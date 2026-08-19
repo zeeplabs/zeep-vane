@@ -286,10 +286,10 @@ T35 → T36 → T37 → T38 → T39 → T40
 - Skill: NONE
 
 **Done when**:
-- [ ] `Create` rejeita email duplicado com erro tipado
-- [ ] `GetByEmail` retorna `ErrNotFound` tipado quando não existe
-- [ ] Testes de integração cobrem: create sucesso, create duplicado, get existente, get inexistente
-- [ ] Gate check passa: `go test ./... -tags=integration`
+- [x] `Create` rejeita email duplicado com erro tipado
+- [x] `GetByEmail` retorna `ErrNotFound` tipado quando não existe
+- [x] Testes de integração cobrem: create sucesso, create duplicado, get existente, get inexistente
+- [x] Gate check passa: `go test ./... -tags=integration`
 
 **Commit**: `feat(auth): add admin repository`
 **Tests**: integration

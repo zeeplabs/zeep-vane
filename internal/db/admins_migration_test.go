@@ -19,7 +19,11 @@ func TestAdminsMigration_AppliesClean_AndEnforcesUniqueEmail(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewPool() returned unexpected error: %v", err)
 	}
-	defer pool.Close()
+	// Registered before the delete cleanup below so it runs after it
+	// (t.Cleanup runs LIFO): a `defer pool.Close()` here would run at
+	// function return, before any t.Cleanup, closing the pool the delete
+	// cleanup still needs.
+	t.Cleanup(pool.Close)
 
 	const email = "admins-migration-test@example.com"
 	t.Cleanup(func() {
