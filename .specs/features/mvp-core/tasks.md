@@ -866,10 +866,10 @@ T35 → T36 → T37 → T38 → T39 → T40
 - Skill: NONE
 
 **Done when**:
-- [ ] Acessível sem header de autenticação
-- [ ] Retorna status + timestamp de última atualização por serviço
-- [ ] Teste de integração cobre acesso anônimo
-- [ ] Gate check passa: `go test ./... -tags=integration`
+- [x] Acessível sem header de autenticação
+- [x] Retorna status + timestamp de última atualização por serviço
+- [x] Teste de integração cobre acesso anônimo
+- [x] Gate check passa: `go test ./... -tags=integration`
 
 **Commit**: `feat(public): add public status page handler`
 **Tests**: integration
