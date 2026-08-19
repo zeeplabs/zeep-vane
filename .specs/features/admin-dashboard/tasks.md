@@ -273,12 +273,12 @@ T11 → T12 → T13
 - Skill: `security-best-practices`, `best-practices`
 
 **Done when**:
-- [ ] Mudança de papel válida aplica o novo role e revoga sessões do afetado
-- [ ] Tentativa que zeraria owners ativos é rejeitada com 409, estado não muda
-- [ ] Sessão antiga do admin afetado passa a ser rejeitada pelo `RequireAuth` (T5) após a mudança
-- [ ] `admin_audit_log` recebe entrada `role_changed`
-- [ ] Testes de integração cobrem os 3 casos acima, incluindo tentativa de self-demotion como último owner
-- [ ] Gate check passa: `go test ./... -tags=integration && go vet ./...`
+- [x] Mudança de papel válida aplica o novo role e revoga sessões do afetado
+- [x] Tentativa que zeraria owners ativos é rejeitada com 409, estado não muda
+- [x] Sessão antiga do admin afetado passa a ser rejeitada pelo `RequireAuth` (T5) após a mudança
+- [x] `admin_audit_log` recebe entrada `role_changed`
+- [x] Testes de integração cobrem os 3 casos acima, incluindo tentativa de self-demotion como último owner
+- [x] Gate check passa: `go test ./... -tags=integration && go vet ./...`
 
 **Tests**: integration
 **Gate**: full

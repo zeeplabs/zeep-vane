@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/jackc/pgx/v5"
 	"go.uber.org/zap"
 
 	"github.com/zeeplabs/zeep-vane/internal/audit"
@@ -43,6 +44,18 @@ type AdminsHandler struct {
 // NewAdminsHandler builds an AdminsHandler.
 func NewAdminsHandler(pool *db.Pool, admins *db.AdminRepository, invites *db.AdminInviteRepository, auditLog *audit.Log, logger *zap.Logger) *AdminsHandler {
 	return &AdminsHandler{pool: pool, admins: admins, invites: invites, audit: auditLog, logger: logger}
+}
+
+// wouldLeaveZeroOwners is the ADM-06 lockout decision: true when applying
+// an action to an admin currently holding the owner role, that does not
+// keep them an owner, would leave the system with zero active owners
+// (ownerCount here already includes the target admin themselves, since
+// CountActiveOwners counts every admin currently holding the owner role).
+// It applies identically to a role change (keepsOwnerRole = new role ==
+// owner) and a removal (keepsOwnerRole = false, always), including the
+// owner acting on themselves.
+func wouldLeaveZeroOwners(currentRole string, keepsOwnerRole bool, ownerCount int) bool {
+	return currentRole == db.RoleOwner && !keepsOwnerRole && ownerCount <= 1
 }
 
 func isValidAdminRole(role string) bool {
@@ -222,6 +235,101 @@ func (h *AdminsHandler) AcceptInvite(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	_ = json.NewEncoder(w).Encode(acceptAdminInviteResponse{Email: admin.Email, Role: invite.Role})
+}
+
+type updateAdminRoleRequest struct {
+	Role string `json:"role"`
+}
+
+const invalidUpdateAdminRoleRequestBody = `{"error":"role must be one of owner, operator, viewer"}`
+const adminNotFoundBody = `{"error":"admin not found"}`
+const adminLockoutBody = `{"error":"this action would leave zero active owners"}`
+
+type adminResponse struct {
+	ID    string `json:"id"`
+	Email string `json:"email"`
+	Role  string `json:"role"`
+}
+
+// UpdateRole handles PATCH /api/admins/{id}/role (role: owner). The role
+// change and the lockout check run inside a single transaction using
+// CountActiveOwners' SELECT ... FOR UPDATE (design.md Risks & Concerns), so
+// a concurrent request can't slip in between the count and the write. A
+// change that would leave zero active owners - including the owner
+// demoting themselves - is rejected with 409 and no state changes (ADM-06).
+// A successful change revokes the affected admin's sessions immediately
+// (ADM-05) and records a "role_changed" audit entry (ADM-08).
+func (h *AdminsHandler) UpdateRole(w http.ResponseWriter, r *http.Request) {
+	targetID := chi.URLParam(r, "id")
+	actor, ok := AdminFromContext(r.Context())
+	if !ok {
+		writeForbidden(w)
+		return
+	}
+
+	var req updateAdminRoleRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || !isValidAdminRole(req.Role) {
+		writeAdminError(w, http.StatusUnprocessableEntity, invalidUpdateAdminRoleRequestBody)
+		return
+	}
+
+	ctx := r.Context()
+	tx, err := h.pool.Begin(ctx)
+	if err != nil {
+		h.logger.Error("admins: failed to begin role-change transaction", zap.Error(err))
+		writeInternalError(w)
+		return
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	var currentRole string
+	row := tx.QueryRow(ctx, "SELECT role FROM admins WHERE id = $1 FOR UPDATE", targetID)
+	if err := row.Scan(&currentRole); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			writeAdminError(w, http.StatusNotFound, adminNotFoundBody)
+			return
+		}
+		h.logger.Error("admins: failed to load target admin", zap.Error(err))
+		writeInternalError(w)
+		return
+	}
+
+	ownerCount, err := h.admins.CountActiveOwners(ctx, tx)
+	if err != nil {
+		h.logger.Error("admins: failed to count active owners", zap.Error(err))
+		writeInternalError(w)
+		return
+	}
+
+	if wouldLeaveZeroOwners(currentRole, req.Role == db.RoleOwner, ownerCount) {
+		writeAdminError(w, http.StatusConflict, adminLockoutBody)
+		return
+	}
+
+	if _, err := tx.Exec(ctx, "UPDATE admins SET role = $1 WHERE id = $2", req.Role, targetID); err != nil {
+		h.logger.Error("admins: failed to update admin role", zap.Error(err))
+		writeInternalError(w)
+		return
+	}
+	if _, err := tx.Exec(ctx, "UPDATE admins SET sessions_revoked_at = now() WHERE id = $1", targetID); err != nil {
+		h.logger.Error("admins: failed to revoke admin sessions", zap.Error(err))
+		writeInternalError(w)
+		return
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		h.logger.Error("admins: failed to commit role change", zap.Error(err))
+		writeInternalError(w)
+		return
+	}
+
+	if err := h.audit.Record(ctx, actor.ID, targetID, "role_changed"); err != nil {
+		h.logger.Error("admins: failed to record role-change audit entry", zap.Error(err))
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(adminResponse{ID: targetID, Role: req.Role})
 }
 
 func writeAdminError(w http.ResponseWriter, status int, body string) {

@@ -46,6 +46,7 @@ func newAdminsRouter(t *testing.T) (http.Handler, *db.Pool, *db.AdminRepository,
 	r.Group(func(protected chi.Router) {
 		protected.Use(RequireAuth(middlewareTestSecret, admins))
 		protected.With(RequireRole(db.RoleOwner)).Post("/api/admins", handler.Invite)
+		protected.With(RequireRole(db.RoleOwner)).Patch("/api/admins/{id}/role", handler.UpdateRole)
 	})
 	r.Post("/api/admins/invite/{token}/accept", handler.AcceptInvite)
 
@@ -386,5 +387,192 @@ func TestAcceptInvite_MissingPassword_422(t *testing.T) {
 
 	if rec.Code != http.StatusUnprocessableEntity {
 		t.Errorf("status = %d, want %d, body = %s", rec.Code, http.StatusUnprocessableEntity, rec.Body.String())
+	}
+}
+
+func patchAdminRole(t *testing.T, r http.Handler, token, targetID, role string) *httptest.ResponseRecorder {
+	t.Helper()
+	body, err := json.Marshal(updateAdminRoleRequest{Role: role})
+	if err != nil {
+		t.Fatalf("json.Marshal() returned unexpected error: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPatch, "/api/admins/"+targetID+"/role", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+	return rec
+}
+
+func TestUpdateAdminRole_ValidChange_200_AppliesRoleRevokesSessionsAndAudits(t *testing.T) {
+	r, pool, admins, _ := newAdminsRouter(t)
+	ctx := context.Background()
+
+	actor := &db.Admin{Email: uniqueTestEmail(t), PasswordHash: "hash"}
+	if err := admins.Create(ctx, actor); err != nil {
+		t.Fatalf("admins.Create() actor returned unexpected error: %v", err)
+	}
+	t.Cleanup(func() { _ = admins.Delete(context.Background(), actor.ID) })
+	actorToken, err := auth.IssueSession(actor.ID, middlewareTestSecret)
+	if err != nil {
+		t.Fatalf("auth.IssueSession() actor returned unexpected error: %v", err)
+	}
+
+	// A second owner besides actor, so this change can never trip the
+	// ADM-06 lockout guard regardless of any other ambient owner rows in
+	// the shared test database.
+	target := &db.Admin{Email: uniqueTestEmail(t), PasswordHash: "hash"}
+	if err := admins.Create(ctx, target); err != nil {
+		t.Fatalf("admins.Create() target returned unexpected error: %v", err)
+	}
+	t.Cleanup(func() { _ = admins.Delete(context.Background(), target.ID) })
+	targetOldToken, err := auth.IssueSession(target.ID, middlewareTestSecret)
+	if err != nil {
+		t.Fatalf("auth.IssueSession() target returned unexpected error: %v", err)
+	}
+	targetOldClaims, err := auth.VerifySessionClaims(targetOldToken, middlewareTestSecret)
+	if err != nil {
+		t.Fatalf("auth.VerifySessionClaims() returned unexpected error: %v", err)
+	}
+
+	rec := patchAdminRole(t, r, actorToken, target.ID, db.RoleViewer)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	var resp adminResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+	if resp.Role != db.RoleViewer {
+		t.Errorf("response Role = %q, want %q", resp.Role, db.RoleViewer)
+	}
+
+	var gotRole string
+	var revokedAt *time.Time
+	row := pool.QueryRow(ctx, "SELECT role, sessions_revoked_at FROM admins WHERE id = $1", target.ID)
+	if err := row.Scan(&gotRole, &revokedAt); err != nil {
+		t.Fatalf("querying target admin returned unexpected error: %v", err)
+	}
+	if gotRole != db.RoleViewer {
+		t.Errorf("stored role = %q, want %q", gotRole, db.RoleViewer)
+	}
+	if revokedAt == nil || revokedAt.Before(targetOldClaims.IssuedAt) {
+		t.Errorf("sessions_revoked_at = %v, want a timestamp at or after the old token's issued-at %v", revokedAt, targetOldClaims.IssuedAt)
+	}
+
+	var gotActorID, gotAction string
+	auditRow := pool.QueryRow(ctx,
+		"SELECT actor_id, action FROM admin_audit_log WHERE target_id = $1 AND action = 'role_changed'", target.ID)
+	if err := auditRow.Scan(&gotActorID, &gotAction); err != nil {
+		t.Fatalf("querying admin_audit_log returned unexpected error: %v", err)
+	}
+	if gotActorID != actor.ID {
+		t.Errorf("admin_audit_log actor_id = %q, want %q", gotActorID, actor.ID)
+	}
+}
+
+// quarantineAmbientOwners is the only reliable way to test the ADM-06
+// lockout rejection end-to-end in this shared integration test database:
+// the count this handler rejects on is a genuine SELECT ... FOR UPDATE
+// COUNT(*) over the whole admins table (CountActiveOwners has no
+// per-test scoping), and other tests/packages routinely leave owner rows
+// behind (some pre-existing fixtures never clean up, e.g. auth_handler_test.go
+// admins created across earlier runs of this same suite) - so "0 other
+// active owners" cannot be assumed. This helper demotes every currently
+// active owner to operator for the duration of the calling test and
+// restores them via t.Cleanup, so the test's own single owner is
+// deterministically the only one CountActiveOwners will see.
+func quarantineAmbientOwners(t *testing.T, admins *db.AdminRepository, pool *db.Pool) {
+	t.Helper()
+	ctx := context.Background()
+
+	rows, err := pool.Query(ctx, "SELECT id FROM admins WHERE role = $1", db.RoleOwner)
+	if err != nil {
+		t.Fatalf("querying ambient owners returned unexpected error: %v", err)
+	}
+	var ambientOwnerIDs []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			rows.Close()
+			t.Fatalf("scanning ambient owner id returned unexpected error: %v", err)
+		}
+		ambientOwnerIDs = append(ambientOwnerIDs, id)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		t.Fatalf("reading ambient owners returned unexpected error: %v", err)
+	}
+
+	for _, id := range ambientOwnerIDs {
+		if err := admins.UpdateRole(ctx, id, db.RoleOperator); err != nil {
+			t.Fatalf("quarantining ambient owner %q returned unexpected error: %v", id, err)
+		}
+	}
+
+	t.Cleanup(func() {
+		for _, id := range ambientOwnerIDs {
+			_ = admins.UpdateRole(context.Background(), id, db.RoleOwner)
+		}
+	})
+}
+
+func TestUpdateAdminRole_SelfDemotionAsLastOwner_409(t *testing.T) {
+	r, pool, admins, _ := newAdminsRouter(t)
+	ctx := context.Background()
+	quarantineAmbientOwners(t, admins, pool)
+
+	owner := &db.Admin{Email: uniqueTestEmail(t), PasswordHash: "hash"}
+	if err := admins.Create(ctx, owner); err != nil {
+		t.Fatalf("admins.Create() returned unexpected error: %v", err)
+	}
+	t.Cleanup(func() { _ = admins.Delete(context.Background(), owner.ID) })
+	token, err := auth.IssueSession(owner.ID, middlewareTestSecret)
+	if err != nil {
+		t.Fatalf("auth.IssueSession() returned unexpected error: %v", err)
+	}
+
+	rec := patchAdminRole(t, r, token, owner.ID, db.RoleViewer)
+
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusConflict, rec.Body.String())
+	}
+
+	got, err := admins.GetByID(ctx, owner.ID)
+	if err != nil {
+		t.Fatalf("GetByID() returned unexpected error: %v", err)
+	}
+	if got.Role != db.RoleOwner {
+		t.Errorf("Role after rejected self-demotion = %q, want unchanged %q", got.Role, db.RoleOwner)
+	}
+	if got.SessionsRevokedAt != nil {
+		t.Errorf("SessionsRevokedAt after rejected self-demotion = %v, want nil (no state change)", got.SessionsRevokedAt)
+	}
+}
+
+func TestUpdateAdminRole_InvalidRole_422(t *testing.T) {
+	r, _, admins, _ := newAdminsRouter(t)
+	token := issueTestSessionToken(t, admins)
+
+	rec := patchAdminRole(t, r, token, "00000000-0000-0000-0000-000000000000", "superadmin")
+
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Errorf("status = %d, want %d, body = %s", rec.Code, http.StatusUnprocessableEntity, rec.Body.String())
+	}
+}
+
+func TestUpdateAdminRole_NotFound_404(t *testing.T) {
+	r, _, admins, _ := newAdminsRouter(t)
+	token := issueTestSessionToken(t, admins)
+
+	rec := patchAdminRole(t, r, token, "00000000-0000-0000-0000-000000000000", db.RoleViewer)
+
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("status = %d, want %d, body = %s", rec.Code, http.StatusNotFound, rec.Body.String())
 	}
 }
