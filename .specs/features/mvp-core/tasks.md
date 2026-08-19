@@ -529,9 +529,9 @@ T35 → T36 → T37 → T38 → T39 → T40
 - Skill: NONE
 
 **Done when**:
-- [ ] Migration aplica limpo
-- [ ] Default `current_status = 'not_configured'` confirmado
-- [ ] Gate check passa: `go test ./... -tags=integration`
+- [x] Migration aplica limpo
+- [x] Default `current_status = 'not_configured'` confirmado
+- [x] Gate check passa: `go test ./... -tags=integration`
 
 **Commit**: `feat(db): add services migration`
 **Tests**: integration
