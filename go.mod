@@ -10,6 +10,7 @@ require (
 	github.com/joho/godotenv v1.5.1
 	github.com/spf13/cobra v1.10.2
 	go.uber.org/zap v1.28.0
+	golang.org/x/crypto v0.45.0
 )
 
 require (

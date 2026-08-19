@@ -310,10 +310,10 @@ T35 → T36 → T37 → T38 → T39 → T40
 - Skill: NONE
 
 **Done when**:
-- [ ] Hash nunca é igual ao texto plano
-- [ ] Verify retorna true pra senha correta, false pra incorreta
-- [ ] Testes unitários cobrem os dois casos
-- [ ] Gate check passa: `go test ./...`
+- [x] Hash nunca é igual ao texto plano
+- [x] Verify retorna true pra senha correta, false pra incorreta
+- [x] Testes unitários cobrem os dois casos
+- [x] Gate check passa: `go test ./...`
 
 **Commit**: `feat(auth): add bcrypt password hashing`
 **Tests**: unit
