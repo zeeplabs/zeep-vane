@@ -479,10 +479,10 @@ T35 → T36 → T37 → T38 → T39 → T40
 - Skill: NONE
 
 **Done when**:
-- [ ] Shape da resposta confirmado contra API/MCP real antes de implementar o parser (não assumido)
-- [ ] `FetchSLOStatus` retorna erro tipado em 401/timeout/5xx (pra retry na Phase 4 diferenciar)
-- [ ] Testes unitários com servidor HTTP mock cobrem: resposta válida, 401, timeout, 5xx
-- [ ] Gate check passa: `go test ./...`
+- [x] Shape da resposta confirmado contra API/MCP real antes de implementar o parser (não assumido)
+- [x] `FetchSLOStatus` retorna erro tipado em 401/timeout/5xx (pra retry na Phase 4 diferenciar)
+- [x] Testes unitários com servidor HTTP mock cobrem: resposta válida, 401, timeout, 5xx
+- [x] Gate check passa: `go test ./...`
 
 **Commit**: `feat(datadog): add SLO status client`
 **Tests**: unit
