@@ -17,6 +17,14 @@ type Incident struct {
 	ResolvedAt *time.Time
 }
 
+// IncidentUpdate is a single timeline entry attached to an Incident.
+type IncidentUpdate struct {
+	ID         string
+	IncidentID string
+	Body       string
+	CreatedAt  time.Time
+}
+
 // IncidentRepository accesses the incidents, incident_services, and
 // incident_updates tables.
 type IncidentRepository struct {
@@ -62,5 +70,64 @@ func (r *IncidentRepository) Create(ctx context.Context, incident *Incident, ser
 		return fmt.Errorf("db: failed to commit incident create transaction: %w", err)
 	}
 
+	return nil
+}
+
+// AddUpdate appends an update to incidentID's timeline (SP-17). It returns
+// ErrNotFound if incidentID doesn't exist.
+func (r *IncidentRepository) AddUpdate(ctx context.Context, incidentID, body string) (*IncidentUpdate, error) {
+	if err := r.mustExist(ctx, incidentID); err != nil {
+		return nil, err
+	}
+
+	update := &IncidentUpdate{IncidentID: incidentID, Body: body}
+	row := r.pool.QueryRow(ctx,
+		"INSERT INTO incident_updates (incident_id, body) VALUES ($1, $2) RETURNING id, created_at",
+		incidentID, body,
+	)
+	if err := row.Scan(&update.ID, &update.CreatedAt); err != nil {
+		return nil, fmt.Errorf("db: failed to add incident update: %w", err)
+	}
+
+	return update, nil
+}
+
+// ListUpdates returns incidentID's timeline, most recent update first
+// (spec.md: "ordenado do mais recente para o mais antigo").
+func (r *IncidentRepository) ListUpdates(ctx context.Context, incidentID string) ([]IncidentUpdate, error) {
+	rows, err := r.pool.Query(ctx,
+		"SELECT id, incident_id, body, created_at FROM incident_updates WHERE incident_id = $1 ORDER BY created_at DESC",
+		incidentID,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("db: failed to list incident updates: %w", err)
+	}
+	defer rows.Close()
+
+	var updates []IncidentUpdate
+	for rows.Next() {
+		var update IncidentUpdate
+		if err := rows.Scan(&update.ID, &update.IncidentID, &update.Body, &update.CreatedAt); err != nil {
+			return nil, fmt.Errorf("db: failed to scan incident update: %w", err)
+		}
+		updates = append(updates, update)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("db: failed to iterate incident updates: %w", err)
+	}
+
+	return updates, nil
+}
+
+// mustExist confirms incidentID exists, returning ErrNotFound if it doesn't.
+func (r *IncidentRepository) mustExist(ctx context.Context, incidentID string) error {
+	var exists bool
+	row := r.pool.QueryRow(ctx, "SELECT EXISTS(SELECT 1 FROM incidents WHERE id = $1)", incidentID)
+	if err := row.Scan(&exists); err != nil {
+		return fmt.Errorf("db: failed to check incident existence: %w", err)
+	}
+	if !exists {
+		return ErrNotFound
+	}
 	return nil
 }

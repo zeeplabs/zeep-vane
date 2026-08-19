@@ -3,9 +3,11 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"time"
 
+	"github.com/go-chi/chi/v5"
 	"go.uber.org/zap"
 
 	"github.com/zeeplabs/zeep-vane/internal/db"
@@ -15,6 +17,8 @@ import (
 // handler depends on.
 type incidentCreator interface {
 	Create(ctx context.Context, incident *db.Incident, serviceIDs []string) error
+	AddUpdate(ctx context.Context, incidentID, body string) (*db.IncidentUpdate, error)
+	ListUpdates(ctx context.Context, incidentID string) ([]db.IncidentUpdate, error)
 }
 
 // IncidentsHandler serves the incident admin routes.
@@ -64,6 +68,67 @@ func (h *IncidentsHandler) Create(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	_ = json.NewEncoder(w).Encode(toIncidentResponse(incident))
+}
+
+type incidentUpdateResponse struct {
+	ID         string    `json:"id"`
+	IncidentID string    `json:"incident_id"`
+	Body       string    `json:"body"`
+	CreatedAt  time.Time `json:"created_at"`
+}
+
+type addIncidentUpdateRequest struct {
+	Body string `json:"body"`
+}
+
+const invalidIncidentUpdateRequestBody = `{"error":"body is required"}`
+const incidentNotFoundBody = `{"error":"incident not found"}`
+
+// AddUpdate handles POST /api/incidents/{id}/updates, appending an update to
+// the incident's timeline and returning the full timeline, most recent
+// first (SP-17). It returns 404 if the incident doesn't exist.
+func (h *IncidentsHandler) AddUpdate(w http.ResponseWriter, r *http.Request) {
+	incidentID := chi.URLParam(r, "id")
+
+	var req addIncidentUpdateRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Body == "" {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusUnprocessableEntity)
+		_, _ = w.Write([]byte(invalidIncidentUpdateRequestBody))
+		return
+	}
+
+	if _, err := h.incidents.AddUpdate(r.Context(), incidentID, req.Body); err != nil {
+		if errors.Is(err, db.ErrNotFound) {
+			writeIncidentNotFound(w)
+			return
+		}
+		h.logger.Error("incidents: failed to add incident update", zap.Error(err))
+		writeInternalError(w)
+		return
+	}
+
+	updates, err := h.incidents.ListUpdates(r.Context(), incidentID)
+	if err != nil {
+		h.logger.Error("incidents: failed to list incident updates", zap.Error(err))
+		writeInternalError(w)
+		return
+	}
+
+	resp := make([]incidentUpdateResponse, len(updates))
+	for i, update := range updates {
+		resp[i] = incidentUpdateResponse{ID: update.ID, IncidentID: update.IncidentID, Body: update.Body, CreatedAt: update.CreatedAt}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	_ = json.NewEncoder(w).Encode(resp)
+}
+
+func writeIncidentNotFound(w http.ResponseWriter) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusNotFound)
+	_, _ = w.Write([]byte(incidentNotFoundBody))
 }
 
 func toIncidentResponse(incident *db.Incident) incidentResponse {

@@ -985,10 +985,10 @@ T35 → T36 → T37 → T38 → T39 → T40
 - Skill: NONE
 
 **Done when**:
-- [ ] Update anexado aparece na timeline ordenado do mais recente pro mais antigo
-- [ ] Incidente inexistente → 404
-- [ ] Teste de integração cobre os 2 casos
-- [ ] Gate check passa: `go test ./... -tags=integration`
+- [x] Update anexado aparece na timeline ordenado do mais recente pro mais antigo
+- [x] Incidente inexistente → 404
+- [x] Teste de integração cobre os 2 casos
+- [x] Gate check passa: `go test ./... -tags=integration`
 
 **Commit**: `feat(incidents): add incident update timeline endpoint`
 **Tests**: integration
