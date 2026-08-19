@@ -42,6 +42,7 @@ func newIncidentsRouter(t *testing.T) (http.Handler, *db.Pool) {
 		protected.Use(RequireAuth(middlewareTestSecret))
 		protected.Post("/api/incidents", handler.Create)
 		protected.Post("/api/incidents/{id}/updates", handler.AddUpdate)
+		protected.Patch("/api/incidents/{id}", handler.Transition)
 	})
 
 	return r, pool
@@ -187,5 +188,115 @@ func TestAddIncidentUpdate_IncidentNotFound_404(t *testing.T) {
 
 	if rec.Code != http.StatusNotFound {
 		t.Errorf("status = %d, want %d, body = %s", rec.Code, http.StatusNotFound, rec.Body.String())
+	}
+}
+
+func patchIncidentStatus(t *testing.T, r http.Handler, token, incidentID, status string) *httptest.ResponseRecorder {
+	t.Helper()
+	body, err := json.Marshal(transitionIncidentRequest{Status: status})
+	if err != nil {
+		t.Fatalf("json.Marshal() returned unexpected error: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPatch, "/api/incidents/"+incidentID, bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+	return rec
+}
+
+func createTestIncident(t *testing.T, r http.Handler, pool *db.Pool, token, title string) incidentResponse {
+	t.Helper()
+	serviceID := createIncidentTestService(t, pool)
+
+	createRec := postCreateIncident(t, r, token, title, []string{serviceID})
+	if createRec.Code != http.StatusCreated {
+		t.Fatalf("setup create status = %d, want %d, body = %s", createRec.Code, http.StatusCreated, createRec.Body.String())
+	}
+	var incident incidentResponse
+	if err := json.Unmarshal(createRec.Body.Bytes(), &incident); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), "DELETE FROM incidents WHERE id = $1", incident.ID) })
+
+	return incident
+}
+
+func TestTransitionIncident_ToResolved_SetsResolvedAt(t *testing.T) {
+	r, pool := newIncidentsRouter(t)
+	token := issueTestSessionToken(t, "admin-1")
+	incident := createTestIncident(t, r, pool, token, "transition to resolved test incident")
+
+	rec := patchIncidentStatus(t, r, token, incident.ID, "resolved")
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	var updated incidentResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &updated); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+	if updated.Status != "resolved" {
+		t.Errorf("Status = %q, want %q", updated.Status, "resolved")
+	}
+	if updated.ResolvedAt == nil {
+		t.Error("ResolvedAt = nil, want a timestamp set on resolution")
+	}
+}
+
+// TestTransitionIncident_ReopenAfterResolved_AllowedAndRecordedOnTimeline
+// covers SP-20: moving a resolved incident back to an earlier state (e.g.
+// "investigating") is a legitimate reopening, not rejected, and must be
+// recorded on the timeline with a timestamp.
+func TestTransitionIncident_ReopenAfterResolved_AllowedAndRecordedOnTimeline(t *testing.T) {
+	r, pool := newIncidentsRouter(t)
+	token := issueTestSessionToken(t, "admin-1")
+	incident := createTestIncident(t, r, pool, token, "reopen after resolved test incident")
+
+	resolveRec := patchIncidentStatus(t, r, token, incident.ID, "resolved")
+	if resolveRec.Code != http.StatusOK {
+		t.Fatalf("setup resolve status = %d, want %d, body = %s", resolveRec.Code, http.StatusOK, resolveRec.Body.String())
+	}
+
+	reopenRec := patchIncidentStatus(t, r, token, incident.ID, "investigating")
+	if reopenRec.Code != http.StatusOK {
+		t.Fatalf("reopen status = %d, want %d, body = %s", reopenRec.Code, http.StatusOK, reopenRec.Body.String())
+	}
+
+	var reopened incidentResponse
+	if err := json.Unmarshal(reopenRec.Body.Bytes(), &reopened); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+	if reopened.Status != "investigating" {
+		t.Errorf("Status = %q, want %q", reopened.Status, "investigating")
+	}
+	if reopened.ResolvedAt != nil {
+		t.Errorf("ResolvedAt = %v, want nil after reopening", reopened.ResolvedAt)
+	}
+
+	var timelineCount int
+	row := pool.QueryRow(context.Background(),
+		"SELECT COUNT(*) FROM incident_updates WHERE incident_id = $1 AND body = $2",
+		incident.ID, "Status changed to investigating")
+	if err := row.Scan(&timelineCount); err != nil {
+		t.Fatalf("Scan() returned unexpected error: %v", err)
+	}
+	if timelineCount != 1 {
+		t.Errorf("timeline entries for reopening = %d, want %d", timelineCount, 1)
+	}
+
+	var reopenedAt time.Time
+	row = pool.QueryRow(context.Background(),
+		"SELECT created_at FROM incident_updates WHERE incident_id = $1 AND body = $2",
+		incident.ID, "Status changed to investigating")
+	if err := row.Scan(&reopenedAt); err != nil {
+		t.Fatalf("Scan() returned unexpected error: %v", err)
+	}
+	if reopenedAt.IsZero() {
+		t.Error("reopening timeline entry has zero timestamp, want a real one")
 	}
 }

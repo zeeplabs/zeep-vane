@@ -19,6 +19,7 @@ type incidentCreator interface {
 	Create(ctx context.Context, incident *db.Incident, serviceIDs []string) error
 	AddUpdate(ctx context.Context, incidentID, body string) (*db.IncidentUpdate, error)
 	ListUpdates(ctx context.Context, incidentID string) ([]db.IncidentUpdate, error)
+	Transition(ctx context.Context, incidentID, status string) (*db.Incident, error)
 }
 
 // IncidentsHandler serves the incident admin routes.
@@ -123,6 +124,50 @@ func (h *IncidentsHandler) AddUpdate(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	_ = json.NewEncoder(w).Encode(resp)
+}
+
+type transitionIncidentRequest struct {
+	Status string `json:"status"`
+}
+
+const invalidIncidentStatusBody = `{"error":"status must be one of investigating, identified, monitoring, resolved"}`
+
+var validIncidentStatuses = map[string]bool{
+	"investigating": true,
+	"identified":    true,
+	"monitoring":    true,
+	"resolved":      true,
+}
+
+// Transition handles PATCH /api/incidents/{id}, moving the incident to a new
+// status (SP-19). Reopening a resolved incident (e.g. back to
+// "investigating") is a legitimate transition, not rejected (SP-20), and is
+// recorded on the timeline by IncidentRepository.Transition.
+func (h *IncidentsHandler) Transition(w http.ResponseWriter, r *http.Request) {
+	incidentID := chi.URLParam(r, "id")
+
+	var req transitionIncidentRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || !validIncidentStatuses[req.Status] {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusUnprocessableEntity)
+		_, _ = w.Write([]byte(invalidIncidentStatusBody))
+		return
+	}
+
+	incident, err := h.incidents.Transition(r.Context(), incidentID, req.Status)
+	if err != nil {
+		if errors.Is(err, db.ErrNotFound) {
+			writeIncidentNotFound(w)
+			return
+		}
+		h.logger.Error("incidents: failed to transition incident", zap.Error(err))
+		writeInternalError(w)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(toIncidentResponse(incident))
 }
 
 func writeIncidentNotFound(w http.ResponseWriter) {

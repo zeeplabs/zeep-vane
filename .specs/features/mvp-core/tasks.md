@@ -1009,10 +1009,10 @@ T35 → T36 → T37 → T38 → T39 → T40
 - Skill: NONE
 
 **Done when**:
-- [ ] Transição pra `resolved` seta `resolved_at`
-- [ ] Reabertura (`resolved` → `investigating`) é permitida e registrada na timeline com timestamp (SP-20)
-- [ ] Teste de integração cobre os 2 fluxos
-- [ ] Gate check passa: `go test ./... -tags=integration`
+- [x] Transição pra `resolved` seta `resolved_at`
+- [x] Reabertura (`resolved` → `investigating`) é permitida e registrada na timeline com timestamp (SP-20)
+- [x] Teste de integração cobre os 2 fluxos
+- [x] Gate check passa: `go test ./... -tags=integration`
 
 **Commit**: `feat(incidents): add incident status transition endpoint`
 **Tests**: integration

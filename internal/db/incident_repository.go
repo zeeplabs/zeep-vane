@@ -2,8 +2,11 @@ package db
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
+
+	"github.com/jackc/pgx/v5"
 )
 
 // Incident is a manually-managed incident post, optionally linked to one or
@@ -117,6 +120,49 @@ func (r *IncidentRepository) ListUpdates(ctx context.Context, incidentID string)
 	}
 
 	return updates, nil
+}
+
+// Transition sets incidentID's status (SP-19), setting ResolvedAt when
+// entering "resolved" and clearing it otherwise - so reopening an incident
+// (e.g. "resolved" back to "investigating", SP-20) doesn't leave a stale
+// resolution timestamp around. It records the transition on the incident's
+// timeline in the same transaction and returns ErrNotFound if incidentID
+// doesn't exist.
+func (r *IncidentRepository) Transition(ctx context.Context, incidentID, status string) (*Incident, error) {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("db: failed to begin incident transition transaction: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	incident := &Incident{ID: incidentID}
+	row := tx.QueryRow(ctx,
+		`UPDATE incidents
+		 SET status = $2,
+		     resolved_at = CASE WHEN $2 = 'resolved' THEN now() ELSE NULL END
+		 WHERE id = $1
+		 RETURNING title, status, created_at, resolved_at`,
+		incidentID, status,
+	)
+	if err := row.Scan(&incident.Title, &incident.Status, &incident.CreatedAt, &incident.ResolvedAt); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrNotFound
+		}
+		return nil, fmt.Errorf("db: failed to transition incident: %w", err)
+	}
+
+	if _, err := tx.Exec(ctx,
+		"INSERT INTO incident_updates (incident_id, body) VALUES ($1, $2)",
+		incidentID, "Status changed to "+status,
+	); err != nil {
+		return nil, fmt.Errorf("db: failed to record incident transition on timeline: %w", err)
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return nil, fmt.Errorf("db: failed to commit incident transition transaction: %w", err)
+	}
+
+	return incident, nil
 }
 
 // mustExist confirms incidentID exists, returning ErrNotFound if it doesn't.
