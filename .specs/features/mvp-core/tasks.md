@@ -552,11 +552,11 @@ T35 → T36 → T37 → T38 → T39 → T40
 - Skill: NONE
 
 **Done when**:
-- [ ] Criar serviço com `slo_id` salva vínculo
-- [ ] Listar retorna todos os serviços com `current_status` atual
-- [ ] Rotas exigem autenticação
-- [ ] Testes de integração cobrem os 2 fluxos
-- [ ] Gate check passa: `go test ./... -tags=integration`
+- [x] Criar serviço com `slo_id` salva vínculo
+- [x] Listar retorna todos os serviços com `current_status` atual
+- [x] Rotas exigem autenticação
+- [x] Testes de integração cobrem os 2 fluxos
+- [x] Gate check passa: `go test ./... -tags=integration`
 
 **Commit**: `feat(datadog): connect integration and link services to SLOs`
 **Tests**: integration
