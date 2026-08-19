@@ -125,8 +125,8 @@ T35 → T36 → T37 → T38 → T39 → T40
 - Skill: NONE
 
 **Done when**:
-- [ ] `go run ./cmd/vane serve` executa sem erro
-- [ ] `--help` lista o subcomando `serve`
+- [x] `go run ./cmd/vane serve` executa sem erro
+- [x] `--help` lista o subcomando `serve`
 
 **Commit**: `feat(cli): add cobra root and serve command skeleton`
 **Tests**: none
