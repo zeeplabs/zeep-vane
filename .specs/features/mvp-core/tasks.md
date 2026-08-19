@@ -503,12 +503,12 @@ T35 → T36 → T37 → T38 → T39 → T40
 - Skill: NONE
 
 **Done when**:
-- [ ] Key válida → 201, salva criptografado
-- [ ] Key inválida/sem permissão → 422, nada é salvo (SP-02)
-- [ ] Resposta do endpoint (e qualquer log) nunca inclui a key em texto plano (SP-04)
-- [ ] Rota exige autenticação (401 sem sessão)
-- [ ] Testes de integração cobrem os 4 casos
-- [ ] Gate check passa: `go test ./... -tags=integration`
+- [x] Key válida → 201, salva criptografado
+- [x] Key inválida/sem permissão → 422, nada é salvo (SP-02)
+- [x] Resposta do endpoint (e qualquer log) nunca inclui a key em texto plano (SP-04)
+- [x] Rota exige autenticação (401 sem sessão)
+- [x] Testes de integração cobrem os 4 casos
+- [x] Gate check passa: `go test ./... -tags=integration`
 
 **Commit**: `feat(datadog): add connect integration endpoint`
 **Tests**: integration

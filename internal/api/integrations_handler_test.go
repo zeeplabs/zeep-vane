@@ -1,0 +1,191 @@
+//go:build integration
+
+package api
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/go-chi/chi/v5"
+	"go.uber.org/zap"
+	"go.uber.org/zap/zaptest/observer"
+
+	"github.com/zeeplabs/zeep-vane/internal/auth"
+	"github.com/zeeplabs/zeep-vane/internal/connectors/datadog"
+	"github.com/zeeplabs/zeep-vane/internal/crypto"
+	"github.com/zeeplabs/zeep-vane/internal/db"
+)
+
+const testMasterKey = "integrations-handler-test-master-key"
+
+func newIntegrationsRouter(t *testing.T, validate validateDatadogCredentials, logger *zap.Logger) (http.Handler, *db.Pool) {
+	t.Helper()
+	dsn := testDatabaseURL(t)
+
+	if err := db.MigrateUp(dsn, "../db/migrations"); err != nil {
+		t.Fatalf("MigrateUp() returned unexpected error: %v", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	pool, err := db.NewPool(ctx, dsn)
+	if err != nil {
+		t.Fatalf("NewPool() returned unexpected error: %v", err)
+	}
+	t.Cleanup(pool.Close)
+	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), "DELETE FROM integrations WHERE provider = 'datadog'") })
+
+	repo := db.NewIntegrationRepository(pool)
+	handler := NewIntegrationsHandler(repo, validate, testMasterKey, logger)
+
+	r := chi.NewRouter()
+	r.With(RequireAuth(middlewareTestSecret)).Post("/api/integrations/datadog", handler.ConnectDatadog)
+
+	return r, pool
+}
+
+func postConnectDatadog(t *testing.T, r http.Handler, token, apiKey, appKey string) *httptest.ResponseRecorder {
+	t.Helper()
+	body, err := json.Marshal(connectDatadogRequest{APIKey: apiKey, AppKey: appKey})
+	if err != nil {
+		t.Fatalf("json.Marshal() returned unexpected error: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/integrations/datadog", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	rec := httptest.NewRecorder()
+
+	r.ServeHTTP(rec, req)
+	return rec
+}
+
+func fetchIntegrationRow(t *testing.T, pool *db.Pool) (encryptedAPIKey, encryptedAppKey []byte, found bool) {
+	t.Helper()
+	row := pool.QueryRow(context.Background(),
+		"SELECT encrypted_api_key, encrypted_app_key FROM integrations WHERE provider = 'datadog'")
+	if err := row.Scan(&encryptedAPIKey, &encryptedAppKey); err != nil {
+		return nil, nil, false
+	}
+	return encryptedAPIKey, encryptedAppKey, true
+}
+
+func TestConnectDatadog_ValidCredentials_201SavesEncrypted(t *testing.T) {
+	alwaysValid := func(ctx context.Context, apiKey, appKey string) error { return nil }
+	r, pool := newIntegrationsRouter(t, alwaysValid, zap.NewNop())
+	token := issueTestSessionToken(t, "admin-1")
+
+	rec := postConnectDatadog(t, r, token, "real-api-key", "real-app-key")
+
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusCreated, rec.Body.String())
+	}
+
+	encAPIKey, encAppKey, found := fetchIntegrationRow(t, pool)
+	if !found {
+		t.Fatal("no integrations row found after successful connect, want a saved row")
+	}
+
+	gotAPIKey, err := crypto.Decrypt(testMasterKey, encAPIKey)
+	if err != nil {
+		t.Fatalf("Decrypt(stored api key) returned unexpected error: %v", err)
+	}
+	if string(gotAPIKey) != "real-api-key" {
+		t.Errorf("decrypted stored api key = %q, want %q", gotAPIKey, "real-api-key")
+	}
+
+	gotAppKey, err := crypto.Decrypt(testMasterKey, encAppKey)
+	if err != nil {
+		t.Fatalf("Decrypt(stored app key) returned unexpected error: %v", err)
+	}
+	if string(gotAppKey) != "real-app-key" {
+		t.Errorf("decrypted stored app key = %q, want %q", gotAppKey, "real-app-key")
+	}
+
+	if bytes.Contains(encAPIKey, []byte("real-api-key")) {
+		t.Error("stored encrypted_api_key contains the plaintext key, want ciphertext only")
+	}
+}
+
+func TestConnectDatadog_InvalidCredentials_422NothingSaved(t *testing.T) {
+	alwaysInvalid := func(ctx context.Context, apiKey, appKey string) error { return datadog.ErrUnauthorized }
+	r, pool := newIntegrationsRouter(t, alwaysInvalid, zap.NewNop())
+	token := issueTestSessionToken(t, "admin-1")
+
+	rec := postConnectDatadog(t, r, token, "bad-api-key", "bad-app-key")
+
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Errorf("status = %d, want %d", rec.Code, http.StatusUnprocessableEntity)
+	}
+
+	_, _, found := fetchIntegrationRow(t, pool)
+	if found {
+		t.Error("integrations row found after rejected connect, want nothing persisted (SP-01.2)")
+	}
+}
+
+func TestConnectDatadog_NoAuth_401(t *testing.T) {
+	alwaysValid := func(ctx context.Context, apiKey, appKey string) error { return nil }
+	r, _ := newIntegrationsRouter(t, alwaysValid, zap.NewNop())
+
+	rec := postConnectDatadog(t, r, "", "any-api-key", "any-app-key")
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Errorf("status = %d, want %d", rec.Code, http.StatusUnauthorized)
+	}
+}
+
+func TestConnectDatadog_ResponseAndLogs_NeverContainPlaintextKey(t *testing.T) {
+	// Force a downstream error (persistence failure) after validation
+	// succeeds, so the handler's error-logging path runs, and confirm even
+	// then the raw key never reaches the logger or the response body
+	// (SP-01.4).
+	core, logs := observer.New(zap.ErrorLevel)
+	logger := zap.New(core)
+
+	alwaysValid := func(ctx context.Context, apiKey, appKey string) error { return nil }
+	r, pool := newIntegrationsRouter(t, alwaysValid, logger)
+	pool.Close() // force UpsertDatadog to fail after validation succeeds
+	token := issueTestSessionToken(t, "admin-1")
+
+	const secretAPIKey = "super-secret-datadog-api-key"
+	rec := postConnectDatadog(t, r, token, secretAPIKey, "app-key")
+
+	if strings.Contains(rec.Body.String(), secretAPIKey) {
+		t.Errorf("response body contains the plaintext api key: %s", rec.Body.String())
+	}
+
+	if len(logs.All()) == 0 {
+		t.Fatal("no error log entry recorded, want the persistence failure to be logged (so this check is meaningful)")
+	}
+
+	for _, entry := range logs.All() {
+		if strings.Contains(entry.Message, secretAPIKey) {
+			t.Errorf("log message contains the plaintext api key: %q", entry.Message)
+		}
+		for key, value := range entry.ContextMap() {
+			if strings.Contains(fmt.Sprintf("%v", value), secretAPIKey) {
+				t.Errorf("log field %q contains the plaintext api key", key)
+			}
+		}
+	}
+}
+
+func issueTestSessionToken(t *testing.T, adminID string) string {
+	t.Helper()
+	token, err := auth.IssueSession(adminID, middlewareTestSecret)
+	if err != nil {
+		t.Fatalf("auth.IssueSession() returned unexpected error: %v", err)
+	}
+	return token
+}

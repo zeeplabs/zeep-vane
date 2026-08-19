@@ -119,30 +119,11 @@ type sloSearchResponse struct {
 func (c *Client) FetchSLOStatus(ctx context.Context, sloID string) (SLOStatus, error) {
 	endpoint := fmt.Sprintf("%s%s?query=%s", c.baseURL, sloSearchPath, url.QueryEscape("id:"+sloID))
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	resp, err := c.get(ctx, endpoint)
 	if err != nil {
-		return SLOStatus{}, fmt.Errorf("datadog: failed to build request: %w", err)
-	}
-	req.Header.Set("DD-API-KEY", c.apiKey)
-	req.Header.Set("DD-APPLICATION-KEY", c.appKey)
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		if isTimeout(err) {
-			return SLOStatus{}, ErrTimeout
-		}
-		return SLOStatus{}, fmt.Errorf("datadog: request failed: %w", err)
+		return SLOStatus{}, err
 	}
 	defer resp.Body.Close()
-
-	switch {
-	case resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden:
-		return SLOStatus{}, ErrUnauthorized
-	case resp.StatusCode >= http.StatusInternalServerError:
-		return SLOStatus{}, ErrServer
-	case resp.StatusCode != http.StatusOK:
-		return SLOStatus{}, fmt.Errorf("datadog: unexpected status %d", resp.StatusCode)
-	}
 
 	var parsed sloSearchResponse
 	if err := json.NewDecoder(resp.Body).Decode(&parsed); err != nil {
@@ -166,6 +147,57 @@ func (c *Client) FetchSLOStatus(ctx context.Context, sloID string) (SLOStatus, e
 	}
 
 	return status, nil
+}
+
+// ValidateCredentials checks that the client's API/App key pair is valid
+// and has SLO read permission, without requiring a specific SLO ID -
+// SP-01.2 must be checkable at connect time, before any service/SLO has
+// been configured yet. It performs a minimal SLO search call and only
+// inspects the outcome; the response body's content is irrelevant here.
+func (c *Client) ValidateCredentials(ctx context.Context) error {
+	endpoint := fmt.Sprintf("%s%s?page_size=1", c.baseURL, sloSearchPath)
+
+	resp, err := c.get(ctx, endpoint)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	return nil
+}
+
+// get issues an authenticated GET against endpoint and classifies the
+// outcome into vane's typed connector errors. On success (200) it returns
+// the response with its body still open for the caller to decode.
+func (c *Client) get(ctx context.Context, endpoint string) (*http.Response, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return nil, fmt.Errorf("datadog: failed to build request: %w", err)
+	}
+	req.Header.Set("DD-API-KEY", c.apiKey)
+	req.Header.Set("DD-APPLICATION-KEY", c.appKey)
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		if isTimeout(err) {
+			return nil, ErrTimeout
+		}
+		return nil, fmt.Errorf("datadog: request failed: %w", err)
+	}
+
+	switch {
+	case resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden:
+		resp.Body.Close()
+		return nil, ErrUnauthorized
+	case resp.StatusCode >= http.StatusInternalServerError:
+		resp.Body.Close()
+		return nil, ErrServer
+	case resp.StatusCode != http.StatusOK:
+		resp.Body.Close()
+		return nil, fmt.Errorf("datadog: unexpected status %d", resp.StatusCode)
+	}
+
+	return resp, nil
 }
 
 // isTimeout reports whether err represents a client-side timeout (either
