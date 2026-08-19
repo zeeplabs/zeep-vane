@@ -1,0 +1,8 @@
+bin/
+*.env
+.env
+*.test
+test-local/
+web/node_modules/
+internal/webui/static/
+.DS_Store

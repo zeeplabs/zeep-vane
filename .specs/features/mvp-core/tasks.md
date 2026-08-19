@@ -103,8 +103,8 @@ T35 → T36 → T37 → T38 → T39 → T40
 - Skill: NONE
 
 **Done when**:
-- [ ] `go build ./...` compila sem erro
-- [ ] `Makefile` tem targets `build`, `test`, `lint`, `vet` funcionais
+- [x] `go build ./...` compila sem erro
+- [x] `Makefile` tem targets `build`, `test`, `lint`, `vet` funcionais
 
 **Commit**: `chore(scaffold): initialize go module and project layout`
 **Tests**: none
