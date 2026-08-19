@@ -66,3 +66,22 @@ func (r *ServiceRepository) List(ctx context.Context) ([]Service, error) {
 
 	return services, nil
 }
+
+// UpdateStatus sets service serviceID's current_status to status. It only
+// touches last_status_change_at when status actually differs from the
+// stored value, so a repeated "operational" poll result doesn't fake a
+// status change.
+func (r *ServiceRepository) UpdateStatus(ctx context.Context, serviceID, status string) error {
+	_, err := r.pool.Exec(ctx,
+		`UPDATE services
+		 SET current_status = $2,
+		     last_status_change_at = CASE WHEN current_status <> $2 THEN now() ELSE last_status_change_at END
+		 WHERE id = $1`,
+		serviceID, status,
+	)
+	if err != nil {
+		return fmt.Errorf("db: failed to update service status: %w", err)
+	}
+
+	return nil
+}

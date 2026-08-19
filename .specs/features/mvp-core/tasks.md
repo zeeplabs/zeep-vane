@@ -624,11 +624,11 @@ T35 → T36 → T37 → T38 → T39 → T40
 - Skill: NONE
 
 **Done when**:
-- [ ] Ciclo atualiza `current_status` conforme error budget (operational/degraded/outage)
-- [ ] Nunca é chamado a partir de uma requisição pública (só pelo próprio ticker)
-- [ ] Cancelamento via context para o loop de forma limpa
-- [ ] Testes de integração cobrem uma iteração completa com Datadog mockado
-- [ ] Gate check passa: `go test ./... -tags=integration`
+- [x] Ciclo atualiza `current_status` conforme error budget (operational/degraded/outage)
+- [x] Nunca é chamado a partir de uma requisição pública (só pelo próprio ticker)
+- [x] Cancelamento via context para o loop de forma limpa
+- [x] Testes de integração cobrem uma iteração completa com Datadog mockado
+- [x] Gate check passa: `go test ./... -tags=integration`
 
 **Commit**: `feat(poller): add periodic SLO polling loop`
 **Tests**: integration
