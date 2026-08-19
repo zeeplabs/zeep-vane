@@ -938,9 +938,9 @@ T35 → T36 → T37 → T38 → T39 → T40
 - Skill: NONE
 
 **Done when**:
-- [ ] Migrations aplicam limpo
-- [ ] FKs confirmadas
-- [ ] Gate check passa: `go test ./... -tags=integration`
+- [x] Migrations aplicam limpo
+- [x] FKs confirmadas
+- [x] Gate check passa: `go test ./... -tags=integration`
 
 **Commit**: `feat(db): add incidents migrations`
 **Tests**: integration
