@@ -10,6 +10,7 @@ func NewRootCmd() *cobra.Command {
 	}
 
 	root.AddCommand(NewServeCmd())
+	root.AddCommand(NewMigrateCmd())
 
 	return root
 }

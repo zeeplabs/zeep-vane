@@ -217,9 +217,9 @@ T35 → T36 → T37 → T38 → T39 → T40
 - Skill: NONE
 
 **Done when**:
-- [ ] `vane migrate up` roda contra banco vazio sem erro (0 migrations ainda)
-- [ ] Runner é idempotente (rodar 2x não duplica nada)
-- [ ] Gate check passa: `go test ./... -tags=integration`
+- [x] `vane migrate up` roda contra banco vazio sem erro (0 migrations ainda)
+- [x] Runner é idempotente (rodar 2x não duplica nada)
+- [x] Gate check passa: `go test ./... -tags=integration`
 
 **Commit**: `feat(db): add migration runner and migrate command`
 **Tests**: integration
