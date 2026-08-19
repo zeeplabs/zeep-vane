@@ -130,10 +130,10 @@ T11 → T12 → T13
 - Skill: NONE
 
 **Done when**:
-- [ ] `Record` insere linha com timestamp correto
-- [ ] Sem cascade delete - remover um `Admin` não remove linhas de `admin_audit_log` que o citam
-- [ ] Teste de integração cobre insert e sobrevivência do registro após remoção do admin referenciado
-- [ ] Gate check passa: `go test ./... -tags=integration && go vet ./...`
+- [x] `Record` insere linha com timestamp correto
+- [x] Sem cascade delete - remover um `Admin` não remove linhas de `admin_audit_log` que o citam
+- [x] Teste de integração cobre insert e sobrevivência do registro após remoção do admin referenciado
+- [x] Gate check passa: `go test ./... -tags=integration && go vet ./...`
 
 **Tests**: integration
 **Gate**: full
