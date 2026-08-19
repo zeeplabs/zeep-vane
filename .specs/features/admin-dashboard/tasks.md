@@ -222,11 +222,11 @@ T11 → T12 → T13
 - Skill: NONE
 
 **Done when**:
-- [ ] `owner` consegue convidar; `operator`/`viewer` recebem 403
-- [ ] Convite duplicado pro mesmo email invalida o anterior sem criar registro duplicado
-- [ ] `admin_audit_log` recebe entrada `invited` com actor e target corretos
-- [ ] Testes de integração cobrem os 3 casos acima
-- [ ] Gate check passa: `go test ./... -tags=integration && go vet ./...`
+- [x] `owner` consegue convidar; `operator`/`viewer` recebem 403
+- [x] Convite duplicado pro mesmo email invalida o anterior sem criar registro duplicado
+- [x] `admin_audit_log` recebe entrada `invited` com actor e target corretos
+- [x] Testes de integração cobrem os 3 casos acima
+- [x] Gate check passa: `go test ./... -tags=integration && go vet ./...`
 
 **Tests**: integration
 **Gate**: full

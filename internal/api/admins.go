@@ -1,0 +1,160 @@
+package api
+
+import (
+	"crypto/rand"
+	"crypto/sha256"
+	"encoding/base64"
+	"encoding/json"
+	"errors"
+	"net/http"
+	"time"
+
+	"go.uber.org/zap"
+
+	"github.com/zeeplabs/zeep-vane/internal/audit"
+	"github.com/zeeplabs/zeep-vane/internal/db"
+)
+
+// adminInviteTTL is how long an admin invite token stays valid (ADM-01).
+const adminInviteTTL = 1 * time.Hour
+
+// adminInviteTokenBytes is the size of the raw random invite token before
+// encoding, chosen to make guessing infeasible (same size as the password
+// reset token).
+const adminInviteTokenBytes = 32
+
+// AdminsHandler serves the admin management routes: invite, invite
+// acceptance, role change, removal, and listing. It takes *db.Pool directly
+// (unlike other handlers' narrow repository interfaces) because
+// UpdateRole/Delete need to run CountActiveOwners and the resulting write in
+// the same transaction (design.md Risks & Concerns - lockout check must be
+// atomic), which isn't expressible through the existing per-repository
+// interfaces.
+type AdminsHandler struct {
+	pool    *db.Pool
+	admins  *db.AdminRepository
+	invites *db.AdminInviteRepository
+	audit   *audit.Log
+	logger  *zap.Logger
+}
+
+// NewAdminsHandler builds an AdminsHandler.
+func NewAdminsHandler(pool *db.Pool, admins *db.AdminRepository, invites *db.AdminInviteRepository, auditLog *audit.Log, logger *zap.Logger) *AdminsHandler {
+	return &AdminsHandler{pool: pool, admins: admins, invites: invites, audit: auditLog, logger: logger}
+}
+
+func isValidAdminRole(role string) bool {
+	switch role {
+	case db.RoleOwner, db.RoleOperator, db.RoleViewer:
+		return true
+	default:
+		return false
+	}
+}
+
+type inviteAdminRequest struct {
+	Email string `json:"email"`
+	Role  string `json:"role"`
+}
+
+const invalidInviteAdminRequestBody = `{"error":"email is required and role must be one of owner, operator, viewer"}`
+const adminAlreadyActiveBody = `{"error":"an active admin already exists for this email"}`
+
+// Invite handles POST /api/admins (role: owner). It rejects an email that
+// already belongs to an active admin (spec.md edge case), otherwise
+// invalidates any pending invite for the same email (ADM-02) before issuing
+// a new one, and records an "invited" audit entry (ADM-08).
+//
+// SPEC_DEVIATION: spec.md AC1 says inviting "cria o registro do admin em
+// estado pending", but design.md (already implemented in T1-T4) models no
+// pending Admin row and no status column - only a separate admin_invites
+// row. The Admin row is created only at accept time (AcceptInvite). This
+// keeps this handler consistent with the schema already committed for this
+// feature; the "already active" edge case is served by checking for an
+// existing Admin row by email instead of a pending-status Admin row.
+//
+// SPEC_DEVIATION: admin_audit_log.target_id is NOT NULL and there is no
+// Admin row yet for an invited email, so the "invited" audit entry uses the
+// AdminInvite's own ID as target_id rather than an Admin ID.
+func (h *AdminsHandler) Invite(w http.ResponseWriter, r *http.Request) {
+	actor, ok := AdminFromContext(r.Context())
+	if !ok {
+		writeForbidden(w)
+		return
+	}
+
+	var req inviteAdminRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Email == "" || !isValidAdminRole(req.Role) {
+		writeAdminError(w, http.StatusUnprocessableEntity, invalidInviteAdminRequestBody)
+		return
+	}
+
+	if _, err := h.admins.GetByEmail(r.Context(), req.Email); err == nil {
+		writeAdminError(w, http.StatusConflict, adminAlreadyActiveBody)
+		return
+	} else if !errors.Is(err, db.ErrNotFound) {
+		h.logger.Error("admins: failed to look up admin by email", zap.Error(err))
+		writeInternalError(w)
+		return
+	}
+
+	if err := h.invites.InvalidatePendingForEmail(r.Context(), req.Email); err != nil {
+		h.logger.Error("admins: failed to invalidate pending invites", zap.Error(err))
+		writeInternalError(w)
+		return
+	}
+
+	rawToken, err := generateAdminInviteToken()
+	if err != nil {
+		h.logger.Error("admins: failed to generate invite token", zap.Error(err))
+		writeInternalError(w)
+		return
+	}
+
+	invite := &db.AdminInvite{
+		Email:       req.Email,
+		Role:        req.Role,
+		TokenHash:   hashAdminInviteToken(rawToken),
+		InvitedByID: actor.ID,
+		ExpiresAt:   time.Now().Add(adminInviteTTL),
+	}
+	if err := h.invites.Create(r.Context(), invite); err != nil {
+		h.logger.Error("admins: failed to create invite", zap.Error(err))
+		writeInternalError(w)
+		return
+	}
+
+	// Email delivery is out of scope for the MVP (same convention as the
+	// password reset flow, T14 of mvp-core): the raw token is only logged,
+	// standing in for a real provider. The raw token itself is never
+	// persisted (see AdminInvite.TokenHash).
+	h.logger.Info("admins: invite issued",
+		zap.String("email", req.Email), zap.String("role", req.Role), zap.String("token", rawToken))
+
+	if err := h.audit.Record(r.Context(), actor.ID, invite.ID, "invited"); err != nil {
+		h.logger.Error("admins: failed to record invite audit entry", zap.Error(err))
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	_ = json.NewEncoder(w).Encode(map[string]string{"status": "invited"})
+}
+
+func writeAdminError(w http.ResponseWriter, status int, body string) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	_, _ = w.Write([]byte(body))
+}
+
+func generateAdminInviteToken() (string, error) {
+	raw := make([]byte, adminInviteTokenBytes)
+	if _, err := rand.Read(raw); err != nil {
+		return "", err
+	}
+	return base64.RawURLEncoding.EncodeToString(raw), nil
+}
+
+func hashAdminInviteToken(rawToken string) string {
+	sum := sha256.Sum256([]byte(rawToken))
+	return base64.RawURLEncoding.EncodeToString(sum[:])
+}
