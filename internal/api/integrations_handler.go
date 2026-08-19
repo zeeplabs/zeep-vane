@@ -3,17 +3,21 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
+	"time"
 
 	"go.uber.org/zap"
 
 	"github.com/zeeplabs/zeep-vane/internal/crypto"
+	"github.com/zeeplabs/zeep-vane/internal/db"
 )
 
 // datadogIntegrationUpserter is the subset of *db.IntegrationRepository the
 // integrations handler depends on.
 type datadogIntegrationUpserter interface {
 	UpsertDatadog(ctx context.Context, encryptedAPIKey, encryptedAppKey []byte) error
+	GetDatadog(ctx context.Context) (*db.Integration, error)
 }
 
 // validateDatadogCredentials checks that an API key + App key pair is valid
@@ -85,6 +89,43 @@ func (h *IntegrationsHandler) ConnectDatadog(w http.ResponseWriter, r *http.Requ
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	_, _ = w.Write([]byte(`{"status":"connected"}`))
+}
+
+type datadogStatusResponse struct {
+	Status        string  `json:"status"`
+	LastCheckedAt *string `json:"last_checked_at"`
+	LastError     *string `json:"last_error"`
+}
+
+const datadogIntegrationNotFoundBody = `{"error":"datadog integration not connected yet"}`
+
+// Status handles GET /api/integrations/datadog/status, exposing the
+// Datadog integration's current status and last recorded error to the
+// authenticated admin (SP-09) - in particular, the failure the poller
+// recorded after exhausting its retries.
+func (h *IntegrationsHandler) Status(w http.ResponseWriter, r *http.Request) {
+	integration, err := h.integrations.GetDatadog(r.Context())
+	if err != nil {
+		if errors.Is(err, db.ErrNotFound) {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusNotFound)
+			_, _ = w.Write([]byte(datadogIntegrationNotFoundBody))
+			return
+		}
+		h.logger.Error("integrations: failed to get datadog integration status", zap.Error(err))
+		writeInternalError(w)
+		return
+	}
+
+	resp := datadogStatusResponse{Status: integration.Status, LastError: integration.LastError}
+	if integration.LastCheckedAt != nil {
+		formatted := integration.LastCheckedAt.Format(time.RFC3339)
+		resp.LastCheckedAt = &formatted
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(resp)
 }
 
 func writeInvalidDatadogCredentials(w http.ResponseWriter) {

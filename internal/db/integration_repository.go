@@ -2,8 +2,11 @@ package db
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
+
+	"github.com/jackc/pgx/v5"
 )
 
 // Integration is a connected external provider (Datadog in the MVP). Its
@@ -49,4 +52,36 @@ func (r *IntegrationRepository) UpsertDatadog(ctx context.Context, encryptedAPIK
 	}
 
 	return nil
+}
+
+// MarkDatadogInvalid marks the Datadog integration as invalid and records
+// lastError as the reason - called once the poller exhausts its retries
+// fetching SLO status (SP-09), so the admin can see why.
+func (r *IntegrationRepository) MarkDatadogInvalid(ctx context.Context, lastError string) error {
+	_, err := r.pool.Exec(ctx,
+		`UPDATE integrations SET status = 'invalid', last_error = $1, last_checked_at = now() WHERE provider = 'datadog'`,
+		lastError,
+	)
+	if err != nil {
+		return fmt.Errorf("db: failed to mark datadog integration invalid: %w", err)
+	}
+
+	return nil
+}
+
+// GetDatadog returns the Datadog integration's current status and last
+// error, or ErrNotFound if no Datadog integration has been connected yet.
+func (r *IntegrationRepository) GetDatadog(ctx context.Context) (*Integration, error) {
+	row := r.pool.QueryRow(ctx,
+		"SELECT id, provider, status, last_checked_at, last_error FROM integrations WHERE provider = 'datadog'")
+
+	var integration Integration
+	if err := row.Scan(&integration.ID, &integration.Provider, &integration.Status, &integration.LastCheckedAt, &integration.LastError); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrNotFound
+		}
+		return nil, fmt.Errorf("db: failed to get datadog integration: %w", err)
+	}
+
+	return &integration, nil
 }

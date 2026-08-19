@@ -48,8 +48,20 @@ func newIntegrationsRouter(t *testing.T, validate validateDatadogCredentials, lo
 
 	r := chi.NewRouter()
 	r.With(RequireAuth(middlewareTestSecret)).Post("/api/integrations/datadog", handler.ConnectDatadog)
+	r.With(RequireAuth(middlewareTestSecret)).Get("/api/integrations/datadog/status", handler.Status)
 
 	return r, pool
+}
+
+func getDatadogStatus(t *testing.T, r http.Handler, token string) *httptest.ResponseRecorder {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodGet, "/api/integrations/datadog/status", nil)
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+	return rec
 }
 
 func postConnectDatadog(t *testing.T, r http.Handler, token, apiKey, appKey string) *httptest.ResponseRecorder {
@@ -178,6 +190,64 @@ func TestConnectDatadog_ResponseAndLogs_NeverContainPlaintextKey(t *testing.T) {
 				t.Errorf("log field %q contains the plaintext api key", key)
 			}
 		}
+	}
+}
+
+func TestDatadogStatus_NotConnectedYet_404(t *testing.T) {
+	alwaysValid := func(ctx context.Context, apiKey, appKey string) error { return nil }
+	r, _ := newIntegrationsRouter(t, alwaysValid, zap.NewNop())
+	token := issueTestSessionToken(t, "admin-1")
+
+	rec := getDatadogStatus(t, r, token)
+
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("status = %d, want %d", rec.Code, http.StatusNotFound)
+	}
+}
+
+func TestDatadogStatus_NoAuth_401(t *testing.T) {
+	alwaysValid := func(ctx context.Context, apiKey, appKey string) error { return nil }
+	r, _ := newIntegrationsRouter(t, alwaysValid, zap.NewNop())
+
+	rec := getDatadogStatus(t, r, "")
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Errorf("status = %d, want %d", rec.Code, http.StatusUnauthorized)
+	}
+}
+
+// TestDatadogStatus_AfterConnectionFailure_ReportsInvalidAndReason covers
+// T24's admin-facing side (SP-09): once the poller has recorded a
+// connection failure via MarkDatadogInvalid, the status endpoint must
+// surface both the "invalid" status and the recorded reason to the admin.
+func TestDatadogStatus_AfterConnectionFailure_ReportsInvalidAndReason(t *testing.T) {
+	alwaysValid := func(ctx context.Context, apiKey, appKey string) error { return nil }
+	r, pool := newIntegrationsRouter(t, alwaysValid, zap.NewNop())
+	token := issueTestSessionToken(t, "admin-1")
+
+	postConnectDatadog(t, r, token, "real-api-key", "real-app-key")
+
+	repo := db.NewIntegrationRepository(pool)
+	const reason = "datadog: request timed out"
+	if err := repo.MarkDatadogInvalid(context.Background(), reason); err != nil {
+		t.Fatalf("MarkDatadogInvalid() returned unexpected error: %v", err)
+	}
+
+	rec := getDatadogStatus(t, r, token)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	var resp datadogStatusResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+
+	if resp.Status != "invalid" {
+		t.Errorf("Status = %q, want %q", resp.Status, "invalid")
+	}
+	if resp.LastError == nil || *resp.LastError != reason {
+		t.Errorf("LastError = %v, want %q", resp.LastError, reason)
 	}
 }
 

@@ -32,30 +32,39 @@ type snapshotCreator interface {
 	Create(ctx context.Context, snapshot *db.StatusSnapshot) error
 }
 
+// integrationInvalidator is the subset of *db.IntegrationRepository the
+// poller depends on to record a connection failure for the admin (SP-09).
+type integrationInvalidator interface {
+	MarkDatadogInvalid(ctx context.Context, lastError string) error
+}
+
 // Poller periodically fetches SLO status for every configured service and
 // updates its cached current status. It is the only path that talks to the
 // SLO provider: pollOnce/pollService are unexported and reached only via
 // Run's own ticker, never from a public request (SP-06 - the public status
 // page must only ever read the cache, never call Datadog on demand).
 type Poller struct {
-	services  serviceLister
-	statuses  serviceStatusUpdater
-	snapshots snapshotCreator
-	provider  datadog.SLOProvider
-	interval  time.Duration
-	logger    *zap.Logger
+	services     serviceLister
+	statuses     serviceStatusUpdater
+	snapshots    snapshotCreator
+	integrations integrationInvalidator
+	provider     datadog.SLOProvider
+	interval     time.Duration
+	logger       *zap.Logger
 }
 
 // NewPoller builds a Poller that fetches SLO status via provider every
-// interval, persisting results through statuses/snapshots.
-func NewPoller(services serviceLister, statuses serviceStatusUpdater, snapshots snapshotCreator, provider datadog.SLOProvider, interval time.Duration, logger *zap.Logger) *Poller {
+// interval, persisting results through statuses/snapshots and recording
+// connection failures through integrations.
+func NewPoller(services serviceLister, statuses serviceStatusUpdater, snapshots snapshotCreator, integrations integrationInvalidator, provider datadog.SLOProvider, interval time.Duration, logger *zap.Logger) *Poller {
 	return &Poller{
-		services:  services,
-		statuses:  statuses,
-		snapshots: snapshots,
-		provider:  provider,
-		interval:  interval,
-		logger:    logger,
+		services:     services,
+		statuses:     statuses,
+		snapshots:    snapshots,
+		integrations: integrations,
+		provider:     provider,
+		interval:     interval,
+		logger:       logger,
 	}
 }
 
@@ -91,14 +100,21 @@ func (p *Poller) pollOnce(ctx context.Context) {
 
 // pollService fetches svc's SLO status (with retry), persists a snapshot,
 // and updates the service's cached current_status. On a failed fetch it
-// returns early without touching current_status, so the last known valid
-// status stays visible on the public page (SP-08/T24) - it never writes a
-// status derived from a failure.
+// records the connection failure on the Datadog integration for the admin
+// (SP-09) and returns early without touching current_status, so the last
+// known valid status stays visible on the public page (SP-08) - it never
+// writes a status derived from a failure.
 func (p *Poller) pollService(ctx context.Context, svc db.Service) error {
 	status, err := FetchWithRetry(ctx, p.provider, svc.SLOID, maxFetchAttempts)
 	if err != nil {
 		p.logger.Error("poller: failed to fetch slo status",
 			zap.String("service_id", svc.ID), zap.String("slo_id", svc.SLOID), zap.Error(err))
+
+		if markErr := p.integrations.MarkDatadogInvalid(ctx, err.Error()); markErr != nil {
+			p.logger.Error("poller: failed to mark datadog integration invalid",
+				zap.Error(markErr))
+		}
+
 		return err
 	}
 

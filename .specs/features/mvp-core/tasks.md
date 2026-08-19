@@ -649,11 +649,11 @@ T35 → T36 → T37 → T38 → T39 → T40
 - Skill: NONE
 
 **Done when**:
-- [ ] Falha esgotada marca integração como inválida com motivo
-- [ ] `GET /api/integrations/datadog/status` retorna o estado + último erro pro admin autenticado
-- [ ] Último `current_status` do serviço NÃO muda quando a falha é de conexão (mantém último válido)
-- [ ] Testes de integração cobrem o fluxo completo de falha
-- [ ] Gate check passa: `go test ./... -tags=integration`
+- [x] Falha esgotada marca integração como inválida com motivo
+- [x] `GET /api/integrations/datadog/status` retorna o estado + último erro pro admin autenticado
+- [x] Último `current_status` do serviço NÃO muda quando a falha é de conexão (mantém último válido)
+- [x] Testes de integração cobrem o fluxo completo de falha
+- [x] Gate check passa: `go test ./... -tags=integration`
 
 **Commit**: `feat(poller): add connection failure alerting`
 **Tests**: integration
