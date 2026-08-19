@@ -107,10 +107,10 @@ T11 → T12 → T13
 - Skill: NONE
 
 **Done when**:
-- [ ] `Create` grava convite com token hasheado (nunca cru)
-- [ ] `InvalidatePendingForEmail` marca convites pendentes anteriores como usados antes de criar o novo
-- [ ] Testes de integração cobrem create, lookup por hash, e dedup de convite pendente
-- [ ] Gate check passa: `go test ./... -tags=integration && go vet ./...`
+- [x] `Create` grava convite com token hasheado (nunca cru)
+- [x] `InvalidatePendingForEmail` marca convites pendentes anteriores como usados antes de criar o novo
+- [x] Testes de integração cobrem create, lookup por hash, e dedup de convite pendente
+- [x] Gate check passa: `go test ./... -tags=integration && go vet ./...`
 
 **Tests**: integration
 **Gate**: full

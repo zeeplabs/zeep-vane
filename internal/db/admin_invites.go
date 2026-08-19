@@ -1,0 +1,106 @@
+package db
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"time"
+
+	"github.com/jackc/pgx/v5"
+)
+
+// AdminInvite tracks a single admin invitation. TokenHash is always a hash
+// of the invite token, never the raw token itself - the raw token exists
+// only transiently in the request/response path and is never persisted
+// (same convention as PasswordResetToken).
+type AdminInvite struct {
+	ID          string
+	Email       string
+	Role        string
+	TokenHash   string
+	InvitedByID string
+	ExpiresAt   time.Time
+	UsedAt      *time.Time
+	CreatedAt   time.Time
+}
+
+// AdminInviteRepository accesses the admin_invites table.
+type AdminInviteRepository struct {
+	pool *Pool
+}
+
+// NewAdminInviteRepository builds an AdminInviteRepository backed by pool.
+func NewAdminInviteRepository(pool *Pool) *AdminInviteRepository {
+	return &AdminInviteRepository{pool: pool}
+}
+
+// Create inserts invite, filling in its generated ID and CreatedAt. Only the
+// hash is ever written - callers must never pass a plaintext token in
+// TokenHash.
+func (r *AdminInviteRepository) Create(ctx context.Context, invite *AdminInvite) error {
+	row := r.pool.QueryRow(ctx,
+		`INSERT INTO admin_invites (email, role, token_hash, invited_by_id, expires_at)
+		 VALUES ($1, $2, $3, $4, $5)
+		 RETURNING id, created_at`,
+		invite.Email, invite.Role, invite.TokenHash, invite.InvitedByID, invite.ExpiresAt,
+	)
+
+	if err := row.Scan(&invite.ID, &invite.CreatedAt); err != nil {
+		return fmt.Errorf("db: failed to create admin invite: %w", err)
+	}
+
+	return nil
+}
+
+// GetByTokenHash looks up an invite by its hash, returning ErrNotFound if
+// none exists.
+func (r *AdminInviteRepository) GetByTokenHash(ctx context.Context, tokenHash string) (*AdminInvite, error) {
+	row := r.pool.QueryRow(ctx,
+		`SELECT id, email, role, token_hash, invited_by_id, expires_at, used_at, created_at
+		 FROM admin_invites WHERE token_hash = $1`,
+		tokenHash,
+	)
+
+	var invite AdminInvite
+	if err := row.Scan(
+		&invite.ID, &invite.Email, &invite.Role, &invite.TokenHash,
+		&invite.InvitedByID, &invite.ExpiresAt, &invite.UsedAt, &invite.CreatedAt,
+	); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrNotFound
+		}
+		return nil, fmt.Errorf("db: failed to get admin invite by hash: %w", err)
+	}
+
+	return &invite, nil
+}
+
+// MarkUsed sets used_at on the invite with the given ID to now, returning
+// ErrNotFound if no such invite exists.
+func (r *AdminInviteRepository) MarkUsed(ctx context.Context, id string) error {
+	tag, err := r.pool.Exec(ctx,
+		"UPDATE admin_invites SET used_at = now() WHERE id = $1", id,
+	)
+	if err != nil {
+		return fmt.Errorf("db: failed to mark admin invite used: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+
+	return nil
+}
+
+// InvalidatePendingForEmail marks every still-pending (unused) invite for
+// email as used, so a new invite can be created for the same address
+// without leaving more than one live token. It is a no-op (not an error) if
+// no pending invite exists for email.
+func (r *AdminInviteRepository) InvalidatePendingForEmail(ctx context.Context, email string) error {
+	if _, err := r.pool.Exec(ctx,
+		"UPDATE admin_invites SET used_at = now() WHERE email = $1 AND used_at IS NULL", email,
+	); err != nil {
+		return fmt.Errorf("db: failed to invalidate pending admin invites for email: %w", err)
+	}
+
+	return nil
+}
