@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"os"
 	"os/signal"
 	"syscall"
 	"time"
@@ -19,11 +20,22 @@ import (
 	"github.com/zeeplabs/zeep-vane/internal/logging"
 	"github.com/zeeplabs/zeep-vane/internal/poller"
 	"github.com/zeeplabs/zeep-vane/internal/router"
+	vanetls "github.com/zeeplabs/zeep-vane/internal/tls"
 )
 
 // shutdownTimeout bounds how long the HTTP server gets to finish in-flight
 // requests once a shutdown signal arrives.
 const shutdownTimeout = 10 * time.Second
+
+// defaultHTTPSPort is used when HTTPS_PORT is not set. 443 is where
+// browsers expect a status page's custom domain to answer.
+const defaultHTTPSPort = "443"
+
+// defaultCertMagicStoragePath is used when CERTMAGIC_STORAGE_PATH is not
+// set. In production this must point at a volume that survives container
+// restarts (design.md Risks & Concerns) - operators are expected to set
+// CERTMAGIC_STORAGE_PATH explicitly rather than rely on this default.
+const defaultCertMagicStoragePath = "./certmagic-data"
 
 // NewServeCmd builds the serve subcommand, wiring config, the Postgres
 // pool, the HTTP router, and the SLO poller together. Both the HTTP server
@@ -73,10 +85,20 @@ func NewServeCmd() *cobra.Command {
 			addr := fmt.Sprintf(":%d", cfg.Port)
 			srv := &http.Server{Addr: addr, Handler: router.New(pool)}
 
-			serverErrs := make(chan error, 1)
+			httpsSrv := newHTTPSServer(pool, router.New(pool))
+
+			serverErrs := make(chan error, 2)
 			go func() {
 				logger.Info("serve: listening", zap.String("addr", addr))
 				if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+					serverErrs <- err
+					return
+				}
+				serverErrs <- nil
+			}()
+			go func() {
+				logger.Info("serve: https listening (on-demand tls)", zap.String("addr", httpsSrv.Addr))
+				if err := httpsSrv.ListenAndServeTLS("", ""); err != nil && !errors.Is(err, http.ErrServerClosed) {
 					serverErrs <- err
 					return
 				}
@@ -98,10 +120,45 @@ func NewServeCmd() *cobra.Command {
 			if err := srv.Shutdown(shutdownCtx); err != nil {
 				logger.Error("serve: http shutdown error", zap.Error(err))
 			}
+			if err := httpsSrv.Shutdown(shutdownCtx); err != nil {
+				logger.Error("serve: https shutdown error", zap.Error(err))
+			}
 
 			<-pollerDone
 			return nil
 		},
+	}
+}
+
+// newHTTPSServer builds the HTTPS listener that serves status pages on
+// their custom domains, with on-demand TLS via CertMagic (SP-11, SP-12,
+// SP-13). Its port and CertMagic's certificate storage path are both
+// configurable via env - HTTPS_PORT and CERTMAGIC_STORAGE_PATH - falling
+// back to 443 and ./certmagic-data respectively when unset. HostPolicy
+// (internal/tls) gates every certificate request against the StatusPage
+// table, and OnEvent records the real outcome of each issuance attempt back
+// onto the matching StatusPage row.
+func newHTTPSServer(pool *db.Pool, handler http.Handler) *http.Server {
+	httpsPort := os.Getenv("HTTPS_PORT")
+	if httpsPort == "" {
+		httpsPort = defaultHTTPSPort
+	}
+
+	storagePath := os.Getenv("CERTMAGIC_STORAGE_PATH")
+	if storagePath == "" {
+		storagePath = defaultCertMagicStoragePath
+	}
+
+	statusPages := db.NewStatusPageRepository(pool)
+	manager := vanetls.NewManager(statusPages, storagePath)
+
+	tlsConfig := manager.TLSConfig()
+	tlsConfig.NextProtos = append([]string{"h2", "http/1.1"}, tlsConfig.NextProtos...)
+
+	return &http.Server{
+		Addr:      ":" + httpsPort,
+		Handler:   handler,
+		TLSConfig: tlsConfig,
 	}
 }
 

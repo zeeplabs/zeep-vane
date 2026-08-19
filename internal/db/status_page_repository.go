@@ -2,8 +2,11 @@ package db
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
+
+	"github.com/jackc/pgx/v5"
 )
 
 // StatusPage is a public status page published at Subdomain under Domain,
@@ -60,6 +63,70 @@ func (r *StatusPageRepository) Create(ctx context.Context, statusPage *StatusPag
 
 	if err := tx.Commit(ctx); err != nil {
 		return fmt.Errorf("db: failed to commit status page create transaction: %w", err)
+	}
+
+	return nil
+}
+
+// hostnameMatch is the shared WHERE-clause fragment matching a status
+// page's public hostname: its subdomain joined to its domain's root
+// hostname (e.g. "status" + "empresa.com" = "status.empresa.com").
+const hostnameMatch = "d.id = sp.domain_id AND sp.subdomain || '.' || d.hostname = $1"
+
+// StateByHostname returns the State of the status page published at
+// hostname, joining status_pages to its parent domain. It returns
+// ErrNotFound if no status page matches - CertMagic's HostPolicy (T30)
+// treats that the same as any other lookup failure: reject the ACME
+// request.
+func (r *StatusPageRepository) StateByHostname(ctx context.Context, hostname string) (string, error) {
+	row := r.pool.QueryRow(ctx,
+		"SELECT sp.state FROM status_pages sp JOIN domains d ON "+hostnameMatch,
+		hostname,
+	)
+
+	var state string
+	if err := row.Scan(&state); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return "", ErrNotFound
+		}
+		return "", fmt.Errorf("db: failed to get status page state by hostname: %w", err)
+	}
+
+	return state, nil
+}
+
+// MarkPublished sets the status page at hostname to "published" and clears
+// any prior tls_last_error (SP-12: a successful certificate issuance
+// publishes the page). It returns ErrNotFound if no status page matches.
+func (r *StatusPageRepository) MarkPublished(ctx context.Context, hostname string) error {
+	tag, err := r.pool.Exec(ctx,
+		"UPDATE status_pages sp SET state = 'published', tls_last_error = NULL FROM domains d WHERE "+hostnameMatch,
+		hostname,
+	)
+	if err != nil {
+		return fmt.Errorf("db: failed to mark status page published: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+
+	return nil
+}
+
+// MarkTLSFailed sets the status page at hostname to "tls_failed" and
+// records reason (SP-13: a failed certificate issuance keeps the page
+// unpublished and surfaces why to the admin). It returns ErrNotFound if no
+// status page matches.
+func (r *StatusPageRepository) MarkTLSFailed(ctx context.Context, hostname, reason string) error {
+	tag, err := r.pool.Exec(ctx,
+		"UPDATE status_pages sp SET state = 'tls_failed', tls_last_error = $2 FROM domains d WHERE "+hostnameMatch,
+		hostname, reason,
+	)
+	if err != nil {
+		return fmt.Errorf("db: failed to mark status page tls_failed: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
 	}
 
 	return nil

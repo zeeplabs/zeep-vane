@@ -818,10 +818,10 @@ T35 → T36 → T37 → T38 → T39 → T40
 - Skill: NONE
 
 **Done when**:
-- [ ] Emissão bem-sucedida → estado `published`
-- [ ] Emissão falha → estado `tls_failed` com motivo salvo
-- [ ] Teste de integração cobre os 2 fluxos (com ACME de teste/staging ou fake)
-- [ ] Gate check passa: `go test ./... -tags=integration`
+- [x] Emissão bem-sucedida → estado `published`
+- [x] Emissão falha → estado `tls_failed` com motivo salvo
+- [x] Teste de integração cobre os 2 fluxos (com ACME de teste/staging ou fake) — sem ambiente ACME staging disponível no sandbox, usado fake: payload de evento CertMagic (`cert_obtained`/`cert_failed`) construído no mesmo shape do `config.go` real da lib, despachado em `OnEvent` contra `StatusPageRepository` real (Postgres)
+- [x] Gate check passa: `go test ./... -tags=integration`
 
 **Commit**: `feat(domains): custom domain registration with automatic TLS provisioning`
 **Tests**: integration

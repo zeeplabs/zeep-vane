@@ -7,7 +7,12 @@ import (
 
 // fakeStatusPageStore is a StatusPageStore backed by an in-memory map, so
 // HostPolicy can be tested without a Postgres dependency (this task's Gate
-// is "quick": go test ./... && go vet ./..., no -tags=integration).
+// is "quick": go test ./... && go vet ./..., no -tags=integration). Only
+// StateByHostname is exercised by these tests; MarkPublished/MarkTLSFailed
+// are no-op stubs required to satisfy the StatusPageStore interface -
+// their real behavior is covered by the integration test in
+// internal/db/status_page_repository_test.go (T31), which exercises the
+// real Postgres transition these methods perform.
 type fakeStatusPageStore struct {
 	statesByHostname map[string]string
 }
@@ -18,6 +23,14 @@ func (f *fakeStatusPageStore) StateByHostname(ctx context.Context, hostname stri
 		return "", ErrHostnameNotFound
 	}
 	return state, nil
+}
+
+func (f *fakeStatusPageStore) MarkPublished(ctx context.Context, hostname string) error {
+	return nil
+}
+
+func (f *fakeStatusPageStore) MarkTLSFailed(ctx context.Context, hostname, reason string) error {
+	return nil
 }
 
 func TestHostPolicy_UnregisteredHostname_Rejects(t *testing.T) {
