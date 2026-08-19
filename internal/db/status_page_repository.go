@@ -95,6 +95,31 @@ func (r *StatusPageRepository) StateByHostname(ctx context.Context, hostname str
 	return state, nil
 }
 
+// GetByHostname returns the full StatusPage row published at hostname,
+// joining status_pages to its parent domain. It returns ErrNotFound if no
+// status page matches. Unlike StateByHostname (used only by tls.HostPolicy,
+// which needs just the state to gate ACME issuance), this returns the
+// StatusPage's ID too, so callers like router.HostRouter can thread it down
+// to the scoped public queries that implement SP-15 (a status page shows
+// only its own linked services/incidents).
+func (r *StatusPageRepository) GetByHostname(ctx context.Context, hostname string) (*StatusPage, error) {
+	row := r.pool.QueryRow(ctx,
+		"SELECT sp.id, sp.name, sp.subdomain, sp.domain_id, sp.state, sp.tls_last_error, sp.created_at "+
+			"FROM status_pages sp JOIN domains d ON "+hostnameMatch,
+		hostname,
+	)
+
+	var sp StatusPage
+	if err := row.Scan(&sp.ID, &sp.Name, &sp.Subdomain, &sp.DomainID, &sp.State, &sp.TLSLastError, &sp.CreatedAt); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrNotFound
+		}
+		return nil, fmt.Errorf("db: failed to get status page by hostname: %w", err)
+	}
+
+	return &sp, nil
+}
+
 // MarkPublished sets the status page at hostname to "published" and clears
 // any prior tls_last_error (SP-12: a successful certificate issuance
 // publishes the page). It returns ErrNotFound if no status page matches.

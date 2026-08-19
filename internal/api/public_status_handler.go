@@ -9,12 +9,15 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/zeeplabs/zeep-vane/internal/db"
+	"github.com/zeeplabs/zeep-vane/internal/router"
 )
 
 // serviceLister is the subset of *db.ServiceRepository the public status
-// handler depends on.
+// handler depends on. It is scoped to a single status page (SP-15): the
+// public page must show only the services linked to it, never every
+// service in the installation.
 type serviceLister interface {
-	List(ctx context.Context) ([]db.Service, error)
+	ListForStatusPage(ctx context.Context, statusPageID string) ([]db.Service, error)
 }
 
 // latestSnapshotFetcher is the subset of *db.StatusSnapshotRepository the
@@ -24,9 +27,10 @@ type latestSnapshotFetcher interface {
 }
 
 // publicIncidentLister is the subset of *db.IncidentRepository the public
-// status handler depends on.
+// status handler depends on. It is scoped to a single status page (SP-15):
+// only incidents linked to a service that status page publishes may appear.
 type publicIncidentLister interface {
-	ListPublic(ctx context.Context, retentionDays int) (active, resolved []db.IncidentPublic, err error)
+	ListPublicForStatusPage(ctx context.Context, statusPageID string, retentionDays int) (active, resolved []db.IncidentPublic, err error)
 }
 
 // incidentRetentionDays is the public status page's incident history
@@ -87,7 +91,20 @@ type publicStatusResponse struct {
 // registered service's current status and the timestamp it last changed.
 // It requires no authentication (SP-10).
 func (h *PublicStatusHandler) Get(w http.ResponseWriter, r *http.Request) {
-	services, err := h.services.List(r.Context())
+	statusPageID, ok := router.StatusPageIDFromContext(r.Context())
+	if !ok {
+		// Reached without a StatusPage resolved on the context - only
+		// possible if this handler is wired up without going through
+		// router.HostRouter first. That is a routing bug, not a client
+		// error: never fall back to listing every service/incident in the
+		// installation (that would silently reintroduce the SP-15 scoping
+		// gap).
+		h.logger.Error("public-status: no StatusPageID on request context")
+		writeInternalError(w)
+		return
+	}
+
+	services, err := h.services.ListForStatusPage(r.Context(), statusPageID)
 	if err != nil {
 		h.logger.Error("public-status: failed to list services", zap.Error(err))
 		writeInternalError(w)
@@ -101,7 +118,7 @@ func (h *PublicStatusHandler) Get(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	activeIncidents, resolvedIncidents, err := h.incidents.ListPublic(r.Context(), incidentRetentionDays)
+	activeIncidents, resolvedIncidents, err := h.incidents.ListPublicForStatusPage(r.Context(), statusPageID, incidentRetentionDays)
 	if err != nil {
 		h.logger.Error("public-status: failed to list public incidents", zap.Error(err))
 		writeInternalError(w)

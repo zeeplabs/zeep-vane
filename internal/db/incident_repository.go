@@ -191,18 +191,65 @@ func (r *IncidentRepository) ListPublic(ctx context.Context, retentionDays int) 
 	}
 	defer rows.Close()
 
+	incidents, err := scanIncidentRows(rows)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	return r.withTimelinesSplit(ctx, incidents)
+}
+
+// ListPublicForStatusPage is the scoped counterpart to ListPublic (SP-15):
+// it returns only incidents linked, via incident_services, to a service
+// that itself belongs to statusPageID (via status_page_services) - a status
+// page's public page must never surface an incident for a service it
+// doesn't publish. Active/resolved splitting and the retention window
+// behave exactly as in ListPublic.
+func (r *IncidentRepository) ListPublicForStatusPage(ctx context.Context, statusPageID string, retentionDays int) (active, resolved []IncidentPublic, err error) {
+	rows, err := r.pool.Query(ctx,
+		`SELECT DISTINCT i.id, i.title, i.status, i.created_at, i.resolved_at
+		 FROM incidents i
+		 JOIN incident_services isv ON isv.incident_id = i.id
+		 JOIN status_page_services sps ON sps.service_id = isv.service_id
+		 WHERE sps.status_page_id = $1
+		   AND (i.status <> 'resolved' OR i.resolved_at > now() - make_interval(days => $2))
+		 ORDER BY i.created_at DESC`,
+		statusPageID, retentionDays,
+	)
+	if err != nil {
+		return nil, nil, fmt.Errorf("db: failed to list public incidents for status page: %w", err)
+	}
+	defer rows.Close()
+
+	incidents, err := scanIncidentRows(rows)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	return r.withTimelinesSplit(ctx, incidents)
+}
+
+// scanIncidentRows scans the (id, title, status, created_at, resolved_at)
+// shape shared by ListPublic and ListPublicForStatusPage.
+func scanIncidentRows(rows pgx.Rows) ([]Incident, error) {
 	var incidents []Incident
 	for rows.Next() {
 		var incident Incident
 		if err := rows.Scan(&incident.ID, &incident.Title, &incident.Status, &incident.CreatedAt, &incident.ResolvedAt); err != nil {
-			return nil, nil, fmt.Errorf("db: failed to scan public incident: %w", err)
+			return nil, fmt.Errorf("db: failed to scan public incident: %w", err)
 		}
 		incidents = append(incidents, incident)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, nil, fmt.Errorf("db: failed to iterate public incidents: %w", err)
+		return nil, fmt.Errorf("db: failed to iterate public incidents: %w", err)
 	}
+	return incidents, nil
+}
 
+// withTimelinesSplit loads each incident's timeline and splits the result
+// into active (status <> "resolved", shown in destaque) and resolved
+// (shown in history within the retention window) groups, per SP-18.
+func (r *IncidentRepository) withTimelinesSplit(ctx context.Context, incidents []Incident) (active, resolved []IncidentPublic, err error) {
 	for _, incident := range incidents {
 		updates, err := r.ListUpdates(ctx, incident.ID)
 		if err != nil {

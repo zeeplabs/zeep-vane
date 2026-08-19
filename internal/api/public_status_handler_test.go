@@ -5,6 +5,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -15,6 +16,7 @@ import (
 
 	"github.com/zeeplabs/zeep-vane/internal/db"
 	"github.com/zeeplabs/zeep-vane/internal/dbtest"
+	"github.com/zeeplabs/zeep-vane/internal/router"
 )
 
 func newPublicStatusRouter(t *testing.T) (http.Handler, *db.Pool) {
@@ -72,6 +74,47 @@ func createPublicStatusServiceFixture(t *testing.T, pool *db.Pool, status string
 	return service.ID, func() { _, _ = pool.Exec(context.Background(), "DELETE FROM services WHERE id = $1", service.ID) }
 }
 
+// createPublicStatusPageFixture creates a domain and a status page linked
+// to serviceIDs, registering cleanup for both. It returns the status
+// page's ID, which tests attach to the request context via
+// withStatusPageContext - the same StatusPage.ID router.HostRouter would
+// resolve and attach for a real request against this status page's
+// hostname (SP-15 scoping).
+func createPublicStatusPageFixture(t *testing.T, pool *db.Pool, serviceIDs ...string) string {
+	t.Helper()
+	ctx := context.Background()
+
+	suffix := fmt.Sprintf("%d", time.Now().UnixNano())
+	rootHostname := fmt.Sprintf("public-status-test-%s.example.com", suffix)
+
+	domains := db.NewDomainRepository(pool)
+	domain := &db.Domain{Hostname: rootHostname}
+	if err := domains.Create(ctx, domain); err != nil {
+		t.Fatalf("setup domain Create() returned unexpected error: %v", err)
+	}
+	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), "DELETE FROM domains WHERE id = $1", domain.ID) })
+
+	statusPages := db.NewStatusPageRepository(pool)
+	statusPage := &db.StatusPage{Name: "public-status-test-page", Subdomain: "status", DomainID: domain.ID}
+	if err := statusPages.Create(ctx, statusPage, serviceIDs); err != nil {
+		t.Fatalf("setup status page Create() returned unexpected error: %v", err)
+	}
+	t.Cleanup(func() {
+		cleanupCtx := context.Background()
+		_, _ = pool.Exec(cleanupCtx, "DELETE FROM status_page_services WHERE status_page_id = $1", statusPage.ID)
+		_, _ = pool.Exec(cleanupCtx, "DELETE FROM status_pages WHERE id = $1", statusPage.ID)
+	})
+
+	return statusPage.ID
+}
+
+// withStatusPageContext returns a shallow copy of req carrying
+// statusPageID on its context, exactly as router.HostRouter attaches it
+// before dispatching to the public handler in the real server.
+func withStatusPageContext(req *http.Request, statusPageID string) *http.Request {
+	return req.WithContext(router.WithStatusPageID(req.Context(), statusPageID))
+}
+
 func findPublicService(services []publicServiceResponse, serviceID string, allServices []db.Service) *publicServiceResponse {
 	var name string
 	for _, s := range allServices {
@@ -93,10 +136,11 @@ func TestPublicStatusGet_NoAuthHeader_200WithServiceStatus(t *testing.T) {
 	fetchedAt := time.Date(2026, 1, 15, 10, 0, 0, 0, time.UTC)
 	serviceID, cleanup := createPublicStatusServiceFixture(t, pool, "operational", fetchedAt)
 	t.Cleanup(cleanup)
+	statusPageID := createPublicStatusPageFixture(t, pool, serviceID)
 
 	// Deliberately no Authorization header at all - the public endpoint
 	// must be reachable by an anonymous visitor (SP-10).
-	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req := withStatusPageContext(httptest.NewRequest(http.MethodGet, "/", nil), statusPageID)
 	rec := httptest.NewRecorder()
 	r.ServeHTTP(rec, req)
 
@@ -135,6 +179,7 @@ func TestPublicStatusGet_IntegrationInvalid_StillServesLastSnapshot(t *testing.T
 	fetchedAt := time.Date(2026, 2, 1, 8, 30, 0, 0, time.UTC)
 	serviceID, cleanup := createPublicStatusServiceFixture(t, pool, "degraded", fetchedAt)
 	t.Cleanup(cleanup)
+	statusPageID := createPublicStatusPageFixture(t, pool, serviceID)
 
 	dsn := testDatabaseURL(t)
 	dbtest.LockDatadogIntegration(t, context.Background(), dsn)
@@ -148,7 +193,7 @@ func TestPublicStatusGet_IntegrationInvalid_StillServesLastSnapshot(t *testing.T
 		t.Fatalf("setup MarkDatadogInvalid() returned unexpected error: %v", err)
 	}
 
-	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req := withStatusPageContext(httptest.NewRequest(http.MethodGet, "/", nil), statusPageID)
 	rec := httptest.NewRecorder()
 	r.ServeHTTP(rec, req)
 
@@ -199,8 +244,9 @@ func TestPublicStatusGet_NotConfiguredService_HiddenValidServiceShown(t *testing
 	if notConfigured.CurrentStatus != "not_configured" {
 		t.Fatalf("setup: fresh service CurrentStatus = %q, want %q", notConfigured.CurrentStatus, "not_configured")
 	}
+	statusPageID := createPublicStatusPageFixture(t, pool, configuredID, notConfigured.ID)
 
-	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req := withStatusPageContext(httptest.NewRequest(http.MethodGet, "/", nil), statusPageID)
 	rec := httptest.NewRecorder()
 	r.ServeHTTP(rec, req)
 
@@ -229,12 +275,16 @@ func TestPublicStatusGet_NotConfiguredService_HiddenValidServiceShown(t *testing
 }
 
 // createPublicIncidentFixture creates an incident linked to a fresh service
-// and returns its ID, registering cleanup.
-func createPublicIncidentFixture(t *testing.T, pool *db.Pool, title string) string {
+// and returns the incident's ID and that service's ID, registering
+// cleanup. The service ID is needed by callers so they can link a status
+// page to it via createPublicStatusPageFixture - an incident only appears
+// on a status page's public response if it's linked (via incident_services)
+// to a service that status page also publishes (SP-15).
+func createPublicIncidentFixture(t *testing.T, pool *db.Pool, title string) (incidentID, serviceID string) {
 	t.Helper()
 	ctx := context.Background()
 
-	serviceID := createIncidentTestService(t, pool)
+	serviceID = createIncidentTestService(t, pool)
 	incidents := db.NewIncidentRepository(pool)
 	incident := &db.Incident{Title: title}
 	if err := incidents.Create(ctx, incident, []string{serviceID}); err != nil {
@@ -242,7 +292,7 @@ func createPublicIncidentFixture(t *testing.T, pool *db.Pool, title string) stri
 	}
 	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), "DELETE FROM incidents WHERE id = $1", incident.ID) })
 
-	return incident.ID
+	return incident.ID, serviceID
 }
 
 func findPublicIncident(incidents []publicIncidentResponse, incidentID string) *publicIncidentResponse {
@@ -259,9 +309,10 @@ func findPublicIncident(incidents []publicIncidentResponse, incidentID string) *
 // the public status page.
 func TestPublicStatusGet_UnresolvedIncident_AppearsInActive(t *testing.T) {
 	r, pool := newPublicStatusRouter(t)
-	incidentID := createPublicIncidentFixture(t, pool, "unresolved incident public test")
+	incidentID, serviceID := createPublicIncidentFixture(t, pool, "unresolved incident public test")
+	statusPageID := createPublicStatusPageFixture(t, pool, serviceID)
 
-	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req := withStatusPageContext(httptest.NewRequest(http.MethodGet, "/", nil), statusPageID)
 	rec := httptest.NewRecorder()
 	r.ServeHTTP(rec, req)
 
@@ -287,7 +338,8 @@ func TestPublicStatusGet_UnresolvedIncident_AppearsInActive(t *testing.T) {
 // still appear in the public history.
 func TestPublicStatusGet_ResolvedIncidentWithinRetention_AppearsInHistory(t *testing.T) {
 	r, pool := newPublicStatusRouter(t)
-	incidentID := createPublicIncidentFixture(t, pool, "recently resolved incident public test")
+	incidentID, serviceID := createPublicIncidentFixture(t, pool, "recently resolved incident public test")
+	statusPageID := createPublicStatusPageFixture(t, pool, serviceID)
 
 	if _, err := pool.Exec(context.Background(),
 		"UPDATE incidents SET status = 'resolved', resolved_at = now() - interval '10 days' WHERE id = $1",
@@ -296,7 +348,7 @@ func TestPublicStatusGet_ResolvedIncidentWithinRetention_AppearsInHistory(t *tes
 		t.Fatalf("setup resolved_at update returned unexpected error: %v", err)
 	}
 
-	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req := withStatusPageContext(httptest.NewRequest(http.MethodGet, "/", nil), statusPageID)
 	rec := httptest.NewRecorder()
 	r.ServeHTTP(rec, req)
 
@@ -319,7 +371,8 @@ func TestPublicStatusGet_ResolvedIncidentWithinRetention_AppearsInHistory(t *tes
 // days ago must never appear on the public status page.
 func TestPublicStatusGet_ResolvedIncidentBeyondRetention_Hidden(t *testing.T) {
 	r, pool := newPublicStatusRouter(t)
-	incidentID := createPublicIncidentFixture(t, pool, "long-resolved incident public test")
+	incidentID, serviceID := createPublicIncidentFixture(t, pool, "long-resolved incident public test")
+	statusPageID := createPublicStatusPageFixture(t, pool, serviceID)
 
 	if _, err := pool.Exec(context.Background(),
 		"UPDATE incidents SET status = 'resolved', resolved_at = now() - interval '91 days' WHERE id = $1",
@@ -328,7 +381,7 @@ func TestPublicStatusGet_ResolvedIncidentBeyondRetention_Hidden(t *testing.T) {
 		t.Fatalf("setup resolved_at update returned unexpected error: %v", err)
 	}
 
-	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req := withStatusPageContext(httptest.NewRequest(http.MethodGet, "/", nil), statusPageID)
 	rec := httptest.NewRecorder()
 	r.ServeHTTP(rec, req)
 

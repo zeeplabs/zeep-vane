@@ -773,6 +773,7 @@ T35 → T36 → T37 → T38 → T39 → T40
 - [x] Criar um 2º domínio raiz não é bloqueado
 - [x] Testes de integração cobrem os 3 casos
 - [x] Gate check passa: `go test ./... -tags=integration`
+- [x] **Fix (Verifier Gap 2, pós-T40)**: `status_page_services` (escrito aqui) passa a ser lido de volta - `db.ServiceRepository.ListForStatusPage` e `db.IncidentRepository.ListPublicForStatusPage` (T40) fazem o join que faltava, fechando o lado de leitura de SP-15
 
 **Commit**: `feat(status-pages): add status page creation endpoint`
 **Tests**: integration
@@ -846,6 +847,7 @@ T35 → T36 → T37 → T38 → T39 → T40
 - [x] Host não reconhecido → 404
 - [x] Testes de integração cobrem os 2 casos
 - [x] Gate check passa: `go test ./... -tags=integration`
+- [x] **Fix (Verifier Gap 2)**: `HostRouter` resolve o `StatusPage` completo (`GetByHostname`, não só `StateByHostname`) e injeta `StatusPage.ID` no contexto da requisição (`WithStatusPageID`/`StatusPageIDFromContext`) para o handler público escopar suas queries (SP-15)
 
 **Commit**: `feat(router): add host-based request routing`
 **Tests**: integration
@@ -870,6 +872,7 @@ T35 → T36 → T37 → T38 → T39 → T40
 - [x] Retorna status + timestamp de última atualização por serviço
 - [x] Teste de integração cobre acesso anônimo
 - [x] Gate check passa: `go test ./... -tags=integration`
+- [x] **Fix (Verifier Gap 2, SP-15)**: `serviceLister.List` (global) trocado por `ServiceRepository.ListForStatusPage(ctx, statusPageID)` - o handler lê o `StatusPageID` resolvido por `HostRouter` (T32) do contexto e escopa a query pra só os serviços vinculados via `status_page_services`; sem `StatusPageID` no contexto, retorna 500 em vez de cair pra listagem global
 
 **Commit**: `feat(public): add public status page handler`
 **Tests**: integration
@@ -1038,6 +1041,7 @@ T35 → T36 → T37 → T38 → T39 → T40
 - [x] Incidente resolvido há mais de 90 dias não aparece
 - [x] Teste de integração cobre os 3 casos
 - [x] Gate check passa: `go test ./... -tags=integration`
+- [x] **Fix (Verifier Gap 2, SP-15)**: `publicIncidentLister.ListPublic` (global) trocado por `IncidentRepository.ListPublicForStatusPage(ctx, statusPageID, retentionDays)` - só inclui incidentes ligados (via `incident_services`) a um serviço que a própria status page publica (via `status_page_services`)
 
 **Commit**: `feat(incidents): manual incident management with public timeline`
 **Tests**: integration

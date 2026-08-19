@@ -67,6 +67,40 @@ func (r *ServiceRepository) List(ctx context.Context) ([]Service, error) {
 	return services, nil
 }
 
+// ListForStatusPage returns every service linked to statusPageID via the
+// status_page_services junction table, ordered by name, with its current
+// status. This is the scoped counterpart to List (SP-15): a status page's
+// public page must show only its own linked services, never every service
+// in the installation.
+func (r *ServiceRepository) ListForStatusPage(ctx context.Context, statusPageID string) ([]Service, error) {
+	rows, err := r.pool.Query(ctx,
+		`SELECT s.id, s.name, s.slo_id, s.current_status, s.last_status_change_at
+		 FROM services s
+		 JOIN status_page_services sps ON sps.service_id = s.id
+		 WHERE sps.status_page_id = $1
+		 ORDER BY s.name`,
+		statusPageID,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("db: failed to list services for status page: %w", err)
+	}
+	defer rows.Close()
+
+	var services []Service
+	for rows.Next() {
+		var service Service
+		if err := rows.Scan(&service.ID, &service.Name, &service.SLOID, &service.CurrentStatus, &service.LastStatusChangeAt); err != nil {
+			return nil, fmt.Errorf("db: failed to scan service: %w", err)
+		}
+		services = append(services, service)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("db: failed to iterate services: %w", err)
+	}
+
+	return services, nil
+}
+
 // UpdateStatus sets service serviceID's current_status to status. It only
 // touches last_status_change_at when status actually differs from the
 // stored value, so a repeated "operational" poll result doesn't fake a
