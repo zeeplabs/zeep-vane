@@ -842,10 +842,10 @@ T35 → T36 → T37 → T38 → T39 → T40
 - Skill: NONE
 
 **Done when**:
-- [ ] Host de status page publicada → roteia pro handler público
-- [ ] Host não reconhecido → 404
-- [ ] Testes de integração cobrem os 2 casos
-- [ ] Gate check passa: `go test ./... -tags=integration`
+- [x] Host de status page publicada → roteia pro handler público
+- [x] Host não reconhecido → 404
+- [x] Testes de integração cobrem os 2 casos
+- [x] Gate check passa: `go test ./... -tags=integration`
 
 **Commit**: `feat(router): add host-based request routing`
 **Tests**: integration
