@@ -170,9 +170,9 @@ T35 → T36 → T37 → T38 → T39 → T40
 - Skill: NONE
 
 **Done when**:
-- [ ] Logger emite JSON estruturado
-- [ ] Nível configurável via env (`debug`/`info`/`warn`/`error`)
-- [ ] Gate check passa: `go build ./...`
+- [x] Logger emite JSON estruturado
+- [x] Nível configurável via env (`debug`/`info`/`warn`/`error`)
+- [x] Gate check passa: `go build ./...`
 
 **Commit**: `feat(logging): add structured zap logger`
 **Tests**: none

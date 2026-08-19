@@ -16,6 +16,7 @@ type Config struct {
 	MasterKey           string
 	Port                int
 	PollIntervalSeconds int
+	LogLevel            string
 }
 
 // Load reads and validates the required environment variables, returning a
@@ -44,11 +45,17 @@ func Load() (Config, error) {
 		return Config{}, err
 	}
 
+	logLevel := os.Getenv("LOG_LEVEL")
+	if logLevel == "" {
+		logLevel = "info"
+	}
+
 	return Config{
 		DatabaseURL:         databaseURL,
 		MasterKey:           masterKey,
 		Port:                port,
 		PollIntervalSeconds: pollIntervalSeconds,
+		LogLevel:            logLevel,
 	}, nil
 }
 
