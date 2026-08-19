@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -46,6 +47,7 @@ func newAdminsRouter(t *testing.T) (http.Handler, *db.Pool, *db.AdminRepository,
 		protected.Use(RequireAuth(middlewareTestSecret, admins))
 		protected.With(RequireRole(db.RoleOwner)).Post("/api/admins", handler.Invite)
 	})
+	r.Post("/api/admins/invite/{token}/accept", handler.AcceptInvite)
 
 	return r, pool, admins, invites
 }
@@ -240,6 +242,147 @@ func TestInviteAdmin_InvalidRole_422(t *testing.T) {
 	token := issueTestSessionToken(t, admins)
 
 	rec := postInviteAdmin(t, r, token, uniqueTestEmail(t), "superadmin")
+
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Errorf("status = %d, want %d, body = %s", rec.Code, http.StatusUnprocessableEntity, rec.Body.String())
+	}
+}
+
+// createTestInvite inserts a pending admin_invites row directly (bypassing
+// the Invite handler, whose raw token is only observable via logging), so
+// AcceptInvite tests can drive the accept endpoint with a known raw token.
+func createTestInvite(t *testing.T, invites *db.AdminInviteRepository, inviterID, email, role string, ttl time.Duration) string {
+	t.Helper()
+	rawToken, err := generateAdminInviteToken()
+	if err != nil {
+		t.Fatalf("generateAdminInviteToken() returned unexpected error: %v", err)
+	}
+
+	invite := &db.AdminInvite{
+		Email:       email,
+		Role:        role,
+		TokenHash:   hashAdminInviteToken(rawToken),
+		InvitedByID: inviterID,
+		ExpiresAt:   time.Now().Add(ttl),
+	}
+	if err := invites.Create(context.Background(), invite); err != nil {
+		t.Fatalf("invites.Create() returned unexpected error: %v", err)
+	}
+	return rawToken
+}
+
+func postAcceptInvite(t *testing.T, r http.Handler, token, password string) *httptest.ResponseRecorder {
+	t.Helper()
+	body, err := json.Marshal(acceptAdminInviteRequest{Password: password})
+	if err != nil {
+		t.Fatalf("json.Marshal() returned unexpected error: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/admins/invite/"+token+"/accept", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+	return rec
+}
+
+func TestAcceptInvite_ValidToken_201_ActivatesAccountWithInvitedRole(t *testing.T) {
+	r, pool, admins, invites := newAdminsRouter(t)
+	inviterAdmin := &db.Admin{Email: uniqueTestEmail(t), PasswordHash: "hash"}
+	if err := admins.Create(context.Background(), inviterAdmin); err != nil {
+		t.Fatalf("admins.Create() returned unexpected error: %v", err)
+	}
+	t.Cleanup(func() { _ = admins.Delete(context.Background(), inviterAdmin.ID) })
+
+	email := uniqueTestEmail(t)
+	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), "DELETE FROM admins WHERE email = $1", email) })
+	rawToken := createTestInvite(t, invites, inviterAdmin.ID, email, db.RoleOperator, 1*time.Hour)
+
+	rec := postAcceptInvite(t, r, rawToken, "a-strong-password")
+
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusCreated, rec.Body.String())
+	}
+
+	created, err := admins.GetByEmail(context.Background(), email)
+	if err != nil {
+		t.Fatalf("GetByEmail() returned unexpected error: %v", err)
+	}
+	// GetByEmail (mvp-core, unmodified by this feature) doesn't select
+	// role - read it back directly to confirm the invited role was applied.
+	var gotRole string
+	roleRow := pool.QueryRow(context.Background(), "SELECT role FROM admins WHERE id = $1", created.ID)
+	if err := roleRow.Scan(&gotRole); err != nil {
+		t.Fatalf("querying created admin's role returned unexpected error: %v", err)
+	}
+	if gotRole != db.RoleOperator {
+		t.Errorf("created admin role = %q, want %q", gotRole, db.RoleOperator)
+	}
+
+	invite, err := invites.GetByTokenHash(context.Background(), hashAdminInviteToken(rawToken))
+	if err != nil {
+		t.Fatalf("GetByTokenHash() returned unexpected error: %v", err)
+	}
+	if invite.UsedAt == nil {
+		t.Error("invite.UsedAt = nil after accept, want non-nil (marked used)")
+	}
+}
+
+func TestAcceptInvite_ExpiredToken_401_NoStateChange(t *testing.T) {
+	r, _, admins, invites := newAdminsRouter(t)
+	inviterAdmin := &db.Admin{Email: uniqueTestEmail(t), PasswordHash: "hash"}
+	if err := admins.Create(context.Background(), inviterAdmin); err != nil {
+		t.Fatalf("admins.Create() returned unexpected error: %v", err)
+	}
+	t.Cleanup(func() { _ = admins.Delete(context.Background(), inviterAdmin.ID) })
+
+	email := uniqueTestEmail(t)
+	rawToken := createTestInvite(t, invites, inviterAdmin.ID, email, db.RoleOperator, -1*time.Hour)
+
+	rec := postAcceptInvite(t, r, rawToken, "a-strong-password")
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Errorf("status = %d, want %d, body = %s", rec.Code, http.StatusUnauthorized, rec.Body.String())
+	}
+
+	if _, err := admins.GetByEmail(context.Background(), email); !errors.Is(err, db.ErrNotFound) {
+		t.Errorf("GetByEmail() after rejected accept error = %v, want ErrNotFound (no admin created)", err)
+	}
+}
+
+func TestAcceptInvite_AlreadyUsedToken_401(t *testing.T) {
+	r, pool, admins, invites := newAdminsRouter(t)
+	inviterAdmin := &db.Admin{Email: uniqueTestEmail(t), PasswordHash: "hash"}
+	if err := admins.Create(context.Background(), inviterAdmin); err != nil {
+		t.Fatalf("admins.Create() returned unexpected error: %v", err)
+	}
+	t.Cleanup(func() { _ = admins.Delete(context.Background(), inviterAdmin.ID) })
+
+	email := uniqueTestEmail(t)
+	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), "DELETE FROM admins WHERE email = $1", email) })
+	rawToken := createTestInvite(t, invites, inviterAdmin.ID, email, db.RoleViewer, 1*time.Hour)
+
+	first := postAcceptInvite(t, r, rawToken, "a-strong-password")
+	if first.Code != http.StatusCreated {
+		t.Fatalf("first accept status = %d, want %d", first.Code, http.StatusCreated)
+	}
+
+	second := postAcceptInvite(t, r, rawToken, "a-different-password")
+	if second.Code != http.StatusUnauthorized {
+		t.Errorf("second accept status = %d, want %d, body = %s", second.Code, http.StatusUnauthorized, second.Body.String())
+	}
+}
+
+func TestAcceptInvite_MissingPassword_422(t *testing.T) {
+	r, _, admins, invites := newAdminsRouter(t)
+	inviterAdmin := &db.Admin{Email: uniqueTestEmail(t), PasswordHash: "hash"}
+	if err := admins.Create(context.Background(), inviterAdmin); err != nil {
+		t.Fatalf("admins.Create() returned unexpected error: %v", err)
+	}
+	t.Cleanup(func() { _ = admins.Delete(context.Background(), inviterAdmin.ID) })
+
+	rawToken := createTestInvite(t, invites, inviterAdmin.ID, uniqueTestEmail(t), db.RoleViewer, 1*time.Hour)
+
+	rec := postAcceptInvite(t, r, rawToken, "")
 
 	if rec.Code != http.StatusUnprocessableEntity {
 		t.Errorf("status = %d, want %d, body = %s", rec.Code, http.StatusUnprocessableEntity, rec.Body.String())

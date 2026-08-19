@@ -9,9 +9,11 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/go-chi/chi/v5"
 	"go.uber.org/zap"
 
 	"github.com/zeeplabs/zeep-vane/internal/audit"
+	"github.com/zeeplabs/zeep-vane/internal/auth"
 	"github.com/zeeplabs/zeep-vane/internal/db"
 )
 
@@ -138,6 +140,88 @@ func (h *AdminsHandler) Invite(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	_ = json.NewEncoder(w).Encode(map[string]string{"status": "invited"})
+}
+
+type acceptAdminInviteRequest struct {
+	Password string `json:"password"`
+}
+
+const invalidAcceptInviteRequestBody = `{"error":"password is required"}`
+const acceptInviteErrorBody = `{"error":"invalid or expired invite token"}`
+
+type acceptAdminInviteResponse struct {
+	Email string `json:"email"`
+	Role  string `json:"role"`
+}
+
+// AcceptInvite handles POST /api/admins/invite/{token}/accept (public). A
+// missing, expired, or already-used token is rejected with 401 (ADM-04)
+// without altering any state. A valid token creates the Admin account with
+// the role the invite specified (ADM-03) and marks the invite used.
+func (h *AdminsHandler) AcceptInvite(w http.ResponseWriter, r *http.Request) {
+	token := chi.URLParam(r, "token")
+
+	var req acceptAdminInviteRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Password == "" {
+		writeAdminError(w, http.StatusUnprocessableEntity, invalidAcceptInviteRequestBody)
+		return
+	}
+
+	if token == "" {
+		writeAdminError(w, http.StatusUnauthorized, acceptInviteErrorBody)
+		return
+	}
+
+	invite, err := h.invites.GetByTokenHash(r.Context(), hashAdminInviteToken(token))
+	switch {
+	case errors.Is(err, db.ErrNotFound):
+		writeAdminError(w, http.StatusUnauthorized, acceptInviteErrorBody)
+		return
+	case err != nil:
+		h.logger.Error("admins: failed to look up invite by token", zap.Error(err))
+		writeInternalError(w)
+		return
+	}
+
+	if invite.UsedAt != nil || time.Now().After(invite.ExpiresAt) {
+		writeAdminError(w, http.StatusUnauthorized, acceptInviteErrorBody)
+		return
+	}
+
+	passwordHash, err := auth.HashPassword(req.Password)
+	if err != nil {
+		h.logger.Error("admins: failed to hash invite password", zap.Error(err))
+		writeInternalError(w)
+		return
+	}
+
+	admin := &db.Admin{Email: invite.Email, PasswordHash: passwordHash}
+	if err := h.admins.Create(r.Context(), admin); err != nil {
+		h.logger.Error("admins: failed to activate invited admin", zap.Error(err))
+		writeInternalError(w)
+		return
+	}
+
+	// admins.Create always creates with the "owner" column default
+	// (unchanged from mvp-core, T9) - apply the invite's role explicitly
+	// whenever it isn't owner.
+	if invite.Role != db.RoleOwner {
+		if err := h.admins.UpdateRole(r.Context(), admin.ID, invite.Role); err != nil {
+			h.logger.Error("admins: failed to apply invited role", zap.Error(err))
+			writeInternalError(w)
+			return
+		}
+	}
+
+	if err := h.invites.MarkUsed(r.Context(), invite.ID); err != nil {
+		h.logger.Error("admins: failed to mark invite used", zap.Error(err))
+		writeInternalError(w)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	_ = json.NewEncoder(w).Encode(acceptAdminInviteResponse{Email: admin.Email, Role: invite.Role})
 }
 
 func writeAdminError(w http.ResponseWriter, status int, body string) {

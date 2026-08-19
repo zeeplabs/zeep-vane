@@ -248,10 +248,10 @@ T11 → T12 → T13
 - Skill: NONE
 
 **Done when**:
-- [ ] Token válido ativa a conta com o papel correto e marca o convite como usado
-- [ ] Token expirado ou já usado retorna 401 sem alterar estado
-- [ ] Testes de integração cobrem os 2 casos
-- [ ] Gate check passa: `go test ./... -tags=integration && go vet ./...`
+- [x] Token válido ativa a conta com o papel correto e marca o convite como usado
+- [x] Token expirado ou já usado retorna 401 sem alterar estado
+- [x] Testes de integração cobrem os 2 casos
+- [x] Gate check passa: `go test ./... -tags=integration && go vet ./...`
 
 **Tests**: integration
 **Gate**: full
