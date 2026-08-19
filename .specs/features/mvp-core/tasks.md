@@ -1043,6 +1043,7 @@ T35 → T36 → T37 → T38 → T39 → T40
 - [x] Teste de integração cobre os 3 casos
 - [x] Gate check passa: `go test ./... -tags=integration`
 - [x] **Fix (Verifier Gap 2, SP-15)**: `publicIncidentLister.ListPublic` (global) trocado por `IncidentRepository.ListPublicForStatusPage(ctx, statusPageID, retentionDays)` - só inclui incidentes ligados (via `incident_services`) a um serviço que a própria status page publica (via `status_page_services`)
+- [x] **Fix (Verifier iteration 2, SP-15 incident-side coverage)**: `TestNewHTTPSServer_TwoPublishedStatusPages_ReturnDisjointIncidents` (`internal/cli/serve_test.go`) proves the incident-scoping JOIN/WHERE end-to-end - two published status pages, each linked to its own service and incident, each hostname's response asserted to contain only its own incident. Confirmed the test kills a reverted scoping clause before restoring it.
 
 **Commit**: `feat(incidents): manual incident management with public timeline`
 **Tests**: integration

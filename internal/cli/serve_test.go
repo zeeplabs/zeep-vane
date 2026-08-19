@@ -107,12 +107,20 @@ func createServePublishedStatusPageFixture(t *testing.T, pool *db.Pool, serviceI
 }
 
 // servePublicStatusResponse is a minimal decode shape for the public
-// status endpoint's response, just enough to assert which services came
-// back.
+// status endpoint's response, just enough to assert which services and
+// incidents came back.
 type servePublicStatusResponse struct {
 	Services []struct {
 		Name string `json:"name"`
 	} `json:"services"`
+	Incidents struct {
+		Active []struct {
+			Title string `json:"title"`
+		} `json:"active"`
+		Resolved []struct {
+			Title string `json:"title"`
+		} `json:"resolved"`
+	} `json:"incidents"`
 }
 
 func containsServiceName(services []struct {
@@ -124,6 +132,36 @@ func containsServiceName(services []struct {
 		}
 	}
 	return false
+}
+
+func containsIncidentTitle(incidents []struct {
+	Title string `json:"title"`
+}, title string) bool {
+	for _, i := range incidents {
+		if i.Title == title {
+			return true
+		}
+	}
+	return false
+}
+
+// createServeTestIncident creates an incident linked to serviceID,
+// registering cleanup. Mirrors createPublicIncidentFixture
+// (internal/api/public_status_handler_test.go) - an incident only appears
+// on a status page's public response if it's linked (via
+// incident_services) to a service that status page also publishes (SP-15).
+func createServeTestIncident(t *testing.T, pool *db.Pool, serviceID, namePrefix string) string {
+	t.Helper()
+	ctx := context.Background()
+
+	incidents := db.NewIncidentRepository(pool)
+	incident := &db.Incident{Title: fmt.Sprintf("%s-%d", namePrefix, time.Now().UnixNano())}
+	if err := incidents.Create(ctx, incident, []string{serviceID}); err != nil {
+		t.Fatalf("setup incident Create() returned unexpected error: %v", err)
+	}
+	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), "DELETE FROM incidents WHERE id = $1", incident.ID) })
+
+	return incident.Title
 }
 
 // fetchPublicStatus issues a GET against baseURL with its Host header set
@@ -206,6 +244,46 @@ func TestNewHTTPSServer_TwoPublishedStatusPages_ReturnDisjointServices(t *testin
 	}
 	if containsServiceName(bodyB.Services, nameA) {
 		t.Errorf("status page B's response contains status page A's service %q, want scoped to its own services only (SP-15)", nameA)
+	}
+}
+
+// TestNewHTTPSServer_TwoPublishedStatusPages_ReturnDisjointIncidents proves
+// SP-15's incident-side scoping (IncidentRepository.ListPublicForStatusPage,
+// internal/db/incident_repository.go:208-230) end-to-end through the real
+// newHTTPSServer wiring - not just by inspecting the SQL. It mirrors
+// TestNewHTTPSServer_TwoPublishedStatusPages_ReturnDisjointServices: two
+// published status pages, each linked to its own service, each service
+// linked to its own incident, and confirms each hostname's response
+// contains only its own incident.
+func TestNewHTTPSServer_TwoPublishedStatusPages_ReturnDisjointIncidents(t *testing.T) {
+	pool := newServeTestPool(t)
+
+	serviceA := createServeTestService(t, pool, "svc-inc-a")
+	serviceB := createServeTestService(t, pool, "svc-inc-b")
+	hostnameA := createServePublishedStatusPageFixture(t, pool, serviceA)
+	hostnameB := createServePublishedStatusPageFixture(t, pool, serviceB)
+
+	titleA := createServeTestIncident(t, pool, serviceA, "incident-a")
+	titleB := createServeTestIncident(t, pool, serviceB, "incident-b")
+
+	httpsSrv := newHTTPSServer(pool, zap.NewNop())
+	testServer := httptest.NewServer(httpsSrv.Handler)
+	defer testServer.Close()
+
+	bodyA := fetchPublicStatus(t, testServer.URL, hostnameA)
+	if !containsIncidentTitle(bodyA.Incidents.Active, titleA) {
+		t.Errorf("status page A's response missing its own linked incident %q", titleA)
+	}
+	if containsIncidentTitle(bodyA.Incidents.Active, titleB) {
+		t.Errorf("status page A's response contains status page B's incident %q, want scoped to its own incidents only (SP-15)", titleB)
+	}
+
+	bodyB := fetchPublicStatus(t, testServer.URL, hostnameB)
+	if !containsIncidentTitle(bodyB.Incidents.Active, titleB) {
+		t.Errorf("status page B's response missing its own linked incident %q", titleB)
+	}
+	if containsIncidentTitle(bodyB.Incidents.Active, titleA) {
+		t.Errorf("status page B's response contains status page A's incident %q, want scoped to its own incidents only (SP-15)", titleA)
 	}
 }
 
