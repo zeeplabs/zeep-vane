@@ -383,10 +383,10 @@ T35 → T36 → T37 → T38 → T39 → T40
 - Skill: NONE
 
 **Done when**:
-- [ ] Migration aplica limpo
-- [ ] Repositório nunca persiste o token em texto plano, só o hash
-- [ ] Testes de integração cobrem create, get por hash, marcar usado
-- [ ] Gate check passa: `go test ./... -tags=integration`
+- [x] Migration aplica limpo
+- [x] Repositório nunca persiste o token em texto plano, só o hash
+- [x] Testes de integração cobrem create, get por hash, marcar usado
+- [x] Gate check passa: `go test ./... -tags=integration`
 
 **Commit**: `feat(auth): add password reset token migration and repository`
 **Tests**: integration
