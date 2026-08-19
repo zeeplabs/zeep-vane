@@ -432,9 +432,9 @@ T35 → T36 → T37 → T38 → T39 → T40
 - Skill: NONE
 
 **Done when**:
-- [ ] Migration aplica limpo
-- [ ] Constraint unique em `provider` confirmada
-- [ ] Gate check passa: `go test ./... -tags=integration`
+- [x] Migration aplica limpo
+- [x] Constraint unique em `provider` confirmada
+- [x] Gate check passa: `go test ./... -tags=integration`
 
 **Commit**: `feat(db): add integrations migration`
 **Tests**: integration
