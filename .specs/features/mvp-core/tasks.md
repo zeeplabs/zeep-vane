@@ -961,10 +961,10 @@ T35 → T36 → T37 → T38 → T39 → T40
 - Skill: NONE
 
 **Done when**:
-- [ ] Cria incidente com vínculo a serviços
-- [ ] Rota exige autenticação
-- [ ] Teste de integração cobre o fluxo
-- [ ] Gate check passa: `go test ./... -tags=integration`
+- [x] Cria incidente com vínculo a serviços
+- [x] Rota exige autenticação
+- [x] Teste de integração cobre o fluxo
+- [x] Gate check passa: `go test ./... -tags=integration`
 
 **Commit**: `feat(incidents): add incident creation endpoint`
 **Tests**: integration
