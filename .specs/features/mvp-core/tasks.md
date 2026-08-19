@@ -890,10 +890,10 @@ T35 → T36 → T37 → T38 → T39 → T40
 - Skill: NONE
 
 **Done when**:
-- [ ] Integração marcada como `invalid` não derruba a resposta pública
-- [ ] Timestamp exposto reflete a última atualização bem-sucedida real, nunca "agora" fingido
-- [ ] Teste de integração simula integração inválida e confirma último status + timestamp corretos
-- [ ] Gate check passa: `go test ./... -tags=integration`
+- [x] Integração marcada como `invalid` não derruba a resposta pública
+- [x] Timestamp exposto reflete a última atualização bem-sucedida real, nunca "agora" fingido
+- [x] Teste de integração simula integração inválida e confirma último status + timestamp corretos
+- [x] Gate check passa: `go test ./... -tags=integration`
 
 **Commit**: `feat(public): add cached fallback on datadog failure`
 **Tests**: integration

@@ -14,6 +14,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/zeeplabs/zeep-vane/internal/db"
+	"github.com/zeeplabs/zeep-vane/internal/dbtest"
 )
 
 func newPublicStatusRouter(t *testing.T) (http.Handler, *db.Pool) {
@@ -33,8 +34,9 @@ func newPublicStatusRouter(t *testing.T) (http.Handler, *db.Pool) {
 	}
 	t.Cleanup(pool.Close)
 
-	repo := db.NewServiceRepository(pool)
-	handler := NewPublicStatusHandler(repo, zap.NewNop())
+	services := db.NewServiceRepository(pool)
+	snapshots := db.NewStatusSnapshotRepository(pool)
+	handler := NewPublicStatusHandler(services, snapshots, zap.NewNop())
 
 	r := chi.NewRouter()
 	r.Get("/", handler.Get)
@@ -42,19 +44,54 @@ func newPublicStatusRouter(t *testing.T) (http.Handler, *db.Pool) {
 	return r, pool
 }
 
-func TestPublicStatusGet_NoAuthHeader_200WithServiceStatus(t *testing.T) {
-	r, pool := newPublicStatusRouter(t)
+// createPublicStatusServiceFixture creates a service, sets its current
+// status, and records a StatusSnapshot with a fixed, past fetchedAt (rather
+// than "now") so tests can assert the exact timestamp the public endpoint
+// exposes, not just that some recent-looking value came back.
+func createPublicStatusServiceFixture(t *testing.T, pool *db.Pool, status string, fetchedAt time.Time) (serviceID string, cleanup func()) {
+	t.Helper()
+	ctx := context.Background()
 	name := uniqueServiceName(t)
-	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), "DELETE FROM services WHERE name = $1", name) })
 
 	services := db.NewServiceRepository(pool)
 	service := &db.Service{Name: name, SLOID: "slo-public-test"}
-	if err := services.Create(context.Background(), service); err != nil {
+	if err := services.Create(ctx, service); err != nil {
 		t.Fatalf("setup Create() returned unexpected error: %v", err)
 	}
-	if err := services.UpdateStatus(context.Background(), service.ID, "operational"); err != nil {
+	if err := services.UpdateStatus(ctx, service.ID, status); err != nil {
 		t.Fatalf("setup UpdateStatus() returned unexpected error: %v", err)
 	}
+	if _, err := pool.Exec(ctx,
+		"INSERT INTO status_snapshots (service_id, status, error_budget_remaining, fetched_at) VALUES ($1, $2, $3, $4)",
+		service.ID, status, 0.5, fetchedAt,
+	); err != nil {
+		t.Fatalf("setup snapshot insert returned unexpected error: %v", err)
+	}
+
+	return service.ID, func() { _, _ = pool.Exec(context.Background(), "DELETE FROM services WHERE id = $1", service.ID) }
+}
+
+func findPublicService(services []publicServiceResponse, serviceID string, allServices []db.Service) *publicServiceResponse {
+	var name string
+	for _, s := range allServices {
+		if s.ID == serviceID {
+			name = s.Name
+			break
+		}
+	}
+	for i := range services {
+		if services[i].Name == name {
+			return &services[i]
+		}
+	}
+	return nil
+}
+
+func TestPublicStatusGet_NoAuthHeader_200WithServiceStatus(t *testing.T) {
+	r, pool := newPublicStatusRouter(t)
+	fetchedAt := time.Date(2026, 1, 15, 10, 0, 0, 0, time.UTC)
+	serviceID, cleanup := createPublicStatusServiceFixture(t, pool, "operational", fetchedAt)
+	t.Cleanup(cleanup)
 
 	// Deliberately no Authorization header at all - the public endpoint
 	// must be reachable by an anonymous visitor (SP-10).
@@ -71,20 +108,70 @@ func TestPublicStatusGet_NoAuthHeader_200WithServiceStatus(t *testing.T) {
 		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
 	}
 
-	var found *publicServiceResponse
-	for i := range body.Services {
-		if body.Services[i].Name == name {
-			found = &body.Services[i]
-			break
-		}
+	allServices, err := db.NewServiceRepository(pool).List(context.Background())
+	if err != nil {
+		t.Fatalf("List() returned unexpected error: %v", err)
 	}
+	found := findPublicService(body.Services, serviceID, allServices)
 	if found == nil {
-		t.Fatalf("service %q not present in public response", name)
+		t.Fatalf("service %s not present in public response", serviceID)
 	}
 	if found.Status != "operational" {
 		t.Errorf("Status = %q, want %q", found.Status, "operational")
 	}
-	if found.LastUpdatedAt.IsZero() {
-		t.Error("LastUpdatedAt is zero, want a real last-update timestamp")
+	if !found.LastUpdatedAt.Equal(fetchedAt) {
+		t.Errorf("LastUpdatedAt = %v, want %v (the recorded snapshot's fetched_at)", found.LastUpdatedAt, fetchedAt)
+	}
+}
+
+// TestPublicStatusGet_IntegrationInvalid_StillServesLastSnapshot simulates
+// the Datadog connection failing (Integration marked "invalid" after the
+// poller exhausts its retries, T24) and confirms the public endpoint keeps
+// serving the last valid cached status instead of erroring out (SP-08,
+// SP-09).
+func TestPublicStatusGet_IntegrationInvalid_StillServesLastSnapshot(t *testing.T) {
+	r, pool := newPublicStatusRouter(t)
+	fetchedAt := time.Date(2026, 2, 1, 8, 30, 0, 0, time.UTC)
+	serviceID, cleanup := createPublicStatusServiceFixture(t, pool, "degraded", fetchedAt)
+	t.Cleanup(cleanup)
+
+	dsn := testDatabaseURL(t)
+	dbtest.LockDatadogIntegration(t, context.Background(), dsn)
+	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), "DELETE FROM integrations WHERE provider = 'datadog'") })
+
+	integrations := db.NewIntegrationRepository(pool)
+	if err := integrations.UpsertDatadog(context.Background(), []byte("encrypted-key"), []byte("encrypted-app-key")); err != nil {
+		t.Fatalf("setup UpsertDatadog() returned unexpected error: %v", err)
+	}
+	if err := integrations.MarkDatadogInvalid(context.Background(), "connection failure: exhausted retries"); err != nil {
+		t.Fatalf("setup MarkDatadogInvalid() returned unexpected error: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	var body publicStatusResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+
+	allServices, err := db.NewServiceRepository(pool).List(context.Background())
+	if err != nil {
+		t.Fatalf("List() returned unexpected error: %v", err)
+	}
+	found := findPublicService(body.Services, serviceID, allServices)
+	if found == nil {
+		t.Fatalf("service %s not present in public response", serviceID)
+	}
+	if found.Status != "degraded" {
+		t.Errorf("Status = %q, want %q (last cached status, unaffected by integration failure)", found.Status, "degraded")
+	}
+	if !found.LastUpdatedAt.Equal(fetchedAt) {
+		t.Errorf("LastUpdatedAt = %v, want %v (real last-success timestamp, never a fabricated now)", found.LastUpdatedAt, fetchedAt)
 	}
 }

@@ -17,18 +17,28 @@ type serviceLister interface {
 	List(ctx context.Context) ([]db.Service, error)
 }
 
+// latestSnapshotFetcher is the subset of *db.StatusSnapshotRepository the
+// public status handler depends on.
+type latestSnapshotFetcher interface {
+	LatestFetchedAtByService(ctx context.Context) (map[string]time.Time, error)
+}
+
 // PublicStatusHandler serves the public, unauthenticated status page
 // endpoint (SP-10). It never talks to Datadog directly - it only reads
 // what the poller (Phase 4) has already persisted, so a Datadog outage
-// never takes the public page down with it.
+// (including the connected Integration being marked "invalid") never takes
+// the public page down: it keeps serving the last snapshot on record, with
+// its real fetched_at timestamp, never a fabricated "now" (SP-08, SP-09).
 type PublicStatusHandler struct {
-	services serviceLister
-	logger   *zap.Logger
+	services  serviceLister
+	snapshots latestSnapshotFetcher
+	logger    *zap.Logger
 }
 
-// NewPublicStatusHandler builds a PublicStatusHandler backed by services.
-func NewPublicStatusHandler(services serviceLister, logger *zap.Logger) *PublicStatusHandler {
-	return &PublicStatusHandler{services: services, logger: logger}
+// NewPublicStatusHandler builds a PublicStatusHandler backed by services and
+// snapshots.
+func NewPublicStatusHandler(services serviceLister, snapshots latestSnapshotFetcher, logger *zap.Logger) *PublicStatusHandler {
+	return &PublicStatusHandler{services: services, snapshots: snapshots, logger: logger}
 }
 
 type publicServiceResponse struct {
@@ -52,12 +62,22 @@ func (h *PublicStatusHandler) Get(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	latestFetchedAt, err := h.snapshots.LatestFetchedAtByService(r.Context())
+	if err != nil {
+		h.logger.Error("public-status: failed to load latest status snapshots", zap.Error(err))
+		writeInternalError(w)
+		return
+	}
+
 	resp := publicStatusResponse{Services: []publicServiceResponse{}}
 	for _, service := range services {
+		// A service the poller has never successfully reached yet has no
+		// entry here; LastUpdatedAt then stays the zero value rather than a
+		// fabricated "now" (SP-08, SP-09, edge case in spec.md).
 		resp.Services = append(resp.Services, publicServiceResponse{
 			Name:          service.Name,
 			Status:        service.CurrentStatus,
-			LastUpdatedAt: service.LastStatusChangeAt,
+			LastUpdatedAt: latestFetchedAt[service.ID],
 		})
 	}
 
