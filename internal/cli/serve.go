@@ -13,6 +13,7 @@ import (
 	"github.com/spf13/cobra"
 	"go.uber.org/zap"
 
+	"github.com/zeeplabs/zeep-vane/internal/api"
 	"github.com/zeeplabs/zeep-vane/internal/config"
 	"github.com/zeeplabs/zeep-vane/internal/connectors/datadog"
 	"github.com/zeeplabs/zeep-vane/internal/crypto"
@@ -85,7 +86,7 @@ func NewServeCmd() *cobra.Command {
 			addr := fmt.Sprintf(":%d", cfg.Port)
 			srv := &http.Server{Addr: addr, Handler: router.New(pool)}
 
-			httpsSrv := newHTTPSServer(pool, router.New(pool))
+			httpsSrv := newHTTPSServer(pool, logger)
 
 			serverErrs := make(chan error, 2)
 			go func() {
@@ -138,7 +139,14 @@ func NewServeCmd() *cobra.Command {
 // (internal/tls) gates every certificate request against the StatusPage
 // table, and OnEvent records the real outcome of each issuance attempt back
 // onto the matching StatusPage row.
-func newHTTPSServer(pool *db.Pool, handler http.Handler) *http.Server {
+//
+// Its handler is router.HostRouter wrapping the public status page handler
+// (T32-T35, T40): a request's Host header resolves to a published
+// StatusPage, whose ID is threaded down so the public handler's
+// services/incidents queries are scoped to that status page (SP-15). The
+// admin API/SPA is served on the separate HTTP listener built in RunE
+// (router.New) - HostRouter here never touches it (design.md placeholder).
+func newHTTPSServer(pool *db.Pool, logger *zap.Logger) *http.Server {
 	httpsPort := os.Getenv("HTTPS_PORT")
 	if httpsPort == "" {
 		httpsPort = defaultHTTPSPort
@@ -151,6 +159,12 @@ func newHTTPSServer(pool *db.Pool, handler http.Handler) *http.Server {
 
 	statusPages := db.NewStatusPageRepository(pool)
 	manager := vanetls.NewManager(statusPages, storagePath)
+
+	services := db.NewServiceRepository(pool)
+	snapshots := db.NewStatusSnapshotRepository(pool)
+	incidents := db.NewIncidentRepository(pool)
+	publicHandler := api.NewPublicStatusHandler(services, snapshots, incidents, logger)
+	handler := router.HostRouter(statusPages, http.HandlerFunc(publicHandler.Get))
 
 	tlsConfig := manager.TLSConfig()
 	tlsConfig.NextProtos = append([]string{"h2", "http/1.1"}, tlsConfig.NextProtos...)

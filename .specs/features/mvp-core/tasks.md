@@ -823,6 +823,7 @@ T35 → T36 → T37 → T38 → T39 → T40
 - [x] Emissão falha → estado `tls_failed` com motivo salvo
 - [x] Teste de integração cobre os 2 fluxos (com ACME de teste/staging ou fake) — sem ambiente ACME staging disponível no sandbox, usado fake: payload de evento CertMagic (`cert_obtained`/`cert_failed`) construído no mesmo shape do `config.go` real da lib, despachado em `OnEvent` contra `StatusPageRepository` real (Postgres)
 - [x] Gate check passa: `go test ./... -tags=integration`
+- [x] **Fix (Verifier Gap 1)**: o listener HTTPS que este task sobe em `serve.go` agora serve `router.HostRouter` (T32) + o handler público (T33-T35, T40) de fato - antes só respondia `/healthz` em qualquer domínio custom, deixando a página pública inalcançável no binário real. `internal/cli/serve_test.go` prova isso ponta a ponta contra o `Handler` que `newHTTPSServer` retorna.
 
 **Commit**: `feat(domains): custom domain registration with automatic TLS provisioning`
 **Tests**: integration
