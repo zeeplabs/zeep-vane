@@ -240,9 +240,9 @@ T35 → T36 → T37 → T38 → T39 → T40
 - Skill: NONE
 
 **Done when**:
-- [ ] `GET /healthz` retorna 200 quando Postgres acessível, 503 quando não
-- [ ] Teste de integração cobre os dois casos
-- [ ] Gate check passa: `go test ./... -tags=integration`
+- [x] `GET /healthz` retorna 200 quando Postgres acessível, 503 quando não
+- [x] Teste de integração cobre os dois casos
+- [x] Gate check passa: `go test ./... -tags=integration`
 
 **Commit**: `feat(http): add chi router with healthz endpoint`
 **Tests**: integration
