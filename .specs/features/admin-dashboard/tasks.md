@@ -199,10 +199,10 @@ T11 → T12 → T13
 - Skill: `security-best-practices`, `best-practices`
 
 **Done when**:
-- [ ] Papel presente na lista permitida segue pro handler
-- [ ] Papel fora da lista permitida retorna 403 sem executar o handler
-- [ ] Testes unitários cobrem os 2 casos pra cada um dos 3 papéis
-- [ ] Gate check passa: `go test ./... && go vet ./...`
+- [x] Papel presente na lista permitida segue pro handler
+- [x] Papel fora da lista permitida retorna 403 sem executar o handler
+- [x] Testes unitários cobrem os 2 casos pra cada um dos 3 papéis
+- [x] Gate check passa: `go test ./... && go vet ./...`
 
 **Tests**: unit
 **Gate**: quick

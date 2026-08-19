@@ -93,3 +93,38 @@ func writeUnauthorized(w http.ResponseWriter) {
 	w.WriteHeader(http.StatusUnauthorized)
 	_, _ = w.Write([]byte(`{"error":"unauthorized"}`))
 }
+
+func writeForbidden(w http.ResponseWriter) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusForbidden)
+	_, _ = w.Write([]byte(`{"error":"forbidden"}`))
+}
+
+// RequireRole builds middleware that rejects a request with 403 unless the
+// *db.Admin stored in context by RequireAuth has one of roles. It must run
+// after RequireAuth in the middleware chain - if no Admin is present in
+// context (RequireAuth didn't run, or rejected the request first), it
+// rejects with 403 rather than assuming the request is authorized.
+func RequireRole(roles ...string) func(http.Handler) http.Handler {
+	allowed := make(map[string]struct{}, len(roles))
+	for _, role := range roles {
+		allowed[role] = struct{}{}
+	}
+
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			admin, ok := AdminFromContext(r.Context())
+			if !ok {
+				writeForbidden(w)
+				return
+			}
+
+			if _, ok := allowed[admin.Role]; !ok {
+				writeForbidden(w)
+				return
+			}
+
+			next.ServeHTTP(w, r)
+		})
+	}
+}
