@@ -1033,11 +1033,11 @@ T35 → T36 → T37 → T38 → T39 → T40
 - Skill: NONE
 
 **Done when**:
-- [ ] Incidente não resolvido aparece em destaque na resposta pública
-- [ ] Incidente resolvido há menos de 90 dias aparece no histórico
-- [ ] Incidente resolvido há mais de 90 dias não aparece
-- [ ] Teste de integração cobre os 3 casos
-- [ ] Gate check passa: `go test ./... -tags=integration`
+- [x] Incidente não resolvido aparece em destaque na resposta pública
+- [x] Incidente resolvido há menos de 90 dias aparece no histórico
+- [x] Incidente resolvido há mais de 90 dias não aparece
+- [x] Teste de integração cobre os 3 casos
+- [x] Gate check passa: `go test ./... -tags=integration`
 
 **Commit**: `feat(incidents): manual incident management with public timeline`
 **Tests**: integration

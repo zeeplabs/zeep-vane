@@ -165,6 +165,61 @@ func (r *IncidentRepository) Transition(ctx context.Context, incidentID, status 
 	return incident, nil
 }
 
+// IncidentPublic is an Incident with its timeline, shaped for the public
+// status page (SP-18).
+type IncidentPublic struct {
+	Incident
+	Updates []IncidentUpdate
+}
+
+// ListPublic returns incidents for the public status page (SP-18): active
+// splits out every incident whose status isn't "resolved" (shown in
+// destaque at the top), resolved splits out incidents resolved within the
+// last retentionDays (spec.md's 90-day retention assumption) - a resolved
+// incident older than that is omitted entirely. Both are ordered most
+// recently created first, each with its timeline ordered most-recent-update
+// first.
+func (r *IncidentRepository) ListPublic(ctx context.Context, retentionDays int) (active, resolved []IncidentPublic, err error) {
+	rows, err := r.pool.Query(ctx,
+		`SELECT id, title, status, created_at, resolved_at FROM incidents
+		 WHERE status <> 'resolved' OR resolved_at > now() - make_interval(days => $1)
+		 ORDER BY created_at DESC`,
+		retentionDays,
+	)
+	if err != nil {
+		return nil, nil, fmt.Errorf("db: failed to list public incidents: %w", err)
+	}
+	defer rows.Close()
+
+	var incidents []Incident
+	for rows.Next() {
+		var incident Incident
+		if err := rows.Scan(&incident.ID, &incident.Title, &incident.Status, &incident.CreatedAt, &incident.ResolvedAt); err != nil {
+			return nil, nil, fmt.Errorf("db: failed to scan public incident: %w", err)
+		}
+		incidents = append(incidents, incident)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, nil, fmt.Errorf("db: failed to iterate public incidents: %w", err)
+	}
+
+	for _, incident := range incidents {
+		updates, err := r.ListUpdates(ctx, incident.ID)
+		if err != nil {
+			return nil, nil, err
+		}
+
+		withUpdates := IncidentPublic{Incident: incident, Updates: updates}
+		if incident.Status == "resolved" {
+			resolved = append(resolved, withUpdates)
+		} else {
+			active = append(active, withUpdates)
+		}
+	}
+
+	return active, resolved, nil
+}
+
 // mustExist confirms incidentID exists, returning ErrNotFound if it doesn't.
 func (r *IncidentRepository) mustExist(ctx context.Context, incidentID string) error {
 	var exists bool

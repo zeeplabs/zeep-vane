@@ -36,7 +36,8 @@ func newPublicStatusRouter(t *testing.T) (http.Handler, *db.Pool) {
 
 	services := db.NewServiceRepository(pool)
 	snapshots := db.NewStatusSnapshotRepository(pool)
-	handler := NewPublicStatusHandler(services, snapshots, zap.NewNop())
+	incidents := db.NewIncidentRepository(pool)
+	handler := NewPublicStatusHandler(services, snapshots, incidents, zap.NewNop())
 
 	r := chi.NewRouter()
 	r.Get("/", handler.Get)
@@ -224,5 +225,126 @@ func TestPublicStatusGet_NotConfiguredService_HiddenValidServiceShown(t *testing
 	}
 	if found := findPublicService(body.Services, configuredID, allServices); found == nil {
 		t.Fatalf("configured service %s not present in public response, want shown", configuredID)
+	}
+}
+
+// createPublicIncidentFixture creates an incident linked to a fresh service
+// and returns its ID, registering cleanup.
+func createPublicIncidentFixture(t *testing.T, pool *db.Pool, title string) string {
+	t.Helper()
+	ctx := context.Background()
+
+	serviceID := createIncidentTestService(t, pool)
+	incidents := db.NewIncidentRepository(pool)
+	incident := &db.Incident{Title: title}
+	if err := incidents.Create(ctx, incident, []string{serviceID}); err != nil {
+		t.Fatalf("setup incident Create() returned unexpected error: %v", err)
+	}
+	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), "DELETE FROM incidents WHERE id = $1", incident.ID) })
+
+	return incident.ID
+}
+
+func findPublicIncident(incidents []publicIncidentResponse, incidentID string) *publicIncidentResponse {
+	for i := range incidents {
+		if incidents[i].ID == incidentID {
+			return &incidents[i]
+		}
+	}
+	return nil
+}
+
+// TestPublicStatusGet_UnresolvedIncident_AppearsInActive covers SP-18: an
+// incident not yet resolved must appear in destaque (the "active" group) on
+// the public status page.
+func TestPublicStatusGet_UnresolvedIncident_AppearsInActive(t *testing.T) {
+	r, pool := newPublicStatusRouter(t)
+	incidentID := createPublicIncidentFixture(t, pool, "unresolved incident public test")
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	var body publicStatusResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+
+	if found := findPublicIncident(body.Incidents.Active, incidentID); found == nil {
+		t.Fatalf("unresolved incident %s not present in active incidents, want it featured", incidentID)
+	}
+	if found := findPublicIncident(body.Incidents.Resolved, incidentID); found != nil {
+		t.Errorf("unresolved incident %s present in resolved incidents, want it absent", incidentID)
+	}
+}
+
+// TestPublicStatusGet_ResolvedIncidentWithinRetention_AppearsInHistory
+// covers SP-18/retention: an incident resolved less than 90 days ago must
+// still appear in the public history.
+func TestPublicStatusGet_ResolvedIncidentWithinRetention_AppearsInHistory(t *testing.T) {
+	r, pool := newPublicStatusRouter(t)
+	incidentID := createPublicIncidentFixture(t, pool, "recently resolved incident public test")
+
+	if _, err := pool.Exec(context.Background(),
+		"UPDATE incidents SET status = 'resolved', resolved_at = now() - interval '10 days' WHERE id = $1",
+		incidentID,
+	); err != nil {
+		t.Fatalf("setup resolved_at update returned unexpected error: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	var body publicStatusResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+
+	if found := findPublicIncident(body.Incidents.Resolved, incidentID); found == nil {
+		t.Fatalf("incident %s resolved 10 days ago not present in resolved history, want it within the 90-day window", incidentID)
+	}
+}
+
+// TestPublicStatusGet_ResolvedIncidentBeyondRetention_Hidden covers the
+// spec.md 90-day retention assumption: an incident resolved more than 90
+// days ago must never appear on the public status page.
+func TestPublicStatusGet_ResolvedIncidentBeyondRetention_Hidden(t *testing.T) {
+	r, pool := newPublicStatusRouter(t)
+	incidentID := createPublicIncidentFixture(t, pool, "long-resolved incident public test")
+
+	if _, err := pool.Exec(context.Background(),
+		"UPDATE incidents SET status = 'resolved', resolved_at = now() - interval '91 days' WHERE id = $1",
+		incidentID,
+	); err != nil {
+		t.Fatalf("setup resolved_at update returned unexpected error: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	var body publicStatusResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+
+	if found := findPublicIncident(body.Incidents.Resolved, incidentID); found != nil {
+		t.Errorf("incident %s resolved 91 days ago present in resolved history, want it hidden past the 90-day window", incidentID)
+	}
+	if found := findPublicIncident(body.Incidents.Active, incidentID); found != nil {
+		t.Errorf("incident %s present in active incidents, want it hidden entirely", incidentID)
 	}
 }
