@@ -914,10 +914,10 @@ T35 → T36 → T37 → T38 → T39 → T40
 - Skill: NONE
 
 **Done when**:
-- [ ] Serviço `not_configured` nunca aparece na resposta pública
-- [ ] Serviço com status válido aparece normalmente
-- [ ] Teste de integração cobre os 2 casos
-- [ ] Gate check passa: `go test ./... -tags=integration`
+- [x] Serviço `not_configured` nunca aparece na resposta pública
+- [x] Serviço com status válido aparece normalmente
+- [x] Teste de integração cobre os 2 casos
+- [x] Gate check passa: `go test ./... -tags=integration`
 
 **Commit**: `feat(public): serve public status page from cache with host-based routing`
 **Tests**: integration

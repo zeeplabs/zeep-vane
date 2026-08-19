@@ -37,7 +37,9 @@ func createPublishedStatusPageFixture(t *testing.T, pool *db.Pool) string {
 	if err := statusPages.Create(ctx, statusPage, nil); err != nil {
 		t.Fatalf("failed to create status page fixture: %v", err)
 	}
-	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), "DELETE FROM status_pages WHERE id = $1", statusPage.ID) })
+	t.Cleanup(func() {
+		_, _ = pool.Exec(context.Background(), "DELETE FROM status_pages WHERE id = $1", statusPage.ID)
+	})
 
 	if err := statusPages.MarkPublished(ctx, hostname); err != nil {
 		t.Fatalf("failed to publish status page fixture: %v", err)

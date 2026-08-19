@@ -71,6 +71,13 @@ func (h *PublicStatusHandler) Get(w http.ResponseWriter, r *http.Request) {
 
 	resp := publicStatusResponse{Services: []publicServiceResponse{}}
 	for _, service := range services {
+		// A service with no SLO linked yet stays "not_configured" and is
+		// never shown publicly (spec.md edge case) - it's an admin-side
+		// concept only, until a poller cycle gives it a real status.
+		if service.CurrentStatus == "not_configured" {
+			continue
+		}
+
 		// A service the poller has never successfully reached yet has no
 		// entry here; LastUpdatedAt then stays the zero value rather than a
 		// fabricated "now" (SP-08, SP-09, edge case in spec.md).

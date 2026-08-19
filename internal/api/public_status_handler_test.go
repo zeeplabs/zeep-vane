@@ -175,3 +175,54 @@ func TestPublicStatusGet_IntegrationInvalid_StillServesLastSnapshot(t *testing.T
 		t.Errorf("LastUpdatedAt = %v, want %v (real last-success timestamp, never a fabricated now)", found.LastUpdatedAt, fetchedAt)
 	}
 }
+
+// TestPublicStatusGet_NotConfiguredService_HiddenValidServiceShown covers
+// the spec.md edge case: a service with no SLO linked yet stays
+// "not_configured" on the admin side and must never appear in the public
+// response, while a service with a real status appears normally alongside
+// it.
+func TestPublicStatusGet_NotConfiguredService_HiddenValidServiceShown(t *testing.T) {
+	r, pool := newPublicStatusRouter(t)
+	ctx := context.Background()
+
+	configuredID, cleanupConfigured := createPublicStatusServiceFixture(t, pool, "operational", time.Now().UTC())
+	t.Cleanup(cleanupConfigured)
+
+	services := db.NewServiceRepository(pool)
+	notConfiguredName := uniqueServiceName(t)
+	notConfigured := &db.Service{Name: notConfiguredName, SLOID: "slo-not-configured-test"}
+	if err := services.Create(ctx, notConfigured); err != nil {
+		t.Fatalf("setup Create() returned unexpected error: %v", err)
+	}
+	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), "DELETE FROM services WHERE id = $1", notConfigured.ID) })
+	if notConfigured.CurrentStatus != "not_configured" {
+		t.Fatalf("setup: fresh service CurrentStatus = %q, want %q", notConfigured.CurrentStatus, "not_configured")
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	var body publicStatusResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+
+	for _, s := range body.Services {
+		if s.Name == notConfiguredName {
+			t.Fatalf("not_configured service %q present in public response, want hidden", notConfiguredName)
+		}
+	}
+
+	allServices, err := services.List(ctx)
+	if err != nil {
+		t.Fatalf("List() returned unexpected error: %v", err)
+	}
+	if found := findPublicService(body.Services, configuredID, allServices); found == nil {
+		t.Fatalf("configured service %s not present in public response, want shown", configuredID)
+	}
+}
