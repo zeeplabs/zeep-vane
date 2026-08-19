@@ -17,7 +17,7 @@ import (
 	"github.com/zeeplabs/zeep-vane/internal/db"
 )
 
-func newIncidentsRouter(t *testing.T) (http.Handler, *db.Pool) {
+func newIncidentsRouter(t *testing.T) (http.Handler, *db.Pool, *db.AdminRepository) {
 	t.Helper()
 	dsn := testDatabaseURL(t)
 
@@ -35,17 +35,18 @@ func newIncidentsRouter(t *testing.T) (http.Handler, *db.Pool) {
 	t.Cleanup(pool.Close)
 
 	repo := db.NewIncidentRepository(pool)
+	admins := db.NewAdminRepository(pool)
 	handler := NewIncidentsHandler(repo, zap.NewNop())
 
 	r := chi.NewRouter()
 	r.Group(func(protected chi.Router) {
-		protected.Use(RequireAuth(middlewareTestSecret))
+		protected.Use(RequireAuth(middlewareTestSecret, admins))
 		protected.Post("/api/incidents", handler.Create)
 		protected.Post("/api/incidents/{id}/updates", handler.AddUpdate)
 		protected.Patch("/api/incidents/{id}", handler.Transition)
 	})
 
-	return r, pool
+	return r, pool, admins
 }
 
 // createIncidentTestService inserts a service to link an incident to,
@@ -79,8 +80,8 @@ func postCreateIncident(t *testing.T, r http.Handler, token, title string, servi
 }
 
 func TestCreateIncident_ValidRequest_201LinksServices(t *testing.T) {
-	r, pool := newIncidentsRouter(t)
-	token := issueTestSessionToken(t, "admin-1")
+	r, pool, admins := newIncidentsRouter(t)
+	token := issueTestSessionToken(t, admins)
 	serviceID := createIncidentTestService(t, pool)
 
 	rec := postCreateIncident(t, r, token, "database latency spike", []string{serviceID})
@@ -114,7 +115,7 @@ func TestCreateIncident_ValidRequest_201LinksServices(t *testing.T) {
 }
 
 func TestCreateIncident_NoAuth_401(t *testing.T) {
-	r, _ := newIncidentsRouter(t)
+	r, _, _ := newIncidentsRouter(t)
 
 	rec := postCreateIncident(t, r, "", "unauthorized incident", []string{"any-id"})
 	if rec.Code != http.StatusUnauthorized {
@@ -140,8 +141,8 @@ func postIncidentUpdate(t *testing.T, r http.Handler, token, incidentID, body st
 }
 
 func TestAddIncidentUpdate_TwoUpdates_TimelineOrderedMostRecentFirst(t *testing.T) {
-	r, pool := newIncidentsRouter(t)
-	token := issueTestSessionToken(t, "admin-1")
+	r, pool, admins := newIncidentsRouter(t)
+	token := issueTestSessionToken(t, admins)
 	serviceID := createIncidentTestService(t, pool)
 
 	createRec := postCreateIncident(t, r, token, "timeline ordering test incident", []string{serviceID})
@@ -181,8 +182,8 @@ func TestAddIncidentUpdate_TwoUpdates_TimelineOrderedMostRecentFirst(t *testing.
 }
 
 func TestAddIncidentUpdate_IncidentNotFound_404(t *testing.T) {
-	r, _ := newIncidentsRouter(t)
-	token := issueTestSessionToken(t, "admin-1")
+	r, _, admins := newIncidentsRouter(t)
+	token := issueTestSessionToken(t, admins)
 
 	rec := postIncidentUpdate(t, r, token, "00000000-0000-0000-0000-000000000000", "update on a nonexistent incident")
 
@@ -226,8 +227,8 @@ func createTestIncident(t *testing.T, r http.Handler, pool *db.Pool, token, titl
 }
 
 func TestTransitionIncident_ToResolved_SetsResolvedAt(t *testing.T) {
-	r, pool := newIncidentsRouter(t)
-	token := issueTestSessionToken(t, "admin-1")
+	r, pool, admins := newIncidentsRouter(t)
+	token := issueTestSessionToken(t, admins)
 	incident := createTestIncident(t, r, pool, token, "transition to resolved test incident")
 
 	rec := patchIncidentStatus(t, r, token, incident.ID, "resolved")
@@ -253,8 +254,8 @@ func TestTransitionIncident_ToResolved_SetsResolvedAt(t *testing.T) {
 // "investigating") is a legitimate reopening, not rejected, and must be
 // recorded on the timeline with a timestamp.
 func TestTransitionIncident_ReopenAfterResolved_AllowedAndRecordedOnTimeline(t *testing.T) {
-	r, pool := newIncidentsRouter(t)
-	token := issueTestSessionToken(t, "admin-1")
+	r, pool, admins := newIncidentsRouter(t)
+	token := issueTestSessionToken(t, admins)
 	incident := createTestIncident(t, r, pool, token, "reopen after resolved test incident")
 
 	resolveRec := patchIncidentStatus(t, r, token, incident.ID, "resolved")

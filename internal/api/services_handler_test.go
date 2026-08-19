@@ -18,7 +18,7 @@ import (
 	"github.com/zeeplabs/zeep-vane/internal/db"
 )
 
-func newServicesRouter(t *testing.T) (http.Handler, *db.Pool) {
+func newServicesRouter(t *testing.T) (http.Handler, *db.Pool, *db.AdminRepository) {
 	t.Helper()
 	dsn := testDatabaseURL(t)
 
@@ -36,16 +36,17 @@ func newServicesRouter(t *testing.T) (http.Handler, *db.Pool) {
 	t.Cleanup(pool.Close)
 
 	repo := db.NewServiceRepository(pool)
+	admins := db.NewAdminRepository(pool)
 	handler := NewServicesHandler(repo, zap.NewNop())
 
 	r := chi.NewRouter()
 	r.Group(func(protected chi.Router) {
-		protected.Use(RequireAuth(middlewareTestSecret))
+		protected.Use(RequireAuth(middlewareTestSecret, admins))
 		protected.Post("/api/services", handler.Create)
 		protected.Get("/api/services", handler.List)
 	})
 
-	return r, pool
+	return r, pool, admins
 }
 
 func uniqueServiceName(t *testing.T) string {
@@ -82,8 +83,8 @@ func getServices(t *testing.T, r http.Handler, token string) *httptest.ResponseR
 }
 
 func TestCreateService_ValidRequest_201SavesSLOLink(t *testing.T) {
-	r, pool := newServicesRouter(t)
-	token := issueTestSessionToken(t, "admin-1")
+	r, pool, admins := newServicesRouter(t)
+	token := issueTestSessionToken(t, admins)
 	name := uniqueServiceName(t)
 	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), "DELETE FROM services WHERE name = $1", name) })
 
@@ -112,8 +113,8 @@ func TestCreateService_ValidRequest_201SavesSLOLink(t *testing.T) {
 }
 
 func TestListServices_ReturnsAllWithCurrentStatus(t *testing.T) {
-	r, pool := newServicesRouter(t)
-	token := issueTestSessionToken(t, "admin-1")
+	r, pool, admins := newServicesRouter(t)
+	token := issueTestSessionToken(t, admins)
 	name := uniqueServiceName(t)
 	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), "DELETE FROM services WHERE name = $1", name) })
 
@@ -148,7 +149,7 @@ func TestListServices_ReturnsAllWithCurrentStatus(t *testing.T) {
 }
 
 func TestServicesRoutes_NoAuth_401(t *testing.T) {
-	r, _ := newServicesRouter(t)
+	r, _, _ := newServicesRouter(t)
 
 	createRec := postCreateService(t, r, "", "any-name", "any-slo")
 	if createRec.Code != http.StatusUnauthorized {

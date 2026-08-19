@@ -18,7 +18,7 @@ import (
 	"github.com/zeeplabs/zeep-vane/internal/db"
 )
 
-func newDomainsRouter(t *testing.T) (http.Handler, *db.Pool) {
+func newDomainsRouter(t *testing.T) (http.Handler, *db.Pool, *db.AdminRepository) {
 	t.Helper()
 	dsn := testDatabaseURL(t)
 
@@ -36,15 +36,16 @@ func newDomainsRouter(t *testing.T) (http.Handler, *db.Pool) {
 	t.Cleanup(pool.Close)
 
 	repo := db.NewDomainRepository(pool)
+	admins := db.NewAdminRepository(pool)
 	handler := NewDomainsHandler(repo, zap.NewNop())
 
 	r := chi.NewRouter()
 	r.Group(func(protected chi.Router) {
-		protected.Use(RequireAuth(middlewareTestSecret))
+		protected.Use(RequireAuth(middlewareTestSecret, admins))
 		protected.Post("/api/domains", handler.Create)
 	})
 
-	return r, pool
+	return r, pool, admins
 }
 
 func uniqueHostname(t *testing.T) string {
@@ -70,8 +71,8 @@ func postCreateDomain(t *testing.T, r http.Handler, token, hostname string) *htt
 }
 
 func TestCreateDomain_NewHostname_201(t *testing.T) {
-	r, pool := newDomainsRouter(t)
-	token := issueTestSessionToken(t, "admin-1")
+	r, pool, admins := newDomainsRouter(t)
+	token := issueTestSessionToken(t, admins)
 	hostname := uniqueHostname(t)
 	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), "DELETE FROM domains WHERE hostname = $1", hostname) })
 
@@ -100,8 +101,8 @@ func TestCreateDomain_NewHostname_201(t *testing.T) {
 }
 
 func TestCreateDomain_DuplicateHostname_409(t *testing.T) {
-	r, pool := newDomainsRouter(t)
-	token := issueTestSessionToken(t, "admin-1")
+	r, pool, admins := newDomainsRouter(t)
+	token := issueTestSessionToken(t, admins)
 	hostname := uniqueHostname(t)
 	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), "DELETE FROM domains WHERE hostname = $1", hostname) })
 
@@ -117,7 +118,7 @@ func TestCreateDomain_DuplicateHostname_409(t *testing.T) {
 }
 
 func TestCreateDomain_NoAuth_401(t *testing.T) {
-	r, _ := newDomainsRouter(t)
+	r, _, _ := newDomainsRouter(t)
 
 	rec := postCreateDomain(t, r, "", "any-hostname.example.com")
 	if rec.Code != http.StatusUnauthorized {

@@ -54,6 +54,27 @@ func issueSessionWithTTL(adminID, secret string, ttl time.Duration) (string, err
 // ID it was issued for. It returns ErrInvalidToken for any malformed,
 // unsigned, tampered, or expired token.
 func VerifySession(tokenString, secret string) (string, error) {
+	claims, err := VerifySessionClaims(tokenString, secret)
+	if err != nil {
+		return "", err
+	}
+	return claims.AdminID, nil
+}
+
+// SessionClaims is the subset of a verified session token's payload callers
+// beyond the admin ID itself may need. IssuedAt backs the admin-dashboard
+// feature's session revocation check (RequireAuth rejects a token issued
+// before the admin's sessions were revoked).
+type SessionClaims struct {
+	AdminID  string
+	IssuedAt time.Time
+}
+
+// VerifySessionClaims validates tokenString against secret like
+// VerifySession, additionally returning the token's IssuedAt claim. It
+// returns ErrInvalidToken for any malformed, unsigned, tampered, or expired
+// token, or one missing an IssuedAt claim.
+func VerifySessionClaims(tokenString, secret string) (SessionClaims, error) {
 	token, err := jwt.ParseWithClaims(tokenString, &sessionClaims{}, func(t *jwt.Token) (interface{}, error) {
 		if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
 			return nil, fmt.Errorf("auth: unexpected signing method %v", t.Header["alg"])
@@ -61,13 +82,13 @@ func VerifySession(tokenString, secret string) (string, error) {
 		return []byte(secret), nil
 	})
 	if err != nil || !token.Valid {
-		return "", ErrInvalidToken
+		return SessionClaims{}, ErrInvalidToken
 	}
 
 	claims, ok := token.Claims.(*sessionClaims)
-	if !ok || claims.Subject == "" {
-		return "", ErrInvalidToken
+	if !ok || claims.Subject == "" || claims.IssuedAt == nil {
+		return SessionClaims{}, ErrInvalidToken
 	}
 
-	return claims.Subject, nil
+	return SessionClaims{AdminID: claims.Subject, IssuedAt: claims.IssuedAt.Time}, nil
 }

@@ -18,7 +18,7 @@ import (
 	"github.com/zeeplabs/zeep-vane/internal/db"
 )
 
-func newStatusPagesRouter(t *testing.T) (http.Handler, *db.Pool) {
+func newStatusPagesRouter(t *testing.T) (http.Handler, *db.Pool, *db.AdminRepository) {
 	t.Helper()
 	dsn := testDatabaseURL(t)
 
@@ -36,15 +36,16 @@ func newStatusPagesRouter(t *testing.T) (http.Handler, *db.Pool) {
 	t.Cleanup(pool.Close)
 
 	repo := db.NewStatusPageRepository(pool)
+	admins := db.NewAdminRepository(pool)
 	handler := NewStatusPagesHandler(repo, zap.NewNop())
 
 	r := chi.NewRouter()
 	r.Group(func(protected chi.Router) {
-		protected.Use(RequireAuth(middlewareTestSecret))
+		protected.Use(RequireAuth(middlewareTestSecret, admins))
 		protected.Post("/api/status-pages", handler.Create)
 	})
 
-	return r, pool
+	return r, pool, admins
 }
 
 // createTestDomain inserts a domain fixture and registers its cleanup,
@@ -107,8 +108,8 @@ func postCreateStatusPage(t *testing.T, r http.Handler, token string, req create
 }
 
 func TestCreateStatusPage_ValidRequest_201LinksDomainAndServices(t *testing.T) {
-	r, pool := newStatusPagesRouter(t)
-	token := issueTestSessionToken(t, "admin-1")
+	r, pool, admins := newStatusPagesRouter(t)
+	token := issueTestSessionToken(t, admins)
 	domainID := createTestDomain(t, pool)
 	serviceID := createTestService(t, pool)
 
@@ -143,8 +144,8 @@ func TestCreateStatusPage_ValidRequest_201LinksDomainAndServices(t *testing.T) {
 }
 
 func TestCreateStatusPage_SecondPageSameDomain_NotBlocked(t *testing.T) {
-	r, pool := newStatusPagesRouter(t)
-	token := issueTestSessionToken(t, "admin-1")
+	r, pool, admins := newStatusPagesRouter(t)
+	token := issueTestSessionToken(t, admins)
 	domainID := createTestDomain(t, pool)
 
 	firstRec := postCreateStatusPage(t, r, token, createStatusPageRequest{
@@ -165,8 +166,8 @@ func TestCreateStatusPage_SecondPageSameDomain_NotBlocked(t *testing.T) {
 }
 
 func TestCreateStatusPage_SecondRootDomain_NotBlocked(t *testing.T) {
-	r, pool := newStatusPagesRouter(t)
-	token := issueTestSessionToken(t, "admin-1")
+	r, pool, admins := newStatusPagesRouter(t)
+	token := issueTestSessionToken(t, admins)
 	firstDomainID := createTestDomain(t, pool)
 	secondDomainID := createTestDomain(t, pool)
 

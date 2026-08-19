@@ -176,10 +176,10 @@ T11 → T12 → T13
 - Skill: `security-best-practices`, `best-practices`
 
 **Done when**:
-- [ ] Token com `iat` anterior a `sessions_revoked_at` é rejeitado com 401
-- [ ] Token válido e não revogado segue com `Admin` disponível no `context`
-- [ ] Testes de integração cobrem os 2 casos + o caso já existente de token ausente/inválido/expirado (regressão)
-- [ ] Gate check passa: `go test ./... -tags=integration && go vet ./...`
+- [x] Token com `iat` anterior a `sessions_revoked_at` é rejeitado com 401
+- [x] Token válido e não revogado segue com `Admin` disponível no `context`
+- [x] Testes de integração cobrem os 2 casos + o caso já existente de token ausente/inválido/expirado (regressão)
+- [x] Gate check passa: `go test ./... -tags=integration && go vet ./...`
 
 **Tests**: integration
 **Gate**: full

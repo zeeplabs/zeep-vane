@@ -26,7 +26,7 @@ import (
 
 const testMasterKey = "integrations-handler-test-master-key"
 
-func newIntegrationsRouter(t *testing.T, validate validateDatadogCredentials, logger *zap.Logger) (http.Handler, *db.Pool) {
+func newIntegrationsRouter(t *testing.T, validate validateDatadogCredentials, logger *zap.Logger) (http.Handler, *db.Pool, *db.AdminRepository) {
 	t.Helper()
 	dsn := testDatabaseURL(t)
 
@@ -45,14 +45,26 @@ func newIntegrationsRouter(t *testing.T, validate validateDatadogCredentials, lo
 	dbtest.LockDatadogIntegration(t, ctx, dsn)
 	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), "DELETE FROM integrations WHERE provider = 'datadog'") })
 
+	// RequireAuth's admin lookup runs against its own dedicated pool,
+	// separate from pool above: TestConnectDatadog_ResponseAndLogs_
+	// NeverContainPlaintextKey deliberately closes pool mid-test to force
+	// the integrations repository to fail downstream of auth, and that
+	// must not also break the auth lookup itself.
+	authPool, err := db.NewPool(ctx, dsn)
+	if err != nil {
+		t.Fatalf("NewPool() for auth returned unexpected error: %v", err)
+	}
+	t.Cleanup(authPool.Close)
+	admins := db.NewAdminRepository(authPool)
+
 	repo := db.NewIntegrationRepository(pool)
 	handler := NewIntegrationsHandler(repo, validate, testMasterKey, logger)
 
 	r := chi.NewRouter()
-	r.With(RequireAuth(middlewareTestSecret)).Post("/api/integrations/datadog", handler.ConnectDatadog)
-	r.With(RequireAuth(middlewareTestSecret)).Get("/api/integrations/datadog/status", handler.Status)
+	r.With(RequireAuth(middlewareTestSecret, admins)).Post("/api/integrations/datadog", handler.ConnectDatadog)
+	r.With(RequireAuth(middlewareTestSecret, admins)).Get("/api/integrations/datadog/status", handler.Status)
 
-	return r, pool
+	return r, pool, admins
 }
 
 func getDatadogStatus(t *testing.T, r http.Handler, token string) *httptest.ResponseRecorder {
@@ -96,8 +108,8 @@ func fetchIntegrationRow(t *testing.T, pool *db.Pool) (encryptedAPIKey, encrypte
 
 func TestConnectDatadog_ValidCredentials_201SavesEncrypted(t *testing.T) {
 	alwaysValid := func(ctx context.Context, apiKey, appKey string) error { return nil }
-	r, pool := newIntegrationsRouter(t, alwaysValid, zap.NewNop())
-	token := issueTestSessionToken(t, "admin-1")
+	r, pool, admins := newIntegrationsRouter(t, alwaysValid, zap.NewNop())
+	token := issueTestSessionToken(t, admins)
 
 	rec := postConnectDatadog(t, r, token, "real-api-key", "real-app-key")
 
@@ -133,8 +145,8 @@ func TestConnectDatadog_ValidCredentials_201SavesEncrypted(t *testing.T) {
 
 func TestConnectDatadog_InvalidCredentials_422NothingSaved(t *testing.T) {
 	alwaysInvalid := func(ctx context.Context, apiKey, appKey string) error { return datadog.ErrUnauthorized }
-	r, pool := newIntegrationsRouter(t, alwaysInvalid, zap.NewNop())
-	token := issueTestSessionToken(t, "admin-1")
+	r, pool, admins := newIntegrationsRouter(t, alwaysInvalid, zap.NewNop())
+	token := issueTestSessionToken(t, admins)
 
 	rec := postConnectDatadog(t, r, token, "bad-api-key", "bad-app-key")
 
@@ -150,7 +162,7 @@ func TestConnectDatadog_InvalidCredentials_422NothingSaved(t *testing.T) {
 
 func TestConnectDatadog_NoAuth_401(t *testing.T) {
 	alwaysValid := func(ctx context.Context, apiKey, appKey string) error { return nil }
-	r, _ := newIntegrationsRouter(t, alwaysValid, zap.NewNop())
+	r, _, _ := newIntegrationsRouter(t, alwaysValid, zap.NewNop())
 
 	rec := postConnectDatadog(t, r, "", "any-api-key", "any-app-key")
 
@@ -168,9 +180,9 @@ func TestConnectDatadog_ResponseAndLogs_NeverContainPlaintextKey(t *testing.T) {
 	logger := zap.New(core)
 
 	alwaysValid := func(ctx context.Context, apiKey, appKey string) error { return nil }
-	r, pool := newIntegrationsRouter(t, alwaysValid, logger)
+	r, pool, admins := newIntegrationsRouter(t, alwaysValid, logger)
 	pool.Close() // force UpsertDatadog to fail after validation succeeds
-	token := issueTestSessionToken(t, "admin-1")
+	token := issueTestSessionToken(t, admins)
 
 	const secretAPIKey = "super-secret-datadog-api-key"
 	rec := postConnectDatadog(t, r, token, secretAPIKey, "app-key")
@@ -197,8 +209,8 @@ func TestConnectDatadog_ResponseAndLogs_NeverContainPlaintextKey(t *testing.T) {
 
 func TestDatadogStatus_NotConnectedYet_404(t *testing.T) {
 	alwaysValid := func(ctx context.Context, apiKey, appKey string) error { return nil }
-	r, _ := newIntegrationsRouter(t, alwaysValid, zap.NewNop())
-	token := issueTestSessionToken(t, "admin-1")
+	r, _, admins := newIntegrationsRouter(t, alwaysValid, zap.NewNop())
+	token := issueTestSessionToken(t, admins)
 
 	rec := getDatadogStatus(t, r, token)
 
@@ -209,7 +221,7 @@ func TestDatadogStatus_NotConnectedYet_404(t *testing.T) {
 
 func TestDatadogStatus_NoAuth_401(t *testing.T) {
 	alwaysValid := func(ctx context.Context, apiKey, appKey string) error { return nil }
-	r, _ := newIntegrationsRouter(t, alwaysValid, zap.NewNop())
+	r, _, _ := newIntegrationsRouter(t, alwaysValid, zap.NewNop())
 
 	rec := getDatadogStatus(t, r, "")
 
@@ -224,8 +236,8 @@ func TestDatadogStatus_NoAuth_401(t *testing.T) {
 // surface both the "invalid" status and the recorded reason to the admin.
 func TestDatadogStatus_AfterConnectionFailure_ReportsInvalidAndReason(t *testing.T) {
 	alwaysValid := func(ctx context.Context, apiKey, appKey string) error { return nil }
-	r, pool := newIntegrationsRouter(t, alwaysValid, zap.NewNop())
-	token := issueTestSessionToken(t, "admin-1")
+	r, pool, admins := newIntegrationsRouter(t, alwaysValid, zap.NewNop())
+	token := issueTestSessionToken(t, admins)
 
 	postConnectDatadog(t, r, token, "real-api-key", "real-app-key")
 
@@ -253,9 +265,18 @@ func TestDatadogStatus_AfterConnectionFailure_ReportsInvalidAndReason(t *testing
 	}
 }
 
-func issueTestSessionToken(t *testing.T, adminID string) string {
+// issueTestSessionToken inserts a real admin row via admins (so RequireAuth's
+// GetByID lookup succeeds) and issues a session token for it.
+func issueTestSessionToken(t *testing.T, admins *db.AdminRepository) string {
 	t.Helper()
-	token, err := auth.IssueSession(adminID, middlewareTestSecret)
+	ctx := context.Background()
+	admin := &db.Admin{Email: uniqueTestEmail(t), PasswordHash: "hash"}
+	if err := admins.Create(ctx, admin); err != nil {
+		t.Fatalf("admins.Create() returned unexpected error: %v", err)
+	}
+	t.Cleanup(func() { _ = admins.Delete(context.Background(), admin.ID) })
+
+	token, err := auth.IssueSession(admin.ID, middlewareTestSecret)
 	if err != nil {
 		t.Fatalf("auth.IssueSession() returned unexpected error: %v", err)
 	}
