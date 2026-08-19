@@ -745,9 +745,9 @@ T35 → T36 → T37 → T38 → T39 → T40
 - Skill: NONE
 
 **Done when**:
-- [ ] Migrations aplicam limpo
-- [ ] FK `domain_id → domains.id` e `status_page_services` com FKs pros dois lados confirmadas
-- [ ] Gate check passa: `go test ./... -tags=integration`
+- [x] Migrations aplicam limpo
+- [x] FK `domain_id → domains.id` e `status_page_services` com FKs pros dois lados confirmadas
+- [x] Gate check passa: `go test ./... -tags=integration`
 
 **Commit**: `feat(db): add status pages migrations`
 **Tests**: integration
