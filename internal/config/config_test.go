@@ -1,0 +1,53 @@
+package config
+
+import "testing"
+
+func setAllRequiredEnv(t *testing.T) {
+	t.Helper()
+	t.Setenv("DATABASE_URL", "postgres://user:pass@localhost:5432/vane")
+	t.Setenv("VANE_MASTER_KEY", "0123456789abcdef0123456789abcdef")
+	t.Setenv("PORT", "8080")
+	t.Setenv("POLL_INTERVAL_SECONDS", "120")
+}
+
+func TestLoad_AllVarsPresent_Success(t *testing.T) {
+	setAllRequiredEnv(t)
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() returned unexpected error: %v", err)
+	}
+
+	if cfg.DatabaseURL != "postgres://user:pass@localhost:5432/vane" {
+		t.Errorf("DatabaseURL = %q, want %q", cfg.DatabaseURL, "postgres://user:pass@localhost:5432/vane")
+	}
+	if cfg.MasterKey != "0123456789abcdef0123456789abcdef" {
+		t.Errorf("MasterKey = %q, want %q", cfg.MasterKey, "0123456789abcdef0123456789abcdef")
+	}
+	if cfg.Port != 8080 {
+		t.Errorf("Port = %d, want 8080", cfg.Port)
+	}
+	if cfg.PollIntervalSeconds != 120 {
+		t.Errorf("PollIntervalSeconds = %d, want 120", cfg.PollIntervalSeconds)
+	}
+}
+
+func TestLoad_MissingRequiredVar_Error(t *testing.T) {
+	setAllRequiredEnv(t)
+	t.Setenv("DATABASE_URL", "")
+
+	_, err := Load()
+	if err == nil {
+		t.Fatal("Load() with missing DATABASE_URL returned nil error, want error")
+	}
+}
+
+func TestLoad_InvalidPollIntervalFormat_Error(t *testing.T) {
+	setAllRequiredEnv(t)
+	t.Setenv("POLL_INTERVAL_SECONDS", "not-a-number")
+
+	_, err := Load()
+	if err == nil {
+		t.Fatal("Load() with non-numeric POLL_INTERVAL_SECONDS returned nil error, want error")
+	}
+}

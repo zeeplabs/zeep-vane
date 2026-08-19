@@ -147,9 +147,9 @@ T35 → T36 → T37 → T38 → T39 → T40
 - Skill: NONE
 
 **Done when**:
-- [ ] `Load()` retorna erro claro se variável obrigatória ausente
-- [ ] Testes cobrem: todas variáveis presentes (sucesso), uma ausente (erro), formato inválido de `POLL_INTERVAL_SECONDS` (erro)
-- [ ] Gate check passa: `go test ./... && go vet ./...`
+- [x] `Load()` retorna erro claro se variável obrigatória ausente
+- [x] Testes cobrem: todas variáveis presentes (sucesso), uma ausente (erro), formato inválido de `POLL_INTERVAL_SECONDS` (erro)
+- [x] Gate check passa: `go test ./... && go vet ./...`
 
 **Commit**: `feat(config): add environment config loader`
 **Tests**: unit
