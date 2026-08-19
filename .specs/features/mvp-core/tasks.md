@@ -768,11 +768,11 @@ T35 → T36 → T37 → T38 → T39 → T40
 - Skill: NONE
 
 **Done when**:
-- [ ] Cria status page vinculada a domínio + serviços
-- [ ] Criar uma 2ª status page pra mesma empresa não é bloqueado (sem limite técnico no MVP)
-- [ ] Criar um 2º domínio raiz não é bloqueado
-- [ ] Testes de integração cobrem os 3 casos
-- [ ] Gate check passa: `go test ./... -tags=integration`
+- [x] Cria status page vinculada a domínio + serviços
+- [x] Criar uma 2ª status page pra mesma empresa não é bloqueado (sem limite técnico no MVP)
+- [x] Criar um 2º domínio raiz não é bloqueado
+- [x] Testes de integração cobrem os 3 casos
+- [x] Gate check passa: `go test ./... -tags=integration`
 
 **Commit**: `feat(status-pages): add status page creation endpoint`
 **Tests**: integration
