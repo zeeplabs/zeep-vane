@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 
 	"go.uber.org/zap"
@@ -21,13 +22,15 @@ type adminGetter interface {
 
 // AuthHandler serves the auth-related admin routes.
 type AuthHandler struct {
-	admins adminGetter
-	logger *zap.Logger
+	admins        adminGetter
+	logger        *zap.Logger
+	sessionSecret string
 }
 
-// NewAuthHandler builds an AuthHandler backed by admins.
-func NewAuthHandler(admins adminGetter, logger *zap.Logger) *AuthHandler {
-	return &AuthHandler{admins: admins, logger: logger}
+// NewAuthHandler builds an AuthHandler backed by admins. sessionSecret signs
+// issued session tokens (see internal/auth.IssueSession).
+func NewAuthHandler(admins adminGetter, logger *zap.Logger, sessionSecret string) *AuthHandler {
+	return &AuthHandler{admins: admins, logger: logger, sessionSecret: sessionSecret}
 }
 
 type loginRequest struct {
@@ -66,9 +69,16 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	token, err := auth.IssueSession(admin.ID, h.sessionSecret)
+	if err != nil {
+		h.logger.Error("auth: failed to issue session token", zap.Error(err))
+		writeInternalError(w)
+		return
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write([]byte(`{"status":"ok"}`))
+	_, _ = w.Write([]byte(fmt.Sprintf(`{"token":%q}`, token)))
 }
 
 func writeLoginError(w http.ResponseWriter) {

@@ -20,6 +20,8 @@ import (
 	"github.com/zeeplabs/zeep-vane/internal/db"
 )
 
+const testSessionSecret = "test-session-secret-at-least-32-bytes!!"
+
 func testDatabaseURL(t *testing.T) string {
 	t.Helper()
 	dsn := os.Getenv("TEST_DATABASE_URL")
@@ -47,7 +49,7 @@ func newLoginRouter(t *testing.T) (http.Handler, *db.AdminRepository, *db.Pool) 
 	t.Cleanup(pool.Close)
 
 	repo := db.NewAdminRepository(pool)
-	handler := NewAuthHandler(repo, zap.NewNop())
+	handler := NewAuthHandler(repo, zap.NewNop(), testSessionSecret)
 
 	r := chi.NewRouter()
 	r.Post("/api/auth/login", handler.Login)
@@ -100,6 +102,16 @@ func TestLogin_CorrectCredentials_200(t *testing.T) {
 
 	if rec.Code != http.StatusOK {
 		t.Errorf("status = %d, want %d", rec.Code, http.StatusOK)
+	}
+
+	var body struct {
+		Token string `json:"token"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+	if body.Token == "" {
+		t.Error("response body has no token, want a non-empty session token")
 	}
 }
 

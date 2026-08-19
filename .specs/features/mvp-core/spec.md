@@ -188,7 +188,7 @@ Toda ambiguidade foi resolvida ou registrada aqui — nada fica silenciosamente 
 | SP-22 | P2: Login/conta | Design | Implementing |
 | SP-23 | P2: Login/conta | Design | Pending |
 | SP-24 | P2: Login/conta | Design | Pending |
-| SP-25 | P2: Login/conta | Design | Pending |
+| SP-25 | P2: Login/conta | Design | Implementing |
 | SP-26 | P3: Uptime histórico | Design | Pending |
 
 **ID format:** `SP-NN` (Status Page)

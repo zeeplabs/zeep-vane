@@ -359,10 +359,10 @@ T35 → T36 → T37 → T38 → T39 → T40
 - Skill: NONE
 
 **Done when**:
-- [ ] Token válido passa pelo middleware
-- [ ] Token ausente/inválido/expirado → 401
-- [ ] Testes de integração cobrem os 3 casos
-- [ ] Gate check passa: `go test ./... -tags=integration`
+- [x] Token válido passa pelo middleware
+- [x] Token ausente/inválido/expirado → 401
+- [x] Testes de integração cobrem os 3 casos
+- [x] Gate check passa: `go test ./... -tags=integration`
 
 **Commit**: `feat(auth): add jwt session and auth middleware`
 **Tests**: integration
