@@ -455,10 +455,10 @@ T35 → T36 → T37 → T38 → T39 → T40
 - Skill: NONE
 
 **Done when**:
-- [ ] `Decrypt(Encrypt(x)) == x` pra qualquer input
-- [ ] Chave mestra errada falha a decriptação com erro claro, nunca retorna dado corrompido silenciosamente
-- [ ] Testes unitários cobrem round-trip e chave errada
-- [ ] Gate check passa: `go test ./...`
+- [x] `Decrypt(Encrypt(x)) == x` pra qualquer input
+- [x] Chave mestra errada falha a decriptação com erro claro, nunca retorna dado corrompido silenciosamente
+- [x] Testes unitários cobrem round-trip e chave errada
+- [x] Gate check passa: `go test ./...`
 
 **Commit**: `feat(crypto): add AES-256-GCM secret encryption`
 **Tests**: unit
