@@ -720,11 +720,11 @@ T35 → T36 → T37 → T38 → T39 → T40
 - Skill: NONE
 
 **Done when**:
-- [ ] Domínio novo → 201
-- [ ] Domínio duplicado → 409
-- [ ] Rota exige autenticação
-- [ ] Testes de integração cobrem os 2 casos
-- [ ] Gate check passa: `go test ./... -tags=integration`
+- [x] Domínio novo → 201
+- [x] Domínio duplicado → 409
+- [x] Rota exige autenticação
+- [x] Testes de integração cobrem os 2 casos
+- [x] Gate check passa: `go test ./... -tags=integration`
 
 **Commit**: `feat(domains): add domain registration endpoint`
 **Tests**: integration
