@@ -674,9 +674,9 @@ T35 → T36 → T37 → T38 → T39 → T40
 - Skill: NONE
 
 **Done when**:
-- [ ] `serve` inicia HTTP + poller juntos
-- [ ] `SIGTERM` encerra os dois de forma limpa (sem goroutine leak)
-- [ ] Gate check passa: `go build ./... && go test ./... -tags=integration`
+- [x] `serve` inicia HTTP + poller juntos
+- [x] `SIGTERM` encerra os dois de forma limpa (sem goroutine leak)
+- [x] Gate check passa: `go build ./... && go test ./... -tags=integration`
 
 **Commit**: `feat(poller): periodic SLO polling with retry and failure alerting`
 **Tests**: integration

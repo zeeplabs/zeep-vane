@@ -13,6 +13,7 @@ import (
 
 	"github.com/zeeplabs/zeep-vane/internal/connectors/datadog"
 	"github.com/zeeplabs/zeep-vane/internal/db"
+	"github.com/zeeplabs/zeep-vane/internal/dbtest"
 )
 
 func testDatabaseURL(t *testing.T) string {
@@ -24,7 +25,7 @@ func testDatabaseURL(t *testing.T) string {
 	return dsn
 }
 
-func newTestPool(t *testing.T) *db.Pool {
+func newTestPool(t *testing.T) (*db.Pool, string) {
 	t.Helper()
 	dsn := testDatabaseURL(t)
 
@@ -41,7 +42,7 @@ func newTestPool(t *testing.T) *db.Pool {
 	}
 	t.Cleanup(pool.Close)
 
-	return pool
+	return pool, dsn
 }
 
 func createTestService(t *testing.T, pool *db.Pool, services *db.ServiceRepository) db.Service {
@@ -62,9 +63,11 @@ func createTestService(t *testing.T, pool *db.Pool, services *db.ServiceReposito
 
 // createTestIntegration seeds an active Datadog integration row so
 // MarkDatadogInvalid has a row to update, and cleans it up afterwards.
-func createTestIntegration(t *testing.T, pool *db.Pool, integrations *db.IntegrationRepository) {
+func createTestIntegration(t *testing.T, pool *db.Pool, dsn string, integrations *db.IntegrationRepository) {
 	t.Helper()
 	ctx := context.Background()
+
+	dbtest.LockDatadogIntegration(t, ctx, dsn)
 
 	if err := integrations.UpsertDatadog(ctx, []byte("encrypted-key"), []byte("encrypted-app-key")); err != nil {
 		t.Fatalf("UpsertDatadog() returned unexpected error: %v", err)
@@ -77,14 +80,14 @@ func createTestIntegration(t *testing.T, pool *db.Pool, integrations *db.Integra
 // the cycle updates current_status per the fetched error budget/state and
 // persists a status_snapshots row.
 func TestPoller_PollOnce_UpdatesStatusAndPersistsSnapshot(t *testing.T) {
-	pool := newTestPool(t)
+	pool, dsn := newTestPool(t)
 	ctx := context.Background()
 
 	services := db.NewServiceRepository(pool)
 	snapshots := db.NewStatusSnapshotRepository(pool)
 	integrations := db.NewIntegrationRepository(pool)
 	svc := createTestService(t, pool, services)
-	createTestIntegration(t, pool, integrations)
+	createTestIntegration(t, pool, dsn, integrations)
 
 	provider := &fakeProvider{
 		errs:   []error{nil},
@@ -132,14 +135,14 @@ func TestPoller_PollOnce_UpdatesStatusAndPersistsSnapshot(t *testing.T) {
 // service's last known valid current_status is left untouched - a
 // connection failure must never overwrite it (spec.md P1 AC4).
 func TestPoller_PollOnce_ConnectionFailure_MarksIntegrationInvalidAndKeepsLastStatus(t *testing.T) {
-	pool := newTestPool(t)
+	pool, dsn := newTestPool(t)
 	ctx := context.Background()
 
 	services := db.NewServiceRepository(pool)
 	snapshots := db.NewStatusSnapshotRepository(pool)
 	integrations := db.NewIntegrationRepository(pool)
 	svc := createTestService(t, pool, services)
-	createTestIntegration(t, pool, integrations)
+	createTestIntegration(t, pool, dsn, integrations)
 
 	// Seed a known-good status via one successful poll, so the failure that
 	// follows has a last-known-valid status to preserve.
@@ -186,7 +189,7 @@ func TestPoller_PollOnce_ConnectionFailure_MarksIntegrationInvalidAndKeepsLastSt
 // cleanly when its context is canceled, so cmd/vane serve (T25) can shut it
 // down without a goroutine leak.
 func TestPoller_Run_StopsOnContextCancel(t *testing.T) {
-	pool := newTestPool(t)
+	pool, _ := newTestPool(t)
 	services := db.NewServiceRepository(pool)
 	snapshots := db.NewStatusSnapshotRepository(pool)
 	integrations := db.NewIntegrationRepository(pool)

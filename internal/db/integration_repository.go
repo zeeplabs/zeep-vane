@@ -69,14 +69,19 @@ func (r *IntegrationRepository) MarkDatadogInvalid(ctx context.Context, lastErro
 	return nil
 }
 
-// GetDatadog returns the Datadog integration's current status and last
-// error, or ErrNotFound if no Datadog integration has been connected yet.
+// GetDatadog returns the Datadog integration's current status, last error,
+// and encrypted credentials, or ErrNotFound if no Datadog integration has
+// been connected yet.
 func (r *IntegrationRepository) GetDatadog(ctx context.Context) (*Integration, error) {
 	row := r.pool.QueryRow(ctx,
-		"SELECT id, provider, status, last_checked_at, last_error FROM integrations WHERE provider = 'datadog'")
+		`SELECT id, provider, encrypted_api_key, encrypted_app_key, status, last_checked_at, last_error
+		 FROM integrations WHERE provider = 'datadog'`)
 
 	var integration Integration
-	if err := row.Scan(&integration.ID, &integration.Provider, &integration.Status, &integration.LastCheckedAt, &integration.LastError); err != nil {
+	if err := row.Scan(
+		&integration.ID, &integration.Provider, &integration.EncryptedAPIKey, &integration.EncryptedAppKey,
+		&integration.Status, &integration.LastCheckedAt, &integration.LastError,
+	); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, ErrNotFound
 		}

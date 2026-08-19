@@ -21,6 +21,7 @@ import (
 	"github.com/zeeplabs/zeep-vane/internal/connectors/datadog"
 	"github.com/zeeplabs/zeep-vane/internal/crypto"
 	"github.com/zeeplabs/zeep-vane/internal/db"
+	"github.com/zeeplabs/zeep-vane/internal/dbtest"
 )
 
 const testMasterKey = "integrations-handler-test-master-key"
@@ -41,6 +42,7 @@ func newIntegrationsRouter(t *testing.T, validate validateDatadogCredentials, lo
 		t.Fatalf("NewPool() returned unexpected error: %v", err)
 	}
 	t.Cleanup(pool.Close)
+	dbtest.LockDatadogIntegration(t, ctx, dsn)
 	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), "DELETE FROM integrations WHERE provider = 'datadog'") })
 
 	repo := db.NewIntegrationRepository(pool)
