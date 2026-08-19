@@ -600,10 +600,10 @@ T35 → T36 → T37 → T38 → T39 → T40
 - Skill: NONE
 
 **Done when**:
-- [ ] 3 tentativas em erro transitório antes de desistir
-- [ ] Erro 401 não gera retry (falha imediata)
-- [ ] Testes unitários cobrem: sucesso na 1ª tentativa, sucesso na 3ª, esgotamento das tentativas, 401 sem retry
-- [ ] Gate check passa: `go test ./...`
+- [x] 3 tentativas em erro transitório antes de desistir
+- [x] Erro 401 não gera retry (falha imediata)
+- [x] Testes unitários cobrem: sucesso na 1ª tentativa, sucesso na 3ª, esgotamento das tentativas, 401 sem retry
+- [x] Gate check passa: `go test ./...`
 
 **Commit**: `feat(poller): add retry with backoff for SLO fetch`
 **Tests**: unit
