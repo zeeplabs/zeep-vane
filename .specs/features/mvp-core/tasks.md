@@ -407,11 +407,11 @@ T35 → T36 → T37 → T38 → T39 → T40
 - Skill: NONE
 
 **Done when**:
-- [ ] Request gera token com expiração de 1h
-- [ ] Confirm com token válido e não expirado troca a senha
-- [ ] Confirm com token expirado ou já usado → rejeitado (SP-24)
-- [ ] Testes de integração cobrem os 3 casos
-- [ ] Gate check passa: `go test ./... -tags=integration`
+- [x] Request gera token com expiração de 1h
+- [x] Confirm com token válido e não expirado troca a senha
+- [x] Confirm com token expirado ou já usado → rejeitado (SP-24)
+- [x] Testes de integração cobrem os 3 casos
+- [x] Gate check passa: `go test ./... -tags=integration`
 
 **Commit**: `feat(auth): password reset request/confirm flow`
 **Tests**: integration

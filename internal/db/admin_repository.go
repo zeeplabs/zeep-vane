@@ -73,3 +73,19 @@ func (r *AdminRepository) GetByEmail(ctx context.Context, email string) (*Admin,
 
 	return &admin, nil
 }
+
+// UpdatePasswordHash sets a new password hash for the admin with the given
+// ID, returning ErrNotFound if no such admin exists.
+func (r *AdminRepository) UpdatePasswordHash(ctx context.Context, adminID, passwordHash string) error {
+	tag, err := r.pool.Exec(ctx,
+		"UPDATE admins SET password_hash = $1 WHERE id = $2", passwordHash, adminID,
+	)
+	if err != nil {
+		return fmt.Errorf("db: failed to update admin password hash: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+
+	return nil
+}
