@@ -185,7 +185,7 @@ Toda ambiguidade foi resolvida ou registrada aqui — nada fica silenciosamente 
 | SP-19 | P1: Incidentes | Design | Pending |
 | SP-20 | P1: Incidentes | Design | Pending |
 | SP-21 | P2: Login/conta | Design | Implementing |
-| SP-22 | P2: Login/conta | Design | Pending |
+| SP-22 | P2: Login/conta | Design | Implementing |
 | SP-23 | P2: Login/conta | Design | Pending |
 | SP-24 | P2: Login/conta | Design | Pending |
 | SP-25 | P2: Login/conta | Design | Pending |

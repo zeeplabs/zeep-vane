@@ -334,11 +334,11 @@ T35 → T36 → T37 → T38 → T39 → T40
 - Skill: NONE
 
 **Done when**:
-- [ ] Credenciais corretas → 200 + sessão criada
-- [ ] Senha errada → 401 com mensagem genérica idêntica à de email inexistente (SP-22, anti user-enumeration)
-- [ ] Email inexistente → mesma mensagem/401
-- [ ] Testes de integração cobrem os 3 casos
-- [ ] Gate check passa: `go test ./... -tags=integration`
+- [x] Credenciais corretas → 200 + sessão criada
+- [x] Senha errada → 401 com mensagem genérica idêntica à de email inexistente (SP-22, anti user-enumeration)
+- [x] Email inexistente → mesma mensagem/401
+- [x] Testes de integração cobrem os 3 casos
+- [x] Gate check passa: `go test ./... -tags=integration`
 
 **Commit**: `feat(auth): add login endpoint`
 **Tests**: integration
