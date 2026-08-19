@@ -153,10 +153,10 @@ T11 → T12 → T13
 - Skill: NONE
 
 **Done when**:
-- [ ] `UpdateRole` e `RevokeSessions` persistem corretamente
-- [ ] `CountActiveOwners` usa `FOR UPDATE` e é chamado dentro de transação pelos handlers que o consomem (T9/T10)
-- [ ] Testes de integração cobrem update de role, revogação, contagem de owners, e delete
-- [ ] Gate check passa: `go test ./... -tags=integration && go vet ./...`
+- [x] `UpdateRole` e `RevokeSessions` persistem corretamente
+- [x] `CountActiveOwners` usa `FOR UPDATE` e é chamado dentro de transação pelos handlers que o consomem (T9/T10)
+- [x] Testes de integração cobrem update de role, revogação, contagem de owners, e delete
+- [x] Gate check passa: `go test ./... -tags=integration && go vet ./...`
 
 **Tests**: integration
 **Gate**: full
