@@ -793,11 +793,11 @@ T35 → T36 → T37 → T38 → T39 → T40
 - Skill: NONE
 
 **Done when**:
-- [ ] Hostname não cadastrado → `HostPolicy` rejeita (nunca chama ACME pra hostname arbitrário — risco de abuso do design)
-- [ ] Hostname cadastrado com state válido → `HostPolicy` permite
-- [ ] Storage do CertMagic aponta pra path configurável via env (persistência entre restarts)
-- [ ] Testes unitários cobrem os 2 casos de `HostPolicy` (com store fake)
-- [ ] Gate check passa: `go test ./...`
+- [x] Hostname não cadastrado → `HostPolicy` rejeita (nunca chama ACME pra hostname arbitrário — risco de abuso do design)
+- [x] Hostname cadastrado com state válido → `HostPolicy` permite
+- [x] Storage do CertMagic aponta pra path configurável via env (persistência entre restarts) — `NewManager` recebe `storagePath` como parâmetro; a leitura da env var em si fica em T31, que faz o wiring em `internal/cli/serve.go` (fora do escopo de arquivo desta task)
+- [x] Testes unitários cobrem os 2 casos de `HostPolicy` (com store fake) — mais um 3º caso adicionado (hostname registrado em estado `draft`), ancorado no texto do design (`HostPolicy` só permite `State != 'draft'`)
+- [x] Gate check passa: `go test ./...`
 
 **Commit**: `feat(tls): add certmagic manager with host policy`
 **Tests**: unit
