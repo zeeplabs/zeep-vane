@@ -263,9 +263,9 @@ T35 → T36 → T37 → T38 → T39 → T40
 - Skill: NONE
 
 **Done when**:
-- [ ] Migration aplica limpo em banco vazio
-- [ ] Constraint unique em `email` confirmada
-- [ ] Gate check passa: `go test ./... -tags=integration`
+- [x] Migration aplica limpo em banco vazio
+- [x] Constraint unique em `email` confirmada
+- [x] Gate check passa: `go test ./... -tags=integration`
 
 **Commit**: `feat(db): add admins migration`
 **Tests**: integration
