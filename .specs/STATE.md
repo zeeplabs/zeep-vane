@@ -28,4 +28,14 @@
 
 ## Handoff
 
-[none yet - Design phase recém concluída]
+**Feature**: `mvp-core` — **status: PASS ✅** (Verifier completou em 2 rodadas de fix→re-verify, dentro do limite de 3). Relatório: `.specs/features/mvp-core/validation.md`.
+
+**Completo**: T1-T40 (todas as 7 fases) implementadas via 6 batches de sub-agentes + 2 rodadas de fix (dead-code wiring do router público/handler em `serve.go`, e scoping de SP-15 pra `status_page_services`/`incident_services` — antes write-only, agora lido e testado). Branch `main`, working tree limpa. Último commit: `9efdcef` (test: disjoint-incidents SP-15 scoping).
+
+**Deferred ideas (não resolvidas, sem context.md ainda pra feature)**:
+- Cliente Datadog é construído uma vez no startup do `serve`; se admin reconectar com chave nova em runtime, poller continua usando client antigo até restart (surgiu no batch de Phase 4).
+- `internal/poller` nunca é chamado por request pública — verificado estruturalmente (nenhum import cruzado), não por teste de request-path, já que handler público só existiu a partir da Phase 6.
+- 3 spec-precision gaps não-bloqueantes flagados pelo Verifier final: shape de log da SP-05 não travado, SP-08 ("nunca chama Datadog a partir de request pública") sem teste ativo dedicado, e label de estado `tls_failed` (spec usa texto "pendente de publicação").
+- Tabela de Requirement Traceability em `spec.md` não foi atualizada linha a linha durante os fixes — vale uma passada separada se o time quiser ela 100% current.
+
+**Next steps**: `admin-dashboard` (13 tasks, 4 fases) ainda não iniciado — depende de tabela `admins` (já existe, T8/T9 do mvp-core) e das rotas já registradas (T18/T20/T27/T29/T37/T38/T39, todas prontas). Pronto pra rodar Execute quando o usuário autorizar. Depois: frontend specs (admin React UI) — combinado explicitamente pra ficar pra depois do backend, ainda não começado.
