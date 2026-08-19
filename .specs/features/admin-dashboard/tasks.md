@@ -85,9 +85,9 @@ T11 → T12 → T13
 - Skill: NONE
 
 **Done when**:
-- [ ] Migration roda limpa em banco vazio e em banco com admin pré-existente (backfill correto)
-- [ ] Constraint `CHECK` rejeita valor de role fora dos 3 permitidos
-- [ ] Gate check passa: `go build ./... && gofmt -l . && go test ./... -tags=integration && go vet ./...`
+- [x] Migration roda limpa em banco vazio e em banco com admin pré-existente (backfill correto)
+- [x] Constraint `CHECK` rejeita valor de role fora dos 3 permitidos
+- [x] Gate check passa: `go build ./... && gofmt -l . && go test ./... -tags=integration && go vet ./...`
 
 **Tests**: none
 **Gate**: build
