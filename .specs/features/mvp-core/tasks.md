@@ -193,10 +193,10 @@ T35 → T36 → T37 → T38 → T39 → T40
 - Skill: NONE
 
 **Done when**:
-- [ ] `NewPool(ctx, dsn)` retorna erro claro se DSN inválido
-- [ ] `Ping(ctx)` detecta banco fora do ar
-- [ ] Teste de integração conecta a `TEST_DATABASE_URL` e confirma ping OK
-- [ ] Gate check passa: `go test ./... -tags=integration`
+- [x] `NewPool(ctx, dsn)` retorna erro claro se DSN inválido
+- [x] `Ping(ctx)` detecta banco fora do ar
+- [x] Teste de integração conecta a `TEST_DATABASE_URL` e confirma ping OK
+- [x] Gate check passa: `go test ./... -tags=integration`
 
 **Commit**: `feat(db): add postgres connection pool with health check`
 **Tests**: integration
