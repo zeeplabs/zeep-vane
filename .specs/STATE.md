@@ -26,6 +26,22 @@
 - **Date**: 2026-08-06
 - **Status**: active
 
+### AD-004
+- **Decision**: Token de sessão do admin no frontend vive em cookie `httpOnly`/`Secure`/`SameSite=Strict` setado pelo backend no login — nunca em `localStorage`/`sessionStorage`, nunca lido ou decodificado por JavaScript no client.
+- **Reason**: Decisão explícita do usuário durante o Design de `admin-frontend`. Cookie `httpOnly` elimina por completo a superfície de XSS-rouba-token (JS não tem acesso de leitura), diferente de qualquer storage acessível via script. `SameSite=Strict` mitiga CSRF numa API JSON same-origin. O papel do admin continua vindo sempre de `GET /api/auth/me` (AF-34) — o JWT não carrega claim de role (só `sub`/`iat`).
+- **Trade-off**: Exige mudança aditiva no backend (login passa a também setar cookie além do corpo `{token}` já existente; `RequireAuth` passa a aceitar cookie além do header `Authorization`; novo endpoint `POST /api/auth/logout` para limpar o cookie). Mudança é 100% aditiva — nenhum teste/consumidor existente do login ou do middleware quebra. `Secure` exige HTTPS mesmo em desenvolvimento local.
+- **Scope**: Qualquer feature de frontend deste projeto que lide com o token de sessão do admin.
+- **Date**: 2026-08-19
+- **Status**: active (revisada no mesmo dia, antes de Tasks/Execute — versão anterior desta entrada, que propunha `sessionStorage`, nunca chegou a ser implementada)
+
+### AD-005
+- **Decision**: O produto se chama **Vane** — nome de marca oficial exibido em toda copy de frontend (sidebar, login, título de página), não só o "working name" do handoff de design recebido em `dashboard-handoff/`.
+- **Reason**: Nenhuma feature anterior (`mvp-core`, `admin-dashboard`) travou nome de produto — só o handoff de design (`dashboard-handoff/README.md`) o usa, com a ressalva explícita "rename if the product has an official one". Usuário confirmou que deve ser adotado como definitivo.
+- **Trade-off**: Trocar depois exigiria revisitar toda copy de marca já implementada (sidebar, login, possivelmente nome do binário/repo) — decisão feita cedo, antes de qualquer tela existir, pra evitar esse retrabalho.
+- **Scope**: Qualquer copy de marca em qualquer frontend deste projeto (admin-frontend e futuras features de frontend, incluindo a status page pública).
+- **Date**: 2026-08-20
+- **Status**: active
+
 ## Handoff
 
 **Feature**: `admin-dashboard` — **status: PASS ✅** (Verifier completou em 1 rodada de fix→re-verify, dentro do limite de 3). Relatório: `.specs/features/admin-dashboard/validation.md`.
