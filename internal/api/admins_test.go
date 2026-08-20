@@ -47,6 +47,7 @@ func newAdminsRouter(t *testing.T) (http.Handler, *db.Pool, *db.AdminRepository,
 		protected.Use(RequireAuth(middlewareTestSecret, admins))
 		protected.With(RequireRole(db.RoleOwner)).Post("/api/admins", handler.Invite)
 		protected.With(RequireRole(db.RoleOwner)).Patch("/api/admins/{id}/role", handler.UpdateRole)
+		protected.With(RequireRole(db.RoleOwner)).Delete("/api/admins/{id}", handler.Delete)
 	})
 	r.Post("/api/admins/invite/{token}/accept", handler.AcceptInvite)
 
@@ -571,6 +572,100 @@ func TestUpdateAdminRole_NotFound_404(t *testing.T) {
 	token := issueTestSessionToken(t, admins)
 
 	rec := patchAdminRole(t, r, token, "00000000-0000-0000-0000-000000000000", db.RoleViewer)
+
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("status = %d, want %d, body = %s", rec.Code, http.StatusNotFound, rec.Body.String())
+	}
+}
+
+func deleteAdmin(t *testing.T, r http.Handler, token, targetID string) *httptest.ResponseRecorder {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodDelete, "/api/admins/"+targetID, nil)
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+	return rec
+}
+
+func TestDeleteAdmin_ValidRemoval_200_RevokesSessionsDeletesAndAudits(t *testing.T) {
+	r, pool, admins, _ := newAdminsRouter(t)
+	ctx := context.Background()
+
+	actor := &db.Admin{Email: uniqueTestEmail(t), PasswordHash: "hash"}
+	if err := admins.Create(ctx, actor); err != nil {
+		t.Fatalf("admins.Create() actor returned unexpected error: %v", err)
+	}
+	t.Cleanup(func() { _ = admins.Delete(context.Background(), actor.ID) })
+	actorToken, err := auth.IssueSession(actor.ID, middlewareTestSecret)
+	if err != nil {
+		t.Fatalf("auth.IssueSession() actor returned unexpected error: %v", err)
+	}
+
+	// A second owner besides actor, so this removal can never trip the
+	// ADM-06 lockout guard regardless of ambient owner rows.
+	target := &db.Admin{Email: uniqueTestEmail(t), PasswordHash: "hash"}
+	if err := admins.Create(ctx, target); err != nil {
+		t.Fatalf("admins.Create() target returned unexpected error: %v", err)
+	}
+
+	rec := deleteAdmin(t, r, actorToken, target.ID)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	if _, err := admins.GetByID(ctx, target.ID); !errors.Is(err, db.ErrNotFound) {
+		t.Errorf("GetByID() after Delete = %v, want ErrNotFound", err)
+	}
+
+	var gotActorID, gotAction string
+	row := pool.QueryRow(ctx,
+		"SELECT actor_id, action FROM admin_audit_log WHERE target_id = $1 AND action = 'removed'", target.ID)
+	if err := row.Scan(&gotActorID, &gotAction); err != nil {
+		t.Fatalf("querying admin_audit_log returned unexpected error: %v", err)
+	}
+	if gotActorID != actor.ID {
+		t.Errorf("admin_audit_log actor_id = %q, want %q", gotActorID, actor.ID)
+	}
+}
+
+func TestDeleteAdmin_SelfRemovalAsLastOwner_409(t *testing.T) {
+	r, pool, admins, _ := newAdminsRouter(t)
+	ctx := context.Background()
+	quarantineAmbientOwners(t, admins, pool)
+
+	owner := &db.Admin{Email: uniqueTestEmail(t), PasswordHash: "hash"}
+	if err := admins.Create(ctx, owner); err != nil {
+		t.Fatalf("admins.Create() returned unexpected error: %v", err)
+	}
+	t.Cleanup(func() { _ = admins.Delete(context.Background(), owner.ID) })
+	token, err := auth.IssueSession(owner.ID, middlewareTestSecret)
+	if err != nil {
+		t.Fatalf("auth.IssueSession() returned unexpected error: %v", err)
+	}
+
+	rec := deleteAdmin(t, r, token, owner.ID)
+
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusConflict, rec.Body.String())
+	}
+
+	got, err := admins.GetByID(ctx, owner.ID)
+	if err != nil {
+		t.Fatalf("GetByID() after rejected self-removal returned unexpected error: %v (admin should still exist)", err)
+	}
+	if got.SessionsRevokedAt != nil {
+		t.Errorf("SessionsRevokedAt after rejected self-removal = %v, want nil (no state change)", got.SessionsRevokedAt)
+	}
+}
+
+func TestDeleteAdmin_NotFound_404(t *testing.T) {
+	r, _, admins, _ := newAdminsRouter(t)
+	token := issueTestSessionToken(t, admins)
+
+	rec := deleteAdmin(t, r, token, "00000000-0000-0000-0000-000000000000")
 
 	if rec.Code != http.StatusNotFound {
 		t.Errorf("status = %d, want %d, body = %s", rec.Code, http.StatusNotFound, rec.Body.String())

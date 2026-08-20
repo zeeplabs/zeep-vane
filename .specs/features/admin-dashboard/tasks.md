@@ -300,11 +300,11 @@ T11 → T12 → T13
 - Skill: `security-best-practices`, `best-practices`
 
 **Done when**:
-- [ ] Remoção válida revoga sessões e remove a conta
-- [ ] Tentativa que zeraria owners ativos é rejeitada com 409
-- [ ] `admin_audit_log` recebe entrada `removed`
-- [ ] Testes de integração cobrem os 2 casos, incluindo self-removal como último owner
-- [ ] Gate check passa: `go test ./... -tags=integration && go vet ./...`
+- [x] Remoção válida revoga sessões e remove a conta
+- [x] Tentativa que zeraria owners ativos é rejeitada com 409
+- [x] `admin_audit_log` recebe entrada `removed`
+- [x] Testes de integração cobrem os 2 casos, incluindo self-removal como último owner
+- [x] Gate check passa: `go test ./... -tags=integration && go vet ./...`
 
 **Tests**: integration
 **Gate**: full

@@ -332,6 +332,79 @@ func (h *AdminsHandler) UpdateRole(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(adminResponse{ID: targetID, Role: req.Role})
 }
 
+// Delete handles DELETE /api/admins/{id} (role: owner). Same atomic lockout
+// protection as UpdateRole: the count and the removal run in one
+// transaction, rejecting with 409 if removing this admin would leave zero
+// active owners (ADM-06). A successful removal revokes the admin's
+// sessions and deletes the account (ADM-07), and records a "removed" audit
+// entry (ADM-08).
+func (h *AdminsHandler) Delete(w http.ResponseWriter, r *http.Request) {
+	targetID := chi.URLParam(r, "id")
+	actor, ok := AdminFromContext(r.Context())
+	if !ok {
+		writeForbidden(w)
+		return
+	}
+
+	ctx := r.Context()
+	tx, err := h.pool.Begin(ctx)
+	if err != nil {
+		h.logger.Error("admins: failed to begin removal transaction", zap.Error(err))
+		writeInternalError(w)
+		return
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	var currentRole string
+	row := tx.QueryRow(ctx, "SELECT role FROM admins WHERE id = $1 FOR UPDATE", targetID)
+	if err := row.Scan(&currentRole); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			writeAdminError(w, http.StatusNotFound, adminNotFoundBody)
+			return
+		}
+		h.logger.Error("admins: failed to load target admin", zap.Error(err))
+		writeInternalError(w)
+		return
+	}
+
+	ownerCount, err := h.admins.CountActiveOwners(ctx, tx)
+	if err != nil {
+		h.logger.Error("admins: failed to count active owners", zap.Error(err))
+		writeInternalError(w)
+		return
+	}
+
+	if wouldLeaveZeroOwners(currentRole, false, ownerCount) {
+		writeAdminError(w, http.StatusConflict, adminLockoutBody)
+		return
+	}
+
+	if _, err := tx.Exec(ctx, "UPDATE admins SET sessions_revoked_at = now() WHERE id = $1", targetID); err != nil {
+		h.logger.Error("admins: failed to revoke admin sessions", zap.Error(err))
+		writeInternalError(w)
+		return
+	}
+	if _, err := tx.Exec(ctx, "DELETE FROM admins WHERE id = $1", targetID); err != nil {
+		h.logger.Error("admins: failed to delete admin", zap.Error(err))
+		writeInternalError(w)
+		return
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		h.logger.Error("admins: failed to commit admin removal", zap.Error(err))
+		writeInternalError(w)
+		return
+	}
+
+	if err := h.audit.Record(ctx, actor.ID, targetID, "removed"); err != nil {
+		h.logger.Error("admins: failed to record removal audit entry", zap.Error(err))
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(map[string]string{"status": "removed"})
+}
+
 func writeAdminError(w http.ResponseWriter, status int, body string) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
