@@ -156,3 +156,258 @@ func TestAdminRouter_Viewer_ReadRoute_200(t *testing.T) {
 		t.Errorf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
 	}
 }
+
+// routeCase describes one route this suite drives through the real router
+// built by buildAdminRouter, so a wiring regression (e.g. a missing
+// RequireRole) is caught regardless of which route it hits.
+type routeCase struct {
+	name   string
+	method string
+	path   string
+	body   func() []byte
+}
+
+const routesTestNonexistentID = "00000000-0000-0000-0000-000000000000"
+
+// writeRouteCases lists every mvp-core write route mounted in routes.go
+// (ADM-10, ADM-11). Before this, the suite drove only POST /api/domains as
+// a stand-in for "any write route" - removing RequireRole from
+// /api/status-pages or /api/incidents broke nothing (validation.md M5, M6).
+// Each body func is called fresh per request so the /api/domains case gets
+// a unique hostname (its only unique-constrained field) every call.
+func writeRouteCases() []routeCase {
+	return []routeCase{
+		{
+			name:   "POST /api/domains",
+			method: http.MethodPost,
+			path:   "/api/domains",
+			body: func() []byte {
+				b, _ := json.Marshal(map[string]string{
+					"hostname": fmt.Sprintf("cli-routes-test-%d.example.com", time.Now().UnixNano()),
+				})
+				return b
+			},
+		},
+		{
+			name:   "POST /api/services",
+			method: http.MethodPost,
+			path:   "/api/services",
+			body: func() []byte {
+				b, _ := json.Marshal(map[string]string{
+					"name":   fmt.Sprintf("cli-routes-test-service-%d", time.Now().UnixNano()),
+					"slo_id": fmt.Sprintf("cli-routes-test-slo-%d", time.Now().UnixNano()),
+				})
+				return b
+			},
+		},
+		{
+			name:   "POST /api/integrations/datadog",
+			method: http.MethodPost,
+			path:   "/api/integrations/datadog",
+			body: func() []byte {
+				b, _ := json.Marshal(map[string]string{
+					"api_key": "cli-routes-test-api-key",
+					"app_key": "cli-routes-test-app-key",
+				})
+				return b
+			},
+		},
+		{
+			name:   "POST /api/incidents",
+			method: http.MethodPost,
+			path:   "/api/incidents",
+			body: func() []byte {
+				b, _ := json.Marshal(map[string]interface{}{
+					"title":       "cli-routes-test-incident",
+					"service_ids": []string{routesTestNonexistentID},
+				})
+				return b
+			},
+		},
+		{
+			name:   "POST /api/incidents/{id}/updates",
+			method: http.MethodPost,
+			path:   "/api/incidents/" + routesTestNonexistentID + "/updates",
+			body: func() []byte {
+				b, _ := json.Marshal(map[string]string{"body": "cli-routes-test-update"})
+				return b
+			},
+		},
+		{
+			name:   "PATCH /api/incidents/{id}",
+			method: http.MethodPatch,
+			path:   "/api/incidents/" + routesTestNonexistentID,
+			body: func() []byte {
+				b, _ := json.Marshal(map[string]string{"status": "investigating"})
+				return b
+			},
+		},
+		{
+			name:   "POST /api/status-pages",
+			method: http.MethodPost,
+			path:   "/api/status-pages",
+			body: func() []byte {
+				b, _ := json.Marshal(map[string]string{
+					"name":      "cli-routes-test-page",
+					"subdomain": fmt.Sprintf("cli-routes-test-sub-%d", time.Now().UnixNano()),
+					"domain_id": routesTestNonexistentID,
+				})
+				return b
+			},
+		},
+	}
+}
+
+// adminManagementRouteCases lists every admin-management route mounted in
+// routes.go, restricted to owner (ADM-09). Before this, only
+// internal/api/admins_test.go exercised these routes, through a router it
+// assembles itself rather than buildAdminRouter, so removing RequireRole
+// from routes.go's real wiring (validation.md M8) broke nothing.
+func adminManagementRouteCases() []routeCase {
+	return []routeCase{
+		{
+			name:   "POST /api/admins",
+			method: http.MethodPost,
+			path:   "/api/admins",
+			body: func() []byte {
+				b, _ := json.Marshal(map[string]string{
+					"email": fmt.Sprintf("cli-routes-test-admin-%d@example.com", time.Now().UnixNano()),
+					"role":  db.RoleViewer,
+				})
+				return b
+			},
+		},
+		{
+			name:   "GET /api/admins",
+			method: http.MethodGet,
+			path:   "/api/admins",
+			body:   func() []byte { return nil },
+		},
+		{
+			name:   "PATCH /api/admins/{id}/role",
+			method: http.MethodPatch,
+			path:   "/api/admins/" + routesTestNonexistentID + "/role",
+			body: func() []byte {
+				b, _ := json.Marshal(map[string]string{"role": db.RoleViewer})
+				return b
+			},
+		},
+		{
+			name:   "DELETE /api/admins/{id}",
+			method: http.MethodDelete,
+			path:   "/api/admins/" + routesTestNonexistentID,
+			body:   func() []byte { return nil },
+		},
+	}
+}
+
+func doRouteRequest(t *testing.T, r http.Handler, token string, rt routeCase) *httptest.ResponseRecorder {
+	t.Helper()
+	req := httptest.NewRequest(rt.method, rt.path, bytes.NewReader(rt.body()))
+	req.Header.Set("Content-Type", "application/json")
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+	return rec
+}
+
+// TestAdminRouter_Viewer_AllWriteRoutes_403 is Fix 1 (ADM-10, ADM-11): every
+// mvp-core write route mounted by buildAdminRouter must reject viewer with
+// 403, not just /api/domains.
+func TestAdminRouter_Viewer_AllWriteRoutes_403(t *testing.T) {
+	r, _, admins := newAdminRouterForTest(t)
+	token := issueRoutesTestToken(t, admins, db.RoleViewer)
+
+	for _, rt := range writeRouteCases() {
+		t.Run(rt.name, func(t *testing.T) {
+			rec := doRouteRequest(t, r, token, rt)
+			if rec.Code != http.StatusForbidden {
+				t.Errorf("status = %d, want %d, body = %s", rec.Code, http.StatusForbidden, rec.Body.String())
+			}
+		})
+	}
+}
+
+// TestAdminRouter_OwnerAndOperator_AllWriteRoutes_PassAuthorization is Fix 1
+// (ADM-10): owner and operator must clear RequireRole on every mvp-core
+// write route - i.e. the response must never be 401/403. It does not assert
+// full handler success: several cases reference IDs (incident, domain) that
+// don't exist in this test, so a 404/422/500 from business logic downstream
+// of authorization is an expected, acceptable outcome here.
+func TestAdminRouter_OwnerAndOperator_AllWriteRoutes_PassAuthorization(t *testing.T) {
+	r, _, admins := newAdminRouterForTest(t)
+
+	for _, role := range []string{db.RoleOwner, db.RoleOperator} {
+		role := role
+		t.Run(role, func(t *testing.T) {
+			token := issueRoutesTestToken(t, admins, role)
+			for _, rt := range writeRouteCases() {
+				t.Run(rt.name, func(t *testing.T) {
+					rec := doRouteRequest(t, r, token, rt)
+					if rec.Code == http.StatusUnauthorized || rec.Code == http.StatusForbidden {
+						t.Errorf("status = %d, want not 401/403 for role %q, body = %s", rec.Code, role, rec.Body.String())
+					}
+				})
+			}
+		})
+	}
+}
+
+// TestAdminRouter_OperatorAndViewer_AdminManagementRoutes_403 is Fix 2
+// (ADM-09): admin-management routes must reject operator and viewer with
+// 403 through the real router, not just through admins_test.go's
+// self-assembled router.
+func TestAdminRouter_OperatorAndViewer_AdminManagementRoutes_403(t *testing.T) {
+	r, _, admins := newAdminRouterForTest(t)
+
+	for _, role := range []string{db.RoleOperator, db.RoleViewer} {
+		role := role
+		t.Run(role, func(t *testing.T) {
+			token := issueRoutesTestToken(t, admins, role)
+			for _, rt := range adminManagementRouteCases() {
+				t.Run(rt.name, func(t *testing.T) {
+					rec := doRouteRequest(t, r, token, rt)
+					if rec.Code != http.StatusForbidden {
+						t.Errorf("status = %d, want %d, body = %s", rec.Code, http.StatusForbidden, rec.Body.String())
+					}
+				})
+			}
+		})
+	}
+}
+
+// TestAdminRouter_Owner_AdminManagementRoutes_PassAuthorization is Fix 2
+// (ADM-09): owner must clear RequireRole on every admin-management route
+// through the real router.
+func TestAdminRouter_Owner_AdminManagementRoutes_PassAuthorization(t *testing.T) {
+	r, _, admins := newAdminRouterForTest(t)
+	token := issueRoutesTestToken(t, admins, db.RoleOwner)
+
+	for _, rt := range adminManagementRouteCases() {
+		t.Run(rt.name, func(t *testing.T) {
+			rec := doRouteRequest(t, r, token, rt)
+			if rec.Code == http.StatusUnauthorized || rec.Code == http.StatusForbidden {
+				t.Errorf("status = %d, want not 401/403 for owner, body = %s", rec.Code, rec.Body.String())
+			}
+		})
+	}
+}
+
+// TestAdminRouter_Viewer_PollerStatus_200 is Fix 5 (ADM-13): viewer must be
+// able to read poller status through the real router (anyRole, not
+// writeRoles - validation.md M12).
+func TestAdminRouter_Viewer_PollerStatus_200(t *testing.T) {
+	r, _, admins := newAdminRouterForTest(t)
+	token := issueRoutesTestToken(t, admins, db.RoleViewer)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/poller/status", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Errorf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+}
