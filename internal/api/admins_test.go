@@ -632,6 +632,62 @@ func TestDeleteAdmin_ValidRemoval_200_RevokesSessionsDeletesAndAudits(t *testing
 	}
 }
 
+// TestDeleteAdmin_ValidRemoval_OldJWTRejected_401 is Fix 4 (ADM-07 +
+// spec.md:97 edge case). TestDeleteAdmin_ValidRemoval_200... above only
+// asserts the admin row is gone (GetByID -> ErrNotFound); it never proves a
+// JWT issued to the removed admin before removal stops working. This drives
+// that token through RequireAuth (the same middleware routes.go wires in
+// front of every protected route) after the removal and confirms it is
+// rejected with 401, not just that the row no longer exists.
+func TestDeleteAdmin_ValidRemoval_OldJWTRejected_401(t *testing.T) {
+	r, _, admins, _ := newAdminsRouter(t)
+	ctx := context.Background()
+
+	actor := &db.Admin{Email: uniqueTestEmail(t), PasswordHash: "hash"}
+	if err := admins.Create(ctx, actor); err != nil {
+		t.Fatalf("admins.Create() actor returned unexpected error: %v", err)
+	}
+	t.Cleanup(func() { _ = admins.Delete(context.Background(), actor.ID) })
+	actorToken, err := auth.IssueSession(actor.ID, middlewareTestSecret)
+	if err != nil {
+		t.Fatalf("auth.IssueSession() actor returned unexpected error: %v", err)
+	}
+
+	// A second owner besides actor, so this removal can never trip the
+	// ADM-06 lockout guard regardless of ambient owner rows.
+	target := &db.Admin{Email: uniqueTestEmail(t), PasswordHash: "hash"}
+	if err := admins.Create(ctx, target); err != nil {
+		t.Fatalf("admins.Create() target returned unexpected error: %v", err)
+	}
+	targetToken, err := auth.IssueSession(target.ID, middlewareTestSecret)
+	if err != nil {
+		t.Fatalf("auth.IssueSession() target returned unexpected error: %v", err)
+	}
+
+	rec := deleteAdmin(t, r, actorToken, target.ID)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	// target.ID no longer exists in admins - RequireAuth's admins.GetByID
+	// lookup must treat "not found" as unauthenticated (401), not crash or
+	// pass the request through.
+	var gotAdmin *db.Admin
+	handler := newProtectedHandler(admins, &gotAdmin)
+
+	req := httptest.NewRequest(http.MethodGet, "/protected", nil)
+	req.Header.Set("Authorization", "Bearer "+targetToken)
+	protectedRec := httptest.NewRecorder()
+	handler.ServeHTTP(protectedRec, req)
+
+	if protectedRec.Code != http.StatusUnauthorized {
+		t.Errorf("status = %d, want %d (JWT issued before removal must be rejected)", protectedRec.Code, http.StatusUnauthorized)
+	}
+	if gotAdmin != nil {
+		t.Errorf("Admin stored in context = %+v, want nil (removed admin must not reach the handler)", gotAdmin)
+	}
+}
+
 func TestDeleteAdmin_SelfRemovalAsLastOwner_409(t *testing.T) {
 	r, pool, admins, _ := newAdminsRouter(t)
 	ctx := context.Background()
