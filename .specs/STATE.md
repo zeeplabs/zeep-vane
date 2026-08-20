@@ -28,14 +28,19 @@
 
 ## Handoff
 
-**Feature**: `mvp-core` — **status: PASS ✅** (Verifier completou em 2 rodadas de fix→re-verify, dentro do limite de 3). Relatório: `.specs/features/mvp-core/validation.md`.
+**Feature**: `admin-dashboard` — **status: PASS ✅** (Verifier completou em 1 rodada de fix→re-verify, dentro do limite de 3). Relatório: `.specs/features/admin-dashboard/validation.md`.
 
-**Completo**: T1-T40 (todas as 7 fases) implementadas via 6 batches de sub-agentes + 2 rodadas de fix (dead-code wiring do router público/handler em `serve.go`, e scoping de SP-15 pra `status_page_services`/`incident_services` — antes write-only, agora lido e testado). Branch `main`, working tree limpa. Último commit: `9efdcef` (test: disjoint-incidents SP-15 scoping).
+**Completo**: T1-T13 (todas as 4 fases) implementadas via 2 batches de sub-agentes (Batch1 T1-T6, Batch2 T7-T13) + 1 rodada de fix (5 de 6 gaps do Verifier — testes de wiring real do router de produção que não cobriam todas as rotas de escrita/admin, TTL de convite não verificado contra valor persistido, revogação de sessão em delete sem teste, poller status sem teste de acesso viewer no router real). Branch `main`, working tree limpa (exceto `.specs/features/admin-dashboard/validation.md`, `.specs/LESSONS.md`, `.specs/lessons.json` ainda não commitados). Último commit: `d719366` (test: assert invite TTL matches persisted expires_at).
 
-**Deferred ideas (não resolvidas, sem context.md ainda pra feature)**:
-- Cliente Datadog é construído uma vez no startup do `serve`; se admin reconectar com chave nova em runtime, poller continua usando client antigo até restart (surgiu no batch de Phase 4).
-- `internal/poller` nunca é chamado por request pública — verificado estruturalmente (nenhum import cruzado), não por teste de request-path, já que handler público só existiu a partir da Phase 6.
-- 3 spec-precision gaps não-bloqueantes flagados pelo Verifier final: shape de log da SP-05 não travado, SP-08 ("nunca chama Datadog a partir de request pública") sem teste ativo dedicado, e label de estado `tls_failed` (spec usa texto "pendente de publicação").
-- Tabela de Requirement Traceability em `spec.md` não foi atualizada linha a linha durante os fixes — vale uma passada separada se o time quiser ela 100% current.
+**Achado real relevante**: o batch de execução descobriu que o roteamento de produção do `mvp-core` inteiro (domains/services/integrations/incidents/status-pages) nunca tinha sido montado no binário real (`serve.go` só servia `/healthz`) — `internal/cli/routes.go` (`buildAdminRouter`) foi criado nesta feature pra resolver isso e aplicar `RequireRole` a cada rota. Sem essa correção, todo o RBAC desta feature seria código morto, igual o gap achado no `mvp-core`.
 
-**Next steps**: `admin-dashboard` (13 tasks, 4 fases) ainda não iniciado — depende de tabela `admins` (já existe, T8/T9 do mvp-core) e das rotas já registradas (T18/T20/T27/T29/T37/T38/T39, todas prontas). Pronto pra rodar Execute quando o usuário autorizar. Depois: frontend specs (admin React UI) — combinado explicitamente pra ficar pra depois do backend, ainda não começado.
+**Desvios técnicos documentados como SPEC_DEVIATION no código** (não bloqueantes, backlog):
+- Não existe linha de `Admin` "pending" no convite — estado vive só em `admin_invites` até o accept.
+- `target_id` do audit log `invited` aponta pro invite, não pro admin (que ainda não existe nesse momento).
+- Envio de email loga o token ao invés de enviar de verdade — convenção herdada do mecanismo de reset de senha do mvp-core (`password_reset_handler.go`), não uma decisão nova desta feature.
+
+**Deferred/backlog (não bloqueante)**:
+- Flake intermitente `dbtest: pg_advisory_lock failed: timeout` em `integrations_handler_test.go` sob `-p` default (não reproduz com `-p 1`) — infra de teste, não da feature. Recomendação do Verifier: revisar `internal/dbtest` ou fixar `-p 1` no Makefile/CI.
+- 4 deferred ideas do `mvp-core` (ver histórico) seguem não resolvidas.
+
+**Next steps**: backend do `zeep-vane` completo (mvp-core + admin-dashboard, ambos PASS). Próximo: specs de frontend (admin React UI) — combinado explicitamente pra ficar pra depois do backend, ainda não começado.

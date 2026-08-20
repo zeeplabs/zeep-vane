@@ -1,0 +1,99 @@
+{
+  "schema": 1,
+  "promote_threshold": 2,
+  "window_days": 45,
+  "quarantine_threshold": 2,
+  "next_id": 6,
+  "lessons": [
+    {
+      "id": "L-001",
+      "key": "surviving_mutant::test every route in the production route mounting file not one representative route per category",
+      "text": "Test every route in the production route-mounting file, not one representative route per category",
+      "signal": "surviving_mutant",
+      "scope": "routes",
+      "status": "candidate",
+      "features": [
+        "admin-dashboard"
+      ],
+      "recurrence": 1,
+      "harmful": 0,
+      "evidence": [
+        "validation.md M5/M6 - internal/cli/routes.go:69,72 (routes)"
+      ],
+      "created": "2026-08-20T00:25:53Z",
+      "last_seen": "2026-08-20T00:25:53Z"
+    },
+    {
+      "id": "L-002",
+      "key": "surviving_mutant::exercise authorization through the production router assembly not a router rebuilt inside the test",
+      "text": "Exercise authorization through the production router assembly, not a router rebuilt inside the test",
+      "signal": "surviving_mutant",
+      "scope": "routes",
+      "status": "candidate",
+      "features": [
+        "admin-dashboard"
+      ],
+      "recurrence": 1,
+      "harmful": 0,
+      "evidence": [
+        "validation.md M8 - internal/cli/routes.go:60 (routes)"
+      ],
+      "created": "2026-08-20T00:25:53Z",
+      "last_seen": "2026-08-20T00:25:53Z"
+    },
+    {
+      "id": "L-003",
+      "key": "ac_gap::when a record is deleted assert the resulting access denial on a live request instead of only asserting the row is gone",
+      "text": "When a record is deleted, assert the resulting access denial on a live request instead of only asserting the row is gone",
+      "signal": "ac_gap",
+      "scope": "auth",
+      "status": "candidate",
+      "features": [
+        "admin-dashboard"
+      ],
+      "recurrence": 1,
+      "harmful": 0,
+      "evidence": [
+        "ADM-07 + spec.md:97 - internal/api/admins_test.go:620 (auth)"
+      ],
+      "created": "2026-08-20T00:25:53Z",
+      "last_seen": "2026-08-20T00:25:53Z"
+    },
+    {
+      "id": "L-004",
+      "key": "spec_precision_gap::assert the exact token lifetime the spec states reading it from the row the handler wrote",
+      "text": "Assert the exact token lifetime the spec states, reading it from the row the handler wrote",
+      "signal": "spec_precision_gap",
+      "scope": "auth",
+      "status": "candidate",
+      "features": [
+        "admin-dashboard"
+      ],
+      "recurrence": 1,
+      "harmful": 0,
+      "evidence": [
+        "ADM-01 - internal/api/admins.go:22 (auth)"
+      ],
+      "created": "2026-08-20T00:25:53Z",
+      "last_seen": "2026-08-20T00:25:53Z"
+    },
+    {
+      "id": "L-005",
+      "key": "spec_deviation::reconcile the spec text with the committed schema before implementing instead of documenting a deviation in the handler",
+      "text": "Reconcile the spec text with the committed schema before implementing, instead of documenting a deviation in the handler",
+      "signal": "spec_deviation",
+      "scope": "spec",
+      "status": "candidate",
+      "features": [
+        "admin-dashboard"
+      ],
+      "recurrence": 1,
+      "harmful": 0,
+      "evidence": [
+        "SPEC_DEVIATION internal/api/admins.go:84-93 (spec)"
+      ],
+      "created": "2026-08-20T00:25:53Z",
+      "last_seen": "2026-08-20T00:25:53Z"
+    }
+  ]
+}
