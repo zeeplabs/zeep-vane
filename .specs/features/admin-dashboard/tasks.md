@@ -326,9 +326,9 @@ T11 → T12 → T13
 - Skill: NONE
 
 **Done when**:
-- [ ] `owner` recebe lista completa; `operator`/`viewer` recebem 403
-- [ ] Testes de integração cobrem os 2 casos
-- [ ] Gate check passa: `go test ./... -tags=integration && go vet ./...`
+- [x] `owner` recebe lista completa; `operator`/`viewer` recebem 403
+- [x] Testes de integração cobrem os 2 casos
+- [x] Gate check passa: `go test ./... -tags=integration && go vet ./...`
 
 **Tests**: integration
 **Gate**: full

@@ -48,6 +48,7 @@ func newAdminsRouter(t *testing.T) (http.Handler, *db.Pool, *db.AdminRepository,
 		protected.With(RequireRole(db.RoleOwner)).Post("/api/admins", handler.Invite)
 		protected.With(RequireRole(db.RoleOwner)).Patch("/api/admins/{id}/role", handler.UpdateRole)
 		protected.With(RequireRole(db.RoleOwner)).Delete("/api/admins/{id}", handler.Delete)
+		protected.With(RequireRole(db.RoleOwner)).Get("/api/admins", handler.List)
 	})
 	r.Post("/api/admins/invite/{token}/accept", handler.AcceptInvite)
 
@@ -669,5 +670,79 @@ func TestDeleteAdmin_NotFound_404(t *testing.T) {
 
 	if rec.Code != http.StatusNotFound {
 		t.Errorf("status = %d, want %d, body = %s", rec.Code, http.StatusNotFound, rec.Body.String())
+	}
+}
+
+func getAdminsList(t *testing.T, r http.Handler, token string) *httptest.ResponseRecorder {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodGet, "/api/admins", nil)
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+	return rec
+}
+
+func TestListAdmins_Owner_200_IncludesEveryAdminWithRole(t *testing.T) {
+	r, _, admins, _ := newAdminsRouter(t)
+	token := issueTestSessionToken(t, admins)
+
+	target := &db.Admin{Email: uniqueTestEmail(t), PasswordHash: "hash"}
+	if err := admins.Create(context.Background(), target); err != nil {
+		t.Fatalf("admins.Create() returned unexpected error: %v", err)
+	}
+	t.Cleanup(func() { _ = admins.Delete(context.Background(), target.ID) })
+	if err := admins.UpdateRole(context.Background(), target.ID, db.RoleViewer); err != nil {
+		t.Fatalf("admins.UpdateRole() returned unexpected error: %v", err)
+	}
+
+	rec := getAdminsList(t, r, token)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	var list []adminResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &list); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+
+	found := false
+	for _, item := range list {
+		if item.ID == target.ID {
+			found = true
+			if item.Email != target.Email {
+				t.Errorf("listed admin Email = %q, want %q", item.Email, target.Email)
+			}
+			if item.Role != db.RoleViewer {
+				t.Errorf("listed admin Role = %q, want %q", item.Role, db.RoleViewer)
+			}
+		}
+	}
+	if !found {
+		t.Errorf("admin %q not present in list response %s", target.ID, rec.Body.String())
+	}
+}
+
+func TestListAdmins_Operator_403(t *testing.T) {
+	r, _, admins, _ := newAdminsRouter(t)
+	token := issueTestSessionTokenWithRole(t, admins, db.RoleOperator)
+
+	rec := getAdminsList(t, r, token)
+
+	if rec.Code != http.StatusForbidden {
+		t.Errorf("status = %d, want %d, body = %s", rec.Code, http.StatusForbidden, rec.Body.String())
+	}
+}
+
+func TestListAdmins_Viewer_403(t *testing.T) {
+	r, _, admins, _ := newAdminsRouter(t)
+	token := issueTestSessionTokenWithRole(t, admins, db.RoleViewer)
+
+	rec := getAdminsList(t, r, token)
+
+	if rec.Code != http.StatusForbidden {
+		t.Errorf("status = %d, want %d, body = %s", rec.Code, http.StatusForbidden, rec.Body.String())
 	}
 }

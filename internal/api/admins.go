@@ -405,6 +405,39 @@ func (h *AdminsHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(map[string]string{"status": "removed"})
 }
 
+// List handles GET /api/admins (role: owner), returning every admin's email
+// and current role (ADM-09 scopes this to owner via router-level
+// RequireRole, not a check here).
+func (h *AdminsHandler) List(w http.ResponseWriter, r *http.Request) {
+	rows, err := h.pool.Query(r.Context(), "SELECT id, email, role FROM admins ORDER BY email")
+	if err != nil {
+		h.logger.Error("admins: failed to list admins", zap.Error(err))
+		writeInternalError(w)
+		return
+	}
+	defer rows.Close()
+
+	list := []adminResponse{}
+	for rows.Next() {
+		var item adminResponse
+		if err := rows.Scan(&item.ID, &item.Email, &item.Role); err != nil {
+			h.logger.Error("admins: failed to scan admin row", zap.Error(err))
+			writeInternalError(w)
+			return
+		}
+		list = append(list, item)
+	}
+	if err := rows.Err(); err != nil {
+		h.logger.Error("admins: failed reading admin rows", zap.Error(err))
+		writeInternalError(w)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(list)
+}
+
 func writeAdminError(w http.ResponseWriter, status int, body string) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
