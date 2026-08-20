@@ -1,0 +1,848 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="_ds/nocturne/styles.css">
+  <style>
+    :root{ --color-success: oklch(0.72 0.135 152); --color-warning: oklch(0.78 0.15 80); --color-critical: oklch(0.685 0.19 25); }
+    body{ overscroll-behavior:none; }
+    a{ color: var(--color-accent); }
+    a:hover{ color: var(--color-accent-2); }
+  </style>
+</helmet>
+
+<!-- ============================= LOGIN VIEW ============================= -->
+<sc-if value="{{ isLogin }}" hint-placeholder-val="{{ false }}">
+  <div style="min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;background:var(--color-bg);padding:24px;gap:22.4px">
+    <div style="display:flex;align-items:center;gap:8.4px;color:var(--color-text)">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v6M12 16v6M4.9 4.9l4.2 4.2M14.9 14.9l4.2 4.2M2 12h6M16 12h6M4.9 19.1l4.2-4.2M14.9 9.1l4.2-4.2"/></svg>
+      <span style="font-family:var(--font-heading);font-weight:600;font-size:18px;letter-spacing:-0.01em">Vane</span>
+    </div>
+    <div class="card elev-md" style="width:min(380px,100%);padding:22.4px;gap:16.8px">
+      <div>
+        <h3 style="margin-bottom:2.8px">Entrar</h3>
+        <p style="font-size:13px;opacity:0.65;margin:0">Acesse o painel administrativo</p>
+      </div>
+      <sc-if value="{{ loginErrorVisible }}" hint-placeholder-val="{{ false }}">
+        <div style="display:flex;align-items:flex-start;gap:8.4px;padding:8.4px 11.2px;border-radius:8px;background:color-mix(in oklch, var(--color-critical) 16%, var(--color-bg));border:1px solid color-mix(in oklch, var(--color-critical) 38%, transparent)">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--color-critical)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="flex:none;margin-top:1px"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16h.01"/></svg>
+          <span style="font-size:13px;color:color-mix(in oklch, var(--color-critical) 55%, var(--color-neutral-100))">E-mail ou senha inválidos.</span>
+        </div>
+      </sc-if>
+      <div style="display:flex;flex-direction:column;gap:11.2px">
+        <div class="field">
+          <label for="login-email">E-mail</label>
+          <input id="login-email" class="input" type="email" placeholder="voce@empresa.com">
+        </div>
+        <div class="field">
+          <label for="login-password">Senha</label>
+          <div style="position:relative">
+            <input id="login-password" class="input" type="{{ passwordFieldType }}" placeholder="••••••••" style="padding-right:38px">
+            <button type="button" onClick="{{ togglePasswordVisible }}" aria-label="Mostrar senha" style="position:absolute;right:4px;top:4px;width:28px;height:28px;display:grid;place-items:center;background:transparent;border:0;color:var(--color-text);opacity:0.6;cursor:pointer">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>
+            </button>
+          </div>
+        </div>
+        <a href="#" onClick="{{ preventDefault }}" style="font-size:12.5px;justify-self:flex-start">Esqueci minha senha</a>
+        <button type="button" class="btn btn-primary btn-block" onClick="{{ goApp }}" style="margin-top:2.8px">Entrar</button>
+        <button type="button" onClick="{{ toggleLoginError }}" style="background:transparent;border:0;color:var(--color-text);opacity:0.5;font-size:11.5px;cursor:pointer;padding:2.8px 0;text-align:center">Pré-visualizar estado de erro</button>
+      </div>
+    </div>
+  </div>
+</sc-if>
+
+<!-- ============================= APP SHELL ============================= -->
+<sc-if value="{{ isApp }}" hint-placeholder-val="{{ true }}">
+<div style="display:flex;min-height:100vh;background:var(--color-bg);color:var(--color-text);font-family:var(--font-body)">
+
+  <!-- Sidebar -->
+  <aside style="width:236px;flex:none;display:flex;flex-direction:column;border-right:1px solid var(--color-divider);padding:16.8px 11.2px">
+    <div style="display:flex;align-items:center;gap:8.4px;padding:8.4px 8.4px 16.8px">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--color-accent)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v6M12 16v6M4.9 4.9l4.2 4.2M14.9 14.9l4.2 4.2M2 12h6M16 12h6M4.9 19.1l4.2-4.2M14.9 9.1l4.2-4.2"/></svg>
+      <span style="font-family:var(--font-heading);font-weight:600;font-size:16px;letter-spacing:-0.01em">Vane</span>
+    </div>
+
+    <nav style="display:flex;flex-direction:column;gap:2.8px">
+      <button type="button" onClick="{{ goIntegrations }}" style="{{ navStyleIntegrations }}">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M9 2v4M15 2v4M7 8h2v4a3 3 0 0 0 3 3 3 3 0 0 0 3-3V8h2M12 15v4M9 22h6"/></svg>
+        <span>Integrações</span>
+      </button>
+      <button type="button" onClick="{{ goDomains }}" style="{{ navStyleDomains }}">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.7 4 6.1 4 9s-1.5 6.3-4 9c-2.5-2.7-4-6.1-4-9s1.5-6.3 4-9Z"/></svg>
+        <span>Domínios &amp; Status Pages</span>
+      </button>
+      <button type="button" onClick="{{ goIncidents }}" style="{{ navStyleIncidents }}">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 2 20h20L12 3Z"/><path d="M12 10v4M12 17h.01"/></svg>
+        <span>Incidentes</span>
+      </button>
+      <sc-if value="{{ isOwner }}" hint-placeholder-val="{{ true }}">
+        <button type="button" onClick="{{ goAdmins }}" style="{{ navStyleAdmins }}">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3.2"/><path d="M2.8 19c.7-3.4 3.2-5.5 6.2-5.5s5.5 2.1 6.2 5.5"/><circle cx="17.5" cy="8.5" r="2.4"/><path d="M16 13.8c2.2.4 3.9 2.1 4.4 4.4"/></svg>
+          <span>Admins</span>
+        </button>
+      </sc-if>
+      <button type="button" onClick="{{ goPoller }}" style="{{ navStylePoller }}">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12h4l2 7 4-14 2 7h8"/></svg>
+        <span>Status do poller</span>
+      </button>
+    </nav>
+
+    <div style="margin-top:auto;display:flex;flex-direction:column;gap:8.4px;padding-top:16.8px">
+      <div class="hr" style="margin:0"></div>
+      <div style="padding:2.8px 8.4px">
+        <div style="font-size:10px;text-transform:uppercase;letter-spacing:0.08em;opacity:0.5;margin-bottom:5.6px">Visualizando como</div>
+        <div class="seg" style="width:100%">
+          <label class="seg-opt" style="flex:1;justify-content:center;padding:6px 2px;font-size:10.5px"><input type="radio" name="role" checked="{{ roleIsOwner }}" onChange="{{ setRoleOwner }}"><span class="dot" style="display:none"></span>Owner</label>
+          <label class="seg-opt" style="flex:1;justify-content:center;padding:6px 2px;font-size:10.5px"><input type="radio" name="role" checked="{{ roleIsOperator }}" onChange="{{ setRoleOperator }}"><span class="dot" style="display:none"></span>Operator</label>
+          <label class="seg-opt" style="flex:1;justify-content:center;padding:6px 2px;font-size:10.5px"><input type="radio" name="role" checked="{{ roleIsViewer }}" onChange="{{ setRoleViewer }}"><span class="dot" style="display:none"></span>Viewer</label>
+        </div>
+      </div>
+      <button type="button" onClick="{{ openSessionModal }}" style="display:flex;align-items:center;gap:8.4px;padding:6px 8.4px;background:transparent;border:0;color:var(--color-text);opacity:0.55;font-size:12.5px;cursor:pointer;border-radius:8px;text-align:left">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="10" width="16" height="10" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>
+        Simular sessão expirada
+      </button>
+      <button type="button" onClick="{{ openLogoutConfirm }}" style="display:flex;align-items:center;gap:8.4px;padding:6px 8.4px;background:transparent;border:0;color:var(--color-text);opacity:0.55;font-size:12.5px;cursor:pointer;border-radius:8px;text-align:left">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/></svg>
+        Sair
+      </button>
+    </div>
+  </aside>
+
+  <!-- Content column -->
+  <div style="flex:1;display:flex;flex-direction:column;min-width:0">
+
+    <!-- Global poller failure banner -->
+    <sc-if value="{{ bannerVisible }}" hint-placeholder-val="{{ false }}">
+      <div style="display:flex;align-items:center;gap:8.4px;padding:8.4px 22.4px;background:color-mix(in oklch, var(--color-critical) 14%, var(--color-bg));border-bottom:1px solid color-mix(in oklch, var(--color-critical) 30%, transparent)">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--color-critical)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="flex:none"><path d="M12 3 2 20h20L12 3Z"/><path d="M12 10v4M12 17h.01"/></svg>
+        <span style="font-size:13px;color:color-mix(in oklch, var(--color-critical) 45%, var(--color-neutral-100))">Falha ao verificar a integração Datadog — última tentativa não teve sucesso.</span>
+        <button type="button" onClick="{{ goPoller }}" class="btn btn-ghost" style="margin-left:auto;font-size:12.5px;padding:2.8px 8px">Ver detalhes</button>
+      </div>
+    </sc-if>
+
+    <div style="flex:1;overflow:auto;padding:22.4px 32px 44.8px">
+
+      <!-- ===================== INTEGRAÇÕES ===================== -->
+      <sc-if value="{{ screenIsIntegrations }}" hint-placeholder-val="{{ true }}">
+        <div style="display:flex;flex-direction:column;gap:22.4px;max-width:920px">
+          <div>
+            <h2>Integrações</h2>
+            <p style="opacity:0.65;font-size:13.5px;margin:0">Conecte o Datadog e vincule SLOs aos serviços monitorados.</p>
+          </div>
+
+          <div class="card elev-sm" style="padding:16.8px;gap:11.2px">
+            <div style="display:flex;align-items:center;gap:11.2px">
+              <div style="width:38px;height:38px;border-radius:10px;background:var(--color-accent-800);display:grid;place-items:center;flex:none">
+                <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="var(--color-accent-200)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M9 2v4M15 2v4M7 8h2v4a3 3 0 0 0 3 3 3 3 0 0 0 3-3V8h2M12 15v4M9 22h6"/></svg>
+              </div>
+              <div style="flex:1">
+                <div style="font-family:var(--font-heading);font-weight:600;font-size:15px">Datadog</div>
+                <div style="font-size:12.5px;opacity:0.6">Chave: •••• •••• •••• 8f2a &nbsp;·&nbsp; Última verificação: 20 ago, 09:14</div>
+              </div>
+              <span class="tag" style="background:color-mix(in oklch, var(--color-success) 18%, var(--color-bg));color:color-mix(in oklch, var(--color-success) 60%, var(--color-neutral-100));border:1px solid color-mix(in oklch, var(--color-success) 35%, transparent)">Conectado</span>
+              <sc-if value="{{ canWrite }}" hint-placeholder-val="{{ true }}">
+                <button type="button" class="btn btn-secondary" onClick="{{ openRotateKey }}">Rotacionar chave</button>
+              </sc-if>
+            </div>
+            <sc-if value="{{ rotateKeyOpen }}" hint-placeholder-val="{{ false }}">
+              <div class="hr"></div>
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:11.2px">
+                <div class="field"><label>Nova API key</label><input class="input" type="password" placeholder="Chave da API"></div>
+                <div class="field"><label>Nova App key</label><input class="input" type="password" placeholder="Chave da aplicação"></div>
+              </div>
+              <p style="font-size:11.5px;opacity:0.55;margin:0">As chaves são validadas contra o Datadog e criptografadas em repouso. Não são reexibidas após salvar.</p>
+              <div style="display:flex;gap:8.4px;justify-content:flex-end">
+                <button type="button" class="btn btn-secondary" onClick="{{ closeRotateKey }}">Cancelar</button>
+                <button type="button" class="btn btn-primary" onClick="{{ closeRotateKey }}">Salvar chave</button>
+              </div>
+            </sc-if>
+          </div>
+
+          <div>
+            <div style="display:flex;align-items:center;margin-bottom:8.4px">
+              <h4 style="margin:0">Serviços monitorados</h4>
+              <sc-if value="{{ canWrite }}" hint-placeholder-val="{{ true }}">
+                <button type="button" class="btn btn-primary" style="margin-left:auto" onClick="{{ openLinkService }}">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+                  Vincular serviço
+                </button>
+              </sc-if>
+            </div>
+            <table class="table">
+              <thead><tr><th>Serviço</th><th>SLO vinculado</th><th>Status</th><th>Última mudança</th></tr></thead>
+              <tbody>
+                <sc-for list="{{ services }}" as="svc" hint-placeholder-count="0">
+                  <tr>
+                    <td style="font-weight:500">{{ svc.name }}</td>
+                    <td style="opacity:0.7;font-size:12.5px">{{ svc.sloId }}</td>
+                    <td>
+                      <sc-if value="{{ svc.isOperational }}" hint-placeholder-val="{{ false }}"><span class="tag" style="background:color-mix(in oklch, var(--color-success) 18%, var(--color-bg));color:color-mix(in oklch, var(--color-success) 60%, var(--color-neutral-100))">Operacional</span></sc-if>
+                      <sc-if value="{{ svc.isDegraded }}" hint-placeholder-val="{{ false }}"><span class="tag" style="background:color-mix(in oklch, var(--color-warning) 20%, var(--color-bg));color:color-mix(in oklch, var(--color-warning) 55%, var(--color-neutral-100))">Degradado</span></sc-if>
+                      <sc-if value="{{ svc.isDown }}" hint-placeholder-val="{{ false }}"><span class="tag" style="background:color-mix(in oklch, var(--color-critical) 18%, var(--color-bg));color:color-mix(in oklch, var(--color-critical) 55%, var(--color-neutral-100))">Inoperante</span></sc-if>
+                      <sc-if value="{{ svc.isNotConfigured }}" hint-placeholder-val="{{ false }}"><span class="tag tag-neutral">Não configurado</span></sc-if>
+                    </td>
+                    <td style="opacity:0.55;font-size:12.5px">{{ svc.changedAt }}</td>
+                  </tr>
+                </sc-for>
+              </tbody>
+            </table>
+          </div>
+
+          <sc-if value="{{ linkServiceOpen }}" hint-placeholder-val="{{ false }}">
+            <div class="dialog-backdrop" onClick="{{ closeLinkService }}">
+              <div class="dialog" onClick="{{ stopPropagation }}" style="padding:28px;box-shadow:0 0 0 1px var(--color-divider), 0 20px 48px rgba(0,0,0,0.6)">
+                <div class="dialog-title">Vincular serviço a um SLO</div>
+                <div class="field"><label>Nome do serviço</label><input class="input" placeholder="Ex.: API de pagamentos"></div>
+                <div class="field">
+                  <label>Buscar SLO no Datadog</label>
+                  <div style="position:relative">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" style="position:absolute;left:10px;top:11px;opacity:0.5"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+                    <input class="input" style="padding-left:30px" placeholder="checkout-latency-slo">
+                  </div>
+                  <div style="display:flex;flex-direction:column;gap:2.8px;margin-top:8.4px;border:1px solid var(--color-divider);border-radius:8px;overflow:hidden">
+                    <div style="padding:8px 10px;font-size:13px;cursor:pointer;background:color-mix(in srgb, var(--color-accent) 12%, transparent);color:var(--color-accent)">checkout-latency-slo &nbsp;<span style="opacity:0.6">99.9% · 30d</span></div>
+                    <div style="padding:8px 10px;font-size:13px;cursor:pointer">checkout-availability-slo &nbsp;<span style="opacity:0.6">99.95% · 30d</span></div>
+                    <div style="padding:8px 10px;font-size:13px;cursor:pointer">payments-api-error-rate &nbsp;<span style="opacity:0.6">99.5% · 7d</span></div>
+                  </div>
+                </div>
+                <div class="dialog-actions">
+                  <button type="button" class="btn btn-secondary" onClick="{{ closeLinkService }}">Cancelar</button>
+                  <button type="button" class="btn btn-primary" onClick="{{ closeLinkService }}">Vincular</button>
+                </div>
+              </div>
+            </div>
+          </sc-if>
+        </div>
+      </sc-if>
+
+      <!-- ===================== DOMÍNIOS & STATUS PAGES ===================== -->
+      <sc-if value="{{ screenIsDomains }}" hint-placeholder-val="{{ false }}">
+        <div style="display:flex;flex-direction:column;gap:22.4px;max-width:1000px">
+          <div>
+            <h2>Domínios &amp; Status Pages</h2>
+            <p style="opacity:0.65;font-size:13.5px;margin:0">Cadastre domínios raiz e publique status pages em subdomínios com TLS automático.</p>
+          </div>
+
+          <div>
+            <div style="display:flex;align-items:center;margin-bottom:8.4px">
+              <h4 style="margin:0">Domínios cadastrados</h4>
+              <sc-if value="{{ canWrite }}" hint-placeholder-val="{{ true }}">
+                <button type="button" class="btn btn-primary" style="margin-left:auto" onClick="{{ openAddDomain }}">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+                  Adicionar domínio
+                </button>
+              </sc-if>
+            </div>
+            <table class="table">
+              <thead><tr><th>Hostname</th><th>Cadastrado em</th></tr></thead>
+              <tbody>
+                <sc-for list="{{ domains }}" as="dom" hint-placeholder-count="0">
+                  <tr><td style="font-weight:500">{{ dom.hostname }}</td><td style="opacity:0.6;font-size:12.5px">{{ dom.createdAt }}</td></tr>
+                </sc-for>
+              </tbody>
+            </table>
+          </div>
+
+          <div>
+            <div style="display:flex;align-items:center;margin-bottom:8.4px">
+              <h4 style="margin:0">Status pages</h4>
+              <sc-if value="{{ canWrite }}" hint-placeholder-val="{{ true }}">
+                <button type="button" class="btn btn-primary" style="margin-left:auto" onClick="{{ openNewStatusPage }}">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+                  Criar status page
+                </button>
+              </sc-if>
+            </div>
+            <table class="table">
+              <thead><tr><th>Nome</th><th>Subdomínio</th><th>Estado</th></tr></thead>
+              <tbody>
+                <sc-for list="{{ statusPages }}" as="sp" hint-placeholder-count="0">
+                  <tr>
+                    <td style="font-weight:500">{{ sp.name }}</td>
+                    <td style="opacity:0.7;font-size:12.5px">{{ sp.subdomain }}</td>
+                    <td>
+                      <sc-if value="{{ sp.isDraft }}" hint-placeholder-val="{{ false }}"><span class="tag tag-neutral">Rascunho</span></sc-if>
+                      <sc-if value="{{ sp.isIssuing }}" hint-placeholder-val="{{ false }}"><span class="tag tag-accent" style="display:inline-flex;align-items:center;gap:5px"><span style="width:6px;height:6px;border-radius:50%;background:var(--color-accent-200);animation:none"></span>Emitindo certificado</span></sc-if>
+                      <sc-if value="{{ sp.isPublished }}" hint-placeholder-val="{{ false }}">
+                        <span style="display:inline-flex;align-items:center;gap:8px">
+                          <span class="tag" style="background:color-mix(in oklch, var(--color-success) 18%, var(--color-bg));color:color-mix(in oklch, var(--color-success) 60%, var(--color-neutral-100))">Publicada</span>
+                          <a href="#" onClick="{{ preventDefault }}" style="font-size:12px">{{ sp.url }}</a>
+                        </span>
+                      </sc-if>
+                      <sc-if value="{{ sp.isFailed }}" hint-placeholder-val="{{ false }}">
+                        <span style="display:inline-flex;flex-direction:column;gap:2px">
+                          <span class="tag" style="background:color-mix(in oklch, var(--color-critical) 18%, var(--color-bg));color:color-mix(in oklch, var(--color-critical) 55%, var(--color-neutral-100));width:fit-content">Falha</span>
+                          <span style="font-size:11px;opacity:0.55">{{ sp.error }}</span>
+                        </span>
+                      </sc-if>
+                    </td>
+                  </tr>
+                </sc-for>
+              </tbody>
+            </table>
+          </div>
+
+          <sc-if value="{{ addDomainOpen }}" hint-placeholder-val="{{ false }}">
+            <div class="dialog-backdrop" onClick="{{ closeAddDomain }}">
+              <div class="dialog" onClick="{{ stopPropagation }}" style="padding:28px;box-shadow:0 0 0 1px var(--color-divider), 0 20px 48px rgba(0,0,0,0.6)">
+                <div class="dialog-title">Adicionar domínio raiz</div>
+                <div class="field">
+                  <label>Hostname</label>
+                  <input class="input" placeholder="status.suaempresa.com" value="status.suaempresa.com">
+                  <div style="display:flex;align-items:center;gap:6px;margin-top:5.6px">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--color-critical)" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16h.01"/></svg>
+                    <span style="font-size:11.5px;color:color-mix(in oklch, var(--color-critical) 55%, var(--color-neutral-100))">Esse hostname já está cadastrado.</span>
+                  </div>
+                </div>
+                <div class="dialog-actions">
+                  <button type="button" class="btn btn-secondary" onClick="{{ closeAddDomain }}">Cancelar</button>
+                  <button type="button" class="btn btn-primary" onClick="{{ closeAddDomain }}">Adicionar</button>
+                </div>
+              </div>
+            </div>
+          </sc-if>
+
+          <sc-if value="{{ newStatusPageOpen }}" hint-placeholder-val="{{ false }}">
+            <div class="dialog-backdrop" onClick="{{ closeNewStatusPage }}">
+              <div class="dialog" onClick="{{ stopPropagation }}" style="padding:28px;box-shadow:0 0 0 1px var(--color-divider), 0 20px 48px rgba(0,0,0,0.6)">
+                <div class="dialog-title">Criar status page</div>
+                <div class="field"><label>Nome</label><input class="input" placeholder="Status — Produção"></div>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:11.2px">
+                  <div class="field"><label>Subdomínio</label><input class="input" placeholder="status"></div>
+                  <div class="field"><label>Domínio</label><input class="input" placeholder="suaempresa.com"></div>
+                </div>
+                <div class="field"><label>Serviços exibidos</label>
+                  <div style="display:flex;flex-wrap:wrap;gap:6px">
+                    <span class="tag tag-outline">API de pagamentos</span>
+                    <span class="tag tag-outline">Checkout web</span>
+                    <span class="tag tag-outline">Autenticação</span>
+                  </div>
+                </div>
+                <div class="dialog-actions">
+                  <button type="button" class="btn btn-secondary" onClick="{{ closeNewStatusPage }}">Cancelar</button>
+                  <button type="button" class="btn btn-primary" onClick="{{ closeNewStatusPage }}">Criar</button>
+                </div>
+              </div>
+            </div>
+          </sc-if>
+        </div>
+      </sc-if>
+
+      <!-- ===================== INCIDENTES ===================== -->
+      <sc-if value="{{ screenIsIncidents }}" hint-placeholder-val="{{ false }}">
+<div style="display:flex;flex-direction:column;gap:16.8px;width:100%">
+          <div style="display:flex;align-items:flex-start">
+            <div>
+              <h2>Incidentes</h2>
+              <p style="opacity:0.65;font-size:13.5px;margin:0">Acompanhe e comunique incidentes vinculados aos serviços monitorados.</p>
+            </div>
+            <sc-if value="{{ canWrite }}" hint-placeholder-val="{{ true }}">
+              <button type="button" class="btn btn-primary" style="margin-left:auto" onClick="{{ openNewIncident }}">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+                Novo incidente
+              </button>
+            </sc-if>
+          </div>
+
+          <div class="seg" style="width:fit-content">
+            <label class="seg-opt"><input type="radio" name="itab" checked="{{ tabIsActive }}" onChange="{{ setTabActive }}">Ativos</label>
+            <label class="seg-opt"><input type="radio" name="itab" checked="{{ tabIsResolved }}" onChange="{{ setTabResolved }}">Resolvidos</label>
+          </div>
+
+          <sc-if value="{{ tabIsActive }}" hint-placeholder-val="{{ true }}">
+            <div style="display:flex;flex-direction:column;gap:8.4px">
+              <sc-for list="{{ incidentsActive }}" as="inc" hint-placeholder-count="0">
+                <div class="card elev-sm" style="padding:14px 16.8px">
+                  <div style="display:flex;align-items:center;gap:11.2px">
+                    <span class="tag" style="background:var(--color-accent-800);color:var(--color-accent-100)">{{ inc.statusLabel }}</span>
+                    <span style="font-weight:500;font-size:14.5px">{{ inc.title }}</span>
+                    <span style="margin-left:auto;font-size:11.5px;opacity:0.5">{{ inc.createdAt }}</span>
+                  </div>
+                  <div style="display:flex;flex-wrap:wrap;gap:6px">
+                    <sc-for list="{{ inc.services }}" as="s" hint-placeholder-count="2"><span class="tag tag-neutral">{{ s }}</span></sc-for>
+                  </div>
+                  <button type="button" class="btn btn-ghost" style="width:fit-content;padding-inline:0" onClick="{{ inc.openTimeline }}">Ver timeline ({{ inc.updateCount }})</button>
+                  <sc-if value="{{ inc.timelineOpen }}" hint-placeholder-val="{{ false }}">
+                    <div class="hr" style="margin:2.8px 0"></div>
+                    <div style="display:flex;flex-direction:column;gap:8.4px">
+                      <sc-for list="{{ inc.updates }}" as="u" hint-placeholder-count="2">
+                        <div style="display:flex;gap:8.4px">
+                          <div style="width:6px;height:6px;border-radius:50%;background:var(--color-accent);margin-top:6px;flex:none"></div>
+                          <div>
+                            <div style="font-size:13px">{{ u.body }}</div>
+                            <div style="font-size:11px;opacity:0.5">{{ u.createdAt }}</div>
+                          </div>
+                        </div>
+                      </sc-for>
+                      <sc-if value="{{ canWrite }}" hint-placeholder-val="{{ true }}">
+                        <div style="display:flex;gap:8.4px;margin-top:5.6px">
+                          <input class="input" placeholder="Adicionar atualização…" style="flex:1">
+                          <button type="button" class="btn btn-primary">Publicar</button>
+                        </div>
+                        <div style="display:flex;gap:6px;flex-wrap:wrap">
+                          <button type="button" class="btn btn-secondary" style="font-size:12px;padding:4px 10px">Identificado</button>
+                          <button type="button" class="btn btn-secondary" style="font-size:12px;padding:4px 10px">Monitorando</button>
+                          <button type="button" class="btn btn-secondary" style="font-size:12px;padding:4px 10px">Marcar como resolvido</button>
+                        </div>
+                      </sc-if>
+                    </div>
+                  </sc-if>
+                </div>
+              </sc-for>
+              <sc-if value="{{ activeIsEmpty }}" hint-placeholder-val="{{ false }}">
+                <div class="card" style="align-items:center;text-align:center;padding:32px 16px;gap:5.6px">
+                  <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="var(--color-text)" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" style="opacity:0.4"><path d="m9 12 2 2 4-4"/><circle cx="12" cy="12" r="9"/></svg>
+                  <div style="font-size:14px">Nenhum incidente ativo</div>
+                  <div style="font-size:12.5px;opacity:0.6">Todos os serviços monitorados estão operando normalmente.</div>
+                </div>
+              </sc-if>
+            </div>
+          </sc-if>
+
+          <sc-if value="{{ tabIsResolved }}" hint-placeholder-val="{{ false }}">
+            <div style="display:flex;flex-direction:column;gap:8.4px">
+              <sc-for list="{{ incidentsResolved }}" as="inc" hint-placeholder-count="0">
+                <div class="card" style="padding:14px 16.8px;opacity:0.85">
+                  <div style="display:flex;align-items:center;gap:11.2px">
+                    <span class="tag tag-neutral">Resolvido</span>
+                    <span style="font-weight:500;font-size:14.5px">{{ inc.title }}</span>
+                    <span style="margin-left:auto;font-size:11.5px;opacity:0.5">{{ inc.resolvedAt }}</span>
+                  </div>
+                  <div style="display:flex;flex-wrap:wrap;gap:6px">
+                    <sc-for list="{{ inc.services }}" as="s" hint-placeholder-count="2"><span class="tag tag-neutral">{{ s }}</span></sc-for>
+                  </div>
+                  <sc-if value="{{ canWrite }}" hint-placeholder-val="{{ true }}">
+                    <button type="button" class="btn btn-ghost" style="width:fit-content;padding-inline:0">
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.6-6.4M21 3v6h-6"/></svg>
+                      Reabrir incidente
+                    </button>
+                  </sc-if>
+                </div>
+              </sc-for>
+            </div>
+          </sc-if>
+
+          <sc-if value="{{ newIncidentOpen }}" hint-placeholder-val="{{ false }}">
+            <div class="dialog-backdrop" onClick="{{ closeNewIncident }}">
+              <div class="dialog" onClick="{{ stopPropagation }}" style="padding:28px;box-shadow:0 0 0 1px var(--color-divider), 0 20px 48px rgba(0,0,0,0.6)">
+                <div class="dialog-title">Novo incidente</div>
+                <div class="field"><label>Título</label><input class="input" placeholder="Latência elevada no checkout"></div>
+                <div class="field"><label>Serviços afetados</label>
+                  <div style="display:flex;flex-wrap:wrap;gap:6px">
+                    <span class="tag tag-outline">API de pagamentos</span>
+                    <span class="tag" style="background:var(--color-accent-800);color:var(--color-accent-100)">Checkout web</span>
+                    <span class="tag tag-outline">Autenticação</span>
+                  </div>
+                </div>
+                <div class="dialog-actions">
+                  <button type="button" class="btn btn-secondary" onClick="{{ closeNewIncident }}">Cancelar</button>
+                  <button type="button" class="btn btn-primary" onClick="{{ closeNewIncident }}">Criar incidente</button>
+                </div>
+              </div>
+            </div>
+          </sc-if>
+        </div>
+      </sc-if>
+
+      <!-- ===================== ADMINS ===================== -->
+      <sc-if value="{{ screenIsAdmins }}" hint-placeholder-val="{{ false }}">
+<div style="display:flex;flex-direction:column;gap:22.4px;width:100%">
+          <div style="display:flex;align-items:flex-start">
+            <div>
+              <h2>Admins</h2>
+              <p style="opacity:0.65;font-size:13.5px;margin:0">Gerencie quem tem acesso ao painel e com qual papel.</p>
+            </div>
+            <button type="button" class="btn btn-primary" style="margin-left:auto" onClick="{{ openInviteAdmin }}">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+              Convidar admin
+            </button>
+          </div>
+
+          <div>
+            <h4 style="margin:0 0 8.4px">Ativos</h4>
+            <table class="table">
+              <thead><tr><th>E-mail</th><th>Papel</th><th></th></tr></thead>
+              <tbody>
+                <sc-for list="{{ admins }}" as="ad" hint-placeholder-count="0">
+                  <tr>
+                    <td style="font-weight:500">{{ ad.email }}</td>
+                    <td>
+                      <div style="display:inline-flex;align-items:center;gap:4px">
+                        <button type="button" title="Owner" onClick="{{ ad.setOwner }}" style="{{ ad.ownerIconStyle }}">
+                          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2 3 6v6c0 5 3.8 8.7 9 10 5.2-1.3 9-5 9-10V6l-9-4Z"/></svg>
+                        </button>
+                        <button type="button" title="Operator" onClick="{{ ad.setOperator }}" style="{{ ad.operatorIconStyle }}">
+                          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a4 4 0 0 1-5.4 5.4L4 17l3 3 5.3-5.3a4 4 0 0 1 5.4-5.4l-2.4 2.4-2-2 2.4-2.4Z"/></svg>
+                        </button>
+                        <button type="button" title="Viewer" onClick="{{ ad.setViewer }}" style="{{ ad.viewerIconStyle }}">
+                          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>
+                        </button>
+                      </div>
+                    </td>
+                    <td style="text-align:right">
+                      <button type="button" class="btn btn-icon btn-ghost" title="Remover" onClick="{{ ad.confirmRemove }}">
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M9 7V5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2m2 0-.9 12.1a2 2 0 0 1-2 1.9H7.9a2 2 0 0 1-2-1.9L5 7"/><path d="M10 11v6M14 11v6"/></svg>
+                      </button>
+                    </td>
+                  </tr>
+                </sc-for>
+              </tbody>
+            </table>
+          </div>
+
+          <div>
+            <h4 style="margin:0 0 8.4px">Convites pendentes</h4>
+            <table class="table">
+              <thead><tr><th>E-mail</th><th>Papel</th><th></th><th></th></tr></thead>
+              <tbody>
+                <sc-for list="{{ pendingInvites }}" as="inv" hint-placeholder-count="0">
+                  <tr>
+                    <td style="font-weight:500">{{ inv.email }}</td>
+                    <td style="opacity:0.7">{{ inv.roleLabel }}</td>
+                    <td><span class="tag tag-outline">Pendente</span></td>
+                    <td style="text-align:right;white-space:nowrap">
+                      <button type="button" class="btn btn-ghost" style="font-size:12.5px">Reenviar</button>
+                      <button type="button" class="btn btn-ghost" style="font-size:12.5px" onClick="{{ inv.confirmCancel }}">Cancelar</button>
+                    </td>
+                  </tr>
+                </sc-for>
+              </tbody>
+            </table>
+          </div>
+
+          <sc-if value="{{ inviteAdminOpen }}" hint-placeholder-val="{{ false }}">
+            <div class="dialog-backdrop" onClick="{{ closeInviteAdmin }}">
+              <div class="dialog" onClick="{{ stopPropagation }}" style="padding:28px;box-shadow:0 0 0 1px var(--color-divider), 0 20px 48px rgba(0,0,0,0.6)">
+                <div class="dialog-title">Convidar admin</div>
+                <div class="field"><label>E-mail</label><input class="input" type="email" placeholder="pessoa@empresa.com"></div>
+                <div class="field"><label>Papel</label>
+                  <div class="seg" style="width:100%">
+                    <label class="seg-opt" style="flex:1;justify-content:center"><input type="radio" name="invrole" defaultChecked="{{ false }}">Owner</label>
+                    <label class="seg-opt" style="flex:1;justify-content:center"><input type="radio" name="invrole" defaultChecked="{{ true }}">Operator</label>
+                    <label class="seg-opt" style="flex:1;justify-content:center"><input type="radio" name="invrole" defaultChecked="{{ false }}">Viewer</label>
+                  </div>
+                </div>
+                <div class="dialog-actions">
+                  <button type="button" class="btn btn-secondary" onClick="{{ closeInviteAdmin }}">Cancelar</button>
+                  <button type="button" class="btn btn-primary" onClick="{{ closeInviteAdmin }}">Enviar convite</button>
+                </div>
+              </div>
+            </div>
+          </sc-if>
+
+          <sc-if value="{{ confirmDialogOpen }}" hint-placeholder-val="{{ false }}">
+            <div class="dialog-backdrop" onClick="{{ closeConfirmDialog }}">
+              <div class="dialog" onClick="{{ stopPropagation }}" style="width:min(380px,100%);padding:28px;box-shadow:0 0 0 1px var(--color-divider), 0 20px 48px rgba(0,0,0,0.6)">
+                <div class="dialog-title">{{ confirmDialogTitle }}</div>
+                <div class="dialog-body">{{ confirmDialogBody }}</div>
+                <div class="dialog-actions">
+                  <button type="button" class="btn btn-secondary" onClick="{{ closeConfirmDialog }}">Cancelar</button>
+                  <button type="button" class="btn btn-primary" onClick="{{ closeConfirmDialog }}">Confirmar</button>
+                </div>
+              </div>
+            </div>
+          </sc-if>
+        </div>
+      </sc-if>
+
+      <!-- ===================== STATUS DO POLLER ===================== -->
+      <sc-if value="{{ screenIsPoller }}" hint-placeholder-val="{{ false }}">
+<div style="display:flex;flex-direction:column;gap:16.8px;width:100%">
+          <div>
+            <h2>Status do poller</h2>
+            <p style="opacity:0.65;font-size:13.5px;margin:0">Última execução de cada integração conectada — apenas leitura.</p>
+          </div>
+          <table class="table">
+            <thead><tr><th>Integração</th><th>Última execução</th><th>Resultado</th><th>Mensagem de erro</th></tr></thead>
+            <tbody>
+              <sc-for list="{{ pollerRows }}" as="p" hint-placeholder-count="0">
+                <tr>
+                  <td style="font-weight:500">{{ p.provider }}</td>
+                  <td style="opacity:0.7;font-size:12.5px">{{ p.lastCheckedAt }}</td>
+                  <td>
+                    <sc-if value="{{ p.ok }}" hint-placeholder-val="{{ true }}"><span class="tag" style="background:color-mix(in oklch, var(--color-success) 18%, var(--color-bg));color:color-mix(in oklch, var(--color-success) 60%, var(--color-neutral-100))">Sucesso</span></sc-if>
+                    <sc-if value="{{ p.fail }}" hint-placeholder-val="{{ false }}"><span class="tag" style="background:color-mix(in oklch, var(--color-critical) 18%, var(--color-bg));color:color-mix(in oklch, var(--color-critical) 55%, var(--color-neutral-100))">Falha</span></sc-if>
+                  </td>
+                  <td style="font-size:12.5px;opacity:0.6">{{ p.error }}</td>
+                </tr>
+              </sc-for>
+            </tbody>
+          </table>
+        </div>
+      </sc-if>
+    </div>
+  </div>
+</div>
+</sc-if>
+
+<!-- ============================= LOGOUT CONFIRM MODAL ============================= -->
+<sc-if value="{{ logoutConfirmOpen }}" hint-placeholder-val="{{ false }}">
+  <div class="dialog-backdrop" style="z-index:200" onClick="{{ closeLogoutConfirm }}">
+    <div class="dialog" onClick="{{ stopPropagation }}" style="width:min(360px,100%);padding:28px;box-shadow:0 0 0 1px var(--color-divider), 0 20px 48px rgba(0,0,0,0.6)">
+      <div class="dialog-title">Sair do painel</div>
+      <div class="dialog-body">Tem certeza que deseja encerrar sua sessão?</div>
+      <div class="dialog-actions">
+        <button type="button" class="btn btn-secondary" onClick="{{ closeLogoutConfirm }}">Cancelar</button>
+        <button type="button" class="btn btn-primary" onClick="{{ confirmLogout }}">Sair</button>
+      </div>
+    </div>
+  </div>
+</sc-if>
+
+<!-- ============================= SESSION EXPIRED MODAL ============================= -->
+<sc-if value="{{ sessionModalOpen }}" hint-placeholder-val="{{ false }}">
+  <div class="dialog-backdrop" style="z-index:200">
+    <div class="dialog" style="width:min(360px,100%);text-align:center;align-items:center;padding:28px;box-shadow:0 0 0 1px var(--color-divider), 0 20px 48px rgba(0,0,0,0.6)">
+      <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="var(--color-accent)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="10" width="16" height="10" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>
+      <div class="dialog-title">Sessão expirada</div>
+      <div class="dialog-body">Por segurança, sua sessão foi encerrada. Entre novamente para continuar.</div>
+      <button type="button" class="btn btn-primary btn-block" onClick="{{ confirmSessionExpired }}">Ir para o login</button>
+    </div>
+  </div>
+</sc-if>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  state = {
+    view: 'app',
+    role: 'owner',
+    screen: 'integrations',
+    loginErrorVisible: false,
+    passwordVisible: false,
+    sessionModalOpen: false,
+    incidentsTab: 'active',
+    rotateKeyOpen: false,
+    linkServiceOpen: false,
+    addDomainOpen: false,
+    newStatusPageOpen: false,
+    newIncidentOpen: false,
+    inviteAdminOpen: false,
+    confirmDialogOpen: false,
+    confirmDialogTitle: '',
+    confirmDialogBody: '',
+    openTimelineId: 'inc-1',
+    logoutConfirmOpen: false,
+  };
+
+  services = [
+    { name: 'API de pagamentos', sloId: 'checkout-latency-slo', status: 'operational', changedAt: '20 ago, 08:02' },
+    { name: 'Checkout web', sloId: 'checkout-availability-slo', status: 'degraded', changedAt: '20 ago, 09:47' },
+    { name: 'Autenticação', sloId: 'auth-error-rate-slo', status: 'down', changedAt: '20 ago, 09:52' },
+    { name: 'Notificações', sloId: '—', status: 'not_configured', changedAt: '—' },
+  ];
+
+  domains = [
+    { hostname: 'suaempresa.com', createdAt: '02 jul, 2026' },
+    { hostname: 'suaempresa.io', createdAt: '14 ago, 2026' },
+  ];
+
+  statusPages = [
+    { name: 'Status — Produção', subdomain: 'status.suaempresa.com', state: 'published', url: 'https://status.suaempresa.com' },
+    { name: 'Status — Staging', subdomain: 'status-staging.suaempresa.com', state: 'issuing' },
+    { name: 'Status — Parceiros', subdomain: 'parceiros.suaempresa.com', state: 'failed', error: 'Falha na validação DNS do domínio' },
+    { name: 'Status — Interno', subdomain: 'interno.suaempresa.com', state: 'draft' },
+  ];
+
+  incidentsActiveData = [
+    {
+      id: 'inc-1', title: 'Latência elevada no checkout', statusLabel: 'Identificado',
+      services: ['Checkout web', 'API de pagamentos'], createdAt: '20 ago, 09:40',
+      updates: [
+        { body: 'Identificamos aumento de latência relacionado a uma dependência externa de pagamentos.', createdAt: '20 ago, 09:55' },
+        { body: 'Investigando aumento de tempo de resposta no checkout.', createdAt: '20 ago, 09:40' },
+      ],
+    },
+  ];
+
+  incidentsResolvedData = [
+    { id: 'inc-2', title: 'Falha intermitente no login', services: ['Autenticação'], resolvedAt: '18 ago, 2026' },
+    { id: 'inc-3', title: 'Página de status fora do ar', services: ['Status — Produção'], resolvedAt: '11 ago, 2026' },
+  ];
+
+  admins = [
+    { email: 'ana.owner@suaempresa.com', role: 'owner' },
+    { email: 'bruno.ops@suaempresa.com', role: 'operator' },
+    { email: 'carla.leitura@suaempresa.com', role: 'viewer' },
+  ];
+
+  pendingInvites = [
+    { email: 'diego@suaempresa.com', role: 'operator' },
+  ];
+
+  pollerRows = [
+    { provider: 'Datadog', lastCheckedAt: '20 ago, 09:14', ok: false, error: 'timeout ao consultar SLO checkout-availability-slo (504)' },
+  ];
+
+  preventDefault = (e) => e && e.preventDefault && e.preventDefault();
+  stopPropagation = (e) => e && e.stopPropagation && e.stopPropagation();
+
+  togglePasswordVisible = () => this.setState(s => ({ passwordVisible: !s.passwordVisible }));
+  toggleLoginError = () => this.setState(s => ({ loginErrorVisible: !s.loginErrorVisible }));
+  goApp = () => this.setState({ view: 'app', loginErrorVisible: false });
+  goLogin = () => this.setState({ view: 'login' });
+  openLogoutConfirm = () => this.setState({ logoutConfirmOpen: true });
+  closeLogoutConfirm = () => this.setState({ logoutConfirmOpen: false });
+  confirmLogout = () => this.setState({ logoutConfirmOpen: false, view: 'login' });
+
+  goIntegrations = () => this.setState({ screen: 'integrations' });
+  goDomains = () => this.setState({ screen: 'domains' });
+  goIncidents = () => this.setState({ screen: 'incidents' });
+  goAdmins = () => this.setState({ screen: 'admins' });
+  goPoller = () => this.setState({ screen: 'poller' });
+
+  setRoleOwner = () => this.setState({ role: 'owner' });
+  setRoleOperator = () => this.setState(s => ({ role: 'operator', screen: s.screen === 'admins' ? 'integrations' : s.screen }));
+  setRoleViewer = () => this.setState(s => ({ role: 'viewer', screen: s.screen === 'admins' ? 'integrations' : s.screen }));
+
+  setTabActive = () => this.setState({ incidentsTab: 'active' });
+  setTabResolved = () => this.setState({ incidentsTab: 'resolved' });
+
+  openRotateKey = () => this.setState({ rotateKeyOpen: true });
+  closeRotateKey = () => this.setState({ rotateKeyOpen: false });
+  openLinkService = () => this.setState({ linkServiceOpen: true });
+  closeLinkService = () => this.setState({ linkServiceOpen: false });
+  openAddDomain = () => this.setState({ addDomainOpen: true });
+  closeAddDomain = () => this.setState({ addDomainOpen: false });
+  openNewStatusPage = () => this.setState({ newStatusPageOpen: true });
+  closeNewStatusPage = () => this.setState({ newStatusPageOpen: false });
+  openNewIncident = () => this.setState({ newIncidentOpen: true });
+  closeNewIncident = () => this.setState({ newIncidentOpen: false });
+  openInviteAdmin = () => this.setState({ inviteAdminOpen: true });
+  closeInviteAdmin = () => this.setState({ inviteAdminOpen: false });
+
+  openSessionModal = () => this.setState({ sessionModalOpen: true });
+  confirmSessionExpired = () => this.setState({ sessionModalOpen: false, view: 'login' });
+
+  openConfirm = (title, body) => this.setState({ confirmDialogOpen: true, confirmDialogTitle: title, confirmDialogBody: body });
+  closeConfirmDialog = () => this.setState({ confirmDialogOpen: false });
+
+  toggleTimeline = (id) => () => this.setState(s => ({ openTimelineId: s.openTimelineId === id ? null : id }));
+
+  setAdminRole = (email, role) => {
+    const target = this.admins.find(a => a.email === email);
+    if (target) target.role = role;
+    this.forceUpdate();
+  };
+
+  navStyle(active) {
+    return {
+      display: 'flex', alignItems: 'center', gap: '10px', padding: '8px 10px',
+      borderRadius: '8px', fontSize: '13.5px', textAlign: 'left', cursor: 'pointer',
+      border: '0', background: active ? 'color-mix(in srgb, var(--color-accent) 14%, transparent)' : 'transparent',
+      color: active ? 'var(--color-accent)' : 'var(--color-text)', fontWeight: active ? 500 : 400,
+    };
+  }
+
+  roleLabel(role) {
+    return role === 'owner' ? 'Owner' : role === 'operator' ? 'Operator' : 'Viewer';
+  }
+
+  renderVals() {
+    const { view, role, screen, loginErrorVisible, passwordVisible, sessionModalOpen, incidentsTab,
+      rotateKeyOpen, linkServiceOpen, addDomainOpen, newStatusPageOpen, newIncidentOpen, inviteAdminOpen,
+      confirmDialogOpen, confirmDialogTitle, confirmDialogBody, openTimelineId, logoutConfirmOpen } = this.state;
+
+    const services = this.services.map(s => ({
+      ...s,
+      isOperational: s.status === 'operational',
+      isDegraded: s.status === 'degraded',
+      isDown: s.status === 'down',
+      isNotConfigured: s.status === 'not_configured',
+    }));
+
+    const statusPages = this.statusPages.map(sp => ({
+      ...sp,
+      isDraft: sp.state === 'draft', isIssuing: sp.state === 'issuing',
+      isPublished: sp.state === 'published', isFailed: sp.state === 'failed',
+    }));
+
+    const incidentsActive = this.incidentsActiveData.map(inc => ({
+      ...inc,
+      updateCount: inc.updates.length,
+      timelineOpen: openTimelineId === inc.id,
+      openTimeline: this.toggleTimeline(inc.id),
+    }));
+
+    const roleIconStyle = (active) => ({
+      display: 'grid', placeItems: 'center', width: '26px', height: '26px', padding: 0,
+      border: active ? '1px solid var(--color-accent)' : '1px solid var(--color-divider)',
+      borderRadius: '7px', cursor: 'pointer',
+      background: active ? 'color-mix(in srgb, var(--color-accent) 16%, transparent)' : 'transparent',
+      color: active ? 'var(--color-accent)' : 'var(--color-text)', opacity: active ? 1 : 0.4,
+    });
+    const admins = this.admins.map(ad => ({
+      ...ad,
+      confirmRemove: () => this.openConfirm('Remover admin', `Remover o acesso de ${ad.email}? Esta ação não pode ser desfeita.`),
+      setOwner: () => this.setAdminRole(ad.email, 'owner'),
+      setOperator: () => this.setAdminRole(ad.email, 'operator'),
+      setViewer: () => this.setAdminRole(ad.email, 'viewer'),
+      ownerIconStyle: roleIconStyle(ad.role === 'owner'),
+      operatorIconStyle: roleIconStyle(ad.role === 'operator'),
+      viewerIconStyle: roleIconStyle(ad.role === 'viewer'),
+    }));
+
+    const pendingInvites = this.pendingInvites.map(inv => ({
+      ...inv,
+      roleLabel: this.roleLabel(inv.role),
+      confirmCancel: () => this.openConfirm('Cancelar convite', `Cancelar o convite pendente para ${inv.email}?`),
+    }));
+
+    const pollerRows = this.pollerRows.map(p => ({ ...p, fail: !p.ok }));
+    const bannerVisible = view === 'app' && pollerRows.some(p => !p.ok);
+
+    return {
+      isLogin: view === 'login', isApp: view === 'app',
+      passwordFieldType: passwordVisible ? 'text' : 'password',
+      loginErrorVisible, togglePasswordVisible: this.togglePasswordVisible,
+      toggleLoginError: this.toggleLoginError, goApp: this.goApp, goLogin: this.goLogin,
+      logoutConfirmOpen, openLogoutConfirm: this.openLogoutConfirm, closeLogoutConfirm: this.closeLogoutConfirm, confirmLogout: this.confirmLogout,
+      preventDefault: this.preventDefault, stopPropagation: this.stopPropagation,
+
+      isOwner: role === 'owner', canWrite: role !== 'viewer',
+      roleIsOwner: role === 'owner', roleIsOperator: role === 'operator', roleIsViewer: role === 'viewer',
+      setRoleOwner: this.setRoleOwner, setRoleOperator: this.setRoleOperator, setRoleViewer: this.setRoleViewer,
+
+      screenIsIntegrations: screen === 'integrations', screenIsDomains: screen === 'domains',
+      screenIsIncidents: screen === 'incidents', screenIsAdmins: screen === 'admins' && role === 'owner',
+      screenIsPoller: screen === 'poller',
+      navStyleIntegrations: this.navStyle(screen === 'integrations'),
+      navStyleDomains: this.navStyle(screen === 'domains'),
+      navStyleIncidents: this.navStyle(screen === 'incidents'),
+      navStyleAdmins: this.navStyle(screen === 'admins'),
+      navStylePoller: this.navStyle(screen === 'poller'),
+      goIntegrations: this.goIntegrations, goDomains: this.goDomains, goIncidents: this.goIncidents,
+      goAdmins: this.goAdmins, goPoller: this.goPoller,
+
+      bannerVisible,
+      openSessionModal: this.openSessionModal, sessionModalOpen, confirmSessionExpired: this.confirmSessionExpired,
+
+      services, rotateKeyOpen, openRotateKey: this.openRotateKey, closeRotateKey: this.closeRotateKey,
+      linkServiceOpen, openLinkService: this.openLinkService, closeLinkService: this.closeLinkService,
+
+      domains: this.domains, statusPages,
+      addDomainOpen, openAddDomain: this.openAddDomain, closeAddDomain: this.closeAddDomain,
+      newStatusPageOpen, openNewStatusPage: this.openNewStatusPage, closeNewStatusPage: this.closeNewStatusPage,
+
+      tabIsActive: incidentsTab === 'active', tabIsResolved: incidentsTab === 'resolved',
+      setTabActive: this.setTabActive, setTabResolved: this.setTabResolved,
+      incidentsActive, incidentsResolved: this.incidentsResolvedData, activeIsEmpty: incidentsActive.length === 0,
+      newIncidentOpen, openNewIncident: this.openNewIncident, closeNewIncident: this.closeNewIncident,
+
+      admins, pendingInvites,
+      inviteAdminOpen, openInviteAdmin: this.openInviteAdmin, closeInviteAdmin: this.closeInviteAdmin,
+      confirmDialogOpen, confirmDialogTitle, confirmDialogBody, closeConfirmDialog: this.closeConfirmDialog,
+
+      pollerRows,
+    };
+  }
+}
+</script>
+</body>
+</html>
