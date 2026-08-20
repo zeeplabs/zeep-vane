@@ -102,18 +102,20 @@ func postInviteAdmin(t *testing.T, r http.Handler, token, email, role string) *h
 // where a test could recover it (one-way hash), so assertions read invite
 // state straight from the table instead.
 type pendingInviteRow struct {
-	id     string
-	role   string
-	usedAt *time.Time
+	id        string
+	role      string
+	usedAt    *time.Time
+	createdAt time.Time
+	expiresAt time.Time
 }
 
 func latestInviteForEmail(t *testing.T, pool *db.Pool, email string) pendingInviteRow {
 	t.Helper()
 	row := pool.QueryRow(context.Background(),
-		"SELECT id, role, used_at FROM admin_invites WHERE email = $1 ORDER BY created_at DESC LIMIT 1", email)
+		"SELECT id, role, used_at, created_at, expires_at FROM admin_invites WHERE email = $1 ORDER BY created_at DESC LIMIT 1", email)
 
 	var got pendingInviteRow
-	if err := row.Scan(&got.id, &got.role, &got.usedAt); err != nil {
+	if err := row.Scan(&got.id, &got.role, &got.usedAt, &got.createdAt, &got.expiresAt); err != nil {
 		t.Fatalf("querying latest admin_invites row for %q returned unexpected error: %v", email, err)
 	}
 	return got
@@ -148,6 +150,17 @@ func TestInviteAdmin_Owner_201_CreatesInviteAndAuditEntry(t *testing.T) {
 	}
 	if invite.usedAt != nil {
 		t.Error("invite.usedAt = non-nil, want nil (fresh invite)")
+	}
+
+	// ADM-01: the invite token is valid for 1 hour. This reads expires_at
+	// from the row the Invite handler itself persisted (not a TTL fabricated
+	// by a test helper like createTestInvite), so a regression in
+	// adminInviteTTL is observed by this test.
+	gotTTL := invite.expiresAt.Sub(invite.createdAt)
+	const wantTTL = 1 * time.Hour
+	const ttlTolerance = 2 * time.Second
+	if diff := gotTTL - wantTTL; diff < -ttlTolerance || diff > ttlTolerance {
+		t.Errorf("invite TTL (expires_at - created_at) = %v, want %v (+/- %v)", gotTTL, wantTTL, ttlTolerance)
 	}
 
 	var gotActorID, gotAction string
