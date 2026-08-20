@@ -14,6 +14,7 @@ import (
 type Config struct {
 	DatabaseURL         string
 	MasterKey           string
+	SessionSecret       string
 	Port                int
 	PollIntervalSeconds int
 	LogLevel            string
@@ -31,6 +32,11 @@ func Load() (Config, error) {
 	}
 
 	masterKey, err := requireString("VANE_MASTER_KEY")
+	if err != nil {
+		return Config{}, err
+	}
+
+	sessionSecret, err := requireString("VANE_SESSION_SECRET")
 	if err != nil {
 		return Config{}, err
 	}
@@ -53,6 +59,7 @@ func Load() (Config, error) {
 	return Config{
 		DatabaseURL:         databaseURL,
 		MasterKey:           masterKey,
+		SessionSecret:       sessionSecret,
 		Port:                port,
 		PollIntervalSeconds: pollIntervalSeconds,
 		LogLevel:            logLevel,

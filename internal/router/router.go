@@ -19,8 +19,14 @@ type pinger interface {
 
 const healthzPingTimeout = 3 * time.Second
 
-// New builds the chi router with the routes vane serves.
-func New(pool *db.Pool) http.Handler {
+// New builds the base chi router with /healthz. It returns chi.Router
+// (not just http.Handler) so a caller that also depends on internal/api -
+// which internal/router cannot import back without a cycle, since
+// internal/api already depends on internal/router for HostRouter's status
+// page context helper - can mount further routes onto the same router
+// (see internal/cli's serve command, which wires the admin-dashboard and
+// mvp-core admin routes on top of this base).
+func New(pool *db.Pool) chi.Router {
 	r := chi.NewRouter()
 	r.Get("/healthz", healthzHandler(pool))
 	return r

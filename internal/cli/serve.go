@@ -84,7 +84,7 @@ func NewServeCmd() *cobra.Command {
 			}
 
 			addr := fmt.Sprintf(":%d", cfg.Port)
-			srv := &http.Server{Addr: addr, Handler: router.New(pool)}
+			srv := &http.Server{Addr: addr, Handler: buildAdminRouter(pool, cfg, logger)}
 
 			httpsSrv := newHTTPSServer(pool, logger)
 

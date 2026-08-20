@@ -350,10 +350,10 @@ T11 → T12 → T13
 - Skill: `security-best-practices`, `best-practices`
 
 **Done when**:
-- [ ] `viewer` recebe 403 em toda rota de escrita listada no design; recebe 200 em rotas de leitura
-- [ ] `operator` e `owner` continuam funcionando em todas as rotas como antes
-- [ ] Testes de integração cobrem pelo menos 1 rota de escrita e 1 de leitura por papel (3 papéis × 2 tipos de rota)
-- [ ] Gate check passa: `go test ./... -tags=integration && go vet ./...`
+- [x] `viewer` recebe 403 em toda rota de escrita listada no design; recebe 200 em rotas de leitura
+- [x] `operator` e `owner` continuam funcionando em todas as rotas como antes
+- [x] Testes de integração cobrem pelo menos 1 rota de escrita e 1 de leitura por papel (3 papéis × 2 tipos de rota)
+- [x] Gate check passa: `go test ./... -tags=integration && go vet ./...`
 
 **Tests**: integration
 **Gate**: full

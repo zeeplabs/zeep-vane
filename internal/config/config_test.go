@@ -6,6 +6,7 @@ func setAllRequiredEnv(t *testing.T) {
 	t.Helper()
 	t.Setenv("DATABASE_URL", "postgres://user:pass@localhost:5432/vane")
 	t.Setenv("VANE_MASTER_KEY", "0123456789abcdef0123456789abcdef")
+	t.Setenv("VANE_SESSION_SECRET", "test-session-secret-at-least-32-bytes!!")
 	t.Setenv("PORT", "8080")
 	t.Setenv("POLL_INTERVAL_SECONDS", "120")
 }
@@ -23,6 +24,9 @@ func TestLoad_AllVarsPresent_Success(t *testing.T) {
 	}
 	if cfg.MasterKey != "0123456789abcdef0123456789abcdef" {
 		t.Errorf("MasterKey = %q, want %q", cfg.MasterKey, "0123456789abcdef0123456789abcdef")
+	}
+	if cfg.SessionSecret != "test-session-secret-at-least-32-bytes!!" {
+		t.Errorf("SessionSecret = %q, want %q", cfg.SessionSecret, "test-session-secret-at-least-32-bytes!!")
 	}
 	if cfg.Port != 8080 {
 		t.Errorf("Port = %d, want 8080", cfg.Port)
