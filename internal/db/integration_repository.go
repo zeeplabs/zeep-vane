@@ -69,6 +69,36 @@ func (r *IntegrationRepository) MarkDatadogInvalid(ctx context.Context, lastErro
 	return nil
 }
 
+// List returns every connected integration (admin-dashboard ADM-13/ADM-14 -
+// the poller status view reads this directly, with no new fetch logic).
+// Ordered by provider for a stable response.
+func (r *IntegrationRepository) List(ctx context.Context) ([]Integration, error) {
+	rows, err := r.pool.Query(ctx,
+		`SELECT id, provider, encrypted_api_key, encrypted_app_key, status, last_checked_at, last_error
+		 FROM integrations ORDER BY provider`)
+	if err != nil {
+		return nil, fmt.Errorf("db: failed to list integrations: %w", err)
+	}
+	defer rows.Close()
+
+	var integrations []Integration
+	for rows.Next() {
+		var integration Integration
+		if err := rows.Scan(
+			&integration.ID, &integration.Provider, &integration.EncryptedAPIKey, &integration.EncryptedAppKey,
+			&integration.Status, &integration.LastCheckedAt, &integration.LastError,
+		); err != nil {
+			return nil, fmt.Errorf("db: failed to scan integration row: %w", err)
+		}
+		integrations = append(integrations, integration)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("db: failed reading integration rows: %w", err)
+	}
+
+	return integrations, nil
+}
+
 // GetDatadog returns the Datadog integration's current status, last error,
 // and encrypted credentials, or ErrNotFound if no Datadog integration has
 // been connected yet.

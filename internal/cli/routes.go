@@ -40,6 +40,7 @@ func buildAdminRouter(pool *db.Pool, cfg config.Config, logger *zap.Logger) http
 	integrationsHandler := api.NewIntegrationsHandler(db.NewIntegrationRepository(pool), validateDatadogCredentials, cfg.MasterKey, logger)
 	incidentsHandler := api.NewIncidentsHandler(db.NewIncidentRepository(pool), logger)
 	statusPagesHandler := api.NewStatusPagesHandler(db.NewStatusPageRepository(pool), logger)
+	pollerStatusHandler := api.NewPollerStatusHandler(db.NewIntegrationRepository(pool), logger)
 
 	requireAuth := api.RequireAuth(cfg.SessionSecret, admins)
 	writeRoles := api.RequireRole(db.RoleOwner, db.RoleOperator)
@@ -70,9 +71,11 @@ func buildAdminRouter(pool *db.Pool, cfg config.Config, logger *zap.Logger) http
 		protected.With(writeRoles).Patch("/api/incidents/{id}", incidentsHandler.Transition)
 		protected.With(writeRoles).Post("/api/status-pages", statusPagesHandler.Create)
 
-		// mvp-core read routes - owner, operator, and viewer (ADM-10, ADM-11).
+		// mvp-core read routes and poller status (admin-dashboard ADM-13) -
+		// owner, operator, and viewer (ADM-10, ADM-11).
 		protected.With(anyRole).Get("/api/services", servicesHandler.List)
 		protected.With(anyRole).Get("/api/integrations/datadog/status", integrationsHandler.Status)
+		protected.With(anyRole).Get("/api/poller/status", pollerStatusHandler.List)
 	})
 
 	return r

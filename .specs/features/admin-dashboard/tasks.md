@@ -375,11 +375,11 @@ T11 → T12 → T13
 - Skill: NONE
 
 **Done when**:
-- [ ] Resposta reflete o último estado persistido pelo poller, sem chamada nova ao Datadog
-- [ ] Falha de conexão registrada pelo poller aparece com `status = "invalid"` e `last_error` preenchido
-- [ ] Todos os 3 papéis conseguem acessar (200)
-- [ ] Testes de integração cobrem sucesso e cenário de falha persistida
-- [ ] Gate check passa: `go test ./... -tags=integration && go vet ./...`
+- [x] Resposta reflete o último estado persistido pelo poller, sem chamada nova ao Datadog
+- [x] Falha de conexão registrada pelo poller aparece com `status = "invalid"` e `last_error` preenchido
+- [x] Todos os 3 papéis conseguem acessar (200)
+- [x] Testes de integração cobrem sucesso e cenário de falha persistida
+- [x] Gate check passa: `go test ./... -tags=integration && go vet ./...`
 
 **Tests**: integration
 **Gate**: full
