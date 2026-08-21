@@ -364,10 +364,10 @@ I19 → I20
 - Skill: NONE
 
 **Done when**:
-- [ ] Endpoint retorna o mesmo shape `{services,incidents}` que `PublicStatusHandler.Get` produz pra hostname, mas resolvido por ID
-- [ ] Atrás de `requireAuth` (não é público de verdade — só preview pra admin logado)
-- [ ] Comentário `SPEC_DEVIATION` no código aponta pro endpoint real de produção e explica a coexistência
-- [ ] Gate check passes: `go test -tags=integration ./...`
+- [x] Endpoint retorna o mesmo shape `{services,incidents}` que `PublicStatusHandler.Get` produz pra hostname, mas resolvido por ID
+- [x] Atrás de `requireAuth` (não é público de verdade — só preview pra admin logado)
+- [x] Comentário `SPEC_DEVIATION` no código aponta pro endpoint real de produção e explica a coexistência
+- [x] Gate check passes: `go test -tags=integration ./...`
 
 **Tests**: integration
 **Gate**: full

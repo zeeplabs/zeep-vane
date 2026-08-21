@@ -41,6 +41,8 @@ func buildAdminRouter(pool *db.Pool, cfg config.Config, logger *zap.Logger) http
 	incidentsHandler := api.NewIncidentsHandler(db.NewIncidentRepository(pool), logger)
 	statusPagesHandler := api.NewStatusPagesHandler(db.NewStatusPageRepository(pool), logger)
 	pollerStatusHandler := api.NewPollerStatusHandler(db.NewIntegrationRepository(pool), logger)
+	publicStatusHandler := api.NewPublicStatusHandler(db.NewServiceRepository(pool), db.NewStatusSnapshotRepository(pool), db.NewIncidentRepository(pool), logger)
+	publicStatusPreviewHandler := api.NewPublicStatusPreviewHandler(publicStatusHandler, logger)
 
 	requireAuth := api.RequireAuth(cfg.SessionSecret, admins)
 	writeRoles := api.RequireRole(db.RoleOwner, db.RoleOperator)
@@ -79,6 +81,7 @@ func buildAdminRouter(pool *db.Pool, cfg config.Config, logger *zap.Logger) http
 		protected.With(anyRole).Get("/api/domains", domainsHandler.List)
 		protected.With(anyRole).Get("/api/services", servicesHandler.List)
 		protected.With(anyRole).Get("/api/status-pages", statusPagesHandler.List)
+		protected.With(anyRole).Get("/api/status-pages/{id}/public-preview", publicStatusPreviewHandler.Get)
 		protected.With(anyRole).Get("/api/integrations/datadog/status", integrationsHandler.Status)
 		protected.With(anyRole).Get("/api/poller/status", pollerStatusHandler.List)
 	})

@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"time"
 
@@ -104,25 +105,35 @@ func (h *PublicStatusHandler) Get(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	services, err := h.services.ListForStatusPage(r.Context(), statusPageID)
+	resp, err := h.composeResponse(r.Context(), statusPageID)
 	if err != nil {
-		h.logger.Error("public-status: failed to list services", zap.Error(err))
+		h.logger.Error("public-status: failed to compose response", zap.Error(err))
 		writeInternalError(w)
 		return
 	}
 
-	latestFetchedAt, err := h.snapshots.LatestFetchedAtByService(r.Context())
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(resp)
+}
+
+// composeResponse builds the public status response for statusPageID -
+// shared by Get (resolved by Host header, production) and
+// PublicStatusPreviewHandler.Get (resolved by ID, dev/preview - I12).
+func (h *PublicStatusHandler) composeResponse(ctx context.Context, statusPageID string) (publicStatusResponse, error) {
+	services, err := h.services.ListForStatusPage(ctx, statusPageID)
 	if err != nil {
-		h.logger.Error("public-status: failed to load latest status snapshots", zap.Error(err))
-		writeInternalError(w)
-		return
+		return publicStatusResponse{}, fmt.Errorf("failed to list services: %w", err)
 	}
 
-	activeIncidents, resolvedIncidents, err := h.incidents.ListPublicForStatusPage(r.Context(), statusPageID, incidentRetentionDays)
+	latestFetchedAt, err := h.snapshots.LatestFetchedAtByService(ctx)
 	if err != nil {
-		h.logger.Error("public-status: failed to list public incidents", zap.Error(err))
-		writeInternalError(w)
-		return
+		return publicStatusResponse{}, fmt.Errorf("failed to load latest status snapshots: %w", err)
+	}
+
+	activeIncidents, resolvedIncidents, err := h.incidents.ListPublicForStatusPage(ctx, statusPageID, incidentRetentionDays)
+	if err != nil {
+		return publicStatusResponse{}, fmt.Errorf("failed to list public incidents: %w", err)
 	}
 
 	resp := publicStatusResponse{
@@ -150,9 +161,7 @@ func (h *PublicStatusHandler) Get(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	_ = json.NewEncoder(w).Encode(resp)
+	return resp, nil
 }
 
 // toPublicIncidentResponses converts a slice of db.IncidentPublic (already
