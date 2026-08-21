@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { renderHook, waitFor } from "@testing-library/react";
 import { TestQueryProvider } from "../../test/queryClient";
-import { apiFetch } from "../../lib/apiClient";
+import { apiFetch, ApiError } from "../../lib/apiClient";
 import { useCreateService, useServices } from "./hooks";
 
 async function loginAsOwner() {
@@ -19,7 +19,11 @@ describe("services hooks", () => {
     expect(result.current.data!.length).toBeGreaterThan(0);
   });
 
-  it("serviço sem slo_id fica not_configured; com slo_id vinculado remove o rótulo", async () => {
+  // O backend real exige slo_id na criação (services.slo_id NOT NULL,
+  // 0004_services.up.sql) - diferente do mock antigo, que permitia criar
+  // um serviço sem SLO nenhum. Todo serviço criado nasce "not_configured"
+  // até o poller buscar o status pela primeira vez (SPEC_DEVIATION, I15).
+  it("serviço criado com slo_id nasce not_configured e resolve slo_name via busca por id", async () => {
     await loginAsOwner();
     const { result } = renderHook(
       () => ({ services: useServices(), create: useCreateService() }),
@@ -27,20 +31,25 @@ describe("services hooks", () => {
     );
     await waitFor(() => expect(result.current.services.isSuccess).toBe(true));
 
-    const withoutSlo = await result.current.create.mutateAsync({ name: "Serviço sem SLO" });
-    expect(withoutSlo.current_status).toBe("not_configured");
-    expect(withoutSlo.slo_name).toBeNull();
-
-    const withSlo = await result.current.create.mutateAsync({
+    const created = await result.current.create.mutateAsync({
       name: "Serviço com SLO",
       slo_id: "slo-1",
     });
-    expect(withSlo.slo_name).not.toBeNull();
-    expect(withSlo.current_status).not.toBe("not_configured");
+    expect(created.current_status).toBe("not_configured");
+    expect(created.slo_name).not.toBeNull();
 
     await waitFor(() => expect(result.current.services.isFetching).toBe(false));
     const names = result.current.services.data!.map((s) => s.name);
-    expect(names).toContain("Serviço sem SLO");
     expect(names).toContain("Serviço com SLO");
+  });
+
+  it("POST /api/services sem slo_id retorna 422 (mesma regra do backend real)", async () => {
+    await loginAsOwner();
+    await expect(
+      apiFetch("/api/services", {
+        method: "POST",
+        body: JSON.stringify({ name: "Serviço inválido" }),
+      })
+    ).rejects.toThrow(ApiError);
   });
 });

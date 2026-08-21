@@ -93,18 +93,22 @@ export const services: Service[] = [
     last_status_change_at: new Date(Date.now() - 1000 * 60 * 30).toISOString(),
   },
   {
+    // slo_id/slo_name non-null (SPEC_DEVIATION, I15): the real services
+    // table has slo_id NOT NULL (0004_services.up.sql) - a service always
+    // has an SLO linked at creation, "not_configured" only means the
+    // poller hasn't fetched a status for it yet, never "no SLO at all".
     id: "svc-3",
     name: "Notificações",
-    slo_id: null,
-    slo_name: null,
+    slo_id: "slo-4",
+    slo_name: "Fila de notificações",
     current_status: "not_configured",
     last_status_change_at: new Date(Date.now() - 1000 * 60 * 60 * 24).toISOString(),
   },
   {
     id: "svc-4",
     name: "Fila de processamento",
-    slo_id: null,
-    slo_name: null,
+    slo_id: "slo-3",
+    slo_name: "Autenticação disponibilidade",
     current_status: "operational",
     last_status_change_at: new Date(Date.now() - 1000 * 60 * 60 * 12).toISOString(),
   },

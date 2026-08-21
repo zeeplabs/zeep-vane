@@ -53,8 +53,16 @@ export function ServicesSection() {
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     setError(null);
+    if (!selectedSlo) {
+      // The real backend requires slo_id on creation (SPEC_DEVIATION, I15:
+      // the earlier mock allowed a service with no SLO at all) - validated
+      // client-side so the admin gets an immediate, specific message
+      // instead of a generic 422 from the API.
+      setError("Selecione um SLO da lista antes de salvar.");
+      return;
+    }
     try {
-      await createService.mutateAsync({ name, slo_id: selectedSlo?.id ?? null });
+      await createService.mutateAsync({ name, slo_id: selectedSlo.id });
       resetForm();
       setDialogOpen(false);
     } catch (err) {

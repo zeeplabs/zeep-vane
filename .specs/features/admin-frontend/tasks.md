@@ -440,12 +440,14 @@ I19 → I20
 - Skill: NONE
 
 **Done when**:
-- [ ] Conectar Datadog (ou stub de credenciais), buscar SLO e vincular serviço funcionam contra API real em teste manual
-- [ ] Todos os testes de hook desta etapa passam via MSW
-- [ ] Gate check passes: `cd web && npm run test`
+- [ ] Conectar Datadog (ou stub de credenciais), buscar SLO e vincular serviço funcionam contra API real em teste manual — não executado nesta sessão: sem credenciais reais de Datadog disponíveis no ambiente; fluxo validado end-to-end via MSW (equivalente funcional) e via testes de integração Go do handler (I14), não via browser real. Backlog: validar manualmente quando houver conta de teste Datadog disponível.
+- [x] Todos os testes de hook desta etapa passam via MSW
+- [x] Gate check passes: `cd web && npm run test`
 
 **Tests**: unit (via MSW)
 **Gate**: quick (frontend)
+
+> SPEC_DEVIATION: (1) checkbox de teste manual contra Datadog real não marcado (sem credenciais nesta sessão), ver nota acima. (2) `services/hooks.ts`: backend real não tem campo `slo_name` em `Service` (só `slo_id` opaco) — resolvido client-side reutilizando `GET /api/integrations/datadog/slos?query=id:<slo_id>` (mesmo endpoint de I14), função `fetchSLOName` em `integrations/hooks.ts`. (3) backend real exige `slo_id` na criação de serviço (`services.slo_id NOT NULL`) — `CreateServiceInput.slo_id` deixou de ser opcional; `ServicesSection.tsx` ganhou validação client-side (SLO obrigatório antes de submeter), teste antigo de "serviço sem SLO" substituído por um teste de 422 real. (4) `integrations/hooks.ts`: `useIntegrationStatus` batia em `/api/integrations/datadog` (path errado) e esperava shape mock (`connected`/`masked_key`) que o backend real nunca retornou — corrigido pra `/api/integrations/datadog/status` com adaptação 404→`{connected:false}`; backend nunca reexibe a chave (SP-01.4), então `masked_key` fica sempre `undefined` e o placeholder genérico é o que aparece (teste de `IntegrationsPage.test.tsx` ajustado, mesmo padrão de gap do I13/i18n). (5) fixtures `svc-3`/`svc-4` em `mockData.ts` tinham `slo_id: null`, impossível no schema real — corrigidas pra usar SLOs do catálogo (estado "not_configured"/"operational" com SLO vinculado mas ainda não pollado, não "sem SLO").
 
 ---
 

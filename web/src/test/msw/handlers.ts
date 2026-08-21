@@ -6,8 +6,10 @@ import {
   services as seedServices,
   incidents as seedIncidents,
   incidentUpdates as seedIncidentUpdates,
+  sloCatalog,
+  datadogIntegration as seedDatadogIntegration,
 } from "../../lib/mockData";
-import type { Domain, StatusPage } from "../../types/api";
+import type { Domain, StatusPage, Service } from "../../types/api";
 
 // Simulates the vane_session cookie server-side: real cookie semantics
 // (Set-Cookie/credentials) are covered by the Go integration tests
@@ -35,6 +37,36 @@ export function resetDomainsAndStatusPages(): void {
   statusPageIdCounter = 0;
 }
 resetDomainsAndStatusPages();
+
+// In-memory services + Datadog integration state (I15), seeded the same
+// way as domains/status-pages above.
+let servicesState: Service[] = [];
+let serviceIdCounter = 0;
+let datadogConnected = false;
+let datadogStatus: "active" | "invalid" = "active";
+let datadogLastError: string | null = null;
+
+export function resetServicesAndIntegration(): void {
+  servicesState = seedServices.map((s) => ({ ...s }));
+  serviceIdCounter = 0;
+  datadogConnected = seedDatadogIntegration.connected;
+  datadogStatus = seedDatadogIntegration.status;
+  datadogLastError = seedDatadogIntegration.last_error;
+}
+resetServicesAndIntegration();
+
+// toServiceResponse strips slo_name - the real serviceResponse
+// (internal/api/services_handler.go) never returns it, only the opaque
+// slo_id (see services/hooks.ts's toService adapter, SPEC_DEVIATION I15).
+function toServiceResponse(service: Service) {
+  return {
+    id: service.id,
+    name: service.name,
+    slo_id: service.slo_id,
+    current_status: service.current_status,
+    last_status_change_at: service.last_status_change_at,
+  };
+}
 
 // toDomainResponse/toStatusPageResponse strip fields the real backend
 // never returns (StatusPage.service_ids only exists in the frontend
@@ -133,6 +165,72 @@ export const handlers = [
     };
     statusPagesState.push(created);
     return HttpResponse.json(toStatusPageResponse(created), { status: 201 });
+  }),
+
+  http.get("/api/integrations/datadog/status", () => {
+    if (!sessionAdminId) return HttpResponse.json({ error: "unauthorized" }, { status: 401 });
+    if (!datadogConnected) {
+      return HttpResponse.json({ error: "datadog integration not connected yet" }, { status: 404 });
+    }
+    return HttpResponse.json({
+      status: datadogStatus,
+      last_checked_at: new Date().toISOString(),
+      last_error: datadogLastError,
+    });
+  }),
+
+  http.post("/api/integrations/datadog", async ({ request }) => {
+    if (!sessionAdminId) return HttpResponse.json({ error: "unauthorized" }, { status: 401 });
+    const body = (await request.json()) as { api_key?: string; app_key?: string };
+    if (!body.api_key || !body.app_key) {
+      return HttpResponse.json(
+        { error: "invalid datadog api key or app key, or missing slo read permission" },
+        { status: 422 },
+      );
+    }
+    datadogConnected = true;
+    datadogStatus = "active";
+    datadogLastError = null;
+    return HttpResponse.json({ status: "connected" }, { status: 201 });
+  }),
+
+  // GET /api/integrations/datadog/slos?query= (I14/I15) - mirrors
+  // SearchSLOs: "id:<id>" does an exact id lookup (how services/hooks.ts's
+  // fetchSLOName resolves slo_name), anything else is a case-insensitive
+  // name substring match.
+  http.get("/api/integrations/datadog/slos", ({ request }) => {
+    if (!sessionAdminId) return HttpResponse.json({ error: "unauthorized" }, { status: 401 });
+    const query = new URL(request.url).searchParams.get("query") ?? "";
+    if (query.startsWith("id:")) {
+      const id = query.slice(3);
+      return HttpResponse.json(sloCatalog.filter((slo) => slo.id === id));
+    }
+    const needle = query.toLowerCase();
+    return HttpResponse.json(sloCatalog.filter((slo) => slo.name.toLowerCase().includes(needle)));
+  }),
+
+  http.get("/api/services", () => {
+    if (!sessionAdminId) return HttpResponse.json({ error: "unauthorized" }, { status: 401 });
+    return HttpResponse.json(servicesState.map(toServiceResponse));
+  }),
+
+  http.post("/api/services", async ({ request }) => {
+    if (!sessionAdminId) return HttpResponse.json({ error: "unauthorized" }, { status: 401 });
+    const body = (await request.json()) as { name?: string; slo_id?: string };
+    if (!body.name || !body.slo_id) {
+      return HttpResponse.json({ error: "name and slo_id are required" }, { status: 422 });
+    }
+    serviceIdCounter += 1;
+    const created: Service = {
+      id: `svc-msw-${serviceIdCounter}`,
+      name: body.name,
+      slo_id: body.slo_id,
+      slo_name: sloCatalog.find((slo) => slo.id === body.slo_id)?.name ?? null,
+      current_status: "not_configured",
+      last_status_change_at: new Date().toISOString(),
+    };
+    servicesState.push(created);
+    return HttpResponse.json(toServiceResponse(created), { status: 201 });
   }),
 
   // GET /api/status-pages/:id/public-preview (I12/I13) - mirrors the real

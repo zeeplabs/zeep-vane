@@ -56,6 +56,9 @@ describe("IntegrationsPage", () => {
     await userEvent.click(screen.getByRole("button", { name: "Salvar chave" }));
 
     await waitFor(() => expect(screen.queryByLabelText("Nova API key")).not.toBeInTheDocument());
-    expect(await screen.findByText(/1234/)).toBeInTheDocument();
+    // O backend real nunca reexibe a chave, nem mascarada (SP-01.4) -
+    // diferente do mock antigo, que simulava um masked_key com os últimos
+    // dígitos. Placeholder genérico permanece (SPEC_DEVIATION, I15).
+    expect(await screen.findByText(/Chave: •••• •••• •••• \?\?\?\?/)).toBeInTheDocument();
   });
 });
