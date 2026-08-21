@@ -123,6 +123,13 @@ func (h *AuthHandler) Me(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(meResponse{ID: admin.ID, Email: admin.Email, Role: admin.Role})
 }
 
+// Logout expires the vane_session cookie set at login. It requires no
+// role beyond being authenticated - any admin can end their own session.
+func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
+	http.SetCookie(w, sessionCookie("", -1))
+	w.WriteHeader(http.StatusOK)
+}
+
 func writeLoginError(w http.ResponseWriter) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusUnauthorized)

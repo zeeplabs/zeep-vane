@@ -254,6 +254,82 @@ func TestMe_NoSession_401(t *testing.T) {
 	}
 }
 
+func newLogoutRouter(t *testing.T) (http.Handler, *db.AdminRepository, *db.Pool) {
+	t.Helper()
+	dsn := testDatabaseURL(t)
+
+	if err := db.MigrateUp(dsn, "../db/migrations"); err != nil {
+		t.Fatalf("MigrateUp() returned unexpected error: %v", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	pool, err := db.NewPool(ctx, dsn)
+	if err != nil {
+		t.Fatalf("NewPool() returned unexpected error: %v", err)
+	}
+	t.Cleanup(pool.Close)
+
+	repo := db.NewAdminRepository(pool)
+	handler := NewAuthHandler(repo, zap.NewNop(), testSessionSecret)
+
+	r := chi.NewRouter()
+	protected := chi.NewRouter()
+	protected.Use(RequireAuth(testSessionSecret, repo))
+	protected.Get("/api/auth/me", handler.Me)
+	protected.Post("/api/auth/logout", handler.Logout)
+	r.Mount("/", protected)
+
+	return r, repo, pool
+}
+
+func TestLogout_ExpiresCookie_SubsequentRequestRejected(t *testing.T) {
+	r, repo, pool := newLogoutRouter(t)
+	email := uniqueTestEmail(t)
+	createTestAdmin(t, repo, pool, email, "correct-horse-battery-staple")
+	admin, err := repo.GetByEmail(context.Background(), email)
+	if err != nil {
+		t.Fatalf("GetByEmail() returned unexpected error: %v", err)
+	}
+	token, err := auth.IssueSession(admin.ID, testSessionSecret)
+	if err != nil {
+		t.Fatalf("IssueSession() returned unexpected error: %v", err)
+	}
+
+	logoutReq := httptest.NewRequest(http.MethodPost, "/api/auth/logout", nil)
+	logoutReq.AddCookie(&http.Cookie{Name: sessionCookieName, Value: token})
+	logoutRec := httptest.NewRecorder()
+	r.ServeHTTP(logoutRec, logoutReq)
+
+	if logoutRec.Code != http.StatusOK {
+		t.Fatalf("logout status = %d, want %d", logoutRec.Code, http.StatusOK)
+	}
+
+	var expiredCookie *http.Cookie
+	for _, c := range logoutRec.Result().Cookies() {
+		if c.Name == "vane_session" {
+			expiredCookie = c
+			break
+		}
+	}
+	if expiredCookie == nil {
+		t.Fatal("logout response has no vane_session cookie, want an expiring one")
+	}
+	if expiredCookie.MaxAge >= 0 {
+		t.Errorf("expired cookie MaxAge = %d, want negative (immediate expiry)", expiredCookie.MaxAge)
+	}
+
+	meReq := httptest.NewRequest(http.MethodGet, "/api/auth/me", nil)
+	meReq.AddCookie(&http.Cookie{Name: sessionCookieName, Value: expiredCookie.Value})
+	meRec := httptest.NewRecorder()
+	r.ServeHTTP(meRec, meReq)
+
+	if meRec.Code != http.StatusUnauthorized {
+		t.Errorf("subsequent request status = %d, want %d (expired cookie must not authenticate - simulated via empty cookie value browsers send after expiry)", meRec.Code, http.StatusUnauthorized)
+	}
+}
+
 func TestLogin_NonexistentEmail_IdenticalToWrongPassword(t *testing.T) {
 	rWrongPassword, repo, pool := newLoginRouter(t)
 	email := uniqueTestEmail(t)

@@ -174,9 +174,9 @@ I19 → I20
 - Skill: NONE
 
 **Done when**:
-- [ ] `POST /api/auth/logout` responde 200 e expira o cookie
-- [ ] Requisição subsequente com o cookie expirado retorna 401
-- [ ] Gate check passes: `go test -tags=integration ./...`
+- [x] `POST /api/auth/logout` responde 200 e expira o cookie
+- [x] Requisição subsequente com o cookie expirado retorna 401
+- [x] Gate check passes: `go test -tags=integration ./...`
 
 **Tests**: integration
 **Gate**: full
