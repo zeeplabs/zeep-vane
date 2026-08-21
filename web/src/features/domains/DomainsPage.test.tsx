@@ -1,0 +1,71 @@
+import { describe, it, expect, afterEach } from "vitest";
+import { render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { MemoryRouter } from "react-router-dom";
+import "../../lib/i18n";
+import { AuthProvider } from "../../auth/AuthProvider";
+import { TestQueryProvider } from "../../test/queryClient";
+import { apiFetch } from "../../lib/apiClient";
+import { DomainsPage } from "./DomainsPage";
+
+async function loginAs(email: string) {
+  await apiFetch("/api/auth/login", {
+    method: "POST",
+    body: JSON.stringify({ email, password: "demo1234" }),
+  });
+}
+
+afterEach(async () => {
+  await apiFetch("/api/auth/logout", { method: "POST" });
+});
+
+function renderPage() {
+  return render(
+    <MemoryRouter>
+      <TestQueryProvider>
+        <AuthProvider>
+          <DomainsPage />
+        </AuthProvider>
+      </TestQueryProvider>
+    </MemoryRouter>
+  );
+}
+
+describe("DomainsPage", () => {
+  it("lista domínios com colunas Hostname/Cadastrado em", async () => {
+    await loginAs("owner@vane.app");
+    renderPage();
+    expect(await screen.findByText("status.acme.com")).toBeInTheDocument();
+    expect(screen.getByText("Hostname")).toBeInTheDocument();
+    expect(screen.getByText("Cadastrado em")).toBeInTheDocument();
+  });
+
+  it("viewer não vê o formulário de cadastro", async () => {
+    await loginAs("viewer@vane.app");
+    renderPage();
+    await screen.findByText("status.acme.com");
+    expect(screen.queryByRole("button", { name: "Cadastrar domínio" })).not.toBeInTheDocument();
+  });
+
+  it("cadastro duplicado exibe erro exato sem criar linha nova", async () => {
+    await loginAs("owner@vane.app");
+    renderPage();
+    await userEvent.click(await screen.findByRole("button", { name: "Cadastrar domínio" }));
+    await userEvent.type(screen.getByLabelText("Hostname"), "status.acme.com");
+    await userEvent.click(screen.getByRole("button", { name: "Salvar" }));
+
+    expect(await screen.findByText("Esse hostname já está cadastrado.")).toBeInTheDocument();
+    expect(screen.getAllByText("status.acme.com")).toHaveLength(1); // continua só a linha original, não duplicou
+  });
+
+  it("cadastro novo aparece na tabela", async () => {
+    await loginAs("owner@vane.app");
+    renderPage();
+    await userEvent.click(await screen.findByRole("button", { name: "Cadastrar domínio" }));
+    await userEvent.type(screen.getByLabelText("Hostname"), "status.novo-dominio.com");
+    await userEvent.click(screen.getByRole("button", { name: "Salvar" }));
+
+    await waitFor(() => expect(screen.queryByLabelText("Hostname")).not.toBeInTheDocument());
+    expect(await screen.findByText("status.novo-dominio.com")).toBeInTheDocument();
+  });
+});

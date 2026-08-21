@@ -11,6 +11,8 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Design**: `.specs/features/admin-frontend/design.md`
 **Status**: Draft
 
+> **Nota de execução (2026-08-20, ver AD-006 em `.specs/STATE.md`)**: esta rodada seguiu ordem invertida — frontend primeiro, contra mock layer (`web/src/lib/mockData.ts` + `apiClient.ts`), sem rede real. T1-T8 (backend: `auth/me`, listagens de domains/status-pages/admins com convites, busca de SLO, cookie de sessão) e a integração de rede real de T13 (`apiClient`)/T14 (`AuthProvider`)/T18 (embed da SPA)/T21/T24/T28/T31/T33 (hooks que hoje apontam pro mock) permanecem pendentes como backlog de integração. Nenhuma checkbox de "Done when" abaixo foi marcada como concluída nesta rodada — todas dependem de endpoints reais ainda inexistentes.
+
 ---
 
 ## Test Coverage Matrix

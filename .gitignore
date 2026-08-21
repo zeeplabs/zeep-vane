@@ -4,5 +4,6 @@ bin/
 *.test
 test-local/
 web/node_modules/
+web/dist/
 internal/webui/static/
 .DS_Store

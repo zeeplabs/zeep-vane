@@ -42,6 +42,14 @@
 - **Date**: 2026-08-20
 - **Status**: active
 
+### AD-006
+- **Decision**: Frontend `admin-frontend` implementado primeiro contra mock layer (`web/src/lib/mockData.ts` + `apiClient.ts` simulando fetch em memória, sem rede real). Integração real com backend Go (T1-T8 backend + wiring real de T13/T14/T18 + demais hooks) fica para fase posterior, fora do escopo desta rodada de execução.
+- **Reason**: Usuário pediu explicitamente "faça só interface navegável com dados fake, depois faremos a fase de integração com o backend" — decisão deliberada de escopo, não esquecimento do plano em `tasks.md` (que descreve ordem backend-primeiro nas Fases 1-2).
+- **Trade-off**: Nenhum dos 25 requisitos admin (SP-01 a SP-25) fica operável contra dado real nesta rodada; endpoints T1-T8 (auth/me, list de domains/status-pages/admins com convites, busca de SLO), cookie de sessão (T6-T8) e o wiring de rede real em T13 (`apiClient`)/T14 (`AuthProvider`)/T18 (embed da SPA) continuam pendentes. Risco de retrabalho na integração se o contrato mockado divergir do contrato real do backend — validar payloads exatos com T1-T8 antes de trocar a camada mock por fetch real.
+- **Scope**: Frontend `admin-frontend` (`web/`) desta rodada de execução; próxima rodada deve tratar a integração como fase própria.
+- **Date**: 2026-08-20
+- **Status**: active
+
 ## Handoff
 
 **Feature**: `admin-dashboard` — **status: PASS ✅** (Verifier completou em 1 rodada de fix→re-verify, dentro do limite de 3). Relatório: `.specs/features/admin-dashboard/validation.md`.
