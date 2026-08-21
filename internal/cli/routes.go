@@ -81,7 +81,10 @@ func buildAdminRouter(pool *db.Pool, cfg config.Config, logger *zap.Logger) http
 		protected.With(anyRole).Get("/api/poller/status", pollerStatusHandler.List)
 	})
 
-	return r
+	// Wraps the whole mux rather than r.Use(...): router.New already
+	// registers /healthz before returning, and chi panics if Use is called
+	// after any route is registered on the same mux.
+	return api.NewCORSMiddleware(cfg.CORSAllowedOrigin)(r)
 }
 
 // validateDatadogCredentials adapts datadog.Client.ValidateCredentials to

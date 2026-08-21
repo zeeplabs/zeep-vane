@@ -18,7 +18,12 @@ type Config struct {
 	Port                int
 	PollIntervalSeconds int
 	LogLevel            string
+	CORSAllowedOrigin   string
 }
+
+// defaultCORSAllowedOrigin is the Vite dev server's origin - the CORS
+// allowlist entry when CORS_ALLOWED_ORIGIN is unset (local development).
+const defaultCORSAllowedOrigin = "http://localhost:5173"
 
 // Load reads and validates the required environment variables, returning a
 // clear error if any is missing or malformed. A .env file is loaded on a
@@ -56,6 +61,11 @@ func Load() (Config, error) {
 		logLevel = "info"
 	}
 
+	corsAllowedOrigin := os.Getenv("CORS_ALLOWED_ORIGIN")
+	if corsAllowedOrigin == "" {
+		corsAllowedOrigin = defaultCORSAllowedOrigin
+	}
+
 	return Config{
 		DatabaseURL:         databaseURL,
 		MasterKey:           masterKey,
@@ -63,6 +73,7 @@ func Load() (Config, error) {
 		Port:                port,
 		PollIntervalSeconds: pollIntervalSeconds,
 		LogLevel:            logLevel,
+		CORSAllowedOrigin:   corsAllowedOrigin,
 	}, nil
 }
 

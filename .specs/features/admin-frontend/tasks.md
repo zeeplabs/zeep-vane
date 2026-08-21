@@ -196,10 +196,10 @@ I19 → I20
 - Skill: NONE (consultar doc oficial da lib de CORS escolhida antes de configurar — não inventar opções)
 
 **Done when**:
-- [ ] Preflight `OPTIONS` de origem permitida recebe `Access-Control-Allow-Origin`+`Access-Control-Allow-Credentials:true`
-- [ ] Origem fora da allowlist não recebe os headers de CORS (requisição falha no browser)
-- [ ] Teste explícito confirma que a config nunca combina origem wildcard com credentials
-- [ ] Gate check passes: `go test -tags=integration ./...`
+- [x] Preflight `OPTIONS` de origem permitida recebe `Access-Control-Allow-Origin`+`Access-Control-Allow-Credentials:true`
+- [x] Origem fora da allowlist não recebe os headers de CORS (requisição falha no browser)
+- [x] Teste explícito confirma que a config nunca combina origem wildcard com credentials
+- [x] Gate check passes: `go test -tags=integration ./...`
 
 **Tests**: integration
 **Gate**: full

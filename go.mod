@@ -3,7 +3,9 @@ module github.com/zeeplabs/zeep-vane
 go 1.26.5
 
 require (
+	github.com/caddyserver/certmagic v0.25.4
 	github.com/go-chi/chi/v5 v5.3.1
+	github.com/go-chi/cors v1.2.2
 	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/golang-migrate/migrate/v4 v4.19.1
 	github.com/jackc/pgerrcode v0.0.0-20220416144525-469b46aa5efa
@@ -15,7 +17,6 @@ require (
 )
 
 require (
-	github.com/caddyserver/certmagic v0.25.4 // indirect
 	github.com/caddyserver/zerossl v0.1.5 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/jackc/pgpassfile v1.0.0 // indirect
