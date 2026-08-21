@@ -52,6 +52,9 @@ func RequireAuth(secret string, admins adminLoader) func(http.Handler) http.Hand
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			token := bearerToken(r.Header.Get("Authorization"))
 			if token == "" {
+				token = sessionCookieToken(r)
+			}
+			if token == "" {
 				writeUnauthorized(w)
 				return
 			}
@@ -86,6 +89,16 @@ func bearerToken(header string) string {
 		return ""
 	}
 	return strings.TrimPrefix(header, prefix)
+}
+
+// sessionCookieToken reads the vane_session cookie set by AuthHandler.Login
+// (I2), returning "" if absent.
+func sessionCookieToken(r *http.Request) string {
+	cookie, err := r.Cookie(sessionCookieName)
+	if err != nil {
+		return ""
+	}
+	return cookie.Value
 }
 
 func writeUnauthorized(w http.ResponseWriter) {

@@ -111,6 +111,64 @@ func TestRequireAuth_ValidToken_PassesThrough(t *testing.T) {
 	}
 }
 
+func TestRequireAuth_CookieOnly_PassesThrough(t *testing.T) {
+	repo, pool := newMiddlewareTestAdmins(t)
+	admin := createMiddlewareTestAdmin(t, repo, pool)
+
+	token, err := auth.IssueSession(admin.ID, middlewareTestSecret)
+	if err != nil {
+		t.Fatalf("IssueSession() returned unexpected error: %v", err)
+	}
+
+	var gotAdmin *db.Admin
+	handler := newProtectedHandler(repo, &gotAdmin)
+
+	req := httptest.NewRequest(http.MethodGet, "/protected", nil)
+	req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: token})
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Errorf("status = %d, want %d", rec.Code, http.StatusOK)
+	}
+	if gotAdmin == nil || gotAdmin.ID != admin.ID {
+		t.Errorf("Admin in context = %v, want admin %q", gotAdmin, admin.ID)
+	}
+}
+
+func TestRequireAuth_HeaderTakesPriorityOverCookie(t *testing.T) {
+	repo, pool := newMiddlewareTestAdmins(t)
+	headerAdmin := createMiddlewareTestAdmin(t, repo, pool)
+	cookieAdmin := createMiddlewareTestAdmin(t, repo, pool)
+
+	headerToken, err := auth.IssueSession(headerAdmin.ID, middlewareTestSecret)
+	if err != nil {
+		t.Fatalf("IssueSession() returned unexpected error: %v", err)
+	}
+	cookieToken, err := auth.IssueSession(cookieAdmin.ID, middlewareTestSecret)
+	if err != nil {
+		t.Fatalf("IssueSession() returned unexpected error: %v", err)
+	}
+
+	var gotAdmin *db.Admin
+	handler := newProtectedHandler(repo, &gotAdmin)
+
+	req := httptest.NewRequest(http.MethodGet, "/protected", nil)
+	req.Header.Set("Authorization", "Bearer "+headerToken)
+	req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: cookieToken})
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Errorf("status = %d, want %d", rec.Code, http.StatusOK)
+	}
+	if gotAdmin == nil || gotAdmin.ID != headerAdmin.ID {
+		t.Errorf("Admin in context = %v, want header's admin %q (header must win over cookie)", gotAdmin, headerAdmin.ID)
+	}
+}
+
 func TestRequireAuth_MissingToken_401(t *testing.T) {
 	repo, _ := newMiddlewareTestAdmins(t)
 	var gotAdmin *db.Admin

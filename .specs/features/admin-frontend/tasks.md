@@ -151,10 +151,10 @@ I19 → I20
 - Skill: NONE
 
 **Done when**:
-- [ ] Requisição só com cookie (sem header `Authorization`) autentica com sucesso
-- [ ] Header continua tendo prioridade quando ambos presentes
-- [ ] Todos os testes existentes de `middleware_test.go` (baseados em header) continuam passando sem alteração
-- [ ] Gate check passes: `go test -tags=integration ./...`
+- [x] Requisição só com cookie (sem header `Authorization`) autentica com sucesso
+- [x] Header continua tendo prioridade quando ambos presentes
+- [x] Todos os testes existentes de `middleware_test.go` (baseados em header) continuam passando sem alteração
+- [x] Gate check passes: `go test -tags=integration ./...`
 
 **Tests**: integration
 **Gate**: full
