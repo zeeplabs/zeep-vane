@@ -81,6 +81,27 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write([]byte(fmt.Sprintf(`{"token":%q}`, token)))
 }
 
+type meResponse struct {
+	ID    string `json:"id"`
+	Email string `json:"email"`
+	Role  string `json:"role"`
+}
+
+// Me returns the authenticated admin's identity, as loaded into context by
+// RequireAuth. It never re-queries the database - RequireAuth already did
+// that lookup for authorization purposes.
+func (h *AuthHandler) Me(w http.ResponseWriter, r *http.Request) {
+	admin, ok := AdminFromContext(r.Context())
+	if !ok {
+		writeUnauthorized(w)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(meResponse{ID: admin.ID, Email: admin.Email, Role: admin.Role})
+}
+
 func writeLoginError(w http.ResponseWriter) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusUnauthorized)

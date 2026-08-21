@@ -130,6 +130,82 @@ func TestLogin_WrongPassword_401Generic(t *testing.T) {
 	}
 }
 
+func newMeRouter(t *testing.T) (http.Handler, *db.AdminRepository, *db.Pool) {
+	t.Helper()
+	dsn := testDatabaseURL(t)
+
+	if err := db.MigrateUp(dsn, "../db/migrations"); err != nil {
+		t.Fatalf("MigrateUp() returned unexpected error: %v", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	pool, err := db.NewPool(ctx, dsn)
+	if err != nil {
+		t.Fatalf("NewPool() returned unexpected error: %v", err)
+	}
+	t.Cleanup(pool.Close)
+
+	repo := db.NewAdminRepository(pool)
+	handler := NewAuthHandler(repo, zap.NewNop(), testSessionSecret)
+
+	r := chi.NewRouter()
+	r.With(RequireAuth(testSessionSecret, repo)).Get("/api/auth/me", handler.Me)
+
+	return r, repo, pool
+}
+
+func TestMe_ValidSession_200WithIdentity(t *testing.T) {
+	r, repo, pool := newMeRouter(t)
+	email := uniqueTestEmail(t)
+	createTestAdmin(t, repo, pool, email, "correct-horse-battery-staple")
+
+	created, err := repo.GetByEmail(context.Background(), email)
+	if err != nil {
+		t.Fatalf("GetByEmail() returned unexpected error: %v", err)
+	}
+	// GetByEmail's SELECT omits role - re-fetch by ID (same lookup
+	// RequireAuth performs) to get the value the handler will actually see.
+	admin, err := repo.GetByID(context.Background(), created.ID)
+	if err != nil {
+		t.Fatalf("GetByID() returned unexpected error: %v", err)
+	}
+	token, err := auth.IssueSession(admin.ID, testSessionSecret)
+	if err != nil {
+		t.Fatalf("IssueSession() returned unexpected error: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/auth/me", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Errorf("status = %d, want %d", rec.Code, http.StatusOK)
+	}
+
+	var body meResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+	if body.ID != admin.ID || body.Email != admin.Email || body.Role != admin.Role {
+		t.Errorf("body = %+v, want {ID:%q Email:%q Role:%q}", body, admin.ID, admin.Email, admin.Role)
+	}
+}
+
+func TestMe_NoSession_401(t *testing.T) {
+	r, _, _ := newMeRouter(t)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/auth/me", nil)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Errorf("status = %d, want %d", rec.Code, http.StatusUnauthorized)
+	}
+}
+
 func TestLogin_NonexistentEmail_IdenticalToWrongPassword(t *testing.T) {
 	rWrongPassword, repo, pool := newLoginRouter(t)
 	email := uniqueTestEmail(t)

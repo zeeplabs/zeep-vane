@@ -106,10 +106,10 @@ I19 → I20
 - Skill: NONE
 
 **Done when**:
-- [ ] `GET /api/auth/me` retorna 200 `{id,email,role}` para qualquer papel autenticado
-- [ ] Retorna 401 sem cookie/header válido
-- [ ] Gate check passes: `go test -tags=integration ./...`
-- [ ] `gofmt -l .` e `go vet ./...` limpos
+- [x] `GET /api/auth/me` retorna 200 `{id,email,role}` para qualquer papel autenticado
+- [x] Retorna 401 sem cookie/header válido
+- [x] Gate check passes: `go test -tags=integration ./...`
+- [x] `gofmt -l .` e `go vet ./...` limpos
 
 **Tests**: integration
 **Gate**: full

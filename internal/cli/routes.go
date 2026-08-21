@@ -56,6 +56,8 @@ func buildAdminRouter(pool *db.Pool, cfg config.Config, logger *zap.Logger) http
 	r.Group(func(protected chi.Router) {
 		protected.Use(requireAuth)
 
+		protected.With(anyRole).Get("/api/auth/me", authHandler.Me)
+
 		// Admin management (admin-dashboard ADM-09) - owner only.
 		protected.With(ownerOnly).Post("/api/admins", adminsHandler.Invite)
 		protected.With(ownerOnly).Get("/api/admins", adminsHandler.List)
