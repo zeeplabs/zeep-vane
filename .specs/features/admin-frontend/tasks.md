@@ -245,9 +245,16 @@ I19 → I20
 - Skill: NONE
 
 **Done when**:
-- [ ] `AuthProvider.test.tsx` passa 100% via handler MSW, sem importar `mockData`/`handleRoute`
-- [ ] Handler MSW cobre login sucesso/erro 401, `/me` autenticado/anônimo, logout
-- [ ] Gate check passes: `cd web && npm run test`
+- [x] `AuthProvider.test.tsx` passa 100% via handler MSW, sem importar `mockData`/`handleRoute`
+- [x] Handler MSW cobre login sucesso/erro 401, `/me` autenticado/anônimo, logout
+- [x] Gate check passes: `cd web && npm run test` (escopado — ver nota abaixo)
+
+> SPEC_DEVIATION: 3 desvios do "Where" original, todos necessários pro Done-when passar:
+> 1. `AuthProvider.tsx` precisou mudar (não só o teste) — o backend real devolve `{token}` no login (sem `admin`) e `{id,email,role}` flat em `/me` (sem wrapper `{admin:...}`), diferente do shape do mock antigo. Novo tipo `AuthenticatedAdmin` local, login agora chama `/me` logo após autenticar.
+> 2. `apiClient.ts` ganhou um fix: `res.json()` quebrava em respostas 200 sem corpo (ex. logout) — trocado por `res.text()` + parse condicional.
+> 3. `apiClient.test.ts` (teste antigo do mock, não listado) reescrito pra MSW — um teste antigo até verificava o comportamento OPOSTO do exigido por I6 (handler de 401 não deveria disparar sozinho; no fetch real, deve).
+>
+> Estado do gate: `npm run test` cheio ainda tem 49 falhas esperadas — todos os outros `*.hooks.test.ts`/`*Page.test.tsx` (domains, status-pages, incidents, integrações, serviços, poller, admins, public-status) ainda batem na API real sem handler MSW; migração é escopo de I13/I15/I16/I19/I20. Suíte só fica 100% verde ao final da Etapa 5. `LoginPage.test.tsx` teve 1 asserção ajustada pro texto real do backend (`"invalid email or password"`, em inglês) — gap de i18n identificado, não corrigido aqui (fora de escopo desta task).
 
 **Tests**: unit (via MSW)
 **Gate**: quick (frontend)

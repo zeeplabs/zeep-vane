@@ -54,9 +54,9 @@ export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> 
     throw new ApiError(res.status, await parseErrorMessage(res));
   }
 
-  if (res.status === 204) {
-    return undefined as T;
-  }
-
-  return (await res.json()) as T;
+  // Several endpoints (e.g. logout) respond 200/204 with no body at all.
+  // res.text() never throws on an empty stream; only parse it as JSON
+  // when there's actually something to parse.
+  const text = await res.text();
+  return (text ? JSON.parse(text) : undefined) as T;
 }

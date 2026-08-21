@@ -7,18 +7,28 @@ import {
   type ReactNode,
 } from "react";
 import { apiFetch, ApiError, setUnauthorizedHandler } from "../lib/apiClient";
-import { admins, type Admin, type Role } from "../lib/mockData";
+import { admins, type Role } from "../lib/mockData";
 
 type Status = "loading" | "authenticated" | "anonymous";
 
+// Shape of GET /api/auth/me's real response body (AF-34) - flat, no
+// wrapper. Deliberately narrower than mockData's full Admin (no `status`):
+// the session only needs the caller's own identity, not the admin-list
+// row shape. Full type migration out of mockData.ts happens in I9.
+export interface AuthenticatedAdmin {
+  id: string;
+  email: string;
+  role: Role;
+}
+
 interface State {
-  admin: Admin | null;
+  admin: AuthenticatedAdmin | null;
   status: Status;
 }
 
 type Action =
   | { type: "BOOT_START" }
-  | { type: "AUTHENTICATED"; admin: Admin }
+  | { type: "AUTHENTICATED"; admin: AuthenticatedAdmin }
   | { type: "ANONYMOUS" };
 
 function reducer(state: State, action: Action): State {
@@ -35,7 +45,7 @@ function reducer(state: State, action: Action): State {
 }
 
 export interface AuthContextValue {
-  admin: Admin | null;
+  admin: AuthenticatedAdmin | null;
   status: Status;
   login: (email: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
@@ -62,8 +72,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     (async () => {
       dispatch({ type: "BOOT_START" });
       try {
-        const res = await apiFetch<{ admin: Admin }>("/api/auth/me");
-        if (!cancelled) dispatch({ type: "AUTHENTICATED", admin: res.admin });
+        const admin = await apiFetch<AuthenticatedAdmin>("/api/auth/me");
+        if (!cancelled) dispatch({ type: "AUTHENTICATED", admin });
       } catch {
         if (!cancelled) dispatch({ type: "ANONYMOUS" });
       }
@@ -81,13 +91,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const login = useCallback(async (email: string, password: string) => {
-    // A resposta mock pode incluir um "token" — descartado deliberadamente:
-    // o estado de autenticação nunca guarda token, só {id,email,role}.
-    const res = await apiFetch<{ admin: Admin; token?: string }>("/api/auth/login", {
+    // O corpo de /api/auth/login traz só {token} - descartado
+    // deliberadamente, nunca guardado em estado. A sessão real vem do
+    // cookie httpOnly que o login também seta (AD-004); a identidade é
+    // hidratada por /api/auth/me logo em seguida, mesmo caminho do boot.
+    await apiFetch<{ token: string }>("/api/auth/login", {
       method: "POST",
       body: JSON.stringify({ email, password }),
     });
-    dispatch({ type: "AUTHENTICATED", admin: res.admin });
+    const admin = await apiFetch<AuthenticatedAdmin>("/api/auth/me");
+    dispatch({ type: "AUTHENTICATED", admin });
   }, []);
 
   const logout = useCallback(async () => {
@@ -110,7 +123,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (!seed) return;
     dispatch({
       type: "AUTHENTICATED",
-      admin: { id: seed.id, email: seed.email, role: seed.role, status: seed.status },
+      admin: { id: seed.id, email: seed.email, role: seed.role },
     });
   }, []);
 

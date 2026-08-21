@@ -1,7 +1,6 @@
-import { describe, it, expect, afterEach } from "vitest";
+import { describe, it, expect } from "vitest";
 import { render, screen, waitFor, act } from "@testing-library/react";
 import { AuthProvider, useAuth } from "./AuthProvider";
-import { apiFetch } from "../lib/apiClient";
 
 function Probe() {
   const auth = useAuth();
@@ -16,18 +15,13 @@ function Probe() {
       <button onClick={() => auth.login("owner@vane.app", "wrong").catch(() => {})}>
         login-fail
       </button>
+      <button onClick={() => auth.logout()}>logout</button>
     </div>
   );
 }
 
-afterEach(async () => {
-  // limpa sessão mock entre testes
-  try {
-    await apiFetch("/api/auth/logout", { method: "POST" });
-  } catch {
-    /* ignore */
-  }
-});
+// Sessão MSW resetada globalmente entre testes por src/test/setup.ts
+// (resetAuthSession, chamado no afterEach do server).
 
 describe("AuthProvider", () => {
   it("boot sem sessão vira anonymous", async () => {
@@ -92,5 +86,26 @@ describe("AuthProvider", () => {
     expect(screen.getByTestId("has-owner")).toHaveTextContent("true");
     expect(screen.getByTestId("has-operator")).toHaveTextContent("false");
     expect(screen.getByTestId("has-viewer")).toHaveTextContent("false");
+  });
+
+  it("logout limpa a sessão e volta pra anonymous", async () => {
+    render(
+      <AuthProvider>
+        <Probe />
+      </AuthProvider>
+    );
+    await waitFor(() => expect(screen.getByTestId("status")).toHaveTextContent("anonymous"));
+
+    await act(async () => {
+      screen.getByText("login-ok").click();
+    });
+    await waitFor(() => expect(screen.getByTestId("status")).toHaveTextContent("authenticated"));
+
+    await act(async () => {
+      screen.getByText("logout").click();
+    });
+
+    await waitFor(() => expect(screen.getByTestId("status")).toHaveTextContent("anonymous"));
+    expect(screen.getByTestId("admin")).toHaveTextContent("null");
   });
 });
