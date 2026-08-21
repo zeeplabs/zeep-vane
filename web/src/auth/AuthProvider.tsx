@@ -7,7 +7,7 @@ import {
   type ReactNode,
 } from "react";
 import { apiFetch, ApiError, setUnauthorizedHandler } from "../lib/apiClient";
-import { admins, type Role } from "../lib/mockData";
+import type { Role } from "../lib/mockData";
 
 type Status = "loading" | "authenticated" | "anonymous";
 
@@ -118,12 +118,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const dismissSessionExpired = useCallback(() => setSessionExpired(false), []);
 
+  // Dev-only, dynamically imported: mockData must never end up in the
+  // production bundle now that the app talks to a real backend (I6).
   const setDevRole = useCallback((role: Role) => {
-    const seed = admins.find((a) => a.role === role);
-    if (!seed) return;
-    dispatch({
-      type: "AUTHENTICATED",
-      admin: { id: seed.id, email: seed.email, role: seed.role },
+    if (!import.meta.env.DEV) return;
+    void import("../lib/mockData").then(({ admins }) => {
+      const seed = admins.find((a) => a.role === role);
+      if (!seed) return;
+      dispatch({
+        type: "AUTHENTICATED",
+        admin: { id: seed.id, email: seed.email, role: seed.role },
+      });
     });
   }, []);
 

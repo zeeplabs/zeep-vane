@@ -135,7 +135,7 @@ export function Sidebar() {
           type="button"
           onClick={() => navigate("/domains")}
           className={
-            "flex h-9 items-center gap-2.5 rounded-md px-3 text-left text-sm transition-colors " +
+            "flex h-9 cursor-pointer items-center gap-2.5 rounded-md px-3 text-left text-sm transition-colors " +
             (domainsActive ? "text-accent bg-accent-900" : "text-neutral-300 hover:text-text")
           }
         >
@@ -156,45 +156,49 @@ export function Sidebar() {
           <PollerIcon />
           <span>{t("sidebar.pollerStatus")}</span>
         </NavLink>
-        <NavLink to="/settings" className={navItemClass}>
-          <SettingsIcon />
-          <span>{t("sidebar.settings")}</span>
-        </NavLink>
+        {hasRole(["owner"]) ? (
+          <NavLink to="/settings" className={navItemClass}>
+            <SettingsIcon />
+            <span>{t("sidebar.settings")}</span>
+          </NavLink>
+        ) : null}
       </nav>
 
       <div className="mt-auto flex flex-col gap-2 pt-4">
         <div className="h-px bg-divider" />
 
-        <div className="px-2 py-0.5">
-          <div className="mb-1.5 text-[10px] uppercase tracking-wider text-neutral-400 opacity-70">
-            {t("sidebar.viewingAs")}
+        {import.meta.env.DEV ? (
+          <div className="px-2 py-0.5">
+            <div className="mb-1.5 text-[10px] uppercase tracking-wider text-neutral-400 opacity-70">
+              {t("sidebar.viewingAs")}
+            </div>
+            <div className="flex w-full rounded-md border border-divider bg-bg p-0.5" role="radiogroup" aria-label={t("sidebar.viewingAs")}>
+              {DEV_ROLES.map((r) => {
+                const active = admin?.role === r.value;
+                return (
+                  <button
+                    key={r.value}
+                    type="button"
+                    role="radio"
+                    aria-checked={active}
+                    onClick={() => setDevRole(r.value)}
+                    className={
+                      "flex-1 cursor-pointer rounded-sm px-1 py-1.5 text-[10.5px] transition-colors " +
+                      (active ? "text-accent ring-1 ring-inset ring-accent" : "text-neutral-400 hover:text-text")
+                    }
+                  >
+                    {r.label}
+                  </button>
+                );
+              })}
+            </div>
           </div>
-          <div className="flex w-full rounded-md border border-divider bg-bg p-0.5" role="radiogroup" aria-label={t("sidebar.viewingAs")}>
-            {DEV_ROLES.map((r) => {
-              const active = admin?.role === r.value;
-              return (
-                <button
-                  key={r.value}
-                  type="button"
-                  role="radio"
-                  aria-checked={active}
-                  onClick={() => setDevRole(r.value)}
-                  className={
-                    "flex-1 rounded-sm px-1 py-1.5 text-[10.5px] transition-colors " +
-                    (active ? "text-accent ring-1 ring-inset ring-accent" : "text-neutral-400 hover:text-text")
-                  }
-                >
-                  {r.label}
-                </button>
-              );
-            })}
-          </div>
-        </div>
+        ) : null}
 
         <button
           type="button"
           onClick={simulateSessionExpired}
-          className="flex items-center gap-2 rounded-md px-2 py-1.5 text-left text-[12.5px] text-text opacity-55 transition-opacity hover:opacity-80"
+          className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-left text-[12.5px] text-text opacity-55 transition-opacity hover:opacity-80"
         >
           <SimulateExpiredIcon />
           {t("sidebar.simulateSessionExpired")}
@@ -202,7 +206,7 @@ export function Sidebar() {
         <button
           type="button"
           onClick={() => setConfirmOpen(true)}
-          className="flex items-center gap-2 rounded-md px-2 py-1.5 text-left text-[12.5px] text-text opacity-55 transition-opacity hover:opacity-80"
+          className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-left text-[12.5px] text-text opacity-55 transition-opacity hover:opacity-80"
         >
           <LogoutIcon />
           {t("sidebar.logout")}

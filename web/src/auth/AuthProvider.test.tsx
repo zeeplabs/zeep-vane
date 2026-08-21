@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { render, screen, waitFor, act } from "@testing-library/react";
 import { AuthProvider, useAuth } from "./AuthProvider";
 
@@ -16,6 +16,7 @@ function Probe() {
         login-fail
       </button>
       <button onClick={() => auth.logout()}>logout</button>
+      <button onClick={() => auth.setDevRole("viewer")}>dev-role-viewer</button>
     </div>
   );
 }
@@ -107,5 +108,40 @@ describe("AuthProvider", () => {
 
     await waitFor(() => expect(screen.getByTestId("status")).toHaveTextContent("anonymous"));
     expect(screen.getByTestId("admin")).toHaveTextContent("null");
+  });
+
+  it("setDevRole é no-op fora de DEV", async () => {
+    vi.stubEnv("DEV", false);
+    render(
+      <AuthProvider>
+        <Probe />
+      </AuthProvider>
+    );
+    await waitFor(() => expect(screen.getByTestId("status")).toHaveTextContent("anonymous"));
+
+    await act(async () => {
+      screen.getByText("dev-role-viewer").click();
+    });
+
+    expect(screen.getByTestId("status")).toHaveTextContent("anonymous");
+    expect(screen.getByTestId("admin")).toHaveTextContent("null");
+    vi.unstubAllEnvs();
+  });
+
+  it("setDevRole autentica com o papel escolhido em DEV", async () => {
+    render(
+      <AuthProvider>
+        <Probe />
+      </AuthProvider>
+    );
+    await waitFor(() => expect(screen.getByTestId("status")).toHaveTextContent("anonymous"));
+
+    await act(async () => {
+      screen.getByText("dev-role-viewer").click();
+    });
+
+    await waitFor(() => expect(screen.getByTestId("status")).toHaveTextContent("authenticated"));
+    const admin = JSON.parse(screen.getByTestId("admin").textContent ?? "{}");
+    expect(admin.role).toBe("viewer");
   });
 });

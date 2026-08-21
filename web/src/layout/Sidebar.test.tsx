@@ -1,4 +1,4 @@
-import { describe, it, expect, afterEach } from "vitest";
+import { describe, it, expect, afterEach, vi } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import "../lib/i18n";
@@ -32,16 +32,31 @@ function renderSidebar() {
 }
 
 describe("Sidebar", () => {
-  it("esconde 'Admins' para non-owner", async () => {
+  it("esconde 'Equipe' para non-owner", async () => {
     await loginAs("viewer@vane.app");
     renderSidebar();
     await waitFor(() => expect(screen.getByText("Domínios & Status Pages")).toBeInTheDocument());
-    expect(screen.queryByText("Admins")).not.toBeInTheDocument();
+    expect(screen.queryByText("Equipe")).not.toBeInTheDocument();
   });
 
-  it("mostra 'Admins' para owner", async () => {
+  it("mostra 'Equipe' para owner", async () => {
     await loginAs("owner@vane.app");
     renderSidebar();
-    await waitFor(() => expect(screen.getByText("Admins")).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText("Equipe")).toBeInTheDocument());
+  });
+
+  it("mostra o controle 'Visualizando como' em DEV", async () => {
+    await loginAs("owner@vane.app");
+    renderSidebar();
+    await waitFor(() => expect(screen.getByRole("radiogroup")).toBeInTheDocument());
+  });
+
+  it("esconde o controle 'Visualizando como' fora de DEV", async () => {
+    vi.stubEnv("DEV", false);
+    await loginAs("owner@vane.app");
+    renderSidebar();
+    await waitFor(() => expect(screen.getByText("Domínios & Status Pages")).toBeInTheDocument());
+    expect(screen.queryByRole("radiogroup")).not.toBeInTheDocument();
+    vi.unstubAllEnvs();
   });
 });

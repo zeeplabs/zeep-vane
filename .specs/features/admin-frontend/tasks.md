@@ -274,9 +274,9 @@ I19 → I20
 - Skill: NONE
 
 **Done when**:
-- [ ] Build de produção (`npm run build`) não inclui `mockData` no bundle (verificar via análise do output ou remoção do import condicional)
-- [ ] `setDevRole`/controle "Visualizando como" só aparecem com `import.meta.env.DEV===true`
-- [ ] Gate check passes: `cd web && npm run test`
+- [x] Build de produção (`npm run build`) não inclui `mockData` no bundle (verificar via análise do output ou remoção do import condicional)
+- [x] `setDevRole`/controle "Visualizando como" só aparecem com `import.meta.env.DEV===true`
+- [x] Gate check passes: `cd web && npm run test`
 
 **Tests**: unit
 **Gate**: quick (frontend)
