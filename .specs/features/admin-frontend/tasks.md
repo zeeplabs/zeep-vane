@@ -219,11 +219,13 @@ I19 → I20
 - Skill: NONE
 
 **Done when**:
-- [ ] `apiFetch` faz requisição de rede real com `credentials:"include"`, sem nenhum `handleRoute`/roteador em memória restante no arquivo
-- [ ] Lança `ApiError` com `status`/`message` corretos em erro real do backend
-- [ ] `triggerUnauthorized()` dispara em 401 real
-- [ ] `VITE_API_BASE_URL` configurável via env, sem hardcode
-- [ ] Gate check passes: `cd web && npm run build` (nenhum teste de hook ainda migrado — ver I7)
+- [x] `apiFetch` faz requisição de rede real com `credentials:"include"`, sem nenhum `handleRoute`/roteador em memória restante no arquivo
+- [x] Lança `ApiError` com `status`/`message` corretos em erro real do backend
+- [x] `triggerUnauthorized()` dispara em 401 real
+- [x] `VITE_API_BASE_URL` configurável via env, sem hardcode
+- [x] Gate check passes: `cd web && npm run build` (nenhum teste de hook ainda migrado — ver I7)
+
+> SPEC_DEVIATION: `vite.config.ts` não precisou de alteração — Vite já expõe vars `VITE_*` via `import.meta.env` sem config extra. Em vez disso, `web/src/vite-env.d.ts` ganhou a tipagem de `ImportMetaEnv.VITE_API_BASE_URL` (necessária pro build TS passar), arquivo não listado originalmente no "Where".
 
 **Tests**: none (config/infra — cobertura via I7)
 **Gate**: build (frontend)
