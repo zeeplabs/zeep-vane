@@ -8,7 +8,7 @@ import { LoginPage } from "./features/auth/LoginPage";
 import { PasswordResetRequestPage } from "./features/auth/PasswordResetRequestPage";
 import { IntegrationsPage } from "./features/integrations/IntegrationsPage";
 import { ServicesPage } from "./features/services/ServicesPage";
-import { DomainsPage } from "./features/domains/DomainsPage";
+import { DomainsStatusPagesPage } from "./features/domains/DomainsStatusPagesPage";
 import { StatusPagesPage } from "./features/status-pages/StatusPagesPage";
 import { StatusPageDetail } from "./features/status-pages/StatusPageDetail";
 import { IncidentsPage } from "./features/incidents/IncidentsPage";
@@ -17,6 +17,7 @@ import { AdminsPage } from "./features/admins/AdminsPage";
 import { PollerBanner } from "./features/poller/PollerBanner";
 import { PollerStatusPage } from "./features/poller/PollerStatusPage";
 import { SettingsPage } from "./features/settings/SettingsPage";
+import { PublicStatusPage } from "./features/public-status/PublicStatusPage";
 import "./lib/i18n";
 
 function AuthenticatedLayout() {
@@ -44,6 +45,7 @@ export default function App() {
       <Routes>
         <Route path="/login" element={<LoginPage />} />
         <Route path="/reset-password" element={<PasswordResetRequestPage />} />
+        <Route path="/status/:id" element={<PublicStatusPage />} />
         <Route
           element={
             <RequireAuth>
@@ -52,7 +54,7 @@ export default function App() {
           }
         >
           <Route path="/" element={<Navigate to="/domains" replace />} />
-          <Route path="/domains" element={<DomainsPage />} />
+          <Route path="/domains" element={<DomainsStatusPagesPage />} />
           <Route path="/status-pages" element={<StatusPagesPage />} />
           <Route path="/status-pages/:id" element={<StatusPageDetail />} />
           <Route path="/incidents" element={<IncidentsPage />} />
@@ -68,7 +70,14 @@ export default function App() {
             }
           />
           <Route path="/poller-status" element={<PollerStatusPage />} />
-          <Route path="/settings" element={<SettingsPage />} />
+          <Route
+            path="/settings"
+            element={
+              <RequireRole roles={["owner"]}>
+                <SettingsPage />
+              </RequireRole>
+            }
+          />
         </Route>
       </Routes>
     </AuthProvider>

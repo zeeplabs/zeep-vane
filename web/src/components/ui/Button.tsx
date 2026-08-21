@@ -7,7 +7,7 @@ export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
 }
 
 const base =
-  "inline-flex items-center justify-center gap-2 rounded-md text-sm font-medium transition-colors " +
+  "inline-flex items-center justify-center gap-2 rounded-md text-sm font-medium transition-colors cursor-pointer " +
   "disabled:opacity-45 disabled:pointer-events-none focus-visible:outline-none";
 
 const variantClasses: Record<ButtonVariant, string> = {

@@ -15,7 +15,7 @@ export function StatusPageDetail() {
   const url = `https://${page.subdomain}.${hostname ?? "?"}`;
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="mx-auto flex w-full max-w-[1280px] flex-col gap-4">
       <h3 className="text-text">{page.name}</h3>
 
       {page.state === "draft" ? (
@@ -31,6 +31,9 @@ export function StatusPageDetail() {
           </Tag>
           <a href={url} target="_blank" rel="noreferrer" className="text-sm text-accent hover:underline">
             {url}
+          </a>
+          <a href={`/status/${page.id}`} target="_blank" rel="noreferrer" className="text-sm text-accent hover:underline">
+            Pré-visualizar página pública (mock)
           </a>
         </div>
       ) : null}

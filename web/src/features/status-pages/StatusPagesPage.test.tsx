@@ -35,7 +35,7 @@ describe("StatusPagesPage", () => {
   it("lista status pages com tags de estado mapeadas", async () => {
     await loginAs("owner@vane.app");
     renderPage();
-    expect(await screen.findByText("Publicada")).toBeInTheDocument();
+    expect((await screen.findAllByText("Publicada")).length).toBeGreaterThan(0);
     expect(screen.getByText("Emitindo certificado")).toBeInTheDocument();
     expect(screen.getByText("Falha")).toBeInTheDocument();
   });
@@ -43,7 +43,7 @@ describe("StatusPagesPage", () => {
   it("viewer não vê o formulário de criação", async () => {
     await loginAs("viewer@vane.app");
     renderPage();
-    await screen.findByText("Publicada");
+    await screen.findAllByText("Publicada");
     expect(screen.queryByRole("button", { name: "Criar status page" })).not.toBeInTheDocument();
   });
 

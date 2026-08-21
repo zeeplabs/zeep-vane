@@ -44,13 +44,13 @@ describe("DomainsPage", () => {
     await loginAs("viewer@vane.app");
     renderPage();
     await screen.findByText("status.acme.com");
-    expect(screen.queryByRole("button", { name: "Cadastrar domínio" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Adicionar domínio" })).not.toBeInTheDocument();
   });
 
   it("cadastro duplicado exibe erro exato sem criar linha nova", async () => {
     await loginAs("owner@vane.app");
     renderPage();
-    await userEvent.click(await screen.findByRole("button", { name: "Cadastrar domínio" }));
+    await userEvent.click(await screen.findByRole("button", { name: "Adicionar domínio" }));
     await userEvent.type(screen.getByLabelText("Hostname"), "status.acme.com");
     await userEvent.click(screen.getByRole("button", { name: "Salvar" }));
 
@@ -61,7 +61,7 @@ describe("DomainsPage", () => {
   it("cadastro novo aparece na tabela", async () => {
     await loginAs("owner@vane.app");
     renderPage();
-    await userEvent.click(await screen.findByRole("button", { name: "Cadastrar domínio" }));
+    await userEvent.click(await screen.findByRole("button", { name: "Adicionar domínio" }));
     await userEvent.type(screen.getByLabelText("Hostname"), "status.novo-dominio.com");
     await userEvent.click(screen.getByRole("button", { name: "Salvar" }));
 

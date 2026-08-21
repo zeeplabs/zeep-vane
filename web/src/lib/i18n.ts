@@ -18,7 +18,7 @@ const resources = {
         incidents: "Incidentes",
         integrations: "Integrações",
         services: "Serviços",
-        admins: "Admins",
+        admins: "Equipe",
         pollerStatus: "Status do poller",
         settings: "Configurações",
         viewingAs: "Visualizando como",

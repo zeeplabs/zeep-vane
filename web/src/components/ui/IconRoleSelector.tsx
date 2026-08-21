@@ -1,3 +1,5 @@
+import { Tooltip } from "./Tooltip";
+
 export type AdminRole = "owner" | "operator" | "viewer";
 
 export interface IconRoleSelectorProps {
@@ -64,19 +66,20 @@ export function IconRoleSelector({ role, onSelect }: IconRoleSelectorProps) {
         const Icon = icons[r.value];
         const active = r.value === role;
         return (
-          <button
-            key={r.value}
-            type="button"
-            aria-label={r.label}
-            aria-pressed={active}
-            onClick={() => onSelect(r.value)}
-            className={
-              "flex h-9 w-9 items-center justify-center rounded-md transition-opacity " +
-              (active ? "text-accent bg-accent-900 opacity-100" : "text-text opacity-40")
-            }
-          >
-            <Icon />
-          </button>
+          <Tooltip key={r.value} label={r.label}>
+            <button
+              type="button"
+              aria-label={r.label}
+              aria-pressed={active}
+              onClick={() => onSelect(r.value)}
+              className={
+                "flex h-9 w-9 cursor-pointer items-center justify-center rounded-md transition-opacity " +
+                (active ? "text-accent bg-accent-900 opacity-100" : "text-text opacity-40")
+              }
+            >
+              <Icon />
+            </button>
+          </Tooltip>
         );
       })}
     </div>

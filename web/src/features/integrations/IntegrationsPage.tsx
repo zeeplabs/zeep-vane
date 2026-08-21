@@ -55,7 +55,7 @@ export function IntegrationsPage() {
   const connected = data?.connected ?? false;
 
   return (
-    <div className="flex max-w-[920px] flex-col gap-6">
+    <div className="mx-auto flex w-full max-w-[1280px] flex-col gap-6">
       <div>
         <h2 className="text-text">Integrações</h2>
         <p className="m-0 text-[13.5px] text-neutral-400">

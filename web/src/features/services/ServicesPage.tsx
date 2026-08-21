@@ -2,7 +2,7 @@ import { ServicesSection } from "./ServicesSection";
 
 export function ServicesPage() {
   return (
-    <div className="flex flex-col gap-4">
+    <div className="mx-auto flex w-full max-w-[1280px] flex-col gap-4">
       <ServicesSection />
     </div>
   );

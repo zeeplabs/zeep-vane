@@ -9,11 +9,11 @@ const options = [
 ];
 
 describe("Seg", () => {
-  it("marca o item ativo com aria-selected e ring accent", () => {
+  it("marca o item ativo com aria-selected e borda accent", () => {
     render(<Seg options={options} value="a" onChange={() => {}} />);
     const active = screen.getByRole("tab", { name: "A" });
     expect(active).toHaveAttribute("aria-selected", "true");
-    expect(active.className).toContain("ring-accent");
+    expect(active.className).toContain("border-accent");
 
     const inactive = screen.getByRole("tab", { name: "B" });
     expect(inactive).toHaveAttribute("aria-selected", "false");

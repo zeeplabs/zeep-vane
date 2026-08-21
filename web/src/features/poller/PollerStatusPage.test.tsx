@@ -37,7 +37,7 @@ describe("PollerStatusPage", () => {
   it("mostra tabela com Integração/Última execução/Resultado, mensagem de erro só em falha", async () => {
     await loginAsOwner();
     renderPage();
-    expect(await screen.findByText("datadog")).toBeInTheDocument();
+    expect(await screen.findByText("Datadog")).toBeInTheDocument();
     expect(screen.getByText("Sucesso")).toBeInTheDocument();
     expect(screen.getByText("Integração")).toBeInTheDocument();
     expect(screen.getByText("Última execução")).toBeInTheDocument();

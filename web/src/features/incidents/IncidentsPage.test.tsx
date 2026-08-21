@@ -54,7 +54,7 @@ describe("IncidentsPage", () => {
     await loginAs("viewer@vane.app");
     renderPage();
     await screen.findByText("Latência elevada no Checkout");
-    expect(screen.queryByRole("button", { name: "Criar incidente" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Novo incidente" })).not.toBeInTheDocument();
 
     await userEvent.click(screen.getByRole("tab", { name: "Resolvidos" }));
     await screen.findByText("Indisponibilidade parcial da API");
@@ -64,7 +64,7 @@ describe("IncidentsPage", () => {
   it("criar incidente com serviços selecionados aparece na aba Ativos", async () => {
     await loginAs("owner@vane.app");
     renderPage();
-    await userEvent.click(await screen.findByRole("button", { name: "Criar incidente" }));
+    await userEvent.click(await screen.findByRole("button", { name: "Novo incidente" }));
     await userEvent.type(screen.getByLabelText("Título"), "Falha de teste E2E");
     await userEvent.click(screen.getByRole("button", { name: "API pública" }));
     await userEvent.click(screen.getByRole("button", { name: "Criar" }));
