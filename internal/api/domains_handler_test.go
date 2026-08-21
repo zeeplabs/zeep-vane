@@ -43,6 +43,7 @@ func newDomainsRouter(t *testing.T) (http.Handler, *db.Pool, *db.AdminRepository
 	r.Group(func(protected chi.Router) {
 		protected.Use(RequireAuth(middlewareTestSecret, admins))
 		protected.Post("/api/domains", handler.Create)
+		protected.Get("/api/domains", handler.List)
 	})
 
 	return r, pool, admins
@@ -121,6 +122,59 @@ func TestCreateDomain_NoAuth_401(t *testing.T) {
 	r, _, _ := newDomainsRouter(t)
 
 	rec := postCreateDomain(t, r, "", "any-hostname.example.com")
+	if rec.Code != http.StatusUnauthorized {
+		t.Errorf("status = %d, want %d", rec.Code, http.StatusUnauthorized)
+	}
+}
+
+func getListDomains(t *testing.T, r http.Handler, token string) *httptest.ResponseRecorder {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodGet, "/api/domains", nil)
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+	return rec
+}
+
+func TestListDomains_AnyRole_200IncludesCreated(t *testing.T) {
+	r, pool, admins := newDomainsRouter(t)
+	token := issueTestSessionToken(t, admins)
+	hostname := uniqueHostname(t)
+	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), "DELETE FROM domains WHERE hostname = $1", hostname) })
+
+	createRec := postCreateDomain(t, r, token, hostname)
+	if createRec.Code != http.StatusCreated {
+		t.Fatalf("setup create status = %d, want %d", createRec.Code, http.StatusCreated)
+	}
+
+	rec := getListDomains(t, r, token)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	var domains []domainResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &domains); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+
+	found := false
+	for _, d := range domains {
+		if d.Hostname == hostname {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("List() response %+v does not include created hostname %q", domains, hostname)
+	}
+}
+
+func TestListDomains_NoAuth_401(t *testing.T) {
+	r, _, _ := newDomainsRouter(t)
+
+	rec := getListDomains(t, r, "")
 	if rec.Code != http.StatusUnauthorized {
 		t.Errorf("status = %d, want %d", rec.Code, http.StatusUnauthorized)
 	}

@@ -76,6 +76,7 @@ func buildAdminRouter(pool *db.Pool, cfg config.Config, logger *zap.Logger) http
 
 		// mvp-core read routes and poller status (admin-dashboard ADM-13) -
 		// owner, operator, and viewer (ADM-10, ADM-11).
+		protected.With(anyRole).Get("/api/domains", domainsHandler.List)
 		protected.With(anyRole).Get("/api/services", servicesHandler.List)
 		protected.With(anyRole).Get("/api/integrations/datadog/status", integrationsHandler.Status)
 		protected.With(anyRole).Get("/api/poller/status", pollerStatusHandler.List)

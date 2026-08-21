@@ -320,9 +320,9 @@ I19 → I20
 - Skill: NONE
 
 **Done when**:
-- [ ] `GET /api/domains` retorna 200 com a lista no formato `{id,hostname,created_at}` já usado em `POST /api/domains`
-- [ ] Acessível por qualquer papel autenticado, 401 sem sessão válida
-- [ ] Gate check passes: `go test -tags=integration ./...`
+- [x] `GET /api/domains` retorna 200 com a lista no formato `{id,hostname,created_at}` já usado em `POST /api/domains`
+- [x] Acessível por qualquer papel autenticado, 401 sem sessão válida
+- [x] Gate check passes: `go test -tags=integration ./...`
 
 **Tests**: integration
 **Gate**: full

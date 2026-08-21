@@ -51,3 +51,26 @@ func (r *DomainRepository) Create(ctx context.Context, domain *Domain) error {
 
 	return nil
 }
+
+// List returns every registered domain, ordered by hostname.
+func (r *DomainRepository) List(ctx context.Context) ([]Domain, error) {
+	rows, err := r.pool.Query(ctx, "SELECT id, hostname, created_at FROM domains ORDER BY hostname")
+	if err != nil {
+		return nil, fmt.Errorf("db: failed to list domains: %w", err)
+	}
+	defer rows.Close()
+
+	var domains []Domain
+	for rows.Next() {
+		var domain Domain
+		if err := rows.Scan(&domain.ID, &domain.Hostname, &domain.CreatedAt); err != nil {
+			return nil, fmt.Errorf("db: failed to scan domain: %w", err)
+		}
+		domains = append(domains, domain)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("db: failed to list domains: %w", err)
+	}
+
+	return domains, nil
+}
