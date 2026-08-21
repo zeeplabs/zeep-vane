@@ -54,7 +54,9 @@ describe("DomainsPage", () => {
     await userEvent.type(screen.getByLabelText("Hostname"), "status.acme.com");
     await userEvent.click(screen.getByRole("button", { name: "Salvar" }));
 
-    expect(await screen.findByText("Esse hostname já está cadastrado.")).toBeInTheDocument();
+    // Texto do backend real (I13) - inglês, gap de i18n já identificado em
+    // LoginPage.test.tsx (I7), não corrigido aqui (fora de escopo).
+    expect(await screen.findByText("hostname already registered")).toBeInTheDocument();
     expect(screen.getAllByText("status.acme.com")).toHaveLength(1); // continua só a linha original, não duplicou
   });
 

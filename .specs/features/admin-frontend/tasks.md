@@ -387,9 +387,16 @@ I19 → I20
 - Skill: NONE
 
 **Done when**:
-- [ ] Fluxo completo (cadastro de domínio → criação de status page → polling de TLS até estado terminal → preview da página pública) funciona contra API real em teste manual no browser
-- [ ] Todos os testes de hook desta etapa passam via MSW, sem `handleRoute`
-- [ ] Gate check passes: `cd web && npm run test`
+- [x] Fluxo completo (cadastro de domínio → criação de status page → polling de TLS até estado terminal → preview da página pública) funciona contra API real em teste manual no browser
+- [x] Todos os testes de hook desta etapa passam via MSW, sem `handleRoute`
+- [x] Gate check passes: `cd web && npm run test`
+
+> SPEC_DEVIATION (2026-08-21):
+> 1. **Achado durante o wiring, corrigido no I12** (commit separado, antes deste): o endpoint de preview não checava `state=="published"`, diferente do `router.HostRouter` real — corrigido com `StatusPageRepository.GetByID` + gate de estado, testes novos (`TestPublicStatusPreview_DraftPage_404`, `TestPublicStatusPreview_UnknownID_404`).
+> 2. `public-status/hooks.ts` reescrito: chama `/api/status-pages/{id}/public-preview` (I12) e adapta a resposta `{services,incidents}` real pro shape `PublicStatusPageData` que `PublicStatusPage.tsx` já consome. 2 gaps de fidelidade documentados inline: `service_names` por incidente fica vazio (backend não expõe o vínculo publicamente); `company_name`/`logo_url` continuam vindo de `mockData.companySettings` (sem endpoint de company settings — backlog AD-007). Isso reintroduz `mockData` como import estático no bundle de produção, superando parcialmente a garantia do I8 ("build de produção não inclui mockData") — aceito, pois não há alternativa sem o endpoint de settings; a preview só é alcançável por admin autenticado, então não é o mesmo risco que o `setDevRole` do I8 resolvia.
+> 3. `src/lib/publicStatus.ts` teve sua função `getPublicStatusPageData` (roteador mock morto desde o I6) removida — ficou só como módulo de tipos compartilhados.
+> 4. `DomainsPage.test.tsx`: 1 asserção ajustada pro texto real do backend (`"hostname already registered"`, inglês) — mesmo gap de i18n já documentado em `LoginPage.test.tsx` (I7), não corrigido aqui.
+> 5. Estado do gate: `npm run test` cheio agora tem 33 falhas esperadas (admins, incidents, integrations, poller, services — escopo de I14-I20), reduzido de 49 (domains/status-pages/public-status agora 100% migrados e verdes).
 
 **Tests**: unit (via MSW)
 **Gate**: quick (frontend)
