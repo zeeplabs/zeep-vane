@@ -5,6 +5,7 @@ import { Button } from "../../components/ui/Button";
 import { Field } from "../../components/ui/Field";
 import { Tag } from "../../components/ui/Tag";
 import { IconRoleSelector } from "../../components/ui/IconRoleSelector";
+import { Tooltip } from "../../components/ui/Tooltip";
 import { ApiError } from "../../lib/apiClient";
 import type { Role } from "../../types/api";
 import {
@@ -18,6 +19,22 @@ import {
 } from "./hooks";
 
 const roleOptions: Role[] = ["owner", "operator", "viewer"];
+
+function PlusIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+      <path d="M12 5v14M5 12h14" />
+    </svg>
+  );
+}
+
+function TrashIcon() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13" />
+    </svg>
+  );
+}
 
 export function AdminsPage() {
   const { data: admins, isLoading } = useAdmins();
@@ -106,9 +123,18 @@ export function AdminsPage() {
       key: "actions",
       header: "",
       render: (a) => (
-        <Button variant="ghost" onClick={() => setRemoveTarget(a)}>
-          Remover
-        </Button>
+        <div className="flex justify-end">
+          <Tooltip label="Remover">
+            <Button
+              variant="ghost"
+              aria-label="Remover"
+              className="text-neutral-400 hover:text-critical"
+              onClick={() => setRemoveTarget(a)}
+            >
+              <TrashIcon />
+            </Button>
+          </Tooltip>
+        </div>
       ),
     },
   ];
@@ -121,7 +147,7 @@ export function AdminsPage() {
       key: "actions",
       header: "",
       render: (a) => (
-        <div className="flex gap-2">
+        <div className="flex justify-end gap-2">
           <Button variant="ghost" onClick={() => resendInvite.mutate(a.id)}>
             Reenviar
           </Button>
@@ -134,29 +160,42 @@ export function AdminsPage() {
   ];
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="mx-auto flex w-full max-w-[1280px] flex-col gap-6">
       <div className="flex items-center justify-between">
-        <h3 className="text-text">Admins</h3>
+        <div>
+          <h2 className="text-text">Equipe</h2>
+          <p className="m-0 text-[13.5px] text-neutral-400">
+            Gerencie quem tem acesso ao painel e com qual papel.
+          </p>
+        </div>
         <Button variant="primary" onClick={() => setInviteOpen(true)}>
+          <PlusIcon />
           Convidar admin
         </Button>
       </div>
 
-      {isLoading ? (
-        <p className="text-neutral-400">Carregando…</p>
-      ) : (
-        <Table
-          columns={activeColumns}
-          rows={active}
-          rowKey={(a) => a.id}
-          emptyMessage="Nenhum admin cadastrado."
-        />
-      )}
+      <div className="flex flex-col gap-4">
+        <h4 className="text-text">Ativos</h4>
+        <div className="mt-2">
+          {isLoading ? (
+            <p className="text-neutral-400">Carregando…</p>
+          ) : (
+            <Table
+              columns={activeColumns}
+              rows={active}
+              rowKey={(a) => a.id}
+              emptyMessage="Nenhum admin cadastrado."
+            />
+          )}
+        </div>
+      </div>
 
       {pending.length > 0 ? (
-        <div className="flex flex-col gap-2">
+        <div className="flex flex-col gap-4">
           <h4 className="text-text">Convites pendentes</h4>
-          <Table columns={pendingColumns} rows={pending} rowKey={(a) => a.id} />
+          <div className="mt-2">
+            <Table columns={pendingColumns} rows={pending} rowKey={(a) => a.id} />
+          </div>
         </div>
       ) : null}
 

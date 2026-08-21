@@ -100,16 +100,18 @@ export function ServicesSection() {
         ) : null}
       </div>
 
-      {isLoading ? (
-        <p className="text-neutral-400">Carregando…</p>
-      ) : (
-        <Table
-          columns={columns}
-          rows={services ?? []}
-          rowKey={(s) => s.id}
-          emptyMessage="Nenhum serviço cadastrado."
-        />
-      )}
+      <div className="mt-2">
+        {isLoading ? (
+          <p className="text-neutral-400">Carregando…</p>
+        ) : (
+          <Table
+            columns={columns}
+            rows={services ?? []}
+            rowKey={(s) => s.id}
+            emptyMessage="Nenhum serviço cadastrado."
+          />
+        )}
+      </div>
 
       <Dialog
         open={dialogOpen}
@@ -147,7 +149,7 @@ export function ServicesSection() {
                         setQuery(slo.name);
                       }}
                       className={
-                        "w-full rounded-sm px-2 py-1.5 text-left text-sm hover:bg-neutral-800 " +
+                        "w-full cursor-pointer rounded-sm px-2 py-1.5 text-left text-sm hover:bg-neutral-800 " +
                         (selectedSlo?.id === slo.id ? "text-accent" : "text-text")
                       }
                     >
