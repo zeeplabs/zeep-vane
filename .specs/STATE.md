@@ -50,6 +50,17 @@
 - **Date**: 2026-08-20
 - **Status**: active
 
+### AD-007
+- **Decision**: Integração backend real do `admin-frontend` (pós-AD-006) dividida em 6 etapas sequenciais e testáveis isoladamente (Etapa 0 Fundação → 1 Domínios/Status Pages/pública → 2 Integrações/Serviços → 3 Incidentes → 4 Admins → 5 Poller), substituindo T1-T8 e o wiring pendente de T13/T14/T18/T21/T24/T28/T31/T33 em `tasks.md` por tasks novas I1-I20. 3 sub-decisões tomadas com o usuário durante o planejamento:
+  1. **Gaps fora de `tasks.md`** descobertos na investigação (admin invite resend/cancel — hooks já existem no frontend sem endpoint; company settings GET/PATCH — feature inteira sem endpoint) ficam como **backlog separado**, fora do escopo desta integração. `AdminsPage` desabilita as ações de reenviar/cancelar convite com aviso explícito em vez de deixá-las quebrar; `SettingsPage` continua 100% mockada.
+  2. **Status page pública**: mantém rota por ID no frontend (`/status/:id`) via endpoint novo autenticado-lite de dev/preview (`internal/api/public_status_preview_handler.go`), coexistindo deliberadamente com o endpoint real de produção resolvido por Host header (`public_status_handler.go`, já existente) — SPEC_DEVIATION documentado no código, motivo é a SPA não ter infraestrutura de host-routing em dev.
+  3. **Estratégia de teste**: introduzir **MSW** para interceptar `fetch` real nos testes de hook (10 arquivos + `AuthProvider.test.tsx`), substituindo a dependência direta no `handleRoute` mock — primeiro uso de MSW no projeto.
+- **Reason**: Investigação (Explore) confirmou que nenhum de T1-T8 existe hoje no backend, CORS não existe em lugar nenhum do código (bloqueante pra qualquer fetch real do Vite dev contra a API), e os testes de hook dependem 100% do roteador mock em memória — trocar `apiClient` pra fetch real sem uma estratégia de teste nova quebraria a suíte inteira. A investigação também achou 2 gaps que o `tasks.md` original nunca cobriu (resend/cancel de convite, company settings); usuário decidiu não expandir escopo agora.
+- **Trade-off**: Etapa 0 é bloqueante e relativamente pesada (9 tasks: 5 backend + 4 frontend) antes de qualquer etapa de feature poder começar. Endpoint dev/preview de status page pública (item 2) é superfície extra a manter que não existe em produção — decisão consciente de simplicidade de dev sobre fidelidade total à arquitetura de produção. `AdminsPage`/`SettingsPage` ficam com funcionalidade parcialmente indisponível até rodada futura.
+- **Scope**: Integração backend real de `admin-frontend` (`web/` + endpoints Go correspondentes) desta rodada. Backlog (resend/cancel invite, company settings) fica para rodada futura.
+- **Date**: 2026-08-21
+- **Status**: active
+
 ## Handoff
 
 **Feature**: `admin-dashboard` — **status: PASS ✅** (Verifier completou em 1 rodada de fix→re-verify, dentro do limite de 3). Relatório: `.specs/features/admin-dashboard/validation.md`.

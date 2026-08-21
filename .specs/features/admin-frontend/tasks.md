@@ -11,7 +11,9 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Design**: `.specs/features/admin-frontend/design.md`
 **Status**: Draft
 
-> **Nota de execução (2026-08-20, ver AD-006 em `.specs/STATE.md`)**: esta rodada seguiu ordem invertida — frontend primeiro, contra mock layer (`web/src/lib/mockData.ts` + `apiClient.ts`), sem rede real. T1-T8 (backend: `auth/me`, listagens de domains/status-pages/admins com convites, busca de SLO, cookie de sessão) e a integração de rede real de T13 (`apiClient`)/T14 (`AuthProvider`)/T18 (embed da SPA)/T21/T24/T28/T31/T33 (hooks que hoje apontam pro mock) permanecem pendentes como backlog de integração. Nenhuma checkbox de "Done when" abaixo foi marcada como concluída nesta rodada — todas dependem de endpoints reais ainda inexistentes.
+> **Nota de execução (2026-08-20, ver AD-006 em `.specs/STATE.md`)**: aquela rodada seguiu ordem invertida — frontend primeiro, contra mock layer (`web/src/lib/mockData.ts` + `apiClient.ts`), sem rede real. UI completa (T9-T34 abaixo, seção "Historical Task Breakdown"), 119 testes, build limpo — mas 100% mockada.
+>
+> **Nota de execução (2026-08-21, ver AD-007 em `.specs/STATE.md`)**: esta rodada trata a integração real com o backend Go, dividida em 6 etapas sequenciais e testáveis isoladamente (Etapa 0 a 5, ver `## Execution Plan` e `## Integration Task Breakdown` abaixo). Substitui T1-T8 (backend pendente) e a parte de rede real de T13/T14/T18/T21/T24/T28/T31/T33 (que hoje apontam pro mock) por tasks novas I1-I20. As tasks T9-T34 originais (construção de UI) permanecem como registro histórico do que já foi implementado — não precisam ser refeitas, só re-conectadas à API real onde a task de integração correspondente instruir. 2 gaps descobertos durante a investigação desta rodada (admin invite resend/cancel; company settings) ficam fora de escopo, registrados como backlog em AD-007.
 
 ---
 
@@ -30,6 +32,8 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 | React auth/session (`AuthProvider`, route guards, `apiClient`, `SessionExpiredModal`) | unit | Every AC in "P1: Login e sessão" (AF-01 a AF-06, AF-43) | `web/src/auth/*.test.tsx`, `web/src/lib/*.test.ts` | `cd web && npm run test` |
 | React design-system layer — tokens + componentes Nocturne (`Button`/`Input`/`Field`/`Tag`/`Card`/`Table`/`Dialog`/`Seg`/`IconRoleSelector`) | unit/component (smoke para tokens) | Cada componente cobre suas variantes/estados descritos no handoff (`dashboard-handoff/README.md`); tokens cobertos por smoke test de computed style | `web/src/styles/*.test.ts`, `web/src/components/ui/*.test.tsx` | `cd web && npm run test` |
 | Config/scaffold (`package.json`, `vite.config.ts`, Tailwind config, `types/api.ts`) | none | Build gate only | `web/*.config.*`, `web/src/types/*.ts` | `cd web && npm run build` |
+| React hooks contra rede real (integração, 2026-08-21) | unit (via MSW) | Cada hook de feature testado contra handler MSW simulando a resposta HTTP real do backend (status code + shape), não mais `handleRoute` em memória; mesma profundidade que os testes mock já tinham (happy path + erro 401/403/404/409/422 por hook) | `web/src/features/**/*.hooks.test.ts`, `web/src/test/msw/handlers.ts`, `web/src/auth/AuthProvider.test.tsx` | `cd web && npm run test` |
+| Go middleware — CORS (integração, 2026-08-21) | integration | Preflight `OPTIONS` aceito pra origem do Vite dev; origem fora da allowlist rejeitada; `Access-Control-Allow-Credentials` nunca combinado com `*` | `internal/api/middleware_test.go` (ou arquivo de teste do novo middleware) | `go test -tags=integration ./...` |
 
 ## Gate Check Commands
 
@@ -45,61 +49,500 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 
 ---
 
-## Execution Plan
+## Execution Plan (integração real, 2026-08-21 — ver AD-007)
 
-Phases are ordered and run sequentially - each phase completes before the next begins, and tasks within a phase execute in order.
+Esta é a execução ATIVA desta rodada: 6 etapas sequenciais, cada uma uma fatia vertical (backend + wiring de frontend + testes) shippable e testável isoladamente. Etapa 0 é bloqueante para as demais; Etapas 1-5 poderiam em teoria rodar em paralelo entre si depois da Etapa 0, mas esta rodada mantém execução sequencial simples, seguindo a convenção já usada neste arquivo. As tasks T1-T34 originais (abaixo, seção "Historical Task Breakdown") descrevem a rodada mock-first já concluída — a UI que elas descrevem já existe; as tasks I1-I20 abaixo são o trabalho real desta rodada.
 
-### Phase 1: Backend — Read-only support endpoints (AF-34, 35, 36, 38, 42)
-
-```
-T1 → T2 → T3 → T4 → T5
-```
-
-### Phase 2: Backend — Cookie-based session (AF-39, 40, 41)
+### Etapa 0: Fundação — sessão via cookie, CORS, fetch real, MSW (bloqueante)
 
 ```
-T5 → T6 → T7 → T8
+I1 → I2 → I3 → I4 → I5 → I6 → I7 → I8 → I9
 ```
 
-### Phase 3: Frontend — Scaffold, design system (Nocturne) & core infrastructure
+### Etapa 1: Domínios + Status Pages + status page pública
 
 ```
-T8 → T9 → T10 → T11 → T12 → T13 → T14 → T15 → T16 → T17 → T18
+I9 → I10 → I11 → I12 → I13
 ```
 
-### Phase 4: Frontend — Login & account pages (AF-01 a 06, 43)
+### Etapa 2: Integrações (Datadog) + Serviços
 
 ```
-T18 → T19 → T20
+I13 → I14 → I15
 ```
 
-### Phase 5: Frontend — Integrations (Datadog) & services (AF-07 a 11)
+### Etapa 3: Incidentes
 
 ```
-T20 → T21 → T22 → T23
+I15 → I16
 ```
 
-### Phase 6: Frontend — Domains & status pages with TLS polling (AF-12 a 18)
+### Etapa 4: Admins (core, sem resend/cancel — backlog AD-007)
 
 ```
-T23 → T24 → T25 → T26 → T27
+I16 → I17 → I18 → I19
 ```
 
-### Phase 7: Frontend — Incidents (AF-19 a 24)
+### Etapa 5: Poller status
 
 ```
-T27 → T28 → T29 → T30
-```
-
-### Phase 8: Frontend — Admin management (RBAC) & poller status (AF-25 a 33)
-
-```
-T30 → T31 → T32 → T33 → T34
+I19 → I20
 ```
 
 ---
 
-## Task Breakdown
+## Task Breakdown (I1-I20 — integração real, esta rodada)
+
+### I1: `GET /api/auth/me` handler
+
+**What**: Novo handler `AuthHandler.Me` que lê o `Admin` já carregado no contexto por `RequireAuth` e retorna `{id,email,role}`; rota registrada atrás de `requireAuth`+`anyRole`.
+**Where**: `internal/api/auth_handler.go` (modify), `internal/cli/routes.go` (modify)
+**Depends on**: None
+**Reuses**: `RequireAuth` (já injeta `Admin` no contexto — `internal/api/middleware.go:50-81`), `anyRole` (`internal/cli/routes.go:76-78`)
+**Requirement**: AF-34
+
+**Tools**:
+- MCP: NONE
+- Skill: NONE
+
+**Done when**:
+- [ ] `GET /api/auth/me` retorna 200 `{id,email,role}` para qualquer papel autenticado
+- [ ] Retorna 401 sem cookie/header válido
+- [ ] Gate check passes: `go test -tags=integration ./...`
+- [ ] `gofmt -l .` e `go vet ./...` limpos
+
+**Tests**: integration
+**Gate**: full
+
+---
+
+### I2: Login seta cookie de sessão
+
+**What**: `AuthHandler.Login` passa a, além do corpo `{token}` já existente, setar `http.SetCookie` com `Name:"vane_session"`, `HttpOnly:true`, `Secure:true`, `SameSite:http.SameSiteStrictMode`, `Path:"/"`, `MaxAge` igual a `sessionTTL` (AD-004).
+**Where**: `internal/api/auth_handler.go` (modify)
+**Depends on**: I1
+**Reuses**: `sessionTTL` já definida no arquivo
+**Requirement**: AF-39
+
+**Tools**:
+- MCP: NONE
+- Skill: NONE
+
+**Done when**:
+- [ ] Login bem-sucedido seta o cookie com todos os atributos corretos, corpo `{token}` inalterado
+- [ ] Testes existentes de login (`auth_handler_test.go`) continuam passando sem modificação
+- [ ] Gate check passes: `go test -tags=integration ./...`
+
+**Tests**: integration
+**Gate**: full
+
+---
+
+### I3: `RequireAuth` aceita cookie além do header
+
+**What**: `bearerToken`/`RequireAuth` passam a, na ausência do header `Authorization`, ler o token do cookie `vane_session` via `r.Cookie(...)` antes de rejeitar com 401.
+**Where**: `internal/api/middleware.go` (modify)
+**Depends on**: I2
+**Reuses**: `bearerToken`, `RequireAuth` existentes (`internal/api/middleware.go:50-89`)
+**Requirement**: AF-40
+
+**Tools**:
+- MCP: NONE
+- Skill: NONE
+
+**Done when**:
+- [ ] Requisição só com cookie (sem header `Authorization`) autentica com sucesso
+- [ ] Header continua tendo prioridade quando ambos presentes
+- [ ] Todos os testes existentes de `middleware_test.go` (baseados em header) continuam passando sem alteração
+- [ ] Gate check passes: `go test -tags=integration ./...`
+
+**Tests**: integration
+**Gate**: full
+
+---
+
+### I4: `POST /api/auth/logout`
+
+**What**: Novo handler, atrás de `requireAuth` (qualquer papel), que seta o cookie `vane_session` com `MaxAge:-1` e responde 200; rota registrada.
+**Where**: `internal/api/auth_handler.go` (modify), `internal/cli/routes.go` (modify)
+**Depends on**: I3
+**Reuses**: Mesmos atributos de cookie definidos em I2
+**Requirement**: AF-41
+
+**Tools**:
+- MCP: NONE
+- Skill: NONE
+
+**Done when**:
+- [ ] `POST /api/auth/logout` responde 200 e expira o cookie
+- [ ] Requisição subsequente com o cookie expirado retorna 401
+- [ ] Gate check passes: `go test -tags=integration ./...`
+
+**Tests**: integration
+**Gate**: full
+
+---
+
+### I5: Middleware de CORS restrito à origem do Vite dev
+
+**What**: Novo middleware CORS (chi-compatível, ex. `github.com/go-chi/cors`) montado em `buildAdminRouter`, allowlist de origem única (ex. `http://localhost:5173`, configurável por env), `AllowCredentials:true`, métodos/headers necessários para `apiFetch`. Nunca `AllowedOrigins:["*"]` combinado com `AllowCredentials:true` — checar explicitamente essa combinação num teste.
+**Where**: `internal/api/cors.go` (new), `internal/cli/routes.go` (modify)
+**Depends on**: I4
+**Reuses**: Nenhum (primeiro middleware de CORS do projeto)
+**Requirement**: N/A — infraestrutura bloqueante para qualquer fetch real do frontend contra a API (ver AD-007)
+
+**Tools**:
+- MCP: NONE
+- Skill: NONE (consultar doc oficial da lib de CORS escolhida antes de configurar — não inventar opções)
+
+**Done when**:
+- [ ] Preflight `OPTIONS` de origem permitida recebe `Access-Control-Allow-Origin`+`Access-Control-Allow-Credentials:true`
+- [ ] Origem fora da allowlist não recebe os headers de CORS (requisição falha no browser)
+- [ ] Teste explícito confirma que a config nunca combina origem wildcard com credentials
+- [ ] Gate check passes: `go test -tags=integration ./...`
+
+**Tests**: integration
+**Gate**: full
+
+---
+
+### I6: `apiClient.ts` — troca do mock por `fetch` real
+
+**What**: Substituir o corpo de `handleRoute` (`apiClient.ts:101-402`) por uma implementação real: `fetch(baseUrl+path, {...init, credentials:"include"})`, parse de `response.json()`, `if (!res.ok) throw new ApiError(res.status, body.error)`. Mantém a assinatura pública intacta (`apiFetch<T>`, `ApiError`, `setUnauthorizedHandler`/`triggerUnauthorized`, disparado em `res.status===401`) — nenhum hook muda. `baseUrl` vem de `import.meta.env.VITE_API_BASE_URL`.
+**Where**: `web/src/lib/apiClient.ts` (rewrite), `web/vite.config.ts` (modify — expõe env var), `web/.env.development` (new)
+**Depends on**: I5
+**Reuses**: `ApiError`, `setUnauthorizedHandler`/`triggerUnauthorized` já existentes; assinatura de `apiFetch` já usada por todos os hooks
+**Requirement**: AF-03 (401 global), AF-01 (nunca lê/escreve token)
+
+**Tools**:
+- MCP: NONE
+- Skill: NONE
+
+**Done when**:
+- [ ] `apiFetch` faz requisição de rede real com `credentials:"include"`, sem nenhum `handleRoute`/roteador em memória restante no arquivo
+- [ ] Lança `ApiError` com `status`/`message` corretos em erro real do backend
+- [ ] `triggerUnauthorized()` dispara em 401 real
+- [ ] `VITE_API_BASE_URL` configurável via env, sem hardcode
+- [ ] Gate check passes: `cd web && npm run build` (nenhum teste de hook ainda migrado — ver I7)
+
+**Tests**: none (config/infra — cobertura via I7)
+**Gate**: build (frontend)
+
+---
+
+### I7: MSW — setup + migração de `AuthProvider.test.tsx`
+
+**What**: Instalar `msw`, criar `web/src/test/msw/server.ts` (setup do node server) + `web/src/test/msw/handlers.ts` (handlers de `/api/auth/login|logout|me`), religar `AuthProvider.test.tsx` pra rodar contra MSW em vez do `handleRoute` antigo — primeiro arquivo migrado, valida o padrão antes de replicar nos outros 10.
+**Where**: `web/src/test/msw/server.ts` (new), `web/src/test/msw/handlers.ts` (new), `web/src/auth/AuthProvider.test.tsx` (modify), `web/package.json` (add devDependency)
+**Depends on**: I6
+**Reuses**: Nenhum (primeiro uso de MSW no projeto)
+**Requirement**: N/A — pré-requisito de teste pra toda task de wiring das etapas seguintes (ver AD-007)
+
+**Tools**:
+- MCP: NONE
+- Skill: NONE
+
+**Done when**:
+- [ ] `AuthProvider.test.tsx` passa 100% via handler MSW, sem importar `mockData`/`handleRoute`
+- [ ] Handler MSW cobre login sucesso/erro 401, `/me` autenticado/anônimo, logout
+- [ ] Gate check passes: `cd web && npm run test`
+
+**Tests**: unit (via MSW)
+**Gate**: quick (frontend)
+
+---
+
+### I8: Isolar `setDevRole` atrás de `import.meta.env.DEV`
+
+**What**: `setDevRole` (`AuthProvider.tsx:108-115`) hoje importa `mockData` direto pra trocar de papel sem novo login (recurso "Visualizando como" da sidebar). Envolver toda a função (e o botão que a expõe na sidebar) em `if (import.meta.env.DEV)` explícito, removendo o import de `mockData` em produção.
+**Where**: `web/src/auth/AuthProvider.tsx` (modify), `web/src/layout/Sidebar.tsx` (modify — esconder o controle fora de DEV)
+**Depends on**: I7
+**Reuses**: Nenhum
+**Requirement**: N/A — limpeza necessária antes de ligar rede real (ver AD-007)
+
+**Tools**:
+- MCP: NONE
+- Skill: NONE
+
+**Done when**:
+- [ ] Build de produção (`npm run build`) não inclui `mockData` no bundle (verificar via análise do output ou remoção do import condicional)
+- [ ] `setDevRole`/controle "Visualizando como" só aparecem com `import.meta.env.DEV===true`
+- [ ] Gate check passes: `cd web && npm run test`
+
+**Tests**: unit
+**Gate**: quick (frontend)
+
+---
+
+### I9: Migrar tipos de `mockData.ts` para `web/src/types/api.ts`
+
+**What**: Extrair as interfaces hoje importadas de `mockData.ts` por hooks/páginas (`Domain`, `Admin`, `AdminInvite`, `Service`, `StatusPage`, `Incident`, `IncidentUpdate`, `PollerStatusEntry`, `CompanySettings`, `SLOSummary`, `IntegrationStatus`) para `web/src/types/api.ts`; atualizar todos os imports; `mockData.ts` deixa de ser fonte de tipos (fica só como fixture de teste, usado pelos handlers MSW das etapas seguintes se conveniente).
+**Where**: `web/src/types/api.ts` (new), todos os `hooks.ts`/páginas que hoje importam tipo de `mockData.ts` (modify — só o import)
+**Depends on**: I8
+**Reuses**: Interfaces já existentes em `mockData.ts` (movidas, não recriadas)
+**Requirement**: N/A — infraestrutura de tipos, pré-requisito de todas as etapas seguintes
+
+**Tools**:
+- MCP: NONE
+- Skill: NONE
+
+**Done when**:
+- [ ] Nenhum arquivo de produção (`src/features/**`, `src/auth/**`, `src/layout/**`) importa tipo de `mockData.ts`
+- [ ] `tsc -b --force` limpo
+- [ ] Gate check passes: `cd web && npm run build`
+
+**Tests**: none (refactor de tipos, sem lógica nova)
+**Gate**: build (frontend)
+
+---
+
+### I10: `DomainRepository.List` + `GET /api/domains`
+
+**What**: Novo método `List(ctx) ([]Domain, error)`; handler `anyRole` correspondente; rota registrada.
+**Where**: `internal/db/domain_repository.go` (modify), `internal/api/domains_handler.go` (modify), `internal/cli/routes.go` (modify)
+**Depends on**: I9
+**Reuses**: Mesmo padrão de `ServiceRepository.List`/`IntegrationRepository.List` (`internal/api/services_handler.go:18`, `internal/api/poller_status.go:17`)
+**Requirement**: AF-35, AF-37
+
+**Tools**:
+- MCP: NONE
+- Skill: NONE
+
+**Done when**:
+- [ ] `GET /api/domains` retorna 200 com a lista no formato `{id,hostname,created_at}` já usado em `POST /api/domains`
+- [ ] Acessível por qualquer papel autenticado, 401 sem sessão válida
+- [ ] Gate check passes: `go test -tags=integration ./...`
+
+**Tests**: integration
+**Gate**: full
+
+---
+
+### I11: `StatusPageRepository.List` + `GET /api/status-pages`
+
+**What**: Novo método `List(ctx) ([]StatusPage, error)`; handler `anyRole` correspondente; rota registrada.
+**Where**: `internal/db/status_page_repository.go` (modify), `internal/api/status_pages_handler.go` (modify), `internal/cli/routes.go` (modify)
+**Depends on**: I10
+**Reuses**: Mesmo padrão de I10
+**Requirement**: AF-36, AF-37
+
+**Tools**:
+- MCP: NONE
+- Skill: NONE
+
+**Done when**:
+- [ ] `GET /api/status-pages` retorna 200 com a lista no formato já usado em `POST /api/status-pages`
+- [ ] Acessível por qualquer papel autenticado, 401 sem sessão válida
+- [ ] Gate check passes: `go test -tags=integration ./...`
+
+**Tests**: integration
+**Gate**: full
+
+---
+
+### I12: Endpoint dev/preview da status page pública por ID
+
+**What**: Novo endpoint autenticado-lite (ex. `GET /api/status-pages/{id}/public-preview`, atrás de `requireAuth`+`anyRole` — não é o endpoint de produção) que reaproveita a lógica de `PublicStatusHandler` mas resolve por ID em vez de Host header, servindo só o preview interno usado por `web/src/features/public-status`. Coexiste deliberadamente com `public_status_handler.go` (produção, resolvido por `router.HostRouter`) — **SPEC_DEVIATION documentado no código**: motivo é a SPA não ter infraestrutura de host-routing em dev (AD-007).
+**Where**: `internal/api/public_status_preview_handler.go` (new), `internal/cli/routes.go` (modify)
+**Depends on**: I11
+**Reuses**: Lógica de composição de resposta de `public_status_handler.go` (extrair função compartilhada em vez de duplicar o corpo)
+**Requirement**: N/A — infraestrutura de dev/preview, decisão AD-007
+
+**Tools**:
+- MCP: NONE
+- Skill: NONE
+
+**Done when**:
+- [ ] Endpoint retorna o mesmo shape `{services,incidents}` que `PublicStatusHandler.Get` produz pra hostname, mas resolvido por ID
+- [ ] Atrás de `requireAuth` (não é público de verdade — só preview pra admin logado)
+- [ ] Comentário `SPEC_DEVIATION` no código aponta pro endpoint real de produção e explica a coexistência
+- [ ] Gate check passes: `go test -tags=integration ./...`
+
+**Tests**: integration
+**Gate**: full
+
+---
+
+### I13: Wiring — domains, status-pages, public-status
+
+**What**: `domains/hooks.ts` e `status-pages/hooks.ts` já usam `apiFetch` corretamente (nenhuma mudança de lógica) — só migrar `domains/hooks.test.ts` e `status-pages/hooks.test.ts` pra MSW; `public-status/hooks.ts` passa a chamar o endpoint de I12 em vez do mock.
+**Where**: `web/src/features/domains/hooks.test.ts` (modify), `web/src/features/status-pages/hooks.test.ts` (modify), `web/src/features/public-status/hooks.ts` (modify), `web/src/features/public-status/PublicStatusPage.test.tsx` (modify), `web/src/test/msw/handlers.ts` (modify — novos handlers)
+**Depends on**: I12
+**Reuses**: Padrão MSW estabelecido em I7
+**Requirement**: AF-12, AF-13, AF-16, AF-17, AF-18
+
+**Tools**:
+- MCP: NONE
+- Skill: NONE
+
+**Done when**:
+- [ ] Fluxo completo (cadastro de domínio → criação de status page → polling de TLS até estado terminal → preview da página pública) funciona contra API real em teste manual no browser
+- [ ] Todos os testes de hook desta etapa passam via MSW, sem `handleRoute`
+- [ ] Gate check passes: `cd web && npm run test`
+
+**Tests**: unit (via MSW)
+**Gate**: quick (frontend)
+
+---
+
+### I14: `SearchSLOs` + `GET /api/integrations/datadog/slos?query=`
+
+**What**: Novo método `SearchSLOs(ctx, query string) ([]SLOSummary, error)` no client Datadog, reaproveitando `sloSearchPath` com filtro de nome livre; handler e rota `writeRoles`.
+**Where**: `internal/connectors/datadog/client.go` (modify), `internal/api/integrations_handler.go` (modify), `internal/cli/routes.go` (modify)
+**Depends on**: I13
+**Reuses**: `sloSearchPath`, `Client.get` (mesma infra HTTP de `FetchSLOStatus`/`ValidateCredentials`)
+**Requirement**: AF-42
+
+**Tools**:
+- MCP: NONE (consultar doc oficial do Datadog pra sintaxe de busca por nome — não inventar; se a sintaxe exata não estiver clara, usar o mesmo padrão de filtro por texto que `id:<sloID>` já demonstra)
+- Skill: NONE
+
+**Done when**:
+- [ ] `SearchSLOs` retorna `[]SLOSummary{id,name}` (sucesso, sem resultado, erro 401/5xx)
+- [ ] `GET /api/integrations/datadog/slos?query=<termo>` retorna 200 com a lista, 401 sem sessão
+- [ ] Gate check passes: `go test ./...` (client) + `go test -tags=integration ./...` (handler)
+
+**Tests**: integration (handler) + unit (client)
+**Gate**: full
+
+---
+
+### I15: Wiring — integrações + serviços
+
+**What**: `integrations/hooks.ts` e `services/hooks.ts` já usam `apiFetch` (Connect/Status/Services já existem no backend, sem mudança de lógica) — migrar `integrations/hooks.test.ts` e `services/hooks.test.ts` pra MSW; `useSLOSearch` passa a apontar pro endpoint real de I14.
+**Where**: `web/src/features/integrations/hooks.test.ts` (modify), `web/src/features/services/hooks.test.ts` (modify), `web/src/test/msw/handlers.ts` (modify)
+**Depends on**: I14
+**Reuses**: Padrão MSW de I7
+**Requirement**: AF-07, AF-08, AF-09, AF-10, AF-11
+
+**Tools**:
+- MCP: NONE
+- Skill: NONE
+
+**Done when**:
+- [ ] Conectar Datadog (ou stub de credenciais), buscar SLO e vincular serviço funcionam contra API real em teste manual
+- [ ] Todos os testes de hook desta etapa passam via MSW
+- [ ] Gate check passes: `cd web && npm run test`
+
+**Tests**: unit (via MSW)
+**Gate**: quick (frontend)
+
+---
+
+### I16: Wiring — incidentes
+
+**What**: `incidents/hooks.ts` já usa `apiFetch` (Create/List/AddUpdate/Transition já existem no backend, zero endpoint novo) — só migrar `incidents/hooks.test.ts` pra MSW.
+**Where**: `web/src/features/incidents/hooks.test.ts` (modify), `web/src/test/msw/handlers.ts` (modify)
+**Depends on**: I15
+**Reuses**: Padrão MSW de I7
+**Requirement**: AF-19, AF-20, AF-21, AF-22, AF-23, AF-24
+
+**Tools**:
+- MCP: NONE
+- Skill: NONE
+
+**Done when**:
+- [ ] Criar incidente, adicionar update, transicionar estado e reabrir funcionam contra API real em teste manual
+- [ ] Testes de hook passam via MSW
+- [ ] Gate check passes: `cd web && npm run test`
+
+**Tests**: unit (via MSW)
+**Gate**: quick (frontend)
+
+---
+
+### I17: `AdminInviteRepository.List`
+
+**What**: Novo método `List(ctx) ([]AdminInvite, error)` retornando convites não usados/não expirados.
+**Where**: `internal/db/admin_invites.go` (modify)
+**Depends on**: I16
+**Reuses**: `AdminInviteRepository` existente (`GetByTokenHash`, `Create`, etc.)
+**Requirement**: AF-38
+
+**Tools**:
+- MCP: NONE
+- Skill: NONE
+
+**Done when**:
+- [ ] `List` retorna só convites pendentes e não expirados
+- [ ] Gate check passes: `go test -tags=integration ./...`
+
+**Tests**: integration
+**Gate**: full
+
+---
+
+### I18: `AdminsHandler.List` — mesclar convites pendentes
+
+**What**: `AdminsHandler.List` passa a mesclar admins ativos (`status:"active"`) com convites pendentes de I17 (`status:"pending"`) na mesma lista.
+**Where**: `internal/api/admins.go` (modify)
+**Depends on**: I17
+**Reuses**: `List` de I17
+**Requirement**: AF-38
+
+**Tools**:
+- MCP: NONE
+- Skill: NONE
+
+**Done when**:
+- [ ] `GET /api/admins` retorna admins ativos + convites pendentes na mesma lista, cada item com `status`
+- [ ] Convite expirado ou já usado não aparece na lista
+- [ ] Rota continua restrita a `owner` (`ownerOnly`, sem mudança de middleware)
+- [ ] Gate check passes: `go test -tags=integration ./...`
+
+**Tests**: integration
+**Gate**: full
+
+---
+
+### I19: Wiring — admins (core, sem resend/cancel)
+
+**What**: `admins/hooks.ts` — `useAdmins`/`useInviteAdmin`/`useUpdateAdminRole`/`useDeleteAdmin` ligados ao backend real (I18 + endpoints já existentes de Invite/UpdateRole/Delete). `useResendInvite`/`useCancelInvite` **não têm backend** (backlog AD-007) — desabilitar os botões correspondentes em `AdminsPage.tsx` com tooltip/aviso explícito ("Ainda não disponível") em vez de deixá-los quebrar com 404 silencioso.
+**Where**: `web/src/features/admins/hooks.test.ts` (modify), `web/src/features/admins/AdminsPage.tsx` (modify — desabilitar 2 ações), `web/src/features/admins/AdminsPage.test.tsx` (modify — cobrir estado desabilitado), `web/src/test/msw/handlers.ts` (modify)
+**Depends on**: I18
+**Reuses**: Padrão MSW de I7
+**Requirement**: AF-25, AF-27, AF-28, AF-29
+
+**Tools**:
+- MCP: NONE
+- Skill: NONE
+
+**Done when**:
+- [ ] Convite, mudança de papel, remoção e lockout de owner funcionam contra API real em teste manual
+- [ ] Botões "Reenviar"/"Cancelar" convite aparecem desabilitados com aviso, não disparam requisição
+- [ ] Testes de hook e de página cobrem o estado desabilitado
+- [ ] Gate check passes: `cd web && npm run test`
+
+**Tests**: unit (via MSW)
+**Gate**: quick (frontend)
+
+---
+
+### I20: Wiring — poller status
+
+**What**: `poller/hooks.ts` já usa `apiFetch` contra endpoint já existente (`GET /api/poller/status`) — só migrar `poller/hooks.test.ts` pra MSW.
+**Where**: `web/src/features/poller/hooks.test.ts` (modify), `web/src/test/msw/handlers.ts` (modify)
+**Depends on**: I19
+**Reuses**: Padrão MSW de I7
+**Requirement**: AF-31, AF-32, AF-33
+
+**Tools**:
+- MCP: NONE
+- Skill: NONE
+
+**Done when**:
+- [ ] Banner de falha e página de detalhe do poller refletem status real em teste manual
+- [ ] Teste de hook passa via MSW
+- [ ] Gate check passes: `cd web && npm run test`
+
+**Tests**: unit (via MSW)
+**Gate**: quick (frontend)
+
+---
+
+## Historical Task Breakdown — Mock-First UI Round (completed 2026-08-20/21, ver AD-006)
+
+> As tasks T1-T34 abaixo descrevem a rodada anterior (UI navegável contra mock, sem rede real). A UI que elas especificam já existe no código — mantidas aqui só como registro histórico do que foi construído. Não fazem parte da execução ativa desta rodada (ver `## Execution Plan` acima, tasks I1-I20). T1-T8 (backend) e a parte de rede real de T13/T14/T18/T21/T24/T28/T31/T33 foram substituídas pelas tasks I1-I20.
 
 ### T1: `GET /api/auth/me` handler
 
@@ -904,7 +1347,7 @@ T30 → T31 → T32 → T33 → T34
 
 ---
 
-## Phase Execution Map
+## Phase Execution Map (histórico — T1-T34, rodada mock-first)
 
 Visual representation of task ordering. Phases run in sequence, and tasks within a phase run in order:
 
@@ -923,11 +1366,11 @@ Phase 8:  T30 -----→ T31 ------→ T32 ------→ T33 ------→ T34
 
 Execution is strictly sequential - there is no intra-phase parallelism. A single agent (or batch worker) works one task at a time, in order.
 
-**How phase-based execution works:** at Execute, the agent counts total tasks (34) and packs phases into task-budgeted batches (~7 tasks per worker, whole phases only — never split a phase). This yields more than one batch, so batch sub-agents will be offered before Execute starts. **Fase 3 sozinha já tem 11 tasks** (T8→T18, incluindo as 3 novas de design system T10-T12) — maior que o budget de ~7 por worker; como uma fase nunca é dividida entre workers, ela pode precisar rodar como seu próprio batch (ou ser o primeiro batch, absorvendo o excedente), decisão a confirmar no momento do Execute junto com a oferta de sub-agentes. See `sub-agents.md` for the full model.
+**Nota**: este mapa e as 3 seções de validação abaixo (Granularity/Diagram-Cross-Check/Test Co-location) descrevem a rodada mock-first já concluída (T1-T34) — mantidas como registro histórico. As seções equivalentes para a rodada ativa (I1-I20) estão logo depois, em "## Phase Execution Map (I1-I20 — integração real)".
 
 ---
 
-## Task Granularity Check
+## Task Granularity Check (histórico — T1-T34)
 
 | Task | Scope | Status |
 | --- | --- | --- |
@@ -943,7 +1386,7 @@ Execution is strictly sequential - there is no intra-phase parallelism. A single
 
 ---
 
-## Diagram-Definition Cross-Check
+## Diagram-Definition Cross-Check (histórico — T1-T34)
 
 Every task depends on exactly its immediate predecessor (T1←none, T2←T1, T3←T2, ... T34←T33) — a single linear chain across all 8 phases, matching the pattern already used in `admin-dashboard/tasks.md`. Each phase's diagram repeats the last task of the previous phase as its leading node (e.g. Phase 2 opens with `T5 → T6 → ...`, since T5 is Phase 1's last task), so every `Depends on` has a matching arrow and every arrow has a matching `Depends on` — including at phase boundaries.
 
@@ -970,7 +1413,7 @@ No dependency points to a later phase — the chain is strictly sequential and b
 
 ---
 
-## Test Co-location Validation
+## Test Co-location Validation (histórico — T1-T34)
 
 | Task | Code Layer Created/Modified | Matrix Requires | Task Says | Status |
 | --- | --- | --- | --- | --- |
@@ -1010,6 +1453,95 @@ No dependency points to a later phase — the chain is strictly sequential and b
 | T34 | React components | unit | unit | ✅ OK |
 
 No violations — every task's `Tests` field matches its layer's Coverage Expectation from the matrix. `Tests: none` used only for T9 (pure scaffold/config), consistent with the matrix.
+
+---
+
+## Phase Execution Map (I1-I20 — integração real, esta rodada)
+
+```
+Etapa 0 → Etapa 1 → Etapa 2 → Etapa 3 → Etapa 4 → Etapa 5
+
+Etapa 0:  I1 ------→ I2 ------→ I3 ------→ I4 ------→ I5 ------→ I6 ------→ I7 ------→ I8 ------→ I9
+Etapa 1:  I9 ------→ I10 ------→ I11 ------→ I12 ------→ I13
+Etapa 2:  I13 -----→ I14 ------→ I15
+Etapa 3:  I15 -----→ I16
+Etapa 4:  I16 -----→ I17 ------→ I18 ------→ I19
+Etapa 5:  I19 -----→ I20
+```
+
+Execução sequencial dentro de cada etapa. 20 tasks totais — acima do budget de ~7-8 por worker de um único batch, então sub-agentes por etapa serão oferecidos no início do Execute (Etapa 0 sozinha tem 9 tasks, levemente acima do budget — dependency chain única, não faz sentido dividir no meio; vira seu próprio batch, absorvendo o excedente). Etapas 1-3 e 5 (4-5 tasks cada) empacotam bem num batch por etapa; Etapa 4 (4 tasks) idem.
+
+---
+
+## Task Granularity Check (I1-I20)
+
+| Task | Scope | Status |
+| --- | --- | --- |
+| I1-I5 | 1 endpoint/middleware change each | ✅ Granular |
+| I6 | 1 arquivo (`apiClient.ts`) + 1 config de env — reescrita coesa de uma única camada | ✅ Granular |
+| I7 | Setup de MSW + migração de 1 arquivo de teste — cohesive (infra de teste nova, primeiro uso) | ✅ OK — coeso |
+| I8 | 2 arquivos pequenos e diretamente relacionados (isolar 1 feature dev-only) | ✅ OK — coeso |
+| I9 | Refactor mecânico de tipos, 1 arquivo novo + imports atualizados | ✅ Granular |
+| I10-I12 | 1 endpoint/repository change each | ✅ Granular |
+| I13 | Wiring de 3 features irmãs (domains/status-pages/public-status) que já compartilham a mesma migração mecânica (trocar teste de handleRoute pra MSW) — cohesive, mesma fase | ✅ OK — coeso |
+| I14 | 1 método de client + 1 endpoint | ✅ Granular |
+| I15 | Wiring de 2 features irmãs (integrations/services), mesma migração mecânica | ✅ OK — coeso |
+| I16 | Wiring de 1 feature | ✅ Granular |
+| I17-I18 | 1 repository method / 1 handler change each | ✅ Granular |
+| I19 | Wiring de 1 feature + desabilitar 2 ações órfãs — cohesive (mesma página, mesma decisão AD-007) | ✅ OK — coeso |
+| I20 | Wiring de 1 feature | ✅ Granular |
+
+---
+
+## Diagram-Definition Cross-Check (I1-I20)
+
+Cada task depende exatamente do seu predecessor imediato (I1←none, I2←I1, ... I20←I19) — cadeia linear única através das 6 etapas. Cada etapa repete a última task da etapa anterior como nó inicial do diagrama (ex. Etapa 1 abre com `I9 → I10 → ...`, já que I9 é a última task da Etapa 0), então todo `Depends on` tem seta correspondente e toda seta tem `Depends on` correspondente — inclusive nas fronteiras de etapa.
+
+| Task | Depends On (task body) | Diagram Shows | Status |
+| --- | --- | --- | --- |
+| I1 | None | None (first task) | ✅ Match |
+| I2..I9 | I(n-1) | I(n-1)→I(n) in Etapa 0 | ✅ Match |
+| I10 | I9 | I9→I10 in Etapa 1 (I9 repeated as Etapa 1's leading node) | ✅ Match |
+| I11..I13 | I(n-1) | I(n-1)→I(n) in Etapa 1 | ✅ Match |
+| I14 | I13 | I13→I14 in Etapa 2 (I13 repeated as Etapa 2's leading node) | ✅ Match |
+| I15 | I14 | I14→I15 in Etapa 2 | ✅ Match |
+| I16 | I15 | I15→I16 in Etapa 3 (I15 repeated as Etapa 3's leading node) | ✅ Match |
+| I17 | I16 | I16→I17 in Etapa 4 (I16 repeated as Etapa 4's leading node) | ✅ Match |
+| I18, I19 | I(n-1) | I(n-1)→I(n) in Etapa 4 | ✅ Match |
+| I20 | I19 | I19→I20 in Etapa 5 (I19 repeated as Etapa 5's leading node) | ✅ Match |
+
+No dependency points to a later stage — the chain is strictly sequential and backward-only by construction.
+
+---
+
+## Test Co-location Validation (I1-I20)
+
+| Task | Code Layer Created/Modified | Matrix Requires | Task Says | Status |
+| --- | --- | --- | --- | --- |
+| I1 | Go handler | integration | integration | ✅ OK |
+| I2 | Go handler (auth) | integration | integration | ✅ OK |
+| I3 | Go middleware | integration | integration | ✅ OK |
+| I4 | Go handler | integration | integration | ✅ OK |
+| I5 | Go middleware (CORS) | integration | integration | ✅ OK |
+| I6 | React lib (apiClient rewrite) | unit | none (coberto por I7 — ver justificativa abaixo) | ✅ OK |
+| I7 | React test infra (MSW) + auth test | unit | unit (via MSW) | ✅ OK |
+| I8 | React auth/layout (dev-only feature) | unit | unit | ✅ OK |
+| I9 | Config/types refactor | none | none | ✅ OK |
+| I10 | Go handler + repository | integration | integration | ✅ OK |
+| I11 | Go handler + repository | integration | integration | ✅ OK |
+| I12 | Go handler (novo endpoint) | integration | integration | ✅ OK |
+| I13 | React hooks (wiring + testes) | unit (via MSW) | unit (via MSW) | ✅ OK |
+| I14 | Go connector + handler | unit (connector) + integration (handler) | integration (handler) + unit (connector) | ✅ OK |
+| I15 | React hooks (wiring + testes) | unit (via MSW) | unit (via MSW) | ✅ OK |
+| I16 | React hooks (wiring + testes) | unit (via MSW) | unit (via MSW) | ✅ OK |
+| I17 | Go repository | integration | integration | ✅ OK |
+| I18 | Go handler | integration | integration | ✅ OK |
+| I19 | React hooks + page (wiring + testes) | unit (via MSW) | unit (via MSW) | ✅ OK |
+| I20 | React hooks (wiring + testes) | unit (via MSW) | unit (via MSW) | ✅ OK |
+
+**Justificativa I6 `Tests: none`**: I6 reescreve `apiClient.ts` pra fetch real, mas nenhum teste de hook pode validar essa troca até o MSW existir (I7) — sem MSW, "testar" I6 exigiria rede real contra o backend rodando, não é um teste automatizado isolado. Não é deferral disfarçado: I7 é a PRÓXIMA task, roda imediatamente em seguida na mesma etapa, e migra exatamente o arquivo de teste que cobre o comportamento que I6 introduziu (`AuthProvider.test.tsx`, que exercita `apiFetch` ponta a ponta). Este é o padrão "merge forward" descrito em `tasks.md`/Resolving compilation dependencies — a alternativa (só uma task I6+I7 fundida) quebraria a atomicidade (2 preocupações distintas: reescrever o client vs. montar infra de teste nova). Gate de I6 é `build` (compila e o `AuthProvider` real consegue rodar contra um backend real manualmente) até I7 fechar a cobertura automatizada.
+
+No violations além da já justificada — every task's `Tests` field matches its layer's Coverage Expectation from the matrix.
 
 ---
 
