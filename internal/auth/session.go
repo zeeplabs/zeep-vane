@@ -8,10 +8,12 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 )
 
-// sessionTTL is how long an issued session token stays valid. The spec does
+// SessionTTL is how long an issued session token stays valid. The spec does
 // not define an explicit session lifetime, so this is a reasonable default,
-// not a requirement derived from an AC.
-const sessionTTL = 24 * time.Hour
+// not a requirement derived from an AC. Exported so callers that set a
+// cookie alongside the token (see api.AuthHandler.Login) can match its
+// MaxAge to the token's actual expiry.
+const SessionTTL = 24 * time.Hour
 
 // ErrInvalidToken is returned when a token fails to parse, fails signature
 // verification, or is expired.
@@ -23,9 +25,9 @@ type sessionClaims struct {
 }
 
 // IssueSession signs a session token for adminID using secret, valid for
-// sessionTTL.
+// SessionTTL.
 func IssueSession(adminID, secret string) (string, error) {
-	return issueSessionWithTTL(adminID, secret, sessionTTL)
+	return issueSessionWithTTL(adminID, secret, SessionTTL)
 }
 
 // issueSessionWithTTL is IssueSession with an explicit TTL, so tests can

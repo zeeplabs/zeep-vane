@@ -129,9 +129,9 @@ I19 → I20
 - Skill: NONE
 
 **Done when**:
-- [ ] Login bem-sucedido seta o cookie com todos os atributos corretos, corpo `{token}` inalterado
-- [ ] Testes existentes de login (`auth_handler_test.go`) continuam passando sem modificação
-- [ ] Gate check passes: `go test -tags=integration ./...`
+- [x] Login bem-sucedido seta o cookie com todos os atributos corretos, corpo `{token}` inalterado
+- [x] Testes existentes de login (`auth_handler_test.go`) continuam passando sem modificação
+- [x] Gate check passes: `go test -tags=integration ./...`
 
 **Tests**: integration
 **Gate**: full

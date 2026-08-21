@@ -115,6 +115,54 @@ func TestLogin_CorrectCredentials_200(t *testing.T) {
 	}
 }
 
+func TestLogin_CorrectCredentials_SetsSessionCookie(t *testing.T) {
+	r, repo, pool := newLoginRouter(t)
+	email := uniqueTestEmail(t)
+	createTestAdmin(t, repo, pool, email, "correct-horse-battery-staple")
+
+	rec := postLogin(t, r, email, "correct-horse-battery-staple")
+
+	cookies := rec.Result().Cookies()
+	var sessionCookie *http.Cookie
+	for _, c := range cookies {
+		if c.Name == "vane_session" {
+			sessionCookie = c
+			break
+		}
+	}
+	if sessionCookie == nil {
+		t.Fatalf("no vane_session cookie in response, want one set (cookies: %+v)", cookies)
+	}
+	if sessionCookie.Value == "" {
+		t.Error("vane_session cookie has empty value, want the session token")
+	}
+	if !sessionCookie.HttpOnly {
+		t.Error("vane_session cookie HttpOnly = false, want true")
+	}
+	if !sessionCookie.Secure {
+		t.Error("vane_session cookie Secure = false, want true")
+	}
+	if sessionCookie.SameSite != http.SameSiteStrictMode {
+		t.Errorf("vane_session cookie SameSite = %v, want %v", sessionCookie.SameSite, http.SameSiteStrictMode)
+	}
+	if sessionCookie.Path != "/" {
+		t.Errorf("vane_session cookie Path = %q, want %q", sessionCookie.Path, "/")
+	}
+	if sessionCookie.MaxAge != int(auth.SessionTTL.Seconds()) {
+		t.Errorf("vane_session cookie MaxAge = %d, want %d", sessionCookie.MaxAge, int(auth.SessionTTL.Seconds()))
+	}
+
+	var body struct {
+		Token string `json:"token"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+	if body.Token == "" {
+		t.Error("response body has no token, want the body contract unchanged")
+	}
+}
+
 func TestLogin_WrongPassword_401Generic(t *testing.T) {
 	r, repo, pool := newLoginRouter(t)
 	email := uniqueTestEmail(t)

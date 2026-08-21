@@ -76,9 +76,30 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	http.SetCookie(w, sessionCookie(token, int(auth.SessionTTL.Seconds())))
+
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write([]byte(fmt.Sprintf(`{"token":%q}`, token)))
+}
+
+// sessionCookieName is the name of the session cookie set on login and
+// cleared on logout (AD-004).
+const sessionCookieName = "vane_session"
+
+// sessionCookie builds the vane_session cookie with the attributes AD-004
+// requires. maxAge is in seconds - pass a negative value to build an
+// already-expired cookie (used by logout).
+func sessionCookie(value string, maxAge int) *http.Cookie {
+	return &http.Cookie{
+		Name:     sessionCookieName,
+		Value:    value,
+		Path:     "/",
+		HttpOnly: true,
+		Secure:   true,
+		SameSite: http.SameSiteStrictMode,
+		MaxAge:   maxAge,
+	}
 }
 
 type meResponse struct {
