@@ -1,6 +1,6 @@
 import { Table, type TableColumn } from "../../components/ui/Table";
 import { Tag } from "../../components/ui/Tag";
-import type { PollerStatusEntry } from "../../lib/mockData";
+import type { PollerStatusEntry } from "../../types/api";
 import { usePollerStatus } from "./hooks";
 
 function formatTimestamp(iso: string | null): string {

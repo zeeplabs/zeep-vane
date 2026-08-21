@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiFetch } from "../../lib/apiClient";
-import type { Service } from "../../lib/mockData";
+import type { Service } from "../../types/api";
 
 export function useServices() {
   return useQuery({

@@ -6,7 +6,7 @@ import { Field } from "../../components/ui/Field";
 import { Tag } from "../../components/ui/Tag";
 import { IconRoleSelector } from "../../components/ui/IconRoleSelector";
 import { ApiError } from "../../lib/apiClient";
-import type { Role } from "../../lib/mockData";
+import type { Role } from "../../types/api";
 import {
   useAdmins,
   useCancelInvite,

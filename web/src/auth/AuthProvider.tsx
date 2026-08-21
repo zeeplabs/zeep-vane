@@ -7,7 +7,7 @@ import {
   type ReactNode,
 } from "react";
 import { apiFetch, ApiError, setUnauthorizedHandler } from "../lib/apiClient";
-import type { Role } from "../lib/mockData";
+import type { Role } from "../types/api";
 
 type Status = "loading" | "authenticated" | "anonymous";
 

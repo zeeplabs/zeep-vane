@@ -1,19 +1,25 @@
-// Fixtures compartilhadas pela camada mock de API (src/lib/apiClient.ts).
-// Arrays mutáveis em memória — simulam um backend real durante a sessão do browser.
-// SPEC_DEVIATION: dado 100% fake, sem rede real (ver AD-006 em .specs/STATE.md).
+// Fixtures usadas por testes e pelo seletor dev-only "Visualizando como"
+// (AuthProvider.setDevRole) - não é mais a camada de rede (I6 trocou
+// apiClient.ts por fetch real). Tipos vêm de src/types/api.ts (I9); este
+// arquivo só declara os dados de exemplo.
 // Contratos seguem `design.md` § Data Models; onde a UI precisa de algo que o
 // design documenta como "a API não retorna na leitura" (ex.: `service_ids` no
-// Incident lido de volta), o mock inclui o campo mesmo assim para viabilizar a
-// tela — reconciliar com o contrato real do backend na fase de integração.
+// Incident lido de volta), a fixture inclui o campo mesmo assim para viabilizar
+// a tela em dev/teste.
 
-export type Role = "owner" | "operator" | "viewer";
-
-export interface Admin {
-  id: string;
-  email: string;
-  role: Role;
-  status: "active" | "pending";
-}
+import type {
+  Admin,
+  AdminInvite,
+  IntegrationStatus,
+  SLOSummary,
+  Service,
+  Domain,
+  StatusPage,
+  Incident,
+  IncidentUpdate,
+  PollerStatusEntry,
+  CompanySettings,
+} from "../types/api";
 
 interface AdminSeed extends Admin {
   password: string;
@@ -41,14 +47,6 @@ export function toPublicAdmin(admin: AdminSeed): Admin {
 
 // -- Convites pendentes de admin (AF-38: mesclados em GET /api/admins) --------
 
-export interface AdminInvite {
-  id: string;
-  email: string;
-  role: Role;
-  status: "pending";
-  expires_at: string;
-}
-
 export const adminInvites: AdminInvite[] = [
   {
     id: "invite-1",
@@ -61,23 +59,12 @@ export const adminInvites: AdminInvite[] = [
 
 // -- Integração Datadog --------------------------------------------------------
 
-export interface IntegrationStatus {
-  status: "active" | "invalid";
-  last_checked_at: string | null;
-  last_error: string | null;
-}
-
 export const datadogIntegration: { connected: boolean } & IntegrationStatus = {
   connected: true,
   status: "active",
   last_checked_at: new Date(Date.now() - 1000 * 60 * 5).toISOString(),
   last_error: null,
 };
-
-export interface SLOSummary {
-  id: string;
-  name: string;
-}
 
 export const sloCatalog: SLOSummary[] = [
   { id: "slo-1", name: "API disponibilidade 99.9%" },
@@ -87,17 +74,6 @@ export const sloCatalog: SLOSummary[] = [
 ];
 
 // -- Serviços -------------------------------------------------------------------
-
-export type ServiceStatus = "not_configured" | "operational" | "degraded" | "outage";
-
-export interface Service {
-  id: string;
-  name: string;
-  slo_id: string | null;
-  slo_name: string | null;
-  current_status: ServiceStatus;
-  last_status_change_at: string;
-}
 
 export const services: Service[] = [
   {
@@ -124,15 +100,17 @@ export const services: Service[] = [
     current_status: "not_configured",
     last_status_change_at: new Date(Date.now() - 1000 * 60 * 60 * 24).toISOString(),
   },
+  {
+    id: "svc-4",
+    name: "Fila de processamento",
+    slo_id: null,
+    slo_name: null,
+    current_status: "operational",
+    last_status_change_at: new Date(Date.now() - 1000 * 60 * 60 * 12).toISOString(),
+  },
 ];
 
 // -- Domínios ---------------------------------------------------------------
-
-export interface Domain {
-  id: string;
-  hostname: string;
-  created_at: string;
-}
 
 export const domains: Domain[] = [
   { id: "dom-1", hostname: "status.acme.com", created_at: new Date(Date.now() - 1000 * 60 * 60 * 24 * 10).toISOString() },
@@ -140,19 +118,6 @@ export const domains: Domain[] = [
 ];
 
 // -- Status Pages -------------------------------------------------------------
-
-export type StatusPageState = "draft" | "published" | "tls_failed";
-
-export interface StatusPage {
-  id: string;
-  name: string;
-  subdomain: string;
-  domain_id: string;
-  state: StatusPageState;
-  tls_last_error: string | null;
-  created_at: string;
-  service_ids: string[];
-}
 
 export const statusPages: StatusPage[] = [
   {
@@ -185,6 +150,16 @@ export const statusPages: StatusPage[] = [
     created_at: new Date(Date.now() - 1000 * 60 * 60 * 24).toISOString(),
     service_ids: [],
   },
+  {
+    id: "sp-4",
+    name: "Status Delta",
+    subdomain: "status-delta",
+    domain_id: "dom-1",
+    state: "published",
+    tls_last_error: null,
+    created_at: new Date(Date.now() - 1000 * 60 * 60 * 24 * 20).toISOString(),
+    service_ids: ["svc-4"],
+  },
 ];
 
 // Contador simulando quantas vezes um status page em emissão já foi consultado —
@@ -203,24 +178,6 @@ export function advanceStatusPagePolling(page: StatusPage): StatusPage {
 }
 
 // -- Incidentes -----------------------------------------------------------------
-
-export type IncidentStatus = "investigating" | "identified" | "monitoring" | "resolved";
-
-export interface Incident {
-  id: string;
-  title: string;
-  status: IncidentStatus;
-  created_at: string;
-  resolved_at: string | null;
-  service_ids: string[];
-}
-
-export interface IncidentUpdate {
-  id: string;
-  incident_id: string;
-  body: string;
-  created_at: string;
-}
 
 export const incidents: Incident[] = [
   {
@@ -270,13 +227,6 @@ export const incidentUpdates: IncidentUpdate[] = [
 
 // -- Poller ---------------------------------------------------------------------
 
-export interface PollerStatusEntry {
-  provider: string;
-  status: string;
-  last_checked_at: string | null;
-  last_error: string | null;
-}
-
 export const pollerStatus: PollerStatusEntry[] = [
   {
     provider: "datadog",
@@ -285,6 +235,14 @@ export const pollerStatus: PollerStatusEntry[] = [
     last_error: null,
   },
 ];
+
+// -- Configurações da empresa -----------------------------------------------------
+
+export const companySettings: CompanySettings = {
+  name: "Sua Empresa Ltda.",
+  contact_email: "contato@suaempresa.com",
+  logo_url: null,
+};
 
 // -- Helpers de id ---------------------------------------------------------------
 

@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient, type Query } from "@tanstack/react-query";
 import { apiFetch } from "../../lib/apiClient";
-import type { StatusPage, StatusPageState } from "../../lib/mockData";
+import type { StatusPage, StatusPageState } from "../../types/api";
 
 const terminalStates: StatusPageState[] = ["published", "tls_failed"];
 

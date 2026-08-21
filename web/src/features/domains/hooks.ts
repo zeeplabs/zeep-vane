@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiFetch } from "../../lib/apiClient";
-import type { Domain } from "../../lib/mockData";
+import type { Domain } from "../../types/api";
 
 export function useDomains() {
   return useQuery({

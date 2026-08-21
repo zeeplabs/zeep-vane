@@ -5,7 +5,7 @@ import { Tag } from "../../components/ui/Tag";
 import { Button } from "../../components/ui/Button";
 import { Field } from "../../components/ui/Field";
 import { useAuth } from "../../auth/AuthProvider";
-import type { IncidentStatus } from "../../lib/mockData";
+import type { IncidentStatus } from "../../types/api";
 import {
   useAddIncidentUpdate,
   useIncidents,
@@ -42,7 +42,7 @@ export function IncidentDetail() {
   if (!incident) return <p className="text-neutral-400">Incidente não encontrado.</p>;
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="mx-auto flex w-full max-w-[1280px] flex-col gap-6">
       <div className="flex items-center gap-2">
         <Tag variant={incident.status === "resolved" ? "neutral" : "accent"}>
           {incident.status === "resolved" ? "Resolvido" : incident.status}

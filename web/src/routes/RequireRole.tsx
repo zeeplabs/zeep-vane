@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { Navigate } from "react-router-dom";
 import { useAuth } from "../auth/AuthProvider";
-import type { Role } from "../lib/mockData";
+import type { Role } from "../types/api";
 
 export function RequireAuth({ children }: { children: ReactNode }) {
   const { status } = useAuth();

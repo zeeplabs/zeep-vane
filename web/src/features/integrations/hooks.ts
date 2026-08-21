@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiFetch } from "../../lib/apiClient";
-import type { SLOSummary } from "../../lib/mockData";
+import type { SLOSummary } from "../../types/api";
 
 export interface IntegrationStatusResponse {
   connected: boolean;

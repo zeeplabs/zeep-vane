@@ -296,9 +296,11 @@ I19 → I20
 - Skill: NONE
 
 **Done when**:
-- [ ] Nenhum arquivo de produção (`src/features/**`, `src/auth/**`, `src/layout/**`) importa tipo de `mockData.ts`
-- [ ] `tsc -b --force` limpo
-- [ ] Gate check passes: `cd web && npm run build`
+- [x] Nenhum arquivo de produção (`src/features/**`, `src/auth/**`, `src/layout/**`) importa tipo de `mockData.ts`
+- [x] `tsc -b --force` limpo
+- [x] Gate check passes: `cd web && npm run build`
+
+> Nota: `mockData.ts` continua exportando os arrays fixture (`admins`, `domains`, etc.) e funções auxiliares — usados por testes e pelo `setDevRole` dev-only (I8). Só as declarações de tipo saíram de lá.
 
 **Tests**: none (refactor de tipos, sem lógica nova)
 **Gate**: build (frontend)

@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiFetch } from "../../lib/apiClient";
-import type { Role } from "../../lib/mockData";
+import type { Role } from "../../types/api";
 
 export interface AdminRow {
   id: string;

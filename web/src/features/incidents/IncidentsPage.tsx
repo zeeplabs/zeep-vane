@@ -9,7 +9,7 @@ import { Dialog } from "../../components/ui/Dialog";
 import { EmptyState } from "../../layout/EmptyState";
 import { useAuth } from "../../auth/AuthProvider";
 import { ApiError } from "../../lib/apiClient";
-import type { Incident, IncidentStatus } from "../../lib/mockData";
+import type { Incident, IncidentStatus } from "../../types/api";
 import { useServices } from "../services/hooks";
 import { useCreateIncident, useIncidents, useTransitionIncident } from "./hooks";
 

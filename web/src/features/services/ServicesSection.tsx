@@ -6,7 +6,7 @@ import { Field } from "../../components/ui/Field";
 import { Tag, type TagVariant } from "../../components/ui/Tag";
 import { useAuth } from "../../auth/AuthProvider";
 import { ApiError } from "../../lib/apiClient";
-import type { Service, ServiceStatus } from "../../lib/mockData";
+import type { Service, ServiceStatus } from "../../types/api";
 import { useSLOSearch } from "../integrations/hooks";
 import { useCreateService, useServices } from "./hooks";
 

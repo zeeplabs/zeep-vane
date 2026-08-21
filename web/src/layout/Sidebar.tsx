@@ -4,7 +4,7 @@ import { useTranslation } from "react-i18next";
 import { useAuth } from "../auth/AuthProvider";
 import { Dialog } from "../components/ui/Dialog";
 import { Button } from "../components/ui/Button";
-import type { Role } from "../lib/mockData";
+import type { Role } from "../types/api";
 
 function BrandIcon() {
   return (

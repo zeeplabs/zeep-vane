@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiFetch } from "../../lib/apiClient";
-import type { Incident, IncidentStatus, IncidentUpdate } from "../../lib/mockData";
+import type { Incident, IncidentStatus, IncidentUpdate } from "../../types/api";
 
 export function useIncidents() {
   return useQuery({
