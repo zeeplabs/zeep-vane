@@ -342,9 +342,9 @@ I19 → I20
 - Skill: NONE
 
 **Done when**:
-- [ ] `GET /api/status-pages` retorna 200 com a lista no formato já usado em `POST /api/status-pages`
-- [ ] Acessível por qualquer papel autenticado, 401 sem sessão válida
-- [ ] Gate check passes: `go test -tags=integration ./...`
+- [x] `GET /api/status-pages` retorna 200 com a lista no formato já usado em `POST /api/status-pages`
+- [x] Acessível por qualquer papel autenticado, 401 sem sessão válida
+- [x] Gate check passes: `go test -tags=integration ./...`
 
 **Tests**: integration
 **Gate**: full

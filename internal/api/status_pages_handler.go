@@ -11,20 +11,21 @@ import (
 	"github.com/zeeplabs/zeep-vane/internal/db"
 )
 
-// statusPageCreator is the subset of *db.StatusPageRepository the status
-// pages handler depends on.
-type statusPageCreator interface {
+// statusPageCreatorLister is the subset of *db.StatusPageRepository the
+// status pages handler depends on.
+type statusPageCreatorLister interface {
 	Create(ctx context.Context, statusPage *db.StatusPage, serviceIDs []string) error
+	List(ctx context.Context) ([]db.StatusPage, error)
 }
 
 // StatusPagesHandler serves the status page admin routes.
 type StatusPagesHandler struct {
-	statusPages statusPageCreator
+	statusPages statusPageCreatorLister
 	logger      *zap.Logger
 }
 
 // NewStatusPagesHandler builds a StatusPagesHandler backed by statusPages.
-func NewStatusPagesHandler(statusPages statusPageCreator, logger *zap.Logger) *StatusPagesHandler {
+func NewStatusPagesHandler(statusPages statusPageCreatorLister, logger *zap.Logger) *StatusPagesHandler {
 	return &StatusPagesHandler{statusPages: statusPages, logger: logger}
 }
 
@@ -79,4 +80,32 @@ func (h *StatusPagesHandler) Create(w http.ResponseWriter, r *http.Request) {
 		TLSLastError: statusPage.TLSLastError,
 		CreatedAt:    statusPage.CreatedAt,
 	})
+}
+
+// List handles GET /api/status-pages, returning every registered status
+// page.
+func (h *StatusPagesHandler) List(w http.ResponseWriter, r *http.Request) {
+	statusPages, err := h.statusPages.List(r.Context())
+	if err != nil {
+		h.logger.Error("status-pages: failed to list status pages", zap.Error(err))
+		writeInternalError(w)
+		return
+	}
+
+	resp := make([]statusPageResponse, len(statusPages))
+	for i, sp := range statusPages {
+		resp[i] = statusPageResponse{
+			ID:           sp.ID,
+			Name:         sp.Name,
+			Subdomain:    sp.Subdomain,
+			DomainID:     sp.DomainID,
+			State:        sp.State,
+			TLSLastError: sp.TLSLastError,
+			CreatedAt:    sp.CreatedAt,
+		}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(resp)
 }

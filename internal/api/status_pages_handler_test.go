@@ -43,6 +43,7 @@ func newStatusPagesRouter(t *testing.T) (http.Handler, *db.Pool, *db.AdminReposi
 	r.Group(func(protected chi.Router) {
 		protected.Use(RequireAuth(middlewareTestSecret, admins))
 		protected.Post("/api/status-pages", handler.Create)
+		protected.Get("/api/status-pages", handler.List)
 	})
 
 	return r, pool, admins
@@ -197,4 +198,60 @@ func decodeStatusPageID(t *testing.T, rec *httptest.ResponseRecorder) string {
 		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
 	}
 	return resp.ID
+}
+
+func getListStatusPages(t *testing.T, r http.Handler, token string) *httptest.ResponseRecorder {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodGet, "/api/status-pages", nil)
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+	return rec
+}
+
+func TestListStatusPages_AnyRole_200IncludesCreated(t *testing.T) {
+	r, pool, admins := newStatusPagesRouter(t)
+	token := issueTestSessionToken(t, admins)
+	domainID := createTestDomain(t, pool)
+
+	createRec := postCreateStatusPage(t, r, token, createStatusPageRequest{
+		Name: "List Test Page", Subdomain: "list-test", DomainID: domainID,
+	})
+	if createRec.Code != http.StatusCreated {
+		t.Fatalf("setup create status = %d, want %d, body = %s", createRec.Code, http.StatusCreated, createRec.Body.String())
+	}
+	createdID := decodeStatusPageID(t, createRec)
+	cleanupStatusPage(t, pool, createdID)
+
+	rec := getListStatusPages(t, r, token)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	var statusPages []statusPageResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &statusPages); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+
+	found := false
+	for _, sp := range statusPages {
+		if sp.ID == createdID {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("List() response does not include created status page %q", createdID)
+	}
+}
+
+func TestListStatusPages_NoAuth_401(t *testing.T) {
+	r, _, _ := newStatusPagesRouter(t)
+
+	rec := getListStatusPages(t, r, "")
+	if rec.Code != http.StatusUnauthorized {
+		t.Errorf("status = %d, want %d", rec.Code, http.StatusUnauthorized)
+	}
 }

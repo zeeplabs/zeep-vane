@@ -68,6 +68,30 @@ func (r *StatusPageRepository) Create(ctx context.Context, statusPage *StatusPag
 	return nil
 }
 
+// List returns every registered status page, ordered by name.
+func (r *StatusPageRepository) List(ctx context.Context) ([]StatusPage, error) {
+	rows, err := r.pool.Query(ctx,
+		"SELECT id, name, subdomain, domain_id, state, tls_last_error, created_at FROM status_pages ORDER BY name")
+	if err != nil {
+		return nil, fmt.Errorf("db: failed to list status pages: %w", err)
+	}
+	defer rows.Close()
+
+	var statusPages []StatusPage
+	for rows.Next() {
+		var sp StatusPage
+		if err := rows.Scan(&sp.ID, &sp.Name, &sp.Subdomain, &sp.DomainID, &sp.State, &sp.TLSLastError, &sp.CreatedAt); err != nil {
+			return nil, fmt.Errorf("db: failed to scan status page: %w", err)
+		}
+		statusPages = append(statusPages, sp)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("db: failed to list status pages: %w", err)
+	}
+
+	return statusPages, nil
+}
+
 // hostnameMatch is the shared WHERE-clause fragment matching a status
 // page's public hostname: its subdomain joined to its domain's root
 // hostname (e.g. "status" + "empresa.com" = "status.empresa.com").
