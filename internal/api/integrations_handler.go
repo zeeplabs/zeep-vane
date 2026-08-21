@@ -9,6 +9,7 @@ import (
 
 	"go.uber.org/zap"
 
+	"github.com/zeeplabs/zeep-vane/internal/connectors/datadog"
 	"github.com/zeeplabs/zeep-vane/internal/crypto"
 	"github.com/zeeplabs/zeep-vane/internal/db"
 )
@@ -24,19 +25,25 @@ type datadogIntegrationUpserter interface {
 // and has SLO read permission, without needing a specific SLO ID (SP-01.2).
 type validateDatadogCredentials func(ctx context.Context, apiKey, appKey string) error
 
+// searchDatadogSLOs searches Datadog for SLOs matching query, using the
+// stored integration's decrypted key pair (I14).
+type searchDatadogSLOs func(ctx context.Context, apiKey, appKey, query string) ([]datadog.SLOSummary, error)
+
 // IntegrationsHandler serves the integrations admin routes.
 type IntegrationsHandler struct {
 	integrations datadogIntegrationUpserter
 	validate     validateDatadogCredentials
+	search       searchDatadogSLOs
 	masterKey    string
 	logger       *zap.Logger
 }
 
 // NewIntegrationsHandler builds an IntegrationsHandler. validate is called
 // with the submitted keys to confirm they are usable before anything is
-// encrypted or persisted; masterKey encrypts the keys at rest (T16).
-func NewIntegrationsHandler(integrations datadogIntegrationUpserter, validate validateDatadogCredentials, masterKey string, logger *zap.Logger) *IntegrationsHandler {
-	return &IntegrationsHandler{integrations: integrations, validate: validate, masterKey: masterKey, logger: logger}
+// encrypted or persisted; masterKey encrypts the keys at rest (T16). search
+// is called with the stored, decrypted key pair to serve SLO lookups (I14).
+func NewIntegrationsHandler(integrations datadogIntegrationUpserter, validate validateDatadogCredentials, search searchDatadogSLOs, masterKey string, logger *zap.Logger) *IntegrationsHandler {
+	return &IntegrationsHandler{integrations: integrations, validate: validate, search: search, masterKey: masterKey, logger: logger}
 }
 
 type connectDatadogRequest struct {
@@ -123,6 +130,67 @@ func (h *IntegrationsHandler) Status(w http.ResponseWriter, r *http.Request) {
 		resp.LastCheckedAt = &formatted
 	}
 
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(resp)
+}
+
+type sloSummaryResponse struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+}
+
+// SearchSLOs handles GET /api/integrations/datadog/slos?query=, letting an
+// admin search Datadog SLOs by name to link one to a service (AF-42, I14).
+// No integration connected yet is not an error from this endpoint's point
+// of view (SPEC_DEVIATION: the done-when only specifies 200/401, not this
+// case) - it simply has nothing to search yet, so it returns an empty list
+// rather than failing the admin's search UI.
+func (h *IntegrationsHandler) SearchSLOs(w http.ResponseWriter, r *http.Request) {
+	query := r.URL.Query().Get("query")
+
+	integration, err := h.integrations.GetDatadog(r.Context())
+	if err != nil {
+		if errors.Is(err, db.ErrNotFound) {
+			writeSLOSummaries(w, nil)
+			return
+		}
+		h.logger.Error("integrations: failed to get datadog integration for slo search", zap.Error(err))
+		writeInternalError(w)
+		return
+	}
+
+	apiKey, err := crypto.Decrypt(h.masterKey, integration.EncryptedAPIKey)
+	if err != nil {
+		h.logger.Error("integrations: failed to decrypt datadog api key", zap.Error(err))
+		writeInternalError(w)
+		return
+	}
+	appKey, err := crypto.Decrypt(h.masterKey, integration.EncryptedAppKey)
+	if err != nil {
+		h.logger.Error("integrations: failed to decrypt datadog app key", zap.Error(err))
+		writeInternalError(w)
+		return
+	}
+
+	slos, err := h.search(r.Context(), string(apiKey), string(appKey), query)
+	if err != nil {
+		h.logger.Error("integrations: failed to search datadog slos", zap.Error(err))
+		writeInternalError(w)
+		return
+	}
+
+	resp := make([]sloSummaryResponse, len(slos))
+	for i, slo := range slos {
+		resp[i] = sloSummaryResponse{ID: slo.ID, Name: slo.Name}
+	}
+	writeSLOSummaries(w, resp)
+}
+
+func writeSLOSummaries(w http.ResponseWriter, resp []sloSummaryResponse) {
+	if resp == nil {
+		resp = []sloSummaryResponse{}
+	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	_ = json.NewEncoder(w).Encode(resp)

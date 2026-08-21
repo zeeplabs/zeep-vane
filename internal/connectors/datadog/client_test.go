@@ -129,3 +129,104 @@ func TestFetchSLOStatus_ServerError_ReturnsErrServer(t *testing.T) {
 		t.Errorf("FetchSLOStatus() error = %v, want ErrServer", err)
 	}
 }
+
+// searchResponseBody mirrors validSearchResponseBody but with a name
+// attribute added, as SearchSLOs needs (see the [Provável] note on
+// sloSearchResponse in client.go).
+const searchResponseBody = `{
+  "data": {
+    "attributes": {
+      "slos": [
+        {
+          "data": {
+            "id": "34709d4e377558da8630d86b309b732b",
+            "attributes": {
+              "name": "Checkout latência p95",
+              "status": {
+                "error_budget_remaining": 80.812,
+                "sli": 99.90405942762656,
+                "state": "ok"
+              },
+              "thresholds": [
+                {"target": 99.5, "timeframe": "30d"}
+              ]
+            }
+          }
+        }
+      ]
+    }
+  }
+}`
+
+func TestSearchSLOs_ValidResponse_ReturnsSummaries(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.URL.Query().Get("query"); got != "checkout" {
+			t.Errorf("query param = %q, want %q", got, "checkout")
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(searchResponseBody))
+	}))
+	defer server.Close()
+
+	client := newTestClient(t, server)
+	summaries, err := client.SearchSLOs(t.Context(), "checkout")
+	if err != nil {
+		t.Fatalf("SearchSLOs() returned unexpected error: %v", err)
+	}
+	if len(summaries) != 1 {
+		t.Fatalf("len(summaries) = %d, want 1", len(summaries))
+	}
+	if summaries[0].ID != "34709d4e377558da8630d86b309b732b" {
+		t.Errorf("summaries[0].ID = %q, want %q", summaries[0].ID, "34709d4e377558da8630d86b309b732b")
+	}
+	if summaries[0].Name != "Checkout latência p95" {
+		t.Errorf("summaries[0].Name = %q, want %q", summaries[0].Name, "Checkout latência p95")
+	}
+}
+
+func TestSearchSLOs_NoMatches_ReturnsEmptySliceNotError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"data":{"attributes":{"slos":[]}}}`))
+	}))
+	defer server.Close()
+
+	client := newTestClient(t, server)
+	summaries, err := client.SearchSLOs(t.Context(), "nonexistent")
+	if err != nil {
+		t.Fatalf("SearchSLOs() returned unexpected error: %v", err)
+	}
+	if len(summaries) != 0 {
+		t.Errorf("len(summaries) = %d, want 0", len(summaries))
+	}
+}
+
+func TestSearchSLOs_Unauthorized_ReturnsErrUnauthorized(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+		_, _ = w.Write([]byte(`{"errors":["Unauthorized"]}`))
+	}))
+	defer server.Close()
+
+	client := newTestClient(t, server)
+	_, err := client.SearchSLOs(t.Context(), "checkout")
+	if !errors.Is(err, ErrUnauthorized) {
+		t.Errorf("SearchSLOs() error = %v, want ErrUnauthorized", err)
+	}
+}
+
+func TestSearchSLOs_ServerError_ReturnsErrServer(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte(`{"errors":["Internal Server Error"]}`))
+	}))
+	defer server.Close()
+
+	client := newTestClient(t, server)
+	_, err := client.SearchSLOs(t.Context(), "checkout")
+	if !errors.Is(err, ErrServer) {
+		t.Errorf("SearchSLOs() error = %v, want ErrServer", err)
+	}
+}

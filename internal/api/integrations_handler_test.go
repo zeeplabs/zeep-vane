@@ -26,7 +26,17 @@ import (
 
 const testMasterKey = "integrations-handler-test-master-key"
 
+// alwaysEmptySearch is the default search stub for tests not exercising
+// SearchSLOs itself.
+func alwaysEmptySearch(ctx context.Context, apiKey, appKey, query string) ([]datadog.SLOSummary, error) {
+	return nil, nil
+}
+
 func newIntegrationsRouter(t *testing.T, validate validateDatadogCredentials, logger *zap.Logger) (http.Handler, *db.Pool, *db.AdminRepository) {
+	return newIntegrationsRouterWithSearch(t, validate, alwaysEmptySearch, logger)
+}
+
+func newIntegrationsRouterWithSearch(t *testing.T, validate validateDatadogCredentials, search searchDatadogSLOs, logger *zap.Logger) (http.Handler, *db.Pool, *db.AdminRepository) {
 	t.Helper()
 	dsn := testDatabaseURL(t)
 
@@ -58,11 +68,12 @@ func newIntegrationsRouter(t *testing.T, validate validateDatadogCredentials, lo
 	admins := db.NewAdminRepository(authPool)
 
 	repo := db.NewIntegrationRepository(pool)
-	handler := NewIntegrationsHandler(repo, validate, testMasterKey, logger)
+	handler := NewIntegrationsHandler(repo, validate, search, testMasterKey, logger)
 
 	r := chi.NewRouter()
 	r.With(RequireAuth(middlewareTestSecret, admins)).Post("/api/integrations/datadog", handler.ConnectDatadog)
 	r.With(RequireAuth(middlewareTestSecret, admins)).Get("/api/integrations/datadog/status", handler.Status)
+	r.With(RequireAuth(middlewareTestSecret, admins)).Get("/api/integrations/datadog/slos", handler.SearchSLOs)
 
 	return r, pool, admins
 }
@@ -262,6 +273,73 @@ func TestDatadogStatus_AfterConnectionFailure_ReportsInvalidAndReason(t *testing
 	}
 	if resp.LastError == nil || *resp.LastError != reason {
 		t.Errorf("LastError = %v, want %q", resp.LastError, reason)
+	}
+}
+
+func getDatadogSLOs(t *testing.T, r http.Handler, token, query string) *httptest.ResponseRecorder {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodGet, "/api/integrations/datadog/slos?query="+query, nil)
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+	return rec
+}
+
+func TestSearchDatadogSLOs_Connected_200ReturnsList(t *testing.T) {
+	alwaysValid := func(ctx context.Context, apiKey, appKey string) error { return nil }
+	search := func(ctx context.Context, apiKey, appKey, query string) ([]datadog.SLOSummary, error) {
+		if apiKey != "real-api-key" || appKey != "real-app-key" {
+			t.Errorf("search called with apiKey=%q appKey=%q, want the stored, decrypted keys", apiKey, appKey)
+		}
+		if query != "checkout" {
+			t.Errorf("search called with query=%q, want %q", query, "checkout")
+		}
+		return []datadog.SLOSummary{{ID: "slo-1", Name: "Checkout latência p95"}}, nil
+	}
+	r, _, admins := newIntegrationsRouterWithSearch(t, alwaysValid, search, zap.NewNop())
+	token := issueTestSessionToken(t, admins)
+	postConnectDatadog(t, r, token, "real-api-key", "real-app-key")
+
+	rec := getDatadogSLOs(t, r, token, "checkout")
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	var resp []sloSummaryResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+	if len(resp) != 1 || resp[0].ID != "slo-1" || resp[0].Name != "Checkout latência p95" {
+		t.Errorf("resp = %+v, want [{slo-1 Checkout latência p95}]", resp)
+	}
+}
+
+func TestSearchDatadogSLOs_NotConnectedYet_200EmptyList(t *testing.T) {
+	alwaysValid := func(ctx context.Context, apiKey, appKey string) error { return nil }
+	r, _, admins := newIntegrationsRouterWithSearch(t, alwaysValid, alwaysEmptySearch, zap.NewNop())
+	token := issueTestSessionToken(t, admins)
+
+	rec := getDatadogSLOs(t, r, token, "checkout")
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	if strings.TrimSpace(rec.Body.String()) != "[]" {
+		t.Errorf("body = %q, want %q", rec.Body.String(), "[]")
+	}
+}
+
+func TestSearchDatadogSLOs_NoAuth_401(t *testing.T) {
+	alwaysValid := func(ctx context.Context, apiKey, appKey string) error { return nil }
+	r, _, _ := newIntegrationsRouterWithSearch(t, alwaysValid, alwaysEmptySearch, zap.NewNop())
+
+	rec := getDatadogSLOs(t, r, "", "checkout")
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Errorf("status = %d, want %d", rec.Code, http.StatusUnauthorized)
 	}
 }
 

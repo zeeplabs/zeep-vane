@@ -53,6 +53,13 @@ type SLOProvider interface {
 	FetchSLOStatus(ctx context.Context, sloID string) (SLOStatus, error)
 }
 
+// SLOSummary is a minimal SLO identity, used to let an admin pick an SLO by
+// name when linking it to a service (I14) without fetching its full status.
+type SLOSummary struct {
+	ID   string
+	Name string
+}
+
 // Typed errors so callers (the poller's retry logic, Phase 4) can tell an
 // auth failure - never worth retrying - apart from a transient one.
 var (
@@ -95,7 +102,18 @@ type sloSearchResponse struct {
 		Attributes struct {
 			SLOs []struct {
 				Data struct {
+					ID         string `json:"id"`
 					Attributes struct {
+						// Name: [Provável], not live-verified like Status/
+						// Thresholds/ID above (see SLOStatus doc) - inferred
+						// from the official client's SLOResponseData shape
+						// (github.com/DataDog/datadog-api-client-go,
+						// model_slo_response_data.go: flat Name/Thresholds
+						// fields), which this search response's "attributes"
+						// object mirrors for Status/Thresholds. Re-verify
+						// against a real account before relying on this in
+						// production.
+						Name   string `json:"name"`
 						Status struct {
 							ErrorBudgetRemaining float64 `json:"error_budget_remaining"`
 							SLI                  float64 `json:"sli"`
@@ -147,6 +165,34 @@ func (c *Client) FetchSLOStatus(ctx context.Context, sloID string) (SLOStatus, e
 	}
 
 	return status, nil
+}
+
+// SearchSLOs searches for SLOs by free-text name (I14), reusing the same
+// sloSearchPath as FetchSLOStatus but with a name filter instead of
+// id:<sloID>. Returns an empty slice (not ErrNotFound) when nothing
+// matches - unlike FetchSLOStatus, an empty result here is a normal,
+// expected outcome of a search, not a lookup failure.
+func (c *Client) SearchSLOs(ctx context.Context, query string) ([]SLOSummary, error) {
+	endpoint := fmt.Sprintf("%s%s?query=%s", c.baseURL, sloSearchPath, url.QueryEscape(query))
+
+	resp, err := c.get(ctx, endpoint)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	var parsed sloSearchResponse
+	if err := json.NewDecoder(resp.Body).Decode(&parsed); err != nil {
+		return nil, fmt.Errorf("datadog: failed to decode response: %w", err)
+	}
+
+	slos := parsed.Data.Attributes.SLOs
+	summaries := make([]SLOSummary, 0, len(slos))
+	for _, slo := range slos {
+		summaries = append(summaries, SLOSummary{ID: slo.Data.ID, Name: slo.Data.Attributes.Name})
+	}
+
+	return summaries, nil
 }
 
 // ValidateCredentials checks that the client's API/App key pair is valid

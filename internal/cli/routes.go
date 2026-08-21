@@ -37,7 +37,7 @@ func buildAdminRouter(pool *db.Pool, cfg config.Config, logger *zap.Logger) http
 	adminsHandler := api.NewAdminsHandler(pool, admins, invites, auditLog, logger)
 	domainsHandler := api.NewDomainsHandler(db.NewDomainRepository(pool), logger)
 	servicesHandler := api.NewServicesHandler(db.NewServiceRepository(pool), logger)
-	integrationsHandler := api.NewIntegrationsHandler(db.NewIntegrationRepository(pool), validateDatadogCredentials, cfg.MasterKey, logger)
+	integrationsHandler := api.NewIntegrationsHandler(db.NewIntegrationRepository(pool), validateDatadogCredentials, searchDatadogSLOs, cfg.MasterKey, logger)
 	incidentsHandler := api.NewIncidentsHandler(db.NewIncidentRepository(pool), logger)
 	statusPagesHandler := api.NewStatusPagesHandler(db.NewStatusPageRepository(pool), logger)
 	pollerStatusHandler := api.NewPollerStatusHandler(db.NewIntegrationRepository(pool), logger)
@@ -83,6 +83,13 @@ func buildAdminRouter(pool *db.Pool, cfg config.Config, logger *zap.Logger) http
 		protected.With(anyRole).Get("/api/status-pages", statusPagesHandler.List)
 		protected.With(anyRole).Get("/api/status-pages/{id}/public-preview", publicStatusPreviewHandler.Get)
 		protected.With(anyRole).Get("/api/integrations/datadog/status", integrationsHandler.Status)
+
+		// SLO search decrypts the stored Datadog key pair server-side and
+		// calls out to Datadog on the admin's behalf - part of the
+		// connect/configure flow (I14), so it stays restricted to
+		// owner/operator like the rest of that flow, unlike the read-only
+		// status/list routes above which viewer can also reach.
+		protected.With(writeRoles).Get("/api/integrations/datadog/slos", integrationsHandler.SearchSLOs)
 		protected.With(anyRole).Get("/api/poller/status", pollerStatusHandler.List)
 	})
 
@@ -96,4 +103,10 @@ func buildAdminRouter(pool *db.Pool, cfg config.Config, logger *zap.Logger) http
 // the shape IntegrationsHandler depends on.
 func validateDatadogCredentials(ctx context.Context, apiKey, appKey string) error {
 	return datadog.NewClient(apiKey, appKey).ValidateCredentials(ctx)
+}
+
+// searchDatadogSLOs adapts datadog.Client.SearchSLOs to the shape
+// IntegrationsHandler depends on (I14).
+func searchDatadogSLOs(ctx context.Context, apiKey, appKey, query string) ([]datadog.SLOSummary, error) {
+	return datadog.NewClient(apiKey, appKey).SearchSLOs(ctx, query)
 }

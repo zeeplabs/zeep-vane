@@ -213,6 +213,12 @@ func writeRouteCases() []routeCase {
 			},
 		},
 		{
+			name:   "GET /api/integrations/datadog/slos",
+			method: http.MethodGet,
+			path:   "/api/integrations/datadog/slos?query=checkout",
+			body:   func() []byte { return nil },
+		},
+		{
 			name:   "POST /api/incidents",
 			method: http.MethodPost,
 			path:   "/api/incidents",

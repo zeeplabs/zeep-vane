@@ -416,12 +416,14 @@ I19 → I20
 - Skill: NONE
 
 **Done when**:
-- [ ] `SearchSLOs` retorna `[]SLOSummary{id,name}` (sucesso, sem resultado, erro 401/5xx)
-- [ ] `GET /api/integrations/datadog/slos?query=<termo>` retorna 200 com a lista, 401 sem sessão
-- [ ] Gate check passes: `go test ./...` (client) + `go test -tags=integration ./...` (handler)
+- [x] `SearchSLOs` retorna `[]SLOSummary{id,name}` (sucesso, sem resultado, erro 401/5xx)
+- [x] `GET /api/integrations/datadog/slos?query=<termo>` retorna 200 com a lista, 401 sem sessão
+- [x] Gate check passes: `go test ./...` (client) + `go test -tags=integration ./...` (handler)
 
 **Tests**: integration (handler) + unit (client)
 **Gate**: full
+
+> SPEC_DEVIATION: (1) o campo `name` na resposta real de busca do Datadog não foi verificado ao vivo nesta sessão (sem credenciais reais disponíveis) — inferido do shape oficial do client Go (`SLOResponseData`), documentado como `[Provável]` no código; revalidar contra conta real antes de depender disso em produção. (2) rota registrada com `writeRoles` (owner/operator), não `anyRole` como as outras rotas GET de leitura — decisão explícita: a busca decripta as chaves Datadog armazenadas e chama a API externa em nome do admin, parte do fluxo de configuração, então fica restrita como o resto desse fluxo. (3) integração ainda não conectada retorna 200 com lista vazia (não erro) — não coberto pelo done-when, mas comportamento mais seguro pra UI de busca.
 
 ---
 
