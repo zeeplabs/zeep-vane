@@ -92,6 +92,25 @@ func (r *StatusPageRepository) List(ctx context.Context) ([]StatusPage, error) {
 	return statusPages, nil
 }
 
+// GetByID returns the full StatusPage row with id. It returns ErrNotFound
+// if no status page matches.
+func (r *StatusPageRepository) GetByID(ctx context.Context, id string) (*StatusPage, error) {
+	row := r.pool.QueryRow(ctx,
+		"SELECT id, name, subdomain, domain_id, state, tls_last_error, created_at FROM status_pages WHERE id = $1",
+		id,
+	)
+
+	var sp StatusPage
+	if err := row.Scan(&sp.ID, &sp.Name, &sp.Subdomain, &sp.DomainID, &sp.State, &sp.TLSLastError, &sp.CreatedAt); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrNotFound
+		}
+		return nil, fmt.Errorf("db: failed to get status page by id: %w", err)
+	}
+
+	return &sp, nil
+}
+
 // hostnameMatch is the shared WHERE-clause fragment matching a status
 // page's public hostname: its subdomain joined to its domain's root
 // hostname (e.g. "status" + "empresa.com" = "status.empresa.com").

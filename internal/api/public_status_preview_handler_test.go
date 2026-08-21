@@ -37,8 +37,9 @@ func newPublicStatusPreviewRouter(t *testing.T) (http.Handler, *db.Pool, *db.Adm
 	services := db.NewServiceRepository(pool)
 	snapshots := db.NewStatusSnapshotRepository(pool)
 	incidents := db.NewIncidentRepository(pool)
+	statusPages := db.NewStatusPageRepository(pool)
 	inner := NewPublicStatusHandler(services, snapshots, incidents, zap.NewNop())
-	handler := NewPublicStatusPreviewHandler(inner, zap.NewNop())
+	handler := NewPublicStatusPreviewHandler(statusPages, inner, zap.NewNop())
 
 	r := chi.NewRouter()
 	r.Group(func(protected chi.Router) {
@@ -68,6 +69,9 @@ func TestPublicStatusPreview_AuthenticatedByID_200SameShapeAsProduction(t *testi
 	serviceID, cleanup := createPublicStatusServiceFixture(t, pool, "operational", fetchedAt)
 	t.Cleanup(cleanup)
 	statusPageID := createPublicStatusPageFixture(t, pool, serviceID)
+	if _, err := pool.Exec(context.Background(), "UPDATE status_pages SET state = 'published' WHERE id = $1", statusPageID); err != nil {
+		t.Fatalf("setup publish update returned unexpected error: %v", err)
+	}
 
 	rec := getPublicStatusPreview(t, r, token, statusPageID)
 	if rec.Code != http.StatusOK {
@@ -99,5 +103,31 @@ func TestPublicStatusPreview_NoAuth_401(t *testing.T) {
 	rec := getPublicStatusPreview(t, r, "", statusPageID)
 	if rec.Code != http.StatusUnauthorized {
 		t.Errorf("status = %d, want %d", rec.Code, http.StatusUnauthorized)
+	}
+}
+
+// TestPublicStatusPreview_DraftPage_404 mirrors router.HostRouter's own
+// gate: a status page still in "draft" (the DB default - SP-15) is never
+// composed, even for an authenticated admin previewing it, so the preview
+// never disagrees with what the page's real hostname would show once
+// published.
+func TestPublicStatusPreview_DraftPage_404(t *testing.T) {
+	r, pool, admins := newPublicStatusPreviewRouter(t)
+	token := issueTestSessionToken(t, admins)
+	statusPageID := createPublicStatusPageFixture(t, pool)
+
+	rec := getPublicStatusPreview(t, r, token, statusPageID)
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("status = %d, want %d", rec.Code, http.StatusNotFound)
+	}
+}
+
+func TestPublicStatusPreview_UnknownID_404(t *testing.T) {
+	r, _, admins := newPublicStatusPreviewRouter(t)
+	token := issueTestSessionToken(t, admins)
+
+	rec := getPublicStatusPreview(t, r, token, "00000000-0000-0000-0000-000000000000")
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("status = %d, want %d", rec.Code, http.StatusNotFound)
 	}
 }

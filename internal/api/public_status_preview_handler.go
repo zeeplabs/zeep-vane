@@ -1,12 +1,22 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
 	"go.uber.org/zap"
+
+	"github.com/zeeplabs/zeep-vane/internal/db"
 )
+
+// statusPageStateGetter is the subset of *db.StatusPageRepository the
+// preview handler depends on to gate unpublished pages.
+type statusPageStateGetter interface {
+	GetByID(ctx context.Context, id string) (*db.StatusPage, error)
+}
 
 // PublicStatusPreviewHandler serves the dev/preview status page endpoint
 // used by web/src/features/public-status. It exists ONLY because the admin
@@ -20,23 +30,45 @@ import (
 // lets a logged-in admin preview a status page's public shape from the SPA
 // before its hostname's TLS/DNS is ready to serve it for real.
 type PublicStatusPreviewHandler struct {
-	inner  *PublicStatusHandler
-	logger *zap.Logger
+	statusPages statusPageStateGetter
+	inner       *PublicStatusHandler
+	logger      *zap.Logger
 }
 
 // NewPublicStatusPreviewHandler builds a PublicStatusPreviewHandler that
 // composes its response the same way inner (the production handler) does,
 // just resolved by ID rather than Host header.
-func NewPublicStatusPreviewHandler(inner *PublicStatusHandler, logger *zap.Logger) *PublicStatusPreviewHandler {
-	return &PublicStatusPreviewHandler{inner: inner, logger: logger}
+func NewPublicStatusPreviewHandler(statusPages statusPageStateGetter, inner *PublicStatusHandler, logger *zap.Logger) *PublicStatusPreviewHandler {
+	return &PublicStatusPreviewHandler{statusPages: statusPages, inner: inner, logger: logger}
 }
 
 // Get handles GET /api/status-pages/{id}/public-preview, returning the same
 // {services,incidents} shape PublicStatusHandler.Get produces for a
 // hostname, resolved instead by the status page's ID. Behind requireAuth +
 // anyRole - not the production public endpoint.
+//
+// Mirrors router.HostRouter's own gate (internal/router/host_router.go):
+// only a "published" status page is ever composed - a draft or
+// tls_failed page 404s here exactly as it would on its real hostname, so
+// the SPA's preview and the eventual production page never disagree on
+// what counts as visible.
 func (h *PublicStatusPreviewHandler) Get(w http.ResponseWriter, r *http.Request) {
 	statusPageID := chi.URLParam(r, "id")
+
+	statusPage, err := h.statusPages.GetByID(r.Context(), statusPageID)
+	if err != nil {
+		if errors.Is(err, db.ErrNotFound) {
+			http.NotFound(w, r)
+			return
+		}
+		h.logger.Error("public-status-preview: failed to look up status page", zap.Error(err))
+		writeInternalError(w)
+		return
+	}
+	if statusPage.State != "published" {
+		http.NotFound(w, r)
+		return
+	}
 
 	resp, err := h.inner.composeResponse(r.Context(), statusPageID)
 	if err != nil {
