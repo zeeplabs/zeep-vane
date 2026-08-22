@@ -199,6 +199,93 @@ func TestAdminInviteRepository_InvalidatePendingForEmail_MarksPendingUsed_Leaves
 	}
 }
 
+func TestAdminInviteRepository_List_ReturnsOnlyPendingNotExpiredMostRecentFirst(t *testing.T) {
+	repo, admins, pool := newAdminInviteRepositoryForTest(t)
+	inviter := createTestAdminForInvite(t, admins, pool)
+	ctx := context.Background()
+
+	pendingOlder := &AdminInvite{
+		Email: uniqueTestEmail(t), Role: "operator", TokenHash: "hash-" + uniqueTestEmail(t),
+		InvitedByID: inviter.ID, ExpiresAt: time.Now().Add(1 * time.Hour),
+	}
+	if err := repo.Create(ctx, pendingOlder); err != nil {
+		t.Fatalf("Create() pendingOlder returned unexpected error: %v", err)
+	}
+	pendingNewer := &AdminInvite{
+		Email: uniqueTestEmail(t), Role: "viewer", TokenHash: "hash-" + uniqueTestEmail(t),
+		InvitedByID: inviter.ID, ExpiresAt: time.Now().Add(2 * time.Hour),
+	}
+	if err := repo.Create(ctx, pendingNewer); err != nil {
+		t.Fatalf("Create() pendingNewer returned unexpected error: %v", err)
+	}
+	used := &AdminInvite{
+		Email: uniqueTestEmail(t), Role: "operator", TokenHash: "hash-" + uniqueTestEmail(t),
+		InvitedByID: inviter.ID, ExpiresAt: time.Now().Add(1 * time.Hour),
+	}
+	if err := repo.Create(ctx, used); err != nil {
+		t.Fatalf("Create() used returned unexpected error: %v", err)
+	}
+	if err := repo.MarkUsed(ctx, used.ID); err != nil {
+		t.Fatalf("MarkUsed() returned unexpected error: %v", err)
+	}
+	expired := &AdminInvite{
+		Email: uniqueTestEmail(t), Role: "operator", TokenHash: "hash-" + uniqueTestEmail(t),
+		InvitedByID: inviter.ID, ExpiresAt: time.Now().Add(-1 * time.Hour),
+	}
+	if _, err := pool.Exec(ctx,
+		`INSERT INTO admin_invites (id, email, role, token_hash, invited_by_id, expires_at)
+		 VALUES (gen_random_uuid(), $1, $2, $3, $4, $5)`,
+		expired.Email, expired.Role, expired.TokenHash, expired.InvitedByID, expired.ExpiresAt,
+	); err != nil {
+		t.Fatalf("insert expired invite returned unexpected error: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = pool.Exec(ctx, "DELETE FROM admin_invites WHERE email IN ($1, $2, $3, $4)",
+			pendingOlder.Email, pendingNewer.Email, used.Email, expired.Email)
+	})
+
+	got, err := repo.List(ctx)
+	if err != nil {
+		t.Fatalf("List() returned unexpected error: %v", err)
+	}
+
+	var gotEmails []string
+	for _, invite := range got {
+		gotEmails = append(gotEmails, invite.Email)
+		if invite.TokenHash != "" {
+			t.Errorf("List() invite %q leaked TokenHash, want empty", invite.Email)
+		}
+	}
+
+	foundOlder, foundNewer := false, false
+	newerIdx, olderIdx := -1, -1
+	for i, email := range gotEmails {
+		if email == used.Email {
+			t.Error("List() included a used invite, want excluded")
+		}
+		if email == expired.Email {
+			t.Error("List() included an expired invite, want excluded")
+		}
+		if email == pendingOlder.Email {
+			foundOlder = true
+			olderIdx = i
+		}
+		if email == pendingNewer.Email {
+			foundNewer = true
+			newerIdx = i
+		}
+	}
+	if !foundOlder {
+		t.Error("List() did not include pendingOlder invite")
+	}
+	if !foundNewer {
+		t.Error("List() did not include pendingNewer invite")
+	}
+	if foundOlder && foundNewer && newerIdx > olderIdx {
+		t.Errorf("List() order = %v, want pendingNewer (created after) before pendingOlder", gotEmails)
+	}
+}
+
 func TestAdminInviteRepository_InvalidatePendingForEmail_NoPending_NoError(t *testing.T) {
 	repo, _, _ := newAdminInviteRepositoryForTest(t)
 

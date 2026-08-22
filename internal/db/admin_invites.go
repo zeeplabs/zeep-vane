@@ -91,6 +91,39 @@ func (r *AdminInviteRepository) MarkUsed(ctx context.Context, id string) error {
 	return nil
 }
 
+// List returns every pending invite - not used and not expired - most
+// recent first. TokenHash is never selected: the raw list is exposed via
+// the admins API and must never leak the hash needed to accept an invite.
+func (r *AdminInviteRepository) List(ctx context.Context) ([]AdminInvite, error) {
+	rows, err := r.pool.Query(ctx,
+		`SELECT id, email, role, invited_by_id, expires_at, created_at
+		 FROM admin_invites
+		 WHERE used_at IS NULL AND expires_at > now()
+		 ORDER BY created_at DESC`,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("db: failed to list admin invites: %w", err)
+	}
+	defer rows.Close()
+
+	var invites []AdminInvite
+	for rows.Next() {
+		var invite AdminInvite
+		if err := rows.Scan(
+			&invite.ID, &invite.Email, &invite.Role,
+			&invite.InvitedByID, &invite.ExpiresAt, &invite.CreatedAt,
+		); err != nil {
+			return nil, fmt.Errorf("db: failed to scan admin invite: %w", err)
+		}
+		invites = append(invites, invite)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("db: failed to list admin invites: %w", err)
+	}
+
+	return invites, nil
+}
+
 // InvalidatePendingForEmail marks every still-pending (unused) invite for
 // email as used, so a new invite can be created for the same address
 // without leaving more than one live token. It is a no-op (not an error) if

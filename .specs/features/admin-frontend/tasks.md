@@ -495,8 +495,8 @@ I19 → I20
 - Skill: NONE
 
 **Done when**:
-- [ ] `List` retorna só convites pendentes e não expirados
-- [ ] Gate check passes: `go test -tags=integration ./...`
+- [x] `List` retorna só convites pendentes e não expirados
+- [x] Gate check passes: `go test -tags=integration ./...`
 
 **Tests**: integration
 **Gate**: full
