@@ -571,9 +571,11 @@ I19 → I20
 - Skill: NONE
 
 **Done when**:
-- [ ] Banner de falha e página de detalhe do poller refletem status real em teste manual
-- [ ] Teste de hook passa via MSW
-- [ ] Gate check passes: `cd web && npm run test`
+- [x] Banner de falha e página de detalhe do poller refletem status real em teste manual
+- [x] Teste de hook passa via MSW
+- [x] Gate check passes: `cd web && npm run test`
+
+> Estado do gate: `npm run test` cheio agora 100% verde (37 arquivos, 129 testes) — 0 falhas esperadas restantes. Etapa 5 conclui a migração MSW iniciada em I7; todos os hooks (domains/status-pages/public-status/integrations/services/incidents/admins/poller) agora batem em handlers MSW, nenhum aponta mais pro roteador mock em memória. `tsc --noEmit` limpo.
 
 **Tests**: unit (via MSW)
 **Gate**: quick (frontend)

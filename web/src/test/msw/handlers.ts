@@ -10,6 +10,7 @@ import {
   incidentUpdates as seedIncidentUpdates,
   sloCatalog,
   datadogIntegration as seedDatadogIntegration,
+  pollerStatus as seedPollerStatus,
 } from "../../lib/mockData";
 import type {
   Admin,
@@ -508,5 +509,14 @@ export const handlers = [
       })),
       incidents: { active, resolved },
     });
+  }),
+
+  // GET /api/poller/status (I20) - mirrors PollerStatusHandler.List
+  // (internal/api/poller_status.go): read-only reflection of the last
+  // status the poller persisted per integration, no live re-check.
+  // Read-only, no per-test state to reset - always seeded from mockData.
+  http.get("/api/poller/status", () => {
+    if (!sessionAdminId) return HttpResponse.json({ error: "unauthorized" }, { status: 401 });
+    return HttpResponse.json(seedPollerStatus);
   }),
 ];
