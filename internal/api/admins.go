@@ -246,9 +246,11 @@ const adminNotFoundBody = `{"error":"admin not found"}`
 const adminLockoutBody = `{"error":"this action would leave zero active owners"}`
 
 type adminResponse struct {
-	ID    string `json:"id"`
-	Email string `json:"email"`
-	Role  string `json:"role"`
+	ID        string     `json:"id"`
+	Email     string     `json:"email"`
+	Role      string     `json:"role"`
+	Status    string     `json:"status"`
+	ExpiresAt *time.Time `json:"expires_at,omitempty"`
 }
 
 // UpdateRole handles PATCH /api/admins/{id}/role (role: owner). The role
@@ -405,11 +407,15 @@ func (h *AdminsHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(map[string]string{"status": "removed"})
 }
 
-// List handles GET /api/admins (role: owner), returning every admin's email
-// and current role (ADM-09 scopes this to owner via router-level
-// RequireRole, not a check here).
+// List handles GET /api/admins (role: owner), returning every active
+// admin's email and current role merged with pending admin invites - not
+// yet accepted and not expired - each item tagged with Status ("active" or
+// "pending") (AF-38). ADM-09 scopes this to owner via router-level
+// RequireRole, not a check here.
 func (h *AdminsHandler) List(w http.ResponseWriter, r *http.Request) {
-	rows, err := h.pool.Query(r.Context(), "SELECT id, email, role FROM admins ORDER BY email")
+	ctx := r.Context()
+
+	rows, err := h.pool.Query(ctx, "SELECT id, email, role FROM admins ORDER BY email")
 	if err != nil {
 		h.logger.Error("admins: failed to list admins", zap.Error(err))
 		writeInternalError(w)
@@ -425,12 +431,29 @@ func (h *AdminsHandler) List(w http.ResponseWriter, r *http.Request) {
 			writeInternalError(w)
 			return
 		}
+		item.Status = "active"
 		list = append(list, item)
 	}
 	if err := rows.Err(); err != nil {
 		h.logger.Error("admins: failed reading admin rows", zap.Error(err))
 		writeInternalError(w)
 		return
+	}
+
+	invites, err := h.invites.List(ctx)
+	if err != nil {
+		h.logger.Error("admins: failed to list pending invites", zap.Error(err))
+		writeInternalError(w)
+		return
+	}
+	for _, invite := range invites {
+		list = append(list, adminResponse{
+			ID:        invite.ID,
+			Email:     invite.Email,
+			Role:      invite.Role,
+			Status:    "pending",
+			ExpiresAt: &invite.ExpiresAt,
+		})
 	}
 
 	w.Header().Set("Content-Type", "application/json")

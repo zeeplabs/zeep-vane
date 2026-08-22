@@ -516,10 +516,10 @@ I19 → I20
 - Skill: NONE
 
 **Done when**:
-- [ ] `GET /api/admins` retorna admins ativos + convites pendentes na mesma lista, cada item com `status`
-- [ ] Convite expirado ou já usado não aparece na lista
-- [ ] Rota continua restrita a `owner` (`ownerOnly`, sem mudança de middleware)
-- [ ] Gate check passes: `go test -tags=integration ./...`
+- [x] `GET /api/admins` retorna admins ativos + convites pendentes na mesma lista, cada item com `status`
+- [x] Convite expirado ou já usado não aparece na lista
+- [x] Rota continua restrita a `owner` (`ownerOnly`, sem mudança de middleware)
+- [x] Gate check passes: `go test -tags=integration ./...`
 
 **Tests**: integration
 **Gate**: full

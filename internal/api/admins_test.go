@@ -794,6 +794,103 @@ func TestListAdmins_Owner_200_IncludesEveryAdminWithRole(t *testing.T) {
 	}
 }
 
+func TestListAdmins_Owner_200_MergesPendingInviteWithStatus(t *testing.T) {
+	r, _, admins, invites := newAdminsRouter(t)
+	token := issueTestSessionToken(t, admins)
+	inviter := &db.Admin{Email: uniqueTestEmail(t), PasswordHash: "hash"}
+	if err := admins.Create(context.Background(), inviter); err != nil {
+		t.Fatalf("admins.Create() returned unexpected error: %v", err)
+	}
+	t.Cleanup(func() { _ = admins.Delete(context.Background(), inviter.ID) })
+
+	pendingEmail := uniqueTestEmail(t)
+	createTestInvite(t, invites, inviter.ID, pendingEmail, db.RoleOperator, 1*time.Hour)
+
+	rec := getAdminsList(t, r, token)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	var list []adminResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &list); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+
+	var pendingItem, activeItem *adminResponse
+	for i := range list {
+		if list[i].Email == pendingEmail {
+			pendingItem = &list[i]
+		}
+		if list[i].ID == inviter.ID {
+			activeItem = &list[i]
+		}
+	}
+
+	if pendingItem == nil {
+		t.Fatalf("pending invite %q not present in list response %s", pendingEmail, rec.Body.String())
+	}
+	if pendingItem.Status != "pending" {
+		t.Errorf("pending invite Status = %q, want %q", pendingItem.Status, "pending")
+	}
+	if pendingItem.Role != db.RoleOperator {
+		t.Errorf("pending invite Role = %q, want %q", pendingItem.Role, db.RoleOperator)
+	}
+	if pendingItem.ExpiresAt == nil {
+		t.Error("pending invite ExpiresAt = nil, want non-nil")
+	}
+
+	if activeItem == nil {
+		t.Fatalf("active admin %q not present in list response %s", inviter.ID, rec.Body.String())
+	}
+	if activeItem.Status != "active" {
+		t.Errorf("active admin Status = %q, want %q", activeItem.Status, "active")
+	}
+}
+
+func TestListAdmins_Owner_200_ExcludesUsedAndExpiredInvites(t *testing.T) {
+	r, _, admins, invites := newAdminsRouter(t)
+	token := issueTestSessionToken(t, admins)
+	inviter := &db.Admin{Email: uniqueTestEmail(t), PasswordHash: "hash"}
+	if err := admins.Create(context.Background(), inviter); err != nil {
+		t.Fatalf("admins.Create() returned unexpected error: %v", err)
+	}
+	t.Cleanup(func() { _ = admins.Delete(context.Background(), inviter.ID) })
+
+	usedEmail := uniqueTestEmail(t)
+	usedInvite := &db.AdminInvite{
+		Email: usedEmail, Role: db.RoleViewer, TokenHash: "hash-" + usedEmail,
+		InvitedByID: inviter.ID, ExpiresAt: time.Now().Add(1 * time.Hour),
+	}
+	if err := invites.Create(context.Background(), usedInvite); err != nil {
+		t.Fatalf("invites.Create() returned unexpected error: %v", err)
+	}
+	if err := invites.MarkUsed(context.Background(), usedInvite.ID); err != nil {
+		t.Fatalf("invites.MarkUsed() returned unexpected error: %v", err)
+	}
+
+	expiredEmail := uniqueTestEmail(t)
+	createTestInvite(t, invites, inviter.ID, expiredEmail, db.RoleViewer, -1*time.Hour)
+
+	rec := getAdminsList(t, r, token)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	var list []adminResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &list); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+
+	for _, item := range list {
+		if item.Email == usedEmail {
+			t.Errorf("list included used invite %q, want excluded", usedEmail)
+		}
+		if item.Email == expiredEmail {
+			t.Errorf("list included expired invite %q, want excluded", expiredEmail)
+		}
+	}
+}
+
 func TestListAdmins_Operator_403(t *testing.T) {
 	r, _, admins, _ := newAdminsRouter(t)
 	token := issueTestSessionTokenWithRole(t, admins, db.RoleOperator)
