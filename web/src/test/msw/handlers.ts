@@ -1,6 +1,8 @@
 import { http, HttpResponse } from "msw";
 import {
   admins as seedAdmins,
+  adminInvites as seedAdminInvites,
+  toPublicAdmin,
   domains as seedDomains,
   statusPages as seedStatusPages,
   services as seedServices,
@@ -9,7 +11,17 @@ import {
   sloCatalog,
   datadogIntegration as seedDatadogIntegration,
 } from "../../lib/mockData";
-import type { Domain, StatusPage, Service, Incident, IncidentUpdate, IncidentStatus } from "../../types/api";
+import type {
+  Admin,
+  AdminInvite,
+  Role,
+  Domain,
+  StatusPage,
+  Service,
+  Incident,
+  IncidentUpdate,
+  IncidentStatus,
+} from "../../types/api";
 
 // Simulates the vane_session cookie server-side: real cookie semantics
 // (Set-Cookie/credentials) are covered by the Go integration tests
@@ -71,6 +83,30 @@ export function resetIncidents(): void {
   incidentUpdateIdCounter = 0;
 }
 resetIncidents();
+
+// In-memory admins + pending invites state (I19), seeded the same way as
+// domains/status-pages/services/incidents above. Mirrors AdminsHandler.List
+// (internal/api/admins.go): active admins tagged status "active", pending
+// invites (used_at is null, expires_at in the future - AdminInviteRepository
+// .List) tagged "pending".
+let adminsState: Admin[] = [];
+let adminInvitesState: AdminInvite[] = [];
+let adminInviteIdCounter = 0;
+
+export function resetAdmins(): void {
+  adminsState = seedAdmins.map((a) => toPublicAdmin(a));
+  adminInvitesState = seedAdminInvites.map((i) => ({ ...i }));
+  adminInviteIdCounter = 0;
+}
+resetAdmins();
+
+const validAdminRoles: Role[] = ["owner", "operator", "viewer"];
+
+// wouldLeaveZeroOwners mirrors admins.go's function of the same name
+// (ADM-06 lockout decision).
+function wouldLeaveZeroOwners(currentRole: Role, keepsOwnerRole: boolean, ownerCount: number): boolean {
+  return currentRole === "owner" && !keepsOwnerRole && ownerCount <= 1;
+}
 
 function timelineFor(incidentId: string): IncidentUpdate[] {
   return incidentUpdatesState
@@ -346,6 +382,80 @@ export const handlers = [
       created_at: new Date().toISOString(),
     });
     return HttpResponse.json(incident);
+  }),
+
+  // GET /api/admins (I18/I19) - mirrors AdminsHandler.List: active admins
+  // (status "active") merged with pending, non-expired invites (status
+  // "pending", each with expires_at).
+  http.get("/api/admins", () => {
+    if (!sessionAdminId) return HttpResponse.json({ error: "unauthorized" }, { status: 401 });
+    const active = adminsState.map((a) => ({ ...a, status: "active" as const }));
+    const pending = adminInvitesState
+      .filter((i) => new Date(i.expires_at).getTime() > Date.now())
+      .map((i) => ({ id: i.id, email: i.email, role: i.role, status: "pending" as const, expires_at: i.expires_at }));
+    return HttpResponse.json([...active, ...pending]);
+  }),
+
+  // POST /api/admins (I19) - mirrors AdminsHandler.Invite: 422 on missing
+  // email/invalid role, 409 if an active admin already owns the email,
+  // otherwise replaces any pending invite for the email and issues a new
+  // one.
+  http.post("/api/admins", async ({ request }) => {
+    if (!sessionAdminId) return HttpResponse.json({ error: "unauthorized" }, { status: 401 });
+    const body = (await request.json()) as { email?: string; role?: string };
+    if (!body.email || !body.role || !validAdminRoles.includes(body.role as Role)) {
+      return HttpResponse.json(
+        { error: "email is required and role must be one of owner, operator, viewer" },
+        { status: 422 },
+      );
+    }
+    if (adminsState.some((a) => a.email === body.email)) {
+      return HttpResponse.json({ error: "an active admin already exists for this email" }, { status: 409 });
+    }
+    adminInvitesState = adminInvitesState.filter((i) => i.email !== body.email);
+    adminInviteIdCounter += 1;
+    adminInvitesState.push({
+      id: `invite-msw-${adminInviteIdCounter}`,
+      email: body.email,
+      role: body.role as Role,
+      status: "pending",
+      expires_at: new Date(Date.now() + 1000 * 60 * 60).toISOString(),
+    });
+    return HttpResponse.json({ status: "invited" }, { status: 201 });
+  }),
+
+  // PATCH /api/admins/:id/role (I19) - mirrors AdminsHandler.UpdateRole:
+  // 404 unknown admin, 422 invalid role, 409 if this change would leave
+  // zero active owners (ADM-06), otherwise applies the new role.
+  http.patch("/api/admins/:id/role", async ({ request, params }) => {
+    if (!sessionAdminId) return HttpResponse.json({ error: "unauthorized" }, { status: 401 });
+    const admin = adminsState.find((a) => a.id === params.id);
+    if (!admin) return HttpResponse.json({ error: "admin not found" }, { status: 404 });
+    const body = (await request.json()) as { role?: string };
+    if (!body.role || !validAdminRoles.includes(body.role as Role)) {
+      return HttpResponse.json({ error: "role must be one of owner, operator, viewer" }, { status: 422 });
+    }
+    const ownerCount = adminsState.filter((a) => a.role === "owner").length;
+    if (wouldLeaveZeroOwners(admin.role, body.role === "owner", ownerCount)) {
+      return HttpResponse.json({ error: "this action would leave zero active owners" }, { status: 409 });
+    }
+    admin.role = body.role as Role;
+    return HttpResponse.json({ id: admin.id, role: admin.role });
+  }),
+
+  // DELETE /api/admins/:id (I19) - mirrors AdminsHandler.Delete: 404 unknown
+  // admin, 409 if removal would leave zero active owners (ADM-06),
+  // otherwise removes the admin.
+  http.delete("/api/admins/:id", ({ params }) => {
+    if (!sessionAdminId) return HttpResponse.json({ error: "unauthorized" }, { status: 401 });
+    const admin = adminsState.find((a) => a.id === params.id);
+    if (!admin) return HttpResponse.json({ error: "admin not found" }, { status: 404 });
+    const ownerCount = adminsState.filter((a) => a.role === "owner").length;
+    if (wouldLeaveZeroOwners(admin.role, false, ownerCount)) {
+      return HttpResponse.json({ error: "this action would leave zero active owners" }, { status: 409 });
+    }
+    adminsState = adminsState.filter((a) => a.id !== admin.id);
+    return HttpResponse.json({ status: "removed" });
   }),
 
   // GET /api/status-pages/:id/public-preview (I12/I13) - mirrors the real

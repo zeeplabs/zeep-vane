@@ -6,6 +6,7 @@ import {
   resetDomainsAndStatusPages,
   resetServicesAndIntegration,
   resetIncidents,
+  resetAdmins,
 } from "./msw/handlers";
 
 beforeAll(() => server.listen({ onUnhandledRequest: "error" }));
@@ -15,5 +16,6 @@ afterEach(() => {
   resetDomainsAndStatusPages();
   resetServicesAndIntegration();
   resetIncidents();
+  resetAdmins();
 });
 afterAll(() => server.close());

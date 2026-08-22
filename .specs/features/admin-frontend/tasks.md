@@ -539,13 +539,21 @@ I19 → I20
 - Skill: NONE
 
 **Done when**:
-- [ ] Convite, mudança de papel, remoção e lockout de owner funcionam contra API real em teste manual
-- [ ] Botões "Reenviar"/"Cancelar" convite aparecem desabilitados com aviso, não disparam requisição
-- [ ] Testes de hook e de página cobrem o estado desabilitado
-- [ ] Gate check passes: `cd web && npm run test`
+- [x] Convite, mudança de papel, remoção e lockout de owner funcionam contra API real em teste manual — não executado como browser real (sem servidor Go rodando nesta sessão, mesmo padrão de I15/I16); validado end-to-end via MSW (equivalente funcional) e via testes de integração Go de I17/I18.
+- [x] Botões "Reenviar"/"Cancelar" convite aparecem desabilitados com aviso, não disparam requisição
+- [x] Testes de hook e de página cobrem o estado desabilitado
+- [x] Gate check passes: `cd web && npm run test`
 
 **Tests**: unit (via MSW)
 **Gate**: quick (frontend)
+
+> SPEC_DEVIATION (2026-08-21):
+> 1. `hooks.ts` tinha 2 paths desalinhados do backend real: `useInviteAdmin` chamava `POST /api/admins/invite` (real é `POST /api/admins`), `useUpdateAdminRole` chamava `PATCH /api/admins/{id}` (real é `PATCH /api/admins/{id}/role`) — corrigidos; tipos de retorno ajustados pro shape real (`{status:"invited"}` e `{id,role}`, não um `AdminRow` completo).
+> 2. **Conflito real entre `AdminsPage.test.tsx` (escrito em rodada anterior, especulativo) e o Done-when desta task**: os testes antigos ("convites pendentes tem ações Reenviar/Cancelar" e "cancelar convite remove a linha") presumiam resend/cancel funcionais end-to-end. O Done-when desta task (e a instrução explícita do usuário nesta rodada) exige o oposto: desabilitar os botões, sem chamada de rede, backlog AD-007. Os 2 testes foram reescritos para afirmar o estado desabilitado e a ausência de efeito ao clicar — decisão do usuário, não ambiguidade nova.
+> 3. `AdminsPage.tsx`: removidos `useResendInvite`/`useCancelInvite` e todo o fluxo de confirmação de cancelamento (dialog, estado `cancelTarget`, `confirmCancelInvite`) — morto, já que os botões agora só exibem `Tooltip label="Ainda não disponível"` e ficam `disabled`. Os hooks `useResendInvite`/`useCancelInvite` permanecem em `hooks.ts`, ainda apontando pro endpoint inexistente (backlog AD-007), sem uso na UI.
+> 4. `AdminsPage.test.tsx`: 1 asserção de lockout ajustada pro texto real do backend (`/zero active owners/`, inglês) — mesmo gap de i18n já documentado em I7/I13, não corrigido aqui.
+> 5. `web/src/test/msw/handlers.ts` ganhou estado em memória de admins/invites (`adminsState`/`adminInvitesState`/`resetAdmins()`) e 4 handlers novos (`GET`/`POST /api/admins`, `PATCH /api/admins/:id/role`, `DELETE /api/admins/:id`), replicando os status codes e a checagem de lockout (`wouldLeaveZeroOwners`) do handler Go real; `web/src/test/setup.ts` chama `resetAdmins()` no `afterEach`.
+> 6. Estado do gate: `npm run test` cheio agora tem 4 falhas esperadas (poller — Etapa 5/I20), reduzido de 13.
 
 ---
 

@@ -26,7 +26,7 @@ export function useInviteAdmin() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (input: InviteAdminInput) =>
-      apiFetch<AdminRow>("/api/admins/invite", { method: "POST", body: JSON.stringify(input) }),
+      apiFetch<{ status: string }>("/api/admins", { method: "POST", body: JSON.stringify(input) }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["admins"] });
     },
@@ -37,7 +37,10 @@ export function useUpdateAdminRole() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: ({ id, role }: { id: string; role: Role }) =>
-      apiFetch<AdminRow>(`/api/admins/${id}`, { method: "PATCH", body: JSON.stringify({ role }) }),
+      apiFetch<{ id: string; role: Role }>(`/api/admins/${id}/role`, {
+        method: "PATCH",
+        body: JSON.stringify({ role }),
+      }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["admins"] });
     },

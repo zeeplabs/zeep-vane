@@ -8,15 +8,7 @@ import { IconRoleSelector } from "../../components/ui/IconRoleSelector";
 import { Tooltip } from "../../components/ui/Tooltip";
 import { ApiError } from "../../lib/apiClient";
 import type { Role } from "../../types/api";
-import {
-  useAdmins,
-  useCancelInvite,
-  useDeleteAdmin,
-  useInviteAdmin,
-  useResendInvite,
-  useUpdateAdminRole,
-  type AdminRow,
-} from "./hooks";
+import { useAdmins, useDeleteAdmin, useInviteAdmin, useUpdateAdminRole, type AdminRow } from "./hooks";
 
 const roleOptions: Role[] = ["owner", "operator", "viewer"];
 
@@ -41,8 +33,6 @@ export function AdminsPage() {
   const inviteAdmin = useInviteAdmin();
   const updateRole = useUpdateAdminRole();
   const deleteAdmin = useDeleteAdmin();
-  const resendInvite = useResendInvite();
-  const cancelInvite = useCancelInvite();
 
   const [inviteOpen, setInviteOpen] = useState(false);
   const [email, setEmail] = useState("");
@@ -56,8 +46,6 @@ export function AdminsPage() {
 
   const [removeTarget, setRemoveTarget] = useState<AdminRow | null>(null);
   const [removeError, setRemoveError] = useState<string | null>(null);
-
-  const [cancelTarget, setCancelTarget] = useState<AdminRow | null>(null);
 
   const active = (admins ?? []).filter((a) => a.status === "active");
   const pending = (admins ?? []).filter((a) => a.status === "pending");
@@ -95,12 +83,6 @@ export function AdminsPage() {
     } catch (err) {
       setRemoveError(err instanceof ApiError ? err.message : "Não foi possível remover o admin.");
     }
-  }
-
-  async function confirmCancelInvite() {
-    if (!cancelTarget) return;
-    await cancelInvite.mutateAsync(cancelTarget.id);
-    setCancelTarget(null);
   }
 
   const activeColumns: TableColumn<AdminRow>[] = [
@@ -146,14 +128,18 @@ export function AdminsPage() {
     {
       key: "actions",
       header: "",
-      render: (a) => (
+      render: () => (
         <div className="flex justify-end gap-2">
-          <Button variant="ghost" onClick={() => resendInvite.mutate(a.id)}>
-            Reenviar
-          </Button>
-          <Button variant="ghost" onClick={() => setCancelTarget(a)}>
-            Cancelar
-          </Button>
+          <Tooltip label="Ainda não disponível">
+            <Button variant="ghost" disabled>
+              Reenviar
+            </Button>
+          </Tooltip>
+          <Tooltip label="Ainda não disponível">
+            <Button variant="ghost" disabled>
+              Cancelar
+            </Button>
+          </Tooltip>
         </div>
       ),
     },
@@ -285,28 +271,6 @@ export function AdminsPage() {
           </Button>
           <Button variant="primary" onClick={confirmRemove} disabled={deleteAdmin.isPending}>
             Remover
-          </Button>
-        </div>
-      </Dialog>
-
-      <Dialog
-        open={cancelTarget !== null}
-        onOpenChange={(open) => {
-          if (!open) setCancelTarget(null);
-        }}
-        title="Cancelar convite"
-        description={
-          cancelTarget
-            ? `Cancelar o convite de ${cancelTarget.email}? Esta ação não pode ser desfeita.`
-            : undefined
-        }
-      >
-        <div className="flex justify-end gap-2">
-          <Button variant="secondary" onClick={() => setCancelTarget(null)}>
-            Voltar
-          </Button>
-          <Button variant="primary" onClick={confirmCancelInvite}>
-            Cancelar convite
           </Button>
         </div>
       </Dialog>

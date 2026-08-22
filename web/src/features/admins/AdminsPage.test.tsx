@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach } from "vitest";
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import "../../lib/i18n";
@@ -58,7 +58,7 @@ describe("AdminsPage", () => {
 
     await userEvent.click(screen.getByRole("button", { name: "Confirmar" }));
 
-    expect(await screen.findByRole("alert")).toHaveTextContent(/último owner/);
+    expect(await screen.findByRole("alert")).toHaveTextContent(/zero active owners/);
     expect(screen.getByText("owner@vane.app")).toBeInTheDocument();
   });
 
@@ -76,23 +76,25 @@ describe("AdminsPage", () => {
     ).toBeInTheDocument();
   });
 
-  it("convites pendentes tem ações Reenviar/Cancelar", async () => {
+  it("convites pendentes tem ações Reenviar/Cancelar desabilitadas (sem backend, backlog AD-007)", async () => {
     await loginAsOwner();
     renderPage();
     await screen.findByText("novo-operador@vane.app");
-    expect(screen.getByRole("button", { name: "Reenviar" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Cancelar" })).toBeInTheDocument();
+
+    const resendButton = screen.getByRole("button", { name: "Reenviar" });
+    const cancelButton = screen.getByRole("button", { name: "Cancelar" });
+    expect(resendButton).toBeDisabled();
+    expect(cancelButton).toBeDisabled();
   });
 
-  it("cancelar convite remove a linha da lista de pendentes", async () => {
+  it("clicar em Reenviar/Cancelar desabilitados não dispara requisição nem remove a linha", async () => {
     await loginAsOwner();
     renderPage();
     await screen.findByText("novo-operador@vane.app");
-    await userEvent.click(screen.getByRole("button", { name: "Cancelar" }));
-    await userEvent.click(screen.getByRole("button", { name: "Cancelar convite" }));
 
-    await waitFor(() =>
-      expect(screen.queryByText("novo-operador@vane.app")).not.toBeInTheDocument()
-    );
+    await userEvent.click(screen.getByRole("button", { name: "Reenviar" }));
+    await userEvent.click(screen.getByRole("button", { name: "Cancelar" }));
+
+    expect(screen.getByText("novo-operador@vane.app")).toBeInTheDocument();
   });
 });
