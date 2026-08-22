@@ -556,3 +556,66 @@ Resultado: **125 passed / 4 failed** (3 arquivos falhos de 37). As 4 falhas são
 **Issues found**: Nenhum.
 
 **Next steps**: Etapa 4 (I17-I19: Admins) considerada concluída. Nenhum fix task pendente. Próxima etapa (I20, poller/Etapa 5) fora do escopo desta verificação.
+
+---
+
+## Etapa 5 (I20) — Poller
+
+**Escopo**: I20 (`GET /api/poller/status` — MSW handler + `poller/hooks.test.ts`). Verificado de forma independente (author != verifier), evidência-ou-zero.
+
+### Spec-Anchored "Done when" Check
+
+| Critério (tasks.md ~L561-579) | Evidência | Resultado |
+|---|---|---|
+| Teste de hook passa via MSW | `web/src/features/poller/hooks.test.ts:15-25` roda contra `http.get("/api/poller/status", ...)` em `web/src/test/msw/handlers.ts:517-524` (commit d4ad003) — sem roteador mock em memória | ✅ PASS |
+| Gate check: `cd web && npm run test` | Re-executado nesta verificação: **37 arquivos, 129 testes, 0 falhas** — bate com o número declarado no `SPEC_DEVIATION` do commit | ✅ PASS |
+| Banner de falha / página de detalhe refletem status real em teste manual | Não executável como browser real nesta sessão (mesma limitação já registrada em I15/I16/I17-19 — sem servidor Go rodando); coberto via MSW por `PollerBanner.test.tsx` e `PollerStatusPage.test.tsx`, que já passam contra o mesmo handler | ✅ PASS (equivalente funcional, mesma ressalva já aceita nas etapas anteriores) |
+| `tsc --noEmit` limpo (mencionado no commit) | `cd web && npx tsc --noEmit` re-executado nesta verificação: exit 0, sem erros | ✅ PASS |
+
+### Contract Fidelity — MSW handler vs. backend real
+
+| Campo/aspecto | Backend real (`internal/api/poller_status.go:35-40`) | MSW handler (`web/src/test/msw/handlers.ts:517-524`, dados de `web/src/lib/mockData.ts:234-241`) | Resultado |
+|---|---|---|---|
+| Shape da resposta | `[]pollerIntegrationStatus{Provider, Status, LastCheckedAt, LastError}` (JSON: `provider`, `status`, `last_checked_at`, `last_error`) | `pollerStatus: PollerStatusEntry[]` com exatamente os mesmos 4 campos (`web/src/types/api.ts:81-86`) | ✅ Fiel |
+| Auth gating | `internal/cli/routes.go:58-59,95` — rota dentro do grupo `protected` (`requireAuth`) + `anyRole` (owner/operator/viewer) | Handler MSW checa `sessionAdminId` e retorna 401 `{error:"unauthorized"}` se ausente, antes de responder | ✅ Fiel (nega sem sessão; não distingue papéis, mas backend usa `anyRole` — qualquer papel autenticado passa, então não há gap de negócio) |
+| Semântica dos dados | Reflexão passiva do último estado persistido pelo poller (sem novo fetch) | Handler é somente leitura, sempre serve a fixture semeada (`seedPollerStatus`), sem estado mutável — consistente com a semântica "read-only reflection" | ✅ Fiel |
+
+Nenhum gap de contrato encontrado.
+
+### Discrimination Sensor
+
+Mutação: `web/src/features/poller/hooks.test.ts:21` — `toHaveProperty("provider")` → `toHaveProperty("nonexistent")`.
+
+- Executado isolado: `npx vitest run src/features/poller/hooks.test.ts` → **1 failed** (`AssertionError: expected { provider: 'datadog', …(3) } to have property "nonexistent"`).
+- Revertido com `git checkout -- web/src/features/poller/hooks.test.ts`.
+- `git status --short` confirmado limpo antes e depois da mutação (nenhuma alteração residual).
+
+**Resultado**: mutante morto — o único teste de hook do poller de fato exercita o shape real da resposta, não é uma asserção trivial/tautológica.
+
+### Gate Check (re-executado nesta verificação)
+
+```
+cd web && npm run test
+```
+Resultado: **37 arquivos, 129 testes passando, 0 falhas.**
+
+```
+cd web && npx tsc --noEmit
+```
+Resultado: limpo, exit 0.
+
+### Requirement Traceability
+
+| Requirement | Status |
+|---|---|
+| AF-31 | ✅ Verified (shape do handler MSW == backend real) |
+| AF-32 | ✅ Verified (auth gating replicada) |
+| AF-33 | ✅ Verified (semântica read-only replicada, teste de hook cobre os 4 campos) |
+
+### Summary
+
+**Overall**: ✅ **PASS** — I20 completa a migração MSW da rodada de integração (Etapas 0-5 / I1-I20). Handler MSW fiel ao contrato do backend Go em shape, auth gating e semântica. Sensor de discriminação confirma que o teste de hook não é vazio/trivial.
+
+**Gaps**: nenhum.
+
+**Next steps**: Nenhum fix pendente. Rodada de integração admin-frontend (I1-I20) considerada concluída do ponto de vista deste Verifier.
