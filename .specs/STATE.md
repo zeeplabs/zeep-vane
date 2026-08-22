@@ -79,3 +79,15 @@
 - 4 deferred ideas do `mvp-core` (ver histórico) seguem não resolvidas.
 
 **Next steps**: backend do `zeep-vane` completo (mvp-core + admin-dashboard, ambos PASS). Próximo: specs de frontend (admin React UI) — combinado explicitamente pra ficar pra depois do backend, ainda não começado.
+
+---
+
+**Feature**: `admin-frontend` (integração real com backend, ver AD-007) — **status: 6/6 etapas PASS ✅**. Etapa 0 (Fundação, I1-I9), Etapa 1 (Domínios/Status Pages/pública, I10-I13), Etapa 2 (Integrações/Serviços, I14-I15), Etapa 3 (Incidentes, I16), Etapa 4 (Admins, I17-I19), Etapa 5 (Poller, I20) — todas com Verifier independente PASS. Relatórios em `.specs/features/admin-frontend/validation.md`.
+
+**Completo**: 20 tasks I1-I20 via commits atômicos (branch `main`, working tree limpa). Backend Go: `AuthHandler.Me`, cookie de sessão httpOnly, `DomainRepository.List`/`StatusPageRepository.List`/endpoint dev-preview de status page pública, Datadog `SearchSLOs`+`GET /api/integrations/datadog/slos`, incidentes com `ServiceIDs` e endpoints de lista/timeline, `AdminInviteRepository.List` + `AdminsHandler.List` mesclando admin ativo + convite pendente. Frontend: MSW introduzido (primeiro uso no projeto) e migração completa de todos os hooks (`domains`, `status-pages`, `public-status`, `integrations`, `services`, `incidents`, `admins`, `poller`) do roteador mock em memória para `apiFetch` real interceptado por MSW nos testes. `npm run test` 100% verde (37 arquivos, 129 testes), `tsc --noEmit` limpo.
+
+**Correção pós-Verifier na Etapa 4**: 3 gaps reais (toast de confirmação faltando em AF-28, sem cobertura de teste em happy-paths de troca de papel/remoção/convite) corrigidos em 1 rodada de fix→re-verify.
+
+**Backlog não-bloqueante herdado de AD-007** (fora de escopo desta integração): resend/cancel de convite de admin (hooks existem, endpoint não), company settings GET/PATCH (feature inteira sem endpoint, `SettingsPage` mockada), teste faltante de 404 em update de incidente inexistente (Etapa 3).
+
+**Next steps**: integração real backend↔frontend do `admin-frontend` está completa. Próximo trabalho pendente: os 2 itens de backlog acima (resend/cancel invite; company settings), se decidido priorizá-los — nenhum foi solicitado ainda nesta sessão.
