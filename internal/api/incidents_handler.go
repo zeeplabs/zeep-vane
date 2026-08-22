@@ -17,6 +17,7 @@ import (
 // handler depends on.
 type incidentCreator interface {
 	Create(ctx context.Context, incident *db.Incident, serviceIDs []string) error
+	List(ctx context.Context) ([]db.Incident, error)
 	AddUpdate(ctx context.Context, incidentID, body string) (*db.IncidentUpdate, error)
 	ListUpdates(ctx context.Context, incidentID string) ([]db.IncidentUpdate, error)
 	Transition(ctx context.Context, incidentID, status string) (*db.Incident, error)
@@ -44,6 +45,7 @@ type incidentResponse struct {
 	Status     string     `json:"status"`
 	CreatedAt  time.Time  `json:"created_at"`
 	ResolvedAt *time.Time `json:"resolved_at"`
+	ServiceIDs []string   `json:"service_ids"`
 }
 
 const invalidIncidentRequestBody = `{"error":"title and at least one service_id are required"}`
@@ -65,10 +67,31 @@ func (h *IncidentsHandler) Create(w http.ResponseWriter, r *http.Request) {
 		writeInternalError(w)
 		return
 	}
+	incident.ServiceIDs = req.ServiceIDs
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	_ = json.NewEncoder(w).Encode(toIncidentResponse(incident))
+}
+
+// List handles GET /api/incidents, returning every incident most recently
+// created first, each with the service_ids it's linked to (I16).
+func (h *IncidentsHandler) List(w http.ResponseWriter, r *http.Request) {
+	incidents, err := h.incidents.List(r.Context())
+	if err != nil {
+		h.logger.Error("incidents: failed to list incidents", zap.Error(err))
+		writeInternalError(w)
+		return
+	}
+
+	resp := make([]incidentResponse, len(incidents))
+	for i, incident := range incidents {
+		resp[i] = toIncidentResponse(&incident)
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(resp)
 }
 
 type incidentUpdateResponse struct {
@@ -126,6 +149,33 @@ func (h *IncidentsHandler) AddUpdate(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(resp)
 }
 
+// ListUpdates handles GET /api/incidents/{id}/updates, returning the
+// incident's timeline, most recent first (I16). Returns 404 if the incident
+// doesn't exist.
+func (h *IncidentsHandler) ListUpdates(w http.ResponseWriter, r *http.Request) {
+	incidentID := chi.URLParam(r, "id")
+
+	updates, err := h.incidents.ListUpdates(r.Context(), incidentID)
+	if err != nil {
+		if errors.Is(err, db.ErrNotFound) {
+			writeIncidentNotFound(w)
+			return
+		}
+		h.logger.Error("incidents: failed to list incident updates", zap.Error(err))
+		writeInternalError(w)
+		return
+	}
+
+	resp := make([]incidentUpdateResponse, len(updates))
+	for i, update := range updates {
+		resp[i] = incidentUpdateResponse{ID: update.ID, IncidentID: update.IncidentID, Body: update.Body, CreatedAt: update.CreatedAt}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(resp)
+}
+
 type transitionIncidentRequest struct {
 	Status string `json:"status"`
 }
@@ -177,11 +227,16 @@ func writeIncidentNotFound(w http.ResponseWriter) {
 }
 
 func toIncidentResponse(incident *db.Incident) incidentResponse {
+	serviceIDs := incident.ServiceIDs
+	if serviceIDs == nil {
+		serviceIDs = []string{}
+	}
 	return incidentResponse{
 		ID:         incident.ID,
 		Title:      incident.Title,
 		Status:     incident.Status,
 		CreatedAt:  incident.CreatedAt,
 		ResolvedAt: incident.ResolvedAt,
+		ServiceIDs: serviceIDs,
 	}
 }

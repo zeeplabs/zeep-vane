@@ -42,7 +42,9 @@ func newIncidentsRouter(t *testing.T) (http.Handler, *db.Pool, *db.AdminReposito
 	r.Group(func(protected chi.Router) {
 		protected.Use(RequireAuth(middlewareTestSecret, admins))
 		protected.Post("/api/incidents", handler.Create)
+		protected.Get("/api/incidents", handler.List)
 		protected.Post("/api/incidents/{id}/updates", handler.AddUpdate)
+		protected.Get("/api/incidents/{id}/updates", handler.ListUpdates)
 		protected.Patch("/api/incidents/{id}", handler.Transition)
 	})
 
@@ -118,6 +120,138 @@ func TestCreateIncident_NoAuth_401(t *testing.T) {
 	r, _, _ := newIncidentsRouter(t)
 
 	rec := postCreateIncident(t, r, "", "unauthorized incident", []string{"any-id"})
+	if rec.Code != http.StatusUnauthorized {
+		t.Errorf("status = %d, want %d", rec.Code, http.StatusUnauthorized)
+	}
+}
+
+func getIncidents(t *testing.T, r http.Handler, token string) *httptest.ResponseRecorder {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodGet, "/api/incidents", nil)
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+	return rec
+}
+
+func getIncidentUpdates(t *testing.T, r http.Handler, token, incidentID string) *httptest.ResponseRecorder {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodGet, "/api/incidents/"+incidentID+"/updates", nil)
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+	return rec
+}
+
+func TestListIncidents_ReturnsMostRecentFirstWithServiceIDs(t *testing.T) {
+	r, pool, admins := newIncidentsRouter(t)
+	token := issueTestSessionToken(t, admins)
+	serviceID := createIncidentTestService(t, pool)
+
+	firstRec := postCreateIncident(t, r, token, "list order test incident A", []string{serviceID})
+	if firstRec.Code != http.StatusCreated {
+		t.Fatalf("setup create A status = %d, want %d, body = %s", firstRec.Code, http.StatusCreated, firstRec.Body.String())
+	}
+	var first incidentResponse
+	if err := json.Unmarshal(firstRec.Body.Bytes(), &first); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), "DELETE FROM incidents WHERE id = $1", first.ID) })
+
+	secondRec := postCreateIncident(t, r, token, "list order test incident B", []string{serviceID})
+	if secondRec.Code != http.StatusCreated {
+		t.Fatalf("setup create B status = %d, want %d, body = %s", secondRec.Code, http.StatusCreated, secondRec.Body.String())
+	}
+	var second incidentResponse
+	if err := json.Unmarshal(secondRec.Body.Bytes(), &second); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), "DELETE FROM incidents WHERE id = $1", second.ID) })
+
+	rec := getIncidents(t, r, token)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	var listed []incidentResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &listed); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+	if len(listed) < 2 {
+		t.Fatalf("len(listed) = %d, want at least 2", len(listed))
+	}
+	if listed[0].ID != second.ID {
+		t.Errorf("listed[0].ID = %q, want %q (most recently created first)", listed[0].ID, second.ID)
+	}
+	if listed[1].ID != first.ID {
+		t.Errorf("listed[1].ID = %q, want %q", listed[1].ID, first.ID)
+	}
+	if len(listed[0].ServiceIDs) != 1 || listed[0].ServiceIDs[0] != serviceID {
+		t.Errorf("listed[0].ServiceIDs = %v, want [%q]", listed[0].ServiceIDs, serviceID)
+	}
+}
+
+func TestListIncidents_NoAuth_401(t *testing.T) {
+	r, _, _ := newIncidentsRouter(t)
+
+	rec := getIncidents(t, r, "")
+	if rec.Code != http.StatusUnauthorized {
+		t.Errorf("status = %d, want %d", rec.Code, http.StatusUnauthorized)
+	}
+}
+
+func TestListIncidentUpdates_ReturnsTimelineMostRecentFirst(t *testing.T) {
+	r, pool, admins := newIncidentsRouter(t)
+	token := issueTestSessionToken(t, admins)
+	incident := createTestIncident(t, r, pool, token, "list updates test incident")
+
+	firstRec := postIncidentUpdate(t, r, token, incident.ID, "first update")
+	if firstRec.Code != http.StatusCreated {
+		t.Fatalf("setup first update status = %d, want %d, body = %s", firstRec.Code, http.StatusCreated, firstRec.Body.String())
+	}
+	secondRec := postIncidentUpdate(t, r, token, incident.ID, "second update")
+	if secondRec.Code != http.StatusCreated {
+		t.Fatalf("setup second update status = %d, want %d, body = %s", secondRec.Code, http.StatusCreated, secondRec.Body.String())
+	}
+
+	rec := getIncidentUpdates(t, r, token, incident.ID)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	var timeline []incidentUpdateResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &timeline); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+	if len(timeline) != 2 {
+		t.Fatalf("len(timeline) = %d, want %d", len(timeline), 2)
+	}
+	if timeline[0].Body != "second update" {
+		t.Errorf("timeline[0].Body = %q, want the most recent update first", timeline[0].Body)
+	}
+	if timeline[1].Body != "first update" {
+		t.Errorf("timeline[1].Body = %q, want the oldest update last", timeline[1].Body)
+	}
+}
+
+func TestListIncidentUpdates_UnknownIncident_404(t *testing.T) {
+	r, _, admins := newIncidentsRouter(t)
+	token := issueTestSessionToken(t, admins)
+
+	rec := getIncidentUpdates(t, r, token, "00000000-0000-0000-0000-000000000000")
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("status = %d, want %d, body = %s", rec.Code, http.StatusNotFound, rec.Body.String())
+	}
+}
+
+func TestListIncidentUpdates_NoAuth_401(t *testing.T) {
+	r, _, _ := newIncidentsRouter(t)
+
+	rec := getIncidentUpdates(t, r, "", "any-id")
 	if rec.Code != http.StatusUnauthorized {
 		t.Errorf("status = %d, want %d", rec.Code, http.StatusUnauthorized)
 	}

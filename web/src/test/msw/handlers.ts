@@ -9,7 +9,7 @@ import {
   sloCatalog,
   datadogIntegration as seedDatadogIntegration,
 } from "../../lib/mockData";
-import type { Domain, StatusPage, Service } from "../../types/api";
+import type { Domain, StatusPage, Service, Incident, IncidentUpdate, IncidentStatus } from "../../types/api";
 
 // Simulates the vane_session cookie server-side: real cookie semantics
 // (Set-Cookie/credentials) are covered by the Go integration tests
@@ -54,6 +54,29 @@ export function resetServicesAndIntegration(): void {
   datadogLastError = seedDatadogIntegration.last_error;
 }
 resetServicesAndIntegration();
+
+// In-memory incidents + timeline state (I16), seeded the same way as
+// domains/status-pages/services above. incident_updates is real-backend
+// shaped: mirrors IncidentRepository.ListUpdates/AddUpdate - most recent
+// first, one row per Transition too (internal/db/incident_repository.go).
+let incidentsState: Incident[] = [];
+let incidentUpdatesState: IncidentUpdate[] = [];
+let incidentIdCounter = 0;
+let incidentUpdateIdCounter = 0;
+
+export function resetIncidents(): void {
+  incidentsState = seedIncidents.map((i) => ({ ...i }));
+  incidentUpdatesState = seedIncidentUpdates.map((u) => ({ ...u }));
+  incidentIdCounter = 0;
+  incidentUpdateIdCounter = 0;
+}
+resetIncidents();
+
+function timelineFor(incidentId: string): IncidentUpdate[] {
+  return incidentUpdatesState
+    .filter((u) => u.incident_id === incidentId)
+    .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+}
 
 // toServiceResponse strips slo_name - the real serviceResponse
 // (internal/api/services_handler.go) never returns it, only the opaque
@@ -231,6 +254,98 @@ export const handlers = [
     };
     servicesState.push(created);
     return HttpResponse.json(toServiceResponse(created), { status: 201 });
+  }),
+
+  // GET /api/incidents (I16) - mirrors IncidentsHandler.List: most recently
+  // created first, each with its service_ids.
+  http.get("/api/incidents", () => {
+    if (!sessionAdminId) return HttpResponse.json({ error: "unauthorized" }, { status: 401 });
+    const sorted = [...incidentsState].sort(
+      (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
+    );
+    return HttpResponse.json(sorted);
+  }),
+
+  http.post("/api/incidents", async ({ request }) => {
+    if (!sessionAdminId) return HttpResponse.json({ error: "unauthorized" }, { status: 401 });
+    const body = (await request.json()) as { title?: string; service_ids?: string[] };
+    if (!body.title || !body.service_ids || body.service_ids.length === 0) {
+      return HttpResponse.json({ error: "title and at least one service_id are required" }, { status: 422 });
+    }
+    incidentIdCounter += 1;
+    const created: Incident = {
+      id: `inc-msw-${incidentIdCounter}`,
+      title: body.title,
+      status: "investigating",
+      created_at: new Date().toISOString(),
+      resolved_at: null,
+      service_ids: body.service_ids,
+    };
+    incidentsState.push(created);
+    return HttpResponse.json(created, { status: 201 });
+  }),
+
+  // GET/POST /api/incidents/:id/updates (I16) - mirrors
+  // IncidentsHandler.ListUpdates/AddUpdate: timeline ordered most-recent
+  // first, 404 for an incident id that doesn't exist.
+  http.get("/api/incidents/:id/updates", ({ params }) => {
+    if (!sessionAdminId) return HttpResponse.json({ error: "unauthorized" }, { status: 401 });
+    const incidentId = params.id as string;
+    if (!incidentsState.some((i) => i.id === incidentId)) {
+      return HttpResponse.json({ error: "incident not found" }, { status: 404 });
+    }
+    return HttpResponse.json(timelineFor(incidentId));
+  }),
+
+  http.post("/api/incidents/:id/updates", async ({ request, params }) => {
+    if (!sessionAdminId) return HttpResponse.json({ error: "unauthorized" }, { status: 401 });
+    const incidentId = params.id as string;
+    if (!incidentsState.some((i) => i.id === incidentId)) {
+      return HttpResponse.json({ error: "incident not found" }, { status: 404 });
+    }
+    const body = (await request.json()) as { body?: string };
+    if (!body.body) {
+      return HttpResponse.json({ error: "body is required" }, { status: 422 });
+    }
+    incidentUpdateIdCounter += 1;
+    incidentUpdatesState.push({
+      id: `upd-msw-${incidentUpdateIdCounter}`,
+      incident_id: incidentId,
+      body: body.body,
+      created_at: new Date().toISOString(),
+    });
+    return HttpResponse.json(timelineFor(incidentId), { status: 201 });
+  }),
+
+  // PATCH /api/incidents/:id (I16) - mirrors IncidentsHandler.Transition:
+  // sets resolved_at entering "resolved", clears it otherwise (reopening a
+  // resolved incident is a legitimate transition, SP-20), records the
+  // transition on the timeline.
+  http.patch("/api/incidents/:id", async ({ request, params }) => {
+    if (!sessionAdminId) return HttpResponse.json({ error: "unauthorized" }, { status: 401 });
+    const incidentId = params.id as string;
+    const incident = incidentsState.find((i) => i.id === incidentId);
+    if (!incident) {
+      return HttpResponse.json({ error: "incident not found" }, { status: 404 });
+    }
+    const body = (await request.json()) as { status?: IncidentStatus };
+    const validStatuses: IncidentStatus[] = ["investigating", "identified", "monitoring", "resolved"];
+    if (!body.status || !validStatuses.includes(body.status)) {
+      return HttpResponse.json(
+        { error: "status must be one of investigating, identified, monitoring, resolved" },
+        { status: 422 },
+      );
+    }
+    incident.status = body.status;
+    incident.resolved_at = body.status === "resolved" ? new Date().toISOString() : null;
+    incidentUpdateIdCounter += 1;
+    incidentUpdatesState.push({
+      id: `upd-msw-${incidentUpdateIdCounter}`,
+      incident_id: incidentId,
+      body: `Status changed to ${body.status}`,
+      created_at: new Date().toISOString(),
+    });
+    return HttpResponse.json(incident);
   }),
 
   // GET /api/status-pages/:id/public-preview (I12/I13) - mirrors the real

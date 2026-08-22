@@ -81,6 +81,8 @@ func buildAdminRouter(pool *db.Pool, cfg config.Config, logger *zap.Logger) http
 		protected.With(anyRole).Get("/api/domains", domainsHandler.List)
 		protected.With(anyRole).Get("/api/services", servicesHandler.List)
 		protected.With(anyRole).Get("/api/status-pages", statusPagesHandler.List)
+		protected.With(anyRole).Get("/api/incidents", incidentsHandler.List)
+		protected.With(anyRole).Get("/api/incidents/{id}/updates", incidentsHandler.ListUpdates)
 		protected.With(anyRole).Get("/api/status-pages/{id}/public-preview", publicStatusPreviewHandler.Get)
 		protected.With(anyRole).Get("/api/integrations/datadog/status", integrationsHandler.Status)
 

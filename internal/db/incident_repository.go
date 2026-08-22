@@ -18,6 +18,7 @@ type Incident struct {
 	Status     string // "investigating" | "identified" | "monitoring" | "resolved"
 	CreatedAt  time.Time
 	ResolvedAt *time.Time
+	ServiceIDs []string // populated by List/Create; nil for callers that don't need it (Transition, ListPublic*)
 }
 
 // IncidentUpdate is a single timeline entry attached to an Incident.
@@ -95,9 +96,66 @@ func (r *IncidentRepository) AddUpdate(ctx context.Context, incidentID, body str
 	return update, nil
 }
 
+// List returns every incident, most recently created first, each with its
+// linked service_ids (I16 - the admin incidents list badges each incident
+// with the services it affects).
+func (r *IncidentRepository) List(ctx context.Context) ([]Incident, error) {
+	rows, err := r.pool.Query(ctx,
+		"SELECT id, title, status, created_at, resolved_at FROM incidents ORDER BY created_at DESC",
+	)
+	if err != nil {
+		return nil, fmt.Errorf("db: failed to list incidents: %w", err)
+	}
+	defer rows.Close()
+
+	incidents, err := scanIncidentRows(rows)
+	if err != nil {
+		return nil, err
+	}
+
+	for i := range incidents {
+		serviceIDs, err := r.listServiceIDs(ctx, incidents[i].ID)
+		if err != nil {
+			return nil, err
+		}
+		incidents[i].ServiceIDs = serviceIDs
+	}
+
+	return incidents, nil
+}
+
+// listServiceIDs returns the service IDs linked to incidentID via
+// incident_services.
+func (r *IncidentRepository) listServiceIDs(ctx context.Context, incidentID string) ([]string, error) {
+	rows, err := r.pool.Query(ctx, "SELECT service_id FROM incident_services WHERE incident_id = $1", incidentID)
+	if err != nil {
+		return nil, fmt.Errorf("db: failed to list incident service links: %w", err)
+	}
+	defer rows.Close()
+
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, fmt.Errorf("db: failed to scan incident service link: %w", err)
+		}
+		ids = append(ids, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("db: failed to iterate incident service links: %w", err)
+	}
+	return ids, nil
+}
+
 // ListUpdates returns incidentID's timeline, most recent update first
-// (spec.md: "ordenado do mais recente para o mais antigo").
+// (spec.md: "ordenado do mais recente para o mais antigo"). Returns
+// ErrNotFound if incidentID doesn't exist, so the GET .../updates route
+// (I16) can distinguish "no updates yet" from "no such incident".
 func (r *IncidentRepository) ListUpdates(ctx context.Context, incidentID string) ([]IncidentUpdate, error) {
+	if err := r.mustExist(ctx, incidentID); err != nil {
+		return nil, err
+	}
+
 	rows, err := r.pool.Query(ctx,
 		"SELECT id, incident_id, body, created_at FROM incident_updates WHERE incident_id = $1 ORDER BY created_at DESC",
 		incidentID,
