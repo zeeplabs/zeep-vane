@@ -1,7 +1,8 @@
 import { describe, it, expect, afterEach } from "vitest";
-import { render, screen, within } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
+import { Toaster } from "sonner";
 import "../../lib/i18n";
 import { AuthProvider } from "../../auth/AuthProvider";
 import { TestQueryProvider } from "../../test/queryClient";
@@ -24,6 +25,7 @@ function renderPage() {
     <MemoryRouter>
       <TestQueryProvider>
         <AuthProvider>
+          <Toaster />
           <AdminsPage />
         </AuthProvider>
       </TestQueryProvider>
@@ -74,6 +76,54 @@ describe("AdminsPage", () => {
     expect(
       screen.getByText("Remover o acesso de operator@vane.app? Esta ação não pode ser desfeita.")
     ).toBeInTheDocument();
+  });
+
+  it("alterar papel com sucesso atualiza o papel exibido na lista (AF-27)", async () => {
+    await loginAsOwner();
+    renderPage();
+    await screen.findByText("operator@vane.app");
+
+    const operatorRow = screen.getByText("operator@vane.app").closest("tr")!;
+    const viewerIcon = within(operatorRow).getByRole("button", { name: "Viewer" });
+    await userEvent.click(viewerIcon);
+    await userEvent.click(screen.getByRole("button", { name: "Confirmar" }));
+
+    await waitFor(() => {
+      const updatedRow = screen.getByText("operator@vane.app").closest("tr")!;
+      expect(within(updatedRow).getByRole("button", { name: "Viewer" })).toHaveAttribute(
+        "aria-pressed",
+        "true"
+      );
+    });
+  });
+
+  it("remover admin com sucesso remove a linha e exibe toast de confirmação (AF-28)", async () => {
+    await loginAsOwner();
+    renderPage();
+    await screen.findByText("operator@vane.app");
+
+    const operatorRow = screen.getByText("operator@vane.app").closest("tr")!;
+    await userEvent.click(within(operatorRow).getByRole("button", { name: "Remover" }));
+    await screen.findByText("Remover admin");
+    await userEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Remover" }));
+
+    await waitFor(() => expect(screen.queryByText("operator@vane.app")).not.toBeInTheDocument());
+    expect(await screen.findByText("Acesso de operator@vane.app removido.")).toBeInTheDocument();
+  });
+
+  it("convidar admin com sucesso adiciona a linha com badge Pendente (AF-25)", async () => {
+    await loginAsOwner();
+    renderPage();
+    await screen.findByText("owner@vane.app");
+
+    await userEvent.click(screen.getByRole("button", { name: "Convidar admin" }));
+    await userEvent.type(screen.getByLabelText("E-mail"), "novo-viewer@vane.app");
+    await userEvent.selectOptions(screen.getByLabelText("Papel"), "viewer");
+    await userEvent.click(screen.getByRole("button", { name: "Enviar convite" }));
+
+    expect(await screen.findByText("novo-viewer@vane.app")).toBeInTheDocument();
+    const newRow = screen.getByText("novo-viewer@vane.app").closest("tr")!;
+    expect(within(newRow).getByText("Pendente")).toBeInTheDocument();
   });
 
   it("convites pendentes tem ações Reenviar/Cancelar desabilitadas (sem backend, backlog AD-007)", async () => {

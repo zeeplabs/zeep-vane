@@ -1,4 +1,5 @@
 import { useState, type FormEvent } from "react";
+import { toast } from "sonner";
 import { Table, type TableColumn } from "../../components/ui/Table";
 import { Dialog } from "../../components/ui/Dialog";
 import { Button } from "../../components/ui/Button";
@@ -78,8 +79,10 @@ export function AdminsPage() {
     if (!removeTarget) return;
     setRemoveError(null);
     try {
+      const removedEmail = removeTarget.email;
       await deleteAdmin.mutateAsync(removeTarget.id);
       setRemoveTarget(null);
+      toast.success(`Acesso de ${removedEmail} removido.`);
     } catch (err) {
       setRemoveError(err instanceof ApiError ? err.message : "Não foi possível remover o admin.");
     }
