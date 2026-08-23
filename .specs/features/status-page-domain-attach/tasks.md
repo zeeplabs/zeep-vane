@@ -452,13 +452,13 @@ Tasks: T13, T14, T15 - see dependency graph below.
 - Skill: NONE
 
 **Done when**:
-- [ ] `domain_id: null` → "Sem domínio configurado" label + button opening `AttachDomainDrawer`
-- [ ] `domain_id` set + `state == "draft"` → "Aguardando validação de DNS/certificado" label (not the old ambiguous text)
-- [ ] `state == "published"` → unchanged existing rendering
-- [ ] `state == "tls_failed"` → unchanged existing rendering
-- [ ] Preview link ("Pré-visualizar página pública") renders regardless of state/domain (moved out of the `published`-only block)
-- [ ] Gate check passes: `cd web && npm run test`
-- [ ] Test count: 4+ new/modified tests pass (no silent deletions)
+- [x] `domain_id: null` → "Sem domínio configurado" label + button opening `AttachDomainDrawer`
+- [x] `domain_id` set + `state == "draft"` → "Aguardando validação de DNS/certificado" label (not the old ambiguous text)
+- [x] `state == "published"` → unchanged existing rendering
+- [x] `state == "tls_failed"` → unchanged existing rendering
+- [x] Preview link ("Pré-visualizar página pública") renders regardless of state/domain (moved out of the `published`-only block)
+- [x] Gate check passes: `cd web && npm run test`
+- [x] Test count: 4+ new/modified tests pass (no silent deletions)
 
 **Tests**: unit
 **Gate**: quick

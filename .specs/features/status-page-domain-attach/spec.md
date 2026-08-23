@@ -120,15 +120,15 @@ Today `POST /api/status-pages` requires `domain_id` (`status_pages.domain_id UUI
 | SPD-09 | P1: Attach domain later | Design | Implementing |
 | SPD-10 | P1: Attach domain later | Design | Implementing |
 | SPD-11 | P1: Attach domain later (RBAC) | Design | Implementing |
-| SPD-12 | P2: Distinguishable labels | Design | Pending |
-| SPD-13 | P2: Distinguishable labels | Design | Pending |
-| SPD-14 | P2: Distinguishable labels | Design | Pending |
+| SPD-12 | P2: Distinguishable labels | Design | Implementing |
+| SPD-13 | P2: Distinguishable labels | Design | Implementing |
+| SPD-14 | P2: Distinguishable labels | Design | Implementing |
 
 **ID format:** `SPD-[NUMBER]`
 
 **Status values:** Pending → In Design → In Tasks → Implementing → Verified
 
-**Coverage:** 14 total, 0 mapped to tasks, 14 unmapped ⚠️ (expected - Tasks phase not yet run)
+**Coverage:** 14 total, 14 mapped to tasks, 0 unmapped
 
 ---
 
