@@ -11,6 +11,7 @@ import {
   sloCatalog,
   datadogIntegration as seedDatadogIntegration,
   pollerStatus as seedPollerStatus,
+  companySettings as seedCompanySettings,
 } from "../../lib/mockData";
 import type {
   Admin,
@@ -22,6 +23,7 @@ import type {
   Incident,
   IncidentUpdate,
   IncidentStatus,
+  CompanySettings,
 } from "../../types/api";
 
 // Simulates the vane_session cookie server-side: real cookie semantics
@@ -100,6 +102,16 @@ export function resetAdmins(): void {
   adminInviteIdCounter = 0;
 }
 resetAdmins();
+
+// In-memory company_settings state (SET-01, SET-07), seeded the same way
+// as the other fixtures above - the real backend's row is a singleton, so
+// this mirrors that with a single mutable object rather than an array.
+let companySettingsState: CompanySettings = { ...seedCompanySettings };
+
+export function resetCompanySettings(): void {
+  companySettingsState = { ...seedCompanySettings };
+}
+resetCompanySettings();
 
 const validAdminRoles: Role[] = ["owner", "operator", "viewer"];
 
@@ -502,6 +514,7 @@ export const handlers = [
       .map(toPreviewIncident);
 
     return HttpResponse.json({
+      company: { name: companySettingsState.name, logo_url: companySettingsState.logo_url },
       services: pageServices.map((s) => ({
         name: s.name,
         status: s.current_status,
@@ -518,5 +531,41 @@ export const handlers = [
   http.get("/api/poller/status", () => {
     if (!sessionAdminId) return HttpResponse.json({ error: "unauthorized" }, { status: 401 });
     return HttpResponse.json(seedPollerStatus);
+  }),
+
+  // GET/PATCH /api/company-settings, POST /api/company-settings/logo
+  // (SET-01, SET-07) - mirrors CompanySettingsHandler: PATCH persists only
+  // {name, contact_email} (logo goes through the separate multipart
+  // upload below), the logo upload updates logo_url in state and returns
+  // the full settings row, same as the real handler's shared
+  // toCompanySettingsResponse.
+  http.get("/api/company-settings", () => {
+    if (!sessionAdminId) return HttpResponse.json({ error: "unauthorized" }, { status: 401 });
+    return HttpResponse.json(companySettingsState);
+  }),
+
+  http.patch("/api/company-settings", async ({ request }) => {
+    if (!sessionAdminId) return HttpResponse.json({ error: "unauthorized" }, { status: 401 });
+    const body = (await request.json()) as { name?: string; contact_email?: string };
+    if (!body.name || !body.contact_email) {
+      return HttpResponse.json(
+        { error: "name is required and contact_email must be a valid e-mail address" },
+        { status: 422 },
+      );
+    }
+    companySettingsState = { ...companySettingsState, name: body.name, contact_email: body.contact_email };
+    return HttpResponse.json(companySettingsState);
+  }),
+
+  http.post("/api/company-settings/logo", async ({ request }) => {
+    if (!sessionAdminId) return HttpResponse.json({ error: "unauthorized" }, { status: 401 });
+    const formData = await request.formData();
+    const file = formData.get("logo");
+    if (!file || !(file instanceof File)) {
+      return HttpResponse.json({ error: "logo must be a PNG or SVG image no larger than 10 MB" }, { status: 422 });
+    }
+    const ext = file.type === "image/svg+xml" ? "svg" : "png";
+    companySettingsState = { ...companySettingsState, logo_url: `/uploads/logo.${ext}` };
+    return HttpResponse.json(companySettingsState);
   }),
 ];

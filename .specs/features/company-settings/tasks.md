@@ -345,12 +345,12 @@ Tasks: T11, T12, T13, T14 (executed in this order; see the dependency graph belo
 - Skill: NONE
 
 **Done when**:
-- [ ] `GET /api/company-settings` returns the seeded state
-- [ ] `PATCH /api/company-settings` updates the in-memory state and returns it
-- [ ] `POST /api/company-settings/logo` accepts a `FormData` upload and updates `logo_url` in state
-- [ ] `GET /api/status-pages/:id/public-preview` response now includes `company: {name, logo_url}` from the same state
-- [ ] Gate check passes: `cd web && npm run test`
-- [ ] Test count: existing suite (129 tests) still 100% green - no regressions from the handler change alone
+- [x] `GET /api/company-settings` returns the seeded state
+- [x] `PATCH /api/company-settings` updates the in-memory state and returns it
+- [x] `POST /api/company-settings/logo` accepts a `FormData` upload and updates `logo_url` in state
+- [x] `GET /api/status-pages/:id/public-preview` response now includes `company: {name, logo_url}` from the same state
+- [x] Gate check passes: `cd web && npm run test`
+- [x] Test count: existing suite (129 tests) still 100% green - no regressions from the handler change alone
 
 **Tests**: none (fixture code; covered indirectly by T12/T13/T14)
 **Gate**: quick
