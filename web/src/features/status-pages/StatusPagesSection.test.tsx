@@ -55,4 +55,43 @@ describe("StatusPagesSection", () => {
     expect(document.body.textContent).not.toContain("https://null");
     expect(document.body.textContent).not.toContain("undefined");
   });
+
+  it("linha de uma página sem domínio mostra label distinto e CTA pra anexar domínio (SPD-12)", async () => {
+    await loginAsOwner();
+    renderSection();
+
+    await userEvent.click(await screen.findByRole("button", { name: "Criar status page" }));
+    await userEvent.type(screen.getByLabelText("Nome"), "Página SPD-12 Section Test");
+    await userEvent.click(screen.getByRole("button", { name: "Criar" }));
+
+    await waitFor(() => expect(screen.queryByLabelText("Nome")).not.toBeInTheDocument());
+    expect(await screen.findByText("Página SPD-12 Section Test")).toBeInTheDocument();
+    expect(screen.getAllByText("Sem domínio configurado").length).toBeGreaterThan(0);
+    expect(screen.getAllByRole("link", { name: "Anexar domínio" }).length).toBeGreaterThan(0);
+  });
+
+  it("linha de uma página com domínio anexado + draft mostra label de DNS/certificado pendente, distinto do 'sem domínio' (SPD-13)", async () => {
+    await loginAsOwner();
+    renderSection();
+
+    // sp-2 (fixture seedada): domain_id preenchido, state "draft".
+    expect(await screen.findByText("Status Beta")).toBeInTheDocument();
+    expect(screen.getByText("Aguardando validação de DNS/certificado")).toBeInTheDocument();
+    expect(screen.queryByText("Emitindo certificado")).not.toBeInTheDocument();
+    expect(screen.queryByText("Sem domínio configurado")).not.toBeInTheDocument();
+  });
+
+  it("páginas published/tls_failed mantêm os labels de sempre na lista (SPD-14)", async () => {
+    await loginAsOwner();
+    renderSection();
+
+    // sp-1/sp-4 (fixtures seedadas): state "published".
+    expect((await screen.findAllByText("Publicada")).length).toBeGreaterThan(0);
+    // sp-3 (fixture seedada): state "tls_failed".
+    expect(screen.getByText("Falha")).toBeInTheDocument();
+    expect(
+      screen.getByText("Falha ao validar propriedade do domínio via DNS-01.")
+    ).toBeInTheDocument();
+    expect(screen.queryByText("Emitindo certificado")).not.toBeInTheDocument();
+  });
 });

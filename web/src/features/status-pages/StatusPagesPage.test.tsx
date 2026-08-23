@@ -36,7 +36,11 @@ describe("StatusPagesPage", () => {
     await loginAs("owner@vane.app");
     renderPage();
     expect((await screen.findAllByText("Publicada")).length).toBeGreaterThan(0);
-    expect(screen.getByText("Emitindo certificado")).toBeInTheDocument();
+    // sp-2 tem domain_id preenchido e state "draft" (SPD-13): label de
+    // DNS/certificado pendente, não mais o antigo "Emitindo certificado"
+    // ambíguo (removido pela correção do Gap 1 do Verifier).
+    expect(screen.getByText("Aguardando validação de DNS/certificado")).toBeInTheDocument();
+    expect(screen.queryByText("Emitindo certificado")).not.toBeInTheDocument();
     expect(screen.getByText("Falha")).toBeInTheDocument();
   });
 
@@ -47,7 +51,7 @@ describe("StatusPagesPage", () => {
     expect(screen.queryByRole("button", { name: "Criar status page" })).not.toBeInTheDocument();
   });
 
-  it("criação não tem campos de domínio e a página nova nasce sem domínio, em estado emitindo certificado (SPD-01)", async () => {
+  it("criação não tem campos de domínio e a página nova nasce sem domínio, com label distinto de 'sem domínio configurado' (SPD-01/SPD-12)", async () => {
     await loginAs("owner@vane.app");
     renderPage();
     await userEvent.click(await screen.findByRole("button", { name: "Criar status page" }));
@@ -58,8 +62,12 @@ describe("StatusPagesPage", () => {
 
     await waitFor(() => expect(screen.queryByLabelText("Nome")).not.toBeInTheDocument());
     expect(await screen.findByText("Status Nova Empresa")).toBeInTheDocument();
-    const tags = screen.getAllByText("Emitindo certificado");
-    expect(tags.length).toBeGreaterThan(0);
+    // Página recém-criada não tem domínio (domain_id: null): a lista deve
+    // mostrar o label distinto exigido pela spec (SPD-12), nunca o antigo
+    // "Emitindo certificado" ambíguo que a spec proíbe para esse caso.
+    const labels = screen.getAllByText("Sem domínio configurado");
+    expect(labels.length).toBeGreaterThan(0);
+    expect(screen.queryByText("Emitindo certificado")).not.toBeInTheDocument();
     expect(screen.getByText("—")).toBeInTheDocument();
   });
 });

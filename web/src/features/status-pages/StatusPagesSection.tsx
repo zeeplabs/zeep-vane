@@ -71,10 +71,28 @@ export function StatusPagesSection() {
       key: "state",
       header: "Estado",
       render: (p) => {
+        // SPD-12: sem domínio nenhum anexado ainda - distinto do "aguardando
+        // DNS/certificado" abaixo, com uma ação pra sair desse estado.
+        // Mesma lógica de StatusPageDetail.tsx, aplicada na lista.
+        if (p.domain_id === null) {
+          return (
+            <div className="flex flex-col gap-1">
+              <Tag variant="accent-outline" className="w-fit">
+                Sem domínio configurado
+              </Tag>
+              <Link to={`/status-pages/${p.id}`} className="text-xs text-accent hover:underline">
+                Anexar domínio
+              </Link>
+            </div>
+          );
+        }
+        // SPD-13: domínio anexado, mas o certificado ainda não foi emitido -
+        // substitui o antigo texto ambíguo "Emitindo certificado", que não
+        // distinguia esse caso do de "sem domínio" acima.
         if (p.state === "draft") {
           return (
             <Tag variant="accent" data-testid="pulsing-tag" className="animate-pulse">
-              Emitindo certificado
+              Aguardando validação de DNS/certificado
             </Tag>
           );
         }
