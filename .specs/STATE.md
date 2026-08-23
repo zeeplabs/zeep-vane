@@ -61,6 +61,14 @@
 - **Date**: 2026-08-21
 - **Status**: active
 
+### AD-008
+- **Decision**: O endpoint de preview autenticado (`GET /api/status-pages/{id}/public-preview`) deixa de exigir `state == "published"` — passa a compor a resposta pra uma status page em qualquer estado, incluindo sem domínio nenhum anexado (`domain_id: null`).
+- **Reason**: Feature `status-page-domain-attach` (2026-08-23) — teste manual do usuário revelou que hoje é impossível visualizar uma status page recém-criada antes do domínio ter DNS resolvido e certificado TLS emitido, porque o preview foi desenhado deliberadamente em `AD-007`/I12 pra espelhar o gate de produção 1:1 ("pra o preview e a página de produção nunca discordarem do que conta como visível"). Esse objetivo original é exatamente a causa do bug: um admin que quer pré-visualizar antes de ir ao ar não tem caminho nenhum se o preview insiste em bater um estado de produção que ainda não existe.
+- **Trade-off**: Preview e produção agora podem "discordar" (preview mostra conteúdo de página `draft`/sem domínio que a produção real nunca serviria) — aceito porque o preview já é autenticado/admin-only e nunca foi o caminho público real; fidelidade total a produção não tem valor pra esse caso de uso.
+- **Scope**: `internal/api/public_status_preview_handler.go` — não afeta `PublicStatusHandler.Get`/`router.HostRouter` (caminho público real de produção, que continua exigindo `published`).
+- **Date**: 2026-08-23
+- **Status**: active (supersede parcial do item 2 de `AD-007` — a decisão de ter o endpoint dev/preview continua válida, só a regra de "espelhar produção 1:1" foi revertida)
+
 ## Handoff
 
 **Feature**: `company-settings` — **status: PASS ✅** (Verifier iteration 2/3, após 1 rodada de fix→re-verify). Relatório: `.specs/features/company-settings/validation.md`. 16/16 ACs (SET-01 a SET-16) verificados, sensor de discriminação 5/5 mortos, 0 gaps.
