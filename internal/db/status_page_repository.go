@@ -6,8 +6,22 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/jackc/pgerrcode"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 )
+
+// ErrDomainAlreadyAttached is returned by AttachDomain when the target
+// status page already has a non-null domain_id.
+var ErrDomainAlreadyAttached = errors.New("db: status page already has a domain attached")
+
+// ErrInvalidDomain is returned by AttachDomain when the given domain_id
+// does not reference an existing Domain.
+var ErrInvalidDomain = errors.New("db: domain_id does not reference an existing domain")
+
+// ErrDuplicateDomainSubdomain is returned by AttachDomain when the given
+// (domain_id, subdomain) pair is already used by another status page.
+var ErrDuplicateDomainSubdomain = errors.New("db: this domain/subdomain pair is already in use")
 
 // StatusPage is a public status page published at Subdomain under Domain,
 // showing the linked services' current status. Subdomain and DomainID are
@@ -68,6 +82,67 @@ func (r *StatusPageRepository) Create(ctx context.Context, statusPage *StatusPag
 	}
 
 	return nil
+}
+
+// AttachDomain sets domain_id/subdomain on the status page identified by
+// id, exactly once (SPD-06). It locks the target row with SELECT ... FOR
+// UPDATE inside an explicit transaction, rather than a conditional UPDATE
+// ... WHERE domain_id IS NULL, because the row lock lets a single query
+// resolve which of 4 distinguishable outcomes applies before deciding what
+// to do - a conditional UPDATE affecting 0 rows can't tell "page doesn't
+// exist" apart from "page already has a domain" (design.md Tech
+// Decisions).
+//
+// It returns ErrNotFound if no status page matches id, ErrDomainAlreadyAttached
+// if the page's domain_id is already non-null (SPD-07), ErrInvalidDomain if
+// domainID does not reference an existing Domain (SPD-07), or
+// ErrDuplicateDomainSubdomain if the (domainID, subdomain) pair is already
+// used by another status page (SPD-09, enforced by the partial unique index
+// added in migration 0013). On any error the row is left unmodified.
+func (r *StatusPageRepository) AttachDomain(ctx context.Context, id, domainID, subdomain string) (*StatusPage, error) {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("db: failed to begin attach domain transaction: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	var currentDomainID *string
+	row := tx.QueryRow(ctx, "SELECT domain_id FROM status_pages WHERE id = $1 FOR UPDATE", id)
+	if err := row.Scan(&currentDomainID); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrNotFound
+		}
+		return nil, fmt.Errorf("db: failed to lock status page for domain attach: %w", err)
+	}
+	if currentDomainID != nil {
+		return nil, ErrDomainAlreadyAttached
+	}
+
+	var sp StatusPage
+	sp.ID = id
+	row = tx.QueryRow(ctx,
+		"UPDATE status_pages SET domain_id = $1, subdomain = $2 WHERE id = $3 "+
+			"RETURNING name, subdomain, domain_id, state, tls_last_error, created_at",
+		domainID, subdomain, id,
+	)
+	if err := row.Scan(&sp.Name, &sp.Subdomain, &sp.DomainID, &sp.State, &sp.TLSLastError, &sp.CreatedAt); err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) {
+			switch pgErr.Code {
+			case pgerrcode.ForeignKeyViolation:
+				return nil, ErrInvalidDomain
+			case pgerrcode.UniqueViolation:
+				return nil, ErrDuplicateDomainSubdomain
+			}
+		}
+		return nil, fmt.Errorf("db: failed to attach domain to status page: %w", err)
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return nil, fmt.Errorf("db: failed to commit attach domain transaction: %w", err)
+	}
+
+	return &sp, nil
 }
 
 // List returns every registered status page, ordered by name.

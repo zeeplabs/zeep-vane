@@ -114,8 +114,8 @@ Today `POST /api/status-pages` requires `domain_id` (`status_pages.domain_id UUI
 | SPD-03 | P1: Preview before domain exists | Design | Pending |
 | SPD-04 | P1: Preview before domain exists | Design | Pending |
 | SPD-05 | P1: Attach domain later | Design | Implementing |
-| SPD-06 | P1: Attach domain later | Design | Pending |
-| SPD-07 | P1: Attach domain later | Design | Pending |
+| SPD-06 | P1: Attach domain later | Design | Implementing |
+| SPD-07 | P1: Attach domain later | Design | Implementing |
 | SPD-08 | P1: Attach domain later | Design | Pending |
 | SPD-09 | P1: Attach domain later | Design | Implementing |
 | SPD-10 | P1: Attach domain later | Design | Pending |

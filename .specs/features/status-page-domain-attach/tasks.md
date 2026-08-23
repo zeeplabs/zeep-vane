@@ -139,14 +139,14 @@ Tasks: T13, T14, T15 - see dependency graph below.
 - Skill: NONE
 
 **Done when**:
-- [ ] Attaching to a domain-less page succeeds, returns updated row with `state` unchanged (`"draft"`)
-- [ ] Attaching to a nonexistent page ID returns `ErrNotFound`
-- [ ] Attaching to a page that already has a domain returns `ErrDomainAlreadyAttached`, row unmodified
-- [ ] Attaching with a `domain_id` that doesn't exist returns `ErrInvalidDomain`, row unmodified
-- [ ] Attaching a `(domain_id, subdomain)` pair already used by another page returns `ErrDuplicateDomainSubdomain`, row unmodified
-- [ ] Two concurrent `AttachDomain` calls on the same domain-less page: exactly one succeeds, the other gets `ErrDomainAlreadyAttached` (test runs both in goroutines against the real DB)
-- [ ] Gate check passes: `go test -tags=integration ./internal/db`
-- [ ] Test count: 6+ new tests pass (no silent deletions)
+- [x] Attaching to a domain-less page succeeds, returns updated row with `state` unchanged (`"draft"`)
+- [x] Attaching to a nonexistent page ID returns `ErrNotFound`
+- [x] Attaching to a page that already has a domain returns `ErrDomainAlreadyAttached`, row unmodified
+- [x] Attaching with a `domain_id` that doesn't exist returns `ErrInvalidDomain`, row unmodified
+- [x] Attaching a `(domain_id, subdomain)` pair already used by another page returns `ErrDuplicateDomainSubdomain`, row unmodified
+- [x] Two concurrent `AttachDomain` calls on the same domain-less page: exactly one succeeds, the other gets `ErrDomainAlreadyAttached` (test runs both in goroutines against the real DB)
+- [x] Gate check passes: `go test -tags=integration ./internal/db`
+- [x] Test count: 6+ new tests pass (no silent deletions)
 
 **Tests**: integration
 **Gate**: full
