@@ -115,8 +115,8 @@ Explicitly excluded. Documented to prevent scope creep.
 | SET-01          | P1: Owner edits company identity          | Design | Implementing |
 | SET-02          | P1: Owner edits company identity (RBAC)   | Design | Pending |
 | SET-03          | P1: Owner edits company identity (seed)   | Design | Implementing |
-| SET-04          | P1: Owner edits company identity (validation) | Design | Pending |
-| SET-05          | P1: Owner edits company identity (validation) | Design | Pending |
+| SET-04          | P1: Owner edits company identity (validation) | Design | Implementing |
+| SET-05          | P1: Owner edits company identity (validation) | Design | Implementing |
 | SET-06          | P1: Owner edits company identity (singleton) | Design | Implementing |
 | SET-07          | P1: Owner uploads logo                    | Design | Pending |
 | SET-08          | P1: Owner uploads logo (size limit)       | Design | Pending |

@@ -186,12 +186,12 @@ Tasks: T11, T12, T13, T14 (executed in this order; see the dependency graph belo
 - Skill: NONE
 
 **Done when**:
-- [ ] `GET` returns 200 + current settings (fresh-install seeded row included)
-- [ ] `PATCH` with valid body persists and returns 200
-- [ ] `PATCH` with empty `name` -> 422, no persistence (assert via a following `GET`)
-- [ ] `PATCH` with malformed `contact_email` -> 422, no persistence
-- [ ] Gate check passes: `go test -tags=integration ./internal/api`
-- [ ] Test count: 4+ new tests pass (no silent deletions)
+- [x] `GET` returns 200 + current settings (fresh-install seeded row included)
+- [x] `PATCH` with valid body persists and returns 200
+- [x] `PATCH` with empty `name` -> 422, no persistence (assert via a following `GET`)
+- [x] `PATCH` with malformed `contact_email` -> 422, no persistence
+- [x] Gate check passes: `go test -tags=integration ./internal/api`
+- [x] Test count: 4+ new tests pass (no silent deletions)
 
 **Tests**: integration
 **Gate**: full
