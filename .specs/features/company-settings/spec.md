@@ -112,7 +112,7 @@ Explicitly excluded. Documented to prevent scope creep.
 
 | Requirement ID | Story                                     | Phase  | Status  |
 | --------------- | ------------------------------------------ | ------ | ------- |
-| SET-01          | P1: Owner edits company identity          | Design | Pending |
+| SET-01          | P1: Owner edits company identity          | Design | Implementing |
 | SET-02          | P1: Owner edits company identity (RBAC)   | Design | Pending |
 | SET-03          | P1: Owner edits company identity (seed)   | Design | Implementing |
 | SET-04          | P1: Owner edits company identity (validation) | Design | Pending |

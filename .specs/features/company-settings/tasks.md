@@ -109,11 +109,11 @@ Tasks: T11, T12, T13, T14 (executed in this order; see the dependency graph belo
 - Skill: NONE
 
 **Done when**:
-- [ ] `Get` returns the singleton row with no "not found" branch
-- [ ] `Update` persists `name`/`contact_email` and returns the updated row
-- [ ] `UpdateLogoURL` persists `logo_url` independently of `Update`
-- [ ] Gate check passes: `go test -tags=integration ./internal/db`
-- [ ] Test count: 3+ new tests pass (no silent deletions)
+- [x] `Get` returns the singleton row with no "not found" branch
+- [x] `Update` persists `name`/`contact_email` and returns the updated row
+- [x] `UpdateLogoURL` persists `logo_url` independently of `Update`
+- [x] Gate check passes: `go test -tags=integration ./internal/db`
+- [x] Test count: 3+ new tests pass (no silent deletions)
 
 **Tests**: integration
 **Gate**: full
