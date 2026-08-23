@@ -401,10 +401,10 @@ Tasks: T13, T14, T15 - see dependency graph below.
 - Skill: NONE
 
 **Done when**:
-- [ ] Create form has no domain/subdomain inputs; submitting creates a domain-less page
-- [ ] List row for a domain-less page renders without a broken URL (no literal `"https://null.undefined"`)
-- [ ] Gate check passes: `cd web && npm run test`
-- [ ] Test count: 2+ new/modified tests pass (no silent deletions)
+- [x] Create form has no domain/subdomain inputs; submitting creates a domain-less page
+- [x] List row for a domain-less page renders without a broken URL (no literal `"https://null.undefined"`)
+- [x] Gate check passes: `cd web && npm run test`
+- [x] Test count: 2+ new/modified tests pass (no silent deletions)
 
 **Tests**: unit
 **Gate**: quick

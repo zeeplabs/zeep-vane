@@ -47,18 +47,19 @@ describe("StatusPagesPage", () => {
     expect(screen.queryByRole("button", { name: "Criar status page" })).not.toBeInTheDocument();
   });
 
-  it("criação exibe a página nova em estado emitindo certificado", async () => {
+  it("criação não tem campos de domínio e a página nova nasce sem domínio, em estado emitindo certificado (SPD-01)", async () => {
     await loginAs("owner@vane.app");
     renderPage();
     await userEvent.click(await screen.findByRole("button", { name: "Criar status page" }));
+    expect(screen.queryByLabelText("Subdomínio")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Domínio")).not.toBeInTheDocument();
     await userEvent.type(screen.getByLabelText("Nome"), "Status Nova Empresa");
-    await userEvent.type(screen.getByLabelText("Subdomínio"), "novaempresa");
-    await userEvent.selectOptions(screen.getByLabelText("Domínio"), "status.acme.com");
     await userEvent.click(screen.getByRole("button", { name: "Criar" }));
 
     await waitFor(() => expect(screen.queryByLabelText("Nome")).not.toBeInTheDocument());
     expect(await screen.findByText("Status Nova Empresa")).toBeInTheDocument();
     const tags = screen.getAllByText("Emitindo certificado");
     expect(tags.length).toBeGreaterThan(0);
+    expect(screen.getByText("—")).toBeInTheDocument();
   });
 });

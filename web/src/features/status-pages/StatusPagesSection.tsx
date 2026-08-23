@@ -12,7 +12,12 @@ import { useDomains } from "../domains/hooks";
 import { useServices } from "../services/hooks";
 import { useCreateStatusPage, useStatusPages } from "./hooks";
 
-function publicUrl(page: StatusPage, hostname: string | undefined): string {
+// publicUrl only composes a URL once both domain_id/subdomain are set
+// (SPD-01) - a domain-less page is always in "draft" state (attaching a
+// domain is the only way to leave that state), so this null-safe guard
+// is defensive: it never renders a broken "https://null.undefined".
+function publicUrl(page: StatusPage, hostname: string | undefined): string | null {
+  if (!page.domain_id || !page.subdomain) return null;
   return `https://${page.subdomain}.${hostname ?? "?"}`;
 }
 
@@ -27,8 +32,6 @@ export function StatusPagesSection() {
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [name, setName] = useState("");
-  const [subdomain, setSubdomain] = useState("");
-  const [domainId, setDomainId] = useState("");
   const [serviceIds, setServiceIds] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
 
@@ -38,17 +41,17 @@ export function StatusPagesSection() {
 
   function resetForm() {
     setName("");
-    setSubdomain("");
-    setDomainId(domains?.[0]?.id ?? "");
     setServiceIds([]);
     setError(null);
   }
 
+  // SPD-01: creates a domain-less status page - the domain is attached
+  // later, from a dedicated screen (AttachDomainDrawer, T14/T15).
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     setError(null);
     try {
-      await createStatusPage.mutateAsync({ name, subdomain, domain_id: domainId, service_ids: serviceIds });
+      await createStatusPage.mutateAsync({ name, service_ids: serviceIds });
       resetForm();
       setDialogOpen(false);
     } catch (err) {
@@ -63,7 +66,7 @@ export function StatusPagesSection() {
 
   const columns: TableColumn<StatusPage>[] = [
     { key: "name", header: "Nome", render: (p) => <Link to={`/status-pages/${p.id}`}>{p.name}</Link> },
-    { key: "subdomain", header: "Subdomínio", render: (p) => p.subdomain },
+    { key: "subdomain", header: "Subdomínio", render: (p) => p.subdomain ?? "—" },
     {
       key: "state",
       header: "Estado",
@@ -76,17 +79,15 @@ export function StatusPagesSection() {
           );
         }
         if (p.state === "published") {
+          const url = publicUrl(p, hostnameFor(p));
           return (
             <div className="flex flex-col gap-0.5">
               <Tag variant="success">Publicada</Tag>
-              <a
-                href={publicUrl(p, hostnameFor(p))}
-                target="_blank"
-                rel="noreferrer"
-                className="text-xs text-accent hover:underline"
-              >
-                {publicUrl(p, hostnameFor(p))}
-              </a>
+              {url ? (
+                <a href={url} target="_blank" rel="noreferrer" className="text-xs text-accent hover:underline">
+                  {url}
+                </a>
+              ) : null}
             </div>
           );
         }
@@ -137,7 +138,7 @@ export function StatusPagesSection() {
         open={dialogOpen}
         onOpenChange={setDialogOpen}
         title="Criar status page"
-        description="Escolha o domínio e vincule os serviços que essa status page vai exibir."
+        description="Vincule os serviços que essa status page vai exibir. O domínio é anexado depois, numa tela dedicada."
         footer={
           <div className="flex gap-2">
             <Button type="submit" form="create-status-page-form" variant="primary" disabled={createStatusPage.isPending}>
@@ -151,33 +152,6 @@ export function StatusPagesSection() {
       >
         <form id="create-status-page-form" onSubmit={handleSubmit} className="flex flex-col gap-3">
           <Field label="Nome" value={name} onChange={(e) => setName(e.target.value)} required />
-          <Field
-            label="Subdomínio"
-            value={subdomain}
-            onChange={(e) => setSubdomain(e.target.value)}
-            required
-          />
-          <div className="flex flex-col gap-1">
-            <label htmlFor="domain-picker" className="text-sm font-medium text-text">
-              Domínio
-            </label>
-            <select
-              id="domain-picker"
-              value={domainId}
-              onChange={(e) => setDomainId(e.target.value)}
-              className="min-h-9 rounded-md border border-divider bg-surface px-3 text-sm text-text"
-              required
-            >
-              <option value="" disabled>
-                Selecione um domínio
-              </option>
-              {(domains ?? []).map((d) => (
-                <option key={d.id} value={d.id}>
-                  {d.hostname}
-                </option>
-              ))}
-            </select>
-          </div>
           <div className="flex flex-col gap-1">
             <span className="text-sm font-medium text-text">Serviços</span>
             <div className="flex flex-wrap gap-2">
