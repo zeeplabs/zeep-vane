@@ -46,23 +46,39 @@ type statusPageResponse struct {
 	CreatedAt    time.Time `json:"created_at"`
 }
 
-const invalidStatusPageRequestBody = `{"error":"name, subdomain, and domain_id are required"}`
+const invalidStatusPageRequestBody = `{"error":"name is required"}`
+const partialDomainStatusPageRequestBody = `{"error":"subdomain and domain_id must be set together, or not at all"}`
 
-// Create handles POST /api/status-pages, creating a status page bound to a
-// domain and a set of services, starting in the "draft" state (SP-15). The
-// system places no technical limit on the number of status pages or root
-// domains a single install can have - this handler never rejects a second
-// status page or a second domain, it only validates the request shape.
+// Create handles POST /api/status-pages, creating a status page starting
+// in the "draft" state (SP-15), optionally bound to a domain and a set of
+// services. SPD-01: domain_id/subdomain are both optional - a status page
+// can be created domain-less and have a domain attached later via
+// AttachDomain. SPD-05: if exactly one of domain_id/subdomain is given,
+// the request is rejected - a domain without a subdomain (or vice versa)
+// is a meaningless combination (design.md Data Models). The system places
+// no technical limit on the number of status pages or root domains a
+// single install can have - this handler never rejects a second status
+// page or a second domain, it only validates the request shape.
 func (h *StatusPagesHandler) Create(w http.ResponseWriter, r *http.Request) {
 	var req createStatusPageRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Name == "" || req.Subdomain == "" || req.DomainID == "" {
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Name == "" {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusUnprocessableEntity)
 		_, _ = w.Write([]byte(invalidStatusPageRequestBody))
 		return
 	}
+	if (req.Subdomain == "") != (req.DomainID == "") {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusUnprocessableEntity)
+		_, _ = w.Write([]byte(partialDomainStatusPageRequestBody))
+		return
+	}
 
-	statusPage := &db.StatusPage{Name: req.Name, Subdomain: &req.Subdomain, DomainID: &req.DomainID}
+	statusPage := &db.StatusPage{Name: req.Name}
+	if req.Subdomain != "" {
+		statusPage.Subdomain = &req.Subdomain
+		statusPage.DomainID = &req.DomainID
+	}
 	if err := h.statusPages.Create(r.Context(), statusPage, req.ServiceIDs); err != nil {
 		h.logger.Error("status-pages: failed to create status page", zap.Error(err))
 		writeInternalError(w)

@@ -193,12 +193,12 @@ Tasks: T13, T14, T15 - see dependency graph below.
 - Skill: NONE
 
 **Done when**:
-- [ ] `POST /api/status-pages` with only `name` (+ optional `service_ids`) → `201`, response has `domain_id: null, subdomain: null`
-- [ ] `POST /api/status-pages` with `domain_id`+`subdomain` both set (existing path) → `201` unchanged
-- [ ] `POST /api/status-pages` with only one of `domain_id`/`subdomain` set → `422`
-- [ ] Existing Create tests updated for the relaxed validation, none weakened or deleted
-- [ ] Gate check passes: `go test -tags=integration ./internal/api`
-- [ ] Test count: at least the same as before, plus 2+ new (no silent deletions)
+- [x] `POST /api/status-pages` with only `name` (+ optional `service_ids`) → `201`, response has `domain_id: null, subdomain: null`
+- [x] `POST /api/status-pages` with `domain_id`+`subdomain` both set (existing path) → `201` unchanged
+- [x] `POST /api/status-pages` with only one of `domain_id`/`subdomain` set → `422`
+- [x] Existing Create tests updated for the relaxed validation, none weakened or deleted
+- [x] Gate check passes: `go test -tags=integration ./internal/api`
+- [x] Test count: at least the same as before, plus 2+ new (no silent deletions)
 
 **Tests**: integration
 **Gate**: full

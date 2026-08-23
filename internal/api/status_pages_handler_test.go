@@ -255,3 +255,72 @@ func TestListStatusPages_NoAuth_401(t *testing.T) {
 		t.Errorf("status = %d, want %d", rec.Code, http.StatusUnauthorized)
 	}
 }
+
+// TestCreateStatusPage_NoDomain_201NullDomainAndSubdomain asserts SPD-01:
+// creating a status page with no domain_id/subdomain (only name) succeeds
+// and both fields are null in the response.
+func TestCreateStatusPage_NoDomain_201NullDomainAndSubdomain(t *testing.T) {
+	r, pool, admins := newStatusPagesRouter(t)
+	token := issueTestSessionToken(t, admins)
+
+	rec := postCreateStatusPage(t, r, token, createStatusPageRequest{Name: "No Domain Page"})
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusCreated, rec.Body.String())
+	}
+
+	var created statusPageResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &created); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+	cleanupStatusPage(t, pool, created.ID)
+
+	if created.DomainID != nil {
+		t.Errorf("DomainID = %v, want nil", *created.DomainID)
+	}
+	if created.Subdomain != nil {
+		t.Errorf("Subdomain = %v, want nil", *created.Subdomain)
+	}
+	if created.State != "draft" {
+		t.Errorf("State = %q, want %q", created.State, "draft")
+	}
+}
+
+// TestCreateStatusPage_OnlySubdomainSet_422 asserts SPD-05: giving
+// subdomain without domain_id is rejected - a meaningless partial
+// combination (design.md Data Models).
+func TestCreateStatusPage_OnlySubdomainSet_422(t *testing.T) {
+	r, _, admins := newStatusPagesRouter(t)
+	token := issueTestSessionToken(t, admins)
+
+	rec := postCreateStatusPage(t, r, token, createStatusPageRequest{Name: "Partial Page", Subdomain: "status"})
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Errorf("status = %d, want %d, body = %s", rec.Code, http.StatusUnprocessableEntity, rec.Body.String())
+	}
+}
+
+// TestCreateStatusPage_OnlyDomainIDSet_422 asserts SPD-05: giving
+// domain_id without subdomain is rejected the same way as the reverse
+// partial combination.
+func TestCreateStatusPage_OnlyDomainIDSet_422(t *testing.T) {
+	r, pool, admins := newStatusPagesRouter(t)
+	token := issueTestSessionToken(t, admins)
+	domainID := createTestDomain(t, pool)
+
+	rec := postCreateStatusPage(t, r, token, createStatusPageRequest{Name: "Partial Page", DomainID: domainID})
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Errorf("status = %d, want %d, body = %s", rec.Code, http.StatusUnprocessableEntity, rec.Body.String())
+	}
+}
+
+// TestCreateStatusPage_EmptyName_422 asserts the pre-existing name
+// requirement (design.md: name is required) still holds after relaxing
+// the domain/subdomain requirement.
+func TestCreateStatusPage_EmptyName_422(t *testing.T) {
+	r, _, admins := newStatusPagesRouter(t)
+	token := issueTestSessionToken(t, admins)
+
+	rec := postCreateStatusPage(t, r, token, createStatusPageRequest{})
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Errorf("status = %d, want %d, body = %s", rec.Code, http.StatusUnprocessableEntity, rec.Body.String())
+	}
+}
