@@ -27,9 +27,13 @@ var pngSignatureBytes = []byte{0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0
 
 const validSVGBody = `<?xml version="1.0" encoding="UTF-8"?><svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"></svg>`
 
-// buildMultipartLogoRequest builds a POST /api/company-settings/logo
-// request whose "logo" form field contains content, named filename.
-func buildMultipartLogoRequest(t *testing.T, filename string, content []byte, token string) *http.Request {
+// multipartLogoBody serializes a POST /api/company-settings/logo body whose
+// "logo" form field contains content, named filename, returning the raw
+// bytes and the matching Content-Type header value. Exposed separately from
+// buildMultipartLogoRequest so a test can measure the exact multipart
+// framing overhead for a given filename (see
+// TestUploadLogo_JustUnderSizeLimit_200UpdatesLogoURL).
+func multipartLogoBody(t *testing.T, filename string, content []byte) (body []byte, contentType string) {
 	t.Helper()
 	var buf bytes.Buffer
 	writer := multipart.NewWriter(&buf)
@@ -43,9 +47,17 @@ func buildMultipartLogoRequest(t *testing.T, filename string, content []byte, to
 	if err := writer.Close(); err != nil {
 		t.Fatalf("writer.Close() returned unexpected error: %v", err)
 	}
+	return buf.Bytes(), writer.FormDataContentType()
+}
 
-	req := httptest.NewRequest(http.MethodPost, "/api/company-settings/logo", &buf)
-	req.Header.Set("Content-Type", writer.FormDataContentType())
+// buildMultipartLogoRequest builds a POST /api/company-settings/logo
+// request whose "logo" form field contains content, named filename.
+func buildMultipartLogoRequest(t *testing.T, filename string, content []byte, token string) *http.Request {
+	t.Helper()
+	body, contentType := multipartLogoBody(t, filename, content)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/company-settings/logo", bytes.NewReader(body))
+	req.Header.Set("Content-Type", contentType)
 	if token != "" {
 		req.Header.Set("Authorization", "Bearer "+token)
 	}
@@ -304,14 +316,21 @@ func TestUploadLogo_ValidSVG_200UpdatesLogoURL(t *testing.T) {
 	}
 }
 
+// specMaxLogoBytes pins spec.md's fixed 10 MB bound for SET-08 - the sizing
+// tests below MUST derive their payloads from this literal, never from
+// maxLogoBytes (the constant under test). A test sized off maxLogoBytes
+// would stay green if that constant were ever widened or narrowed, which is
+// exactly what it must catch.
+const specMaxLogoBytes = 10 * 1024 * 1024
+
 // TestUploadLogo_OverSizeLimit_422NoLogoURLChange asserts SET-08: a file
-// over 10 MB is rejected with 422, no file is written, and logo_url is
-// left unchanged.
+// over the spec's fixed 10 MB bound is rejected with 422, no file is
+// written, and logo_url is left unchanged.
 func TestUploadLogo_OverSizeLimit_422NoLogoURLChange(t *testing.T) {
 	r, _, admins, uploadsDir := newCompanySettingsRouterWithUploadsDir(t)
 	token := issueTestSessionToken(t, admins)
 
-	oversized := make([]byte, maxLogoBytes+1024)
+	oversized := make([]byte, specMaxLogoBytes+1024)
 	copy(oversized, pngSignatureBytes)
 
 	req := buildMultipartLogoRequest(t, "logo.png", oversized, token)
@@ -337,6 +356,40 @@ func TestUploadLogo_OverSizeLimit_422NoLogoURLChange(t *testing.T) {
 	}
 	if getResp.LogoURL != nil {
 		t.Errorf("LogoURL after rejected oversized upload = %v, want nil (unchanged)", *getResp.LogoURL)
+	}
+}
+
+// TestUploadLogo_JustUnderSizeLimit_200UpdatesLogoURL asserts the accepted
+// side of SET-08's boundary: a request body one byte under the spec's fixed
+// 10 MB bound must succeed, not merely "somewhere under maxLogoBytes". The
+// file content is sized so that, once wrapped in multipart framing, the
+// total request body lands at exactly specMaxLogoBytes-1.
+func TestUploadLogo_JustUnderSizeLimit_200UpdatesLogoURL(t *testing.T) {
+	r, _, admins, uploadsDir := newCompanySettingsRouterWithUploadsDir(t)
+	token := issueTestSessionToken(t, admins)
+
+	emptyBody, _ := multipartLogoBody(t, "logo.png", nil)
+	overhead := len(emptyBody)
+
+	content := make([]byte, specMaxLogoBytes-1-overhead)
+	copy(content, pngSignatureBytes)
+
+	req := buildMultipartLogoRequest(t, "logo.png", content, token)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	var resp companySettingsResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+	if resp.LogoURL == nil || *resp.LogoURL != "/uploads/logo.png" {
+		t.Fatalf("LogoURL = %v, want %q", resp.LogoURL, "/uploads/logo.png")
+	}
+	if _, err := os.Stat(filepath.Join(uploadsDir, "logo.png")); err != nil {
+		t.Errorf("expected logo.png to exist in uploads dir, Stat() returned error: %v", err)
 	}
 }
 
