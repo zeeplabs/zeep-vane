@@ -271,6 +271,24 @@ func writeRouteCases() []routeCase {
 				return b
 			},
 		},
+		{
+			name:   "PATCH /api/status-pages/{id}/domain",
+			method: http.MethodPatch,
+			path:   "/api/status-pages/" + routesTestNonexistentID + "/domain",
+			body: func() []byte {
+				b, _ := json.Marshal(map[string]string{
+					"domain_id": routesTestNonexistentID,
+					"subdomain": "status",
+				})
+				return b
+			},
+		},
+		{
+			name:   "GET /api/instance/dns-target",
+			method: http.MethodGet,
+			path:   "/api/instance/dns-target",
+			body:   func() []byte { return nil },
+		},
 	}
 }
 
@@ -578,5 +596,40 @@ func TestAdminRouter_UploadsLogoFile_NoSession_ReachesHandler(t *testing.T) {
 	}
 	if rec.Code != http.StatusNotFound {
 		t.Errorf("status = %d, want %d (no logo uploaded in this test)", rec.Code, http.StatusNotFound)
+	}
+}
+
+// TestAdminRouter_StatusPageDomainAttachAndDNSTarget_NoSession_401 asserts
+// SPD-11: PATCH /api/status-pages/{id}/domain and GET
+// /api/instance/dns-target both require authentication - no Authorization
+// header gets 401 before RequireRole is ever reached.
+func TestAdminRouter_StatusPageDomainAttachAndDNSTarget_NoSession_401(t *testing.T) {
+	r, _, _ := newAdminRouterForTest(t)
+
+	cases := []routeCase{
+		{
+			name:   "PATCH /api/status-pages/{id}/domain",
+			method: http.MethodPatch,
+			path:   "/api/status-pages/" + routesTestNonexistentID + "/domain",
+			body: func() []byte {
+				b, _ := json.Marshal(map[string]string{"domain_id": routesTestNonexistentID, "subdomain": "status"})
+				return b
+			},
+		},
+		{
+			name:   "GET /api/instance/dns-target",
+			method: http.MethodGet,
+			path:   "/api/instance/dns-target",
+			body:   func() []byte { return nil },
+		},
+	}
+
+	for _, rt := range cases {
+		t.Run(rt.name, func(t *testing.T) {
+			rec := doRouteRequest(t, r, "", rt)
+			if rec.Code != http.StatusUnauthorized {
+				t.Errorf("status = %d, want %d, body = %s", rec.Code, http.StatusUnauthorized, rec.Body.String())
+			}
+		})
 	}
 }

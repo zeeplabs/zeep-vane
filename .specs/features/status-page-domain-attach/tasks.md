@@ -301,10 +301,10 @@ Tasks: T13, T14, T15 - see dependency graph below.
 - Skill: NONE
 
 **Done when**:
-- [ ] `PATCH /api/status-pages/{id}/domain` reachable on the real admin router, `403` for `viewer`, `401` with no session
-- [ ] `GET /api/instance/dns-target` same RBAC
-- [ ] Gate check passes: `go test -tags=integration ./internal/cli`
-- [ ] Test count: 2+ new tests pass (no silent deletions)
+- [x] `PATCH /api/status-pages/{id}/domain` reachable on the real admin router, `403` for `viewer`, `401` with no session
+- [x] `GET /api/instance/dns-target` same RBAC
+- [x] Gate check passes: `go test -tags=integration ./internal/cli`
+- [x] Test count: 2+ new tests pass (no silent deletions)
 
 **Tests**: integration
 **Gate**: full

@@ -46,6 +46,7 @@ func buildAdminRouter(pool *db.Pool, cfg config.Config, logger *zap.Logger) http
 	publicStatusPreviewHandler := api.NewPublicStatusPreviewHandler(db.NewStatusPageRepository(pool), publicStatusHandler, logger)
 	companySettingsHandler := api.NewCompanySettingsHandler(companySettingsRepo, cfg.UploadsDir, logger)
 	logoFileHandler := api.NewLogoFileHandler(cfg.UploadsDir)
+	instanceConfigHandler := api.NewInstanceConfigHandler(cfg.PublicDNSTarget, logger)
 
 	requireAuth := api.RequireAuth(cfg.SessionSecret, admins)
 	writeRoles := api.RequireRole(db.RoleOwner, db.RoleOperator)
@@ -90,6 +91,8 @@ func buildAdminRouter(pool *db.Pool, cfg config.Config, logger *zap.Logger) http
 		protected.With(writeRoles).Post("/api/incidents/{id}/updates", incidentsHandler.AddUpdate)
 		protected.With(writeRoles).Patch("/api/incidents/{id}", incidentsHandler.Transition)
 		protected.With(writeRoles).Post("/api/status-pages", statusPagesHandler.Create)
+		protected.With(writeRoles).Patch("/api/status-pages/{id}/domain", statusPagesHandler.AttachDomain)
+		protected.With(writeRoles).Get("/api/instance/dns-target", instanceConfigHandler.DNSTarget)
 
 		// mvp-core read routes and poller status (admin-dashboard ADM-13) -
 		// owner, operator, and viewer (ADM-10, ADM-11).
