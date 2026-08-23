@@ -34,6 +34,13 @@ type publicIncidentLister interface {
 	ListPublicForStatusPage(ctx context.Context, statusPageID string, retentionDays int) (active, resolved []db.IncidentPublic, err error)
 }
 
+// companySettingsGetter is the subset of *db.CompanySettingsRepository the
+// public status handler depends on, to surface the real company identity
+// instead of mockData.companySettings (SET-15, SET-16).
+type companySettingsGetter interface {
+	Get(ctx context.Context) (*db.CompanySettings, error)
+}
+
 // incidentRetentionDays is the public status page's incident history
 // retention window (spec.md Assumptions: "Janela de retenção de histórico
 // de incidentes/uptime" - 90 dias).
@@ -46,16 +53,17 @@ const incidentRetentionDays = 90
 // the public page down: it keeps serving the last snapshot on record, with
 // its real fetched_at timestamp, never a fabricated "now" (SP-08, SP-09).
 type PublicStatusHandler struct {
-	services  serviceLister
-	snapshots latestSnapshotFetcher
-	incidents publicIncidentLister
-	logger    *zap.Logger
+	services        serviceLister
+	snapshots       latestSnapshotFetcher
+	incidents       publicIncidentLister
+	companySettings companySettingsGetter
+	logger          *zap.Logger
 }
 
 // NewPublicStatusHandler builds a PublicStatusHandler backed by services,
-// snapshots, and incidents.
-func NewPublicStatusHandler(services serviceLister, snapshots latestSnapshotFetcher, incidents publicIncidentLister, logger *zap.Logger) *PublicStatusHandler {
-	return &PublicStatusHandler{services: services, snapshots: snapshots, incidents: incidents, logger: logger}
+// snapshots, incidents, and companySettings.
+func NewPublicStatusHandler(services serviceLister, snapshots latestSnapshotFetcher, incidents publicIncidentLister, companySettings companySettingsGetter, logger *zap.Logger) *PublicStatusHandler {
+	return &PublicStatusHandler{services: services, snapshots: snapshots, incidents: incidents, companySettings: companySettings, logger: logger}
 }
 
 type publicServiceResponse struct {
@@ -83,7 +91,16 @@ type publicIncidentsResponse struct {
 	Resolved []publicIncidentResponse `json:"resolved"`
 }
 
+// publicCompanyResponse carries the real company identity (SET-15) - a
+// null LogoURL means no logo has ever been uploaded (SET-16), never a
+// fabricated placeholder.
+type publicCompanyResponse struct {
+	Name    string  `json:"name"`
+	LogoURL *string `json:"logo_url"`
+}
+
 type publicStatusResponse struct {
+	Company   publicCompanyResponse   `json:"company"`
 	Services  []publicServiceResponse `json:"services"`
 	Incidents publicIncidentsResponse `json:"incidents"`
 }
@@ -136,7 +153,13 @@ func (h *PublicStatusHandler) composeResponse(ctx context.Context, statusPageID 
 		return publicStatusResponse{}, fmt.Errorf("failed to list public incidents: %w", err)
 	}
 
+	companySettings, err := h.companySettings.Get(ctx)
+	if err != nil {
+		return publicStatusResponse{}, fmt.Errorf("failed to get company settings: %w", err)
+	}
+
 	resp := publicStatusResponse{
+		Company:  publicCompanyResponse{Name: companySettings.Name, LogoURL: companySettings.LogoURL},
 		Services: []publicServiceResponse{},
 		Incidents: publicIncidentsResponse{
 			Active:   toPublicIncidentResponses(activeIncidents),

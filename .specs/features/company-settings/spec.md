@@ -126,8 +126,8 @@ Explicitly excluded. Documented to prevent scope creep.
 | SET-12          | P1: Owner uploads logo (public serving)   | Design | Implementing |
 | SET-13          | P1: Owner uploads logo (write failure)    | Design | Implementing |
 | SET-14          | P1: Owner uploads logo (null default)     | Design | Pending |
-| SET-15          | P2: Public pages show real identity       | Design | Pending |
-| SET-16          | P2: Public pages show real identity (null logo) | Design | Pending |
+| SET-15          | P2: Public pages show real identity       | Design | Implementing |
+| SET-16          | P2: Public pages show real identity (null logo) | Design | Implementing |
 
 **ID format:** `SET-[NUMBER]`
 

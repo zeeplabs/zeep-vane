@@ -39,7 +39,8 @@ func newPublicStatusRouter(t *testing.T) (http.Handler, *db.Pool) {
 	services := db.NewServiceRepository(pool)
 	snapshots := db.NewStatusSnapshotRepository(pool)
 	incidents := db.NewIncidentRepository(pool)
-	handler := NewPublicStatusHandler(services, snapshots, incidents, zap.NewNop())
+	companySettings := db.NewCompanySettingsRepository(pool)
+	handler := NewPublicStatusHandler(services, snapshots, incidents, companySettings, zap.NewNop())
 
 	r := chi.NewRouter()
 	r.Get("/", handler.Get)
@@ -363,6 +364,85 @@ func TestPublicStatusGet_ResolvedIncidentWithinRetention_AppearsInHistory(t *tes
 
 	if found := findPublicIncident(body.Incidents.Resolved, incidentID); found == nil {
 		t.Fatalf("incident %s resolved 10 days ago not present in resolved history, want it within the 90-day window", incidentID)
+	}
+}
+
+// resetCompanySettingsForPublicStatusTest resets the company_settings
+// singleton row to a known state, registering the same reset as cleanup -
+// mirrors newCompanySettingsRouterWithUploadsDir's reset in
+// company_settings_handler_test.go, since the row is shared across every
+// test in this package.
+func resetCompanySettingsForPublicStatusTest(t *testing.T, pool *db.Pool) {
+	t.Helper()
+	reset := func() {
+		_, _ = pool.Exec(context.Background(), "UPDATE company_settings SET name = '', contact_email = '', logo_url = NULL WHERE id = 1")
+	}
+	reset()
+	t.Cleanup(reset)
+}
+
+// TestPublicStatusGet_CompanySettingsSet_IncludesNameAndLogo covers SET-15:
+// the public response must include the real, persisted company name and
+// logo URL, not a mocked placeholder.
+func TestPublicStatusGet_CompanySettingsSet_IncludesNameAndLogo(t *testing.T) {
+	r, pool := newPublicStatusRouter(t)
+	resetCompanySettingsForPublicStatusTest(t, pool)
+
+	companySettings := db.NewCompanySettingsRepository(pool)
+	if _, err := companySettings.Update(context.Background(), "Acme Status", "contato@acme.example"); err != nil {
+		t.Fatalf("setup Update() returned unexpected error: %v", err)
+	}
+	if _, err := companySettings.UpdateLogoURL(context.Background(), "/uploads/logo.png"); err != nil {
+		t.Fatalf("setup UpdateLogoURL() returned unexpected error: %v", err)
+	}
+
+	statusPageID := createPublicStatusPageFixture(t, pool)
+
+	req := withStatusPageContext(httptest.NewRequest(http.MethodGet, "/", nil), statusPageID)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	var body publicStatusResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+
+	if body.Company.Name != "Acme Status" {
+		t.Errorf("Company.Name = %q, want %q", body.Company.Name, "Acme Status")
+	}
+	if body.Company.LogoURL == nil || *body.Company.LogoURL != "/uploads/logo.png" {
+		t.Errorf("Company.LogoURL = %v, want %q", body.Company.LogoURL, "/uploads/logo.png")
+	}
+}
+
+// TestPublicStatusGet_NoLogoUploaded_CompanyLogoURLNull covers SET-16: while
+// no logo has ever been uploaded, the public response must carry
+// logo_url: null rather than a fabricated placeholder path.
+func TestPublicStatusGet_NoLogoUploaded_CompanyLogoURLNull(t *testing.T) {
+	r, pool := newPublicStatusRouter(t)
+	resetCompanySettingsForPublicStatusTest(t, pool)
+
+	statusPageID := createPublicStatusPageFixture(t, pool)
+
+	req := withStatusPageContext(httptest.NewRequest(http.MethodGet, "/", nil), statusPageID)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	var body publicStatusResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+
+	if body.Company.LogoURL != nil {
+		t.Errorf("Company.LogoURL = %v, want nil (no logo ever uploaded)", *body.Company.LogoURL)
 	}
 }
 

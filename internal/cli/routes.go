@@ -41,9 +41,10 @@ func buildAdminRouter(pool *db.Pool, cfg config.Config, logger *zap.Logger) http
 	incidentsHandler := api.NewIncidentsHandler(db.NewIncidentRepository(pool), logger)
 	statusPagesHandler := api.NewStatusPagesHandler(db.NewStatusPageRepository(pool), logger)
 	pollerStatusHandler := api.NewPollerStatusHandler(db.NewIntegrationRepository(pool), logger)
-	publicStatusHandler := api.NewPublicStatusHandler(db.NewServiceRepository(pool), db.NewStatusSnapshotRepository(pool), db.NewIncidentRepository(pool), logger)
+	companySettingsRepo := db.NewCompanySettingsRepository(pool)
+	publicStatusHandler := api.NewPublicStatusHandler(db.NewServiceRepository(pool), db.NewStatusSnapshotRepository(pool), db.NewIncidentRepository(pool), companySettingsRepo, logger)
 	publicStatusPreviewHandler := api.NewPublicStatusPreviewHandler(db.NewStatusPageRepository(pool), publicStatusHandler, logger)
-	companySettingsHandler := api.NewCompanySettingsHandler(db.NewCompanySettingsRepository(pool), cfg.UploadsDir, logger)
+	companySettingsHandler := api.NewCompanySettingsHandler(companySettingsRepo, cfg.UploadsDir, logger)
 	logoFileHandler := api.NewLogoFileHandler(cfg.UploadsDir)
 
 	requireAuth := api.RequireAuth(cfg.SessionSecret, admins)

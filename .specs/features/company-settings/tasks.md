@@ -318,12 +318,12 @@ Tasks: T11, T12, T13, T14 (executed in this order; see the dependency graph belo
 - Skill: NONE
 
 **Done when**:
-- [ ] Production public status response includes `company.name`/`company.logo_url` matching the persisted `company_settings` row
-- [ ] I12 dev/preview response includes the same fields, sourced the same way
-- [ ] `logo_url: null` when no logo has ever been uploaded (SET-16)
-- [ ] `mockData.companySettings` no longer referenced by `public_status_handler.go` (it never was) - confirms this task fully replaces the frontend mock's data source
-- [ ] Gate check passes: `go test -tags=integration ./internal/api ./internal/cli`
-- [ ] Test count: 3+ modified/new tests pass (no silent deletions)
+- [x] Production public status response includes `company.name`/`company.logo_url` matching the persisted `company_settings` row
+- [x] I12 dev/preview response includes the same fields, sourced the same way
+- [x] `logo_url: null` when no logo has ever been uploaded (SET-16)
+- [x] `mockData.companySettings` no longer referenced by `public_status_handler.go` (it never was) - confirms this task fully replaces the frontend mock's data source
+- [x] Gate check passes: `go test -tags=integration ./internal/api ./internal/cli`
+- [x] Test count: 3+ modified/new tests pass (no silent deletions)
 
 **Tests**: integration
 **Gate**: full

@@ -38,7 +38,8 @@ func newPublicStatusPreviewRouter(t *testing.T) (http.Handler, *db.Pool, *db.Adm
 	snapshots := db.NewStatusSnapshotRepository(pool)
 	incidents := db.NewIncidentRepository(pool)
 	statusPages := db.NewStatusPageRepository(pool)
-	inner := NewPublicStatusHandler(services, snapshots, incidents, zap.NewNop())
+	companySettings := db.NewCompanySettingsRepository(pool)
+	inner := NewPublicStatusHandler(services, snapshots, incidents, companySettings, zap.NewNop())
 	handler := NewPublicStatusPreviewHandler(statusPages, inner, zap.NewNop())
 
 	r := chi.NewRouter()
@@ -93,6 +94,43 @@ func TestPublicStatusPreview_AuthenticatedByID_200SameShapeAsProduction(t *testi
 	}
 	if found.Status != "operational" {
 		t.Errorf("Status = %q, want %q", found.Status, "operational")
+	}
+}
+
+// TestPublicStatusPreview_CompanySettingsSet_IncludesNameAndLogo covers
+// SET-15: the I12 dev/preview endpoint shares composeResponse with
+// production, so it must surface the same real company identity, sourced
+// the same way.
+func TestPublicStatusPreview_CompanySettingsSet_IncludesNameAndLogo(t *testing.T) {
+	r, pool, admins := newPublicStatusPreviewRouter(t)
+	resetCompanySettingsForPublicStatusTest(t, pool)
+	token := issueTestSessionToken(t, admins)
+
+	companySettings := db.NewCompanySettingsRepository(pool)
+	if _, err := companySettings.Update(context.Background(), "Acme Status", "contato@acme.example"); err != nil {
+		t.Fatalf("setup Update() returned unexpected error: %v", err)
+	}
+
+	statusPageID := createPublicStatusPageFixture(t, pool)
+	if _, err := pool.Exec(context.Background(), "UPDATE status_pages SET state = 'published' WHERE id = $1", statusPageID); err != nil {
+		t.Fatalf("setup publish update returned unexpected error: %v", err)
+	}
+
+	rec := getPublicStatusPreview(t, r, token, statusPageID)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	var body publicStatusResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+
+	if body.Company.Name != "Acme Status" {
+		t.Errorf("Company.Name = %q, want %q", body.Company.Name, "Acme Status")
+	}
+	if body.Company.LogoURL != nil {
+		t.Errorf("Company.LogoURL = %v, want nil (no logo uploaded in this test)", *body.Company.LogoURL)
 	}
 }
 
