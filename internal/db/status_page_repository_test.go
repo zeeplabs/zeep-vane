@@ -6,7 +6,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"sync"
 	"testing"
 	"time"
 )
@@ -456,57 +455,90 @@ func TestAttachDomain_DuplicateDomainSubdomainPair_ErrDuplicateDomainSubdomainRo
 // TestAttachDomain_ConcurrentAttachesOnSamePage_ExactlyOneWins is the edge
 // case from spec.md: two concurrent AttachDomain calls targeting the same
 // domain-less page must let exactly one succeed and the other fail with
-// ErrDomainAlreadyAttached - no double-attach, no lost update. This runs
-// both calls in real goroutines against the real database (not mocked) so
-// the SELECT ... FOR UPDATE row lock is actually exercised: the second
-// goroutine's SELECT blocks until the first transaction commits or rolls
-// back, at which point it observes the now-non-null domain_id.
+// ErrDomainAlreadyAttached - no double-attach, no lost update.
+//
+// This does NOT launch two bare goroutines and hope they interleave: in
+// practice the first transaction commits before the second even issues its
+// SELECT, so the row is never actually contended and the test passes even
+// with SELECT ... FOR UPDATE removed from AttachDomain (proven in review).
+// Instead it drives the contention deterministically: an explicit "holder"
+// transaction takes the same SELECT ... FOR UPDATE lock AttachDomain would
+// take, performs the attach itself, and stays open (uncommitted) while a
+// real AttachDomain call runs concurrently in a goroutine. Because the
+// holder transaction genuinely holds the row lock in Postgres, this proves
+// AttachDomain's second call cannot complete until the holder releases it,
+// and that on release it observes the now-non-null domain_id and returns
+// ErrDomainAlreadyAttached - not a lost update overwriting the holder's
+// domain_id/subdomain.
 func TestAttachDomain_ConcurrentAttachesOnSamePage_ExactlyOneWins(t *testing.T) {
 	repo, pool := newAttachDomainTestRepo(t)
 	firstDomainID := createAttachTestDomain(t, pool)
 	secondDomainID := createAttachTestDomain(t, pool)
 	pageID := createDomainlessStatusPage(t, repo, pool, "attach-concurrent-page")
 
-	var wg sync.WaitGroup
-	errs := make([]error, 2)
-	wg.Add(2)
-	go func() {
-		defer wg.Done()
-		_, errs[0] = repo.AttachDomain(context.Background(), pageID, firstDomainID, "status-a")
-	}()
-	go func() {
-		defer wg.Done()
-		_, errs[1] = repo.AttachDomain(context.Background(), pageID, secondDomainID, "status-b")
-	}()
-	wg.Wait()
+	ctx := context.Background()
 
-	successes := 0
-	alreadyAttached := 0
-	for _, err := range errs {
-		switch {
-		case err == nil:
-			successes++
-		case errors.Is(err, ErrDomainAlreadyAttached):
-			alreadyAttached++
-		default:
-			t.Fatalf("unexpected error from concurrent AttachDomain: %v", err)
-		}
+	holderTx, err := pool.Begin(ctx)
+	if err != nil {
+		t.Fatalf("failed to begin holder transaction: %v", err)
 	}
-	if successes != 1 {
-		t.Errorf("successes = %d, want 1", successes)
+	defer func() { _ = holderTx.Rollback(context.Background()) }()
+
+	var lockedDomainID *string
+	holderRow := holderTx.QueryRow(ctx, "SELECT domain_id FROM status_pages WHERE id = $1 FOR UPDATE", pageID)
+	if err := holderRow.Scan(&lockedDomainID); err != nil {
+		t.Fatalf("holder SELECT ... FOR UPDATE failed: %v", err)
 	}
-	if alreadyAttached != 1 {
-		t.Errorf("alreadyAttached = %d, want 1", alreadyAttached)
+	if lockedDomainID != nil {
+		t.Fatalf("holder locked domain_id = %v, want nil before either attach", lockedDomainID)
+	}
+	if _, err := holderTx.Exec(ctx,
+		"UPDATE status_pages SET domain_id = $1, subdomain = $2 WHERE id = $3",
+		firstDomainID, "status-a", pageID,
+	); err != nil {
+		t.Fatalf("holder UPDATE failed: %v", err)
+	}
+
+	// Run the real AttachDomain call while holderTx is still open and
+	// uncommitted. With the production SELECT ... FOR UPDATE in place,
+	// this second call cannot observe a result until holderTx releases
+	// the row lock below.
+	done := make(chan error, 1)
+	go func() {
+		_, err := repo.AttachDomain(context.Background(), pageID, secondDomainID, "status-b")
+		done <- err
+	}()
+
+	select {
+	case err := <-done:
+		t.Fatalf("AttachDomain() returned (err=%v) while the holder transaction was still open - the row lock did not block it", err)
+	case <-time.After(300 * time.Millisecond):
+		// Expected: still blocked behind the holder's uncommitted row lock.
+	}
+
+	if err := holderTx.Commit(ctx); err != nil {
+		t.Fatalf("failed to commit holder transaction: %v", err)
+	}
+
+	var attachErr error
+	select {
+	case attachErr = <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("AttachDomain() did not return after the holder transaction committed")
+	}
+
+	if !errors.Is(attachErr, ErrDomainAlreadyAttached) {
+		t.Fatalf("AttachDomain() error = %v, want ErrDomainAlreadyAttached", attachErr)
 	}
 
 	page, err := repo.GetByID(context.Background(), pageID)
 	if err != nil {
 		t.Fatalf("GetByID() returned unexpected error: %v", err)
 	}
-	if page.DomainID == nil {
-		t.Fatal("DomainID after concurrent attaches = nil, want exactly one winner's domain set")
+	if page.DomainID == nil || *page.DomainID != firstDomainID {
+		t.Errorf("DomainID after contended attach = %v, want holder's %q (no lost update)", page.DomainID, firstDomainID)
 	}
-	if *page.DomainID != firstDomainID && *page.DomainID != secondDomainID {
-		t.Errorf("DomainID = %q, want one of %q or %q", *page.DomainID, firstDomainID, secondDomainID)
+	if page.Subdomain == nil || *page.Subdomain != "status-a" {
+		t.Errorf("Subdomain after contended attach = %v, want holder's %q (no lost update)", page.Subdomain, "status-a")
 	}
 }
