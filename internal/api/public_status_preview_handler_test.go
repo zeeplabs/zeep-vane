@@ -144,19 +144,79 @@ func TestPublicStatusPreview_NoAuth_401(t *testing.T) {
 	}
 }
 
-// TestPublicStatusPreview_DraftPage_404 mirrors router.HostRouter's own
-// gate: a status page still in "draft" (the DB default - SP-15) is never
-// composed, even for an authenticated admin previewing it, so the preview
-// never disagrees with what the page's real hostname would show once
-// published.
-func TestPublicStatusPreview_DraftPage_404(t *testing.T) {
+// TestPublicStatusPreview_DraftPageWithDomain_200 asserts AD-008 (SPD-03):
+// a status page in "draft" state with a domain already attached now
+// composes successfully - previously (I12) this 404'd to mirror
+// router.HostRouter's own production gate, but that gate is deliberately
+// removed here so an admin can preview before DNS/TLS resolve. REWRITTEN
+// from the prior TestPublicStatusPreview_DraftPage_404 (asserted 404),
+// not deleted: the behavior it tested was the exact bug AD-008 fixes.
+func TestPublicStatusPreview_DraftPageWithDomain_200(t *testing.T) {
 	r, pool, admins := newPublicStatusPreviewRouter(t)
 	token := issueTestSessionToken(t, admins)
 	statusPageID := createPublicStatusPageFixture(t, pool)
 
 	rec := getPublicStatusPreview(t, r, token, statusPageID)
-	if rec.Code != http.StatusNotFound {
-		t.Errorf("status = %d, want %d", rec.Code, http.StatusNotFound)
+	if rec.Code != http.StatusOK {
+		t.Errorf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+}
+
+// TestPublicStatusPreview_DraftPageNoDomain_200 asserts SPD-02: a status
+// page with domain_id: null (never had a domain attached at all) composes
+// successfully - the core bug this feature fixes.
+func TestPublicStatusPreview_DraftPageNoDomain_200(t *testing.T) {
+	r, pool, admins := newPublicStatusPreviewRouter(t)
+	token := issueTestSessionToken(t, admins)
+
+	statusPages := db.NewStatusPageRepository(pool)
+	statusPage := &db.StatusPage{Name: "preview-no-domain-page"}
+	if err := statusPages.Create(context.Background(), statusPage, nil); err != nil {
+		t.Fatalf("setup Create() returned unexpected error: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = pool.Exec(context.Background(), "DELETE FROM status_pages WHERE id = $1", statusPage.ID)
+	})
+
+	rec := getPublicStatusPreview(t, r, token, statusPage.ID)
+	if rec.Code != http.StatusOK {
+		t.Errorf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+}
+
+// TestPublicStatusPreview_PublishedPage_200Unaffected asserts SPD-04: a
+// published page's preview is unaffected by removing the gate (it already
+// composed successfully before this change, via
+// TestPublicStatusPreview_AuthenticatedByID_200SameShapeAsProduction -
+// this test targets the state explicitly, without asserting on the
+// response body shape covered there).
+func TestPublicStatusPreview_PublishedPage_200Unaffected(t *testing.T) {
+	r, pool, admins := newPublicStatusPreviewRouter(t)
+	token := issueTestSessionToken(t, admins)
+	statusPageID := createPublicStatusPageFixture(t, pool)
+	if _, err := pool.Exec(context.Background(), "UPDATE status_pages SET state = 'published' WHERE id = $1", statusPageID); err != nil {
+		t.Fatalf("setup publish update returned unexpected error: %v", err)
+	}
+
+	rec := getPublicStatusPreview(t, r, token, statusPageID)
+	if rec.Code != http.StatusOK {
+		t.Errorf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+}
+
+// TestPublicStatusPreview_TLSFailedPage_200Unaffected asserts SPD-04: a
+// tls_failed page's preview is unaffected by removing the gate.
+func TestPublicStatusPreview_TLSFailedPage_200Unaffected(t *testing.T) {
+	r, pool, admins := newPublicStatusPreviewRouter(t)
+	token := issueTestSessionToken(t, admins)
+	statusPageID := createPublicStatusPageFixture(t, pool)
+	if _, err := pool.Exec(context.Background(), "UPDATE status_pages SET state = 'tls_failed' WHERE id = $1", statusPageID); err != nil {
+		t.Fatalf("setup tls_failed update returned unexpected error: %v", err)
+	}
+
+	rec := getPublicStatusPreview(t, r, token, statusPageID)
+	if rec.Code != http.StatusOK {
+		t.Errorf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
 	}
 }
 

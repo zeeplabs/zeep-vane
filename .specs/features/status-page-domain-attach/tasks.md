@@ -274,12 +274,12 @@ Tasks: T13, T14, T15 - see dependency graph below.
 - Skill: NONE
 
 **Done when**:
-- [ ] Preview for a `draft` page with `domain_id: null` → `200`
-- [ ] Preview for a `draft` page with a domain attached → `200` (previously `404`)
-- [ ] Preview for `published`/`tls_failed` pages unaffected (`200`)
-- [ ] Preview for a nonexistent status page ID → `404` unchanged
-- [ ] Gate check passes: `go test -tags=integration ./internal/api`
-- [ ] Test count: 2+ new tests pass, 0 existing tests deleted (the old `404`-on-draft test is REWRITTEN to assert `200`, not deleted - document this in the commit)
+- [x] Preview for a `draft` page with `domain_id: null` → `200`
+- [x] Preview for a `draft` page with a domain attached → `200` (previously `404`)
+- [x] Preview for `published`/`tls_failed` pages unaffected (`200`)
+- [x] Preview for a nonexistent status page ID → `404` unchanged
+- [x] Gate check passes: `go test -tags=integration ./internal/api`
+- [x] Test count: 2+ new tests pass, 0 existing tests deleted (the old `404`-on-draft test is REWRITTEN to assert `200`, not deleted - document this in the commit)
 
 **Tests**: integration
 **Gate**: full

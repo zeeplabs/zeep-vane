@@ -47,26 +47,24 @@ func NewPublicStatusPreviewHandler(statusPages statusPageStateGetter, inner *Pub
 // hostname, resolved instead by the status page's ID. Behind requireAuth +
 // anyRole - not the production public endpoint.
 //
-// Mirrors router.HostRouter's own gate (internal/router/host_router.go):
-// only a "published" status page is ever composed - a draft or
-// tls_failed page 404s here exactly as it would on its real hostname, so
-// the SPA's preview and the eventual production page never disagree on
-// what counts as visible.
+// AD-008 (deliberate divergence from production, supersedes part of
+// AD-007/I12's rationale): this endpoint composes for a status page in ANY
+// state, including domain-less (domain_id: null) pages that never had a
+// hostname to mirror in the first place. router.HostRouter's own gate
+// (internal/router/host_router.go) still requires "published" for the
+// real, fully public path - only this authenticated/admin-only preview
+// drops the gate, so an admin can check a page's content/layout before its
+// domain's DNS/TLS exists at all (the bug AD-008 fixes).
 func (h *PublicStatusPreviewHandler) Get(w http.ResponseWriter, r *http.Request) {
 	statusPageID := chi.URLParam(r, "id")
 
-	statusPage, err := h.statusPages.GetByID(r.Context(), statusPageID)
-	if err != nil {
+	if _, err := h.statusPages.GetByID(r.Context(), statusPageID); err != nil {
 		if errors.Is(err, db.ErrNotFound) {
 			http.NotFound(w, r)
 			return
 		}
 		h.logger.Error("public-status-preview: failed to look up status page", zap.Error(err))
 		writeInternalError(w)
-		return
-	}
-	if statusPage.State != "published" {
-		http.NotFound(w, r)
 		return
 	}
 
