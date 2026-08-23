@@ -1,10 +1,12 @@
 import { describe, it, expect, afterEach, vi } from "vitest";
+import { http, HttpResponse } from "msw";
 import { render, screen, act } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Routes, Route } from "react-router-dom";
 import "../../lib/i18n";
 import { AuthProvider } from "../../auth/AuthProvider";
 import { TestQueryProvider } from "../../test/queryClient";
+import { server } from "../../test/msw/server";
 import * as apiClient from "../../lib/apiClient";
 import type { StatusPage } from "../../types/api";
 import { StatusPageDetail } from "./StatusPageDetail";
@@ -109,5 +111,34 @@ describe("StatusPageDetail", () => {
     expect(screen.queryByText("Sem domínio configurado")).not.toBeInTheDocument();
     expect(screen.queryByText("Emitindo certificado")).not.toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Pré-visualizar página pública" })).toBeInTheDocument();
+  });
+
+  it("estado 'published' com domain_id/subdomain nulos (formato defendido, nunca produzido pelo fluxo real) não renderiza URL quebrada nem lança (mutante #5)", async () => {
+    await loginAsOwner();
+    // Mesmo raciocínio de StatusPagesSection.test.tsx: MarkPublished só
+    // marca "published" via um JOIN por hostname que exige domain_id
+    // não-nulo, então isso nunca ocorre pelo fluxo real - mas o guard
+    // `if (!domainId || !subdomain) return null` em publicUrl() existe
+    // como defesa. Fixture forçado via override do MSW.
+    const impossiblePublished: StatusPage = {
+      id: "sp-impossible-published-detail",
+      name: "Página Published Sem Domínio (impossível, detail)",
+      subdomain: null,
+      domain_id: null,
+      state: "published",
+      tls_last_error: null,
+      created_at: new Date().toISOString(),
+      service_ids: [],
+    };
+    server.use(
+      http.get("/api/status-pages", () => HttpResponse.json([impossiblePublished]))
+    );
+
+    renderDetail(impossiblePublished.id);
+
+    expect(await screen.findByText("Publicada")).toBeInTheDocument();
+    expect(document.body.textContent).not.toContain("https://null");
+    expect(document.body.textContent).not.toContain("undefined");
+    expect(screen.queryByRole("link", { name: /^https:\/\//i })).not.toBeInTheDocument();
   });
 });

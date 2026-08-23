@@ -1,11 +1,14 @@
 import { describe, it, expect, afterEach } from "vitest";
+import { http, HttpResponse } from "msw";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import "../../lib/i18n";
 import { AuthProvider } from "../../auth/AuthProvider";
 import { TestQueryProvider } from "../../test/queryClient";
+import { server } from "../../test/msw/server";
 import { apiFetch } from "../../lib/apiClient";
+import type { StatusPage } from "../../types/api";
 import { StatusPagesSection } from "./StatusPagesSection";
 
 async function loginAsOwner() {
@@ -93,5 +96,38 @@ describe("StatusPagesSection", () => {
       screen.getByText("Falha ao validar propriedade do domínio via DNS-01.")
     ).toBeInTheDocument();
     expect(screen.queryByText("Emitindo certificado")).not.toBeInTheDocument();
+  });
+
+  it("linha 'published' com domain_id/subdomain nulos (formato defendido, nunca produzido pelo fluxo real) não renderiza URL quebrada nem lança (mutante #5)", async () => {
+    await loginAsOwner();
+    // MarkPublished só marca "published" via um JOIN por hostname que exige
+    // domain_id não-nulo, então essa combinação nunca ocorre pelo fluxo real
+    // do app - mas o guard `if (!domain_id || !subdomain) return null` em
+    // publicUrl() existe como defesa. Este teste força esse fixture
+    // impossível-mas-defendido via override do MSW pra provar que o guard
+    // realmente funciona (sem isso, o mutante que remove o guard sobrevive:
+    // nenhum outro teste alcança publicUrl() com domain_id/subdomain nulos
+    // dentro do branch "published").
+    const impossiblePublished: StatusPage = {
+      id: "sp-impossible-published",
+      name: "Página Published Sem Domínio (impossível)",
+      subdomain: null,
+      domain_id: null,
+      state: "published",
+      tls_last_error: null,
+      created_at: new Date().toISOString(),
+      service_ids: [],
+    };
+    server.use(
+      http.get("/api/status-pages", () => HttpResponse.json([impossiblePublished]))
+    );
+
+    renderSection();
+
+    expect(await screen.findByText("Página Published Sem Domínio (impossível)")).toBeInTheDocument();
+    expect(screen.getByText("Publicada")).toBeInTheDocument();
+    expect(document.body.textContent).not.toContain("https://null");
+    expect(document.body.textContent).not.toContain("undefined");
+    expect(screen.queryByRole("link", { name: /^https:\/\//i })).not.toBeInTheDocument();
   });
 });

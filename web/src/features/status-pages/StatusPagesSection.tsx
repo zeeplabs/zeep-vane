@@ -71,6 +71,32 @@ export function StatusPagesSection() {
       key: "state",
       header: "Estado",
       render: (p) => {
+        // SPD-14: published/tls_failed keep today's labels unchanged,
+        // checked first since they're the terminal states - independent of
+        // domain_id (a real published/tls_failed page always has a domain
+        // attached; publicUrl()'s own null-safety guard still protects the
+        // defensive, never-real, published-without-domain shape).
+        if (p.state === "published") {
+          const url = publicUrl(p, hostnameFor(p));
+          return (
+            <div className="flex flex-col gap-0.5">
+              <Tag variant="success">Publicada</Tag>
+              {url ? (
+                <a href={url} target="_blank" rel="noreferrer" className="text-xs text-accent hover:underline">
+                  {url}
+                </a>
+              ) : null}
+            </div>
+          );
+        }
+        if (p.state === "tls_failed") {
+          return (
+            <div className="flex flex-col gap-0.5">
+              <Tag variant="critical">Falha</Tag>
+              <span className="text-xs text-neutral-400">{p.tls_last_error}</span>
+            </div>
+          );
+        }
         // SPD-12: sem domínio nenhum anexado ainda - distinto do "aguardando
         // DNS/certificado" abaixo, com uma ação pra sair desse estado.
         // Mesma lógica de StatusPageDetail.tsx, aplicada na lista.
@@ -89,31 +115,10 @@ export function StatusPagesSection() {
         // SPD-13: domínio anexado, mas o certificado ainda não foi emitido -
         // substitui o antigo texto ambíguo "Emitindo certificado", que não
         // distinguia esse caso do de "sem domínio" acima.
-        if (p.state === "draft") {
-          return (
-            <Tag variant="accent" data-testid="pulsing-tag" className="animate-pulse">
-              Aguardando validação de DNS/certificado
-            </Tag>
-          );
-        }
-        if (p.state === "published") {
-          const url = publicUrl(p, hostnameFor(p));
-          return (
-            <div className="flex flex-col gap-0.5">
-              <Tag variant="success">Publicada</Tag>
-              {url ? (
-                <a href={url} target="_blank" rel="noreferrer" className="text-xs text-accent hover:underline">
-                  {url}
-                </a>
-              ) : null}
-            </div>
-          );
-        }
         return (
-          <div className="flex flex-col gap-0.5">
-            <Tag variant="critical">Falha</Tag>
-            <span className="text-xs text-neutral-400">{p.tls_last_error}</span>
-          </div>
+          <Tag variant="accent" data-testid="pulsing-tag" className="animate-pulse">
+            Aguardando validação de DNS/certificado
+          </Tag>
         );
       },
     },
