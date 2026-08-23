@@ -122,7 +122,7 @@ Explicitly excluded. Documented to prevent scope creep.
 | SET-08          | P1: Owner uploads logo (size limit)       | Design | Pending |
 | SET-09          | P1: Owner uploads logo (MIME whitelist)   | Design | Pending |
 | SET-10          | P1: Owner uploads logo (overwrite)        | Design | Pending |
-| SET-11          | P1: Owner uploads logo (config path)      | Design | Pending |
+| SET-11          | P1: Owner uploads logo (config path)      | Design | Implementing |
 | SET-12          | P1: Owner uploads logo (public serving)   | Design | Pending |
 | SET-13          | P1: Owner uploads logo (write failure)    | Design | Pending |
 | SET-14          | P1: Owner uploads logo (null default)     | Design | Pending |

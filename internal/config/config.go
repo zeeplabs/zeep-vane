@@ -19,11 +19,17 @@ type Config struct {
 	PollIntervalSeconds int
 	LogLevel            string
 	CORSAllowedOrigin   string
+	UploadsDir          string
 }
 
 // defaultCORSAllowedOrigin is the Vite dev server's origin - the CORS
 // allowlist entry when CORS_ALLOWED_ORIGIN is unset (local development).
 const defaultCORSAllowedOrigin = "http://localhost:5173"
+
+// defaultUploadsDir is used when UPLOADS_DIR is unset (local development).
+// In production, operators are expected to set UPLOADS_DIR to a mounted
+// persistent volume so an uploaded logo survives a pod restart (SET-11).
+const defaultUploadsDir = "./data/uploads"
 
 // Load reads and validates the required environment variables, returning a
 // clear error if any is missing or malformed. A .env file is loaded on a
@@ -66,6 +72,11 @@ func Load() (Config, error) {
 		corsAllowedOrigin = defaultCORSAllowedOrigin
 	}
 
+	uploadsDir := os.Getenv("UPLOADS_DIR")
+	if uploadsDir == "" {
+		uploadsDir = defaultUploadsDir
+	}
+
 	return Config{
 		DatabaseURL:         databaseURL,
 		MasterKey:           masterKey,
@@ -74,6 +85,7 @@ func Load() (Config, error) {
 		PollIntervalSeconds: pollIntervalSeconds,
 		LogLevel:            logLevel,
 		CORSAllowedOrigin:   corsAllowedOrigin,
+		UploadsDir:          uploadsDir,
 	}, nil
 }
 

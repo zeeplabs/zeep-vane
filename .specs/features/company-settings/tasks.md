@@ -135,10 +135,10 @@ Tasks: T11, T12, T13, T14 (executed in this order; see the dependency graph belo
 - Skill: NONE
 
 **Done when**:
-- [ ] `UPLOADS_DIR` set -> `Config.UploadsDir` reflects it
-- [ ] `UPLOADS_DIR` unset -> `Config.UploadsDir == "./data/uploads"`
-- [ ] Gate check passes: `go test ./internal/config`
-- [ ] Test count: 2 new tests pass (no silent deletions)
+- [x] `UPLOADS_DIR` set -> `Config.UploadsDir` reflects it
+- [x] `UPLOADS_DIR` unset -> `Config.UploadsDir == "./data/uploads"`
+- [x] Gate check passes: `go test ./internal/config`
+- [x] Test count: 2 new tests pass (no silent deletions)
 
 **Tests**: unit
 **Gate**: quick
