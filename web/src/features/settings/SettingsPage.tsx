@@ -3,7 +3,7 @@ import { Card } from "../../components/ui/Card";
 import { Field } from "../../components/ui/Field";
 import { Button } from "../../components/ui/Button";
 import { ApiError } from "../../lib/apiClient";
-import { useCompanySettings, useUpdateCompanySettings } from "./hooks";
+import { useCompanySettings, useUpdateCompanySettings, useUploadCompanyLogo } from "./hooks";
 
 function UploadIcon() {
   return (
@@ -26,6 +26,7 @@ function ImagePlaceholderIcon() {
 export function SettingsPage() {
   const { data, isLoading } = useCompanySettings();
   const updateSettings = useUpdateCompanySettings();
+  const uploadLogo = useUploadCompanyLogo();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [name, setName] = useState("");
@@ -40,19 +41,26 @@ export function SettingsPage() {
     setLogoUrl(data.logo_url);
   }, [data]);
 
-  function handleLogoChange(e: React.ChangeEvent<HTMLInputElement>) {
+  // Uploads the logo immediately on selection (SET-07), independent of the
+  // name/e-mail form's own submit below - the multipart upload endpoint is
+  // separate from PATCH /api/company-settings.
+  async function handleLogoChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => setLogoUrl(reader.result as string);
-    reader.readAsDataURL(file);
+    setError(null);
+    try {
+      const updated = await uploadLogo.mutateAsync(file);
+      setLogoUrl(updated.logo_url);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Não foi possível enviar a logo.");
+    }
   }
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     setError(null);
     try {
-      await updateSettings.mutateAsync({ name, contact_email: contactEmail, logo_url: logoUrl });
+      await updateSettings.mutateAsync({ name, contact_email: contactEmail });
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Não foi possível salvar as alterações.");
     }

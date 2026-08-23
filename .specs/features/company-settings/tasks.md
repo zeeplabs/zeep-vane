@@ -398,12 +398,12 @@ Tasks: T11, T12, T13, T14 (executed in this order; see the dependency graph belo
 - Skill: NONE
 
 **Done when**:
-- [ ] Loads and displays persisted name/e-mail/logo from `useCompanySettings`
-- [ ] Editing + submitting name/e-mail calls `useUpdateCompanySettings` with only those two fields
-- [ ] Selecting a logo file triggers the upload mutation immediately, independent of the name/e-mail form state
-- [ ] Upload/validation failure (422/500 from MSW) surfaces the existing inline error UI
-- [ ] Gate check passes: `cd web && npm run test`
-- [ ] Test count: 4+ new tests pass (no silent deletions)
+- [x] Loads and displays persisted name/e-mail/logo from `useCompanySettings`
+- [x] Editing + submitting name/e-mail calls `useUpdateCompanySettings` with only those two fields
+- [x] Selecting a logo file triggers the upload mutation immediately, independent of the name/e-mail form state
+- [x] Upload/validation failure (422/500 from MSW) surfaces the existing inline error UI
+- [x] Gate check passes: `cd web && npm run test`
+- [x] Test count: 4+ new tests pass (no silent deletions)
 
 **Tests**: unit
 **Gate**: quick
