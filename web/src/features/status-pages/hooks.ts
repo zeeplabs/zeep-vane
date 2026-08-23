@@ -37,10 +37,12 @@ export function useStatusPage(id: string) {
   });
 }
 
+// SPD-01: the SPA always creates a status page domain-less now - the
+// backend still accepts the with-domain shape (design.md Tech Decisions),
+// but this input never sends domain_id/subdomain. A domain is attached
+// later, exclusively through useAttachDomain below.
 export interface CreateStatusPageInput {
   name: string;
-  subdomain: string;
-  domain_id: string;
   service_ids: string[];
 }
 
@@ -52,5 +54,44 @@ export function useCreateStatusPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["status-pages"] });
     },
+  });
+}
+
+export interface AttachDomainInput {
+  id: string;
+  domain_id: string;
+  subdomain: string;
+}
+
+// useAttachDomain sets domain_id/subdomain exactly once on a domain-less
+// status page (SPD-06 through SPD-09) via PATCH /api/status-pages/{id}/domain.
+// 404/409/422 responses surface as ApiError - the caller (AttachDomainDrawer)
+// renders them inline instead of this hook interpreting them.
+export function useAttachDomain() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, domain_id, subdomain }: AttachDomainInput) =>
+      apiFetch<StatusPage>(`/api/status-pages/${id}/domain`, {
+        method: "PATCH",
+        body: JSON.stringify({ domain_id, subdomain }),
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["status-pages"] });
+    },
+  });
+}
+
+interface DNSTargetResponse {
+  target: string | null;
+}
+
+// useDNSTarget reads the operator-configured DNS record value (SPD-10),
+// or null when PUBLIC_DNS_TARGET was never set - the caller shows a note,
+// never blocks submission on it (design.md Assumptions).
+export function useDNSTarget() {
+  return useQuery({
+    queryKey: ["instance-dns-target"],
+    queryFn: () => apiFetch<DNSTargetResponse>("/api/instance/dns-target"),
+    select: (data: DNSTargetResponse) => data.target,
   });
 }

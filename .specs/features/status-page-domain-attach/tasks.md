@@ -375,11 +375,11 @@ Tasks: T13, T14, T15 - see dependency graph below.
 - Skill: NONE
 
 **Done when**:
-- [ ] `useCreateStatusPage` sends a body with no domain fields
-- [ ] `useAttachDomain` happy path updates the status page query cache; 404/409/422 cases surface as `ApiError`
-- [ ] `useDNSTarget` returns the configured value or `null`
-- [ ] Gate check passes: `cd web && npm run test`
-- [ ] Test count: 6+ new tests pass (no silent deletions)
+- [x] `useCreateStatusPage` sends a body with no domain fields
+- [x] `useAttachDomain` happy path updates the status page query cache; 404/409/422 cases surface as `ApiError`
+- [x] `useDNSTarget` returns the configured value or `null`
+- [x] Gate check passes: `cd web && npm run test`
+- [x] Test count: 6+ new tests pass (no silent deletions)
 
 **Tests**: unit
 **Gate**: quick
