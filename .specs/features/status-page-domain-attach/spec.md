@@ -99,7 +99,7 @@ Today `POST /api/status-pages` requires `domain_id` (`status_pages.domain_id UUI
 
 ## Edge Cases
 
-- IF two concurrent attach requests target the same domain-less status page THEN the system SHALL let exactly one succeed (`200`) and the other SHALL receive `409` (no double-attach, no lost update) - covered by the conditional `UPDATE ... WHERE domain_id IS NULL` guard.
+- IF two concurrent attach requests target the same domain-less status page THEN the system SHALL let exactly one succeed (`200`) and the other SHALL receive `409` (no double-attach, no lost update) - covered by the `SELECT ... FOR UPDATE` row lock inside the attach transaction.
 - IF an admin attaches a domain and its `(domain_id, subdomain)` pair happens to already be resolvable as a real hostname elsewhere (e.g. a page created via the legacy `POST /api/status-pages` with-domain path) THEN the collision SHALL be caught by SPD's attach-endpoint uniqueness check (SPD-05) even though the legacy creation path itself still lacks this check (documented pre-existing gap, Out of Scope).
 - WHILE the operator has not configured the DNS target value, the attach-domain screen SHALL still allow submitting `domain_id`/`subdomain` - the missing hint is cosmetic, never a functional blocker.
 
@@ -109,20 +109,20 @@ Today `POST /api/status-pages` requires `domain_id` (`status_pages.domain_id UUI
 
 | Requirement ID | Story | Phase | Status |
 | --------------- | ----- | ----- | ------ |
-| SPD-01 | P1: Preview before domain exists | Design | Implementing |
-| SPD-02 | P1: Preview before domain exists | Design | Implementing |
-| SPD-03 | P1: Preview before domain exists | Design | Implementing |
-| SPD-04 | P1: Preview before domain exists | Design | Implementing |
-| SPD-05 | P1: Attach domain later | Design | Implementing |
-| SPD-06 | P1: Attach domain later | Design | Implementing |
-| SPD-07 | P1: Attach domain later | Design | Implementing |
-| SPD-08 | P1: Attach domain later | Design | Implementing |
-| SPD-09 | P1: Attach domain later | Design | Implementing |
-| SPD-10 | P1: Attach domain later | Design | Implementing |
-| SPD-11 | P1: Attach domain later (RBAC) | Design | Implementing |
-| SPD-12 | P2: Distinguishable labels | Design | Implementing |
-| SPD-13 | P2: Distinguishable labels | Design | Implementing |
-| SPD-14 | P2: Distinguishable labels | Design | Implementing |
+| SPD-01 | P1: Preview before domain exists | Design | Verified |
+| SPD-02 | P1: Preview before domain exists | Design | Verified |
+| SPD-03 | P1: Preview before domain exists | Design | Verified |
+| SPD-04 | P1: Preview before domain exists | Design | Verified |
+| SPD-05 | P1: Attach domain later | Design | Verified |
+| SPD-06 | P1: Attach domain later | Design | Verified |
+| SPD-07 | P1: Attach domain later | Design | Verified |
+| SPD-08 | P1: Attach domain later | Design | Verified |
+| SPD-09 | P1: Attach domain later | Design | Verified |
+| SPD-10 | P1: Attach domain later | Design | Verified |
+| SPD-11 | P1: Attach domain later (RBAC) | Design | Verified |
+| SPD-12 | P2: Distinguishable labels | Design | Verified |
+| SPD-13 | P2: Distinguishable labels | Design | Verified |
+| SPD-14 | P2: Distinguishable labels | Design | Verified |
 
 **ID format:** `SPD-[NUMBER]`
 

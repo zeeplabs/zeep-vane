@@ -3,7 +3,7 @@
   "promote_threshold": 2,
   "window_days": 45,
   "quarantine_threshold": 2,
-  "next_id": 10,
+  "next_id": 14,
   "lessons": [
     {
       "id": "L-001",
@@ -166,6 +166,78 @@
       ],
       "created": "2026-08-23T15:02:31Z",
       "last_seen": "2026-08-23T15:02:31Z"
+    },
+    {
+      "id": "L-010",
+      "key": "ac_gap::when an ac names two or more views list and detail allocate a task per view fixing only one leaves the ac half met and the untouched view s existing test silently pins the forbidden behavior",
+      "text": "When an AC names two or more views (list AND detail), allocate a task per view: fixing only one leaves the AC half-met and the untouched view's existing test silently pins the forbidden behavior.",
+      "signal": "ac_gap",
+      "scope": "web/src/features",
+      "status": "candidate",
+      "features": [
+        "status-page-domain-attach"
+      ],
+      "recurrence": 1,
+      "harmful": 0,
+      "evidence": [
+        "SPD-12/SPD-13 - web/src/features/status-pages/StatusPagesSection.tsx:74-79 (web/src/features)"
+      ],
+      "created": "2026-08-23T18:50:39Z",
+      "last_seen": "2026-08-23T18:50:39Z"
+    },
+    {
+      "id": "L-011",
+      "key": "surviving_mutant::a negative dom assertion not tocontain only discriminates if the fixture actually reaches the guarded code path assert it on a fixture that would render the bad value not on one where the branch is never entered",
+      "text": "A negative DOM assertion (not.toContain) only discriminates if the fixture actually reaches the guarded code path; assert it on a fixture that would render the bad value, not on one where the branch is never entered.",
+      "signal": "surviving_mutant",
+      "scope": "web/src frontend tests",
+      "status": "candidate",
+      "features": [
+        "status-page-domain-attach"
+      ],
+      "recurrence": 1,
+      "harmful": 0,
+      "evidence": [
+        "mutation 5 - StatusPagesSection.tsx:20 + StatusPageDetail.tsx:12 null-safety guards deleted, tests still passed (web/src frontend tests)"
+      ],
+      "created": "2026-08-23T18:50:39Z",
+      "last_seen": "2026-08-23T18:50:39Z"
+    },
+    {
+      "id": "L-012",
+      "key": "surviving_mutant::a goroutine based concurrency test usually serializes and passes even with the lock removed force contention deterministically hold a competing transaction or inject a hook between the read and the write instead of trusting scheduling",
+      "text": "A goroutine-based concurrency test usually serializes and passes even with the lock removed: force contention deterministically (hold a competing transaction, or inject a hook between the read and the write) instead of trusting scheduling.",
+      "signal": "surviving_mutant",
+      "scope": "concurrency tests / DB write paths",
+      "status": "candidate",
+      "features": [
+        "status-page-domain-attach"
+      ],
+      "recurrence": 1,
+      "harmful": 0,
+      "evidence": [
+        "mutation 1 - internal/db/status_page_repository.go:110 FOR UPDATE removed, TestAttachDomain_Concurrent passed 20/20 under -race (concurrency tests / DB write paths)"
+      ],
+      "created": "2026-08-23T19:06:09Z",
+      "last_seen": "2026-08-23T19:06:09Z"
+    },
+    {
+      "id": "L-013",
+      "key": "spec_precision_gap::when a spec s described mechanism turns out to be wrong grep the whole spec for the old wording before declaring the fix done the same mechanism is usually restated in the edge cases or success criteria section and a half corrected spec re invites the exact regression it caused",
+      "text": "When a spec's described mechanism turns out to be wrong, grep the whole spec for the old wording before declaring the fix done: the same mechanism is usually restated in the Edge Cases or Success Criteria section and a half-corrected spec re-invites the exact regression it caused.",
+      "signal": "spec_precision_gap",
+      "scope": ".specs/features/*/spec.md",
+      "status": "candidate",
+      "features": [
+        "status-page-domain-attach"
+      ],
+      "recurrence": 1,
+      "harmful": 0,
+      "evidence": [
+        ".specs/features/status-page-domain-attach/spec.md:102 (.specs/features/*/spec.md)"
+      ],
+      "created": "2026-08-23T19:20:45Z",
+      "last_seen": "2026-08-23T19:20:45Z"
     }
   ]
 }

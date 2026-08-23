@@ -68,6 +68,30 @@ Seen once or not yet corroborated. Tracked, not trusted.
 - evidence: web/src/test/msw/handlers.ts:566 (multipart body unreadable under jsdom; formData() and text() both hang) (web/msw/uploads)
 - last seen: 2026-08-23T15:02:31Z
 
+### L-010 - When an AC names two or more views (list AND detail), allocate a task per view: fixing only one leaves the AC half-met and the untouched view's existing test silently pins the forbidden behavior.
+- signal: `ac_gap` · recurrence: 1 feature(s) · scope: `web/src/features` · harmful: 0
+- features: status-page-domain-attach
+- evidence: SPD-12/SPD-13 - web/src/features/status-pages/StatusPagesSection.tsx:74-79 (web/src/features)
+- last seen: 2026-08-23T18:50:39Z
+
+### L-011 - A negative DOM assertion (not.toContain) only discriminates if the fixture actually reaches the guarded code path; assert it on a fixture that would render the bad value, not on one where the branch is never entered.
+- signal: `surviving_mutant` · recurrence: 1 feature(s) · scope: `web/src frontend tests` · harmful: 0
+- features: status-page-domain-attach
+- evidence: mutation 5 - StatusPagesSection.tsx:20 + StatusPageDetail.tsx:12 null-safety guards deleted, tests still passed (web/src frontend tests)
+- last seen: 2026-08-23T18:50:39Z
+
+### L-012 - A goroutine-based concurrency test usually serializes and passes even with the lock removed: force contention deterministically (hold a competing transaction, or inject a hook between the read and the write) instead of trusting scheduling.
+- signal: `surviving_mutant` · recurrence: 1 feature(s) · scope: `concurrency tests / DB write paths` · harmful: 0
+- features: status-page-domain-attach
+- evidence: mutation 1 - internal/db/status_page_repository.go:110 FOR UPDATE removed, TestAttachDomain_Concurrent passed 20/20 under -race (concurrency tests / DB write paths)
+- last seen: 2026-08-23T19:06:09Z
+
+### L-013 - When a spec's described mechanism turns out to be wrong, grep the whole spec for the old wording before declaring the fix done: the same mechanism is usually restated in the Edge Cases or Success Criteria section and a half-corrected spec re-invites the exact regression it caused.
+- signal: `spec_precision_gap` · recurrence: 1 feature(s) · scope: `.specs/features/*/spec.md` · harmful: 0
+- features: status-page-domain-attach
+- evidence: .specs/features/status-page-domain-attach/spec.md:102 (.specs/features/*/spec.md)
+- last seen: 2026-08-23T19:20:45Z
+
 ## Quarantined (failed when applied - ignore)
 
 A confirmed lesson that recurred alongside failure. Kept for the maintainer to review.
