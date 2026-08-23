@@ -86,7 +86,7 @@ func NewServeCmd() *cobra.Command {
 			addr := fmt.Sprintf(":%d", cfg.Port)
 			srv := &http.Server{Addr: addr, Handler: buildAdminRouter(pool, cfg, logger)}
 
-			httpsSrv := newHTTPSServer(pool, logger)
+			httpsSrv := newHTTPSServer(pool, cfg.UploadsDir, logger)
 
 			serverErrs := make(chan error, 2)
 			go func() {
@@ -140,13 +140,20 @@ func NewServeCmd() *cobra.Command {
 // table, and OnEvent records the real outcome of each issuance attempt back
 // onto the matching StatusPage row.
 //
-// Its handler is router.HostRouter wrapping the public status page handler
-// (T32-T35, T40): a request's Host header resolves to a published
-// StatusPage, whose ID is threaded down so the public handler's
-// services/incidents queries are scoped to that status page (SP-15). The
-// admin API/SPA is served on the separate HTTP listener built in RunE
+// Its handler is router.HostRouter wrapping a small mux of two routes -
+// the public status page handler at "/" and the public logo file handler
+// at "/uploads/" (SET-06, SET-12) - rather than the public status handler
+// alone: HostRouter forwards every path on a matched hostname to whatever
+// single handler it's given (internal/router/host_router.go), so without
+// this mux, a request for a status page's own logo would hit the status
+// JSON handler instead of the file (design.md Risks & Concerns). A
+// request's Host header resolves to a published StatusPage, whose ID is
+// threaded down so the public handler's services/incidents queries are
+// scoped to that status page (SP-15); the logo route needs no such
+// scoping - the logo file is a single, install-wide singleton (SET-06).
+// The admin API/SPA is served on the separate HTTP listener built in RunE
 // (router.New) - HostRouter here never touches it (design.md placeholder).
-func newHTTPSServer(pool *db.Pool, logger *zap.Logger) *http.Server {
+func newHTTPSServer(pool *db.Pool, uploadsDir string, logger *zap.Logger) *http.Server {
 	httpsPort := os.Getenv("HTTPS_PORT")
 	if httpsPort == "" {
 		httpsPort = defaultHTTPSPort
@@ -164,7 +171,13 @@ func newHTTPSServer(pool *db.Pool, logger *zap.Logger) *http.Server {
 	snapshots := db.NewStatusSnapshotRepository(pool)
 	incidents := db.NewIncidentRepository(pool)
 	publicHandler := api.NewPublicStatusHandler(services, snapshots, incidents, logger)
-	handler := router.HostRouter(statusPages, http.HandlerFunc(publicHandler.Get))
+	logoFileHandler := api.NewLogoFileHandler(uploadsDir)
+
+	publicMux := http.NewServeMux()
+	publicMux.Handle("/uploads/", logoFileHandler)
+	publicMux.HandleFunc("/", publicHandler.Get)
+
+	handler := router.HostRouter(statusPages, publicMux)
 
 	tlsConfig := manager.TLSConfig()
 	tlsConfig.NextProtos = append([]string{"h2", "http/1.1"}, tlsConfig.NextProtos...)

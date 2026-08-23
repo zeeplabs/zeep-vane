@@ -293,10 +293,10 @@ Tasks: T11, T12, T13, T14 (executed in this order; see the dependency graph belo
 - Skill: NONE
 
 **Done when**:
-- [ ] A request to `/uploads/{filename}` on a published status page's hostname serves the logo file (200), not the JSON status payload
-- [ ] A request to `/` on that same hostname still serves the existing public status JSON unchanged
-- [ ] Gate check passes: `go test -tags=integration ./internal/router ./internal/cli`
-- [ ] Test count: 2+ new/modified tests pass (no silent deletions)
+- [x] A request to `/uploads/{filename}` on a published status page's hostname serves the logo file (200), not the JSON status payload
+- [x] A request to `/` on that same hostname still serves the existing public status JSON unchanged
+- [x] Gate check passes: `go test -tags=integration ./internal/router ./internal/cli`
+- [x] Test count: 2+ new/modified tests pass (no silent deletions)
 
 **Tests**: integration
 **Gate**: full

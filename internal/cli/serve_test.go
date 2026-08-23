@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -226,7 +227,7 @@ func TestNewHTTPSServer_TwoPublishedStatusPages_ReturnDisjointServices(t *testin
 		}
 	}
 
-	httpsSrv := newHTTPSServer(pool, zap.NewNop())
+	httpsSrv := newHTTPSServer(pool, t.TempDir(), zap.NewNop())
 	testServer := httptest.NewServer(httpsSrv.Handler)
 	defer testServer.Close()
 
@@ -266,7 +267,7 @@ func TestNewHTTPSServer_TwoPublishedStatusPages_ReturnDisjointIncidents(t *testi
 	titleA := createServeTestIncident(t, pool, serviceA, "incident-a")
 	titleB := createServeTestIncident(t, pool, serviceB, "incident-b")
 
-	httpsSrv := newHTTPSServer(pool, zap.NewNop())
+	httpsSrv := newHTTPSServer(pool, t.TempDir(), zap.NewNop())
 	testServer := httptest.NewServer(httpsSrv.Handler)
 	defer testServer.Close()
 
@@ -294,7 +295,7 @@ func TestNewHTTPSServer_TwoPublishedStatusPages_ReturnDisjointIncidents(t *testi
 func TestNewHTTPSServer_UnregisteredHost_404(t *testing.T) {
 	pool := newServeTestPool(t)
 
-	httpsSrv := newHTTPSServer(pool, zap.NewNop())
+	httpsSrv := newHTTPSServer(pool, t.TempDir(), zap.NewNop())
 	testServer := httptest.NewServer(httpsSrv.Handler)
 	defer testServer.Close()
 
@@ -312,5 +313,79 @@ func TestNewHTTPSServer_UnregisteredHost_404(t *testing.T) {
 
 	if resp.StatusCode != http.StatusNotFound {
 		t.Errorf("status = %d, want %d", resp.StatusCode, http.StatusNotFound)
+	}
+}
+
+// TestNewHTTPSServer_UploadsPath_ServesLogoFile_NotStatusJSON asserts T9
+// (SET-06, SET-12, design.md Risks & Concerns): a request to
+// /uploads/{filename} on a published status page's own hostname must
+// serve the logo file, not the public status JSON that HostRouter forwards
+// every other path to when handed a single handler.
+func TestNewHTTPSServer_UploadsPath_ServesLogoFile_NotStatusJSON(t *testing.T) {
+	pool := newServeTestPool(t)
+	uploadsDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(uploadsDir, "logo.png"), []byte("fake-logo-bytes"), 0o644); err != nil {
+		t.Fatalf("os.WriteFile() returned unexpected error: %v", err)
+	}
+
+	serviceID := createServeTestService(t, pool, "svc-uploads")
+	hostname := createServePublishedStatusPageFixture(t, pool, serviceID)
+
+	httpsSrv := newHTTPSServer(pool, uploadsDir, zap.NewNop())
+	testServer := httptest.NewServer(httpsSrv.Handler)
+	defer testServer.Close()
+
+	req, err := http.NewRequest(http.MethodGet, testServer.URL+"/uploads/logo.png", nil)
+	if err != nil {
+		t.Fatalf("http.NewRequest() returned unexpected error: %v", err)
+	}
+	req.Host = hostname
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("client.Do() returned unexpected error: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want %d", resp.StatusCode, http.StatusOK)
+	}
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("io.ReadAll() returned unexpected error: %v", err)
+	}
+	if string(body) != "fake-logo-bytes" {
+		t.Errorf("body = %q, want %q (the logo file, not status JSON)", string(body), "fake-logo-bytes")
+	}
+}
+
+// TestNewHTTPSServer_RootPath_StillServesStatusJSON confirms the dual
+// mount didn't regress the existing production path: "/" on the same
+// hostname still serves the public status JSON, unchanged.
+func TestNewHTTPSServer_RootPath_StillServesStatusJSON(t *testing.T) {
+	pool := newServeTestPool(t)
+	uploadsDir := t.TempDir()
+
+	serviceID := createServeTestService(t, pool, "svc-root")
+	hostname := createServePublishedStatusPageFixture(t, pool, serviceID)
+
+	allServices, err := db.NewServiceRepository(pool).List(context.Background())
+	if err != nil {
+		t.Fatalf("List() returned unexpected error: %v", err)
+	}
+	var serviceName string
+	for _, s := range allServices {
+		if s.ID == serviceID {
+			serviceName = s.Name
+		}
+	}
+
+	httpsSrv := newHTTPSServer(pool, uploadsDir, zap.NewNop())
+	testServer := httptest.NewServer(httpsSrv.Handler)
+	defer testServer.Close()
+
+	body := fetchPublicStatus(t, testServer.URL, hostname)
+	if !containsServiceName(body.Services, serviceName) {
+		t.Errorf("root path response missing its own service %q after dual-mounting /uploads/", serviceName)
 	}
 }
