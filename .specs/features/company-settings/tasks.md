@@ -213,12 +213,12 @@ Tasks: T11, T12, T13, T14 (executed in this order; see the dependency graph belo
 - Skill: NONE
 
 **Done when**:
-- [ ] Valid PNG upload (< 10 MB) -> 200, `logo_url` updated in a following `GET`
-- [ ] Upload > 10 MB -> 422, `logo_url` unchanged
-- [ ] Upload with a non-PNG/SVG payload -> 422, `logo_url` unchanged
-- [ ] Second valid upload overwrites the first (only one file remains on disk, asserted via a temp test dir)
-- [ ] Gate check passes: `go test -tags=integration ./internal/api`
-- [ ] Test count: 4+ new tests pass (no silent deletions)
+- [x] Valid PNG upload (< 10 MB) -> 200, `logo_url` updated in a following `GET`
+- [x] Upload > 10 MB -> 422, `logo_url` unchanged
+- [x] Upload with a non-PNG/SVG payload -> 422, `logo_url` unchanged
+- [x] Second valid upload overwrites the first (only one file remains on disk, asserted via a temp test dir)
+- [x] Gate check passes: `go test -tags=integration ./internal/api`
+- [x] Test count: 4+ new tests pass (no silent deletions)
 
 **Tests**: integration
 **Gate**: full
