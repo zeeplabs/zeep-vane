@@ -326,8 +326,8 @@ Tasks: T13, T14, T15 - see dependency graph below.
 - Skill: NONE
 
 **Done when**:
-- [ ] `StatusPage.domain_id: string | null`, `StatusPage.subdomain: string | null`
-- [ ] Gate check passes: `cd web && npm run build` (type errors at every read site are EXPECTED here and fixed in T13/T15 - this task only changes the type)
+- [x] `StatusPage.domain_id: string | null`, `StatusPage.subdomain: string | null`
+- [x] Gate check passes: `cd web && npm run build` (type errors at every read site are EXPECTED here and fixed in T13/T15 - this task only changes the type)
 
 **Tests**: none
 **Gate**: build

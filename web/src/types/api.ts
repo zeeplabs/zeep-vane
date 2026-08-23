@@ -52,8 +52,8 @@ export type StatusPageState = "draft" | "published" | "tls_failed";
 export interface StatusPage {
   id: string;
   name: string;
-  subdomain: string;
-  domain_id: string;
+  subdomain: string | null;
+  domain_id: string | null;
   state: StatusPageState;
   tls_last_error: string | null;
   created_at: string;
