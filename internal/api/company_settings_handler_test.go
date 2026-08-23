@@ -444,6 +444,44 @@ func TestUploadLogo_SaveFailure_500NoLogoURLChange(t *testing.T) {
 	}
 }
 
+// TestUploadLogo_MultipartFieldNameContract_LogoAccepted pins the
+// cross-layer multipart field name contract: the frontend
+// (web/src/features/settings/hooks.ts) hardcodes the literal "logo" as its
+// FormData key, independently of the backend's logoFormFieldName constant.
+// Every other test in this file goes through buildMultipartLogoRequest,
+// which builds its part via logoFormFieldName - so it would stay green even
+// if that constant were renamed, since both sides of the comparison move
+// together. This test hardcodes the literal directly, so a rename of
+// logoFormFieldName away from "logo" (breaking the real wire contract with
+// the frontend) fails here.
+func TestUploadLogo_MultipartFieldNameContract_LogoAccepted(t *testing.T) {
+	r, _, admins, _ := newCompanySettingsRouterWithUploadsDir(t)
+	token := issueTestSessionToken(t, admins)
+
+	var buf bytes.Buffer
+	writer := multipart.NewWriter(&buf)
+	part, err := writer.CreateFormFile("logo", "logo.png")
+	if err != nil {
+		t.Fatalf("CreateFormFile() returned unexpected error: %v", err)
+	}
+	if _, err := part.Write(pngSignatureBytes); err != nil {
+		t.Fatalf("part.Write() returned unexpected error: %v", err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatalf("writer.Close() returned unexpected error: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/company-settings/logo", &buf)
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	req.Header.Set("Authorization", "Bearer "+token)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+}
+
 // TestUploadLogo_WrongMIMEType_422NoLogoURLChange asserts SET-09: a
 // non-PNG/SVG payload is rejected with 422 and the previously stored logo
 // (none, here) is left untouched.

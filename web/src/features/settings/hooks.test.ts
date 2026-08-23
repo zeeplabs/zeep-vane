@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { http, HttpResponse } from "msw";
 import { renderHook, waitFor } from "@testing-library/react";
 import { server } from "../../test/msw/server";
@@ -76,6 +76,30 @@ describe("company settings hooks", () => {
 
     expect(updated.logo_url).toBe("/uploads/logo.png");
     await waitFor(() => expect(result.current.settings.data!.logo_url).toBe("/uploads/logo.png"));
+  });
+
+  it("useUploadCompanyLogo monta o FormData com a chave 'logo' esperada pelo backend", async () => {
+    // O contrato entre camadas (nome do campo multipart) é um literal
+    // independente em cada lado: hooks.ts hardcoda "logo" no FormData, o Go
+    // hardcoda logoFormFieldName = "logo". O MSW não consegue ler o corpo
+    // multipart sob jsdom (request.formData()/request.text() travam - ver
+    // validation.md, Non-Shallow Litmus), então este teste inspeciona o
+    // FormData que o hook monta diretamente, via um spy em fetch, sem
+    // depender do MSW ler o corpo.
+    const fetchSpy = vi.spyOn(globalThis, "fetch");
+    await loginAsOwner();
+    const { result } = renderHook(() => useUploadCompanyLogo(), { wrapper: TestQueryProvider });
+
+    const file = testLogoFile();
+    await result.current.mutateAsync(file);
+
+    const uploadCall = fetchSpy.mock.calls.find(([url]) => String(url).includes("/api/company-settings/logo"));
+    expect(uploadCall).toBeDefined();
+    const [, init] = uploadCall!;
+    expect(init?.body).toBeInstanceOf(FormData);
+    expect((init!.body as FormData).get("logo")).toBe(file);
+
+    fetchSpy.mockRestore();
   });
 
   it("useUploadCompanyLogo propaga erro 500 sem atualizar logo_url", async () => {
