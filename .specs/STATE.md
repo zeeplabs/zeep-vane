@@ -63,6 +63,20 @@
 
 ## Handoff
 
+**Feature**: `company-settings` — **status: PASS ✅** (Verifier iteration 2/3, após 1 rodada de fix→re-verify). Relatório: `.specs/features/company-settings/validation.md`. 16/16 ACs (SET-01 a SET-16) verificados, sensor de discriminação 5/5 mortos, 0 gaps.
+
+**Completo**: backlog AD-007 "company settings GET/PATCH" fechado. Backend Go: migration `0012_company_settings` (tabela singleton via `CHECK (id = 1)`), `CompanySettingsRepository`, `UPLOADS_DIR` config, `internal/uploads.Save` (escrita atômica com overwrite), `CompanySettingsHandler` (`GET`/`PATCH /api/company-settings` + `POST /api/company-settings/logo`, RBAC `ownerOnly`), `logoFileHandler` público sem auth, montado nos dois listeners (admin router e o listener público via `HostRouter` — exigiu wrap em mux, achado real documentado em `design.md` Risks). `PublicStatusHandler.composeResponse` ganhou campo `company` (nome/logo real), cobrindo produção e o preview dev/I12 de uma vez. Frontend: `SettingsPage` conectada a dados reais (nome/e-mail via PATCH, logo via upload multipart separado do form), `public-status/hooks.ts` não importa mais `mockData.companySettings`. 14 tasks (T1-T14) + 3 commits de fix, todos atômicos, branch `main`.
+
+**Gaps reais achados pelo Verifier na rodada 1** (corrigidos na rodada 2): mutante sobrevivente em SET-08 (teste de tamanho de upload derivava do valor sob teste em vez do limite literal do spec — 10 MB nunca fixado); SET-13 sem cobertura nenhuma (falha de escrita em disco → 500 nunca testada); nome do campo multipart `"logo"` não pinado nos dois lados. Lições L-006 a L-009 gravadas em `.specs/LESSONS.md`.
+
+**Desvio técnico documentado como SPEC_DEVIATION no código**: `http.DetectContentType` da stdlib do Go não reconhece assinatura de SVG — adicionada checagem própria de bytes (`isLikelySVG`) além do sniff, nunca confiando no header `Content-Type` do cliente (`internal/api/company_settings_handler.go`).
+
+**Deferred/backlog (não bloqueante)**: multi-réplica sem volume compartilhado (RWX) continua não resolvida em código, documentada como requisito operacional; flake pré-existente de `pg_advisory_lock` em `internal/db`/`internal/api` sob paralelismo (não relacionado a esta feature, já documentado em rodadas anteriores).
+
+**Next steps**: restam 3 itens do backlog original de 4 (ver AD-007/handoff anterior): resend/cancel de convite de admin, teste de 404 em update de incidente inexistente, e a validação manual do conector Datadog real (não MSW) — nenhum solicitado ainda nesta sessão.
+
+---
+
 **Feature**: `admin-dashboard` — **status: PASS ✅** (Verifier completou em 1 rodada de fix→re-verify, dentro do limite de 3). Relatório: `.specs/features/admin-dashboard/validation.md`.
 
 **Completo**: T1-T13 (todas as 4 fases) implementadas via 2 batches de sub-agentes (Batch1 T1-T6, Batch2 T7-T13) + 1 rodada de fix (5 de 6 gaps do Verifier — testes de wiring real do router de produção que não cobriam todas as rotas de escrita/admin, TTL de convite não verificado contra valor persistido, revogação de sessão em delete sem teste, poller status sem teste de acesso viewer no router real). Branch `main`, working tree limpa (exceto `.specs/features/admin-dashboard/validation.md`, `.specs/LESSONS.md`, `.specs/lessons.json` ainda não commitados). Último commit: `d719366` (test: assert invite TTL matches persisted expires_at).

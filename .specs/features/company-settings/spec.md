@@ -112,22 +112,22 @@ Explicitly excluded. Documented to prevent scope creep.
 
 | Requirement ID | Story                                     | Phase  | Status  |
 | --------------- | ------------------------------------------ | ------ | ------- |
-| SET-01          | P1: Owner edits company identity          | Design | Implementing |
-| SET-02          | P1: Owner edits company identity (RBAC)   | Design | Implementing |
-| SET-03          | P1: Owner edits company identity (seed)   | Design | Implementing |
-| SET-04          | P1: Owner edits company identity (validation) | Design | Implementing |
-| SET-05          | P1: Owner edits company identity (validation) | Design | Implementing |
-| SET-06          | P1: Owner edits company identity (singleton) | Design | Implementing |
-| SET-07          | P1: Owner uploads logo                    | Design | Implementing |
-| SET-08          | P1: Owner uploads logo (size limit)       | Design | Implementing |
-| SET-09          | P1: Owner uploads logo (MIME whitelist)   | Design | Implementing |
-| SET-10          | P1: Owner uploads logo (overwrite)        | Design | Implementing |
-| SET-11          | P1: Owner uploads logo (config path)      | Design | Implementing |
-| SET-12          | P1: Owner uploads logo (public serving)   | Design | Implementing |
-| SET-13          | P1: Owner uploads logo (write failure)    | Design | Implementing |
-| SET-14          | P1: Owner uploads logo (null default)     | Design | Pending |
-| SET-15          | P2: Public pages show real identity       | Design | Implementing |
-| SET-16          | P2: Public pages show real identity (null logo) | Design | Implementing |
+| SET-01          | P1: Owner edits company identity          | Design | Verified |
+| SET-02          | P1: Owner edits company identity (RBAC)   | Design | Verified |
+| SET-03          | P1: Owner edits company identity (seed)   | Design | Verified |
+| SET-04          | P1: Owner edits company identity (validation) | Design | Verified |
+| SET-05          | P1: Owner edits company identity (validation) | Design | Verified |
+| SET-06          | P1: Owner edits company identity (singleton) | Design | Verified |
+| SET-07          | P1: Owner uploads logo                    | Design | Verified |
+| SET-08          | P1: Owner uploads logo (size limit)       | Design | Verified |
+| SET-09          | P1: Owner uploads logo (MIME whitelist)   | Design | Verified |
+| SET-10          | P1: Owner uploads logo (overwrite)        | Design | Verified |
+| SET-11          | P1: Owner uploads logo (config path)      | Design | Verified |
+| SET-12          | P1: Owner uploads logo (public serving)   | Design | Verified |
+| SET-13          | P1: Owner uploads logo (write failure)    | Design | Verified |
+| SET-14          | P1: Owner uploads logo (null default)     | Design | Verified |
+| SET-15          | P2: Public pages show real identity       | Design | Verified |
+| SET-16          | P2: Public pages show real identity (null logo) | Design | Verified |
 
 **ID format:** `SET-[NUMBER]`
 
