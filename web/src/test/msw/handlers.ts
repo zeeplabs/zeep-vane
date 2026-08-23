@@ -53,6 +53,12 @@ export function resetDomainsAndStatusPages(): void {
 }
 resetDomainsAndStatusPages();
 
+// GET /api/instance/dns-target's configured value (SPD-10) - mirrors
+// config.PublicDNSTarget. Defaults to a configured value; tests that need
+// the "operator never configured it" (null) case override via
+// server.use(http.get("/api/instance/dns-target", ...)).
+const dnsTargetState: string | null = "203.0.113.10";
+
 // In-memory services + Datadog integration state (I15), seeded the same
 // way as domains/status-pages above.
 let servicesState: Service[] = [];
@@ -213,6 +219,11 @@ export const handlers = [
     return HttpResponse.json(statusPagesState.map(toStatusPageResponse));
   }),
 
+  // POST /api/status-pages (SPD-01, SPD-05) - mirrors the relaxed
+  // StatusPagesHandler.Create: name is the only required field now: no
+  // domain_id/subdomain at all creates a domain-less page (domain_id/
+  // subdomain both null); giving exactly one of the pair is rejected,
+  // since a domain without a subdomain (or vice versa) is meaningless.
   http.post("/api/status-pages", async ({ request }) => {
     if (!sessionAdminId) return HttpResponse.json({ error: "unauthorized" }, { status: 401 });
     const body = (await request.json()) as {
@@ -221,15 +232,21 @@ export const handlers = [
       domain_id?: string;
       service_ids?: string[];
     };
-    if (!body.name || !body.subdomain || !body.domain_id) {
-      return HttpResponse.json({ error: "name, subdomain, and domain_id are required" }, { status: 422 });
+    if (!body.name) {
+      return HttpResponse.json({ error: "name is required" }, { status: 422 });
+    }
+    if (Boolean(body.subdomain) !== Boolean(body.domain_id)) {
+      return HttpResponse.json(
+        { error: "subdomain and domain_id must be set together, or not at all" },
+        { status: 422 },
+      );
     }
     statusPageIdCounter += 1;
     const created: StatusPage = {
       id: `sp-msw-${statusPageIdCounter}`,
       name: body.name,
-      subdomain: body.subdomain,
-      domain_id: body.domain_id,
+      subdomain: body.subdomain ?? null,
+      domain_id: body.domain_id ?? null,
       state: "draft",
       tls_last_error: null,
       created_at: new Date().toISOString(),
@@ -237,6 +254,47 @@ export const handlers = [
     };
     statusPagesState.push(created);
     return HttpResponse.json(toStatusPageResponse(created), { status: 201 });
+  }),
+
+  // PATCH /api/status-pages/:id/domain (SPD-06 through SPD-09) - mirrors
+  // StatusPagesHandler.AttachDomain: 404 unknown page, 422 empty
+  // subdomain/domain_id, 409 already attached, 422 domain_id that doesn't
+  // reference a real Domain, 409 (domain_id, subdomain) pair already used
+  // by another page, else 200 with the updated page.
+  http.patch("/api/status-pages/:id/domain", async ({ request, params }) => {
+    if (!sessionAdminId) return HttpResponse.json({ error: "unauthorized" }, { status: 401 });
+    const page = statusPagesState.find((p) => p.id === params.id);
+    if (!page) {
+      return HttpResponse.json({ error: "status page not found" }, { status: 404 });
+    }
+    const body = (await request.json()) as { domain_id?: string; subdomain?: string };
+    if (!body.domain_id || !body.subdomain) {
+      return HttpResponse.json({ error: "domain_id and subdomain are required" }, { status: 422 });
+    }
+    if (page.domain_id) {
+      return HttpResponse.json({ error: "this status page already has a domain attached" }, { status: 409 });
+    }
+    if (!domainsState.some((d) => d.id === body.domain_id)) {
+      return HttpResponse.json({ error: "domain_id does not reference an existing domain" }, { status: 422 });
+    }
+    if (
+      statusPagesState.some(
+        (p) => p.id !== page.id && p.domain_id === body.domain_id && p.subdomain === body.subdomain,
+      )
+    ) {
+      return HttpResponse.json({ error: "this domain/subdomain pair is already in use" }, { status: 409 });
+    }
+    page.domain_id = body.domain_id;
+    page.subdomain = body.subdomain;
+    return HttpResponse.json(toStatusPageResponse(page));
+  }),
+
+  // GET /api/instance/dns-target (SPD-10) - mirrors InstanceConfigHandler
+  // .DNSTarget: the configured value, or null when the operator never set
+  // PUBLIC_DNS_TARGET.
+  http.get("/api/instance/dns-target", () => {
+    if (!sessionAdminId) return HttpResponse.json({ error: "unauthorized" }, { status: 401 });
+    return HttpResponse.json({ target: dnsTargetState });
   }),
 
   http.get("/api/integrations/datadog/status", () => {

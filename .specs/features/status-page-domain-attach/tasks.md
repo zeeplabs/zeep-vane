@@ -349,11 +349,11 @@ Tasks: T13, T14, T15 - see dependency graph below.
 - Skill: NONE
 
 **Done when**:
-- [ ] `POST /api/status-pages` without domain fields returns a page with `domain_id: null, subdomain: null`
-- [ ] `PATCH /api/status-pages/:id/domain` mirrors the 4 backend outcomes (200/404/409/422) by status code
-- [ ] `GET /api/instance/dns-target` returns a configurable mock value or `null`
-- [ ] Gate check passes: `cd web && npm run test`
-- [ ] Test count: existing suite still green - no regressions from the handler change alone
+- [x] `POST /api/status-pages` without domain fields returns a page with `domain_id: null, subdomain: null`
+- [x] `PATCH /api/status-pages/:id/domain` mirrors the 4 backend outcomes (200/404/409/422) by status code
+- [x] `GET /api/instance/dns-target` returns a configurable mock value or `null`
+- [x] Gate check passes: `cd web && npm run test`
+- [x] Test count: existing suite still green - no regressions from the handler change alone
 
 **Tests**: none (fixture code; covered indirectly by T12-T15)
 **Gate**: quick
