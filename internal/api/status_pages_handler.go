@@ -3,9 +3,11 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"time"
 
+	"github.com/go-chi/chi/v5"
 	"go.uber.org/zap"
 
 	"github.com/zeeplabs/zeep-vane/internal/db"
@@ -16,6 +18,7 @@ import (
 type statusPageCreatorLister interface {
 	Create(ctx context.Context, statusPage *db.StatusPage, serviceIDs []string) error
 	List(ctx context.Context) ([]db.StatusPage, error)
+	AttachDomain(ctx context.Context, id, domainID, subdomain string) (*db.StatusPage, error)
 }
 
 // StatusPagesHandler serves the status page admin routes.
@@ -87,6 +90,69 @@ func (h *StatusPagesHandler) Create(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
+	_ = json.NewEncoder(w).Encode(statusPageResponse{
+		ID:           statusPage.ID,
+		Name:         statusPage.Name,
+		Subdomain:    statusPage.Subdomain,
+		DomainID:     statusPage.DomainID,
+		State:        statusPage.State,
+		TLSLastError: statusPage.TLSLastError,
+		CreatedAt:    statusPage.CreatedAt,
+	})
+}
+
+type attachDomainRequest struct {
+	DomainID  string `json:"domain_id"`
+	Subdomain string `json:"subdomain"`
+}
+
+const invalidAttachDomainRequestBody = `{"error":"domain_id and subdomain are required"}`
+const domainAlreadyAttachedBody = `{"error":"this status page already has a domain attached"}`
+const invalidDomainIDBody = `{"error":"domain_id does not reference an existing domain"}`
+const duplicateDomainSubdomainBody = `{"error":"this domain/subdomain pair is already in use"}`
+
+// AttachDomain handles PATCH /api/status-pages/{id}/domain, setting
+// domain_id/subdomain on a status page that doesn't have one yet (SPD-06).
+// It is the only way a domain-less status page (SPD-01) can go on to
+// actually publish, since the existing on-demand TLS/HostPolicy flow only
+// starts once domain_id/subdomain are set.
+func (h *StatusPagesHandler) AttachDomain(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+
+	var req attachDomainRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.DomainID == "" || req.Subdomain == "" {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusUnprocessableEntity)
+		_, _ = w.Write([]byte(invalidAttachDomainRequestBody))
+		return
+	}
+
+	statusPage, err := h.statusPages.AttachDomain(r.Context(), id, req.DomainID, req.Subdomain)
+	if err != nil {
+		switch {
+		case errors.Is(err, db.ErrNotFound):
+			http.NotFound(w, r)
+		case errors.Is(err, db.ErrDomainAlreadyAttached):
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusConflict)
+			_, _ = w.Write([]byte(domainAlreadyAttachedBody))
+		case errors.Is(err, db.ErrInvalidDomain):
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusUnprocessableEntity)
+			_, _ = w.Write([]byte(invalidDomainIDBody))
+		case errors.Is(err, db.ErrDuplicateDomainSubdomain):
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusConflict)
+			_, _ = w.Write([]byte(duplicateDomainSubdomainBody))
+		default:
+			h.logger.Error("status-pages: failed to attach domain", zap.Error(err))
+			writeInternalError(w)
+		}
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
 	_ = json.NewEncoder(w).Encode(statusPageResponse{
 		ID:           statusPage.ID,
 		Name:         statusPage.Name,

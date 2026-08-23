@@ -220,14 +220,14 @@ Tasks: T13, T14, T15 - see dependency graph below.
 - Skill: NONE
 
 **Done when**:
-- [ ] Valid attach on a domain-less page → `200`, response reflects new `domain_id`/`subdomain`
-- [ ] Attach on already-domained page → `409`
-- [ ] Attach with empty `subdomain` → `422`
-- [ ] Attach with a nonexistent `domain_id` → `422`
-- [ ] Attach with a `(domain_id, subdomain)` pair already used elsewhere → `409`
-- [ ] Attach on a nonexistent status page ID → `404`
-- [ ] Gate check passes: `go test -tags=integration ./internal/api`
-- [ ] Test count: 6+ new tests pass (no silent deletions)
+- [x] Valid attach on a domain-less page → `200`, response reflects new `domain_id`/`subdomain`
+- [x] Attach on already-domained page → `409`
+- [x] Attach with empty `subdomain` → `422`
+- [x] Attach with a nonexistent `domain_id` → `422`
+- [x] Attach with a `(domain_id, subdomain)` pair already used elsewhere → `409`
+- [x] Attach on a nonexistent status page ID → `404`
+- [x] Gate check passes: `go test -tags=integration ./internal/api`
+- [x] Test count: 6+ new tests pass (no silent deletions)
 
 **Tests**: integration
 **Gate**: full

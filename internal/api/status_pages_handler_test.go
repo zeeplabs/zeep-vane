@@ -44,6 +44,7 @@ func newStatusPagesRouter(t *testing.T) (http.Handler, *db.Pool, *db.AdminReposi
 		protected.Use(RequireAuth(middlewareTestSecret, admins))
 		protected.Post("/api/status-pages", handler.Create)
 		protected.Get("/api/status-pages", handler.List)
+		protected.Patch("/api/status-pages/{id}/domain", handler.AttachDomain)
 	})
 
 	return r, pool, admins
@@ -322,5 +323,143 @@ func TestCreateStatusPage_EmptyName_422(t *testing.T) {
 	rec := postCreateStatusPage(t, r, token, createStatusPageRequest{})
 	if rec.Code != http.StatusUnprocessableEntity {
 		t.Errorf("status = %d, want %d, body = %s", rec.Code, http.StatusUnprocessableEntity, rec.Body.String())
+	}
+}
+
+// createDomainlessStatusPageViaAPI creates a domain-less status page
+// through the handler under test and registers its cleanup, returning
+// its ID.
+func createDomainlessStatusPageViaAPI(t *testing.T, r http.Handler, pool *db.Pool, token, name string) string {
+	t.Helper()
+	rec := postCreateStatusPage(t, r, token, createStatusPageRequest{Name: name})
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("setup create status = %d, want %d, body = %s", rec.Code, http.StatusCreated, rec.Body.String())
+	}
+	id := decodeStatusPageID(t, rec)
+	cleanupStatusPage(t, pool, id)
+	return id
+}
+
+func patchAttachDomain(t *testing.T, r http.Handler, token, statusPageID string, req attachDomainRequest) *httptest.ResponseRecorder {
+	t.Helper()
+	body, err := json.Marshal(req)
+	if err != nil {
+		t.Fatalf("json.Marshal() returned unexpected error: %v", err)
+	}
+
+	httpReq := httptest.NewRequest(http.MethodPatch, "/api/status-pages/"+statusPageID+"/domain", bytes.NewReader(body))
+	httpReq.Header.Set("Content-Type", "application/json")
+	if token != "" {
+		httpReq.Header.Set("Authorization", "Bearer "+token)
+	}
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, httpReq)
+	return rec
+}
+
+// TestAttachDomain_ValidRequest_200ReflectsNewDomainAndSubdomain asserts
+// SPD-06: a valid attach on a domain-less page succeeds and the response
+// reflects the newly set domain_id/subdomain.
+func TestAttachDomain_ValidRequest_200ReflectsNewDomainAndSubdomain(t *testing.T) {
+	r, pool, admins := newStatusPagesRouter(t)
+	token := issueTestSessionToken(t, admins)
+	domainID := createTestDomain(t, pool)
+	pageID := createDomainlessStatusPageViaAPI(t, r, pool, token, "Attach Handler Page")
+
+	rec := patchAttachDomain(t, r, token, pageID, attachDomainRequest{DomainID: domainID, Subdomain: "status"})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	var updated statusPageResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &updated); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+	if updated.DomainID == nil || *updated.DomainID != domainID {
+		t.Errorf("DomainID = %v, want %q", updated.DomainID, domainID)
+	}
+	if updated.Subdomain == nil || *updated.Subdomain != "status" {
+		t.Errorf("Subdomain = %v, want %q", updated.Subdomain, "status")
+	}
+}
+
+// TestAttachDomain_AlreadyAttached_409 asserts SPD-07.
+func TestAttachDomain_AlreadyAttached_409(t *testing.T) {
+	r, pool, admins := newStatusPagesRouter(t)
+	token := issueTestSessionToken(t, admins)
+	firstDomainID := createTestDomain(t, pool)
+	secondDomainID := createTestDomain(t, pool)
+	pageID := createDomainlessStatusPageViaAPI(t, r, pool, token, "Attach Already Page")
+
+	firstRec := patchAttachDomain(t, r, token, pageID, attachDomainRequest{DomainID: firstDomainID, Subdomain: "status"})
+	if firstRec.Code != http.StatusOK {
+		t.Fatalf("setup attach status = %d, want %d, body = %s", firstRec.Code, http.StatusOK, firstRec.Body.String())
+	}
+
+	rec := patchAttachDomain(t, r, token, pageID, attachDomainRequest{DomainID: secondDomainID, Subdomain: "other"})
+	if rec.Code != http.StatusConflict {
+		t.Errorf("status = %d, want %d, body = %s", rec.Code, http.StatusConflict, rec.Body.String())
+	}
+}
+
+// TestAttachDomain_EmptySubdomain_422 asserts SPD-08.
+func TestAttachDomain_EmptySubdomain_422(t *testing.T) {
+	r, pool, admins := newStatusPagesRouter(t)
+	token := issueTestSessionToken(t, admins)
+	domainID := createTestDomain(t, pool)
+	pageID := createDomainlessStatusPageViaAPI(t, r, pool, token, "Attach Empty Subdomain Page")
+
+	rec := patchAttachDomain(t, r, token, pageID, attachDomainRequest{DomainID: domainID, Subdomain: ""})
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Errorf("status = %d, want %d, body = %s", rec.Code, http.StatusUnprocessableEntity, rec.Body.String())
+	}
+}
+
+// TestAttachDomain_NonexistentDomainID_422 asserts SPD-07.
+func TestAttachDomain_NonexistentDomainID_422(t *testing.T) {
+	r, pool, admins := newStatusPagesRouter(t)
+	token := issueTestSessionToken(t, admins)
+	pageID := createDomainlessStatusPageViaAPI(t, r, pool, token, "Attach Invalid Domain Page")
+
+	rec := patchAttachDomain(t, r, token, pageID, attachDomainRequest{
+		DomainID: "00000000-0000-0000-0000-000000000000", Subdomain: "status",
+	})
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Errorf("status = %d, want %d, body = %s", rec.Code, http.StatusUnprocessableEntity, rec.Body.String())
+	}
+}
+
+// TestAttachDomain_DuplicatePair_409 asserts SPD-09.
+func TestAttachDomain_DuplicatePair_409(t *testing.T) {
+	r, pool, admins := newStatusPagesRouter(t)
+	token := issueTestSessionToken(t, admins)
+	domainID := createTestDomain(t, pool)
+
+	takenPageID := createDomainlessStatusPageViaAPI(t, r, pool, token, "Attach Duplicate Taken Page")
+	takenRec := patchAttachDomain(t, r, token, takenPageID, attachDomainRequest{DomainID: domainID, Subdomain: "status"})
+	if takenRec.Code != http.StatusOK {
+		t.Fatalf("setup attach status = %d, want %d, body = %s", takenRec.Code, http.StatusOK, takenRec.Body.String())
+	}
+
+	pageID := createDomainlessStatusPageViaAPI(t, r, pool, token, "Attach Duplicate Colliding Page")
+	rec := patchAttachDomain(t, r, token, pageID, attachDomainRequest{DomainID: domainID, Subdomain: "status"})
+	if rec.Code != http.StatusConflict {
+		t.Errorf("status = %d, want %d, body = %s", rec.Code, http.StatusConflict, rec.Body.String())
+	}
+}
+
+// TestAttachDomain_NonexistentStatusPageID_404 asserts the not-found
+// outcome for the attach endpoint itself (design.md Error Handling
+// Strategy).
+func TestAttachDomain_NonexistentStatusPageID_404(t *testing.T) {
+	r, pool, admins := newStatusPagesRouter(t)
+	token := issueTestSessionToken(t, admins)
+	domainID := createTestDomain(t, pool)
+
+	rec := patchAttachDomain(t, r, token, "00000000-0000-0000-0000-000000000000", attachDomainRequest{
+		DomainID: domainID, Subdomain: "status",
+	})
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("status = %d, want %d, body = %s", rec.Code, http.StatusNotFound, rec.Body.String())
 	}
 }
