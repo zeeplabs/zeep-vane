@@ -3,7 +3,7 @@
   "promote_threshold": 2,
   "window_days": 45,
   "quarantine_threshold": 2,
-  "next_id": 6,
+  "next_id": 10,
   "lessons": [
     {
       "id": "L-001",
@@ -94,6 +94,78 @@
       ],
       "created": "2026-08-20T00:25:53Z",
       "last_seen": "2026-08-20T00:25:53Z"
+    },
+    {
+      "id": "L-006",
+      "key": "surviving_mutant::never size a boundary test s payload from the constant under test assert the spec s literal limit so widening it fails a test",
+      "text": "Never size a boundary test's payload from the constant under test; assert the spec's literal limit so widening it fails a test.",
+      "signal": "surviving_mutant",
+      "scope": "go/handlers/validation",
+      "status": "candidate",
+      "features": [
+        "company-settings"
+      ],
+      "recurrence": 1,
+      "harmful": 0,
+      "evidence": [
+        "internal/api/company_settings_handler_test.go:314 (mutant M1: maxLogoBytes 10<<20 -> 100<<20 survived) (go/handlers/validation)"
+      ],
+      "created": "2026-08-23T15:02:30Z",
+      "last_seen": "2026-08-23T15:02:30Z"
+    },
+    {
+      "id": "L-007",
+      "key": "ac_gap::when a task s done when list is narrower than its layer s test coverage matrix row treat the matrix as binding and add the missing status code case",
+      "text": "When a task's Done-when list is narrower than its layer's Test Coverage Matrix row, treat the matrix as binding and add the missing status-code case.",
+      "signal": "ac_gap",
+      "scope": "tasks/coverage-matrix",
+      "status": "candidate",
+      "features": [
+        "company-settings"
+      ],
+      "recurrence": 1,
+      "harmful": 0,
+      "evidence": [
+        "SET-13 (no test for uploads.Save failure -> 500) (tasks/coverage-matrix)"
+      ],
+      "created": "2026-08-23T15:02:31Z",
+      "last_seen": "2026-08-23T15:02:31Z"
+    },
+    {
+      "id": "L-008",
+      "key": "spec_deviation::verify a stdlib sniffing parsing helper actually supports every format the spec allowlists before designing validation around it",
+      "text": "Verify a stdlib sniffing/parsing helper actually supports every format the spec allowlists before designing validation around it.",
+      "signal": "spec_deviation",
+      "scope": "go/design/mime",
+      "status": "candidate",
+      "features": [
+        "company-settings"
+      ],
+      "recurrence": 1,
+      "harmful": 0,
+      "evidence": [
+        "internal/api/company_settings_handler.go:189 SPEC_DEVIATION (http.DetectContentType has no SVG signature) (go/design/mime)"
+      ],
+      "created": "2026-08-23T15:02:31Z",
+      "last_seen": "2026-08-23T15:02:31Z"
+    },
+    {
+      "id": "L-009",
+      "key": "spec_precision_gap::msw handlers under jsdom cannot read a multipart body so verify upload field name payload contracts by inspecting the formdata in process instead of in the handler",
+      "text": "MSW handlers under jsdom cannot read a multipart body, so verify upload field-name/payload contracts by inspecting the FormData in-process instead of in the handler.",
+      "signal": "spec_precision_gap",
+      "scope": "web/msw/uploads",
+      "status": "candidate",
+      "features": [
+        "company-settings"
+      ],
+      "recurrence": 1,
+      "harmful": 0,
+      "evidence": [
+        "web/src/test/msw/handlers.ts:566 (multipart body unreadable under jsdom; formData() and text() both hang) (web/msw/uploads)"
+      ],
+      "created": "2026-08-23T15:02:31Z",
+      "last_seen": "2026-08-23T15:02:31Z"
     }
   ]
 }

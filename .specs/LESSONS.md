@@ -44,6 +44,30 @@ Seen once or not yet corroborated. Tracked, not trusted.
 - evidence: SPEC_DEVIATION internal/api/admins.go:84-93 (spec)
 - last seen: 2026-08-20T00:25:53Z
 
+### L-006 - Never size a boundary test's payload from the constant under test; assert the spec's literal limit so widening it fails a test.
+- signal: `surviving_mutant` · recurrence: 1 feature(s) · scope: `go/handlers/validation` · harmful: 0
+- features: company-settings
+- evidence: internal/api/company_settings_handler_test.go:314 (mutant M1: maxLogoBytes 10<<20 -> 100<<20 survived) (go/handlers/validation)
+- last seen: 2026-08-23T15:02:30Z
+
+### L-007 - When a task's Done-when list is narrower than its layer's Test Coverage Matrix row, treat the matrix as binding and add the missing status-code case.
+- signal: `ac_gap` · recurrence: 1 feature(s) · scope: `tasks/coverage-matrix` · harmful: 0
+- features: company-settings
+- evidence: SET-13 (no test for uploads.Save failure -> 500) (tasks/coverage-matrix)
+- last seen: 2026-08-23T15:02:31Z
+
+### L-008 - Verify a stdlib sniffing/parsing helper actually supports every format the spec allowlists before designing validation around it.
+- signal: `spec_deviation` · recurrence: 1 feature(s) · scope: `go/design/mime` · harmful: 0
+- features: company-settings
+- evidence: internal/api/company_settings_handler.go:189 SPEC_DEVIATION (http.DetectContentType has no SVG signature) (go/design/mime)
+- last seen: 2026-08-23T15:02:31Z
+
+### L-009 - MSW handlers under jsdom cannot read a multipart body, so verify upload field-name/payload contracts by inspecting the FormData in-process instead of in the handler.
+- signal: `spec_precision_gap` · recurrence: 1 feature(s) · scope: `web/msw/uploads` · harmful: 0
+- features: company-settings
+- evidence: web/src/test/msw/handlers.ts:566 (multipart body unreadable under jsdom; formData() and text() both hang) (web/msw/uploads)
+- last seen: 2026-08-23T15:02:31Z
+
 ## Quarantined (failed when applied - ignore)
 
 A confirmed lesson that recurred alongside failure. Kept for the maintainer to review.
