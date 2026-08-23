@@ -112,12 +112,12 @@ Tasks: T13, T14, T15 - see dependency graph below.
 - Skill: NONE
 
 **Done when**:
-- [ ] `Create` with `DomainID: nil, Subdomain: nil` succeeds, returned row has both `nil`
-- [ ] `Create` with both set (existing with-domain path) still succeeds unchanged
-- [ ] `List` returns a mix of domain-less and domained rows with correct nullability
-- [ ] Existing tests for `Create`/`List` updated to the new pointer types, none weakened or deleted
-- [ ] Gate check passes: `go test -tags=integration ./internal/db`
-- [ ] Test count: at least the same count as before this task, plus 2+ new (no silent deletions)
+- [x] `Create` with `DomainID: nil, Subdomain: nil` succeeds, returned row has both `nil`
+- [x] `Create` with both set (existing with-domain path) still succeeds unchanged
+- [x] `List` returns a mix of domain-less and domained rows with correct nullability
+- [x] Existing tests for `Create`/`List` updated to the new pointer types, none weakened or deleted
+- [x] Gate check passes: `go test -tags=integration ./internal/db`
+- [x] Test count: at least the same count as before this task, plus 2+ new (no silent deletions)
 
 **Tests**: integration
 **Gate**: full

@@ -39,8 +39,8 @@ type createStatusPageRequest struct {
 type statusPageResponse struct {
 	ID           string    `json:"id"`
 	Name         string    `json:"name"`
-	Subdomain    string    `json:"subdomain"`
-	DomainID     string    `json:"domain_id"`
+	Subdomain    *string   `json:"subdomain"`
+	DomainID     *string   `json:"domain_id"`
 	State        string    `json:"state"`
 	TLSLastError *string   `json:"tls_last_error"`
 	CreatedAt    time.Time `json:"created_at"`
@@ -62,7 +62,7 @@ func (h *StatusPagesHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	statusPage := &db.StatusPage{Name: req.Name, Subdomain: req.Subdomain, DomainID: req.DomainID}
+	statusPage := &db.StatusPage{Name: req.Name, Subdomain: &req.Subdomain, DomainID: &req.DomainID}
 	if err := h.statusPages.Create(r.Context(), statusPage, req.ServiceIDs); err != nil {
 		h.logger.Error("status-pages: failed to create status page", zap.Error(err))
 		writeInternalError(w)

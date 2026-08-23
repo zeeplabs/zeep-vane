@@ -33,7 +33,7 @@ func createPublishedStatusPageFixture(t *testing.T, pool *db.Pool) string {
 	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), "DELETE FROM domains WHERE id = $1", domain.ID) })
 
 	statusPages := db.NewStatusPageRepository(pool)
-	statusPage := &db.StatusPage{Name: "host-router-test-page", Subdomain: subdomain, DomainID: domain.ID}
+	statusPage := &db.StatusPage{Name: "host-router-test-page", Subdomain: &subdomain, DomainID: &domain.ID}
 	if err := statusPages.Create(ctx, statusPage, nil); err != nil {
 		t.Fatalf("failed to create status page fixture: %v", err)
 	}

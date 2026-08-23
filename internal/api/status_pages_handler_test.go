@@ -129,8 +129,8 @@ func TestCreateStatusPage_ValidRequest_201LinksDomainAndServices(t *testing.T) {
 	if created.State != "draft" {
 		t.Errorf("State = %q, want %q", created.State, "draft")
 	}
-	if created.DomainID != domainID {
-		t.Errorf("DomainID = %q, want %q", created.DomainID, domainID)
+	if created.DomainID == nil || *created.DomainID != domainID {
+		t.Errorf("DomainID = %v, want %q", created.DomainID, domainID)
 	}
 
 	var linkedServiceID string

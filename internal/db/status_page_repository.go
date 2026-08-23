@@ -10,12 +10,14 @@ import (
 )
 
 // StatusPage is a public status page published at Subdomain under Domain,
-// showing the linked services' current status.
+// showing the linked services' current status. Subdomain and DomainID are
+// both nullable: a status page can be created with no domain attached
+// (SPD-01) and gets both set together, exactly once, by AttachDomain.
 type StatusPage struct {
 	ID           string
 	Name         string
-	Subdomain    string
-	DomainID     string
+	Subdomain    *string
+	DomainID     *string
 	State        string
 	TLSLastError *string
 	CreatedAt    time.Time

@@ -41,7 +41,7 @@ func setUpStatusPageFixture(t *testing.T) (hostname string, repo *db.StatusPageR
 
 	suffix := fmt.Sprintf("%d", time.Now().UnixNano())
 	rootHostname := fmt.Sprintf("tls-manager-test-%s.example.com", suffix)
-	const subdomain = "status"
+	subdomain := "status"
 	hostname = subdomain + "." + rootHostname
 
 	domains := db.NewDomainRepository(pool)
@@ -52,7 +52,7 @@ func setUpStatusPageFixture(t *testing.T) (hostname string, repo *db.StatusPageR
 	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), "DELETE FROM domains WHERE id = $1", domain.ID) })
 
 	repo = db.NewStatusPageRepository(pool)
-	statusPage := &db.StatusPage{Name: "tls-manager-test-page", Subdomain: subdomain, DomainID: domain.ID}
+	statusPage := &db.StatusPage{Name: "tls-manager-test-page", Subdomain: &subdomain, DomainID: &domain.ID}
 	if err := repo.Create(ctx, statusPage, nil); err != nil {
 		t.Fatalf("failed to create status page fixture: %v", err)
 	}

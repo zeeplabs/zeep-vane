@@ -96,7 +96,8 @@ func createPublicStatusPageFixture(t *testing.T, pool *db.Pool, serviceIDs ...st
 	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), "DELETE FROM domains WHERE id = $1", domain.ID) })
 
 	statusPages := db.NewStatusPageRepository(pool)
-	statusPage := &db.StatusPage{Name: "public-status-test-page", Subdomain: "status", DomainID: domain.ID}
+	subdomain := "status"
+	statusPage := &db.StatusPage{Name: "public-status-test-page", Subdomain: &subdomain, DomainID: &domain.ID}
 	if err := statusPages.Create(ctx, statusPage, serviceIDs); err != nil {
 		t.Fatalf("setup status page Create() returned unexpected error: %v", err)
 	}
