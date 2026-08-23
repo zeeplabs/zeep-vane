@@ -160,11 +160,11 @@ Tasks: T11, T12, T13, T14 (executed in this order; see the dependency graph belo
 - Skill: NONE
 
 **Done when**:
-- [ ] First `Save` into a non-existent dir creates it and writes `logo<ext>`
-- [ ] A second `Save` with a different extension removes the first file, leaving exactly one `logo.*`
-- [ ] Returned `servedPath` is `/uploads/logo<ext>`
-- [ ] Gate check passes: `go test ./internal/uploads`
-- [ ] Test count: 3+ new tests pass (no silent deletions)
+- [x] First `Save` into a non-existent dir creates it and writes `logo<ext>`
+- [x] A second `Save` with a different extension removes the first file, leaving exactly one `logo.*`
+- [x] Returned `servedPath` is `/uploads/logo<ext>`
+- [x] Gate check passes: `go test ./internal/uploads`
+- [x] Test count: 3+ new tests pass (no silent deletions)
 
 **Tests**: unit
 **Gate**: quick
