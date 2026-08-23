@@ -393,6 +393,57 @@ func TestUploadLogo_JustUnderSizeLimit_200UpdatesLogoURL(t *testing.T) {
 	}
 }
 
+// TestUploadLogo_SaveFailure_500NoLogoURLChange asserts SET-13: when
+// uploads.Save cannot write the file (permission denied, disk full, ...)
+// the handler responds 500 and never calls UpdateLogoURL - a subsequent GET
+// still returns the logo_url from the last successful upload, unchanged.
+// The write failure is forced for real, not mocked: the uploads dir is
+// chmod'd to read+execute only (0o500) after a first successful upload has
+// seeded a non-nil logo_url, so removeExistingLogoFiles/os.Create inside
+// uploads.Save genuinely fails with a permission error.
+func TestUploadLogo_SaveFailure_500NoLogoURLChange(t *testing.T) {
+	r, _, admins, uploadsDir := newCompanySettingsRouterWithUploadsDir(t)
+	token := issueTestSessionToken(t, admins)
+
+	// Seed a known-good logo_url first so "unchanged" is a non-nil value -
+	// the stronger form of the AC than proving it merely stayed null.
+	seedReq := buildMultipartLogoRequest(t, "logo.png", pngSignatureBytes, token)
+	seedRec := httptest.NewRecorder()
+	r.ServeHTTP(seedRec, seedReq)
+	if seedRec.Code != http.StatusOK {
+		t.Fatalf("seed upload status = %d, want %d, body = %s", seedRec.Code, http.StatusOK, seedRec.Body.String())
+	}
+
+	if err := os.Chmod(uploadsDir, 0o500); err != nil {
+		t.Fatalf("os.Chmod() returned unexpected error: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(uploadsDir, 0o755) })
+
+	req := buildMultipartLogoRequest(t, "logo.svg", []byte(validSVGBody), token)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusInternalServerError, rec.Body.String())
+	}
+
+	// Restore write access before the follow-up GET so it isn't affected by
+	// the induced failure, then confirm logo_url still points at the seeded
+	// upload.
+	if err := os.Chmod(uploadsDir, 0o755); err != nil {
+		t.Fatalf("os.Chmod() restore returned unexpected error: %v", err)
+	}
+
+	getRec := getCompanySettings(t, r, token)
+	var getResp companySettingsResponse
+	if err := json.Unmarshal(getRec.Body.Bytes(), &getResp); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+	if getResp.LogoURL == nil || *getResp.LogoURL != "/uploads/logo.png" {
+		t.Errorf("LogoURL after failed write = %v, want unchanged %q", getResp.LogoURL, "/uploads/logo.png")
+	}
+}
+
 // TestUploadLogo_WrongMIMEType_422NoLogoURLChange asserts SET-09: a
 // non-PNG/SVG payload is rejected with 422 and the previously stored logo
 // (none, here) is left untouched.
