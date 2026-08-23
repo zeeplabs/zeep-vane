@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -24,8 +25,17 @@ const routesTestSessionSecret = "cli-routes-test-session-secret-32b!!"
 func newAdminRouterForTest(t *testing.T) (http.Handler, *db.Pool, *db.AdminRepository) {
 	t.Helper()
 	pool := newServeTestPool(t)
-	cfg := config.Config{SessionSecret: routesTestSessionSecret, MasterKey: "cli-routes-test-master-key"}
+	cfg := config.Config{SessionSecret: routesTestSessionSecret, MasterKey: "cli-routes-test-master-key", UploadsDir: t.TempDir()}
 	handler := buildAdminRouter(pool, cfg, zap.NewNop())
+
+	// The company_settings row is a singleton shared across every test in
+	// this package - reset it to a known state before and after each test.
+	reset := func() {
+		_, _ = pool.Exec(context.Background(), "UPDATE company_settings SET name = '', contact_email = '', logo_url = NULL WHERE id = 1")
+	}
+	reset()
+	t.Cleanup(reset)
+
 	return handler, pool, db.NewAdminRepository(pool)
 }
 
@@ -415,5 +425,158 @@ func TestAdminRouter_Viewer_PollerStatus_200(t *testing.T) {
 
 	if rec.Code != http.StatusOK {
 		t.Errorf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+}
+
+// buildMultipartLogoBody builds a minimal multipart/form-data body for
+// POST /api/company-settings/logo, returning it alongside the request's
+// Content-Type header value.
+func buildMultipartLogoBody(t *testing.T) ([]byte, string) {
+	t.Helper()
+	var buf bytes.Buffer
+	writer := multipart.NewWriter(&buf)
+	part, err := writer.CreateFormFile("logo", "logo.png")
+	if err != nil {
+		t.Fatalf("CreateFormFile() returned unexpected error: %v", err)
+	}
+	if _, err := part.Write([]byte{0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A}); err != nil {
+		t.Fatalf("part.Write() returned unexpected error: %v", err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatalf("writer.Close() returned unexpected error: %v", err)
+	}
+	return buf.Bytes(), writer.FormDataContentType()
+}
+
+// companySettingsRouteCases lists the 3 company settings routes mounted in
+// routes.go (SET-02), each restricted to owner only.
+func companySettingsRouteCases(t *testing.T) []routeCase {
+	logoBody, _ := buildMultipartLogoBody(t)
+	return []routeCase{
+		{
+			name:   "GET /api/company-settings",
+			method: http.MethodGet,
+			path:   "/api/company-settings",
+			body:   func() []byte { return nil },
+		},
+		{
+			name:   "PATCH /api/company-settings",
+			method: http.MethodPatch,
+			path:   "/api/company-settings",
+			body: func() []byte {
+				b, _ := json.Marshal(map[string]string{"name": "Acme Inc.", "contact_email": "owner@acme.example.com"})
+				return b
+			},
+		},
+		{
+			name:   "POST /api/company-settings/logo",
+			method: http.MethodPost,
+			path:   "/api/company-settings/logo",
+			body:   func() []byte { return append([]byte{}, logoBody...) },
+		},
+	}
+}
+
+func doCompanySettingsRequest(t *testing.T, r http.Handler, token string, rt routeCase, contentType string) *httptest.ResponseRecorder {
+	t.Helper()
+	req := httptest.NewRequest(rt.method, rt.path, bytes.NewReader(rt.body()))
+	req.Header.Set("Content-Type", contentType)
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+	return rec
+}
+
+// TestAdminRouter_CompanySettings_OperatorAndViewer_403 is T8's RBAC
+// requirement (SET-02): every company settings route rejects operator and
+// viewer with 403, the same way admin-management routes do.
+func TestAdminRouter_CompanySettings_OperatorAndViewer_403(t *testing.T) {
+	r, _, admins := newAdminRouterForTest(t)
+	_, logoContentType := buildMultipartLogoBody(t)
+
+	for _, role := range []string{db.RoleOperator, db.RoleViewer} {
+		role := role
+		t.Run(role, func(t *testing.T) {
+			token := issueRoutesTestToken(t, admins, role)
+			for _, rt := range companySettingsRouteCases(t) {
+				t.Run(rt.name, func(t *testing.T) {
+					contentType := "application/json"
+					if rt.method == http.MethodPost {
+						contentType = logoContentType
+					}
+					rec := doCompanySettingsRequest(t, r, token, rt, contentType)
+					if rec.Code != http.StatusForbidden {
+						t.Errorf("status = %d, want %d, body = %s", rec.Code, http.StatusForbidden, rec.Body.String())
+					}
+				})
+			}
+		})
+	}
+}
+
+// TestAdminRouter_CompanySettings_Owner_PassAuthorization is T8's RBAC
+// requirement (SET-02): owner clears RequireRole on every company settings
+// route - the response must never be 401/403 (it may still be a normal
+// application-level status like 200 or 422).
+func TestAdminRouter_CompanySettings_Owner_PassAuthorization(t *testing.T) {
+	r, _, admins := newAdminRouterForTest(t)
+	token := issueRoutesTestToken(t, admins, db.RoleOwner)
+	_, logoContentType := buildMultipartLogoBody(t)
+
+	for _, rt := range companySettingsRouteCases(t) {
+		t.Run(rt.name, func(t *testing.T) {
+			contentType := "application/json"
+			if rt.method == http.MethodPost {
+				contentType = logoContentType
+			}
+			rec := doCompanySettingsRequest(t, r, token, rt, contentType)
+			if rec.Code == http.StatusUnauthorized || rec.Code == http.StatusForbidden {
+				t.Errorf("status = %d, want not 401/403 for owner, body = %s", rec.Code, rec.Body.String())
+			}
+		})
+	}
+}
+
+// TestAdminRouter_CompanySettings_NoSession_401 confirms the company
+// settings routes require authentication at all - no Authorization header
+// or session cookie gets 401 before RequireRole is ever reached.
+func TestAdminRouter_CompanySettings_NoSession_401(t *testing.T) {
+	r, _, _ := newAdminRouterForTest(t)
+	_, logoContentType := buildMultipartLogoBody(t)
+
+	for _, rt := range companySettingsRouteCases(t) {
+		t.Run(rt.name, func(t *testing.T) {
+			contentType := "application/json"
+			if rt.method == http.MethodPost {
+				contentType = logoContentType
+			}
+			rec := doCompanySettingsRequest(t, r, "", rt, contentType)
+			if rec.Code != http.StatusUnauthorized {
+				t.Errorf("status = %d, want %d, body = %s", rec.Code, http.StatusUnauthorized, rec.Body.String())
+			}
+		})
+	}
+}
+
+// TestAdminRouter_UploadsLogoFile_NoSession_ReachesHandler asserts SET-12:
+// GET /uploads/{filename} on the real admin router requires no session at
+// all - it must never respond 401/403 the way every other route in this
+// router does without one. No logo has been uploaded in this test, so the
+// expected outcome is 404 (missing file), proving the request reached
+// logoFileHandler rather than being rejected by auth middleware.
+func TestAdminRouter_UploadsLogoFile_NoSession_ReachesHandler(t *testing.T) {
+	r, _, _ := newAdminRouterForTest(t)
+
+	req := httptest.NewRequest(http.MethodGet, "/uploads/logo.png", nil)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+
+	if rec.Code == http.StatusUnauthorized || rec.Code == http.StatusForbidden {
+		t.Fatalf("status = %d, want not 401/403 (no auth required for /uploads/)", rec.Code)
+	}
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("status = %d, want %d (no logo uploaded in this test)", rec.Code, http.StatusNotFound)
 	}
 }

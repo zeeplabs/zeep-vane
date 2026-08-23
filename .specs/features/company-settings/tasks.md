@@ -267,11 +267,11 @@ Tasks: T11, T12, T13, T14 (executed in this order; see the dependency graph belo
 - Skill: NONE
 
 **Done when**:
-- [ ] `GET`/`PATCH /api/company-settings` reachable only with an owner session on the real admin router (403 for operator/viewer, 401 with no session)
-- [ ] `POST /api/company-settings/logo` same RBAC
-- [ ] `GET /uploads/{filename}` reachable on the admin router with no session
-- [ ] Gate check passes: `go test -tags=integration ./internal/cli`
-- [ ] Test count: 3+ new tests pass (no silent deletions)
+- [x] `GET`/`PATCH /api/company-settings` reachable only with an owner session on the real admin router (403 for operator/viewer, 401 with no session)
+- [x] `POST /api/company-settings/logo` same RBAC
+- [x] `GET /uploads/{filename}` reachable on the admin router with no session
+- [x] Gate check passes: `go test -tags=integration ./internal/cli`
+- [x] Test count: 3+ new tests pass (no silent deletions)
 
 **Tests**: integration
 **Gate**: full

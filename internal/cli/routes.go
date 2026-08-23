@@ -43,6 +43,8 @@ func buildAdminRouter(pool *db.Pool, cfg config.Config, logger *zap.Logger) http
 	pollerStatusHandler := api.NewPollerStatusHandler(db.NewIntegrationRepository(pool), logger)
 	publicStatusHandler := api.NewPublicStatusHandler(db.NewServiceRepository(pool), db.NewStatusSnapshotRepository(pool), db.NewIncidentRepository(pool), logger)
 	publicStatusPreviewHandler := api.NewPublicStatusPreviewHandler(db.NewStatusPageRepository(pool), publicStatusHandler, logger)
+	companySettingsHandler := api.NewCompanySettingsHandler(db.NewCompanySettingsRepository(pool), cfg.UploadsDir, logger)
+	logoFileHandler := api.NewLogoFileHandler(cfg.UploadsDir)
 
 	requireAuth := api.RequireAuth(cfg.SessionSecret, admins)
 	writeRoles := api.RequireRole(db.RoleOwner, db.RoleOperator)
@@ -55,6 +57,12 @@ func buildAdminRouter(pool *db.Pool, cfg config.Config, logger *zap.Logger) http
 	r.Post("/api/auth/password-reset/confirm", passwordResetHandler.Confirm)
 	r.Post("/api/admins/invite/{token}/accept", adminsHandler.AcceptInvite)
 
+	// Public logo file serving (SET-12) - no authentication, so a public
+	// status page's <img> can render it. Mounted here rather than in the
+	// protected group below, mirroring the other unauthenticated routes
+	// above.
+	r.Get("/uploads/{filename}", logoFileHandler.ServeHTTP)
+
 	r.Group(func(protected chi.Router) {
 		protected.Use(requireAuth)
 
@@ -66,6 +74,12 @@ func buildAdminRouter(pool *db.Pool, cfg config.Config, logger *zap.Logger) http
 		protected.With(ownerOnly).Get("/api/admins", adminsHandler.List)
 		protected.With(ownerOnly).Patch("/api/admins/{id}/role", adminsHandler.UpdateRole)
 		protected.With(ownerOnly).Delete("/api/admins/{id}", adminsHandler.Delete)
+
+		// Company settings (SET-02) - owner only, per SettingsPage.tsx's
+		// own "Visível apenas para Owners" copy (spec.md Assumptions).
+		protected.With(ownerOnly).Get("/api/company-settings", companySettingsHandler.Get)
+		protected.With(ownerOnly).Patch("/api/company-settings", companySettingsHandler.Update)
+		protected.With(ownerOnly).Post("/api/company-settings/logo", companySettingsHandler.UploadLogo)
 
 		// mvp-core write routes - owner and operator (ADM-10).
 		protected.With(writeRoles).Post("/api/domains", domainsHandler.Create)
