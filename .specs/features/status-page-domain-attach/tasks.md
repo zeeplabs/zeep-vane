@@ -249,10 +249,10 @@ Tasks: T13, T14, T15 - see dependency graph below.
 - Skill: NONE
 
 **Done when**:
-- [ ] Configured value → `200` with `{"target": "<configured value>"}`
-- [ ] Unconfigured (`""`) → `200` with `{"target": null}`
-- [ ] Gate check passes: `go test -tags=integration ./internal/api`
-- [ ] Test count: 2+ new tests pass (no silent deletions)
+- [x] Configured value → `200` with `{"target": "<configured value>"}`
+- [x] Unconfigured (`""`) → `200` with `{"target": null}`
+- [x] Gate check passes: `go test -tags=integration ./internal/api`
+- [x] Test count: 2+ new tests pass (no silent deletions)
 
 **Tests**: integration
 **Gate**: full
