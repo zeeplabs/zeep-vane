@@ -425,11 +425,11 @@ Tasks: T11, T12, T13, T14 (executed in this order; see the dependency graph belo
 - Skill: NONE
 
 **Done when**:
-- [ ] `usePublicStatusPage` returns `company_name`/`logo_url` sourced from the MSW-mocked API response, not `mockData`
-- [ ] `logo_url: null` case renders/returns `null`, not a fabricated placeholder (SET-16)
-- [ ] No import of `mockData` (or `companySettings` specifically) remains in `public-status/hooks.ts`
-- [ ] Gate check passes: `cd web && npm run test`
-- [ ] Test count: 2+ new tests pass (no silent deletions)
+- [x] `usePublicStatusPage` returns `company_name`/`logo_url` sourced from the MSW-mocked API response, not `mockData`
+- [x] `logo_url: null` case renders/returns `null`, not a fabricated placeholder (SET-16)
+- [x] No import of `mockData` (or `companySettings` specifically) remains in `public-status/hooks.ts`
+- [x] Gate check passes: `cd web && npm run test`
+- [x] Test count: 2+ new tests pass (no silent deletions)
 
 **Tests**: unit
 **Gate**: quick

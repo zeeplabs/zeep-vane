@@ -1,7 +1,11 @@
 import { useQuery } from "@tanstack/react-query";
 import { apiFetch } from "../../lib/apiClient";
-import { companySettings } from "../../lib/mockData";
 import type { PublicIncidentEntry, PublicStatusPageData, PublicServiceStatus } from "../../lib/publicStatus";
+
+interface PreviewCompany {
+  name: string;
+  logo_url: string | null;
+}
 
 interface PreviewIncidentUpdate {
   body: string;
@@ -24,6 +28,7 @@ interface PreviewService {
 }
 
 interface PreviewResponse {
+  company: PreviewCompany;
   services: PreviewService[];
   incidents: { active: PreviewIncident[]; resolved: PreviewIncident[] };
 }
@@ -63,11 +68,8 @@ export function usePublicStatusPage(id: string) {
       const latestChange = latestServiceChange(data.services);
 
       return {
-        // SPEC_DEVIATION (AD-007, I13): company_name/logo_url still come
-        // from the local fixture - there's no company settings endpoint
-        // yet (backlog AD-007).
-        company_name: companySettings.name,
-        logo_url: companySettings.logo_url,
+        company_name: data.company.name,
+        logo_url: data.company.logo_url,
         updated_at: latestChange ?? new Date().toISOString(),
         stale: false,
         services: data.services.map((service) => ({
