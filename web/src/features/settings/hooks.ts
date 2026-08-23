@@ -12,7 +12,6 @@ export function useCompanySettings() {
 export interface UpdateCompanySettingsInput {
   name: string;
   contact_email: string;
-  logo_url?: string | null;
 }
 
 export function useUpdateCompanySettings() {
@@ -23,6 +22,27 @@ export function useUpdateCompanySettings() {
         method: "PATCH",
         body: JSON.stringify(input),
       }),
+    onSuccess: (data) => {
+      queryClient.setQueryData(["company-settings"], data);
+    },
+  });
+}
+
+// useUploadCompanyLogo posts the logo file as multipart/form-data to the
+// dedicated upload endpoint (SET-07), immediately and independently of the
+// name/e-mail PATCH above - the logo is no longer sent as a data: URL
+// inside UpdateCompanySettingsInput.
+export function useUploadCompanyLogo() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (file: File) => {
+      const formData = new FormData();
+      formData.append("logo", file);
+      return apiFetch<CompanySettings>("/api/company-settings/logo", {
+        method: "POST",
+        body: formData,
+      });
+    },
     onSuccess: (data) => {
       queryClient.setQueryData(["company-settings"], data);
     },

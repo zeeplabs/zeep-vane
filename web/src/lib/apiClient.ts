@@ -37,11 +37,16 @@ async function parseErrorMessage(res: Response): Promise<string> {
 }
 
 export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
+  // A FormData body (multipart upload, e.g. the company logo) must never
+  // get an explicit Content-Type here - the browser sets its own
+  // multipart/form-data header with the correct boundary. Forcing
+  // application/json on it would break server-side multipart parsing.
+  const isFormData = typeof FormData !== "undefined" && init?.body instanceof FormData;
   const res = await fetch(`${baseUrl}${path}`, {
     ...init,
     credentials: "include",
     headers: {
-      ...(init?.body ? { "Content-Type": "application/json" } : {}),
+      ...(init?.body && !isFormData ? { "Content-Type": "application/json" } : {}),
       ...init?.headers,
     },
   });

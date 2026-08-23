@@ -557,15 +557,21 @@ export const handlers = [
     return HttpResponse.json(companySettingsState);
   }),
 
-  http.post("/api/company-settings/logo", async ({ request }) => {
+  http.post("/api/company-settings/logo", ({ request }) => {
     if (!sessionAdminId) return HttpResponse.json({ error: "unauthorized" }, { status: 401 });
-    const formData = await request.formData();
-    const file = formData.get("logo");
-    if (!file || !(file instanceof File)) {
+    // Deliberately never reads the multipart body itself (no
+    // request.formData()/arrayBuffer() call): jsdom's Blob/File stream
+    // implementation does not interoperate with Node's fetch body reader
+    // used by msw's node interceptor, and awaiting it here hangs the test
+    // indefinitely - a jsdom-environment limitation, not a real-world one.
+    // MIME/size validation is real backend logic covered by the Go
+    // integration tests (T6); this fixture only needs to prove the upload
+    // was a multipart POST and that logo_url updates in state on success.
+    const contentType = request.headers.get("content-type") ?? "";
+    if (!contentType.startsWith("multipart/form-data")) {
       return HttpResponse.json({ error: "logo must be a PNG or SVG image no larger than 10 MB" }, { status: 422 });
     }
-    const ext = file.type === "image/svg+xml" ? "svg" : "png";
-    companySettingsState = { ...companySettingsState, logo_url: `/uploads/logo.${ext}` };
+    companySettingsState = { ...companySettingsState, logo_url: "/uploads/logo.png" };
     return HttpResponse.json(companySettingsState);
   }),
 ];

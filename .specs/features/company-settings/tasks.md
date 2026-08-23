@@ -372,11 +372,11 @@ Tasks: T11, T12, T13, T14 (executed in this order; see the dependency graph belo
 - Skill: NONE
 
 **Done when**:
-- [ ] `useUpdateCompanySettings` sends only `{name, contact_email}`
-- [ ] `useUploadCompanyLogo` posts `FormData` and updates the `["company-settings"]` query cache on success
-- [ ] Hook test covers happy path for all 3 hooks + a 422/500 error case
-- [ ] Gate check passes: `cd web && npm run test`
-- [ ] Test count: 5+ new tests pass (no silent deletions)
+- [x] `useUpdateCompanySettings` sends only `{name, contact_email}`
+- [x] `useUploadCompanyLogo` posts `FormData` and updates the `["company-settings"]` query cache on success
+- [x] Hook test covers happy path for all 3 hooks + a 422/500 error case
+- [x] Gate check passes: `cd web && npm run test`
+- [x] Test count: 5+ new tests pass (no silent deletions)
 
 **Tests**: unit
 **Gate**: quick
