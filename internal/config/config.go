@@ -20,6 +20,7 @@ type Config struct {
 	LogLevel            string
 	CORSAllowedOrigin   string
 	UploadsDir          string
+	PublicDNSTarget     string
 }
 
 // defaultCORSAllowedOrigin is the Vite dev server's origin - the CORS
@@ -30,6 +31,13 @@ const defaultCORSAllowedOrigin = "http://localhost:5173"
 // In production, operators are expected to set UPLOADS_DIR to a mounted
 // persistent volume so an uploaded logo survives a pod restart (SET-11).
 const defaultUploadsDir = "./data/uploads"
+
+// PublicDNSTarget has no default: an unset PUBLIC_DNS_TARGET means the
+// operator hasn't configured the value this server's admins should point
+// their DNS records at. Config.PublicDNSTarget stays "" in that case - the
+// attach-domain screen (SPD-10) surfaces this as "not configured" rather
+// than blocking anything, since self-hosted infra is arbitrary and the app
+// cannot discover its own public hostname reliably.
 
 // Load reads and validates the required environment variables, returning a
 // clear error if any is missing or malformed. A .env file is loaded on a
@@ -77,6 +85,8 @@ func Load() (Config, error) {
 		uploadsDir = defaultUploadsDir
 	}
 
+	publicDNSTarget := os.Getenv("PUBLIC_DNS_TARGET")
+
 	return Config{
 		DatabaseURL:         databaseURL,
 		MasterKey:           masterKey,
@@ -86,6 +96,7 @@ func Load() (Config, error) {
 		LogLevel:            logLevel,
 		CORSAllowedOrigin:   corsAllowedOrigin,
 		UploadsDir:          uploadsDir,
+		PublicDNSTarget:     publicDNSTarget,
 	}, nil
 }
 

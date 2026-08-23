@@ -168,10 +168,10 @@ Tasks: T13, T14, T15 - see dependency graph below.
 - Skill: NONE
 
 **Done when**:
-- [ ] `PUBLIC_DNS_TARGET` set → `Config.PublicDNSTarget` reflects it
-- [ ] `PUBLIC_DNS_TARGET` unset → `Config.PublicDNSTarget == ""`
-- [ ] Gate check passes: `go test ./internal/config`
-- [ ] Test count: 2 new tests pass (no silent deletions)
+- [x] `PUBLIC_DNS_TARGET` set → `Config.PublicDNSTarget` reflects it
+- [x] `PUBLIC_DNS_TARGET` unset → `Config.PublicDNSTarget == ""`
+- [x] Gate check passes: `go test ./internal/config`
+- [x] Test count: 2 new tests pass (no silent deletions)
 
 **Tests**: unit
 **Gate**: quick

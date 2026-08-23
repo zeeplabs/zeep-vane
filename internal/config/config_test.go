@@ -86,3 +86,34 @@ func TestLoad_UploadsDirUnset_DefaultsToDataUploads(t *testing.T) {
 		t.Errorf("UploadsDir = %q, want %q", cfg.UploadsDir, "./data/uploads")
 	}
 }
+
+// TestLoad_PublicDNSTargetSet_UsesGivenValue asserts SPD-10: PUBLIC_DNS_TARGET,
+// when set, is reflected verbatim in Config.PublicDNSTarget.
+func TestLoad_PublicDNSTargetSet_UsesGivenValue(t *testing.T) {
+	setAllRequiredEnv(t)
+	t.Setenv("PUBLIC_DNS_TARGET", "vane.example.com")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() returned unexpected error: %v", err)
+	}
+	if cfg.PublicDNSTarget != "vane.example.com" {
+		t.Errorf("PublicDNSTarget = %q, want %q", cfg.PublicDNSTarget, "vane.example.com")
+	}
+}
+
+// TestLoad_PublicDNSTargetUnset_DefaultsToEmptyString asserts SPD-10's
+// default: when PUBLIC_DNS_TARGET is unset, Config.PublicDNSTarget is ""
+// (the operator hasn't configured this value), not an error.
+func TestLoad_PublicDNSTargetUnset_DefaultsToEmptyString(t *testing.T) {
+	setAllRequiredEnv(t)
+	t.Setenv("PUBLIC_DNS_TARGET", "")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() returned unexpected error: %v", err)
+	}
+	if cfg.PublicDNSTarget != "" {
+		t.Errorf("PublicDNSTarget = %q, want empty string", cfg.PublicDNSTarget)
+	}
+}
