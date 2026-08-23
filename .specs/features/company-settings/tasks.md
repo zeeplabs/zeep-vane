@@ -240,12 +240,12 @@ Tasks: T11, T12, T13, T14 (executed in this order; see the dependency graph belo
 - Skill: NONE
 
 **Done when**:
-- [ ] Requesting the exact stored filename serves file bytes with 200
-- [ ] Requesting a filename containing `..` or `/` -> 404 (never resolves outside `uploadsDir`)
-- [ ] Requesting a filename that doesn't exist on disk -> 404
-- [ ] No authentication required (handler registered outside any `RequireAuth`/`RequireRole` chain, asserted by the test not injecting a session)
-- [ ] Gate check passes: `go test -tags=integration ./internal/api`
-- [ ] Test count: 3+ new tests pass (no silent deletions)
+- [x] Requesting the exact stored filename serves file bytes with 200
+- [x] Requesting a filename containing `..` or `/` -> 404 (never resolves outside `uploadsDir`)
+- [x] Requesting a filename that doesn't exist on disk -> 404
+- [x] No authentication required (handler registered outside any `RequireAuth`/`RequireRole` chain, asserted by the test not injecting a session)
+- [x] Gate check passes: `go test -tags=integration ./internal/api`
+- [x] Test count: 3+ new tests pass (no silent deletions)
 
 **Tests**: integration
 **Gate**: full

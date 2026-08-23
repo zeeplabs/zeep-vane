@@ -123,7 +123,7 @@ Explicitly excluded. Documented to prevent scope creep.
 | SET-09          | P1: Owner uploads logo (MIME whitelist)   | Design | Implementing |
 | SET-10          | P1: Owner uploads logo (overwrite)        | Design | Implementing |
 | SET-11          | P1: Owner uploads logo (config path)      | Design | Implementing |
-| SET-12          | P1: Owner uploads logo (public serving)   | Design | Pending |
+| SET-12          | P1: Owner uploads logo (public serving)   | Design | Implementing |
 | SET-13          | P1: Owner uploads logo (write failure)    | Design | Implementing |
 | SET-14          | P1: Owner uploads logo (null default)     | Design | Pending |
 | SET-15          | P2: Public pages show real identity       | Design | Pending |
