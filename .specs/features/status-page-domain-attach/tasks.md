@@ -426,11 +426,11 @@ Tasks: T13, T14, T15 - see dependency graph below.
 - Skill: NONE
 
 **Done when**:
-- [ ] Renders domain picker populated from `useDomains`, subdomain text input, DNS target value or a "not configured" note when `null`
-- [ ] Successful submit closes the drawer and the parent page reflects the new domain
-- [ ] 404/409/422 responses render an inline error, drawer stays open
-- [ ] Gate check passes: `cd web && npm run test`
-- [ ] Test count: 4+ new tests pass (no silent deletions)
+- [x] Renders domain picker populated from `useDomains`, subdomain text input, DNS target value or a "not configured" note when `null`
+- [x] Successful submit closes the drawer and the parent page reflects the new domain
+- [x] 404/409/422 responses render an inline error, drawer stays open
+- [x] Gate check passes: `cd web && npm run test`
+- [x] Test count: 4+ new tests pass (no silent deletions)
 
 **Tests**: unit
 **Gate**: quick
