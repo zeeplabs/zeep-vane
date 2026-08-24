@@ -130,11 +130,11 @@ T12 -> T13
 - Skill: NONE
 
 **Done when**:
-- [ ] A request for a real embedded asset path (e.g. whatever hashed filename `npm run build` actually produced under `dist/assets/`) returns that file's exact bytes with a `Content-Type` matching its extension
-- [ ] A request for an SPA client route (e.g. `/services`, `/bootstrap`) that has no matching embedded file returns `dist/index.html`'s content
-- [ ] A request whose path starts with `/api/` and matches no embedded file returns a plain JSON `404`, never `index.html`
-- [ ] Gate check passes: `go test ./web/...`
-- [ ] Test count: ≥3 tests (no silent deletions)
+- [x] A request for a real embedded asset path (e.g. whatever hashed filename `npm run build` actually produced under `dist/assets/`) returns that file's exact bytes with a `Content-Type` matching its extension
+- [x] A request for an SPA client route (e.g. `/services`, `/bootstrap`) that has no matching embedded file returns `dist/index.html`'s content
+- [x] A request whose path starts with `/api/` and matches no embedded file returns a plain JSON `404`, never `index.html`
+- [x] Gate check passes: `go test ./web/...`
+- [x] Test count: ≥3 tests (no silent deletions) — 3 added
 
 **Tests**: unit
 **Gate**: quick
