@@ -98,6 +98,24 @@ Seen once or not yet corroborated. Tracked, not trusted.
 - evidence: internal/poller/poller_test.go:137 (internal/poller)
 - last seen: 2026-08-24T18:50:32Z
 
+### L-015 - When multiple packages each add their own full-table clear/restore helper for a shared integration-test table, serialize them with a cross-process Postgres advisory lock (mirror internal/dbtest/lock.go's LockDatadogIntegration) - otherwise go test ./...'s default cross-package parallelism races their clear windows against other packages' tests on the same table, and it's flaky, not deterministic.
+- signal: `gate_fail` · recurrence: 1 feature(s) · scope: `internal/dbtest` · harmful: 0
+- features: self-hosted-docker-bootstrap
+- evidence: internal/db/admin_repository_test.go:330 (internal/dbtest)
+- last seen: 2026-08-24T21:06:25Z
+
+### L-016 - A tasks.md Requirement Coverage table's own summary count (e.g. '22 total, 22 mapped') is not self-verifying prose - cross-check it against every task's Requirement field, since a build-tooling AC (frontend-build convention) and a Dockerfile-shape AC were both silently missing from the coverage summary despite both being correctly implemented.
+- signal: `spec_precision_gap` · recurrence: 1 feature(s) · scope: `tasks.md` · harmful: 0
+- features: self-hosted-docker-bootstrap
+- evidence: tasks.md Requirement Coverage section (tasks.md)
+- last seen: 2026-08-24T21:06:25Z
+
+### L-017 - TestPublicStatusPreview_PublishedPage_200Unaffected has been reported once as a rare full-suite-parallelism flake (500, unreproduced in isolation and unreproduced across 16 fresh -count=1 full-gate runs by the next Verifier) in a file untouched by the feature under test - treat as a known, non-blocking, unconfirmed flake candidate for internal/api, not a gate blocker, until it recurs with enough evidence to investigate further.
+- signal: `gate_fail` · recurrence: 1 feature(s) · scope: `internal/api` · harmful: 0
+- features: self-hosted-docker-bootstrap
+- evidence: internal/api/public_status_preview_handler_test.go (TestPublicStatusPreview_PublishedPage_200Unaffected) (internal/api)
+- last seen: 2026-08-24T23:44:47Z
+
 ## Quarantined (failed when applied - ignore)
 
 A confirmed lesson that recurred alongside failure. Kept for the maintainer to review.
