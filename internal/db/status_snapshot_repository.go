@@ -70,3 +70,37 @@ func (r *StatusSnapshotRepository) LatestFetchedAtByService(ctx context.Context)
 
 	return latest, nil
 }
+
+// ListRecentByServices returns every status_snapshots row for any of
+// serviceIDs with fetched_at >= since, ordered by service_id then
+// fetched_at ascending. It reuses the existing (service_id, fetched_at)
+// index. An empty serviceIDs or no matching rows returns an empty slice,
+// never an error.
+func (r *StatusSnapshotRepository) ListRecentByServices(ctx context.Context, serviceIDs []string, since time.Time) ([]StatusSnapshot, error) {
+	if len(serviceIDs) == 0 {
+		return []StatusSnapshot{}, nil
+	}
+
+	rows, err := r.pool.Query(ctx,
+		"SELECT id, service_id, status, error_budget_remaining, fetched_at FROM status_snapshots WHERE service_id = ANY($1) AND fetched_at >= $2 ORDER BY service_id, fetched_at ASC",
+		serviceIDs, since,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("db: failed to query recent status snapshots: %w", err)
+	}
+	defer rows.Close()
+
+	snapshots := []StatusSnapshot{}
+	for rows.Next() {
+		var s StatusSnapshot
+		if err := rows.Scan(&s.ID, &s.ServiceID, &s.Status, &s.ErrorBudgetRemaining, &s.FetchedAt); err != nil {
+			return nil, fmt.Errorf("db: failed to scan recent status snapshot: %w", err)
+		}
+		snapshots = append(snapshots, s)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("db: failed to iterate recent status snapshots: %w", err)
+	}
+
+	return snapshots, nil
+}
