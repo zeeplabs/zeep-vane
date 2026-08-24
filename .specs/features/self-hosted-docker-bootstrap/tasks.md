@@ -123,7 +123,7 @@ T12 -> T13
 **Where**: `web/embed.go`, `web/embed_test.go`
 **Depends on**: None
 **Reuses**: `zeep-orbit/internal/dashboard/embed.go`'s `fs.Sub` + open-or-fallback shape
-**Requirement**: SHD-01, SHD-02, SHD-03, SHD-05
+**Requirement**: SHD-01, SHD-02, SHD-03, SHD-05, SHD-07 (the frontend-build-once precondition this task's own "What" calls out, so `go build ./...`/`go test ./...` succeed)
 
 **Tools**:
 - MCP: NONE
@@ -340,7 +340,7 @@ T12 -> T13
 **Depends on**: T6, T9
 **Reuses**: `zeep-orbit/Dockerfile` structure verbatim, adapted to this repo's module path and binary name
 
-**Requirement**: SHD-08, SHD-09, SHD-11
+**Requirement**: SHD-08, SHD-09, SHD-11, SHD-12 (multi-stage build, `FROM scratch` final image with no Node/Go toolchain - this task's own "Done when" already checks it)
 
 **Tools**:
 - MCP: NONE
@@ -523,4 +523,4 @@ No violations. No task defers its required tests to a later task.
 
 ## Requirement Coverage
 
-All 22 `SHD-*` ACs map to at least one task: SHD-01/02/03/05 → T2 (+ T6 wiring); SHD-04 → T6; SHD-06 → T1 + T5; SHD-08/09/11 → T10 + T12; SHD-08/09/10 → T11; SHD-13 → T13; SHD-14 → T4 + T6; SHD-15/16/17 → T3 + T4; SHD-18 → T4 + T8; SHD-19 → T7 + T9; SHD-20 → T8; SHD-21 → T9; SHD-22 → T13. 22 total, 22 mapped, 0 unmapped.
+All 22 `SHD-*` ACs map to at least one task: SHD-01/02/03/05 → T2 (+ T6 wiring); SHD-04 → T6; SHD-06 → T1 + T5; SHD-07 → T2 (frontend-build-once precondition) + T12 (`make build`'s frontend-then-Go build order); SHD-08/09/11 → T10 + T12; SHD-08/09/10 → T11; SHD-12 → T10 (multi-stage `Dockerfile`, `FROM scratch` final image with no Node/Go toolchain); SHD-13 → T13; SHD-14 → T4 + T6; SHD-15/16/17 → T3 + T4; SHD-18 → T4 + T8; SHD-19 → T7 + T9; SHD-20 → T8; SHD-21 → T9; SHD-22 → T13. 22 total, 22 mapped, 0 unmapped.
