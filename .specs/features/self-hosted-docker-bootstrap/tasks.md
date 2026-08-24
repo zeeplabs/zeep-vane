@@ -104,11 +104,11 @@ T12 -> T13
 - Skill: NONE
 
 **Done when**:
-- [ ] `MigrateUpEmbedded` applies every migration in `internal/db/migrations` against a fresh test database with no file-system dependency (test uses a temp/throwaway DSN, never reads from disk for the migration source)
-- [ ] Running it twice in a row is a no-op the second time (no error), matching `MigrateUp`'s existing contract
-- [ ] `MigrateUp` and all existing 37 call sites are unchanged (`git diff` shows no edits to `internal/db/migrate.go` or any existing test file)
-- [ ] Gate check passes: `TEST_DATABASE_URL=<dsn> go test -tags=integration ./internal/db/...`
-- [ ] Test count: ≥2 tests (no silent deletions)
+- [x] `MigrateUpEmbedded` applies every migration in `internal/db/migrations` against a fresh test database with no file-system dependency (test uses a temp/throwaway DSN, never reads from disk for the migration source)
+- [x] Running it twice in a row is a no-op the second time (no error), matching `MigrateUp`'s existing contract
+- [x] `MigrateUp` and all existing 37 call sites are unchanged (`git diff` shows no edits to `internal/db/migrate.go` or any existing test file)
+- [x] Gate check passes: `TEST_DATABASE_URL=<dsn> go test -tags=integration ./internal/db/...`
+- [x] Test count: ≥2 tests (no silent deletions) — 3 added
 
 **Tests**: integration
 **Gate**: full
