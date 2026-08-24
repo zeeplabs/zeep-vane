@@ -166,6 +166,20 @@ function toStatusPageResponse(statusPage: StatusPage) {
   };
 }
 
+// buildFixtureHourlyHistory fabricates a plausible 24-bucket hourly_history
+// for the public-preview MSW fixture only (never used by the real backend,
+// which computes this from real status_snapshots -
+// internal/history.BuildHourly). Every bucket mirrors the service's
+// current status, giving PublicStatusPage.test.tsx real fixture data to
+// render 24 same-colored bars against.
+function buildFixtureHourlyHistory(status: Service["current_status"]) {
+  const now = Date.now();
+  return Array.from({ length: 24 }, (_, i) => ({
+    start: new Date(now - (23 - i) * 60 * 60 * 1000).toISOString(),
+    status: status === "not_configured" ? "no_data" : status,
+  }));
+}
+
 export const handlers = [
   http.post("/api/auth/login", async ({ request }) => {
     const body = (await request.json()) as { email?: string; password?: string };
@@ -577,6 +591,7 @@ export const handlers = [
         name: s.name,
         status: s.current_status,
         last_updated_at: s.last_status_change_at,
+        hourly_history: buildFixtureHourlyHistory(s.current_status),
       })),
       incidents: { active, resolved },
     });

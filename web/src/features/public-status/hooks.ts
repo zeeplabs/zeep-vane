@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { apiFetch } from "../../lib/apiClient";
-import type { PublicIncidentEntry, PublicStatusPageData, PublicServiceStatus } from "../../lib/publicStatus";
+import type { PublicHourlyBucket, PublicIncidentEntry, PublicStatusPageData, PublicServiceStatus } from "../../lib/publicStatus";
 
 interface PreviewCompany {
   name: string;
@@ -25,6 +25,7 @@ interface PreviewService {
   name: string;
   status: PublicServiceStatus;
   last_updated_at: string;
+  hourly_history: PublicHourlyBucket[];
 }
 
 interface PreviewResponse {
@@ -76,6 +77,7 @@ export function usePublicStatusPage(id: string) {
           name: service.name,
           status: service.status,
           last_updated_at: service.last_updated_at,
+          hourly_history: service.hourly_history,
         })),
         incidents: {
           active: data.incidents.active.map(toPublicIncidentEntry),

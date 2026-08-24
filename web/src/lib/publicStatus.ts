@@ -6,10 +6,21 @@
 // import.
 export type PublicServiceStatus = "operational" | "degraded" | "outage";
 
+// PublicHourlyStatus adds "no_data" on top of PublicServiceStatus: an
+// hourly bucket the poller never recorded anything for (UPT-06), distinct
+// from any real observed status.
+export type PublicHourlyStatus = PublicServiceStatus | "no_data";
+
+export interface PublicHourlyBucket {
+  start: string;
+  status: PublicHourlyStatus;
+}
+
 export interface PublicServiceEntry {
   name: string;
   status: PublicServiceStatus;
   last_updated_at: string | null;
+  hourly_history: PublicHourlyBucket[];
 }
 
 export interface PublicIncidentUpdateEntry {
