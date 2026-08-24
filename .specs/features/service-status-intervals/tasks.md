@@ -301,7 +301,7 @@ T8 → T9
 
 ---
 
-### T9: Wire `internal/cli/serve.go` and `internal/cli/routes.go` to the new repository and start the Pruner
+### T9: Wire `internal/cli/serve.go` and `internal/cli/routes.go` to the new repository and start the Pruner [x]
 
 **What**: Replace both `db.NewStatusSnapshotRepository(pool)` call sites (`serve.go`'s poller construction and `newHTTPSServer`) and the one in `routes.go` with `db.NewStatusIntervalRepository(pool)`; add one more `go func()` in `RunE` starting `retention.NewPruner(intervals, 1*time.Hour, 35*24*time.Hour, logger).Run(ctx)`, canceled by the same `ctx`/`stop()` already wired for the poller and HTTP/HTTPS listeners.
 **Where**: `internal/cli/serve.go`, `internal/cli/routes.go`
@@ -315,11 +315,11 @@ T8 → T9
 - Skill: NONE
 
 **Done when**:
-- [ ] All three `db.NewStatusSnapshotRepository(pool)` call sites now read `db.NewStatusIntervalRepository(pool)`
-- [ ] `RunE` starts the `Pruner`'s `Run` in its own goroutine, canceled on the same shutdown path as the poller (`stop()`/`ctx.Done()`)
-- [ ] Existing `internal/cli/serve_test.go` tests (`TestNewHTTPSServer_*`) still pass unmodified in intent - they exercise `newHTTPSServer`'s routing, which is unaffected by the repository type swap
-- [ ] Gate check passes: `TEST_DATABASE_URL=<dsn> go test -tags=integration ./...`
-- [ ] Test count: 0 new tests required (wiring-only); existing suite must show 0 regressions
+- [x] All three `db.NewStatusSnapshotRepository(pool)` call sites now read `db.NewStatusIntervalRepository(pool)`
+- [x] `RunE` starts the `Pruner`'s `Run` in its own goroutine, canceled on the same shutdown path as the poller (`stop()`/`ctx.Done()`)
+- [x] Existing `internal/cli/serve_test.go` tests (`TestNewHTTPSServer_*`) still pass unmodified in intent - they exercise `newHTTPSServer`'s routing, which is unaffected by the repository type swap
+- [x] Gate check passes: `TEST_DATABASE_URL=<dsn> go test -tags=integration ./...`
+- [x] Test count: 0 new tests required (wiring-only); existing suite must show 0 regressions
 
 **Tests**: none (regression via existing suite)
 **Gate**: full

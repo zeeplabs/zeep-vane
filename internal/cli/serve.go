@@ -20,9 +20,16 @@ import (
 	"github.com/zeeplabs/zeep-vane/internal/db"
 	"github.com/zeeplabs/zeep-vane/internal/logging"
 	"github.com/zeeplabs/zeep-vane/internal/poller"
+	"github.com/zeeplabs/zeep-vane/internal/retention"
 	"github.com/zeeplabs/zeep-vane/internal/router"
 	vanetls "github.com/zeeplabs/zeep-vane/internal/tls"
 )
+
+// pruneTick and pruneRetention control the retention Pruner started in
+// RunE (SHU-16..20) - own independent 1h ticker, deleting closed status
+// intervals older than 35 days.
+const pruneTick = 1 * time.Hour
+const pruneRetention = 35 * 24 * time.Hour
 
 // shutdownTimeout bounds how long the HTTP server gets to finish in-flight
 // requests once a shutdown signal arrives.
@@ -79,6 +86,13 @@ func NewServeCmd() *cobra.Command {
 			} else if !started {
 				logger.Warn("serve: no datadog integration connected yet, poller not started")
 			}
+
+			// The retention Pruner runs on its own ticker, independent of
+			// the poller's (design.md: polling and pruning are unrelated
+			// responsibilities) - canceled by the same ctx/stop() as the
+			// poller and the HTTP/HTTPS listeners below (SHU-16..20).
+			pruner := retention.NewPruner(db.NewStatusIntervalRepository(pool), pruneTick, pruneRetention, logger)
+			go pruner.Run(ctx)
 
 			addr := fmt.Sprintf(":%d", cfg.Port)
 			srv := &http.Server{Addr: addr, Handler: buildAdminRouter(pool, cfg, logger, pollerManager)}
@@ -165,10 +179,10 @@ func newHTTPSServer(pool *db.Pool, uploadsDir string, logger *zap.Logger) *http.
 	manager := vanetls.NewManager(statusPages, storagePath)
 
 	services := db.NewServiceRepository(pool)
-	snapshots := db.NewStatusSnapshotRepository(pool)
+	intervals := db.NewStatusIntervalRepository(pool)
 	incidents := db.NewIncidentRepository(pool)
 	companySettings := db.NewCompanySettingsRepository(pool)
-	publicHandler := api.NewPublicStatusHandler(services, snapshots, incidents, companySettings, logger)
+	publicHandler := api.NewPublicStatusHandler(services, intervals, incidents, companySettings, logger)
 	logoFileHandler := api.NewLogoFileHandler(uploadsDir)
 
 	publicMux := http.NewServeMux()
@@ -214,8 +228,8 @@ func newPollerFromStoredIntegration(ctx context.Context, pool *db.Pool, cfg conf
 
 	client := datadog.NewClient(string(apiKey), string(appKey))
 	services := db.NewServiceRepository(pool)
-	snapshots := db.NewStatusSnapshotRepository(pool)
+	intervals := db.NewStatusIntervalRepository(pool)
 	interval := time.Duration(cfg.PollIntervalSeconds) * time.Second
 
-	return poller.NewPoller(services, services, snapshots, integrations, client, interval, logger), true, nil
+	return poller.NewPoller(services, services, intervals, integrations, client, interval, logger), true, nil
 }
