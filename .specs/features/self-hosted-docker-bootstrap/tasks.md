@@ -400,9 +400,9 @@ T12 -> T13
 - Skill: NONE
 
 **Done when**:
-- [ ] `make build` runs the frontend build, then the Go build, producing `bin/vane`
-- [ ] Existing Makefile targets are byte-for-byte unchanged except for the two additions
-- [ ] Gate check passes: `make build` (the command itself is the gate for this task)
+- [x] `make build` runs the frontend build, then the Go build, producing `bin/vane`
+- [x] Existing Makefile targets are byte-for-byte unchanged except for the two additions
+- [x] Gate check passes: `make build` (the command itself is the gate for this task) — ran for real, `bin/vane` produced
 
 **Tests**: none
 **Gate**: build

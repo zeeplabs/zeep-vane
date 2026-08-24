@@ -1,10 +1,13 @@
-.PHONY: build test lint vet dev-db dev-db-stop migrate dev-backend dev-frontend dev
+.PHONY: build web-build test lint vet dev-db dev-db-stop migrate dev-backend dev-frontend dev
 
 DEV_DB_CONTAINER := vane-dev-pg
 DEV_DB_PORT := 5432
 DATABASE_URL := postgres://vane:vane@localhost:$(DEV_DB_PORT)/vane?sslmode=disable
 
-build:
+web-build:
+	cd web && npm install && npm run build
+
+build: web-build
 	go build -o bin/vane ./cmd/vane
 
 test:
