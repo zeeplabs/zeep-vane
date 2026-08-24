@@ -75,6 +75,19 @@ func NewServeCmd() *cobra.Command {
 			}
 			defer pool.Close()
 
+			// Applies every embedded migration before anything else
+			// starts, so a container with no migrations/ directory on
+			// disk (FROM scratch) is still fully migrated by the time it
+			// begins serving (SHD-06). This is a new startup
+			// responsibility `vane serve` did not previously have - the
+			// explicit `vane migrate up` CLI command still works
+			// unchanged for anyone who wants that as its own deliberate
+			// step (design.md Risks & Concerns).
+			if err := db.MigrateUpEmbedded(cfg.DatabaseURL); err != nil {
+				return fmt.Errorf("serve: failed to apply embedded migrations: %w", err)
+			}
+			logger.Info("serve: embedded migrations applied")
+
 			// pollerManager owns the poller's lifecycle for the rest of this
 			// process's life - not just at boot. Restart is also called by
 			// IntegrationsHandler.ConnectDatadog after every successful

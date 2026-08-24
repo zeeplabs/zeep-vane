@@ -210,12 +210,12 @@ T12 -> T13
 - Skill: NONE
 
 **Done when**:
-- [ ] `RunE` calls `db.MigrateUpEmbedded` before `buildAdminRouter`/`newHTTPSServer` are constructed
-- [ ] A log line at `Info` level reports the migration step ran
-- [ ] A failure from `MigrateUpEmbedded` prevents the server from starting to listen at all
-- [ ] Existing `internal/cli/serve_test.go` tests (`TestNewHTTPSServer_*`) still pass unmodified in intent
-- [ ] Gate check passes: `TEST_DATABASE_URL=<dsn> go test -tags=integration ./...`
-- [ ] Test count: 0 new tests required (wiring-only, covered by T1's own tests); existing suite shows 0 regressions
+- [x] `RunE` calls `db.MigrateUpEmbedded` before `buildAdminRouter`/`newHTTPSServer` are constructed
+- [x] A log line at `Info` level reports the migration step ran
+- [x] A failure from `MigrateUpEmbedded` prevents the server from starting to listen at all
+- [x] Existing `internal/cli/serve_test.go` tests (`TestNewHTTPSServer_*`) still pass unmodified in intent
+- [x] Gate check passes: `TEST_DATABASE_URL=<dsn> go test -tags=integration ./...`
+- [x] Test count: 0 new tests required (wiring-only, covered by T1's own tests); existing suite shows 0 regressions
 
 **Tests**: none (regression via existing suite)
 **Gate**: full
