@@ -190,7 +190,7 @@ T8 → T9
 
 ---
 
-### T5: `internal/history.UptimePercent`
+### T5: `internal/history.UptimePercent` [x]
 
 **What**: Add `internal/history/uptime.go` with `UptimePercent(intervals []db.StatusInterval, windowStart, now time.Time) (percent float64, ok bool)`: denominator start clips to the latest of `windowStart` or the earliest interval's `starts_at` among `intervals`; downtime is the summed overlap duration of every `outage`-status interval with `[denominatorStart, now]`; result is clamped to `[0, 100]` then floored to one decimal. `ok=false` when `intervals` is empty or the clipped denominator is zero/negative.
 **Where**: `internal/history/uptime.go`, `internal/history/uptime_test.go`
@@ -203,14 +203,14 @@ T8 → T9
 - Skill: NONE
 
 **Done when**:
-- [ ] A 24h window with exactly 6h of `outage` and the rest `operational` returns `(75.0, true)`
-- [ ] A service whose earliest interval starts 2h into the window uses a 2h denominator, returning `(100.0, true)` when always `operational` in that span
-- [ ] Zero intervals returns `(_, false)`
-- [ ] `degraded` intervals do not count as downtime (only `outage` does, per confirmed decision)
-- [ ] A pathological case that would compute outside `[0, 100]` is clamped before rounding
-- [ ] Rounding always floors (a case that would round up under normal rounding is asserted to floor instead, e.g. `99.97` → `99.9`, not `100.0`)
-- [ ] Gate check passes: `go test ./internal/history/...`
-- [ ] Test count: ≥6 tests (no silent deletions)
+- [x] A 24h window with exactly 6h of `outage` and the rest `operational` returns `(75.0, true)`
+- [x] A service whose earliest interval starts 2h into the window uses a 2h denominator, returning `(100.0, true)` when always `operational` in that span
+- [x] Zero intervals returns `(_, false)`
+- [x] `degraded` intervals do not count as downtime (only `outage` does, per confirmed decision)
+- [x] A pathological case that would compute outside `[0, 100]` is clamped before rounding
+- [x] Rounding always floors (a case that would round up under normal rounding is asserted to floor instead, e.g. `99.97` → `99.9`, not `100.0`)
+- [x] Gate check passes: `go test ./internal/history/...`
+- [x] Test count: 7 tests (no silent deletions)
 
 **Tests**: unit
 **Gate**: quick
