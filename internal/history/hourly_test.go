@@ -15,11 +15,17 @@ func mustLoadSaoPaulo(t *testing.T) *time.Location {
 	return loc
 }
 
-func snapshot(serviceID, status string, fetchedAt time.Time) db.StatusSnapshot {
-	return db.StatusSnapshot{ServiceID: serviceID, Status: status, FetchedAt: fetchedAt}
+func closedInterval(status string, startsAt, endsAt time.Time) db.StatusInterval {
+	e := endsAt
+	return db.StatusInterval{Status: status, StartsAt: startsAt, EndsAt: &e}
 }
 
-// UPT-01: exactly windowHours buckets, oldest first, current hour last.
+func openInterval(status string, startsAt time.Time) db.StatusInterval {
+	return db.StatusInterval{Status: status, StartsAt: startsAt, EndsAt: nil}
+}
+
+// SHU-08: exactly windowHours buckets, oldest first, current hour last -
+// unchanged contract from the snapshot-based version.
 func TestBuildHourly_ReturnsWindowHoursBucketsOldestFirst(t *testing.T) {
 	loc := mustLoadSaoPaulo(t)
 	now := time.Date(2026, 8, 24, 14, 37, 0, 0, loc)
@@ -44,65 +50,59 @@ func TestBuildHourly_ReturnsWindowHoursBucketsOldestFirst(t *testing.T) {
 	}
 }
 
-// UPT-02: all four status values pass through untouched.
-func TestBuildHourly_AllStatusValuesMapThrough(t *testing.T) {
+// SHU-06 core case: an hour containing both operational (55 min) and outage
+// (5 min) resolves to outage, not the last-observed status.
+func TestBuildHourly_WorstStatusWinsWithinBucket(t *testing.T) {
 	loc := mustLoadSaoPaulo(t)
 	now := time.Date(2026, 8, 24, 10, 0, 0, 0, loc)
+	hourStart := time.Date(2026, 8, 24, 9, 0, 0, 0, loc)
 
-	tests := []string{"operational", "degraded", "outage"}
-	for _, status := range tests {
-		snapshots := []db.StatusSnapshot{
-			snapshot("svc-1", status, time.Date(2026, 8, 24, 10, 15, 0, 0, loc)),
-		}
-		buckets := BuildHourly(snapshots, now, loc, 24)
-		if got := buckets[23].Status; got != status {
-			t.Errorf("status %q: buckets[23].Status = %q, want %q", status, got, status)
-		}
+	intervals := []db.StatusInterval{
+		closedInterval("operational", hourStart, hourStart.Add(55*time.Minute)),
+		closedInterval("outage", hourStart.Add(55*time.Minute), hourStart.Add(60*time.Minute)),
+	}
+
+	buckets := BuildHourly(intervals, now, loc, 24)
+
+	if got := buckets[22].Status; got != "outage" {
+		t.Errorf("buckets[22].Status = %q, want %q (worst status in the hour wins)", got, "outage")
 	}
 }
 
-// UPT-03: last-status-wins within one hour, regardless of input order.
-func TestBuildHourly_LastStatusWinsWithinBucket(t *testing.T) {
+// SHU-06: priority order is outage > degraded > operational, regardless of
+// which interval is listed first.
+func TestBuildHourly_PriorityOrder_OutageBeatsDegradedBeatsOperational(t *testing.T) {
 	loc := mustLoadSaoPaulo(t)
 	now := time.Date(2026, 8, 24, 10, 0, 0, 0, loc)
+	hourStart := time.Date(2026, 8, 24, 9, 0, 0, 0, loc)
 
-	snapshots := []db.StatusSnapshot{
-		snapshot("svc-1", "outage", time.Date(2026, 8, 24, 10, 40, 0, 0, loc)),
-		snapshot("svc-1", "operational", time.Date(2026, 8, 24, 10, 5, 0, 0, loc)),
-		snapshot("svc-1", "degraded", time.Date(2026, 8, 24, 10, 20, 0, 0, loc)),
+	intervals := []db.StatusInterval{
+		closedInterval("degraded", hourStart.Add(20*time.Minute), hourStart.Add(40*time.Minute)),
+		closedInterval("operational", hourStart, hourStart.Add(20*time.Minute)),
+		closedInterval("outage", hourStart.Add(40*time.Minute), hourStart.Add(41*time.Minute)),
+		closedInterval("operational", hourStart.Add(41*time.Minute), hourStart.Add(60*time.Minute)),
 	}
 
-	buckets := BuildHourly(snapshots, now, loc, 24)
+	buckets := BuildHourly(intervals, now, loc, 24)
 
-	if got := buckets[23].Status; got != "outage" {
-		t.Errorf("buckets[23].Status = %q, want %q (latest fetched_at wins)", got, "outage")
-	}
-}
-
-// UPT-04: a snapshot exactly on a bucket boundary lands in the bucket it
-// starts (not the previous one), and this holds across a just-past-midnight
-// America/Sao_Paulo boundary.
-func TestBuildHourly_BoundarySnapshotLandsInStartingBucket(t *testing.T) {
-	loc := mustLoadSaoPaulo(t)
-	now := time.Date(2026, 8, 24, 0, 10, 0, 0, loc)
-
-	boundary := time.Date(2026, 8, 24, 0, 0, 0, 0, loc)
-	snapshots := []db.StatusSnapshot{
-		snapshot("svc-1", "degraded", boundary),
+	if got := buckets[22].Status; got != "outage" {
+		t.Errorf("buckets[22].Status = %q, want %q", got, "outage")
 	}
 
-	buckets := BuildHourly(snapshots, now, loc, 24)
-
-	if got := buckets[23].Status; got != "degraded" {
-		t.Errorf("buckets[23].Status = %q, want %q (boundary snapshot belongs to the hour it starts)", got, "degraded")
+	// Without the outage interval, degraded should beat operational.
+	intervalsNoOutage := []db.StatusInterval{
+		closedInterval("degraded", hourStart.Add(20*time.Minute), hourStart.Add(40*time.Minute)),
+		closedInterval("operational", hourStart, hourStart.Add(20*time.Minute)),
+		closedInterval("operational", hourStart.Add(40*time.Minute), hourStart.Add(60*time.Minute)),
 	}
-	if got := buckets[22].Status; got != NoData {
-		t.Errorf("buckets[22].Status = %q, want %q (previous hour must not absorb the boundary snapshot)", got, NoData)
+	buckets2 := BuildHourly(intervalsNoOutage, now, loc, 24)
+	if got := buckets2[22].Status; got != "degraded" {
+		t.Errorf("buckets[22].Status = %q, want %q", got, "degraded")
 	}
 }
 
-// UPT-06: an empty snapshot slice yields all no_data buckets.
-func TestBuildHourly_EmptySnapshotsYieldsAllNoData(t *testing.T) {
+// SHU-07: a bucket with no overlapping interval resolves to NoData.
+func TestBuildHourly_NoOverlappingInterval_ResolvesToNoData(t *testing.T) {
 	loc := mustLoadSaoPaulo(t)
 	now := time.Date(2026, 8, 24, 14, 0, 0, 0, loc)
 
@@ -115,41 +115,70 @@ func TestBuildHourly_EmptySnapshotsYieldsAllNoData(t *testing.T) {
 	}
 }
 
-// Current-partial-hour assumption: a snapshot in the current, not-yet-complete
-// hour lands in the right-most bucket, and unsorted input is handled correctly.
-func TestBuildHourly_CurrentPartialHourGetsOwnBucket_UnsortedInput(t *testing.T) {
+// SHU-09: an interval spanning multiple bucket boundaries contributes its
+// status to every bucket it overlaps, not just the one containing StartsAt.
+func TestBuildHourly_IntervalSpanningMultipleBuckets_CoversEveryOverlappedBucket(t *testing.T) {
 	loc := mustLoadSaoPaulo(t)
-	now := time.Date(2026, 8, 24, 14, 5, 0, 0, loc)
+	now := time.Date(2026, 8, 24, 12, 0, 0, 0, loc)
 
-	snapshots := []db.StatusSnapshot{
-		snapshot("svc-1", "operational", time.Date(2026, 8, 24, 14, 2, 0, 0, loc)),
-		snapshot("svc-1", "operational", time.Date(2026, 8, 23, 15, 30, 0, 0, loc)),
+	// Spans hours 9, 10, 11 (starts mid-hour-9, ends mid-hour-11).
+	start := time.Date(2026, 8, 24, 9, 30, 0, 0, loc)
+	end := time.Date(2026, 8, 24, 11, 30, 0, 0, loc)
+	intervals := []db.StatusInterval{closedInterval("outage", start, end)}
+
+	buckets := BuildHourly(intervals, now, loc, 24)
+
+	// index 23 = hour 11 (current), 22 = hour 11? recompute: now=12:00 so
+	// current bucket (index 23) covers [12:00,13:00). hour 11 is index 22,
+	// hour 10 is index 21, hour 9 is index 20.
+	if got := buckets[20].Status; got != "outage" {
+		t.Errorf("hour 9 bucket = %q, want %q", got, "outage")
 	}
-
-	buckets := BuildHourly(snapshots, now, loc, 24)
-
-	if got := buckets[23].Status; got != "operational" {
-		t.Errorf("buckets[23] (current hour) = %q, want %q", got, "operational")
+	if got := buckets[21].Status; got != "outage" {
+		t.Errorf("hour 10 bucket = %q, want %q", got, "outage")
 	}
-	if got := buckets[0].Status; got != "operational" {
-		t.Errorf("buckets[0] (oldest hour) = %q, want %q", got, "operational")
+	if got := buckets[22].Status; got != "outage" {
+		t.Errorf("hour 11 bucket = %q, want %q", got, "outage")
+	}
+	if got := buckets[23].Status; got != NoData {
+		t.Errorf("hour 12 (current) bucket = %q, want %q (interval ended before it)", got, NoData)
 	}
 }
 
-// Snapshots outside the window are ignored, not mis-bucketed.
-func TestBuildHourly_SnapshotsOutsideWindowAreIgnored(t *testing.T) {
+// An open-ended interval (EndsAt nil) still overlapping is counted as
+// covering up through now/the current bucket.
+func TestBuildHourly_OpenIntervalCoversUpToNow(t *testing.T) {
+	loc := mustLoadSaoPaulo(t)
+	now := time.Date(2026, 8, 24, 14, 5, 0, 0, loc)
+
+	intervals := []db.StatusInterval{
+		openInterval("outage", time.Date(2026, 8, 24, 13, 30, 0, 0, loc)),
+	}
+
+	buckets := BuildHourly(intervals, now, loc, 24)
+
+	if got := buckets[22].Status; got != "outage" {
+		t.Errorf("hour 13 bucket = %q, want %q", got, "outage")
+	}
+	if got := buckets[23].Status; got != "outage" {
+		t.Errorf("current (hour 14) bucket = %q, want %q (open interval covers up to now)", got, "outage")
+	}
+}
+
+// Intervals entirely outside the window are ignored, not mis-bucketed.
+func TestBuildHourly_IntervalsOutsideWindowAreIgnored(t *testing.T) {
 	loc := mustLoadSaoPaulo(t)
 	now := time.Date(2026, 8, 24, 14, 0, 0, 0, loc)
 
-	snapshots := []db.StatusSnapshot{
-		snapshot("svc-1", "outage", time.Date(2026, 8, 20, 12, 0, 0, 0, loc)),
+	intervals := []db.StatusInterval{
+		closedInterval("outage", time.Date(2026, 8, 20, 12, 0, 0, 0, loc), time.Date(2026, 8, 20, 13, 0, 0, 0, loc)),
 	}
 
-	buckets := BuildHourly(snapshots, now, loc, 24)
+	buckets := BuildHourly(intervals, now, loc, 24)
 
 	for i, b := range buckets {
 		if b.Status != NoData {
-			t.Errorf("buckets[%d].Status = %q, want %q (out-of-window snapshot must not leak in)", i, b.Status, NoData)
+			t.Errorf("buckets[%d].Status = %q, want %q (out-of-window interval must not leak in)", i, b.Status, NoData)
 		}
 	}
 }

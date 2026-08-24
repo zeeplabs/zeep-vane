@@ -162,7 +162,7 @@ T8 → T9
 
 ---
 
-### T4: `internal/history.BuildHourly` - worst-status-wins over intervals
+### T4: `internal/history.BuildHourly` - worst-status-wins over intervals [x]
 
 **What**: Change `BuildHourly`'s input type from `[]db.StatusSnapshot` to `[]db.StatusInterval` and its bucket-resolution rule from last-observation-wins to highest-priority-status-wins (`outage` > `degraded` > `operational`) among every interval overlapping each hour's `[start, start+1h)`; a bucket with no overlapping interval stays `NoData`. Rewrite `internal/history/hourly_test.go` accordingly (existing snapshot-based tests are replaced, not merely edited around).
 **Where**: `internal/history/hourly.go`, `internal/history/hourly_test.go`
@@ -175,13 +175,13 @@ T8 → T9
 - Skill: NONE
 
 **Done when**:
-- [ ] An hour containing both `operational` (55 min) and `outage` (5 min) intervals resolves to `outage` (SHU-06 core case, replaces the old last-wins test)
-- [ ] An hour with no overlapping interval resolves to `NoData`
-- [ ] An interval open-ended (`ends_at` nil) still overlapping is counted as covering up to `now`/the current bucket
-- [ ] An interval spanning multiple bucket boundaries contributes its status to every bucket it overlaps, not only the one containing its `starts_at`
-- [ ] Function still returns exactly `windowHours` buckets, oldest first, unchanged contract
-- [ ] Gate check passes: `go test ./internal/history/...`
-- [ ] Test count: ≥5 tests (no silent deletions from the prior snapshot-based suite's coverage intent)
+- [x] An hour containing both `operational` (55 min) and `outage` (5 min) intervals resolves to `outage` (SHU-06 core case, replaces the old last-wins test)
+- [x] An hour with no overlapping interval resolves to `NoData`
+- [x] An interval open-ended (`ends_at` nil) still overlapping is counted as covering up to `now`/the current bucket
+- [x] An interval spanning multiple bucket boundaries contributes its status to every bucket it overlaps, not only the one containing its `starts_at`
+- [x] Function still returns exactly `windowHours` buckets, oldest first, unchanged contract
+- [x] Gate check passes: `go test ./internal/history/...`
+- [x] Test count: 7 tests (replaces prior 7 snapshot-based tests; no coverage regression)
 
 **Tests**: unit
 **Gate**: quick
