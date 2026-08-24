@@ -373,11 +373,11 @@ T12 -> T13
 - Skill: NONE
 
 **Done when**:
-- [ ] `docker compose config -q` validates the file with no errors
-- [ ] `app` declares `depends_on: db: condition: service_healthy`
-- [ ] Named volumes exist for the Postgres data directory, `UPLOADS_DIR`, and `CERTMAGIC_STORAGE_PATH`
-- [ ] If Docker is available in this environment, `docker compose up -d --wait` brings both services to a healthy state and `curl localhost:<published port>/healthz` returns `200`; if unavailable, this is stated explicitly rather than assumed
-- [ ] Gate check passes: `docker compose config -q` (plus the up/health smoke where possible)
+- [x] `docker compose config -q` validates the file with no errors
+- [x] `app` declares `depends_on: db: condition: service_healthy`
+- [x] Named volumes exist for the Postgres data directory, `UPLOADS_DIR`, and `CERTMAGIC_STORAGE_PATH`
+- [x] If Docker is available in this environment, `docker compose up -d --wait` brings both services to a healthy state and `curl localhost:<published port>/healthz` returns `200`; if unavailable, this is stated explicitly rather than assumed — Docker (OrbStack) was available; ran for real, both containers reported healthy, `curl localhost:8080/healthz` returned 200. `db`'s own port is deliberately not published to the host (unnecessary and collided with this sandbox's local `make dev-db` container already bound to 5432 - the app reaches `db` over the compose-internal network regardless).
+- [x] Gate check passes: `docker compose config -q` (plus the up/health smoke where possible) — both passed for real
 
 **Tests**: none
 **Gate**: docker

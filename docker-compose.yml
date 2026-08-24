@@ -1,0 +1,40 @@
+services:
+  app:
+    build: .
+    ports:
+      - "8080:8080"
+      - "443:443"
+    environment:
+      DATABASE_URL: postgres://vane:vane@db:5432/vane?sslmode=disable
+      VANE_MASTER_KEY: change-me-master-key
+      VANE_SESSION_SECRET: change-me-session-secret
+      PORT: 8080
+      POLL_INTERVAL_SECONDS: 60
+      UPLOADS_DIR: /data/uploads
+      CERTMAGIC_STORAGE_PATH: /data/certmagic
+    volumes:
+      - uploads:/data/uploads
+      - certmagic:/data/certmagic
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: on-failure
+
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: vane
+      POSTGRES_PASSWORD: vane
+      POSTGRES_DB: vane
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U vane"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+volumes:
+  pgdata:
+  uploads:
+  certmagic:
