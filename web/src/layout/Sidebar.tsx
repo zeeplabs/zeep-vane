@@ -123,13 +123,12 @@ export function Sidebar() {
 
   return (
     <aside className="flex h-full w-[236px] shrink-0 flex-col border-r border-divider bg-bg px-3 py-4">
-      <div className="flex items-center gap-2 px-2 pb-4 text-accent">
+      <div className="flex items-center gap-2 px-2 pb-4 mb-4 text-accent">
         {logoUrl ? (
-          <img src={logoUrl} alt={t("sidebar.brand")} className="h-5 w-5 flex-none object-contain" />
+          <img src={logoUrl} alt={t("sidebar.brand")} className="w-26 flex-none object-contain" />
         ) : (
           <BrandIcon />
         )}
-        <span className="text-h5 font-medium text-text">{t("sidebar.brand")}</span>
       </div>
 
       <nav className="flex flex-col gap-0.5">

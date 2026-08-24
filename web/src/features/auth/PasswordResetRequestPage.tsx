@@ -2,8 +2,11 @@ import { useState, type FormEvent } from "react";
 import { Link } from "react-router-dom";
 import { Field } from "../../components/ui/Field";
 import { Button } from "../../components/ui/Button";
+import { useBrandLogoUrl } from "../../lib/branding";
 
 export function PasswordResetRequestPage() {
+  const logoUrl = useBrandLogoUrl();
+
   const [email, setEmail] = useState("");
   const [submitted, setSubmitted] = useState(false);
 
@@ -32,13 +35,16 @@ export function PasswordResetRequestPage() {
         />
 
         <div className="relative flex items-center gap-2">
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-            <path
-              d="M12 2l2.4 7.2L22 12l-7.6 2.8L12 22l-2.4-7.2L2 12l7.6-2.8L12 2z"
-              fill="var(--color-accent)"
-            />
-          </svg>
-          <span className="text-[15px] font-medium tracking-tight text-text">Vane</span>
+          {logoUrl ? (
+            <img src={logoUrl} alt="Company logo" className="w-[180px] object-contain" />
+          ) : (
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path
+                d="M12 2l2.4 7.2L22 12l-7.6 2.8L12 22l-2.4-7.2L2 12l7.6-2.8L12 2z"
+                fill="var(--color-accent)"
+              />
+            </svg>
+          )}
         </div>
 
         <div className="relative flex flex-col gap-4">

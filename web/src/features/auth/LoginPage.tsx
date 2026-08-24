@@ -70,7 +70,7 @@ export function LoginPage() {
 
         <div className="relative flex items-center gap-2">
           {logoUrl ? (
-            <img src={logoUrl} alt="" className="h-[22px] w-[22px] object-contain" />
+            <img src={logoUrl} alt="Company logo" className="w-[180px] object-contain" />
           ) : (
             <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
               <path
@@ -79,7 +79,6 @@ export function LoginPage() {
               />
             </svg>
           )}
-          <span className="text-[15px] font-medium tracking-tight text-text">Vane</span>
         </div>
 
         <div className="relative flex flex-col gap-4">
