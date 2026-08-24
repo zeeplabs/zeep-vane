@@ -245,7 +245,7 @@ T8 → T9
 
 ---
 
-### T7: `internal/retention.Pruner`
+### T7: `internal/retention.Pruner` [x]
 
 **What**: New package `internal/retention` with `Pruner` (fields: an `intervalDeleter` interface with `DeleteClosedBefore(ctx, cutoff) (int64, error)`, `tick`/`retention time.Duration`, `*zap.Logger`), `NewPruner(...)`, and `Run(ctx context.Context)` - same ticker/`select`/`ctx.Done()` shape as `Poller.Run`, calling `DeleteClosedBefore(ctx, time.Now().Add(-p.retention))` each tick and logging (not crashing) on error.
 **Where**: `internal/retention/pruner.go`, `internal/retention/pruner_test.go`
@@ -259,12 +259,12 @@ T8 → T9
 - Skill: NONE
 
 **Done when**:
-- [ ] A tick calls `DeleteClosedBefore` with a cutoff of `now - 35 days` and a closed interval older than that is gone afterward
-- [ ] An open interval, regardless of how old its `starts_at` is, is never deleted by a tick
-- [ ] `Run` returns promptly when its context is canceled, mid-tick-wait
-- [ ] A `DeleteClosedBefore` error is logged via `zap.Error` and does not stop `Run`'s loop (asserted by forcing one failing tick, e.g. a canceled sub-context or closed pool for that call, then confirming a subsequent tick still runs)
-- [ ] Gate check passes: `TEST_DATABASE_URL=<dsn> go test -tags=integration ./internal/retention/...`
-- [ ] Test count: ≥3 tests (no silent deletions)
+- [x] A tick calls `DeleteClosedBefore` with a cutoff of `now - 35 days` and a closed interval older than that is gone afterward
+- [x] An open interval, regardless of how old its `starts_at` is, is never deleted by a tick
+- [x] `Run` returns promptly when its context is canceled, mid-tick-wait
+- [x] A `DeleteClosedBefore` error is logged via `zap.Error` and does not stop `Run`'s loop (asserted by forcing one failing tick, e.g. a canceled sub-context or closed pool for that call, then confirming a subsequent tick still runs)
+- [x] Gate check passes: `TEST_DATABASE_URL=<dsn> go test -tags=integration ./internal/retention/...`
+- [x] Test count: 3 tests (no silent deletions)
 
 **Tests**: integration
 **Gate**: full
