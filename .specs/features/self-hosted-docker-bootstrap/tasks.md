@@ -182,12 +182,12 @@ T12 -> T13
 - Skill: NONE
 
 **Done when**:
-- [ ] `GET` on an admin-less database returns `{"bootstrapped": false}`; after a successful `POST`, returns `{"bootstrapped": true}`
-- [ ] A successful `POST` sets the same `vane_session` cookie shape (`HttpOnly`, `Secure`, `SameSite=Strict`) `Login` sets, and the response body identifies the new owner
-- [ ] A second `POST` against an already-bootstrapped database returns `409` with the exact body `{"error":"already bootstrapped"}`, and does not create a second admin
-- [ ] A `POST` with an empty password returns `422`, no admin created
-- [ ] Gate check passes: `TEST_DATABASE_URL=<dsn> go test -tags=integration ./internal/api/...`
-- [ ] Test count: ≥5 tests (no silent deletions)
+- [x] `GET` on an admin-less database returns `{"bootstrapped": false}`; after a successful `POST`, returns `{"bootstrapped": true}`
+- [x] A successful `POST` sets the same `vane_session` cookie shape (`HttpOnly`, `Secure`, `SameSite=Strict`) `Login` sets, and the response body identifies the new owner
+- [x] A second `POST` against an already-bootstrapped database returns `409` with the exact body `{"error":"already bootstrapped"}`, and does not create a second admin
+- [x] A `POST` with an empty password returns `422`, no admin created
+- [x] Gate check passes: `TEST_DATABASE_URL=<dsn> go test -tags=integration ./internal/api/...`
+- [x] Test count: ≥5 tests (no silent deletions) — 5 added
 
 **Tests**: integration
 **Gate**: full
