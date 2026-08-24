@@ -37,10 +37,10 @@ func newPublicStatusRouter(t *testing.T) (http.Handler, *db.Pool) {
 	t.Cleanup(pool.Close)
 
 	services := db.NewServiceRepository(pool)
-	snapshots := db.NewStatusSnapshotRepository(pool)
+	intervals := db.NewStatusIntervalRepository(pool)
 	incidents := db.NewIncidentRepository(pool)
 	companySettings := db.NewCompanySettingsRepository(pool)
-	handler := NewPublicStatusHandler(services, snapshots, incidents, companySettings, zap.NewNop())
+	handler := NewPublicStatusHandler(services, intervals, incidents, companySettings, zap.NewNop())
 
 	r := chi.NewRouter()
 	r.Get("/", handler.Get)
@@ -49,10 +49,10 @@ func newPublicStatusRouter(t *testing.T) (http.Handler, *db.Pool) {
 }
 
 // createPublicStatusServiceFixture creates a service, sets its current
-// status, and records a StatusSnapshot with a fixed, past fetchedAt (rather
-// than "now") so tests can assert the exact timestamp the public endpoint
-// exposes, not just that some recent-looking value came back.
-func createPublicStatusServiceFixture(t *testing.T, pool *db.Pool, status string, fetchedAt time.Time) (serviceID string, cleanup func()) {
+// status, and opens a status interval with a fixed, past lastSeenAt
+// (rather than "now") so tests can assert the exact timestamp the public
+// endpoint exposes, not just that some recent-looking value came back.
+func createPublicStatusServiceFixture(t *testing.T, pool *db.Pool, status string, lastSeenAt time.Time) (serviceID string, cleanup func()) {
 	t.Helper()
 	ctx := context.Background()
 	name := uniqueServiceName(t)
@@ -65,27 +65,26 @@ func createPublicStatusServiceFixture(t *testing.T, pool *db.Pool, status string
 	if err := services.UpdateStatus(ctx, service.ID, status); err != nil {
 		t.Fatalf("setup UpdateStatus() returned unexpected error: %v", err)
 	}
-	if _, err := pool.Exec(ctx,
-		"INSERT INTO status_snapshots (service_id, status, error_budget_remaining, fetched_at) VALUES ($1, $2, $3, $4)",
-		service.ID, status, 0.5, fetchedAt,
-	); err != nil {
-		t.Fatalf("setup snapshot insert returned unexpected error: %v", err)
+	intervals := db.NewStatusIntervalRepository(pool)
+	if err := intervals.OpenOrExtend(ctx, service.ID, status, 0.5, lastSeenAt); err != nil {
+		t.Fatalf("setup OpenOrExtend() returned unexpected error: %v", err)
 	}
 
 	return service.ID, func() { _, _ = pool.Exec(context.Background(), "DELETE FROM services WHERE id = $1", service.ID) }
 }
 
-// insertStatusSnapshot records an extra StatusSnapshot for serviceID at a
-// caller-chosen fetchedAt, on top of whatever createPublicStatusServiceFixture
-// already inserted - used to control exactly which hourly bucket a snapshot
-// lands in (UPT-01..04).
-func insertStatusSnapshot(t *testing.T, pool *db.Pool, serviceID, status string, fetchedAt time.Time) {
+// insertStatusInterval records a closed status interval for serviceID
+// spanning [startsAt, endsAt), on top of whatever
+// createPublicStatusServiceFixture already opened - used to control exactly
+// which hourly bucket an interval lands in (UPT-01..04) without disturbing
+// the fixture's own open interval (and therefore LastUpdatedAt).
+func insertStatusInterval(t *testing.T, pool *db.Pool, serviceID, status string, startsAt, endsAt time.Time) {
 	t.Helper()
 	if _, err := pool.Exec(context.Background(),
-		"INSERT INTO status_snapshots (service_id, status, error_budget_remaining, fetched_at) VALUES ($1, $2, $3, $4)",
-		serviceID, status, 0.5, fetchedAt,
+		"INSERT INTO status_intervals (service_id, status, error_budget_remaining, starts_at, last_seen_at, ends_at) VALUES ($1, $2, $3, $4, $4, $5)",
+		serviceID, status, 0.5, startsAt, endsAt,
 	); err != nil {
-		t.Fatalf("setup snapshot insert returned unexpected error: %v", err)
+		t.Fatalf("setup interval insert returned unexpected error: %v", err)
 	}
 }
 
@@ -181,7 +180,7 @@ func TestPublicStatusGet_NoAuthHeader_200WithServiceStatus(t *testing.T) {
 		t.Errorf("Status = %q, want %q", found.Status, "operational")
 	}
 	if !found.LastUpdatedAt.Equal(fetchedAt) {
-		t.Errorf("LastUpdatedAt = %v, want %v (the recorded snapshot's fetched_at)", found.LastUpdatedAt, fetchedAt)
+		t.Errorf("LastUpdatedAt = %v, want %v (the open interval's last_seen_at)", found.LastUpdatedAt, fetchedAt)
 	}
 	// UPT-01: the HourlyHistory field is a new addition, but every existing
 	// field above must remain unaffected by it.
@@ -191,21 +190,23 @@ func TestPublicStatusGet_NoAuthHeader_200WithServiceStatus(t *testing.T) {
 }
 
 // TestPublicStatusGet_HourlyHistory_KnownHourStatusAppearsAsSingleBucket
-// covers UPT-01/02/03/04: a snapshot recorded a known number of hours ago
+// covers UPT-01/02/03/04: an interval recorded a known number of hours ago
 // must appear as exactly one hourly bucket, colored by its status, at the
 // correct America/Sao_Paulo local hour.
 func TestPublicStatusGet_HourlyHistory_KnownHourStatusAppearsAsSingleBucket(t *testing.T) {
 	r, pool := newPublicStatusRouter(t)
 
-	// The fixture's own snapshot sits well outside the 24h window so it
-	// cannot contribute a bucket itself.
+	// The fixture's own open interval starts well outside the 24h window
+	// (but stays open, so it still underlies every in-window bucket as
+	// "operational" - the outage interval below then wins those hours it
+	// overlaps, per worst-status-wins).
 	staleFetchedAt := time.Now().Add(-72 * time.Hour)
 	serviceID, cleanup := createPublicStatusServiceFixture(t, pool, "operational", staleFetchedAt)
 	t.Cleanup(cleanup)
 	statusPageID := createPublicStatusPageFixture(t, pool, serviceID)
 
 	knownFetchedAt := time.Now().Add(-3 * time.Hour)
-	insertStatusSnapshot(t, pool, serviceID, "outage", knownFetchedAt)
+	insertStatusInterval(t, pool, serviceID, "outage", knownFetchedAt, knownFetchedAt.Add(1*time.Minute))
 
 	loc, err := time.LoadLocation("America/Sao_Paulo")
 	if err != nil {
@@ -256,7 +257,7 @@ func TestPublicStatusGet_HourlyHistory_KnownHourStatusAppearsAsSingleBucket(t *t
 
 // TestPublicStatusGet_ServiceWithNoSnapshotsEver_AllHourlyBucketsNoData
 // covers UPT-06: a service the poller has never reached (zero
-// status_snapshots rows ever, not just outside the window) must still
+// status_intervals rows ever, not just outside the window) must still
 // render all 24 bars as no_data, never an omitted or fabricated history.
 func TestPublicStatusGet_ServiceWithNoSnapshotsEver_AllHourlyBucketsNoData(t *testing.T) {
 	r, pool := newPublicStatusRouter(t)
@@ -301,6 +302,103 @@ func TestPublicStatusGet_ServiceWithNoSnapshotsEver_AllHourlyBucketsNoData(t *te
 		if bucket.Status != "no_data" {
 			t.Errorf("HourlyHistory[%d].Status = %q, want %q", i, bucket.Status, "no_data")
 		}
+	}
+	// SHU-15: zero recorded intervals ever means uptime % is undefined
+	// (null), never a fabricated 0 or 100.
+	if found.UptimePercent != nil {
+		t.Errorf("UptimePercent = %v, want nil (no recorded intervals)", *found.UptimePercent)
+	}
+}
+
+// TestPublicStatusGet_UptimePercent_OutageWindowComputesExpectedValue
+// covers SHU-10..14 end-to-end through the handler: a service with a real
+// 6h outage inside an otherwise operational 24h window must render
+// uptime_percent = 75.0, not a value computed off a stale snapshot model.
+func TestPublicStatusGet_UptimePercent_OutageWindowComputesExpectedValue(t *testing.T) {
+	r, pool := newPublicStatusRouter(t)
+
+	// Opens an operational interval well before the window so the entire
+	// 24h denominator is used (SHU-11).
+	openedAt := time.Now().Add(-48 * time.Hour)
+	serviceID, cleanup := createPublicStatusServiceFixture(t, pool, "operational", openedAt)
+	t.Cleanup(cleanup)
+	statusPageID := createPublicStatusPageFixture(t, pool, serviceID)
+
+	outageStart := time.Now().Add(-10 * time.Hour)
+	outageEnd := outageStart.Add(6 * time.Hour)
+	insertStatusInterval(t, pool, serviceID, "outage", outageStart, outageEnd)
+
+	req := withStatusPageContext(httptest.NewRequest(http.MethodGet, "/", nil), statusPageID)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	var body publicStatusResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+
+	allServices, err := db.NewServiceRepository(pool).List(context.Background())
+	if err != nil {
+		t.Fatalf("List() returned unexpected error: %v", err)
+	}
+	found := findPublicService(body.Services, serviceID, allServices)
+	if found == nil {
+		t.Fatalf("service %s not present in public response", serviceID)
+	}
+	if found.UptimePercent == nil {
+		t.Fatalf("UptimePercent = nil, want 75.0")
+	}
+	if *found.UptimePercent != 75.0 {
+		t.Errorf("UptimePercent = %v, want 75.0", *found.UptimePercent)
+	}
+}
+
+// TestPublicStatusGet_LastUpdatedAt_AdvancesOnRepeatedSameStatusPoll is a
+// regression guard for the design's stated risk: without last_seen_at
+// bumped on every confirming poll, LastUpdatedAt would freeze at the
+// moment a status interval opened and never move again while the status
+// stays unchanged.
+func TestPublicStatusGet_LastUpdatedAt_AdvancesOnRepeatedSameStatusPoll(t *testing.T) {
+	r, pool := newPublicStatusRouter(t)
+
+	firstSeenAt := time.Now().Add(-2 * time.Hour)
+	serviceID, cleanup := createPublicStatusServiceFixture(t, pool, "operational", firstSeenAt)
+	t.Cleanup(cleanup)
+	statusPageID := createPublicStatusPageFixture(t, pool, serviceID)
+
+	secondSeenAt := time.Now().Add(-1 * time.Hour)
+	intervals := db.NewStatusIntervalRepository(pool)
+	if err := intervals.OpenOrExtend(context.Background(), serviceID, "operational", 0.5, secondSeenAt); err != nil {
+		t.Fatalf("setup second OpenOrExtend() returned unexpected error: %v", err)
+	}
+
+	req := withStatusPageContext(httptest.NewRequest(http.MethodGet, "/", nil), statusPageID)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	var body publicStatusResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+
+	allServices, err := db.NewServiceRepository(pool).List(context.Background())
+	if err != nil {
+		t.Fatalf("List() returned unexpected error: %v", err)
+	}
+	found := findPublicService(body.Services, serviceID, allServices)
+	if found == nil {
+		t.Fatalf("service %s not present in public response", serviceID)
+	}
+	if !found.LastUpdatedAt.Equal(secondSeenAt) {
+		t.Errorf("LastUpdatedAt = %v, want %v (advanced past the interval's original starts_at %v)", found.LastUpdatedAt, secondSeenAt, firstSeenAt)
 	}
 }
 

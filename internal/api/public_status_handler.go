@@ -26,11 +26,11 @@ type serviceLister interface {
 	ListForStatusPage(ctx context.Context, statusPageID string) ([]db.Service, error)
 }
 
-// latestSnapshotFetcher is the subset of *db.StatusSnapshotRepository the
+// statusIntervalReader is the subset of *db.StatusIntervalRepository the
 // public status handler depends on.
-type latestSnapshotFetcher interface {
-	LatestFetchedAtByService(ctx context.Context) (map[string]time.Time, error)
-	ListRecentByServices(ctx context.Context, serviceIDs []string, since time.Time) ([]db.StatusSnapshot, error)
+type statusIntervalReader interface {
+	OpenIntervalsByService(ctx context.Context) (map[string]db.StatusInterval, error)
+	ListOverlapping(ctx context.Context, serviceIDs []string, windowStart, now time.Time) ([]db.StatusInterval, error)
 }
 
 // publicIncidentLister is the subset of *db.IncidentRepository the public
@@ -54,13 +54,13 @@ const incidentRetentionDays = 90
 
 // PublicStatusHandler serves the public, unauthenticated status page
 // endpoint (SP-10). It never talks to Datadog directly - it only reads
-// what the poller (Phase 4) has already persisted, so a Datadog outage
+// what the poller has already persisted, so a Datadog outage
 // (including the connected Integration being marked "invalid") never takes
-// the public page down: it keeps serving the last snapshot on record, with
-// its real fetched_at timestamp, never a fabricated "now" (SP-08, SP-09).
+// the public page down: it keeps serving the last interval on record, with
+// its real last_seen_at timestamp, never a fabricated "now" (SP-08, SP-09).
 type PublicStatusHandler struct {
 	services        serviceLister
-	snapshots       latestSnapshotFetcher
+	intervals       statusIntervalReader
 	incidents       publicIncidentLister
 	companySettings companySettingsGetter
 	logger          *zap.Logger
@@ -68,7 +68,7 @@ type PublicStatusHandler struct {
 }
 
 // NewPublicStatusHandler builds a PublicStatusHandler backed by services,
-// snapshots, incidents, and companySettings.
+// intervals, incidents, and companySettings.
 //
 // It loads the America/Sao_Paulo location once here (UPT-04) rather than
 // per-request - cmd/vane/main.go blank-imports time/tzdata specifically so
@@ -76,12 +76,12 @@ type PublicStatusHandler struct {
 // availability; a failure here is a build/deployment defect, not a
 // per-request condition, so it panics at construction time instead of
 // turning every request into a 500.
-func NewPublicStatusHandler(services serviceLister, snapshots latestSnapshotFetcher, incidents publicIncidentLister, companySettings companySettingsGetter, logger *zap.Logger) *PublicStatusHandler {
+func NewPublicStatusHandler(services serviceLister, intervals statusIntervalReader, incidents publicIncidentLister, companySettings companySettingsGetter, logger *zap.Logger) *PublicStatusHandler {
 	loc, err := time.LoadLocation("America/Sao_Paulo")
 	if err != nil {
 		panic(fmt.Sprintf("public-status: failed to load America/Sao_Paulo location: %v", err))
 	}
-	return &PublicStatusHandler{services: services, snapshots: snapshots, incidents: incidents, companySettings: companySettings, logger: logger, historyLoc: loc}
+	return &PublicStatusHandler{services: services, intervals: intervals, incidents: incidents, companySettings: companySettings, logger: logger, historyLoc: loc}
 }
 
 type publicServiceResponse struct {
@@ -89,6 +89,10 @@ type publicServiceResponse struct {
 	Status        string                       `json:"status"`
 	LastUpdatedAt time.Time                    `json:"last_updated_at"`
 	HourlyHistory []publicHourlyStatusResponse `json:"hourly_history"`
+	// UptimePercent is nil ("undefined", render a dash) when the service
+	// has zero recorded intervals within the window (SHU-15) - never a
+	// fabricated 0 or 100.
+	UptimePercent *float64 `json:"uptime_percent"`
 }
 
 // publicHourlyStatusResponse is one hourly bar in a service's uptime
@@ -169,9 +173,9 @@ func (h *PublicStatusHandler) composeResponse(ctx context.Context, statusPageID 
 		return publicStatusResponse{}, fmt.Errorf("failed to list services: %w", err)
 	}
 
-	latestFetchedAt, err := h.snapshots.LatestFetchedAtByService(ctx)
+	openIntervals, err := h.intervals.OpenIntervalsByService(ctx)
 	if err != nil {
-		return publicStatusResponse{}, fmt.Errorf("failed to load latest status snapshots: %w", err)
+		return publicStatusResponse{}, fmt.Errorf("failed to load open status intervals: %w", err)
 	}
 
 	activeIncidents, resolvedIncidents, err := h.incidents.ListPublicForStatusPage(ctx, statusPageID, incidentRetentionDays)
@@ -187,7 +191,7 @@ func (h *PublicStatusHandler) composeResponse(ctx context.Context, statusPageID 
 	// A service with no SLO linked yet stays "not_configured" and is never
 	// shown publicly (spec.md edge case) - it's an admin-side concept only,
 	// until a poller cycle gives it a real status. Filter before querying
-	// history so a not_configured service never costs a snapshot lookup.
+	// history so a not_configured service never costs an interval lookup.
 	shownServices := make([]db.Service, 0, len(services))
 	serviceIDs := make([]string, 0, len(services))
 	for _, service := range services {
@@ -199,13 +203,14 @@ func (h *PublicStatusHandler) composeResponse(ctx context.Context, statusPageID 
 	}
 
 	now := time.Now()
-	recentSnapshots, err := h.snapshots.ListRecentByServices(ctx, serviceIDs, now.Add(-historyWindowHours*time.Hour))
+	windowStart := now.Add(-historyWindowHours * time.Hour)
+	overlapping, err := h.intervals.ListOverlapping(ctx, serviceIDs, windowStart, now)
 	if err != nil {
-		return publicStatusResponse{}, fmt.Errorf("failed to list recent status snapshots: %w", err)
+		return publicStatusResponse{}, fmt.Errorf("failed to list overlapping status intervals: %w", err)
 	}
-	snapshotsByService := map[string][]db.StatusSnapshot{}
-	for _, snapshot := range recentSnapshots {
-		snapshotsByService[snapshot.ServiceID] = append(snapshotsByService[snapshot.ServiceID], snapshot)
+	intervalsByService := map[string][]db.StatusInterval{}
+	for _, interval := range overlapping {
+		intervalsByService[interval.ServiceID] = append(intervalsByService[interval.ServiceID], interval)
 	}
 
 	resp := publicStatusResponse{
@@ -221,13 +226,21 @@ func (h *PublicStatusHandler) composeResponse(ctx context.Context, statusPageID 
 		// entry here; LastUpdatedAt then stays the zero value rather than a
 		// fabricated "now" (SP-08, SP-09, edge case in spec.md). Its
 		// history is likewise all no_data - history.BuildHourly handles a
-		// nil/empty snapshot slice with no special-case branch here.
-		buckets := history.BuildHourly(snapshotsByService[service.ID], now, h.historyLoc, historyWindowHours)
+		// nil/empty interval slice with no special-case branch here.
+		serviceIntervals := intervalsByService[service.ID]
+		buckets := history.BuildHourly(serviceIntervals, now, h.historyLoc, historyWindowHours)
+
+		var uptimePercent *float64
+		if pct, ok := history.UptimePercent(serviceIntervals, windowStart, now); ok {
+			uptimePercent = &pct
+		}
+
 		resp.Services = append(resp.Services, publicServiceResponse{
 			Name:          service.Name,
 			Status:        service.CurrentStatus,
-			LastUpdatedAt: latestFetchedAt[service.ID],
+			LastUpdatedAt: openIntervals[service.ID].LastSeenAt,
 			HourlyHistory: toPublicHourlyResponses(buckets),
+			UptimePercent: uptimePercent,
 		})
 	}
 

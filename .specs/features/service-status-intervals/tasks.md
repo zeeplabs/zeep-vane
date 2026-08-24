@@ -273,7 +273,7 @@ T8 → T9
 
 ---
 
-### T8: Wire `internal/api/public_status_handler.go` to intervals + uptime %
+### T8: Wire `internal/api/public_status_handler.go` to intervals + uptime % [x]
 
 **What**: Replace the `latestSnapshotFetcher` interface with a `statusIntervalReader` interface (`OpenIntervalsByService`, `ListOverlapping`); `composeResponse` calls `ListOverlapping` once per request (shared by `history.BuildHourly` and `history.UptimePercent`), reads `LastUpdatedAt` from `OpenIntervalsByService`'s `LastSeenAt`, and adds an `UptimePercent *float64` field to `publicServiceResponse` (nil when `UptimePercent`'s `ok` is `false`, per SHU-15). Update `internal/api/public_status_handler_test.go` and `internal/api/public_status_preview_handler_test.go` (both consume `composeResponse`) - existing 24-bucket/no_data assertions stay, worst-status-wins assertions and the new `uptime_percent` field get new/updated tests.
 **Where**: `internal/api/public_status_handler.go`, `internal/api/public_status_handler_test.go`, `internal/api/public_status_preview_handler_test.go`
@@ -287,12 +287,12 @@ T8 → T9
 - Skill: NONE
 
 **Done when**:
-- [ ] `publicServiceResponse.uptime_percent` is `null` in JSON when a service has no recorded intervals in the window (SHU-15), never `0` or `100`
-- [ ] An hour with a real outage inside it renders as `outage` in the response's `hourly_history`, exercised end-to-end through the handler (not just at the `internal/history` unit level)
-- [ ] `LastUpdatedAt` reflects the open interval's `last_seen_at`, confirmed to advance on a repeated-same-status poll (regression guard for the design's stated risk: without `last_seen_at`, this would freeze)
-- [ ] Both the production `Get` and the authenticated preview endpoint return the same shape (existing shared-`composeResponse` contract preserved)
-- [ ] Gate check passes: `TEST_DATABASE_URL=<dsn> go test -tags=integration ./internal/api/...`
-- [ ] Test count: ≥4 new/updated tests across the two files (no silent deletions)
+- [x] `publicServiceResponse.uptime_percent` is `null` in JSON when a service has no recorded intervals in the window (SHU-15), never `0` or `100`
+- [x] An hour with a real outage inside it renders as `outage` in the response's `hourly_history`, exercised end-to-end through the handler (not just at the `internal/history` unit level)
+- [x] `LastUpdatedAt` reflects the open interval's `last_seen_at`, confirmed to advance on a repeated-same-status poll (regression guard for the design's stated risk: without `last_seen_at`, this would freeze)
+- [x] Both the production `Get` and the authenticated preview endpoint return the same shape (existing shared-`composeResponse` contract preserved)
+- [x] Gate check passes: `TEST_DATABASE_URL=<dsn> go test -tags=integration ./internal/api/...`
+- [x] Test count: ≥4 new/updated tests across the two files (no silent deletions)
 
 **Tests**: integration
 **Gate**: full

@@ -35,11 +35,11 @@ func newPublicStatusPreviewRouter(t *testing.T) (http.Handler, *db.Pool, *db.Adm
 
 	admins := db.NewAdminRepository(pool)
 	services := db.NewServiceRepository(pool)
-	snapshots := db.NewStatusSnapshotRepository(pool)
+	intervals := db.NewStatusIntervalRepository(pool)
 	incidents := db.NewIncidentRepository(pool)
 	statusPages := db.NewStatusPageRepository(pool)
 	companySettings := db.NewCompanySettingsRepository(pool)
-	inner := NewPublicStatusHandler(services, snapshots, incidents, companySettings, zap.NewNop())
+	inner := NewPublicStatusHandler(services, intervals, incidents, companySettings, zap.NewNop())
 	handler := NewPublicStatusPreviewHandler(statusPages, inner, zap.NewNop())
 
 	r := chi.NewRouter()
@@ -99,6 +99,14 @@ func TestPublicStatusPreview_AuthenticatedByID_200SameShapeAsProduction(t *testi
 	// shape as production - same field, same bucket count.
 	if len(found.HourlyHistory) != 24 {
 		t.Errorf("len(HourlyHistory) = %d, want %d", len(found.HourlyHistory), 24)
+	}
+	// SHU-15 (surfaced via UPT-08's same-shape contract): a service with a
+	// long-open interval predating the window computes a defined uptime %,
+	// not a null the production endpoint wouldn't also produce.
+	if found.UptimePercent == nil {
+		t.Errorf("UptimePercent = nil, want a defined value (always-operational interval predating the window)")
+	} else if *found.UptimePercent != 100.0 {
+		t.Errorf("UptimePercent = %v, want 100.0", *found.UptimePercent)
 	}
 }
 
