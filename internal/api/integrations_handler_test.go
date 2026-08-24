@@ -437,6 +437,33 @@ func TestConnectDatadog_ValidCredentials_RestartsPoller(t *testing.T) {
 	}
 }
 
+// TestConnectDatadog_RotateKey_RestartsPollerAgain covers PLD-05 at the
+// trigger level: rotating the key goes through the exact same handler
+// method as the first connect (there is no separate "rotate" endpoint -
+// the admin UI's "Rotacionar chave" button just calls this one again), so
+// a second successful call must (re)start the poller a second time too,
+// not just the first.
+func TestConnectDatadog_RotateKey_RestartsPollerAgain(t *testing.T) {
+	alwaysValid := func(ctx context.Context, apiKey, appKey string) error { return nil }
+	poller := &spyPollerRestarter{}
+	r, _, admins := newIntegrationsRouterWithPoller(t, alwaysValid, poller, zap.NewNop())
+	token := issueTestSessionToken(t, admins)
+
+	first := postConnectDatadog(t, r, token, "first-api-key", "first-app-key")
+	if first.Code != http.StatusCreated {
+		t.Fatalf("first connect status = %d, want %d, body = %s", first.Code, http.StatusCreated, first.Body.String())
+	}
+
+	second := postConnectDatadog(t, r, token, "rotated-api-key", "rotated-app-key")
+	if second.Code != http.StatusCreated {
+		t.Fatalf("rotate status = %d, want %d, body = %s", second.Code, http.StatusCreated, second.Body.String())
+	}
+
+	if poller.calls != 2 {
+		t.Errorf("poller.Restart() calls = %d, want 2 - rotating the key must (re)start the poller again, same as the first connect", poller.calls)
+	}
+}
+
 // TestConnectDatadog_PollerRestartFails_StillReturns201 covers PLD-06: the
 // persisted row is authoritative for this response - a poller (re)start
 // failure (e.g. a decrypt error) must not turn an already-successful
