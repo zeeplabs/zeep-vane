@@ -1,7 +1,7 @@
 # Self-Hosted Docker + Admin Bootstrap Design
 
 **Spec**: `.specs/features/self-hosted-docker-bootstrap/spec.md`
-**Status**: Draft
+**Status**: Approved
 
 ---
 

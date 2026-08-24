@@ -123,34 +123,34 @@ Explicitly excluded. Documented to prevent scope creep.
 
 | Requirement ID | Story | Phase | Status |
 | --- | --- | --- | --- |
-| SHD-01 | P1: Binary serves SPA | Design | Pending |
-| SHD-02 | P1: Binary serves SPA | Design | Pending |
-| SHD-03 | P1: Binary serves SPA | Design | Pending |
-| SHD-04 | P1: Binary serves SPA | Design | Pending |
-| SHD-05 | P1: Binary serves SPA | Design | Pending |
-| SHD-06 | P1: Binary serves SPA | Design | Pending |
-| SHD-07 | P1: Binary serves SPA | Design | Pending |
-| SHD-08 | P1: docker compose up | Design | Pending |
-| SHD-09 | P1: docker compose up | Design | Pending |
-| SHD-10 | P1: docker compose up | Design | Pending |
-| SHD-11 | P1: docker compose up | Design | Pending |
-| SHD-12 | P1: docker compose up | Design | Pending |
-| SHD-13 | P1: docker compose up | Design | Pending |
-| SHD-14 | P1: docker compose up | Design | Pending |
-| SHD-15 | P1: First-run bootstrap | Design | Pending |
-| SHD-16 | P1: First-run bootstrap | Design | Pending |
-| SHD-17 | P1: First-run bootstrap | Design | Pending |
-| SHD-18 | P1: First-run bootstrap | Design | Pending |
-| SHD-19 | P1: First-run bootstrap | Design | Pending |
-| SHD-20 | P1: First-run bootstrap | Design | Pending |
-| SHD-21 | P1: First-run bootstrap | Design | Pending |
-| SHD-22 | P1: First-run bootstrap | Design | Pending |
+| SHD-01 | P1: Binary serves SPA | Execute | Verified |
+| SHD-02 | P1: Binary serves SPA | Execute | Verified |
+| SHD-03 | P1: Binary serves SPA | Execute | Verified |
+| SHD-04 | P1: Binary serves SPA | Execute | Verified |
+| SHD-05 | P1: Binary serves SPA | Execute | Verified |
+| SHD-06 | P1: Binary serves SPA | Execute | Verified |
+| SHD-07 | P1: Binary serves SPA | Execute | Verified |
+| SHD-08 | P1: docker compose up | Execute | Verified |
+| SHD-09 | P1: docker compose up | Execute | Verified |
+| SHD-10 | P1: docker compose up | Execute | Verified |
+| SHD-11 | P1: docker compose up | Execute | Verified |
+| SHD-12 | P1: docker compose up | Execute | Verified |
+| SHD-13 | P1: docker compose up | Execute | Verified |
+| SHD-14 | P1: docker compose up | Execute | Verified |
+| SHD-15 | P1: First-run bootstrap | Execute | Verified |
+| SHD-16 | P1: First-run bootstrap | Execute | Verified |
+| SHD-17 | P1: First-run bootstrap | Execute | Verified |
+| SHD-18 | P1: First-run bootstrap | Execute | Verified |
+| SHD-19 | P1: First-run bootstrap | Execute | Verified |
+| SHD-20 | P1: First-run bootstrap | Execute | Verified |
+| SHD-21 | P1: First-run bootstrap | Execute | Verified |
+| SHD-22 | P1: First-run bootstrap | Execute | Verified |
 
 **ID format:** `SHD-[NUMBER]` (Self-Hosted Docker + bootstrap)
 
 **Status values:** Pending → In Design → In Tasks → Implementing → Verified
 
-**Coverage:** 22 total, 0 mapped to tasks, 22 unmapped ⚠️ (expected pre-Design)
+**Coverage:** 22 total, 22 mapped to tasks, 0 unmapped ✅ (Execute complete, Verifier PASS)
 
 ---
 
