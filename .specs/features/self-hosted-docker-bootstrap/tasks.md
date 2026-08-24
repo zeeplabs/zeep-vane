@@ -293,11 +293,11 @@ T12 -> T13
 - Skill: NONE
 
 **Done when**:
-- [ ] Submitting valid, matching email/password/confirm creates the admin (MSW-mocked `POST /api/bootstrap` success) and the page navigates away from `/bootstrap`
-- [ ] A `409` response shows an inline "already bootstrapped" message and a link to `/login`
-- [ ] Submitting with password/confirm mismatched shows a client-side validation error without calling the API
-- [ ] Gate check passes: `cd web && npm run test && npx tsc -b --noEmit`
-- [ ] Test count: ≥4 tests (no silent deletions)
+- [x] Submitting valid, matching email/password/confirm creates the admin (MSW-mocked `POST /api/bootstrap` success) and the page navigates away from `/bootstrap`
+- [x] A `409` response shows an inline "already bootstrapped" message and a link to `/login`
+- [x] Submitting with password/confirm mismatched shows a client-side validation error without calling the API
+- [x] Gate check passes: `cd web && npm run test && npx tsc -b --noEmit` (tsc clean; same 2 pre-existing, unrelated failures noted in T7)
+- [x] Test count: ≥4 tests (no silent deletions) — 4 added
 
 **Tests**: integration (component)
 **Gate**: frontend

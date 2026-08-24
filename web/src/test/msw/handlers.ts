@@ -131,6 +131,13 @@ export function resetBootstrapState(): void {
   bootstrapState = true;
 }
 
+// setBootstrapped lets a test set up the admin-less precondition (e.g. for
+// BootstrapPage's "successful create" case) without a dedicated per-test
+// server.use() override of both /api/bootstrap/status and /api/bootstrap.
+export function setBootstrapped(value: boolean): void {
+  bootstrapState = value;
+}
+
 const validAdminRoles: Role[] = ["owner", "operator", "viewer"];
 
 // wouldLeaveZeroOwners mirrors admins.go's function of the same name
@@ -198,6 +205,26 @@ export const handlers = [
   // (SHD-19). Public, unauthenticated - never gated on sessionAdminId.
   http.get("/api/bootstrap/status", () => {
     return HttpResponse.json({ bootstrapped: bootstrapState });
+  }),
+
+  // POST /api/bootstrap - mirrors BootstrapHandler.Create: creates the
+  // first admin (owner role) when none exists yet, responding with the
+  // same identity shape /api/auth/me returns (SHD-16, SHD-18); 409
+  // "already bootstrapped" once one exists (SHD-15), 422 on an empty
+  // email/password (SHD-14's own input-validation edge case). Deliberately
+  // does not push into seedAdmins/adminsState - BootstrapPage's own tests
+  // never depend on a subsequent /api/auth/me call succeeding within the
+  // same test (that boot re-check only happens on a real page reload).
+  http.post("/api/bootstrap", async ({ request }) => {
+    const body = (await request.json()) as { email?: string; password?: string };
+    if (!body.email || !body.password) {
+      return HttpResponse.json({ error: "email and password are required" }, { status: 422 });
+    }
+    if (bootstrapState) {
+      return HttpResponse.json({ error: "already bootstrapped" }, { status: 409 });
+    }
+    bootstrapState = true;
+    return HttpResponse.json({ id: "admin-bootstrap-1", email: body.email, role: "owner" });
   }),
 
   http.post("/api/auth/login", async ({ request }) => {
