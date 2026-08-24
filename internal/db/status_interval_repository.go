@@ -109,6 +109,86 @@ func (r *StatusIntervalRepository) OpenOrExtend(ctx context.Context, serviceID, 
 	return nil
 }
 
+// OpenIntervalsByService returns each service's currently-open interval
+// (ends_at IS NULL), keyed by service_id. A service with no currently-open
+// interval (never polled, or - impossible in practice today - somehow left
+// with only closed rows) simply has no entry in the returned map.
+func (r *StatusIntervalRepository) OpenIntervalsByService(ctx context.Context) (map[string]StatusInterval, error) {
+	rows, err := r.pool.Query(ctx,
+		"SELECT id, service_id, status, error_budget_remaining, starts_at, last_seen_at, ends_at FROM status_intervals WHERE ends_at IS NULL",
+	)
+	if err != nil {
+		return nil, fmt.Errorf("db: failed to query open status intervals: %w", err)
+	}
+	defer rows.Close()
+
+	open := map[string]StatusInterval{}
+	for rows.Next() {
+		var si StatusInterval
+		if err := rows.Scan(&si.ID, &si.ServiceID, &si.Status, &si.ErrorBudgetRemaining, &si.StartsAt, &si.LastSeenAt, &si.EndsAt); err != nil {
+			return nil, fmt.Errorf("db: failed to scan open status interval: %w", err)
+		}
+		open[si.ServiceID] = si
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("db: failed to iterate open status intervals: %w", err)
+	}
+
+	return open, nil
+}
+
+// ListOverlapping returns every status_intervals row for any of serviceIDs
+// that overlaps [windowStart, now] - i.e. starts_at < now AND (ends_at IS
+// NULL OR ends_at > windowStart) - ordered by service_id then starts_at
+// ascending. An empty serviceIDs returns an empty slice immediately, no
+// query executed, never an error.
+func (r *StatusIntervalRepository) ListOverlapping(ctx context.Context, serviceIDs []string, windowStart, now time.Time) ([]StatusInterval, error) {
+	if len(serviceIDs) == 0 {
+		return []StatusInterval{}, nil
+	}
+
+	rows, err := r.pool.Query(ctx,
+		"SELECT id, service_id, status, error_budget_remaining, starts_at, last_seen_at, ends_at FROM status_intervals "+
+			"WHERE service_id = ANY($1) AND starts_at < $2 AND (ends_at IS NULL OR ends_at > $3) "+
+			"ORDER BY service_id, starts_at ASC",
+		serviceIDs, now, windowStart,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("db: failed to query overlapping status intervals: %w", err)
+	}
+	defer rows.Close()
+
+	intervals := []StatusInterval{}
+	for rows.Next() {
+		var si StatusInterval
+		if err := rows.Scan(&si.ID, &si.ServiceID, &si.Status, &si.ErrorBudgetRemaining, &si.StartsAt, &si.LastSeenAt, &si.EndsAt); err != nil {
+			return nil, fmt.Errorf("db: failed to scan overlapping status interval: %w", err)
+		}
+		intervals = append(intervals, si)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("db: failed to iterate overlapping status intervals: %w", err)
+	}
+
+	return intervals, nil
+}
+
+// DeleteClosedBefore deletes every status_intervals row with a non-null
+// ends_at older than cutoff, returning the number of rows deleted. Open
+// intervals (ends_at IS NULL) are never touched, regardless of how old
+// their starts_at is.
+func (r *StatusIntervalRepository) DeleteClosedBefore(ctx context.Context, cutoff time.Time) (int64, error) {
+	tag, err := r.pool.Exec(ctx,
+		"DELETE FROM status_intervals WHERE ends_at IS NOT NULL AND ends_at < $1",
+		cutoff,
+	)
+	if err != nil {
+		return 0, fmt.Errorf("db: failed to delete closed status intervals before cutoff: %w", err)
+	}
+
+	return tag.RowsAffected(), nil
+}
+
 // insertOpenInterval inserts a new open interval (starts_at == last_seen_at
 // == at, ends_at NULL) for serviceID within tx, translating a unique
 // partial index violation into ErrIntervalRaceLost.

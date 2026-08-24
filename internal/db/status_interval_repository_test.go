@@ -230,3 +230,168 @@ func TestOpenOrExtend_ConcurrentWriters_RaceLoserGetsError(t *testing.T) {
 		t.Errorf("surviving interval EndsAt = %v, want nil", intervals[0].EndsAt)
 	}
 }
+
+func TestOpenIntervalsByService_ReturnsOnlyServicesWithOpenInterval(t *testing.T) {
+	pool := newStatusIntervalRepositoryTestPool(t)
+	repo := NewStatusIntervalRepository(pool)
+	ctx := context.Background()
+
+	openService := createStatusIntervalRepositoryTestService(t, pool, "open-intervals-by-service-open")
+	closedOnlyService := createStatusIntervalRepositoryTestService(t, pool, "open-intervals-by-service-closed-only")
+	noIntervalsService := createStatusIntervalRepositoryTestService(t, pool, "open-intervals-by-service-none")
+	_ = noIntervalsService
+
+	at := time.Now().UTC().Truncate(time.Millisecond)
+	if err := repo.OpenOrExtend(ctx, openService, "operational", 95.0, at); err != nil {
+		t.Fatalf("OpenOrExtend(openService) returned unexpected error: %v", err)
+	}
+
+	// closedOnlyService has an interval that transitions and closes, leaving
+	// no currently-open row (simulate by opening then closing directly).
+	if err := repo.OpenOrExtend(ctx, closedOnlyService, "operational", 95.0, at); err != nil {
+		t.Fatalf("OpenOrExtend(closedOnlyService) returned unexpected error: %v", err)
+	}
+	if _, err := pool.Exec(ctx, "UPDATE status_intervals SET ends_at = $1 WHERE service_id = $2", at.Add(time.Minute), closedOnlyService); err != nil {
+		t.Fatalf("failed to force-close interval: %v", err)
+	}
+
+	open, err := repo.OpenIntervalsByService(ctx)
+	if err != nil {
+		t.Fatalf("OpenIntervalsByService() returned unexpected error: %v", err)
+	}
+
+	if _, ok := open[openService]; !ok {
+		t.Errorf("OpenIntervalsByService() missing entry for service with an open interval")
+	}
+	if _, ok := open[closedOnlyService]; ok {
+		t.Errorf("OpenIntervalsByService() has entry for a service with no open interval")
+	}
+	if _, ok := open[noIntervalsService]; ok {
+		t.Errorf("OpenIntervalsByService() has entry for a service with zero intervals")
+	}
+}
+
+func TestListOverlapping_EmptyServiceIDs_ReturnsEmptySliceNoError(t *testing.T) {
+	pool := newStatusIntervalRepositoryTestPool(t)
+	repo := NewStatusIntervalRepository(pool)
+
+	now := time.Now().UTC()
+	got, err := repo.ListOverlapping(context.Background(), []string{}, now.Add(-24*time.Hour), now)
+	if err != nil {
+		t.Fatalf("ListOverlapping() returned unexpected error: %v", err)
+	}
+	if len(got) != 0 {
+		t.Fatalf("ListOverlapping() returned %d intervals, want 0", len(got))
+	}
+}
+
+func TestListOverlapping_BoundaryConditions(t *testing.T) {
+	pool := newStatusIntervalRepositoryTestPool(t)
+	ctx := context.Background()
+	serviceID := createStatusIntervalRepositoryTestService(t, pool, "list-overlapping-boundaries")
+
+	now := time.Now().UTC().Truncate(time.Millisecond)
+	windowStart := now.Add(-24 * time.Hour)
+
+	insert := func(status string, startsAt time.Time, endsAt *time.Time) {
+		if endsAt == nil {
+			if _, err := pool.Exec(ctx,
+				"INSERT INTO status_intervals (service_id, status, error_budget_remaining, starts_at, last_seen_at) VALUES ($1, $2, $3, $4, $4)",
+				serviceID, status, 90.0, startsAt,
+			); err != nil {
+				t.Fatalf("insert interval failed: %v", err)
+			}
+			return
+		}
+		if _, err := pool.Exec(ctx,
+			"INSERT INTO status_intervals (service_id, status, error_budget_remaining, starts_at, last_seen_at, ends_at) VALUES ($1, $2, $3, $4, $4, $5)",
+			serviceID, status, 90.0, startsAt, *endsAt,
+		); err != nil {
+			t.Fatalf("insert interval failed: %v", err)
+		}
+	}
+
+	insideEnd := windowStart.Add(2 * time.Hour)
+	insertInsideStart := windowStart.Add(1 * time.Hour)
+	insert("operational", insertInsideStart, &insideEnd) // fully inside window
+
+	spanningEnd := windowStart.Add(1 * time.Hour)
+	insert("degraded", windowStart.Add(-2*time.Hour), &spanningEnd) // starts before window, ends inside it
+
+	insert("outage", windowStart.Add(3*time.Hour), nil) // still open, counts up to now
+
+	beforeEnd := windowStart.Add(-1 * time.Hour)
+	insert("operational", windowStart.Add(-3*time.Hour), &beforeEnd) // entirely before windowStart, excluded
+
+	repo := NewStatusIntervalRepository(pool)
+	got, err := repo.ListOverlapping(ctx, []string{serviceID}, windowStart, now)
+	if err != nil {
+		t.Fatalf("ListOverlapping() returned unexpected error: %v", err)
+	}
+
+	if len(got) != 3 {
+		t.Fatalf("ListOverlapping() returned %d intervals, want 3 (excluding the entirely-before-window row)", len(got))
+	}
+
+	statuses := map[string]bool{}
+	for _, iv := range got {
+		statuses[iv.Status] = true
+		if iv.Status == "operational" && iv.StartsAt.Equal(windowStart.Add(-3*time.Hour)) {
+			t.Errorf("ListOverlapping() included the interval entirely before windowStart")
+		}
+	}
+	for _, want := range []string{"operational", "degraded", "outage"} {
+		if !statuses[want] {
+			t.Errorf("ListOverlapping() missing expected status %q in result", want)
+		}
+	}
+}
+
+func TestDeleteClosedBefore_DeletesOnlyClosedRowsOlderThanCutoff(t *testing.T) {
+	pool := newStatusIntervalRepositoryTestPool(t)
+	ctx := context.Background()
+	serviceID := createStatusIntervalRepositoryTestService(t, pool, "delete-closed-before")
+
+	now := time.Now().UTC().Truncate(time.Millisecond)
+	cutoff := now.Add(-35 * 24 * time.Hour)
+
+	oldClosedEnds := cutoff.Add(-1 * time.Hour)   // older than cutoff -> deleted
+	recentClosedEnds := cutoff.Add(1 * time.Hour) // newer than cutoff -> kept
+
+	insertClosed := func(endsAt time.Time) {
+		startsAt := endsAt.Add(-time.Hour)
+		if _, err := pool.Exec(ctx,
+			"INSERT INTO status_intervals (service_id, status, error_budget_remaining, starts_at, last_seen_at, ends_at) VALUES ($1, $2, $3, $4, $4, $5)",
+			serviceID, "operational", 90.0, startsAt, endsAt,
+		); err != nil {
+			t.Fatalf("insert closed interval failed: %v", err)
+		}
+	}
+	insertClosed(oldClosedEnds)
+	insertClosed(recentClosedEnds)
+
+	repo := NewStatusIntervalRepository(pool)
+	// The service's open interval, regardless of age, must never be deleted.
+	veryOldOpenStart := now.Add(-100 * 24 * time.Hour)
+	if err := repo.OpenOrExtend(ctx, serviceID, "outage", 10.0, veryOldOpenStart); err != nil {
+		t.Fatalf("OpenOrExtend() returned unexpected error: %v", err)
+	}
+
+	deleted, err := repo.DeleteClosedBefore(ctx, cutoff)
+	if err != nil {
+		t.Fatalf("DeleteClosedBefore() returned unexpected error: %v", err)
+	}
+	if deleted != 1 {
+		t.Fatalf("DeleteClosedBefore() deleted %d rows, want 1", deleted)
+	}
+
+	remaining := selectIntervalsByService(t, pool, serviceID)
+	if len(remaining) != 2 {
+		t.Fatalf("remaining intervals = %d, want 2 (recent-closed + open)", len(remaining))
+	}
+	for _, iv := range remaining {
+		if iv.EndsAt != nil && iv.EndsAt.Equal(oldClosedEnds) {
+			t.Errorf("old closed interval (ends_at=%v) was not deleted", oldClosedEnds)
+		}
+	}
+}

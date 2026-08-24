@@ -135,7 +135,7 @@ T8 → T9
 
 ---
 
-### T3: `StatusIntervalRepository` read and prune methods
+### T3: `StatusIntervalRepository` read and prune methods [x]
 
 **What**: Add `OpenIntervalsByService(ctx) (map[string]StatusInterval, error)`, `ListOverlapping(ctx, serviceIDs []string, windowStart, now time.Time) ([]StatusInterval, error)`, and `DeleteClosedBefore(ctx, cutoff time.Time) (int64, error)` to `StatusIntervalRepository`, with tests covering overlap boundary conditions (interval fully inside window, interval spanning the window edge, still-open interval counted up to `now`, non-overlapping interval excluded, empty `serviceIDs`) and prune boundary conditions (closed-and-older-than-cutoff deleted; closed-but-newer-than-cutoff kept; open interval never deleted regardless of age).
 **Where**: `internal/db/status_interval_repository.go` (extend), `internal/db/status_interval_repository_test.go` (extend)
@@ -148,12 +148,12 @@ T8 → T9
 - Skill: NONE
 
 **Done when**:
-- [ ] `OpenIntervalsByService` returns only services with a currently-open interval, keyed correctly
-- [ ] `ListOverlapping` returns every interval overlapping `[windowStart, now]` including an open interval and one spanning the window's left edge, and excludes one entirely before `windowStart`
-- [ ] `ListOverlapping` with empty `serviceIDs` returns an empty slice, no error, no query executed
-- [ ] `DeleteClosedBefore` deletes only rows with `ends_at IS NOT NULL AND ends_at < cutoff`, leaving open rows and recently-closed rows untouched, and returns the correct deleted count
-- [ ] Gate check passes: `TEST_DATABASE_URL=<dsn> go test -tags=integration ./internal/db/...`
-- [ ] Test count: ≥7 tests added in this task (no silent deletions)
+- [x] `OpenIntervalsByService` returns only services with a currently-open interval, keyed correctly
+- [x] `ListOverlapping` returns every interval overlapping `[windowStart, now]` including an open interval and one spanning the window's left edge, and excludes one entirely before `windowStart`
+- [x] `ListOverlapping` with empty `serviceIDs` returns an empty slice, no error, no query executed
+- [x] `DeleteClosedBefore` deletes only rows with `ends_at IS NOT NULL AND ends_at < cutoff`, leaving open rows and recently-closed rows untouched, and returns the correct deleted count
+- [x] Gate check passes: `TEST_DATABASE_URL=<dsn> go test -tags=integration ./internal/db/...` (new tests pass; pre-existing snapshot tests still fail per T1's documented transitional state)
+- [x] Test count: 4 tests added in this task (no silent deletions)
 
 **Tests**: integration
 **Gate**: full
