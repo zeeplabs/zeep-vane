@@ -13,6 +13,7 @@ import (
 
 	"github.com/zeeplabs/zeep-vane/internal/auth"
 	"github.com/zeeplabs/zeep-vane/internal/db"
+	"github.com/zeeplabs/zeep-vane/internal/dbtest"
 )
 
 const middlewareTestSecret = "middleware-test-secret-32-bytes-long!!"
@@ -37,6 +38,15 @@ func newMiddlewareTestAdmins(t *testing.T) (*db.AdminRepository, *db.Pool) {
 		t.Fatalf("NewPool() returned unexpected error: %v", err)
 	}
 	t.Cleanup(pool.Close)
+
+	// Every test in this file creates an admin via this constructor's
+	// repository, and AdminRepository.Create always inserts with the
+	// `admins.role` column's database default (owner, migration 0009) -
+	// see LockAdminsTable's doc comment for why this must be held across
+	// concurrently-run packages. Deliberately context.Background(), not
+	// the bounded `ctx` above, which is canceled by the deferred cancel()
+	// as soon as this function returns.
+	dbtest.LockAdminsTable(t, context.Background(), dsn)
 
 	return db.NewAdminRepository(pool), pool
 }

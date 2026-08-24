@@ -410,9 +410,20 @@ func TestSearchDatadogSLOs_NoAuth_401(t *testing.T) {
 
 // issueTestSessionToken inserts a real admin row via admins (so RequireAuth's
 // GetByID lookup succeeds) and issues a session token for it.
+//
+// admins.Create always inserts with the `admins.role` column's database
+// default, which is `owner` (see migration 0009), and this helper never
+// changes it away - every call creates a real, permanent owner-role row
+// for the life of the test. It is used across most of this package's test
+// files (company_settings, domains, incidents, instance_config,
+// integrations, poller_status, public_status_preview, services,
+// status_pages, admins), making it the single common point that needs
+// LockAdminsTable - see that helper's doc comment for why this must be
+// held across concurrently-run packages, not just within this one.
 func issueTestSessionToken(t *testing.T, admins *db.AdminRepository) string {
 	t.Helper()
 	ctx := context.Background()
+	dbtest.LockAdminsTable(t, ctx, testDatabaseURL(t))
 	admin := &db.Admin{Email: uniqueTestEmail(t), PasswordHash: "hash"}
 	if err := admins.Create(ctx, admin); err != nil {
 		t.Fatalf("admins.Create() returned unexpected error: %v", err)

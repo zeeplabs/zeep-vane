@@ -29,6 +29,22 @@ func newAdminRepositoryForTest(t *testing.T) (*AdminRepository, *Pool) {
 	}
 	t.Cleanup(pool.Close)
 
+	// Every test in this file goes through this constructor, and
+	// AdminRepository.Create always inserts with the `admins.role`
+	// column's database default, which is `owner` (migration 0009) -
+	// regardless of whether the individual test cares about role at all.
+	// `go test ./...` runs internal/db, internal/api, and internal/cli as
+	// separate concurrent processes against the same TEST_DATABASE_URL,
+	// so any of these tests can otherwise race another package's
+	// owner-count-sensitive test. Centralizing the lock here (idempotent
+	// per *testing.T - see LockAdminsTable's doc comment) means every
+	// test in this file is covered without each one having to remember
+	// to take it individually. Note: deliberately passed
+	// context.Background(), not the bounded `ctx` above, which is
+	// canceled by the deferred cancel() as soon as this function
+	// returns - the lock's dedicated connection must outlive it.
+	dbtest.LockAdminsTable(t, context.Background(), dsn)
+
 	return NewAdminRepository(pool), pool
 }
 

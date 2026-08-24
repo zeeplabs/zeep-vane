@@ -38,6 +38,22 @@ func newAdminsRouter(t *testing.T) (http.Handler, *db.Pool, *db.AdminRepository,
 	}
 	t.Cleanup(pool.Close)
 
+	// Every test in this file goes through this constructor and virtually
+	// all of them create at least one admin, which - via
+	// AdminRepository.Create's database default (owner, migration 0009) -
+	// transiently creates an owner-role row regardless of the role the
+	// test actually cares about. `go test ./...` runs internal/db,
+	// internal/api, and internal/cli as separate concurrent processes
+	// against the same TEST_DATABASE_URL, so any of these tests can
+	// otherwise race another package's owner-count-sensitive test.
+	// Centralizing the lock here (idempotent per *testing.T - see
+	// LockAdminsTable's doc comment) covers every test in this file
+	// without each one having to remember to take it individually. Note:
+	// deliberately passed context.Background(), not the bounded `ctx`
+	// above, which is canceled by the deferred cancel() as soon as this
+	// function returns - the lock's dedicated connection must outlive it.
+	dbtest.LockAdminsTable(t, context.Background(), dsn)
+
 	admins := db.NewAdminRepository(pool)
 	invites := db.NewAdminInviteRepository(pool)
 	auditLog := audit.NewLog(pool)
@@ -59,9 +75,21 @@ func newAdminsRouter(t *testing.T) (http.Handler, *db.Pool, *db.AdminRepository,
 // issueTestSessionTokenWithRole is issueTestSessionToken, additionally
 // setting the created admin's role - needed to exercise RequireRole's 403
 // path for operator/viewer.
+//
+// admins.Create always inserts with the `admins.role` column's database
+// default, which is `owner` (see migration 0009) - regardless of the
+// `role` requested here, every call transiently creates an owner-role row
+// until/unless the UpdateRole call below moves it away. That makes this
+// helper the single common point every owner-sensitive test in this
+// package (including poller_status_test.go, which shares it) goes
+// through, so it takes LockAdminsTable itself rather than relying on
+// each call site to remember to. See LockAdminsTable's doc comment for
+// why this must be held across concurrently-run packages, not just
+// within this one.
 func issueTestSessionTokenWithRole(t *testing.T, admins *db.AdminRepository, role string) string {
 	t.Helper()
 	ctx := context.Background()
+	dbtest.LockAdminsTable(t, ctx, testDatabaseURL(t))
 	admin := &db.Admin{Email: uniqueTestEmail(t), PasswordHash: "hash"}
 	if err := admins.Create(ctx, admin); err != nil {
 		t.Fatalf("admins.Create() returned unexpected error: %v", err)

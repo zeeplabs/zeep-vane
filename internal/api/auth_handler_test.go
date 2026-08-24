@@ -18,6 +18,7 @@ import (
 
 	"github.com/zeeplabs/zeep-vane/internal/auth"
 	"github.com/zeeplabs/zeep-vane/internal/db"
+	"github.com/zeeplabs/zeep-vane/internal/dbtest"
 )
 
 const testSessionSecret = "test-session-secret-at-least-32-bytes!!"
@@ -47,6 +48,15 @@ func newLoginRouter(t *testing.T) (http.Handler, *db.AdminRepository, *db.Pool) 
 		t.Fatalf("NewPool() returned unexpected error: %v", err)
 	}
 	t.Cleanup(pool.Close)
+
+	// Every test using this router creates an admin via createTestAdmin,
+	// and AdminRepository.Create always inserts with the `admins.role`
+	// column's database default (owner, migration 0009) - see
+	// LockAdminsTable's doc comment for why this must be held across
+	// concurrently-run packages. Deliberately context.Background(), not
+	// the bounded `ctx` above, which is canceled by the deferred cancel()
+	// as soon as this function returns.
+	dbtest.LockAdminsTable(t, context.Background(), dsn)
 
 	repo := db.NewAdminRepository(pool)
 	handler := NewAuthHandler(repo, zap.NewNop(), testSessionSecret)
@@ -195,6 +205,15 @@ func newMeRouter(t *testing.T) (http.Handler, *db.AdminRepository, *db.Pool) {
 	}
 	t.Cleanup(pool.Close)
 
+	// Every test using this router creates an admin via createTestAdmin,
+	// and AdminRepository.Create always inserts with the `admins.role`
+	// column's database default (owner, migration 0009) - see
+	// LockAdminsTable's doc comment for why this must be held across
+	// concurrently-run packages. Deliberately context.Background(), not
+	// the bounded `ctx` above, which is canceled by the deferred cancel()
+	// as soon as this function returns.
+	dbtest.LockAdminsTable(t, context.Background(), dsn)
+
 	repo := db.NewAdminRepository(pool)
 	handler := NewAuthHandler(repo, zap.NewNop(), testSessionSecret)
 
@@ -270,6 +289,15 @@ func newLogoutRouter(t *testing.T) (http.Handler, *db.AdminRepository, *db.Pool)
 		t.Fatalf("NewPool() returned unexpected error: %v", err)
 	}
 	t.Cleanup(pool.Close)
+
+	// Every test using this router creates an admin via createTestAdmin,
+	// and AdminRepository.Create always inserts with the `admins.role`
+	// column's database default (owner, migration 0009) - see
+	// LockAdminsTable's doc comment for why this must be held across
+	// concurrently-run packages. Deliberately context.Background(), not
+	// the bounded `ctx` above, which is canceled by the deferred cancel()
+	// as soon as this function returns.
+	dbtest.LockAdminsTable(t, context.Background(), dsn)
 
 	repo := db.NewAdminRepository(pool)
 	handler := NewAuthHandler(repo, zap.NewNop(), testSessionSecret)

@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/zeeplabs/zeep-vane/internal/db"
+	"github.com/zeeplabs/zeep-vane/internal/dbtest"
 )
 
 func testDatabaseURL(t *testing.T) string {
@@ -44,6 +45,17 @@ func newLogForTest(t *testing.T) (*Log, *db.Pool) {
 func createTestAdminForAudit(t *testing.T, pool *db.Pool) *db.Admin {
 	t.Helper()
 	ctx := context.Background()
+
+	// db.AdminRepository.Create always inserts with the `admins.role`
+	// column's database default, which is `owner` (migration 0009) -
+	// this transiently creates a real owner-role row in the shared
+	// `admins` table. `go test ./...` runs internal/audit, internal/db,
+	// internal/api, and internal/cli as separate concurrent processes
+	// against the same TEST_DATABASE_URL, so an unlocked create here can
+	// corrupt another package's owner-count-sensitive test mid-window.
+	// See dbtest.LockAdminsTable's doc comment.
+	dbtest.LockAdminsTable(t, ctx, testDatabaseURL(t))
+
 	admins := db.NewAdminRepository(pool)
 	email := fmt.Sprintf("audit-log-test-%d@example.com", time.Now().UnixNano())
 

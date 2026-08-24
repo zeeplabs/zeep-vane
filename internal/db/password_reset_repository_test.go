@@ -7,6 +7,8 @@ import (
 	"errors"
 	"testing"
 	"time"
+
+	"github.com/zeeplabs/zeep-vane/internal/dbtest"
 )
 
 func newPasswordResetRepositoryForTest(t *testing.T) (*PasswordResetRepository, *AdminRepository, *Pool) {
@@ -25,6 +27,15 @@ func newPasswordResetRepositoryForTest(t *testing.T) (*PasswordResetRepository, 
 		t.Fatalf("NewPool() returned unexpected error: %v", err)
 	}
 	t.Cleanup(pool.Close)
+
+	// Tests in this file create an admin via createTestAdminForReset, and
+	// AdminRepository.Create always inserts with the `admins.role`
+	// column's database default (owner, migration 0009) - see
+	// LockAdminsTable's doc comment for why this must be held across
+	// concurrently-run packages. Deliberately context.Background(), not
+	// the bounded `ctx` above, which is canceled by the deferred cancel()
+	// as soon as this function returns.
+	dbtest.LockAdminsTable(t, context.Background(), dsn)
 
 	return NewPasswordResetRepository(pool), NewAdminRepository(pool), pool
 }

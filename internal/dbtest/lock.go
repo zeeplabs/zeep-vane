@@ -5,6 +5,7 @@ package dbtest
 
 import (
 	"context"
+	"sync"
 	"testing"
 
 	"github.com/jackc/pgx/v5"
@@ -67,11 +68,40 @@ func LockAdminsTable(t *testing.T, ctx context.Context, dsn string) {
 	lockAdvisoryKey(t, ctx, dsn, adminsTableLockKey)
 }
 
+// heldLocksMu guards heldLocks, which tracks which (test, advisory-key)
+// pairs already hold their lock. This makes lockAdvisoryKey idempotent
+// per *testing.T: a test (or a shared helper it calls more than once,
+// directly or via sub-helpers) can call LockAdminsTable/
+// LockDatadogIntegration any number of times without deadlocking itself
+// on a second dedicated connection waiting for the first one - which it
+// would otherwise never release, since release only happens at that same
+// test's Cleanup. This intentionally does not cover the case of a
+// subtest's *testing.T taking a lock its parent's *testing.T already
+// holds (those are different sessions and will genuinely serialize on
+// the parent, which is what we want) - callers with that shape should
+// take the lock at only one level, not both.
+var (
+	heldLocksMu sync.Mutex
+	heldLocks   = map[*testing.T]map[int64]bool{}
+)
+
 // lockAdvisoryKey opens a dedicated connection, takes the given Postgres
 // advisory lock on it for the duration of the calling test, and releases
-// it via t.Cleanup.
+// it via t.Cleanup. Calling it more than once for the same (t, key) pair
+// is a safe no-op after the first call.
 func lockAdvisoryKey(t *testing.T, ctx context.Context, dsn string, key int64) {
 	t.Helper()
+
+	heldLocksMu.Lock()
+	if heldLocks[t] == nil {
+		heldLocks[t] = map[int64]bool{}
+	}
+	if heldLocks[t][key] {
+		heldLocksMu.Unlock()
+		return
+	}
+	heldLocks[t][key] = true
+	heldLocksMu.Unlock()
 
 	conn, err := pgx.Connect(ctx, dsn)
 	if err != nil {
@@ -86,5 +116,12 @@ func lockAdvisoryKey(t *testing.T, ctx context.Context, dsn string, key int64) {
 	t.Cleanup(func() {
 		_, _ = conn.Exec(context.Background(), "SELECT pg_advisory_unlock($1)", key)
 		_ = conn.Close(context.Background())
+
+		heldLocksMu.Lock()
+		delete(heldLocks[t], key)
+		if len(heldLocks[t]) == 0 {
+			delete(heldLocks, t)
+		}
+		heldLocksMu.Unlock()
 	})
 }

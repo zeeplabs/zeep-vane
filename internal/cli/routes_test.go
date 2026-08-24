@@ -45,9 +45,22 @@ func newAdminRouterForTest(t *testing.T) (http.Handler, *db.Pool, *db.AdminRepos
 // issueRoutesTestToken inserts a real admin row with role and issues a
 // session token for it, so RequireAuth's GetByID lookup and RequireRole's
 // role check both see real state.
+//
+// admins.Create always inserts with the `admins.role` column's database
+// default, which is `owner` (see migration 0009) - regardless of the
+// `role` requested here, every call transiently creates an owner-role row
+// until/unless the UpdateRole call below moves it away. That makes this
+// helper the single common point every owner-sensitive test in this
+// package goes through, so it takes LockAdminsTable itself rather than
+// relying on each call site to remember to. See LockAdminsTable's doc
+// comment for why this must be held across concurrently-run packages,
+// not just within this one - it is not enough to serialize the calls
+// within this test binary since `go test ./...` runs each package as a
+// separate concurrent process against the same TEST_DATABASE_URL.
 func issueRoutesTestToken(t *testing.T, admins *db.AdminRepository, role string) string {
 	t.Helper()
 	ctx := context.Background()
+	dbtest.LockAdminsTable(t, ctx, testDatabaseURL(t))
 	admin := &db.Admin{
 		Email:        fmt.Sprintf("cli-routes-test-%d@example.com", time.Now().UnixNano()),
 		PasswordHash: "hash",
@@ -377,9 +390,12 @@ func TestAdminRouter_OwnerAndOperator_AllWriteRoutes_PassAuthorization(t *testin
 	// This test's write-route assertions depend on the admin tokens it
 	// issues still resolving to real admins mid-test - a concurrent
 	// bulk-clear of the shared `admins` table by another package's
-	// bootstrap tests would break that. See LockAdminsTable's doc comment.
-	dbtest.LockAdminsTable(t, context.Background(), testDatabaseURL(t))
-
+	// bootstrap tests would break that. issueRoutesTestToken (called in
+	// each role's subtest below) takes LockAdminsTable itself, so there is
+	// no separate lock call here - taking it at this level too would
+	// deadlock, since each subtest runs on its own *testing.T (a
+	// different session's dedicated lock connection) while this level's
+	// connection sits held until this function returns.
 	r, _, admins := newAdminRouterForTest(t)
 
 	for _, role := range []string{db.RoleOwner, db.RoleOperator} {

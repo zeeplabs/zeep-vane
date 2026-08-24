@@ -5,6 +5,8 @@ package db
 import (
 	"context"
 	"testing"
+
+	"github.com/zeeplabs/zeep-vane/internal/dbtest"
 )
 
 func TestAdminsMigration_AppliesClean_AndEnforcesUniqueEmail(t *testing.T) {
@@ -25,7 +27,17 @@ func TestAdminsMigration_AppliesClean_AndEnforcesUniqueEmail(t *testing.T) {
 	// cleanup still needs.
 	t.Cleanup(pool.Close)
 
-	const email = "admins-migration-test@example.com"
+	// This INSERT relies on `admins.role`'s database default (owner, see
+	// migration 0009), so it transiently creates an owner-role row like
+	// any other admin-creating test - see LockAdminsTable's doc comment
+	// for why this must be held across concurrently-run packages.
+	dbtest.LockAdminsTable(t, ctx, dsn)
+
+	// A fixed literal email here (rather than a per-run-unique one) would
+	// collide with a leftover row from a previous failed/interrupted run
+	// that never got cleaned up, producing a spurious unique-constraint
+	// failure or a spurious pass unrelated to what this test checks.
+	email := uniqueTestEmail(t)
 	t.Cleanup(func() {
 		_, _ = pool.Exec(ctx, "DELETE FROM admins WHERE email = $1", email)
 	})
