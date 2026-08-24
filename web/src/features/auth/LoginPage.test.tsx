@@ -1,11 +1,12 @@
 import { describe, it, expect, afterEach } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Routes, Route } from "react-router-dom";
 import "../../lib/i18n";
 import { AuthProvider } from "../../auth/AuthProvider";
 import { LoginPage } from "./LoginPage";
 import { apiFetch } from "../../lib/apiClient";
+import { TestQueryProvider } from "../../test/queryClient";
 
 afterEach(async () => {
   try {
@@ -17,14 +18,16 @@ afterEach(async () => {
 
 function App() {
   return (
-    <MemoryRouter initialEntries={["/login"]}>
-      <AuthProvider>
-        <Routes>
-          <Route path="/login" element={<LoginPage />} />
-          <Route path="/" element={<div>home page</div>} />
-        </Routes>
-      </AuthProvider>
-    </MemoryRouter>
+    <TestQueryProvider>
+      <MemoryRouter initialEntries={["/login"]}>
+        <AuthProvider>
+          <Routes>
+            <Route path="/login" element={<LoginPage />} />
+            <Route path="/" element={<div>home page</div>} />
+          </Routes>
+        </AuthProvider>
+      </MemoryRouter>
+    </TestQueryProvider>
   );
 }
 

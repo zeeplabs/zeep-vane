@@ -46,7 +46,7 @@ func buildAdminRouter(pool *db.Pool, cfg config.Config, logger *zap.Logger, poll
 	publicStatusPreviewHandler := api.NewPublicStatusPreviewHandler(db.NewStatusPageRepository(pool), publicStatusHandler, logger)
 	companySettingsHandler := api.NewCompanySettingsHandler(companySettingsRepo, cfg.UploadsDir, logger)
 	logoFileHandler := api.NewLogoFileHandler(cfg.UploadsDir)
-	instanceConfigHandler := api.NewInstanceConfigHandler(cfg.PublicDNSTarget, logger)
+	instanceConfigHandler := api.NewInstanceConfigHandler(cfg.PublicDNSTarget, companySettingsRepo, logger)
 
 	requireAuth := api.RequireAuth(cfg.SessionSecret, admins)
 	writeRoles := api.RequireRole(db.RoleOwner, db.RoleOperator)
@@ -58,6 +58,11 @@ func buildAdminRouter(pool *db.Pool, cfg config.Config, logger *zap.Logger, poll
 	r.Post("/api/auth/password-reset/request", passwordResetHandler.Request)
 	r.Post("/api/auth/password-reset/confirm", passwordResetHandler.Confirm)
 	r.Post("/api/admins/invite/{token}/accept", adminsHandler.AcceptInvite)
+
+	// Public branding (login screen + sidebar, both render without an
+	// owner-role check) - deliberately not behind ownerOnly like
+	// /api/company-settings; see Branding's own doc comment.
+	r.Get("/api/instance/branding", instanceConfigHandler.Branding)
 
 	// Public logo file serving (SET-12) - no authentication, so a public
 	// status page's <img> can render it. Mounted here rather than in the

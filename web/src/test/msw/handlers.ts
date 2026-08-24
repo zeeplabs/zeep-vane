@@ -311,6 +311,13 @@ export const handlers = [
     return HttpResponse.json({ target: dnsTargetState });
   }),
 
+  // GET /api/instance/branding - mirrors InstanceConfigHandler.Branding:
+  // public/unauthenticated (login screen has no session yet), unlike
+  // /api/company-settings.
+  http.get("/api/instance/branding", () => {
+    return HttpResponse.json({ logo_url: companySettingsState.logo_url });
+  }),
+
   http.get("/api/integrations/datadog/status", () => {
     if (!sessionAdminId) return HttpResponse.json({ error: "unauthorized" }, { status: 401 });
     if (!datadogConnected) {

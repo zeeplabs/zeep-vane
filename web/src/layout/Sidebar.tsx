@@ -4,6 +4,7 @@ import { useTranslation } from "react-i18next";
 import { useAuth } from "../auth/AuthProvider";
 import { Dialog } from "../components/ui/Dialog";
 import { Button } from "../components/ui/Button";
+import { useBrandLogoUrl } from "../lib/branding";
 import type { Role } from "../types/api";
 
 function BrandIcon() {
@@ -107,6 +108,7 @@ const DEV_ROLES: { value: Role; label: string }[] = [
 
 export function Sidebar() {
   const { admin, hasRole, logout, setDevRole, simulateSessionExpired } = useAuth();
+  const logoUrl = useBrandLogoUrl();
   const { t } = useTranslation();
   const location = useLocation();
   const navigate = useNavigate();
@@ -122,7 +124,11 @@ export function Sidebar() {
   return (
     <aside className="flex h-full w-[236px] shrink-0 flex-col border-r border-divider bg-bg px-3 py-4">
       <div className="flex items-center gap-2 px-2 pb-4 text-accent">
-        <BrandIcon />
+        {logoUrl ? (
+          <img src={logoUrl} alt={t("sidebar.brand")} className="h-5 w-5 flex-none object-contain" />
+        ) : (
+          <BrandIcon />
+        )}
         <span className="text-h5 font-medium text-text">{t("sidebar.brand")}</span>
       </div>
 

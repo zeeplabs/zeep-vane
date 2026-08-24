@@ -5,6 +5,7 @@ import "../lib/i18n";
 import { AuthProvider } from "../auth/AuthProvider";
 import { Sidebar } from "./Sidebar";
 import { apiFetch } from "../lib/apiClient";
+import { TestQueryProvider } from "../test/queryClient";
 
 async function loginAs(email: string) {
   await apiFetch("/api/auth/login", {
@@ -23,11 +24,13 @@ afterEach(async () => {
 
 function renderSidebar() {
   return render(
-    <MemoryRouter>
-      <AuthProvider>
-        <Sidebar />
-      </AuthProvider>
-    </MemoryRouter>
+    <TestQueryProvider>
+      <MemoryRouter>
+        <AuthProvider>
+          <Sidebar />
+        </AuthProvider>
+      </MemoryRouter>
+    </TestQueryProvider>
   );
 }
 

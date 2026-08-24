@@ -5,6 +5,7 @@ import { Field } from "../../components/ui/Field";
 import { Button } from "../../components/ui/Button";
 import { useAuth } from "../../auth/AuthProvider";
 import { ApiError } from "../../lib/apiClient";
+import { useBrandLogoUrl } from "../../lib/branding";
 
 function EyeIcon({ crossed }: { crossed: boolean }) {
   return (
@@ -24,6 +25,7 @@ export function LoginPage() {
   const { t } = useTranslation();
   const { login } = useAuth();
   const navigate = useNavigate();
+  const logoUrl = useBrandLogoUrl();
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -67,12 +69,16 @@ export function LoginPage() {
         />
 
         <div className="relative flex items-center gap-2">
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-            <path
-              d="M12 2l2.4 7.2L22 12l-7.6 2.8L12 22l-2.4-7.2L2 12l7.6-2.8L12 2z"
-              fill="var(--color-accent)"
-            />
-          </svg>
+          {logoUrl ? (
+            <img src={logoUrl} alt="" className="h-[22px] w-[22px] object-contain" />
+          ) : (
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path
+                d="M12 2l2.4 7.2L22 12l-7.6 2.8L12 22l-2.4-7.2L2 12l7.6-2.8L12 2z"
+                fill="var(--color-accent)"
+              />
+            </svg>
+          )}
           <span className="text-[15px] font-medium tracking-tight text-text">Vane</span>
         </div>
 
@@ -96,12 +102,16 @@ export function LoginPage() {
         <div className="w-full max-w-[380px]">
           <div className="mb-8 flex flex-col gap-1 lg:hidden">
             <div className="flex items-center gap-2">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                <path
-                  d="M12 2l2.4 7.2L22 12l-7.6 2.8L12 22l-2.4-7.2L2 12l7.6-2.8L12 2z"
-                  fill="var(--color-accent)"
-                />
-              </svg>
+              {logoUrl ? (
+                <img src={logoUrl} alt="" className="h-5 w-5 object-contain" />
+              ) : (
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                  <path
+                    d="M12 2l2.4 7.2L22 12l-7.6 2.8L12 22l-2.4-7.2L2 12l7.6-2.8L12 2z"
+                    fill="var(--color-accent)"
+                  />
+                </svg>
+              )}
               <span className="text-[15px] font-medium tracking-tight text-text">Vane</span>
             </div>
           </div>
