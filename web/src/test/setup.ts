@@ -8,6 +8,7 @@ import {
   resetIncidents,
   resetAdmins,
   resetCompanySettings,
+  resetBootstrapState,
 } from "./msw/handlers";
 
 beforeAll(() => server.listen({ onUnhandledRequest: "error" }));
@@ -19,5 +20,6 @@ afterEach(() => {
   resetIncidents();
   resetAdmins();
   resetCompanySettings();
+  resetBootstrapState();
 });
 afterAll(() => server.close());

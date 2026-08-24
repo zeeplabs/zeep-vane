@@ -1,5 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, waitFor, act } from "@testing-library/react";
+import { http, HttpResponse } from "msw";
+import { server } from "../test/msw/server";
 import { AuthProvider, useAuth } from "./AuthProvider";
 
 function Probe() {
@@ -7,6 +9,7 @@ function Probe() {
   return (
     <div>
       <span data-testid="status">{auth.status}</span>
+      <span data-testid="needs-bootstrap">{String(auth.needsBootstrap)}</span>
       <span data-testid="admin">{auth.admin ? JSON.stringify(auth.admin) : "null"}</span>
       <span data-testid="has-owner">{String(auth.hasRole(["owner"]))}</span>
       <span data-testid="has-operator">{String(auth.hasRole(["operator"]))}</span>
@@ -143,5 +146,32 @@ describe("AuthProvider", () => {
     await waitFor(() => expect(screen.getByTestId("status")).toHaveTextContent("authenticated"));
     const admin = JSON.parse(screen.getByTestId("admin").textContent ?? "{}");
     expect(admin.role).toBe("viewer");
+  });
+
+  it("needsBootstrap é true quando GET /api/bootstrap/status retorna bootstrapped:false (SHD-19)", async () => {
+    server.use(
+      http.get("/api/bootstrap/status", () => HttpResponse.json({ bootstrapped: false }))
+    );
+    render(
+      <AuthProvider>
+        <Probe />
+      </AuthProvider>
+    );
+
+    await waitFor(() => expect(screen.getByTestId("needs-bootstrap")).toHaveTextContent("true"));
+  });
+
+  it("needsBootstrap é false quando GET /api/bootstrap/status retorna bootstrapped:true (SHD-19)", async () => {
+    server.use(
+      http.get("/api/bootstrap/status", () => HttpResponse.json({ bootstrapped: true }))
+    );
+    render(
+      <AuthProvider>
+        <Probe />
+      </AuthProvider>
+    );
+
+    await waitFor(() => expect(screen.getByTestId("status")).toHaveTextContent("anonymous"));
+    expect(screen.getByTestId("needs-bootstrap")).toHaveTextContent("false");
   });
 });

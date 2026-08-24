@@ -119,6 +119,18 @@ export function resetCompanySettings(): void {
 }
 resetCompanySettings();
 
+// bootstrapState mirrors the real admins-table-empty check
+// (BootstrapHandler.Status/Create, SHD-15/SHD-19): every fixture/test admin
+// already exists, so this defaults to "bootstrapped" and stays that way
+// unless a test overrides it via server.use() (same convention as
+// dnsTargetState) - keeps every pre-existing AuthProvider-rendering test's
+// needsBootstrap at its safe default (false) without having to touch them.
+let bootstrapState = true;
+
+export function resetBootstrapState(): void {
+  bootstrapState = true;
+}
+
 const validAdminRoles: Role[] = ["owner", "operator", "viewer"];
 
 // wouldLeaveZeroOwners mirrors admins.go's function of the same name
@@ -181,6 +193,13 @@ function buildFixtureHourlyHistory(status: Service["current_status"]) {
 }
 
 export const handlers = [
+  // GET /api/bootstrap/status - mirrors BootstrapHandler.Status: reports
+  // whether any admin exists yet, for the SPA's boot-time redirect decision
+  // (SHD-19). Public, unauthenticated - never gated on sessionAdminId.
+  http.get("/api/bootstrap/status", () => {
+    return HttpResponse.json({ bootstrapped: bootstrapState });
+  }),
+
   http.post("/api/auth/login", async ({ request }) => {
     const body = (await request.json()) as { email?: string; password?: string };
     const admin = seedAdmins.find((a) => a.email === body.email && a.password === body.password);

@@ -266,11 +266,11 @@ T12 -> T13
 - Skill: NONE
 
 **Done when**:
-- [ ] `needsBootstrap` is `true` when the MSW-mocked `/api/bootstrap/status` returns `{"bootstrapped": false}`
-- [ ] `needsBootstrap` is `false` when it returns `{"bootstrapped": true}`
-- [ ] The existing anonymous-boot-doesn't-open-session-expired-modal regression test still passes unmodified in intent
-- [ ] Gate check passes: `cd web && npm run test && npx tsc -b --noEmit`
-- [ ] Test count: ≥2 new tests, 0 regressions in existing `AuthProvider`-related suites
+- [x] `needsBootstrap` is `true` when the MSW-mocked `/api/bootstrap/status` returns `{"bootstrapped": false}`
+- [x] `needsBootstrap` is `false` when it returns `{"bootstrapped": true}`
+- [x] The existing anonymous-boot-doesn't-open-session-expired-modal regression test still passes unmodified in intent
+- [x] Gate check passes: `cd web && npm run test && npx tsc -b --noEmit` (tsc clean; test suite has 2 pre-existing failures in `PasswordResetRequestPage.test.tsx`, unrelated to this feature and present before this task started - confirmed via `git stash`)
+- [x] Test count: ≥2 new tests, 0 regressions in existing `AuthProvider`-related suites — 2 added
 
 **Tests**: integration (component)
 **Gate**: frontend

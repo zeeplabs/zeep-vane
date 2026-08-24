@@ -4,6 +4,7 @@ import {
   useContext,
   useEffect,
   useReducer,
+  useState,
   type ReactNode,
 } from "react";
 import { apiFetch, ApiError, setUnauthorizedHandler } from "../lib/apiClient";
@@ -47,6 +48,11 @@ function reducer(state: State, action: Action): State {
 export interface AuthContextValue {
   admin: AuthenticatedAdmin | null;
   status: Status;
+  /** true once the boot-time check confirms no admin exists yet (SHD-19).
+   * Stays false while that check is still in flight or failed - never
+   * assume bootstrap is needed without a confirmed "false" from the
+   * server. */
+  needsBootstrap: boolean;
   login: (email: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
   hasRole: (roles: Role[]) => boolean;
@@ -66,6 +72,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     (_prev: boolean, next: boolean) => next,
     false
   );
+  const [needsBootstrap, setNeedsBootstrap] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -79,6 +86,29 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (!cancelled) dispatch({ type: "AUTHENTICATED", admin });
       } catch {
         if (!cancelled) dispatch({ type: "ANONYMOUS" });
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Runs in parallel with the /api/auth/me boot fetch above (SHD-19), not
+  // chained after it: the bootstrap-status check is independent of whether
+  // this visitor happens to have a session.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        // Public, unauthenticated endpoint (never 401s) - skipUnauthorizedHandler
+        // guards it the same way the /api/auth/me boot probe is guarded.
+        const { bootstrapped } = await apiFetch<{ bootstrapped: boolean }>("/api/bootstrap/status", {
+          skipUnauthorizedHandler: true,
+        });
+        if (!cancelled) setNeedsBootstrap(!bootstrapped);
+      } catch {
+        // Fails closed: an unreachable/erroring check never traps a real
+        // install behind a bootstrap redirect it can't get past.
       }
     })();
     return () => {
@@ -146,6 +176,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       value={{
         admin: state.admin,
         status: state.status,
+        needsBootstrap,
         login,
         logout,
         hasRole,
