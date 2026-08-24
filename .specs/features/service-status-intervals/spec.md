@@ -6,11 +6,11 @@
 
 ## Goals
 
-- [ ] `status_snapshots` no longer grows one row per poll cycle; writes only happen on status change or as an in-place update to the open interval
-- [ ] Public hourly bars reflect the worst status observed within each hour, not just the last one
-- [ ] Public status page displays an uptime % for the same 24h window already shown by the hourly bars
-- [ ] Closed intervals older than 35 days are pruned automatically, bounding disk growth long-term
-- [ ] At most one open interval exists per service at any time, enforced by the database - not just by application logic
+- [x] `status_snapshots` no longer grows one row per poll cycle; writes only happen on status change or as an in-place update to the open interval
+- [x] Public hourly bars reflect the worst status observed within each hour, not just the last one
+- [x] Public status page displays an uptime % for the same 24h window already shown by the hourly bars
+- [x] Closed intervals older than 35 days are pruned automatically, bounding disk growth long-term
+- [x] At most one open interval exists per service at any time, enforced by the database - not just by application logic
 
 ## Out of Scope
 
@@ -133,39 +133,39 @@ Explicitly excluded. Documented to prevent scope creep.
 
 | Requirement ID | Story | Phase | Status |
 | --- | --- | --- | --- |
-| SHU-01 | P1: Interval-based storage | Design | Pending |
-| SHU-02 | P1: Interval-based storage | Design | Pending |
-| SHU-03 | P1: Interval-based storage | Design | Pending |
-| SHU-04 | P1: Interval-based storage | Design | Pending |
-| SHU-05 | P1: Interval-based storage | Design | Pending |
-| SHU-06 | P1: Worst-status hourly bars | Design | Pending |
-| SHU-07 | P1: Worst-status hourly bars | Design | Pending |
-| SHU-08 | P1: Worst-status hourly bars | Design | Pending |
-| SHU-09 | P1: Worst-status hourly bars | Design | Pending |
-| SHU-10 | P1: 24h uptime % | Design | Pending |
-| SHU-11 | P1: 24h uptime % | Design | Pending |
-| SHU-12 | P1: 24h uptime % | Design | Pending |
-| SHU-13 | P1: 24h uptime % | Design | Pending |
-| SHU-14 | P1: 24h uptime % | Design | Pending |
-| SHU-15 | P1: 24h uptime % | Design | Pending |
-| SHU-16 | P2: Automatic pruning | Design | Pending |
-| SHU-17 | P2: Automatic pruning | Design | Pending |
-| SHU-18 | P2: Automatic pruning | Design | Pending |
-| SHU-19 | P2: Automatic pruning | Design | Pending |
-| SHU-20 | P2: Automatic pruning | Design | Pending |
+| SHU-01 | P1: Interval-based storage | Implementing | Verified |
+| SHU-02 | P1: Interval-based storage | Implementing | Verified |
+| SHU-03 | P1: Interval-based storage | Implementing | Verified |
+| SHU-04 | P1: Interval-based storage | Implementing | Verified |
+| SHU-05 | P1: Interval-based storage | Implementing | Verified |
+| SHU-06 | P1: Worst-status hourly bars | Implementing | Verified |
+| SHU-07 | P1: Worst-status hourly bars | Implementing | Verified |
+| SHU-08 | P1: Worst-status hourly bars | Implementing | Verified |
+| SHU-09 | P1: Worst-status hourly bars | Implementing | Verified |
+| SHU-10 | P1: 24h uptime % | Implementing | Verified |
+| SHU-11 | P1: 24h uptime % | Implementing | Verified |
+| SHU-12 | P1: 24h uptime % | Implementing | Verified |
+| SHU-13 | P1: 24h uptime % | Implementing | Verified |
+| SHU-14 | P1: 24h uptime % | Implementing | Verified |
+| SHU-15 | P1: 24h uptime % | Implementing | Verified |
+| SHU-16 | P2: Automatic pruning | Implementing | Verified |
+| SHU-17 | P2: Automatic pruning | Implementing | Verified |
+| SHU-18 | P2: Automatic pruning | Implementing | Verified |
+| SHU-19 | P2: Automatic pruning | Implementing | Verified |
+| SHU-20 | P2: Automatic pruning | Implementing | Verified |
 
 **ID format:** `SHU-[NUMBER]` (Service status History & Uptime)
 
 **Status values:** Pending → In Design → In Tasks → Implementing → Verified
 
-**Coverage:** 20 total, 0 mapped to tasks, 20 unmapped ⚠️ (expected pre-Design)
+**Coverage:** 20 total, 20 mapped to tasks, 0 unmapped
 
 ---
 
 ## Success Criteria
 
-- [ ] A service polled every 60s with a constant status produces exactly one row in the interval table, not 1,440/day
-- [ ] An hour containing a real outage renders as `outage` on the public status page even if the service recovered before the hour ended
-- [ ] The public status page displays a numeric uptime % (or a dash for undefined) next to the existing hourly bars
-- [ ] No interval row with `ends_at` older than 35 days survives more than 1 hour past that threshold
-- [ ] `status_snapshots` table and its repository are removed from the codebase with no remaining references
+- [x] A service polled every 60s with a constant status produces exactly one row in the interval table, not 1,440/day
+- [x] An hour containing a real outage renders as `outage` on the public status page even if the service recovered before the hour ended
+- [x] The public status page displays a numeric uptime % (or a dash for undefined) next to the existing hourly bars
+- [x] No interval row with `ends_at` older than 35 days survives more than 1 hour past that threshold
+- [x] `status_snapshots` table and its repository are removed from the codebase with no remaining references

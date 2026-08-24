@@ -3,7 +3,7 @@
   "promote_threshold": 2,
   "window_days": 45,
   "quarantine_threshold": 2,
-  "next_id": 14,
+  "next_id": 15,
   "lessons": [
     {
       "id": "L-001",
@@ -238,6 +238,24 @@
       ],
       "created": "2026-08-23T19:20:45Z",
       "last_seen": "2026-08-23T19:20:45Z"
+    },
+    {
+      "id": "L-014",
+      "key": "ac_gap::when a spec edge case says first ever x fails leaves no side effect add a test starting from zero prior state not just a test that seeds success before the failure",
+      "text": "When a spec edge case says 'first-ever X fails leaves no side effect', add a test starting from zero prior state, not just a test that seeds success before the failure.",
+      "signal": "ac_gap",
+      "scope": "internal/poller",
+      "status": "candidate",
+      "features": [
+        "service-status-intervals"
+      ],
+      "recurrence": 1,
+      "harmful": 0,
+      "evidence": [
+        "internal/poller/poller_test.go:137 (internal/poller)"
+      ],
+      "created": "2026-08-24T18:50:32Z",
+      "last_seen": "2026-08-24T18:50:32Z"
     }
   ]
 }

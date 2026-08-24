@@ -92,6 +92,12 @@ Seen once or not yet corroborated. Tracked, not trusted.
 - evidence: .specs/features/status-page-domain-attach/spec.md:102 (.specs/features/*/spec.md)
 - last seen: 2026-08-23T19:20:45Z
 
+### L-014 - When a spec edge case says 'first-ever X fails leaves no side effect', add a test starting from zero prior state, not just a test that seeds success before the failure.
+- signal: `ac_gap` · recurrence: 1 feature(s) · scope: `internal/poller` · harmful: 0
+- features: service-status-intervals
+- evidence: internal/poller/poller_test.go:137 (internal/poller)
+- last seen: 2026-08-24T18:50:32Z
+
 ## Quarantined (failed when applied - ignore)
 
 A confirmed lesson that recurred alongside failure. Kept for the maintainer to review.

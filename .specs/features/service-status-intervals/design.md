@@ -1,7 +1,7 @@
 # Service Status Intervals Design
 
 **Spec**: `.specs/features/service-status-intervals/spec.md`
-**Status**: Draft
+**Status**: Approved
 
 ---
 
