@@ -52,7 +52,14 @@ func newIntegrationsRouterWithSearch(t *testing.T, validate validateDatadogCrede
 		t.Fatalf("NewPool() returned unexpected error: %v", err)
 	}
 	t.Cleanup(pool.Close)
-	dbtest.LockDatadogIntegration(t, ctx, dsn)
+	// Use context.Background() here, not the bounded ctx above: this lock
+	// may need to wait for another concurrently-run package's test to
+	// release the same advisory key, and a 5s setup deadline is
+	// unrelated to (and shorter than) how long that wait can legitimately
+	// take. Mirrors the pattern already used by
+	// public_status_handler_test.go and poller_test.go's own
+	// LockDatadogIntegration calls.
+	dbtest.LockDatadogIntegration(t, context.Background(), dsn)
 	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), "DELETE FROM integrations WHERE provider = 'datadog'") })
 
 	// RequireAuth's admin lookup runs against its own dedicated pool,
@@ -98,7 +105,9 @@ func newIntegrationsRouterWithPoller(t *testing.T, validate validateDatadogCrede
 		t.Fatalf("NewPool() returned unexpected error: %v", err)
 	}
 	t.Cleanup(pool.Close)
-	dbtest.LockDatadogIntegration(t, ctx, dsn)
+	// See newIntegrationsRouterWithSearch's identical comment: use
+	// context.Background() for the lock wait, not the bounded setup ctx.
+	dbtest.LockDatadogIntegration(t, context.Background(), dsn)
 	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), "DELETE FROM integrations WHERE provider = 'datadog'") })
 
 	authPool, err := db.NewPool(ctx, dsn)

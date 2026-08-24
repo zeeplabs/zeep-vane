@@ -19,6 +19,7 @@ import (
 	"github.com/zeeplabs/zeep-vane/internal/auth"
 	"github.com/zeeplabs/zeep-vane/internal/config"
 	"github.com/zeeplabs/zeep-vane/internal/db"
+	"github.com/zeeplabs/zeep-vane/internal/dbtest"
 )
 
 const routesTestSessionSecret = "cli-routes-test-session-secret-32b!!"
@@ -373,6 +374,12 @@ func TestAdminRouter_Viewer_AllWriteRoutes_403(t *testing.T) {
 // don't exist in this test, so a 404/422/500 from business logic downstream
 // of authorization is an expected, acceptable outcome here.
 func TestAdminRouter_OwnerAndOperator_AllWriteRoutes_PassAuthorization(t *testing.T) {
+	// This test's write-route assertions depend on the admin tokens it
+	// issues still resolving to real admins mid-test - a concurrent
+	// bulk-clear of the shared `admins` table by another package's
+	// bootstrap tests would break that. See LockAdminsTable's doc comment.
+	dbtest.LockAdminsTable(t, context.Background(), testDatabaseURL(t))
+
 	r, _, admins := newAdminRouterForTest(t)
 
 	for _, role := range []string{db.RoleOwner, db.RoleOperator} {
@@ -670,6 +677,11 @@ func snapshotTableForBootstrapRoutesTest(t *testing.T, pool *db.Pool, ctx contex
 func clearAdminsForBootstrapRoutesTest(t *testing.T, pool *db.Pool) func() {
 	t.Helper()
 	ctx := context.Background()
+
+	// Serialize against every other package's tests that bulk-clear or
+	// exact-count the shared `admins` table - see LockAdminsTable's doc
+	// comment for why this is needed across concurrently-run packages.
+	dbtest.LockAdminsTable(t, ctx, testDatabaseURL(t))
 
 	invites := snapshotTableForBootstrapRoutesTest(t, pool, ctx,
 		"SELECT id, email, role, token_hash, invited_by_id, expires_at, used_at, created_at FROM admin_invites")

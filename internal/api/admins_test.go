@@ -18,6 +18,7 @@ import (
 	"github.com/zeeplabs/zeep-vane/internal/audit"
 	"github.com/zeeplabs/zeep-vane/internal/auth"
 	"github.com/zeeplabs/zeep-vane/internal/db"
+	"github.com/zeeplabs/zeep-vane/internal/dbtest"
 )
 
 func newAdminsRouter(t *testing.T) (http.Handler, *db.Pool, *db.AdminRepository, *db.AdminInviteRepository) {
@@ -505,6 +506,13 @@ func TestUpdateAdminRole_ValidChange_200_AppliesRoleRevokesSessionsAndAudits(t *
 func quarantineAmbientOwners(t *testing.T, admins *db.AdminRepository, pool *db.Pool) {
 	t.Helper()
 	ctx := context.Background()
+
+	// The snapshot-quarantine-restore window below only reflects an
+	// accurate "last owner" state if no other package's test can create
+	// or delete an owner-role row in the shared `admins` table while it
+	// is open - see LockAdminsTable's doc comment for why this must be
+	// held across concurrently-run packages, not just within this one.
+	dbtest.LockAdminsTable(t, ctx, testDatabaseURL(t))
 
 	rows, err := pool.Query(ctx, "SELECT id FROM admins WHERE role = $1", db.RoleOwner)
 	if err != nil {

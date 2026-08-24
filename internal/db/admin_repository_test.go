@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"testing"
 	"time"
+
+	"github.com/zeeplabs/zeep-vane/internal/dbtest"
 )
 
 func newAdminRepositoryForTest(t *testing.T) (*AdminRepository, *Pool) {
@@ -248,6 +250,11 @@ func TestAdminRepository_CountActiveOwners_CountsOnlyOwners(t *testing.T) {
 	repo, pool := newAdminRepositoryForTest(t)
 	ctx := context.Background()
 
+	// This test's before/after counts are only valid if the admins table
+	// isn't concurrently bulk-cleared or repopulated by another package's
+	// bootstrap tests - see LockAdminsTable's doc comment.
+	dbtest.LockAdminsTable(t, ctx, testDatabaseURL(t))
+
 	ownerEmail := uniqueTestEmail(t)
 	operatorEmail := uniqueTestEmail(t)
 	t.Cleanup(func() {
@@ -330,6 +337,11 @@ type rawRow struct {
 func snapshotAndClearAdmins(t *testing.T, pool *Pool) func() {
 	t.Helper()
 	ctx := context.Background()
+
+	// Serialize against every other package's tests that bulk-clear or
+	// exact-count the shared `admins` table - see LockAdminsTable's doc
+	// comment for why this is needed across concurrently-run packages.
+	dbtest.LockAdminsTable(t, ctx, testDatabaseURL(t))
 
 	invites := snapshotTable(t, pool, ctx,
 		"SELECT id, email, role, token_hash, invited_by_id, expires_at, used_at, created_at FROM admin_invites")

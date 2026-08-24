@@ -16,6 +16,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/zeeplabs/zeep-vane/internal/db"
+	"github.com/zeeplabs/zeep-vane/internal/dbtest"
 )
 
 const testBootstrapSessionSecret = "test-bootstrap-session-secret-32bytes!!"
@@ -86,6 +87,11 @@ func snapshotTableForBootstrapTest(t *testing.T, pool *db.Pool, ctx context.Cont
 func clearAdminsForBootstrapTest(t *testing.T, pool *db.Pool) func() {
 	t.Helper()
 	ctx := context.Background()
+
+	// Serialize against every other package's tests that bulk-clear or
+	// exact-count the shared `admins` table - see LockAdminsTable's doc
+	// comment for why this is needed across concurrently-run packages.
+	dbtest.LockAdminsTable(t, ctx, testDatabaseURL(t))
 
 	invites := snapshotTableForBootstrapTest(t, pool, ctx,
 		"SELECT id, email, role, token_hash, invited_by_id, expires_at, used_at, created_at FROM admin_invites")
