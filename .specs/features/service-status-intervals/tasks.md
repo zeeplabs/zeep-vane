@@ -328,7 +328,7 @@ T8 → T9
 
 ---
 
-### T10: Remove the old snapshot repository and migration test
+### T10: Remove the old snapshot repository and migration test [x]
 
 **What**: Delete `internal/db/status_snapshot_repository.go`, `internal/db/status_snapshot_repository_test.go`, and `internal/db/status_snapshots_migration_test.go` (superseded by T1-T3's interval equivalents); grep-confirm zero remaining references to `StatusSnapshot`, `StatusSnapshotRepository`, or `status_snapshots` anywhere in `internal/` or `cmd/`.
 **Where**: `internal/db/status_snapshot_repository.go` (delete), `internal/db/status_snapshot_repository_test.go` (delete), `internal/db/status_snapshots_migration_test.go` (delete)
@@ -342,11 +342,11 @@ T8 → T9
 - Skill: NONE
 
 **Done when**:
-- [ ] The three files are deleted
-- [ ] `grep -rn "StatusSnapshot\|status_snapshots" internal/ cmd/` returns no matches
-- [ ] `go build ./...` succeeds with the files gone (proves nothing else still referenced them)
-- [ ] Gate check passes: `go build ./... && go vet ./... && gofmt -l . && TEST_DATABASE_URL=<dsn> go test -tags=integration ./... && go test ./...`
-- [ ] Test count: 0 (deletion task; the full suite's existing count, minus the deleted files' tests, must still be 100% green)
+- [x] The three files are deleted
+- [x] `grep -rn "StatusSnapshot\|status_snapshots" internal/ cmd/` returns no matches (remaining hits are the historical `0005_status_snapshots.*.sql`/`0014_status_intervals.*.sql` migration files, which legitimately name the dropped table, and `status_intervals_migration_test.go`'s assertion that the table is absent - no Go type or repository reference remains)
+- [x] `go build ./...` succeeds with the files gone (proves nothing else still referenced them)
+- [x] Gate check passes: `go build ./... && go vet ./... && gofmt -l . && TEST_DATABASE_URL=<dsn> go test -tags=integration ./... && go test ./...`
+- [x] Test count: 0 (deletion task; the full suite's existing count, minus the deleted files' tests, is 100% green)
 
 **Tests**: none
 **Gate**: build
