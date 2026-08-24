@@ -1,10 +1,12 @@
+import type { ReactNode } from "react";
 import { Routes, Route, Outlet, Navigate } from "react-router-dom";
 import { Toaster } from "sonner";
-import { AuthProvider } from "./auth/AuthProvider";
+import { AuthProvider, useAuth } from "./auth/AuthProvider";
 import { SessionExpiredModal } from "./auth/SessionExpiredModal";
 import { RequireAuth, RequireRole } from "./routes/RequireRole";
 import { Sidebar } from "./layout/Sidebar";
 import { LoginPage } from "./features/auth/LoginPage";
+import { BootstrapPage } from "./features/auth/BootstrapPage";
 import { PasswordResetRequestPage } from "./features/auth/PasswordResetRequestPage";
 import { IntegrationsPage } from "./features/integrations/IntegrationsPage";
 import { ServicesPage } from "./features/services/ServicesPage";
@@ -19,6 +21,34 @@ import { PollerStatusPage } from "./features/poller/PollerStatusPage";
 import { SettingsPage } from "./features/settings/SettingsPage";
 import { PublicStatusPage } from "./features/public-status/PublicStatusPage";
 import "./lib/i18n";
+
+// RedirectToBootstrapIfNeeded gates the anonymous-facing admin routes
+// (login, reset-password, the authenticated area) on whether the instance
+// still needs its first admin (SHD-19, SHD-21). Deliberately never wraps
+// /status/:id - that route serves public status-page visitors, a wholly
+// separate audience the admin instance's bootstrap state has no bearing
+// on. Follows RequireAuth's own "status === loading → render nothing yet"
+// convention so it never redirects on a guess before the boot check
+// resolves.
+function RedirectToBootstrapIfNeeded({ children }: { children: ReactNode }) {
+  const { needsBootstrap, status } = useAuth();
+
+  if (status === "loading") return null;
+  if (needsBootstrap) return <Navigate to="/bootstrap" replace />;
+  return <>{children}</>;
+}
+
+// BootstrapRoute is the mirror-image guard for /bootstrap itself: once an
+// admin already exists, the bootstrap form is a dead end, so a direct
+// visit redirects to /login instead of showing the form (SHD-21, spec.md
+// AC7 under "First-run bootstrap").
+function BootstrapRoute() {
+  const { needsBootstrap, status } = useAuth();
+
+  if (status === "loading") return null;
+  if (!needsBootstrap) return <Navigate to="/login" replace />;
+  return <BootstrapPage />;
+}
 
 function AuthenticatedLayout() {
   return (
@@ -43,14 +73,31 @@ export default function App() {
       <SessionExpiredModal />
       <Toaster richColors position="top-right" />
       <Routes>
-        <Route path="/login" element={<LoginPage />} />
-        <Route path="/reset-password" element={<PasswordResetRequestPage />} />
+        <Route
+          path="/login"
+          element={
+            <RedirectToBootstrapIfNeeded>
+              <LoginPage />
+            </RedirectToBootstrapIfNeeded>
+          }
+        />
+        <Route path="/bootstrap" element={<BootstrapRoute />} />
+        <Route
+          path="/reset-password"
+          element={
+            <RedirectToBootstrapIfNeeded>
+              <PasswordResetRequestPage />
+            </RedirectToBootstrapIfNeeded>
+          }
+        />
         <Route path="/status/:id" element={<PublicStatusPage />} />
         <Route
           element={
-            <RequireAuth>
-              <AuthenticatedLayout />
-            </RequireAuth>
+            <RedirectToBootstrapIfNeeded>
+              <RequireAuth>
+                <AuthenticatedLayout />
+              </RequireAuth>
+            </RedirectToBootstrapIfNeeded>
           }
         >
           <Route path="/" element={<Navigate to="/domains" replace />} />

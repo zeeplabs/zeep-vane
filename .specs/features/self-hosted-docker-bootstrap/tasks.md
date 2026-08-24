@@ -320,11 +320,11 @@ T12 -> T13
 - Skill: NONE
 
 **Done when**:
-- [ ] Loading `/login` (or `/`) when `needsBootstrap` is `true` redirects to `/bootstrap`
-- [ ] Loading `/bootstrap` when `needsBootstrap` is `false` redirects to `/login`
-- [ ] Loading `/bootstrap` when `needsBootstrap` is `true` renders `BootstrapPage`, no redirect loop
-- [ ] Gate check passes: `cd web && npm run test && npx tsc -b --noEmit`
-- [ ] Test count: ≥3 tests (no silent deletions)
+- [x] Loading `/login` (or `/`) when `needsBootstrap` is `true` redirects to `/bootstrap`
+- [x] Loading `/bootstrap` when `needsBootstrap` is `false` redirects to `/login`
+- [x] Loading `/bootstrap` when `needsBootstrap` is `true` renders `BootstrapPage`, no redirect loop
+- [x] Gate check passes: `cd web && npm run test && npx tsc -b --noEmit` (tsc clean; same 2 pre-existing, unrelated failures noted in T7)
+- [x] Test count: ≥3 tests (no silent deletions) — 4 added
 
 **Tests**: integration (component)
 **Gate**: frontend
