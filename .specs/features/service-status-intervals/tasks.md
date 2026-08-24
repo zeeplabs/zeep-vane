@@ -219,7 +219,7 @@ T8 → T9
 
 ---
 
-### T6: Wire `internal/poller` to `OpenOrExtend`
+### T6: Wire `internal/poller` to `OpenOrExtend` [x]
 
 **What**: Replace the `snapshotCreator` interface (`Create`) with a `statusIntervalWriter` interface (`OpenOrExtend`) in `internal/poller/poller.go`; `pollService` calls `p.statusIntervals.OpenOrExtend(ctx, svc.ID, current, status.ErrorBudgetRemaining, time.Now())` instead of `p.snapshots.Create`. Update `internal/poller/poller_test.go`'s fakes and assertions to match (assert an interval was opened/extended, not that a snapshot row was created).
 **Where**: `internal/poller/poller.go`, `internal/poller/poller_test.go`
@@ -232,11 +232,11 @@ T8 → T9
 - Skill: NONE
 
 **Done when**:
-- [ ] `pollService` on success calls `OpenOrExtend` with the normalized status and the real fetch time, never `time.Now()` called a second time inconsistently
-- [ ] `pollService` on a Datadog fetch failure still does not call `OpenOrExtend` at all (existing failure-path contract preserved)
-- [ ] Existing `TestPoller_Run_StopsOnContextCancel` still passes unmodified in intent
-- [ ] Gate check passes: `TEST_DATABASE_URL=<dsn> go test -tags=integration ./internal/poller/...`
-- [ ] Test count: 3 existing tests updated, 0 net test count regression
+- [x] `pollService` on success calls `OpenOrExtend` with the normalized status and the real fetch time, never `time.Now()` called a second time inconsistently
+- [x] `pollService` on a Datadog fetch failure still does not call `OpenOrExtend` at all (existing failure-path contract preserved)
+- [x] Existing `TestPoller_Run_StopsOnContextCancel` still passes unmodified in intent
+- [x] Gate check passes: `TEST_DATABASE_URL=<dsn> go test -tags=integration ./internal/poller/...`
+- [x] Test count: 3 existing tests updated, 0 net test count regression
 
 **Tests**: integration
 **Gate**: full

@@ -76,15 +76,15 @@ func createTestIntegration(t *testing.T, pool *db.Pool, dsn string, integrations
 }
 
 // TestPoller_PollOnce_UpdatesStatusAndPersistsSnapshot exercises one full
-// iteration against real repositories with Datadog mocked (T23 Done-when):
-// the cycle updates current_status per the fetched error budget/state and
-// persists a status_snapshots row.
+// iteration against real repositories with Datadog mocked: the cycle
+// updates current_status per the fetched error budget/state and opens a
+// status interval for the service.
 func TestPoller_PollOnce_UpdatesStatusAndPersistsSnapshot(t *testing.T) {
 	pool, dsn := newTestPool(t)
 	ctx := context.Background()
 
 	services := db.NewServiceRepository(pool)
-	snapshots := db.NewStatusSnapshotRepository(pool)
+	statusIntervals := db.NewStatusIntervalRepository(pool)
 	integrations := db.NewIntegrationRepository(pool)
 	svc := createTestService(t, pool, services)
 	createTestIntegration(t, pool, dsn, integrations)
@@ -94,7 +94,7 @@ func TestPoller_PollOnce_UpdatesStatusAndPersistsSnapshot(t *testing.T) {
 		status: datadog.SLOStatus{State: "ok", ErrorBudgetRemaining: 91.2},
 	}
 
-	p := NewPoller(services, services, snapshots, integrations, provider, time.Hour, zap.NewNop())
+	p := NewPoller(services, services, statusIntervals, integrations, provider, time.Hour, zap.NewNop())
 	p.pollOnce(ctx)
 
 	all, err := services.List(ctx)
@@ -116,16 +116,16 @@ func TestPoller_PollOnce_UpdatesStatusAndPersistsSnapshot(t *testing.T) {
 		t.Errorf("CurrentStatus = %q, want %q", found.CurrentStatus, "operational")
 	}
 
-	var snapshotCount int
+	var intervalCount int
 	row := pool.QueryRow(ctx,
-		"SELECT count(*) FROM status_snapshots WHERE service_id = $1 AND status = $2 AND error_budget_remaining = $3",
+		"SELECT count(*) FROM status_intervals WHERE service_id = $1 AND status = $2 AND error_budget_remaining = $3 AND ends_at IS NULL",
 		svc.ID, "operational", 91.2,
 	)
-	if err := row.Scan(&snapshotCount); err != nil {
+	if err := row.Scan(&intervalCount); err != nil {
 		t.Fatalf("Scan() returned unexpected error: %v", err)
 	}
-	if snapshotCount != 1 {
-		t.Errorf("status_snapshots rows for service = %d, want 1", snapshotCount)
+	if intervalCount != 1 {
+		t.Errorf("open status_intervals rows for service = %d, want 1", intervalCount)
 	}
 }
 
@@ -139,7 +139,7 @@ func TestPoller_PollOnce_ConnectionFailure_MarksIntegrationInvalidAndKeepsLastSt
 	ctx := context.Background()
 
 	services := db.NewServiceRepository(pool)
-	snapshots := db.NewStatusSnapshotRepository(pool)
+	statusIntervals := db.NewStatusIntervalRepository(pool)
 	integrations := db.NewIntegrationRepository(pool)
 	svc := createTestService(t, pool, services)
 	createTestIntegration(t, pool, dsn, integrations)
@@ -147,12 +147,12 @@ func TestPoller_PollOnce_ConnectionFailure_MarksIntegrationInvalidAndKeepsLastSt
 	// Seed a known-good status via one successful poll, so the failure that
 	// follows has a last-known-valid status to preserve.
 	okProvider := &fakeProvider{errs: []error{nil}, status: datadog.SLOStatus{State: "ok", ErrorBudgetRemaining: 99}}
-	seedingPoller := NewPoller(services, services, snapshots, integrations, okProvider, time.Hour, zap.NewNop())
+	seedingPoller := NewPoller(services, services, statusIntervals, integrations, okProvider, time.Hour, zap.NewNop())
 	seedingPoller.pollOnce(ctx)
 
 	backoffBase = time.Millisecond
 	failingProvider := &fakeProvider{errs: []error{datadog.ErrTimeout, datadog.ErrTimeout, datadog.ErrTimeout}}
-	p := NewPoller(services, services, snapshots, integrations, failingProvider, time.Hour, zap.NewNop())
+	p := NewPoller(services, services, statusIntervals, integrations, failingProvider, time.Hour, zap.NewNop())
 	p.pollOnce(ctx)
 
 	integration, err := integrations.GetDatadog(ctx)
@@ -191,11 +191,11 @@ func TestPoller_PollOnce_ConnectionFailure_MarksIntegrationInvalidAndKeepsLastSt
 func TestPoller_Run_StopsOnContextCancel(t *testing.T) {
 	pool, _ := newTestPool(t)
 	services := db.NewServiceRepository(pool)
-	snapshots := db.NewStatusSnapshotRepository(pool)
+	statusIntervals := db.NewStatusIntervalRepository(pool)
 	integrations := db.NewIntegrationRepository(pool)
 	provider := &fakeProvider{errs: []error{nil}, status: datadog.SLOStatus{State: "ok"}}
 
-	p := NewPoller(services, services, snapshots, integrations, provider, time.Hour, zap.NewNop())
+	p := NewPoller(services, services, statusIntervals, integrations, provider, time.Hour, zap.NewNop())
 
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})

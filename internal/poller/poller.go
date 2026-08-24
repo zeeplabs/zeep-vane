@@ -26,10 +26,11 @@ type serviceStatusUpdater interface {
 	UpdateStatus(ctx context.Context, serviceID, status string) error
 }
 
-// snapshotCreator is the subset of *db.StatusSnapshotRepository the poller
-// depends on to persist a point-in-time status snapshot.
-type snapshotCreator interface {
-	Create(ctx context.Context, snapshot *db.StatusSnapshot) error
+// statusIntervalWriter is the subset of *db.StatusIntervalRepository the
+// poller depends on to persist an observed status as an open/extended
+// interval.
+type statusIntervalWriter interface {
+	OpenOrExtend(ctx context.Context, serviceID, status string, errorBudgetRemaining float64, at time.Time) error
 }
 
 // integrationInvalidator is the subset of *db.IntegrationRepository the
@@ -44,27 +45,27 @@ type integrationInvalidator interface {
 // Run's own ticker, never from a public request (SP-06 - the public status
 // page must only ever read the cache, never call Datadog on demand).
 type Poller struct {
-	services     serviceLister
-	statuses     serviceStatusUpdater
-	snapshots    snapshotCreator
-	integrations integrationInvalidator
-	provider     datadog.SLOProvider
-	interval     time.Duration
-	logger       *zap.Logger
+	services        serviceLister
+	statuses        serviceStatusUpdater
+	statusIntervals statusIntervalWriter
+	integrations    integrationInvalidator
+	provider        datadog.SLOProvider
+	interval        time.Duration
+	logger          *zap.Logger
 }
 
 // NewPoller builds a Poller that fetches SLO status via provider every
-// interval, persisting results through statuses/snapshots and recording
-// connection failures through integrations.
-func NewPoller(services serviceLister, statuses serviceStatusUpdater, snapshots snapshotCreator, integrations integrationInvalidator, provider datadog.SLOProvider, interval time.Duration, logger *zap.Logger) *Poller {
+// interval, persisting results through statuses/statusIntervals and
+// recording connection failures through integrations.
+func NewPoller(services serviceLister, statuses serviceStatusUpdater, statusIntervals statusIntervalWriter, integrations integrationInvalidator, provider datadog.SLOProvider, interval time.Duration, logger *zap.Logger) *Poller {
 	return &Poller{
-		services:     services,
-		statuses:     statuses,
-		snapshots:    snapshots,
-		integrations: integrations,
-		provider:     provider,
-		interval:     interval,
-		logger:       logger,
+		services:        services,
+		statuses:        statuses,
+		statusIntervals: statusIntervals,
+		integrations:    integrations,
+		provider:        provider,
+		interval:        interval,
+		logger:          logger,
 	}
 }
 
@@ -98,8 +99,9 @@ func (p *Poller) pollOnce(ctx context.Context) {
 	}
 }
 
-// pollService fetches svc's SLO status (with retry), persists a snapshot,
-// and updates the service's cached current_status. On a failed fetch it
+// pollService fetches svc's SLO status (with retry), opens or extends its
+// status interval, and updates the service's cached current_status. On a
+// failed fetch it
 // records the connection failure on the Datadog integration for the admin
 // (SP-09) and returns early without touching current_status, so the last
 // known valid status stays visible on the public page (SP-08) - it never
@@ -120,12 +122,8 @@ func (p *Poller) pollService(ctx context.Context, svc db.Service) error {
 
 	current := normalizeStatus(status.State)
 
-	if err := p.snapshots.Create(ctx, &db.StatusSnapshot{
-		ServiceID:            svc.ID,
-		Status:               current,
-		ErrorBudgetRemaining: status.ErrorBudgetRemaining,
-	}); err != nil {
-		p.logger.Error("poller: failed to persist status snapshot",
+	if err := p.statusIntervals.OpenOrExtend(ctx, svc.ID, current, status.ErrorBudgetRemaining, time.Now()); err != nil {
+		p.logger.Error("poller: failed to open or extend status interval",
 			zap.String("service_id", svc.ID), zap.Error(err))
 		return err
 	}
