@@ -97,8 +97,8 @@ func TestPublicStatusPreview_AuthenticatedByID_200SameShapeAsProduction(t *testi
 	}
 	// UPT-08: the preview endpoint must return the identical hourly-history
 	// shape as production - same field, same bucket count.
-	if len(found.HourlyHistory) != historyWindowHours {
-		t.Errorf("len(HourlyHistory) = %d, want %d", len(found.HourlyHistory), historyWindowHours)
+	if len(found.HourlyHistory) != 24 {
+		t.Errorf("len(HourlyHistory) = %d, want %d", len(found.HourlyHistory), 24)
 	}
 }
 
@@ -139,8 +139,8 @@ func TestPublicStatusPreview_ZeroSnapshotService_AllHourlyBucketsNoData(t *testi
 	if found == nil {
 		t.Fatalf("service %s not present in preview response", service.ID)
 	}
-	if len(found.HourlyHistory) != historyWindowHours {
-		t.Fatalf("len(HourlyHistory) = %d, want %d", len(found.HourlyHistory), historyWindowHours)
+	if len(found.HourlyHistory) != 24 {
+		t.Fatalf("len(HourlyHistory) = %d, want %d", len(found.HourlyHistory), 24)
 	}
 	for i, bucket := range found.HourlyHistory {
 		if bucket.Status != "no_data" {

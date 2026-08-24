@@ -185,8 +185,8 @@ func TestPublicStatusGet_NoAuthHeader_200WithServiceStatus(t *testing.T) {
 	}
 	// UPT-01: the HourlyHistory field is a new addition, but every existing
 	// field above must remain unaffected by it.
-	if len(found.HourlyHistory) != historyWindowHours {
-		t.Errorf("len(HourlyHistory) = %d, want %d", len(found.HourlyHistory), historyWindowHours)
+	if len(found.HourlyHistory) != 24 {
+		t.Errorf("len(HourlyHistory) = %d, want %d", len(found.HourlyHistory), 24)
 	}
 }
 
@@ -235,8 +235,8 @@ func TestPublicStatusGet_HourlyHistory_KnownHourStatusAppearsAsSingleBucket(t *t
 	if found == nil {
 		t.Fatalf("service %s not present in public response", serviceID)
 	}
-	if len(found.HourlyHistory) != historyWindowHours {
-		t.Fatalf("len(HourlyHistory) = %d, want %d", len(found.HourlyHistory), historyWindowHours)
+	if len(found.HourlyHistory) != 24 {
+		t.Fatalf("len(HourlyHistory) = %d, want %d", len(found.HourlyHistory), 24)
 	}
 
 	var outageBuckets int
@@ -294,8 +294,8 @@ func TestPublicStatusGet_ServiceWithNoSnapshotsEver_AllHourlyBucketsNoData(t *te
 	if found == nil {
 		t.Fatalf("service %s not present in public response", service.ID)
 	}
-	if len(found.HourlyHistory) != historyWindowHours {
-		t.Fatalf("len(HourlyHistory) = %d, want %d", len(found.HourlyHistory), historyWindowHours)
+	if len(found.HourlyHistory) != 24 {
+		t.Fatalf("len(HourlyHistory) = %d, want %d", len(found.HourlyHistory), 24)
 	}
 	for i, bucket := range found.HourlyHistory {
 		if bucket.Status != "no_data" {
