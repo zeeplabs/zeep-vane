@@ -72,7 +72,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     (async () => {
       dispatch({ type: "BOOT_START" });
       try {
-        const admin = await apiFetch<AuthenticatedAdmin>("/api/auth/me");
+        // skipUnauthorizedHandler: a 401 here just means "no session yet"
+        // (anonymous visitor, including on /login itself) - never a
+        // session that expired mid-use.
+        const admin = await apiFetch<AuthenticatedAdmin>("/api/auth/me", { skipUnauthorizedHandler: true });
         if (!cancelled) dispatch({ type: "AUTHENTICATED", admin });
       } catch {
         if (!cancelled) dispatch({ type: "ANONYMOUS" });
@@ -95,9 +98,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // deliberadamente, nunca guardado em estado. A sessão real vem do
     // cookie httpOnly que o login também seta (AD-004); a identidade é
     // hidratada por /api/auth/me logo em seguida, mesmo caminho do boot.
+    // skipUnauthorizedHandler: a wrong-credentials 401 here is a normal
+    // login failure (LoginPage shows its own inline error), never a
+    // session that expired.
     await apiFetch<{ token: string }>("/api/auth/login", {
       method: "POST",
       body: JSON.stringify({ email, password }),
+      skipUnauthorizedHandler: true,
     });
     const admin = await apiFetch<AuthenticatedAdmin>("/api/auth/me");
     dispatch({ type: "AUTHENTICATED", admin });

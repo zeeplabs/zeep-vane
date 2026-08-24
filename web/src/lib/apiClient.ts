@@ -48,22 +48,34 @@ async function parseErrorMessage(res: Response): Promise<string> {
   }
 }
 
-export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
+// skipUnauthorizedHandler evita o modal global de "sessão expirada" em
+// chamadas cujo 401 é um resultado ESPERADO, não sinal de sessão que
+// morreu no meio do uso: o probe de boot em /api/auth/me (visitante
+// anônimo, inclusive na própria tela de login) e a tentativa de login em
+// si (credencial errada). Sem isto, abrir /login sem sessão alguma já
+// dispara o modal de sessão expirada, o que é sempre falso - nunca houve
+// sessão para expirar.
+interface ApiFetchInit extends RequestInit {
+  skipUnauthorizedHandler?: boolean;
+}
+
+export async function apiFetch<T>(path: string, init?: ApiFetchInit): Promise<T> {
+  const { skipUnauthorizedHandler, ...fetchInit } = init ?? {};
   // A FormData body (multipart upload, e.g. the company logo) must never
   // get an explicit Content-Type here - the browser sets its own
   // multipart/form-data header with the correct boundary. Forcing
   // application/json on it would break server-side multipart parsing.
-  const isFormData = typeof FormData !== "undefined" && init?.body instanceof FormData;
+  const isFormData = typeof FormData !== "undefined" && fetchInit.body instanceof FormData;
   const res = await fetch(`${baseUrl}${path}`, {
-    ...init,
+    ...fetchInit,
     credentials: "include",
     headers: {
-      ...(init?.body && !isFormData ? { "Content-Type": "application/json" } : {}),
-      ...init?.headers,
+      ...(fetchInit.body && !isFormData ? { "Content-Type": "application/json" } : {}),
+      ...fetchInit.headers,
     },
   });
 
-  if (res.status === 401) {
+  if (res.status === 401 && !skipUnauthorizedHandler) {
     triggerUnauthorized();
   }
 
