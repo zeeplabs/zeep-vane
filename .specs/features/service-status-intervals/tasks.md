@@ -108,7 +108,7 @@ T8 → T9
 
 ---
 
-### T2: `StatusIntervalRepository.OpenOrExtend` - transactional write path
+### T2: `StatusIntervalRepository.OpenOrExtend` - transactional write path [x]
 
 **What**: Add `internal/db/status_interval_repository.go` with the `StatusInterval` struct and `StatusIntervalRepository.OpenOrExtend(ctx, serviceID, status string, errorBudgetRemaining float64, at time.Time) error`, implementing the `SELECT ... FOR UPDATE` read-then-branch (Approach A): no open row → INSERT; same status → UPDATE `error_budget_remaining`/`last_seen_at` in place; different status → UPDATE old row's `ends_at`, INSERT new open row. Add `internal/db/status_interval_repository_test.go`.
 **Where**: `internal/db/status_interval_repository.go`, `internal/db/status_interval_repository_test.go`
@@ -121,12 +121,12 @@ T8 → T9
 - Skill: NONE
 
 **Done when**:
-- [ ] First-ever observation for a service inserts exactly one open interval (`ends_at` NULL, `starts_at == at`)
-- [ ] A repeated identical status updates `error_budget_remaining` and `last_seen_at` on the existing open row without inserting a new one
-- [ ] A different status closes the previous open row (`ends_at == at`) and opens exactly one new row starting at the same `at`
-- [ ] A second writer attempting to open a row for a service that already has an open interval (simulating the `PollerManager.Restart` race, design Risks & Concerns) receives the unique-constraint error, and the first writer's row is left untouched
-- [ ] Gate check passes: `TEST_DATABASE_URL=<dsn> go test -tags=integration ./internal/db/...`
-- [ ] Test count: ≥4 tests (no silent deletions)
+- [x] First-ever observation for a service inserts exactly one open interval (`ends_at` NULL, `starts_at == at`)
+- [x] A repeated identical status updates `error_budget_remaining` and `last_seen_at` on the existing open row without inserting a new one
+- [x] A different status closes the previous open row (`ends_at == at`) and opens exactly one new row starting at the same `at`
+- [x] A second writer attempting to open a row for a service that already has an open interval (simulating the `PollerManager.Restart` race, design Risks & Concerns) receives the unique-constraint error (`ErrIntervalRaceLost`), and the first writer's row is left untouched
+- [x] Gate check passes: `TEST_DATABASE_URL=<dsn> go test -tags=integration ./internal/db/...` (new tests pass; pre-existing snapshot tests still fail per T1's documented transitional state)
+- [x] Test count: 4 tests added (no silent deletions)
 
 **Tests**: integration
 **Gate**: full
