@@ -2,6 +2,7 @@ package main
 
 import (
 	"os"
+	_ "time/tzdata" // embed IANA tzdata so LoadLocation works on minimal containers without host tzdata
 
 	"github.com/zeeplabs/zeep-vane/internal/cli"
 )
