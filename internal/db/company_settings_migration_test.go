@@ -6,6 +6,8 @@ import (
 	"context"
 	"testing"
 	"time"
+
+	"github.com/zeeplabs/zeep-vane/internal/dbtest"
 )
 
 // TestCompanySettingsMigration_AppliesClean_SeedsSingletonRow asserts
@@ -28,6 +30,12 @@ func TestCompanySettingsMigration_AppliesClean_SeedsSingletonRow(t *testing.T) {
 		t.Fatalf("NewPool() returned unexpected error: %v", err)
 	}
 	t.Cleanup(pool.Close)
+
+	// This test asserts the exact content of the shared company_settings
+	// singleton row, which races internal/api's and internal/cli's own
+	// company_settings tests across the separate concurrent processes
+	// `go test ./...` runs them as - see LockCompanySettings' doc comment.
+	dbtest.LockCompanySettings(t, context.Background(), dsn)
 
 	var count int
 	if err := pool.QueryRow(ctx, "SELECT count(*) FROM company_settings").Scan(&count); err != nil {

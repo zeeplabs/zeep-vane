@@ -18,6 +18,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/zeeplabs/zeep-vane/internal/db"
+	"github.com/zeeplabs/zeep-vane/internal/dbtest"
 )
 
 // pngSignatureBytes is a minimal, valid PNG file header - enough for
@@ -93,7 +94,15 @@ func newCompanySettingsRouterWithUploadsDir(t *testing.T) (http.Handler, *db.Poo
 	t.Cleanup(pool.Close)
 
 	// The company_settings row is a singleton shared across every test in
-	// this package - reset it to a known state before and after each test.
+	// this package - reset it to a known state before and after each
+	// test. That reset races internal/db's and internal/cli's own
+	// company_settings tests across the separate concurrent processes
+	// `go test ./...` runs them as, so take the shared advisory lock for
+	// the duration of this test - see LockCompanySettings' doc comment.
+	// Deliberately context.Background(), not the bounded `ctx` above,
+	// which is canceled by the deferred cancel() as soon as this
+	// function returns.
+	dbtest.LockCompanySettings(t, context.Background(), dsn)
 	reset := func() {
 		_, _ = pool.Exec(context.Background(), "UPDATE company_settings SET name = '', contact_email = '', logo_url = NULL WHERE id = 1")
 	}

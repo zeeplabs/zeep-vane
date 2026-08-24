@@ -24,6 +24,14 @@ const datadogIntegrationLockKey = 727100001
 // locks never contend with each other.
 const adminsTableLockKey = 727100002
 
+// companySettingsLockKey is an arbitrary constant identifying the
+// Postgres advisory lock guarding the `company_settings` singleton row
+// (id = 1, enforced by a CHECK constraint - there is never more than one).
+// Its value has no meaning beyond being a stable key both sides of the
+// lock agree on, and it is deliberately distinct from the other keys in
+// this file so none of these locks ever contend with each other.
+const companySettingsLockKey = 727100003
+
 // LockDatadogIntegration serializes access to the Datadog integration
 // singleton row for the duration of the calling test. `go test ./...` runs
 // separate packages' test binaries in parallel, and internal/db,
@@ -66,6 +74,23 @@ func LockDatadogIntegration(t *testing.T, ctx context.Context, dsn string) {
 func LockAdminsTable(t *testing.T, ctx context.Context, dsn string) {
 	t.Helper()
 	lockAdvisoryKey(t, ctx, dsn, adminsTableLockKey)
+}
+
+// LockCompanySettings serializes access to the shared `company_settings`
+// singleton row for the duration of the calling test. `go test ./...`
+// runs separate packages' test binaries in parallel, and internal/db,
+// internal/api, and internal/cli each have tests that reset, update, or
+// assert the exact content of that same row (id = 1) - without
+// serialization, one package's reset-to-blank window races another
+// package's read-and-assert or update against the same shared
+// TEST_DATABASE_URL Postgres instance.
+//
+// See LockDatadogIntegration's doc comment for why the lock is held on
+// its own dedicated connection rather than one borrowed from the
+// caller's pool.
+func LockCompanySettings(t *testing.T, ctx context.Context, dsn string) {
+	t.Helper()
+	lockAdvisoryKey(t, ctx, dsn, companySettingsLockKey)
 }
 
 // heldLocksMu guards heldLocks, which tracks which (test, advisory-key)

@@ -606,6 +606,13 @@ func TestPublicStatusGet_ResolvedIncidentWithinRetention_AppearsInHistory(t *tes
 // test in this package.
 func resetCompanySettingsForPublicStatusTest(t *testing.T, pool *db.Pool) {
 	t.Helper()
+
+	// This reset races internal/db's and internal/cli's own
+	// company_settings tests across the separate concurrent processes
+	// `go test ./...` runs them as, so take the shared advisory lock for
+	// the duration of this test - see LockCompanySettings' doc comment.
+	dbtest.LockCompanySettings(t, context.Background(), testDatabaseURL(t))
+
 	reset := func() {
 		_, _ = pool.Exec(context.Background(), "UPDATE company_settings SET name = '', contact_email = '', logo_url = NULL WHERE id = 1")
 	}

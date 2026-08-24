@@ -14,6 +14,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/zeeplabs/zeep-vane/internal/db"
+	"github.com/zeeplabs/zeep-vane/internal/dbtest"
 )
 
 func newInstanceConfigRouter(t *testing.T, dnsTarget string) (http.Handler, *db.AdminRepository, *db.Pool) {
@@ -132,6 +133,12 @@ func TestBranding_NoAuth_200(t *testing.T) {
 // TestBranding_LogoUploaded_ReturnsLogoURL asserts the real, persisted logo
 // URL is surfaced, not a placeholder.
 func TestBranding_LogoUploaded_ReturnsLogoURL(t *testing.T) {
+	// This test mutates the shared company_settings singleton row, which
+	// races internal/db's and internal/cli's own company_settings tests
+	// across the separate concurrent processes `go test ./...` runs them
+	// as - see LockCompanySettings' doc comment.
+	dbtest.LockCompanySettings(t, context.Background(), testDatabaseURL(t))
+
 	r, _, pool := newInstanceConfigRouter(t, "vane.example.com")
 	companySettings := db.NewCompanySettingsRepository(pool)
 	t.Cleanup(func() {
@@ -158,6 +165,12 @@ func TestBranding_LogoUploaded_ReturnsLogoURL(t *testing.T) {
 // TestBranding_NoLogoUploaded_ReturnsNull asserts the no-logo case never
 // fabricates a placeholder path.
 func TestBranding_NoLogoUploaded_ReturnsNull(t *testing.T) {
+	// This test mutates the shared company_settings singleton row, which
+	// races internal/db's and internal/cli's own company_settings tests
+	// across the separate concurrent processes `go test ./...` runs them
+	// as - see LockCompanySettings' doc comment.
+	dbtest.LockCompanySettings(t, context.Background(), testDatabaseURL(t))
+
 	r, _, pool := newInstanceConfigRouter(t, "vane.example.com")
 	t.Cleanup(func() {
 		_, _ = pool.Exec(context.Background(), "UPDATE company_settings SET logo_url = NULL WHERE id = 1")

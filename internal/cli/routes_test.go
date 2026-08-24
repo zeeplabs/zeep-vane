@@ -32,7 +32,12 @@ func newAdminRouterForTest(t *testing.T) (http.Handler, *db.Pool, *db.AdminRepos
 	handler := buildAdminRouter(pool, cfg, zap.NewNop(), pollerManager)
 
 	// The company_settings row is a singleton shared across every test in
-	// this package - reset it to a known state before and after each test.
+	// this package - reset it to a known state before and after each
+	// test. That reset races internal/db's and internal/api's own
+	// company_settings tests across the separate concurrent processes
+	// `go test ./...` runs them as, so take the shared advisory lock for
+	// the duration of this test - see LockCompanySettings' doc comment.
+	dbtest.LockCompanySettings(t, context.Background(), testDatabaseURL(t))
 	reset := func() {
 		_, _ = pool.Exec(context.Background(), "UPDATE company_settings SET name = '', contact_email = '', logo_url = NULL WHERE id = 1")
 	}

@@ -6,6 +6,8 @@ import (
 	"context"
 	"testing"
 	"time"
+
+	"github.com/zeeplabs/zeep-vane/internal/dbtest"
 )
 
 func newCompanySettingsTestRepo(t *testing.T) (*CompanySettingsRepository, *Pool) {
@@ -24,6 +26,15 @@ func newCompanySettingsTestRepo(t *testing.T) (*CompanySettingsRepository, *Pool
 		t.Fatalf("NewPool() returned unexpected error: %v", err)
 	}
 	t.Cleanup(pool.Close)
+
+	// This reset races internal/api's and internal/cli's own
+	// company_settings tests across the separate concurrent processes
+	// `go test ./...` runs them as, so take the shared advisory lock for
+	// the duration of this test - see LockCompanySettings' doc comment.
+	// Deliberately context.Background(), not the bounded `ctx` above,
+	// which is canceled by the deferred cancel() as soon as this
+	// function returns.
+	dbtest.LockCompanySettings(t, context.Background(), dsn)
 
 	// Reset the singleton row to a known state before each test - other
 	// tests in this suite/package mutate the same row (there is only one).
