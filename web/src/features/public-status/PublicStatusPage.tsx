@@ -3,10 +3,9 @@ import { useParams } from "react-router-dom";
 import { Card } from "../../components/ui/Card";
 import { Tag } from "../../components/ui/Tag";
 import type { TagVariant } from "../../components/ui/Tag";
-import type { PublicIncidentEntry, PublicServiceStatus } from "../../lib/publicStatus";
+import type { PublicHourlyBucket, PublicHourlyStatus, PublicIncidentEntry, PublicServiceStatus } from "../../lib/publicStatus";
 import { usePublicStatusPage } from "./hooks";
 import { formatRelativeTime, formatDateTime, formatDuration } from "./format";
-import { buildServiceHistory } from "./history";
 
 const overallCopy: Record<PublicServiceStatus, { label: string; colorVar: string }> = {
   operational: { label: "Todos os sistemas operacionais", colorVar: "--color-success" },
@@ -25,6 +24,46 @@ const serviceLabel: Record<PublicServiceStatus, string> = {
   degraded: "Degradado",
   outage: "Interrupção",
 };
+
+// hourlyColorVar covers every PublicHourlyStatus, including "no_data"
+// (light gray, UPT-02) - overallCopy/serviceTagVariant above only cover
+// PublicServiceStatus, which has no no_data case.
+const hourlyColorVar: Record<PublicHourlyStatus, string> = {
+  operational: "--color-success",
+  degraded: "--color-warning",
+  outage: "--color-critical",
+  no_data: "--color-neutral-600",
+};
+
+const hourlyLabel: Record<PublicHourlyStatus, string> = {
+  operational: "Operacional",
+  degraded: "Degradado",
+  outage: "Interrupção",
+  no_data: "Sem dados",
+};
+
+const HOURLY_TOOLTIP_FORMATTER = new Intl.DateTimeFormat("pt-BR", {
+  day: "2-digit",
+  month: "2-digit",
+  hour: "2-digit",
+  hour12: false,
+  timeZone: "America/Sao_Paulo",
+});
+
+// hourlyTooltip formats a bar's local date, hour range, and PT-BR status
+// label (UPT-05), always in America/Sao_Paulo regardless of the visitor's
+// own browser/OS timezone - the offset is computed client-side, but the
+// timezone itself is fixed, not detected.
+function hourlyTooltip(bucket: PublicHourlyBucket): string {
+  const start = new Date(bucket.start);
+  const parts = HOURLY_TOOLTIP_FORMATTER.formatToParts(start);
+  const get = (type: string) => parts.find((p) => p.type === type)?.value ?? "";
+  const day = get("day");
+  const month = get("month");
+  const startHour = Number(get("hour")) % 24;
+  const endHour = (startHour + 1) % 24;
+  return `${day}/${month}, ${startHour}h–${endHour}h · ${hourlyLabel[bucket.status]}`;
+}
 
 const incidentTagVariant: Record<PublicIncidentEntry["status"], TagVariant> = {
   investigating: "critical",
@@ -222,18 +261,20 @@ export function PublicStatusPage() {
               </div>
               <div className="flex flex-col gap-0.5">
                 <div className="flex gap-px">
-                  {buildServiceHistory(service.name, service.status).map((day) => (
+                  {service.hourly_history.map((bucket, i) => (
                     <div
-                      key={day.daysAgo}
-                      title={`${day.daysAgo === 0 ? "hoje" : `${day.daysAgo}d atrás`} · ${serviceLabel[day.status]}`}
+                      key={i}
+                      title={hourlyTooltip(bucket)}
+                      tabIndex={0}
                       className="h-[22px] flex-1 rounded-[1.5px]"
-                      style={{ background: `var(${overallCopy[day.status].colorVar})` }}
+                      style={{ background: `var(${hourlyColorVar[bucket.status]})` }}
+                      data-testid={`hourly-bar-${service.name}-${i}`}
                     />
                   ))}
                 </div>
                 <div className="flex justify-between text-[10px] text-neutral-500">
-                  <span>45 dias atrás</span>
-                  <span>hoje</span>
+                  <span>24h atrás</span>
+                  <span>agora</span>
                 </div>
               </div>
             </div>
