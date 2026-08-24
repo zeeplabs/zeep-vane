@@ -1,0 +1,5 @@
+bin/
+.env
+*.test
+web/node_modules/
+web/dist/
