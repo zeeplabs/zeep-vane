@@ -75,6 +75,20 @@ func createPublicStatusServiceFixture(t *testing.T, pool *db.Pool, status string
 	return service.ID, func() { _, _ = pool.Exec(context.Background(), "DELETE FROM services WHERE id = $1", service.ID) }
 }
 
+// insertStatusSnapshot records an extra StatusSnapshot for serviceID at a
+// caller-chosen fetchedAt, on top of whatever createPublicStatusServiceFixture
+// already inserted - used to control exactly which hourly bucket a snapshot
+// lands in (UPT-01..04).
+func insertStatusSnapshot(t *testing.T, pool *db.Pool, serviceID, status string, fetchedAt time.Time) {
+	t.Helper()
+	if _, err := pool.Exec(context.Background(),
+		"INSERT INTO status_snapshots (service_id, status, error_budget_remaining, fetched_at) VALUES ($1, $2, $3, $4)",
+		serviceID, status, 0.5, fetchedAt,
+	); err != nil {
+		t.Fatalf("setup snapshot insert returned unexpected error: %v", err)
+	}
+}
+
 // createPublicStatusPageFixture creates a domain and a status page linked
 // to serviceIDs, registering cleanup for both. It returns the status
 // page's ID, which tests attach to the request context via
@@ -168,6 +182,125 @@ func TestPublicStatusGet_NoAuthHeader_200WithServiceStatus(t *testing.T) {
 	}
 	if !found.LastUpdatedAt.Equal(fetchedAt) {
 		t.Errorf("LastUpdatedAt = %v, want %v (the recorded snapshot's fetched_at)", found.LastUpdatedAt, fetchedAt)
+	}
+	// UPT-01: the HourlyHistory field is a new addition, but every existing
+	// field above must remain unaffected by it.
+	if len(found.HourlyHistory) != historyWindowHours {
+		t.Errorf("len(HourlyHistory) = %d, want %d", len(found.HourlyHistory), historyWindowHours)
+	}
+}
+
+// TestPublicStatusGet_HourlyHistory_KnownHourStatusAppearsAsSingleBucket
+// covers UPT-01/02/03/04: a snapshot recorded a known number of hours ago
+// must appear as exactly one hourly bucket, colored by its status, at the
+// correct America/Sao_Paulo local hour.
+func TestPublicStatusGet_HourlyHistory_KnownHourStatusAppearsAsSingleBucket(t *testing.T) {
+	r, pool := newPublicStatusRouter(t)
+
+	// The fixture's own snapshot sits well outside the 24h window so it
+	// cannot contribute a bucket itself.
+	staleFetchedAt := time.Now().Add(-72 * time.Hour)
+	serviceID, cleanup := createPublicStatusServiceFixture(t, pool, "operational", staleFetchedAt)
+	t.Cleanup(cleanup)
+	statusPageID := createPublicStatusPageFixture(t, pool, serviceID)
+
+	knownFetchedAt := time.Now().Add(-3 * time.Hour)
+	insertStatusSnapshot(t, pool, serviceID, "outage", knownFetchedAt)
+
+	loc, err := time.LoadLocation("America/Sao_Paulo")
+	if err != nil {
+		t.Fatalf("LoadLocation() returned unexpected error: %v", err)
+	}
+	localKnown := knownFetchedAt.In(loc)
+	wantStart := time.Date(localKnown.Year(), localKnown.Month(), localKnown.Day(), localKnown.Hour(), 0, 0, 0, loc)
+
+	req := withStatusPageContext(httptest.NewRequest(http.MethodGet, "/", nil), statusPageID)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	var body publicStatusResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+
+	allServices, err := db.NewServiceRepository(pool).List(context.Background())
+	if err != nil {
+		t.Fatalf("List() returned unexpected error: %v", err)
+	}
+	found := findPublicService(body.Services, serviceID, allServices)
+	if found == nil {
+		t.Fatalf("service %s not present in public response", serviceID)
+	}
+	if len(found.HourlyHistory) != historyWindowHours {
+		t.Fatalf("len(HourlyHistory) = %d, want %d", len(found.HourlyHistory), historyWindowHours)
+	}
+
+	var outageBuckets int
+	for _, bucket := range found.HourlyHistory {
+		if bucket.Status != "outage" {
+			continue
+		}
+		outageBuckets++
+		if !bucket.Start.Equal(wantStart) {
+			t.Errorf("outage bucket Start = %v, want %v", bucket.Start, wantStart)
+		}
+	}
+	if outageBuckets != 1 {
+		t.Fatalf("outage buckets = %d, want exactly 1", outageBuckets)
+	}
+}
+
+// TestPublicStatusGet_ServiceWithNoSnapshotsEver_AllHourlyBucketsNoData
+// covers UPT-06: a service the poller has never reached (zero
+// status_snapshots rows ever, not just outside the window) must still
+// render all 24 bars as no_data, never an omitted or fabricated history.
+func TestPublicStatusGet_ServiceWithNoSnapshotsEver_AllHourlyBucketsNoData(t *testing.T) {
+	r, pool := newPublicStatusRouter(t)
+	ctx := context.Background()
+
+	services := db.NewServiceRepository(pool)
+	service := &db.Service{Name: uniqueServiceName(t), SLOID: "slo-no-snapshot-test"}
+	if err := services.Create(ctx, service); err != nil {
+		t.Fatalf("setup Create() returned unexpected error: %v", err)
+	}
+	if err := services.UpdateStatus(ctx, service.ID, "operational"); err != nil {
+		t.Fatalf("setup UpdateStatus() returned unexpected error: %v", err)
+	}
+	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), "DELETE FROM services WHERE id = $1", service.ID) })
+	statusPageID := createPublicStatusPageFixture(t, pool, service.ID)
+
+	req := withStatusPageContext(httptest.NewRequest(http.MethodGet, "/", nil), statusPageID)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	var body publicStatusResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+
+	allServices, err := services.List(ctx)
+	if err != nil {
+		t.Fatalf("List() returned unexpected error: %v", err)
+	}
+	found := findPublicService(body.Services, service.ID, allServices)
+	if found == nil {
+		t.Fatalf("service %s not present in public response", service.ID)
+	}
+	if len(found.HourlyHistory) != historyWindowHours {
+		t.Fatalf("len(HourlyHistory) = %d, want %d", len(found.HourlyHistory), historyWindowHours)
+	}
+	for i, bucket := range found.HourlyHistory {
+		if bucket.Status != "no_data" {
+			t.Errorf("HourlyHistory[%d].Status = %q, want %q", i, bucket.Status, "no_data")
+		}
 	}
 }
 

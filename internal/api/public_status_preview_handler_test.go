@@ -95,6 +95,58 @@ func TestPublicStatusPreview_AuthenticatedByID_200SameShapeAsProduction(t *testi
 	if found.Status != "operational" {
 		t.Errorf("Status = %q, want %q", found.Status, "operational")
 	}
+	// UPT-08: the preview endpoint must return the identical hourly-history
+	// shape as production - same field, same bucket count.
+	if len(found.HourlyHistory) != historyWindowHours {
+		t.Errorf("len(HourlyHistory) = %d, want %d", len(found.HourlyHistory), historyWindowHours)
+	}
+}
+
+// TestPublicStatusPreview_ZeroSnapshotService_AllHourlyBucketsNoData covers
+// UPT-06/08: a never-polled service previews the same all-no_data history
+// an admin's visitors would see on the real public page.
+func TestPublicStatusPreview_ZeroSnapshotService_AllHourlyBucketsNoData(t *testing.T) {
+	r, pool, admins := newPublicStatusPreviewRouter(t)
+	token := issueTestSessionToken(t, admins)
+	ctx := context.Background()
+
+	services := db.NewServiceRepository(pool)
+	service := &db.Service{Name: uniqueServiceName(t), SLOID: "slo-preview-no-snapshot-test"}
+	if err := services.Create(ctx, service); err != nil {
+		t.Fatalf("setup Create() returned unexpected error: %v", err)
+	}
+	if err := services.UpdateStatus(ctx, service.ID, "operational"); err != nil {
+		t.Fatalf("setup UpdateStatus() returned unexpected error: %v", err)
+	}
+	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), "DELETE FROM services WHERE id = $1", service.ID) })
+	statusPageID := createPublicStatusPageFixture(t, pool, service.ID)
+
+	rec := getPublicStatusPreview(t, r, token, statusPageID)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	var body publicStatusResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+
+	allServices, err := services.List(ctx)
+	if err != nil {
+		t.Fatalf("List() returned unexpected error: %v", err)
+	}
+	found := findPublicService(body.Services, service.ID, allServices)
+	if found == nil {
+		t.Fatalf("service %s not present in preview response", service.ID)
+	}
+	if len(found.HourlyHistory) != historyWindowHours {
+		t.Fatalf("len(HourlyHistory) = %d, want %d", len(found.HourlyHistory), historyWindowHours)
+	}
+	for i, bucket := range found.HourlyHistory {
+		if bucket.Status != "no_data" {
+			t.Errorf("HourlyHistory[%d].Status = %q, want %q", i, bucket.Status, "no_data")
+		}
+	}
 }
 
 // TestPublicStatusPreview_CompanySettingsSet_IncludesNameAndLogo covers
