@@ -71,6 +71,16 @@
 
 ## Handoff
 
+**Feature**: `poller-live-integration-detect` — **status: PASS ✅** (Verifier PASS on first pass, 1 fix→re-verify round for 2 self-found coverage gaps, author-applied and self-verified against the same mutants). Relatório: `.specs/features/poller-live-integration-detect/validation.md`. 6/6 ACs (PLD-01 a PLD-06).
+
+**Completo**: bug achado em teste manual do usuário (2026-08-24) — 2 serviços com SLO vinculado e Datadog "Conectado" ficaram permanentemente "Não configurado" porque o poller só lê a integração Datadog uma vez, no boot do `serve` (`newPollerFromStoredIntegration`). Conectar Datadog pela UI depois do processo já de pé persiste a linha, mas o poller em execução nunca via isso — exigia restart manual. Rotação de chave tinha a mesma causa raiz (client do Datadog fixado na construção). Resolvido com `PollerManager` novo (`internal/cli/poller_manager.go`) — mutex-guarded, `Restart(ctx) (started bool, err error)`/`Stop()` — chamado por `IntegrationsHandler.ConnectDatadog` após todo `UpsertDatadog` bem-sucedido (mesmo endpoint cobre connect e rotate) além do boot. 2 commits atômicos (`7f4993c` fix, `c95ca7d` cobertura de gaps).
+
+**Gap real aceito e documentado** (não bloqueante): teste de "duas chamadas concorrentes de `Restart`/`Stop` são serializadas com espera real por `<-m.done`" não é determinístico de provar sem acesso a rede real do Datadog ou refatorar `Poller` para ser injetável (fora do escopo aprovado desta correção) — cancelamento de contexto faz `Run` retornar quase instantaneamente de qualquer forma, mascarando a diferença. Documentado em `validation.md` como risco residual explícito, não reclamado como corrigido.
+
+**Next steps**: nenhum solicitado ainda. Se o gap residual acima for priorizado no futuro, a via mais direta é tornar `newPollerFromStoredIntegration`/`Poller` injetável para permitir um "poller lento" controlável em teste.
+
+---
+
 **Feature**: `status-page-domain-attach` — **status: PASS ✅** (Verifier iteração 3/3, limite do skill, 2 rodadas de fix→re-verify). Relatório: `.specs/features/status-page-domain-attach/validation.md`. 14/14 ACs (SPD-01 a SPD-14), sensor 5/5 mortos.
 
 **Completo**: nasceu de teste manual do usuário (2026-08-23) que descobriu 2 bugs reais em cascata: (1) `POST /api/status-pages` exigia domínio na criação, então uma página nova só era visualizável depois de DNS real apontado + certificado TLS emitido — impossível revisar conteúdo/layout antes disso; (2) o preview autenticado (`public-preview`, I12) espelhava produção 1:1 de propósito (`state=="published"` obrigatório), causa raiz do mesmo bug. Resolvido com fluxo novo: criar página sem domínio (preview libera na hora, ver `AD-008`) → anexar domínio depois via endpoint novo (`PATCH /api/status-pages/{id}/domain`, transação com `SELECT ... FOR UPDATE` — não `UPDATE ... WHERE domain_id IS NULL`, que não distinguiria "não existe" de "já anexado") → índice único parcial (`WHERE domain_id IS NOT NULL`) evita colisão de `(domain_id, subdomain)` sem race. Endpoint novo `GET /api/instance/dns-target` expõe valor configurado pelo operador (`PUBLIC_DNS_TARGET`, sem auto-detecção de IP). 15 tasks (T1-T15) + 3 commits de fix, todos atômicos.
