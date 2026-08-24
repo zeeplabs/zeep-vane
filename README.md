@@ -14,6 +14,7 @@ This repository is single-tenant by design: **one Vane installation serves exact
 - [Public status page routing](#public-status-page-routing)
 - [Configuration (environment variables)](#configuration-environment-variables)
 - [Running in development](#running-in-development)
+- [Docker Compose](#docker-compose)
 - [Creating the first admin (owner)](#creating-the-first-admin-owner)
 - [Running tests](#running-tests)
 - [Database migrations](#database-migrations)
@@ -216,35 +217,21 @@ Vite serves the SPA on `:5173` and talks to the backend at `http://localhost:808
 
 See the `dev-*` targets in the [Makefile](./Makefile) — `make dev-db`, `make migrate`, `make dev-backend`, `make dev-frontend`, and `make dev` to run backend + frontend together.
 
-## Creating the first admin (owner)
+## Docker Compose
 
-There is currently **no CLI command or seed script to bootstrap the first admin** — `POST /api/admins` (invite) already requires an authenticated `owner`, which is a chicken-and-egg problem on a brand-new database. Until a proper bootstrap command exists (see [Known gaps](#known-gaps--backlog)), insert the first row directly:
+The fastest way to run a self-hosted instance is the shipped [`docker-compose.yml`](./docker-compose.yml): a single command builds the image (multi-stage `Dockerfile` — frontend build, Go build, then a minimal `scratch` runtime image with no Node.js or Go toolchain) and brings up Postgres alongside it, migrations applied automatically on boot.
 
 ```bash
-# Generate a bcrypt hash for your chosen password:
-cat <<'EOF' > /tmp/hash.go
-package main
-
-import (
-	"fmt"
-	"golang.org/x/crypto/bcrypt"
-)
-
-func main() {
-	hash, _ := bcrypt.GenerateFromPassword([]byte("change-me-now"), bcrypt.DefaultCost)
-	fmt.Println(string(hash))
-}
-EOF
-go run /tmp/hash.go
+docker compose up -d
 ```
 
-Then insert the row (new rows default to `role = 'owner'`, per migration `0009_admin_role_and_revocation`):
+Edit `VANE_MASTER_KEY` and `VANE_SESSION_SECRET` in `docker-compose.yml` before running this anywhere but your own machine — the checked-in values are placeholders, not secrets. Once both services report healthy, visit `http://localhost:8080` to complete first-time setup — see [Creating the first admin (owner)](#creating-the-first-admin-owner) below.
 
-```sql
-INSERT INTO admins (email, password_hash) VALUES ('you@company.com', '<hash from above>');
-```
+`make build` (frontend build, then the Go binary) is the one-command build path outside Docker too, if you'd rather run the resulting `bin/vane` directly against your own Postgres.
 
-Log in at `http://localhost:5173` with that email/password.
+## Creating the first admin (owner)
+
+A fresh, admin-less instance lands on an in-product **bootstrap screen** (`/bootstrap`) instead of the login screen — create the owner's email and password there directly in the browser, no SQL or throwaway script required. The screen is only reachable while the `admins` table is empty; once an owner exists, `/bootstrap` redirects to `/login` instead.
 
 ## Running tests
 
@@ -284,7 +271,6 @@ The frontend is built and embedded into the Go binary via `go:embed` (per `.spec
 
 Tracked in `.specs/STATE.md`. Not yet solved, not yet requested to be solved:
 
-- **No bootstrap/seed command for the first admin** (see above) — currently requires a manual SQL insert.
 - Admin invite **resend/cancel** — frontend hooks exist, backend endpoints don't.
 - No test coverage for a 404 on updating a non-existent incident.
 - No auto-discovery of Datadog services/SLOs/monitors (would have to be added as a connector feature).

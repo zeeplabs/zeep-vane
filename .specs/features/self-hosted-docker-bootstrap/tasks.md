@@ -425,10 +425,10 @@ T12 -> T13
 - Skill: NONE
 
 **Done when**:
-- [ ] The manual SQL `INSERT`/bcrypt-throwaway-script section is gone from `README.md`
-- [ ] A "Docker Compose" section exists describing `docker compose up` and the first-run bootstrap screen
-- [ ] `make build` (from T12) is referenced as the one-command build path, consistent with the rest of the README's existing style
-- [ ] Gate check passes: `cd web && npm install && npm run build && cd .. && go build ./... && go vet ./... && gofmt -l . && TEST_DATABASE_URL=<dsn> go test -tags=integration ./... && go test ./...`
+- [x] The manual SQL `INSERT`/bcrypt-throwaway-script section is gone from `README.md`
+- [x] A "Docker Compose" section exists describing `docker compose up` and the first-run bootstrap screen
+- [x] `make build` (from T12) is referenced as the one-command build path, consistent with the rest of the README's existing style
+- [x] Gate check passes: `cd web && npm install && npm run build && cd .. && go build ./... && go vet ./... && gofmt -l . && TEST_DATABASE_URL=<dsn> go test -tags=integration ./... && go test ./...` — ran for real against the sandbox's `TEST_DATABASE_URL`, all green (gofmt: no output, go vet: clean, integration + unit suites: all packages ok)
 
 **Tests**: none
 **Gate**: build
