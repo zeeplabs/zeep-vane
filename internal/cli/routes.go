@@ -13,6 +13,7 @@ import (
 	"github.com/zeeplabs/zeep-vane/internal/connectors/datadog"
 	"github.com/zeeplabs/zeep-vane/internal/db"
 	"github.com/zeeplabs/zeep-vane/internal/router"
+	"github.com/zeeplabs/zeep-vane/web"
 )
 
 // buildAdminRouter mounts the admin-facing API on top of router.New's base
@@ -33,6 +34,7 @@ func buildAdminRouter(pool *db.Pool, cfg config.Config, logger *zap.Logger, poll
 	auditLog := audit.NewLog(pool)
 
 	authHandler := api.NewAuthHandler(admins, logger, cfg.SessionSecret)
+	bootstrapHandler := api.NewBootstrapHandler(pool, admins, logger, cfg.SessionSecret)
 	passwordResetHandler := api.NewPasswordResetHandler(admins, db.NewPasswordResetRepository(pool), logger)
 	adminsHandler := api.NewAdminsHandler(pool, admins, invites, auditLog, logger)
 	domainsHandler := api.NewDomainsHandler(db.NewDomainRepository(pool), logger)
@@ -58,6 +60,12 @@ func buildAdminRouter(pool *db.Pool, cfg config.Config, logger *zap.Logger, poll
 	r.Post("/api/auth/password-reset/request", passwordResetHandler.Request)
 	r.Post("/api/auth/password-reset/confirm", passwordResetHandler.Confirm)
 	r.Post("/api/admins/invite/{token}/accept", adminsHandler.AcceptInvite)
+
+	// First-run bootstrap (SHD-14/SHD-15) - public and unauthenticated by
+	// necessity: no authenticated caller can exist before the very first
+	// admin does, same structural reason AcceptInvite above is public.
+	r.Get("/api/bootstrap/status", bootstrapHandler.Status)
+	r.Post("/api/bootstrap", bootstrapHandler.Create)
 
 	// Public branding (login screen + sidebar, both render without an
 	// owner-role check) - deliberately not behind ownerOnly like
@@ -117,6 +125,13 @@ func buildAdminRouter(pool *db.Pool, cfg config.Config, logger *zap.Logger, poll
 		protected.With(writeRoles).Get("/api/integrations/datadog/slos", integrationsHandler.SearchSLOs)
 		protected.With(anyRole).Get("/api/poller/status", pollerStatusHandler.List)
 	})
+
+	// Serves the embedded SPA (with client-route fallback) for any path
+	// that matched no registered route above. chi dispatches NotFound
+	// only when nothing more specific matched, so every /api/* route
+	// registered above still resolves to its own handler first - this
+	// never intercepts them (SHD-04, SHD-05).
+	r.NotFound(web.StaticHandler().ServeHTTP)
 
 	// Wraps the whole mux rather than r.Use(...): router.New already
 	// registers /healthz before returning, and chi panics if Use is called

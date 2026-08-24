@@ -238,12 +238,12 @@ T12 -> T13
 - Skill: NONE
 
 **Done when**:
-- [ ] `GET /api/bootstrap/status` and `POST /api/bootstrap` are reachable through the real production router built by `buildAdminRouter` (not a hand-rolled test router)
-- [ ] An existing, already-registered API route (e.g. `GET /healthz` or `POST /api/auth/login` with a bad body) still returns its normal JSON response through the same router, unaffected by the new `NotFound` handler
-- [ ] A request to an unmatched non-API path (e.g. `/some-spa-route`) returns the embedded `index.html` content through the real router
-- [ ] A request to an unmatched `/api/...` path returns a JSON `404`, not HTML, through the real router
-- [ ] Gate check passes: `TEST_DATABASE_URL=<dsn> go test -tags=integration ./internal/cli/...`
-- [ ] Test count: ≥4 tests added/updated (no silent deletions)
+- [x] `GET /api/bootstrap/status` and `POST /api/bootstrap` are reachable through the real production router built by `buildAdminRouter` (not a hand-rolled test router)
+- [x] An existing, already-registered API route (e.g. `GET /healthz` or `POST /api/auth/login` with a bad body) still returns its normal JSON response through the same router, unaffected by the new `NotFound` handler
+- [x] A request to an unmatched non-API path (e.g. `/some-spa-route`) returns the embedded `index.html` content through the real router
+- [x] A request to an unmatched `/api/...` path returns a JSON `404`, not HTML, through the real router
+- [x] Gate check passes: `TEST_DATABASE_URL=<dsn> go test -tags=integration ./internal/cli/...`
+- [x] Test count: ≥4 tests added/updated (no silent deletions) — 4 added
 
 **Tests**: integration
 **Gate**: full

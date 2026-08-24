@@ -10,6 +10,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -632,5 +633,209 @@ func TestAdminRouter_StatusPageDomainAttachAndDNSTarget_NoSession_401(t *testing
 				t.Errorf("status = %d, want %d, body = %s", rec.Code, http.StatusUnauthorized, rec.Body.String())
 			}
 		})
+	}
+}
+
+// bootstrapRoutesRawRow and clearAdminsForBootstrapRoutesTest snapshot and
+// restore the admins table (and its two FK-dependent tables) the same way
+// internal/db's and internal/api's own bootstrap tests do: proving the
+// bootstrap routes actually create the first admin through the real
+// production router needs a table with a known admin count, and the
+// shared TEST_DATABASE_URL database otherwise carries whatever other
+// suites' tests left behind.
+type bootstrapRoutesRawRow struct{ values []any }
+
+func snapshotTableForBootstrapRoutesTest(t *testing.T, pool *db.Pool, ctx context.Context, query string) []bootstrapRoutesRawRow {
+	t.Helper()
+	rows, err := pool.Query(ctx, query)
+	if err != nil {
+		t.Fatalf("failed to snapshot table (%s): %v", query, err)
+	}
+	defer rows.Close()
+
+	var saved []bootstrapRoutesRawRow
+	for rows.Next() {
+		values, err := rows.Values()
+		if err != nil {
+			t.Fatalf("failed to scan snapshotted row (%s): %v", query, err)
+		}
+		saved = append(saved, bootstrapRoutesRawRow{values: values})
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatalf("failed while iterating snapshotted rows (%s): %v", query, err)
+	}
+	return saved
+}
+
+func clearAdminsForBootstrapRoutesTest(t *testing.T, pool *db.Pool) func() {
+	t.Helper()
+	ctx := context.Background()
+
+	invites := snapshotTableForBootstrapRoutesTest(t, pool, ctx,
+		"SELECT id, email, role, token_hash, invited_by_id, expires_at, used_at, created_at FROM admin_invites")
+	tokens := snapshotTableForBootstrapRoutesTest(t, pool, ctx,
+		"SELECT id, admin_id, token_hash, expires_at, used_at FROM password_reset_tokens")
+	admins := snapshotTableForBootstrapRoutesTest(t, pool, ctx,
+		"SELECT id, email, password_hash, role, sessions_revoked_at, created_at FROM admins")
+
+	clearAll := func() {
+		if _, err := pool.Exec(ctx, "DELETE FROM admin_invites"); err != nil {
+			t.Fatalf("failed to clear admin_invites: %v", err)
+		}
+		if _, err := pool.Exec(ctx, "DELETE FROM password_reset_tokens"); err != nil {
+			t.Fatalf("failed to clear password_reset_tokens: %v", err)
+		}
+		if _, err := pool.Exec(ctx, "DELETE FROM admins"); err != nil {
+			t.Fatalf("failed to clear admins table for bootstrap routes test: %v", err)
+		}
+	}
+	clearAll()
+
+	return func() {
+		clearAll()
+		for _, a := range admins {
+			if _, err := pool.Exec(ctx,
+				"INSERT INTO admins (id, email, password_hash, role, sessions_revoked_at, created_at) VALUES ($1, $2, $3, $4, $5, $6)",
+				a.values...,
+			); err != nil {
+				t.Fatalf("failed to restore snapshotted admin: %v", err)
+			}
+		}
+		for _, inv := range invites {
+			if _, err := pool.Exec(ctx,
+				"INSERT INTO admin_invites (id, email, role, token_hash, invited_by_id, expires_at, used_at, created_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
+				inv.values...,
+			); err != nil {
+				t.Fatalf("failed to restore snapshotted admin_invite: %v", err)
+			}
+		}
+		for _, tok := range tokens {
+			if _, err := pool.Exec(ctx,
+				"INSERT INTO password_reset_tokens (id, admin_id, token_hash, expires_at, used_at) VALUES ($1, $2, $3, $4, $5)",
+				tok.values...,
+			); err != nil {
+				t.Fatalf("failed to restore snapshotted password_reset_token: %v", err)
+			}
+		}
+	}
+}
+
+// TestAdminRouter_BootstrapRoutes_ReachableThroughRealRouter asserts
+// SHD-14/SHD-15: GET /api/bootstrap/status and POST /api/bootstrap are
+// mounted on the exact router buildAdminRouter returns for production,
+// not a hand-rolled test router - and a full status-then-create round
+// trip against an admin-less table behaves as designed (SHD-16).
+func TestAdminRouter_BootstrapRoutes_ReachableThroughRealRouter(t *testing.T) {
+	r, pool, _ := newAdminRouterForTest(t)
+	restore := clearAdminsForBootstrapRoutesTest(t, pool)
+	t.Cleanup(restore)
+
+	statusReq := httptest.NewRequest(http.MethodGet, "/api/bootstrap/status", nil)
+	statusRec := httptest.NewRecorder()
+	r.ServeHTTP(statusRec, statusReq)
+	if statusRec.Code != http.StatusOK {
+		t.Fatalf("GET /api/bootstrap/status status = %d, want 200", statusRec.Code)
+	}
+	var statusBody map[string]bool
+	if err := json.Unmarshal(statusRec.Body.Bytes(), &statusBody); err != nil {
+		t.Fatalf("status response is not valid JSON: %v", err)
+	}
+	if statusBody["bootstrapped"] {
+		t.Error(`GET /api/bootstrap/status "bootstrapped" = true on an admin-less table, want false`)
+	}
+
+	createBody, err := json.Marshal(map[string]string{
+		"email":    fmt.Sprintf("cli-routes-bootstrap-test-%d@example.com", time.Now().UnixNano()),
+		"password": "correct-horse-battery-staple",
+	})
+	if err != nil {
+		t.Fatalf("json.Marshal() returned unexpected error: %v", err)
+	}
+	createReq := httptest.NewRequest(http.MethodPost, "/api/bootstrap", bytes.NewReader(createBody))
+	createReq.Header.Set("Content-Type", "application/json")
+	createRec := httptest.NewRecorder()
+	r.ServeHTTP(createRec, createReq)
+	if createRec.Code != http.StatusOK {
+		t.Fatalf("POST /api/bootstrap status = %d, want 200, body = %s", createRec.Code, createRec.Body.String())
+	}
+
+	statusAfterRec := httptest.NewRecorder()
+	r.ServeHTTP(statusAfterRec, httptest.NewRequest(http.MethodGet, "/api/bootstrap/status", nil))
+	var statusAfterBody map[string]bool
+	if err := json.Unmarshal(statusAfterRec.Body.Bytes(), &statusAfterBody); err != nil {
+		t.Fatalf("status response is not valid JSON: %v", err)
+	}
+	if !statusAfterBody["bootstrapped"] {
+		t.Error(`GET /api/bootstrap/status "bootstrapped" = false after a successful bootstrap, want true`)
+	}
+}
+
+// TestAdminRouter_ExistingAPIRoute_StillReturnsJSON_AfterNotFoundWired is
+// the design.md-flagged risk test: r.NotFound(web.StaticHandler()) must
+// never shadow an already-registered /api/* route. GET /healthz is
+// registered by router.New before buildAdminRouter adds anything else,
+// so if NotFound registration order ever broke chi's dispatch, this is
+// exactly the route that would silently start returning the SPA's
+// index.html instead of its own JSON.
+func TestAdminRouter_ExistingAPIRoute_StillReturnsJSON_AfterNotFoundWired(t *testing.T) {
+	r, _, _ := newAdminRouterForTest(t)
+
+	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+
+	if ct := rec.Header().Get("Content-Type"); ct != "application/json" && ct != "application/json; charset=utf-8" {
+		t.Fatalf("GET /healthz Content-Type = %q, want application/json (means NotFound intercepted a real route)", ct)
+	}
+	var body map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("GET /healthz body is not valid JSON (means it fell back to the SPA's index.html): %v (body=%q)", err, rec.Body.String())
+	}
+}
+
+// TestAdminRouter_UnmatchedNonAPIPath_ReturnsEmbeddedIndexHTML asserts the
+// SPA fallback: a path that matches no registered route and does not
+// start with /api/ gets the embedded index.html through the real
+// production router.
+func TestAdminRouter_UnmatchedNonAPIPath_ReturnsEmbeddedIndexHTML(t *testing.T) {
+	r, _, _ := newAdminRouterForTest(t)
+
+	req := httptest.NewRequest(http.MethodGet, "/some-spa-route", nil)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	if ct := rec.Header().Get("Content-Type"); !strings.Contains(ct, "html") {
+		t.Errorf("Content-Type = %q, want it to mention html", ct)
+	}
+	if !bytes.Contains(rec.Body.Bytes(), []byte("<html")) {
+		t.Errorf("body does not look like index.html: %q", rec.Body.String())
+	}
+}
+
+// TestAdminRouter_UnmatchedAPIPath_ReturnsJSON404NotHTML asserts an
+// unmatched /api/... path still reads as an API error, not the SPA
+// fallback, through the real production router.
+func TestAdminRouter_UnmatchedAPIPath_ReturnsJSON404NotHTML(t *testing.T) {
+	r, _, _ := newAdminRouterForTest(t)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/does-not-exist", nil)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want 404", rec.Code)
+	}
+	if ct := rec.Header().Get("Content-Type"); !strings.Contains(ct, "json") {
+		t.Fatalf("Content-Type = %q, want application/json", ct)
+	}
+	var body map[string]string
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("body is not valid JSON (means it fell back to index.html): %v (body=%q)", err, rec.Body.String())
+	}
+	if body["error"] == "" {
+		t.Error(`response body missing a non-empty "error" field`)
 	}
 }
