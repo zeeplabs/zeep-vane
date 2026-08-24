@@ -29,11 +29,21 @@ type validateDatadogCredentials func(ctx context.Context, apiKey, appKey string)
 // stored integration's decrypted key pair (I14).
 type searchDatadogSLOs func(ctx context.Context, apiKey, appKey, query string) ([]datadog.SLOSummary, error)
 
+// pollerRestarter is the subset of *cli.PollerManager ConnectDatadog
+// depends on to make a newly connected or rotated integration take effect
+// without a process restart (PLD-01, PLD-05). Defined here rather than
+// imported from internal/cli to avoid a cycle - internal/cli already
+// imports internal/api to assemble the admin router.
+type pollerRestarter interface {
+	Restart(ctx context.Context) (started bool, err error)
+}
+
 // IntegrationsHandler serves the integrations admin routes.
 type IntegrationsHandler struct {
 	integrations datadogIntegrationUpserter
 	validate     validateDatadogCredentials
 	search       searchDatadogSLOs
+	poller       pollerRestarter
 	masterKey    string
 	logger       *zap.Logger
 }
@@ -42,8 +52,11 @@ type IntegrationsHandler struct {
 // with the submitted keys to confirm they are usable before anything is
 // encrypted or persisted; masterKey encrypts the keys at rest (T16). search
 // is called with the stored, decrypted key pair to serve SLO lookups (I14).
-func NewIntegrationsHandler(integrations datadogIntegrationUpserter, validate validateDatadogCredentials, search searchDatadogSLOs, masterKey string, logger *zap.Logger) *IntegrationsHandler {
-	return &IntegrationsHandler{integrations: integrations, validate: validate, search: search, masterKey: masterKey, logger: logger}
+// poller is (re)started after every successful connect/rotate so the
+// change takes effect immediately, without restarting the process
+// (PLD-01, PLD-05).
+func NewIntegrationsHandler(integrations datadogIntegrationUpserter, validate validateDatadogCredentials, search searchDatadogSLOs, poller pollerRestarter, masterKey string, logger *zap.Logger) *IntegrationsHandler {
+	return &IntegrationsHandler{integrations: integrations, validate: validate, search: search, poller: poller, masterKey: masterKey, logger: logger}
 }
 
 type connectDatadogRequest struct {
@@ -91,6 +104,15 @@ func (h *IntegrationsHandler) ConnectDatadog(w http.ResponseWriter, r *http.Requ
 		h.logger.Error("integrations: failed to persist datadog integration", zap.Error(err))
 		writeInternalError(w)
 		return
+	}
+
+	// The persisted row is authoritative for this response (PLD-06) - a
+	// poller (re)start failure here is logged but never turns an already
+	// successful connect/rotate into an error; poller health is a
+	// separate, already-existing concern surfaced via GET
+	// /api/integrations/datadog/status once a poll cycle actually runs.
+	if _, err := h.poller.Restart(r.Context()); err != nil {
+		h.logger.Error("integrations: failed to restart poller after connecting datadog", zap.Error(err))
 	}
 
 	w.Header().Set("Content-Type", "application/json")

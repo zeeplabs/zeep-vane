@@ -68,23 +68,20 @@ func NewServeCmd() *cobra.Command {
 			}
 			defer pool.Close()
 
-			pollerDone := make(chan struct{})
-			slaPoller, started, err := newPollerFromStoredIntegration(pool, cfg, logger)
-			if err != nil {
+			// pollerManager owns the poller's lifecycle for the rest of this
+			// process's life - not just at boot. Restart is also called by
+			// IntegrationsHandler.ConnectDatadog after every successful
+			// connect/rotate, which is what lets an admin start seeing real
+			// data without restarting serve (PLD-01/PLD-05).
+			pollerManager := NewPollerManager(ctx, pool, cfg, logger)
+			if started, err := pollerManager.Restart(ctx); err != nil {
 				return err
-			}
-			if started {
-				go func() {
-					defer close(pollerDone)
-					slaPoller.Run(ctx)
-				}()
-			} else {
+			} else if !started {
 				logger.Warn("serve: no datadog integration connected yet, poller not started")
-				close(pollerDone)
 			}
 
 			addr := fmt.Sprintf(":%d", cfg.Port)
-			srv := &http.Server{Addr: addr, Handler: buildAdminRouter(pool, cfg, logger)}
+			srv := &http.Server{Addr: addr, Handler: buildAdminRouter(pool, cfg, logger, pollerManager)}
 
 			httpsSrv := newHTTPSServer(pool, cfg.UploadsDir, logger)
 
@@ -112,7 +109,7 @@ func NewServeCmd() *cobra.Command {
 				// below.
 			case err := <-serverErrs:
 				stop() // cancel ctx so the poller's Run loop exits too
-				<-pollerDone
+				pollerManager.Stop()
 				return err
 			}
 
@@ -125,7 +122,7 @@ func NewServeCmd() *cobra.Command {
 				logger.Error("serve: https shutdown error", zap.Error(err))
 			}
 
-			<-pollerDone
+			pollerManager.Stop()
 			return nil
 		},
 	}
@@ -193,11 +190,12 @@ func newHTTPSServer(pool *db.Pool, uploadsDir string, logger *zap.Logger) *http.
 // newPollerFromStoredIntegration builds a Poller from whatever Datadog
 // integration is currently connected. started is false (with a nil error)
 // if no integration has been connected yet - the poller then simply isn't
-// started; the admin can connect Datadog and restart serve.
-func newPollerFromStoredIntegration(pool *db.Pool, cfg config.Config, logger *zap.Logger) (p *poller.Poller, started bool, err error) {
+// started; PollerManager.Restart is what lets an admin connecting Datadog
+// after boot start it without a process restart (PLD-01).
+func newPollerFromStoredIntegration(ctx context.Context, pool *db.Pool, cfg config.Config, logger *zap.Logger) (p *poller.Poller, started bool, err error) {
 	integrations := db.NewIntegrationRepository(pool)
 
-	integration, err := integrations.GetDatadog(context.Background())
+	integration, err := integrations.GetDatadog(ctx)
 	if errors.Is(err, db.ErrNotFound) {
 		return nil, false, nil
 	}

@@ -26,7 +26,8 @@ func newAdminRouterForTest(t *testing.T) (http.Handler, *db.Pool, *db.AdminRepos
 	t.Helper()
 	pool := newServeTestPool(t)
 	cfg := config.Config{SessionSecret: routesTestSessionSecret, MasterKey: "cli-routes-test-master-key", UploadsDir: t.TempDir()}
-	handler := buildAdminRouter(pool, cfg, zap.NewNop())
+	pollerManager := NewPollerManager(context.Background(), pool, cfg, zap.NewNop())
+	handler := buildAdminRouter(pool, cfg, zap.NewNop(), pollerManager)
 
 	// The company_settings row is a singleton shared across every test in
 	// this package - reset it to a known state before and after each test.

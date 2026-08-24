@@ -68,7 +68,7 @@ func newIntegrationsRouterWithSearch(t *testing.T, validate validateDatadogCrede
 	admins := db.NewAdminRepository(authPool)
 
 	repo := db.NewIntegrationRepository(pool)
-	handler := NewIntegrationsHandler(repo, validate, search, testMasterKey, logger)
+	handler := NewIntegrationsHandler(repo, validate, search, &spyPollerRestarter{}, testMasterKey, logger)
 
 	r := chi.NewRouter()
 	r.With(RequireAuth(middlewareTestSecret, admins)).Post("/api/integrations/datadog", handler.ConnectDatadog)
@@ -76,6 +76,62 @@ func newIntegrationsRouterWithSearch(t *testing.T, validate validateDatadogCrede
 	r.With(RequireAuth(middlewareTestSecret, admins)).Get("/api/integrations/datadog/slos", handler.SearchSLOs)
 
 	return r, pool, admins
+}
+
+// newIntegrationsRouterWithPoller mirrors newIntegrationsRouterWithSearch
+// but takes the caller's own pollerRestarter, letting tests observe or
+// fail the poller (re)start triggered by a successful connect (PLD-01,
+// PLD-06).
+func newIntegrationsRouterWithPoller(t *testing.T, validate validateDatadogCredentials, poller pollerRestarter, logger *zap.Logger) (http.Handler, *db.Pool, *db.AdminRepository) {
+	t.Helper()
+	dsn := testDatabaseURL(t)
+
+	if err := db.MigrateUp(dsn, "../db/migrations"); err != nil {
+		t.Fatalf("MigrateUp() returned unexpected error: %v", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	pool, err := db.NewPool(ctx, dsn)
+	if err != nil {
+		t.Fatalf("NewPool() returned unexpected error: %v", err)
+	}
+	t.Cleanup(pool.Close)
+	dbtest.LockDatadogIntegration(t, ctx, dsn)
+	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), "DELETE FROM integrations WHERE provider = 'datadog'") })
+
+	authPool, err := db.NewPool(ctx, dsn)
+	if err != nil {
+		t.Fatalf("NewPool() for auth returned unexpected error: %v", err)
+	}
+	t.Cleanup(authPool.Close)
+	admins := db.NewAdminRepository(authPool)
+
+	repo := db.NewIntegrationRepository(pool)
+	handler := NewIntegrationsHandler(repo, validate, alwaysEmptySearch, poller, testMasterKey, logger)
+
+	r := chi.NewRouter()
+	r.With(RequireAuth(middlewareTestSecret, admins)).Post("/api/integrations/datadog", handler.ConnectDatadog)
+
+	return r, pool, admins
+}
+
+// spyPollerRestarter is the default pollerRestarter used by tests that
+// don't care about the poller (re)start side effect - it always succeeds
+// and does nothing else, matching the pre-fix behavior for tests unrelated
+// to PLD-01/PLD-06.
+type spyPollerRestarter struct {
+	calls int
+	err   error
+}
+
+func (s *spyPollerRestarter) Restart(ctx context.Context) (bool, error) {
+	s.calls++
+	if s.err != nil {
+		return false, s.err
+	}
+	return true, nil
 }
 
 func getDatadogStatus(t *testing.T, r http.Handler, token string) *httptest.ResponseRecorder {
@@ -359,4 +415,58 @@ func issueTestSessionToken(t *testing.T, admins *db.AdminRepository) string {
 		t.Fatalf("auth.IssueSession() returned unexpected error: %v", err)
 	}
 	return token
+}
+
+// TestConnectDatadog_ValidCredentials_RestartsPoller covers PLD-01: a
+// successful connect must (re)start the poller in-process, not merely
+// persist the row - the whole point of this fix is that an admin
+// connecting Datadog doesn't have to also restart the server.
+func TestConnectDatadog_ValidCredentials_RestartsPoller(t *testing.T) {
+	alwaysValid := func(ctx context.Context, apiKey, appKey string) error { return nil }
+	poller := &spyPollerRestarter{}
+	r, _, admins := newIntegrationsRouterWithPoller(t, alwaysValid, poller, zap.NewNop())
+	token := issueTestSessionToken(t, admins)
+
+	rec := postConnectDatadog(t, r, token, "real-api-key", "real-app-key")
+
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusCreated, rec.Body.String())
+	}
+	if poller.calls != 1 {
+		t.Errorf("poller.Restart() calls = %d, want 1 - a successful connect must (re)start the poller in-process", poller.calls)
+	}
+}
+
+// TestConnectDatadog_PollerRestartFails_StillReturns201 covers PLD-06: the
+// persisted row is authoritative for this response - a poller (re)start
+// failure (e.g. a decrypt error) must not turn an already-successful
+// connect into an error response.
+func TestConnectDatadog_PollerRestartFails_StillReturns201(t *testing.T) {
+	core, logs := observer.New(zap.ErrorLevel)
+	logger := zap.New(core)
+
+	alwaysValid := func(ctx context.Context, apiKey, appKey string) error { return nil }
+	poller := &spyPollerRestarter{err: fmt.Errorf("poller: simulated restart failure")}
+	r, pool, admins := newIntegrationsRouterWithPoller(t, alwaysValid, poller, logger)
+	token := issueTestSessionToken(t, admins)
+
+	rec := postConnectDatadog(t, r, token, "real-api-key", "real-app-key")
+
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusCreated, rec.Body.String())
+	}
+
+	if _, _, found := fetchIntegrationRow(t, pool); !found {
+		t.Error("no integrations row found, want the connect itself to have still persisted despite the poller restart failure")
+	}
+
+	found := false
+	for _, entry := range logs.All() {
+		if strings.Contains(entry.Message, "restart poller") {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("no log entry recorded for the poller restart failure, want it logged even though the response still succeeds")
+	}
 }

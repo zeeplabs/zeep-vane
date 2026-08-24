@@ -25,7 +25,7 @@ import (
 // internal/api already imports internal/router (for HostRouter's status
 // page context helper), and internal/router importing internal/api back
 // would cycle.
-func buildAdminRouter(pool *db.Pool, cfg config.Config, logger *zap.Logger) http.Handler {
+func buildAdminRouter(pool *db.Pool, cfg config.Config, logger *zap.Logger, pollerManager *PollerManager) http.Handler {
 	r := router.New(pool)
 
 	admins := db.NewAdminRepository(pool)
@@ -37,7 +37,7 @@ func buildAdminRouter(pool *db.Pool, cfg config.Config, logger *zap.Logger) http
 	adminsHandler := api.NewAdminsHandler(pool, admins, invites, auditLog, logger)
 	domainsHandler := api.NewDomainsHandler(db.NewDomainRepository(pool), logger)
 	servicesHandler := api.NewServicesHandler(db.NewServiceRepository(pool), logger)
-	integrationsHandler := api.NewIntegrationsHandler(db.NewIntegrationRepository(pool), validateDatadogCredentials, searchDatadogSLOs, cfg.MasterKey, logger)
+	integrationsHandler := api.NewIntegrationsHandler(db.NewIntegrationRepository(pool), validateDatadogCredentials, searchDatadogSLOs, pollerManager, cfg.MasterKey, logger)
 	incidentsHandler := api.NewIncidentsHandler(db.NewIncidentRepository(pool), logger)
 	statusPagesHandler := api.NewStatusPagesHandler(db.NewStatusPageRepository(pool), logger)
 	pollerStatusHandler := api.NewPollerStatusHandler(db.NewIntegrationRepository(pool), logger)
