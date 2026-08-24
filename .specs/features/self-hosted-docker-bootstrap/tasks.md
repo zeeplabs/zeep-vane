@@ -156,11 +156,11 @@ T12 -> T13
 - Skill: NONE
 
 **Done when**:
-- [ ] Calling it against an admin-less table creates the admin and returns `(true, nil)`
-- [ ] Calling it again afterward (or against a table that already had an admin) returns `(false, nil)`, no second row created
-- [ ] A real concurrency test with two goroutines racing actual separate connections/transactions against the same admin-less table results in exactly one `(true, nil)` and one `(false, nil)` - not a serial simulation of the race (per the `status-page-domain-attach` lesson: prove real lock contention with a holder transaction, not just sequential calls that happen to pass)
-- [ ] Gate check passes: `TEST_DATABASE_URL=<dsn> go test -tags=integration ./internal/db/...`
-- [ ] Test count: ≥3 tests (no silent deletions)
+- [x] Calling it against an admin-less table creates the admin and returns `(true, nil)`
+- [x] Calling it again afterward (or against a table that already had an admin) returns `(false, nil)`, no second row created
+- [x] A real concurrency test with two goroutines racing actual separate connections/transactions against the same admin-less table results in exactly one `(true, nil)` and one `(false, nil)` - not a serial simulation of the race (per the `status-page-domain-attach` lesson: prove real lock contention with a holder transaction, not just sequential calls that happen to pass)
+- [x] Gate check passes: `TEST_DATABASE_URL=<dsn> go test -tags=integration ./internal/db/...`
+- [x] Test count: ≥3 tests (no silent deletions) — 3 added
 
 **Tests**: integration
 **Gate**: full

@@ -189,3 +189,48 @@ func (r *AdminRepository) CountActiveOwners(ctx context.Context, tx pgx.Tx) (int
 
 	return count, nil
 }
+
+// BootstrapFirst creates admin as the very first admin in the table, or
+// refuses (created=false, err=nil - not an error) if any admin already
+// exists. It opens its own transaction and takes LOCK TABLE admins IN
+// EXCLUSIVE MODE before counting, not SELECT ... FOR UPDATE: an empty
+// table has no existing row to lock, so a row-level lock cannot prevent
+// two concurrent callers from both observing zero and both inserting.
+// The table-level lock serializes every concurrent BootstrapFirst call
+// against this exact table, mirroring zeep-orbit's
+// BootstrapFirstSuperadmin (internal/dashboard/store.go).
+func (r *AdminRepository) BootstrapFirst(ctx context.Context, admin *Admin) (created bool, err error) {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return false, fmt.Errorf("db: failed to begin bootstrap transaction: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	if _, err := tx.Exec(ctx, "LOCK TABLE admins IN EXCLUSIVE MODE"); err != nil {
+		return false, fmt.Errorf("db: failed to lock admins table for bootstrap: %w", err)
+	}
+
+	var count int
+	if err := tx.QueryRow(ctx, "SELECT COUNT(*) FROM admins").Scan(&count); err != nil {
+		return false, fmt.Errorf("db: failed to count admins for bootstrap: %w", err)
+	}
+	if count > 0 {
+		// Rolled back by the deferred Rollback above - no state change,
+		// same "no-op" contract as an admin already existing.
+		return false, nil
+	}
+
+	row := tx.QueryRow(ctx,
+		"INSERT INTO admins (email, password_hash) VALUES ($1, $2) RETURNING id, created_at",
+		admin.Email, admin.PasswordHash,
+	)
+	if err := row.Scan(&admin.ID, &admin.CreatedAt); err != nil {
+		return false, fmt.Errorf("db: failed to insert first admin for bootstrap: %w", err)
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return false, fmt.Errorf("db: failed to commit bootstrap transaction: %w", err)
+	}
+
+	return true, nil
+}
