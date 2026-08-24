@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Card } from "../../components/ui/Card";
 import { Field } from "../../components/ui/Field";
 import { Button } from "../../components/ui/Button";
-import { ApiError } from "../../lib/apiClient";
+import { ApiError, resolveAssetUrl } from "../../lib/apiClient";
 import { useCompanySettings, useUpdateCompanySettings, useUploadCompanyLogo } from "./hooks";
 
 function UploadIcon() {
@@ -84,7 +84,7 @@ export function SettingsPage() {
           <span className="text-sm font-medium text-text">Logo da empresa</span>
           <div className="flex h-[260px] w-full items-center justify-center rounded-md border border-divider bg-bg text-neutral-500">
             {logoUrl ? (
-              <img src={logoUrl} alt="Logo da empresa" className="max-h-full max-w-full object-contain" />
+              <img src={resolveAssetUrl(logoUrl)!} alt="Logo da empresa" className="max-h-full max-w-full object-contain" />
             ) : (
               <ImagePlaceholderIcon />
             )}

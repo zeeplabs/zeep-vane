@@ -27,6 +27,18 @@ export function triggerUnauthorized(): void {
 // backend Go rodando à parte (ver web/.env.development).
 const baseUrl = import.meta.env.VITE_API_BASE_URL ?? "";
 
+// resolveAssetUrl prefixa uma URL relativa vinda do backend (ex.:
+// logo_url = "/uploads/logo.png") com o mesmo baseUrl usado por apiFetch -
+// necessário para <img src> etc., que o browser resolve contra a própria
+// origem da página, não contra o backend. Em produção baseUrl é vazio (SPA
+// e API na mesma origem) então isto é um no-op; em dev (front em :5173,
+// back em :8080) sem isto a imagem 404 silenciosamente. URLs absolutas
+// (http(s)://...) passam intactas.
+export function resolveAssetUrl(url: string | null): string | null {
+  if (!url || /^https?:\/\//.test(url)) return url;
+  return `${baseUrl}${url}`;
+}
+
 async function parseErrorMessage(res: Response): Promise<string> {
   try {
     const body = (await res.json()) as { error?: string };

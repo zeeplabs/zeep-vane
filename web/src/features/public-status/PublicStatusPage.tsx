@@ -4,6 +4,7 @@ import { Card } from "../../components/ui/Card";
 import { Tag } from "../../components/ui/Tag";
 import type { TagVariant } from "../../components/ui/Tag";
 import type { PublicHourlyBucket, PublicHourlyStatus, PublicIncidentEntry, PublicServiceStatus } from "../../lib/publicStatus";
+import { resolveAssetUrl } from "../../lib/apiClient";
 import { usePublicStatusPage } from "./hooks";
 import { formatRelativeTime, formatDateTime, formatDuration } from "./format";
 
@@ -195,7 +196,7 @@ export function PublicStatusPage() {
     <div className="mx-auto flex w-full max-w-[720px] flex-col gap-7 px-4 py-11">
       <header className="flex flex-wrap items-baseline justify-between gap-3">
         {data.logo_url ? (
-          <img src={data.logo_url} alt={data.company_name} className="h-11 w-auto" />
+          <img src={resolveAssetUrl(data.logo_url)!} alt={data.company_name} className="h-11 w-auto" />
         ) : (
           <span className="text-[15px] font-medium tracking-tight text-text">{data.company_name}</span>
         )}
