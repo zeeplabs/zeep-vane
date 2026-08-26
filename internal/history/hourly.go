@@ -37,11 +37,17 @@ type HourlyBucket struct {
 // bucket's [start, start+1h) span - an interval spanning multiple buckets
 // contributes its status to every bucket it overlaps, not only the one
 // containing its StartsAt. An open interval (EndsAt nil) is treated as
-// still overlapping up through now. A bucket with no overlapping interval
-// is NoData. intervals need not be pre-sorted or pre-filtered to the
-// window - only intervals overlapping a bucket affect it, everything else
-// is ignored.
-func BuildHourly(intervals []db.StatusInterval, now time.Time, loc *time.Location, windowHours int) []HourlyBucket {
+// still overlapping up through asOf - not now (H7). now anchors which
+// windowHours buckets are shown (always the real, current window - a dead
+// poller must not hide recent hours from the chart); asOf is the last time
+// the poller actually confirmed this status. When the poller is healthy,
+// asOf is effectively now and nothing changes. When it has stalled, asOf
+// stays in the past, so every bucket after it correctly resolves to NoData
+// instead of an open interval's status being fabricated forward to now. A
+// bucket with no overlapping interval is NoData. intervals need not be
+// pre-sorted or pre-filtered to the window - only intervals overlapping a
+// bucket affect it, everything else is ignored.
+func BuildHourly(intervals []db.StatusInterval, now, asOf time.Time, loc *time.Location, windowHours int) []HourlyBucket {
 	nowLocal := now.In(loc)
 	currentStart := time.Date(nowLocal.Year(), nowLocal.Month(), nowLocal.Day(), nowLocal.Hour(), 0, 0, 0, loc)
 	leftmostStart := currentStart.Add(-time.Duration(windowHours-1) * time.Hour)
@@ -56,7 +62,7 @@ func BuildHourly(intervals []db.StatusInterval, now time.Time, loc *time.Locatio
 
 	for _, interval := range intervals {
 		startLocal := interval.StartsAt.In(loc)
-		endLocal := now
+		endLocal := asOf
 		if interval.EndsAt != nil {
 			endLocal = *interval.EndsAt
 		}

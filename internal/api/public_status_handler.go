@@ -58,6 +58,9 @@ const incidentRetentionDays = 90
 // (including the connected Integration being marked "invalid") never takes
 // the public page down: it keeps serving the last interval on record, with
 // its real last_seen_at timestamp, never a fabricated "now" (SP-08, SP-09).
+// This holds for the hourly bars and uptime percentage too (H7 fix,
+// composeResponse's asOf) - a stalled poller's open interval is never
+// extrapolated past the last time it was actually confirmed.
 type PublicStatusHandler struct {
 	services        serviceLister
 	intervals       statusIntervalReader
@@ -228,10 +231,27 @@ func (h *PublicStatusHandler) composeResponse(ctx context.Context, statusPageID 
 		// history is likewise all no_data - history.BuildHourly handles a
 		// nil/empty interval slice with no special-case branch here.
 		serviceIntervals := intervalsByService[service.ID]
-		buckets := history.BuildHourly(serviceIntervals, now, h.historyLoc, historyWindowHours)
+
+		// asOf clamps the hourly bars and uptime percentage to the last
+		// time the poller actually confirmed this service's status, not
+		// wall-clock now (H7). Without this, a service left with an open
+		// interval by a poller that has since crashed would show
+		// fabricated green bars / 100% uptime for however long it's been
+		// silently unconfirmed - directly contradicting this handler's own
+		// promise to never fabricate "now" (SP-08, SP-09). Only an open
+		// interval's LastSeenAt qualifies: no open interval (never polled,
+		// or every interval already closed) leaves asOf at now, matching
+		// prior behavior and leaving closed-interval history unaffected -
+		// every closed interval already carries its own real EndsAt.
+		asOf := now
+		if openInterval, ok := openIntervals[service.ID]; ok && openInterval.LastSeenAt.Before(now) {
+			asOf = openInterval.LastSeenAt
+		}
+
+		buckets := history.BuildHourly(serviceIntervals, now, asOf, h.historyLoc, historyWindowHours)
 
 		var uptimePercent *float64
-		if pct, ok := history.UptimePercent(serviceIntervals, windowStart, now); ok {
+		if pct, ok := history.UptimePercent(serviceIntervals, windowStart, asOf); ok {
 			uptimePercent = &pct
 		}
 

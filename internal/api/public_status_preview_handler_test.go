@@ -70,6 +70,16 @@ func TestPublicStatusPreview_AuthenticatedByID_200SameShapeAsProduction(t *testi
 	serviceID, cleanup := createPublicStatusServiceFixture(t, pool, "operational", fetchedAt)
 	t.Cleanup(cleanup)
 	statusPageID := createPublicStatusPageFixture(t, pool, serviceID)
+
+	// A real poller keeps confirming operational on every tick since the
+	// interval opened in March, continuously bumping last_seen_at - without
+	// this, the H7 asOf clamp (public_status_handler.go) would see the
+	// fixture as last confirmed in March, deeply predating windowStart, and
+	// correctly report UptimePercent as undefined rather than the 100% this
+	// test wants to assert.
+	if err := db.NewStatusIntervalRepository(pool).OpenOrExtend(context.Background(), serviceID, "operational", 0.5, time.Now()); err != nil {
+		t.Fatalf("setup OpenOrExtend() returned unexpected error: %v", err)
+	}
 	if _, err := pool.Exec(context.Background(), "UPDATE status_pages SET state = 'published' WHERE id = $1", statusPageID); err != nil {
 		t.Fatalf("setup publish update returned unexpected error: %v", err)
 	}

@@ -313,7 +313,15 @@ func TestPublicStatusGet_ServiceWithNoSnapshotsEver_AllHourlyBucketsNoData(t *te
 // TestPublicStatusGet_UptimePercent_OutageWindowComputesExpectedValue
 // covers SHU-10..14 end-to-end through the handler: a service with a real
 // 6h outage inside an otherwise operational 24h window must render
-// uptime_percent = 75.0, not a value computed off a stale snapshot model.
+// uptime_percent close to 75.0, not a value computed off a stale snapshot
+// model. "Close to" rather than exactly 75.0 because of the H7 fix
+// (public_status_handler.go's asOf): the denominator now ends at the last
+// time the fixture's open interval was actually confirmed, which - like a
+// real poller - is captured a moment before the request, not at the
+// request's own wall-clock now. That gap is milliseconds here (imperceptible
+// against a 24h window) but means the floored percentage lands at 74.9, not
+// exactly 75.0 - asserting the exact value would be asserting a race that
+// happens to lose by a hair, every run.
 func TestPublicStatusGet_UptimePercent_OutageWindowComputesExpectedValue(t *testing.T) {
 	r, pool := newPublicStatusRouter(t)
 
@@ -327,6 +335,15 @@ func TestPublicStatusGet_UptimePercent_OutageWindowComputesExpectedValue(t *test
 	outageStart := time.Now().Add(-10 * time.Hour)
 	outageEnd := outageStart.Add(6 * time.Hour)
 	insertStatusInterval(t, pool, serviceID, "outage", outageStart, outageEnd)
+
+	// A real poller keeps confirming operational after the outage clears,
+	// continuously bumping the open interval's last_seen_at - without this,
+	// the H7 asOf clamp (public_status_handler.go) would see the fixture's
+	// still-open interval as last confirmed at openedAt (48h ago) and clip
+	// the uptime denominator there, which this test isn't exercising.
+	if err := db.NewStatusIntervalRepository(pool).OpenOrExtend(context.Background(), serviceID, "operational", 0.5, time.Now()); err != nil {
+		t.Fatalf("setup post-outage OpenOrExtend() returned unexpected error: %v", err)
+	}
 
 	req := withStatusPageContext(httptest.NewRequest(http.MethodGet, "/", nil), statusPageID)
 	rec := httptest.NewRecorder()
@@ -350,10 +367,10 @@ func TestPublicStatusGet_UptimePercent_OutageWindowComputesExpectedValue(t *test
 		t.Fatalf("service %s not present in public response", serviceID)
 	}
 	if found.UptimePercent == nil {
-		t.Fatalf("UptimePercent = nil, want 75.0")
+		t.Fatalf("UptimePercent = nil, want ~75.0")
 	}
-	if *found.UptimePercent != 75.0 {
-		t.Errorf("UptimePercent = %v, want 75.0", *found.UptimePercent)
+	if *found.UptimePercent != 75.0 && *found.UptimePercent != 74.9 {
+		t.Errorf("UptimePercent = %v, want 74.9 or 75.0", *found.UptimePercent)
 	}
 }
 
@@ -399,6 +416,58 @@ func TestPublicStatusGet_LastUpdatedAt_AdvancesOnRepeatedSameStatusPoll(t *testi
 	}
 	if !found.LastUpdatedAt.Equal(secondSeenAt) {
 		t.Errorf("LastUpdatedAt = %v, want %v (advanced past the interval's original starts_at %v)", found.LastUpdatedAt, secondSeenAt, firstSeenAt)
+	}
+}
+
+// TestPublicStatusGet_StalledPoller_CurrentHourNotFabricatedOperational is
+// the H7 regression guard: a service's open interval was last confirmed
+// hours ago (the poller died and stopped ticking) - the current hourly
+// bucket must render no_data, not the stale open interval's status
+// extrapolated forward to wall-clock now, which would fabricate confidence
+// the public page never actually had (SP-08, SP-09).
+func TestPublicStatusGet_StalledPoller_CurrentHourNotFabricatedOperational(t *testing.T) {
+	r, pool := newPublicStatusRouter(t)
+
+	openedAt := time.Now().Add(-48 * time.Hour)
+	serviceID, cleanup := createPublicStatusServiceFixture(t, pool, "operational", openedAt)
+	t.Cleanup(cleanup)
+
+	// The poller's last real confirmation was 10h ago - well before the
+	// current hourly bucket - and nothing has extended the interval since
+	// (simulating a dead poller, not a reconnect).
+	staleAt := time.Now().Add(-10 * time.Hour)
+	intervals := db.NewStatusIntervalRepository(pool)
+	if err := intervals.OpenOrExtend(context.Background(), serviceID, "operational", 0.5, staleAt); err != nil {
+		t.Fatalf("setup second OpenOrExtend() returned unexpected error: %v", err)
+	}
+
+	statusPageID := createPublicStatusPageFixture(t, pool, serviceID)
+
+	req := withStatusPageContext(httptest.NewRequest(http.MethodGet, "/", nil), statusPageID)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	var body publicStatusResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+
+	allServices, err := db.NewServiceRepository(pool).List(context.Background())
+	if err != nil {
+		t.Fatalf("List() returned unexpected error: %v", err)
+	}
+	found := findPublicService(body.Services, serviceID, allServices)
+	if found == nil {
+		t.Fatalf("service %s not present in public response", serviceID)
+	}
+
+	lastBucket := found.HourlyHistory[len(found.HourlyHistory)-1]
+	if lastBucket.Status != "no_data" {
+		t.Errorf("current hour bucket = %q, want %q (poller stalled 10h ago - must not fabricate a status this recent)", lastBucket.Status, "no_data")
 	}
 }
 

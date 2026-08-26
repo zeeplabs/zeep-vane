@@ -30,7 +30,7 @@ func TestBuildHourly_ReturnsWindowHoursBucketsOldestFirst(t *testing.T) {
 	loc := mustLoadSaoPaulo(t)
 	now := time.Date(2026, 8, 24, 14, 37, 0, 0, loc)
 
-	buckets := BuildHourly(nil, now, loc, 24)
+	buckets := BuildHourly(nil, now, now, loc, 24)
 
 	if len(buckets) != 24 {
 		t.Fatalf("len(buckets) = %d, want 24", len(buckets))
@@ -62,7 +62,7 @@ func TestBuildHourly_WorstStatusWinsWithinBucket(t *testing.T) {
 		closedInterval("outage", hourStart.Add(55*time.Minute), hourStart.Add(60*time.Minute)),
 	}
 
-	buckets := BuildHourly(intervals, now, loc, 24)
+	buckets := BuildHourly(intervals, now, now, loc, 24)
 
 	if got := buckets[22].Status; got != "outage" {
 		t.Errorf("buckets[22].Status = %q, want %q (worst status in the hour wins)", got, "outage")
@@ -83,7 +83,7 @@ func TestBuildHourly_PriorityOrder_OutageBeatsDegradedBeatsOperational(t *testin
 		closedInterval("operational", hourStart.Add(41*time.Minute), hourStart.Add(60*time.Minute)),
 	}
 
-	buckets := BuildHourly(intervals, now, loc, 24)
+	buckets := BuildHourly(intervals, now, now, loc, 24)
 
 	if got := buckets[22].Status; got != "outage" {
 		t.Errorf("buckets[22].Status = %q, want %q", got, "outage")
@@ -95,7 +95,7 @@ func TestBuildHourly_PriorityOrder_OutageBeatsDegradedBeatsOperational(t *testin
 		closedInterval("operational", hourStart, hourStart.Add(20*time.Minute)),
 		closedInterval("operational", hourStart.Add(40*time.Minute), hourStart.Add(60*time.Minute)),
 	}
-	buckets2 := BuildHourly(intervalsNoOutage, now, loc, 24)
+	buckets2 := BuildHourly(intervalsNoOutage, now, now, loc, 24)
 	if got := buckets2[22].Status; got != "degraded" {
 		t.Errorf("buckets[22].Status = %q, want %q", got, "degraded")
 	}
@@ -106,7 +106,7 @@ func TestBuildHourly_NoOverlappingInterval_ResolvesToNoData(t *testing.T) {
 	loc := mustLoadSaoPaulo(t)
 	now := time.Date(2026, 8, 24, 14, 0, 0, 0, loc)
 
-	buckets := BuildHourly(nil, now, loc, 24)
+	buckets := BuildHourly(nil, now, now, loc, 24)
 
 	for i, b := range buckets {
 		if b.Status != NoData {
@@ -126,7 +126,7 @@ func TestBuildHourly_IntervalSpanningMultipleBuckets_CoversEveryOverlappedBucket
 	end := time.Date(2026, 8, 24, 11, 30, 0, 0, loc)
 	intervals := []db.StatusInterval{closedInterval("outage", start, end)}
 
-	buckets := BuildHourly(intervals, now, loc, 24)
+	buckets := BuildHourly(intervals, now, now, loc, 24)
 
 	// index 23 = hour 11 (current), 22 = hour 11? recompute: now=12:00 so
 	// current bucket (index 23) covers [12:00,13:00). hour 11 is index 22,
@@ -155,13 +155,45 @@ func TestBuildHourly_OpenIntervalCoversUpToNow(t *testing.T) {
 		openInterval("outage", time.Date(2026, 8, 24, 13, 30, 0, 0, loc)),
 	}
 
-	buckets := BuildHourly(intervals, now, loc, 24)
+	buckets := BuildHourly(intervals, now, now, loc, 24)
 
 	if got := buckets[22].Status; got != "outage" {
 		t.Errorf("hour 13 bucket = %q, want %q", got, "outage")
 	}
 	if got := buckets[23].Status; got != "outage" {
 		t.Errorf("current (hour 14) bucket = %q, want %q (open interval covers up to now)", got, "outage")
+	}
+}
+
+// H7: an open interval must not be extrapolated past asOf - the last time
+// the poller actually confirmed status - even though the window itself
+// (anchored on now) still shows the hours since then, correctly as NoData.
+func TestBuildHourly_OpenIntervalClampsToAsOf_NotNow(t *testing.T) {
+	loc := mustLoadSaoPaulo(t)
+	now := time.Date(2026, 8, 24, 14, 5, 0, 0, loc)
+	asOf := time.Date(2026, 8, 24, 11, 30, 0, 0, loc) // poller stalled ~2.5h ago
+
+	intervals := []db.StatusInterval{
+		openInterval("outage", time.Date(2026, 8, 24, 10, 0, 0, 0, loc)),
+	}
+
+	buckets := BuildHourly(intervals, now, asOf, loc, 24)
+
+	if got := buckets[23].Status; got != NoData {
+		t.Errorf("current (hour 14) bucket = %q, want %q (asOf is 11:30, not now)", got, NoData)
+	}
+	if got := buckets[21].Status; got != NoData {
+		t.Errorf("hour 12 bucket = %q, want %q (asOf 11:30 never reaches hour 12)", got, NoData)
+	}
+	if got := buckets[20].Status; got != "outage" {
+		t.Errorf("hour 11 bucket = %q, want %q (interval still covers up to asOf)", got, "outage")
+	}
+	if len(buckets) != 24 {
+		t.Fatalf("len(buckets) = %d, want 24 (window still anchored on now, not asOf)", len(buckets))
+	}
+	wantLast := time.Date(2026, 8, 24, 14, 0, 0, 0, loc)
+	if !buckets[23].Start.Equal(wantLast) {
+		t.Errorf("buckets[23].Start = %v, want %v (window unaffected by asOf)", buckets[23].Start, wantLast)
 	}
 }
 
@@ -174,7 +206,7 @@ func TestBuildHourly_IntervalsOutsideWindowAreIgnored(t *testing.T) {
 		closedInterval("outage", time.Date(2026, 8, 20, 12, 0, 0, 0, loc), time.Date(2026, 8, 20, 13, 0, 0, 0, loc)),
 	}
 
-	buckets := BuildHourly(intervals, now, loc, 24)
+	buckets := BuildHourly(intervals, now, now, loc, 24)
 
 	for i, b := range buckets {
 		if b.Status != NoData {
