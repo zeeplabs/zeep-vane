@@ -9,6 +9,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"sync"
 	"testing"
 	"time"
 
@@ -414,6 +415,67 @@ func TestAcceptInvite_AlreadyUsedToken_401(t *testing.T) {
 	second := postAcceptInvite(t, r, rawToken, "a-different-password")
 	if second.Code != http.StatusUnauthorized {
 		t.Errorf("second accept status = %d, want %d, body = %s", second.Code, http.StatusUnauthorized, second.Body.String())
+	}
+}
+
+// TestAcceptInvite_ConcurrentAccept_OnlyOneSucceeds is the L24 regression
+// guard: the same invite token submitted twice concurrently must produce
+// exactly one created admin, never two - ClaimForUse's atomic
+// UPDATE...WHERE used_at IS NULL is what enforces this, not the earlier
+// in-Go used_at/expiry check that raced.
+func TestAcceptInvite_ConcurrentAccept_OnlyOneSucceeds(t *testing.T) {
+	r, pool, admins, invites := newAdminsRouter(t)
+	inviterAdmin := &db.Admin{Email: uniqueTestEmail(t), PasswordHash: "hash"}
+	if err := admins.Create(context.Background(), inviterAdmin); err != nil {
+		t.Fatalf("admins.Create() returned unexpected error: %v", err)
+	}
+	t.Cleanup(func() { _ = admins.Delete(context.Background(), inviterAdmin.ID) })
+
+	email := uniqueTestEmail(t)
+	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), "DELETE FROM admins WHERE email = $1", email) })
+	rawToken := createTestInvite(t, invites, inviterAdmin.ID, email, db.RoleViewer, 1*time.Hour)
+
+	body, err := json.Marshal(acceptAdminInviteRequest{Password: "a-strong-password"})
+	if err != nil {
+		t.Fatalf("json.Marshal() returned unexpected error: %v", err)
+	}
+
+	// t.Fatalf/t.Helper must only run on the goroutine running the test, so
+	// the concurrent requests below build their own httptest.NewRequest and
+	// call r.ServeHTTP directly rather than going through the
+	// postAcceptInvite helper (which does).
+	const concurrency = 10
+	codes := make([]int, concurrency)
+	var wg sync.WaitGroup
+	for i := 0; i < concurrency; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			req := httptest.NewRequest(http.MethodPost, "/api/admins/invite/"+rawToken+"/accept", bytes.NewReader(body))
+			req.Header.Set("Content-Type", "application/json")
+			rec := httptest.NewRecorder()
+			r.ServeHTTP(rec, req)
+			codes[i] = rec.Code
+		}(i)
+	}
+	wg.Wait()
+
+	created := 0
+	for _, code := range codes {
+		if code == http.StatusCreated {
+			created++
+		}
+	}
+	if created != 1 {
+		t.Errorf("successful (201) accepts among %d concurrent requests = %d, want exactly 1", concurrency, created)
+	}
+
+	var count int
+	if err := pool.QueryRow(context.Background(), "SELECT COUNT(*) FROM admins WHERE email = $1", email).Scan(&count); err != nil {
+		t.Fatalf("counting admins returned unexpected error: %v", err)
+	}
+	if count != 1 {
+		t.Errorf("admins row count for the invited email = %d, want 1", count)
 	}
 }
 

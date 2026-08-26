@@ -75,6 +75,39 @@ func (r *AdminInviteRepository) GetByTokenHash(ctx context.Context, tokenHash st
 	return &invite, nil
 }
 
+// ClaimForUse atomically finds an unused, unexpired invite by tokenHash and
+// marks it used in the same statement, returning ErrNotFound if no such
+// invite exists (covers "no such token", "already used", and "expired"
+// alike - AcceptInvite's caller already treats all three identically).
+// AcceptInvite used to do this as a separate GetByTokenHash SELECT, an
+// in-Go used_at/expiry check, and a later unconditional MarkUsed (L24) -
+// two concurrent requests for the same token could both pass the Go-side
+// check before either called MarkUsed, both proceeding to create an admin
+// account from a single-use invite. The WHERE clause here makes the claim
+// itself the concurrency gate: only one concurrent UPDATE can match a given
+// row, so only one caller ever gets a non-ErrNotFound result back.
+func (r *AdminInviteRepository) ClaimForUse(ctx context.Context, tokenHash string) (*AdminInvite, error) {
+	row := r.pool.QueryRow(ctx,
+		`UPDATE admin_invites SET used_at = now()
+		 WHERE token_hash = $1 AND used_at IS NULL AND expires_at > now()
+		 RETURNING id, email, role, token_hash, invited_by_id, expires_at, used_at, created_at`,
+		tokenHash,
+	)
+
+	var invite AdminInvite
+	if err := row.Scan(
+		&invite.ID, &invite.Email, &invite.Role, &invite.TokenHash,
+		&invite.InvitedByID, &invite.ExpiresAt, &invite.UsedAt, &invite.CreatedAt,
+	); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrNotFound
+		}
+		return nil, fmt.Errorf("db: failed to claim admin invite: %w", err)
+	}
+
+	return &invite, nil
+}
+
 // MarkUsed sets used_at on the invite with the given ID to now, returning
 // ErrNotFound if no such invite exists.
 func (r *AdminInviteRepository) MarkUsed(ctx context.Context, id string) error {

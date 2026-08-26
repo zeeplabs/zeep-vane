@@ -65,6 +65,32 @@ func (r *AdminRepository) Create(ctx context.Context, admin *Admin) error {
 	return nil
 }
 
+// CreateWithRole inserts admin with role set atomically in the same INSERT,
+// filling in its generated ID, Role, and CreatedAt. It returns
+// ErrDuplicateEmail if the email is already registered. Unlike Create
+// (which always lands on the admins.role column's default) followed by a
+// separate UpdateRole call, this is one statement - AcceptInvite (M12) used
+// to do Create-then-UpdateRole as two non-transactional steps, so a crash
+// or error between them left an admin permanently stuck on the default role
+// (reportedly owner) instead of the invite's actual intended role.
+func (r *AdminRepository) CreateWithRole(ctx context.Context, admin *Admin, role string) error {
+	row := r.pool.QueryRow(ctx,
+		"INSERT INTO admins (email, password_hash, role) VALUES ($1, $2, $3) RETURNING id, created_at",
+		admin.Email, admin.PasswordHash, role,
+	)
+
+	if err := row.Scan(&admin.ID, &admin.CreatedAt); err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == pgerrcode.UniqueViolation {
+			return ErrDuplicateEmail
+		}
+		return fmt.Errorf("db: failed to create admin with role: %w", err)
+	}
+	admin.Role = role
+
+	return nil
+}
+
 // GetByEmail looks up an admin by email, returning ErrNotFound if none
 // exists.
 func (r *AdminRepository) GetByEmail(ctx context.Context, email string) (*Admin, error) {

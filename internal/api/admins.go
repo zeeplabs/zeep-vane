@@ -199,22 +199,6 @@ func (h *AdminsHandler) AcceptInvite(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	invite, err := h.invites.GetByTokenHash(r.Context(), hashAdminInviteToken(token))
-	switch {
-	case errors.Is(err, db.ErrNotFound):
-		writeAdminError(w, http.StatusUnauthorized, acceptInviteErrorBody)
-		return
-	case err != nil:
-		h.logger.Error("admins: failed to look up invite by token", zap.Error(err))
-		writeInternalError(w)
-		return
-	}
-
-	if invite.UsedAt != nil || time.Now().After(invite.ExpiresAt) {
-		writeAdminError(w, http.StatusUnauthorized, acceptInviteErrorBody)
-		return
-	}
-
 	passwordHash, err := auth.HashPassword(req.Password)
 	if err != nil {
 		h.logger.Error("admins: failed to hash invite password", zap.Error(err))
@@ -222,26 +206,29 @@ func (h *AdminsHandler) AcceptInvite(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	admin := &db.Admin{Email: invite.Email, PasswordHash: passwordHash}
-	if err := h.admins.Create(r.Context(), admin); err != nil {
-		h.logger.Error("admins: failed to activate invited admin", zap.Error(err))
+	// ClaimForUse atomically checks unused+unexpired and marks the invite
+	// used in one statement (M12/L24) - unlike the old GetByTokenHash +
+	// in-Go check + later MarkUsed sequence, two concurrent requests for
+	// the same token can no longer both pass the check before either
+	// claims it.
+	invite, err := h.invites.ClaimForUse(r.Context(), hashAdminInviteToken(token))
+	switch {
+	case errors.Is(err, db.ErrNotFound):
+		writeAdminError(w, http.StatusUnauthorized, acceptInviteErrorBody)
+		return
+	case err != nil:
+		h.logger.Error("admins: failed to claim invite", zap.Error(err))
 		writeInternalError(w)
 		return
 	}
 
-	// admins.Create always creates with the "owner" column default
-	// (unchanged from mvp-core, T9) - apply the invite's role explicitly
-	// whenever it isn't owner.
-	if invite.Role != db.RoleOwner {
-		if err := h.admins.UpdateRole(r.Context(), admin.ID, invite.Role); err != nil {
-			h.logger.Error("admins: failed to apply invited role", zap.Error(err))
-			writeInternalError(w)
-			return
-		}
-	}
-
-	if err := h.invites.MarkUsed(r.Context(), invite.ID); err != nil {
-		h.logger.Error("admins: failed to mark invite used", zap.Error(err))
+	// CreateWithRole sets the invite's actual role in the same INSERT
+	// (M12) - no longer a separate UpdateRole call that could leave the
+	// account stuck on the admins.role column's default (owner) if it
+	// never ran.
+	admin := &db.Admin{Email: invite.Email, PasswordHash: passwordHash}
+	if err := h.admins.CreateWithRole(r.Context(), admin, invite.Role); err != nil {
+		h.logger.Error("admins: failed to activate invited admin", zap.Error(err))
 		writeInternalError(w)
 		return
 	}
