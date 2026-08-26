@@ -57,7 +57,7 @@ func newAdminsRouter(t *testing.T) (http.Handler, *db.Pool, *db.AdminRepository,
 	admins := db.NewAdminRepository(pool)
 	invites := db.NewAdminInviteRepository(pool)
 	auditLog := audit.NewLog(pool)
-	handler := NewAdminsHandler(pool, admins, invites, auditLog, zap.NewNop())
+	handler := NewAdminsHandler(pool, admins, invites, auditLog, zap.NewNop(), false)
 
 	r := chi.NewRouter()
 	r.Group(func(protected chi.Router) {

@@ -34,16 +34,19 @@ const adminInviteTokenBytes = 32
 // atomic), which isn't expressible through the existing per-repository
 // interfaces.
 type AdminsHandler struct {
-	pool    *db.Pool
-	admins  *db.AdminRepository
-	invites *db.AdminInviteRepository
-	audit   *audit.Log
-	logger  *zap.Logger
+	pool            *db.Pool
+	admins          *db.AdminRepository
+	invites         *db.AdminInviteRepository
+	audit           *audit.Log
+	logger          *zap.Logger
+	devTokenLogging bool
 }
 
-// NewAdminsHandler builds an AdminsHandler.
-func NewAdminsHandler(pool *db.Pool, admins *db.AdminRepository, invites *db.AdminInviteRepository, auditLog *audit.Log, logger *zap.Logger) *AdminsHandler {
-	return &AdminsHandler{pool: pool, admins: admins, invites: invites, audit: auditLog, logger: logger}
+// NewAdminsHandler builds an AdminsHandler. devTokenLogging gates whether
+// the raw invite token is logged when an invite is created (see the
+// PasswordResetHandler doc for why this defaults to off).
+func NewAdminsHandler(pool *db.Pool, admins *db.AdminRepository, invites *db.AdminInviteRepository, auditLog *audit.Log, logger *zap.Logger, devTokenLogging bool) *AdminsHandler {
+	return &AdminsHandler{pool: pool, admins: admins, invites: invites, audit: auditLog, logger: logger, devTokenLogging: devTokenLogging}
 }
 
 // wouldLeaveZeroOwners is the ADM-06 lockout decision: true when applying
@@ -140,11 +143,18 @@ func (h *AdminsHandler) Invite(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Email delivery is out of scope for the MVP (same convention as the
-	// password reset flow, T14 of mvp-core): the raw token is only logged,
-	// standing in for a real provider. The raw token itself is never
-	// persisted (see AdminInvite.TokenHash).
-	h.logger.Info("admins: invite issued",
-		zap.String("email", req.Email), zap.String("role", req.Role), zap.String("token", rawToken))
+	// password reset flow, T14 of mvp-core), standing in for a real
+	// provider. The raw token grants account creation for the invited
+	// role, so it is only logged when VANE_DEV_TOKEN_LOGGING=true is
+	// explicitly set (see PasswordResetHandler.Request for why). The raw
+	// token itself is never persisted (see AdminInvite.TokenHash).
+	if h.devTokenLogging {
+		h.logger.Info("admins: invite issued",
+			zap.String("email", req.Email), zap.String("role", req.Role), zap.String("token", rawToken))
+	} else {
+		h.logger.Info("admins: invite issued",
+			zap.String("email", req.Email), zap.String("role", req.Role))
+	}
 
 	if err := h.audit.Record(r.Context(), actor.ID, invite.ID, "invited"); err != nil {
 		h.logger.Error("admins: failed to record invite audit entry", zap.Error(err))

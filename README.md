@@ -160,6 +160,7 @@ Loaded by `internal/config.Load()` (`internal/config/config.go`). A `.env` file 
 | `PUBLIC_DNS_TARGET` | no | *(empty)* | The DNS target (e.g. an IP or CNAME) this instance's admins should point their custom domain at. Left empty, the "attach domain" screen shows "not configured" instead of blocking — Vane cannot reliably discover its own public hostname |
 | `HTTPS_PORT` | no | `443` | Port the public, TLS-terminated status page listener binds to |
 | `CERTMAGIC_STORAGE_PATH` | no | `./certmagic-data` | Where CertMagic persists issued certificates. **Must be a persistent volume in production** |
+| `VANE_DEV_TOKEN_LOGGING` | no | `false` | Set to `true` to log the raw password-reset/admin-invite token, standing in for real email delivery (see [Known gaps](#known-gaps--backlog)). The token is a bearer credential for account takeover — **leave this off in any deployment whose logs reach a shared sink** |
 
 ## Running in development
 
@@ -275,6 +276,7 @@ The frontend is built and embedded into the Go binary via `go:embed` (per `.spec
 
 Tracked in `.specs/STATE.md`. Not yet solved, not yet requested to be solved:
 
+- **No email delivery.** The password-reset and admin-invite flows generate a real token but have no way to send it — there is no configured mail provider. By default the token is not logged anywhere (`VANE_DEV_TOKEN_LOGGING=false`), which means, out of the box, **neither flow can be completed** without wiring up a mail provider or setting `VANE_DEV_TOKEN_LOGGING=true` and retrieving the token from `docker logs`/your log sink — acceptable for a single self-hosted operator bootstrapping their own instance, not for anything beyond that.
 - Admin invite **resend/cancel** — frontend hooks exist, backend endpoints don't.
 - No test coverage for a 404 on updating a non-existent incident.
 - No auto-discovery of Datadog services/SLOs/monitors (would have to be added as a connector feature).

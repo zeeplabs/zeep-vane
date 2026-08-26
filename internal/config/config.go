@@ -21,6 +21,7 @@ type Config struct {
 	CORSAllowedOrigin   string
 	UploadsDir          string
 	PublicDNSTarget     string
+	DevTokenLogging     bool
 }
 
 // defaultCORSAllowedOrigin is the Vite dev server's origin - the CORS
@@ -87,6 +88,15 @@ func Load() (Config, error) {
 
 	publicDNSTarget := os.Getenv("PUBLIC_DNS_TARGET")
 
+	// devTokenLogging gates logging the raw password-reset/admin-invite
+	// token, which stands in for real email delivery (out of scope for the
+	// MVP - see internal/api/password_reset_handler.go and admins.go).
+	// Defaults to false: without it, an admin has no way to retrieve those
+	// tokens, but the alternative default - writing a bearer token capable
+	// of an owner takeover to whatever log sink LOG_LEVEL=info reaches -
+	// is worse for a self-hosted deploy whose operator hasn't set up email.
+	devTokenLogging := os.Getenv("VANE_DEV_TOKEN_LOGGING") == "true"
+
 	return Config{
 		DatabaseURL:         databaseURL,
 		MasterKey:           masterKey,
@@ -97,6 +107,7 @@ func Load() (Config, error) {
 		CORSAllowedOrigin:   corsAllowedOrigin,
 		UploadsDir:          uploadsDir,
 		PublicDNSTarget:     publicDNSTarget,
+		DevTokenLogging:     devTokenLogging,
 	}, nil
 }
 

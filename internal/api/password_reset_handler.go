@@ -40,14 +40,18 @@ type adminByEmailAndIDUpdater interface {
 
 // PasswordResetHandler serves the password reset request/confirm routes.
 type PasswordResetHandler struct {
-	admins adminByEmailAndIDUpdater
-	tokens passwordResetRepo
-	logger *zap.Logger
+	admins          adminByEmailAndIDUpdater
+	tokens          passwordResetRepo
+	logger          *zap.Logger
+	devTokenLogging bool
 }
 
-// NewPasswordResetHandler builds a PasswordResetHandler.
-func NewPasswordResetHandler(admins adminByEmailAndIDUpdater, tokens passwordResetRepo, logger *zap.Logger) *PasswordResetHandler {
-	return &PasswordResetHandler{admins: admins, tokens: tokens, logger: logger}
+// NewPasswordResetHandler builds a PasswordResetHandler. devTokenLogging
+// gates whether the raw reset token is logged (see Request) - it stands in
+// for real email delivery and must default to off, since the token is a
+// bearer credential for an account takeover.
+func NewPasswordResetHandler(admins adminByEmailAndIDUpdater, tokens passwordResetRepo, logger *zap.Logger, devTokenLogging bool) *PasswordResetHandler {
+	return &PasswordResetHandler{admins: admins, tokens: tokens, logger: logger, devTokenLogging: devTokenLogging}
 }
 
 type passwordResetRequestBody struct {
@@ -96,11 +100,20 @@ func (h *PasswordResetHandler) Request(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Stub for real email delivery (out of scope for the MVP): log the
-	// raw token so it is retrievable during development/testing. The
-	// raw token itself is never persisted (see PasswordResetToken).
-	h.logger.Info("password-reset: token issued",
-		zap.String("admin_id", admin.ID), zap.String("token", rawToken))
+	// Stub for real email delivery (out of scope for the MVP). The raw
+	// token is a bearer credential for this admin's account, so it is
+	// only logged when VANE_DEV_TOKEN_LOGGING=true is explicitly set -
+	// never by default, since LOG_LEVEL=info output routinely reaches a
+	// wider audience (log aggregators, `docker logs`) than the database
+	// itself. The raw token itself is never persisted (see
+	// PasswordResetToken).
+	if h.devTokenLogging {
+		h.logger.Info("password-reset: token issued",
+			zap.String("admin_id", admin.ID), zap.String("token", rawToken))
+	} else {
+		h.logger.Info("password-reset: token issued",
+			zap.String("admin_id", admin.ID))
+	}
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)

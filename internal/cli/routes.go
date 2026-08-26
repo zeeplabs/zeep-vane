@@ -35,8 +35,8 @@ func buildAdminRouter(pool *db.Pool, cfg config.Config, logger *zap.Logger, poll
 
 	authHandler := api.NewAuthHandler(admins, logger, cfg.SessionSecret)
 	bootstrapHandler := api.NewBootstrapHandler(pool, admins, logger, cfg.SessionSecret)
-	passwordResetHandler := api.NewPasswordResetHandler(admins, db.NewPasswordResetRepository(pool), logger)
-	adminsHandler := api.NewAdminsHandler(pool, admins, invites, auditLog, logger)
+	passwordResetHandler := api.NewPasswordResetHandler(admins, db.NewPasswordResetRepository(pool), logger, cfg.DevTokenLogging)
+	adminsHandler := api.NewAdminsHandler(pool, admins, invites, auditLog, logger, cfg.DevTokenLogging)
 	domainsHandler := api.NewDomainsHandler(db.NewDomainRepository(pool), logger)
 	servicesHandler := api.NewServicesHandler(db.NewServiceRepository(pool), logger)
 	integrationsHandler := api.NewIntegrationsHandler(db.NewIntegrationRepository(pool), validateDatadogCredentials, searchDatadogSLOs, pollerManager, cfg.MasterKey, logger)

@@ -43,7 +43,11 @@ func newPasswordResetRouter(t *testing.T) (http.Handler, *db.AdminRepository, *d
 	observedCore, observedLogs := observer.New(zapcore.InfoLevel)
 	logger := zap.New(observedCore)
 
-	handler := NewPasswordResetHandler(admins, tokens, logger)
+	// devTokenLogging=true: this file's tests need the raw token back out
+	// of the log to drive Confirm, mirroring an operator who has opted
+	// into VANE_DEV_TOKEN_LOGGING for local use. The off-by-default case
+	// is covered separately by TestRequest_DevTokenLoggingDisabled_TokenNotLogged.
+	handler := NewPasswordResetHandler(admins, tokens, logger, true)
 
 	r := chi.NewRouter()
 	r.Post("/api/auth/password-reset/request", handler.Request)
@@ -79,6 +83,60 @@ func postJSON(t *testing.T, r http.Handler, path string, payload interface{}) *h
 	rec := httptest.NewRecorder()
 	r.ServeHTTP(rec, req)
 	return rec
+}
+
+// TestPasswordResetRequest_DevTokenLoggingDisabled_TokenNotLogged asserts
+// the secure default: with devTokenLogging=false (VANE_DEV_TOKEN_LOGGING
+// unset), the raw reset token - a bearer credential for account takeover -
+// never reaches the log, even though a log line is still emitted.
+func TestPasswordResetRequest_DevTokenLoggingDisabled_TokenNotLogged(t *testing.T) {
+	dsn := testDatabaseURL(t)
+	if err := db.MigrateUp(dsn, "../db/migrations"); err != nil {
+		t.Fatalf("MigrateUp() returned unexpected error: %v", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	pool, err := db.NewPool(ctx, dsn)
+	if err != nil {
+		t.Fatalf("NewPool() returned unexpected error: %v", err)
+	}
+	t.Cleanup(pool.Close)
+
+	admins := db.NewAdminRepository(pool)
+	tokens := db.NewPasswordResetRepository(pool)
+	observedCore, observedLogs := observer.New(zapcore.InfoLevel)
+	logger := zap.New(observedCore)
+
+	handler := NewPasswordResetHandler(admins, tokens, logger, false)
+	r := chi.NewRouter()
+	r.Post("/api/auth/password-reset/request", handler.Request)
+
+	email := uniqueTestEmail(t)
+	createTestAdmin(t, admins, pool, email, "old-password")
+	t.Cleanup(func() {
+		_, _ = pool.Exec(context.Background(), "DELETE FROM password_reset_tokens WHERE admin_id IN (SELECT id FROM admins WHERE email = $1)", email)
+	})
+
+	rec := postJSON(t, r, "/api/auth/password-reset/request", passwordResetRequestBody{Email: email})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
+	}
+
+	found := false
+	for _, entry := range observedLogs.All() {
+		for _, field := range entry.Context {
+			if field.Key == "token" {
+				found = true
+			}
+		}
+	}
+	if found {
+		t.Error("log entry contains a \"token\" field with devTokenLogging=false, want token never logged")
+	}
+	if observedLogs.Len() == 0 {
+		t.Error("no log entry emitted for password-reset request, want an admin_id-only entry")
+	}
 }
 
 func TestPasswordResetRequest_GeneratesTokenWithOneHourExpiry(t *testing.T) {
