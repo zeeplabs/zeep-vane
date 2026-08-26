@@ -6,8 +6,8 @@ services:
       - "443:443"
     environment:
       DATABASE_URL: postgres://vane:vane@db:5432/vane?sslmode=disable
-      VANE_MASTER_KEY: change-me-master-key
-      VANE_SESSION_SECRET: change-me-session-secret
+      VANE_MASTER_KEY: ${VANE_MASTER_KEY:?set VANE_MASTER_KEY in .env - see README's Docker Compose section, e.g. openssl rand -hex 32}
+      VANE_SESSION_SECRET: ${VANE_SESSION_SECRET:?set VANE_SESSION_SECRET in .env - see README's Docker Compose section, e.g. openssl rand -hex 32}
       PORT: 8080
       POLL_INTERVAL_SECONDS: 60
       UPLOADS_DIR: /data/uploads

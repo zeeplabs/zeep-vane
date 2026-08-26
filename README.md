@@ -181,8 +181,8 @@ Create a `.env` file at the repo root (loaded automatically by the Go binary):
 
 ```bash
 DATABASE_URL=postgres://vane:vane@localhost:5432/vane?sslmode=disable
-VANE_MASTER_KEY=dev-master-key-change-me
-VANE_SESSION_SECRET=dev-session-secret-change-me
+VANE_MASTER_KEY=dev-master-key-change-me-0123456789
+VANE_SESSION_SECRET=dev-session-secret-change-me-0123456789
 PORT=8080
 POLL_INTERVAL_SECONDS=60
 ```
@@ -221,11 +221,15 @@ See the `dev-*` targets in the [Makefile](./Makefile) — `make dev-db`, `make m
 
 The fastest way to run a self-hosted instance is the shipped [`docker-compose.yml`](./docker-compose.yml): a single command builds the image (multi-stage `Dockerfile` — frontend build, Go build, then a minimal `scratch` runtime image with no Node.js or Go toolchain) and brings up Postgres alongside it, migrations applied automatically on boot.
 
+`VANE_MASTER_KEY` and `VANE_SESSION_SECRET` have no default in `docker-compose.yml` — `docker compose up` refuses to start without them, so a real deployment can never accidentally run with a secret that is public on GitHub. Generate two random values and put them in a `.env` file next to `docker-compose.yml` (docker compose loads it automatically):
+
 ```bash
+echo "VANE_MASTER_KEY=$(openssl rand -hex 32)" >> .env
+echo "VANE_SESSION_SECRET=$(openssl rand -hex 32)" >> .env
 docker compose up -d
 ```
 
-Edit `VANE_MASTER_KEY` and `VANE_SESSION_SECRET` in `docker-compose.yml` before running this anywhere but your own machine — the checked-in values are placeholders, not secrets. Once both services report healthy, visit `http://localhost:8080` to complete first-time setup — see [Creating the first admin (owner)](#creating-the-first-admin-owner) below.
+Once both services report healthy, visit `http://localhost:8080` to complete first-time setup — see [Creating the first admin (owner)](#creating-the-first-admin-owner) below. `http://localhost` is a browser-exempted secure context so the session cookie works there; the admin login cookie is `Secure`-flagged, so deploying to a host reached by IP or internal hostname over plain HTTP means the browser silently drops it after login — put a TLS-terminating reverse proxy in front before exposing this beyond your own machine.
 
 `make build` (frontend build, then the Go binary) is the one-command build path outside Docker too, if you'd rather run the resulting `bin/vane` directly against your own Postgres.
 

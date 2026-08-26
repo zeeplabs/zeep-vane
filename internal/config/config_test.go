@@ -36,6 +36,57 @@ func TestLoad_AllVarsPresent_Success(t *testing.T) {
 	}
 }
 
+// TestLoad_MasterKeyTooShort_Error asserts a VANE_MASTER_KEY shorter than
+// 32 characters is rejected instead of silently accepted as a weak key.
+func TestLoad_MasterKeyTooShort_Error(t *testing.T) {
+	setAllRequiredEnv(t)
+	t.Setenv("VANE_MASTER_KEY", "too-short")
+
+	_, err := Load()
+	if err == nil {
+		t.Fatal("Load() with a short VANE_MASTER_KEY returned nil error, want error")
+	}
+}
+
+// TestLoad_SessionSecretTooShort_Error mirrors the master-key case for
+// VANE_SESSION_SECRET.
+func TestLoad_SessionSecretTooShort_Error(t *testing.T) {
+	setAllRequiredEnv(t)
+	t.Setenv("VANE_SESSION_SECRET", "too-short")
+
+	_, err := Load()
+	if err == nil {
+		t.Fatal("Load() with a short VANE_SESSION_SECRET returned nil error, want error")
+	}
+}
+
+// TestLoad_KnownPlaceholderSecret_Error asserts the example values shipped
+// in this repo's own docker-compose.yml are rejected, even though they are
+// individually long enough to pass the length check - a deploy must never
+// be able to start with a secret that is public on GitHub.
+func TestLoad_KnownPlaceholderSecret_Error(t *testing.T) {
+	tests := []struct {
+		name  string
+		env   string
+		value string
+	}{
+		{"master key placeholder", "VANE_MASTER_KEY", "change-me-master-key"},
+		{"session secret placeholder", "VANE_SESSION_SECRET", "change-me-session-secret"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			setAllRequiredEnv(t)
+			t.Setenv(tt.env, tt.value)
+
+			_, err := Load()
+			if err == nil {
+				t.Fatalf("Load() with %s=%q returned nil error, want error", tt.env, tt.value)
+			}
+		})
+	}
+}
+
 func TestLoad_MissingRequiredVar_Error(t *testing.T) {
 	setAllRequiredEnv(t)
 	t.Setenv("DATABASE_URL", "")

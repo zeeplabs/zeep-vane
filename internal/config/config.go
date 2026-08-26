@@ -50,12 +50,12 @@ func Load() (Config, error) {
 		return Config{}, err
 	}
 
-	masterKey, err := requireString("VANE_MASTER_KEY")
+	masterKey, err := requireSecret("VANE_MASTER_KEY")
 	if err != nil {
 		return Config{}, err
 	}
 
-	sessionSecret, err := requireString("VANE_SESSION_SECRET")
+	sessionSecret, err := requireSecret("VANE_SESSION_SECRET")
 	if err != nil {
 		return Config{}, err
 	}
@@ -104,6 +104,39 @@ func requireString(name string) (string, error) {
 	value := os.Getenv(name)
 	if value == "" {
 		return "", fmt.Errorf("config: required environment variable %s is not set", name)
+	}
+	return value, nil
+}
+
+// minSecretLength is the shortest value accepted for a secret-bearing
+// variable (VANE_MASTER_KEY, VANE_SESSION_SECRET). 32 bytes matches the
+// key size secretbox.go derives via SHA-256 and gives the session-signing
+// secret comparable entropy.
+const minSecretLength = 32
+
+// knownPlaceholderSecrets are values that have shipped in this repo's own
+// docker-compose.yml/README as example secrets. A deploy that never
+// overrides them would sign sessions and encrypt integration credentials
+// with a key anyone can read on GitHub, so Load rejects them outright
+// instead of only checking for non-empty.
+var knownPlaceholderSecrets = map[string]bool{
+	"change-me-master-key":     true,
+	"change-me-session-secret": true,
+}
+
+// requireSecret behaves like requireString but additionally rejects
+// values that are too short to be a real key or that match a known
+// placeholder shipped in this repo's own example configs.
+func requireSecret(name string) (string, error) {
+	value, err := requireString(name)
+	if err != nil {
+		return "", err
+	}
+	if len(value) < minSecretLength {
+		return "", fmt.Errorf("config: environment variable %s must be at least %d characters, got %d", name, minSecretLength, len(value))
+	}
+	if knownPlaceholderSecrets[value] {
+		return "", fmt.Errorf("config: environment variable %s is still set to the example placeholder value - generate a real secret before starting", name)
 	}
 	return value, nil
 }

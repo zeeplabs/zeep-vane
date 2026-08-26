@@ -32,8 +32,8 @@ dev-db-stop:
 # Applies pending migrations against the dev database.
 migrate:
 	DATABASE_URL=$(DATABASE_URL) \
-	VANE_MASTER_KEY=dev-master-key-change-me \
-	VANE_SESSION_SECRET=dev-session-secret-change-me \
+	VANE_MASTER_KEY=dev-master-key-change-me-0123456789 \
+	VANE_SESSION_SECRET=dev-session-secret-change-me-0123456789 \
 	PORT=8080 \
 	POLL_INTERVAL_SECONDS=60 \
 	go run ./cmd/vane migrate up
@@ -41,8 +41,8 @@ migrate:
 # Runs the admin API on :8080. Requires dev-db + migrate already run.
 dev-backend:
 	DATABASE_URL=$(DATABASE_URL) \
-	VANE_MASTER_KEY=dev-master-key-change-me \
-	VANE_SESSION_SECRET=dev-session-secret-change-me \
+	VANE_MASTER_KEY=dev-master-key-change-me-0123456789 \
+	VANE_SESSION_SECRET=dev-session-secret-change-me-0123456789 \
 	PORT=8080 \
 	POLL_INTERVAL_SECONDS=60 \
 	go run ./cmd/vane serve
