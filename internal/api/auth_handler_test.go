@@ -59,7 +59,10 @@ func newLoginRouter(t *testing.T) (http.Handler, *db.AdminRepository, *db.Pool) 
 	dbtest.LockAdminsTable(t, context.Background(), dsn)
 
 	repo := db.NewAdminRepository(pool)
-	handler := NewAuthHandler(repo, zap.NewNop(), testSessionSecret)
+	// secureCookies=true: this file's cookie assertions expect the default,
+	// Secure-only behavior. The off case is covered separately by
+	// TestLogin_SecureCookiesDisabled_CookieNotSecure.
+	handler := NewAuthHandler(repo, zap.NewNop(), testSessionSecret, true)
 
 	r := chi.NewRouter()
 	r.Post("/api/auth/login", handler.Login)
@@ -173,6 +176,55 @@ func TestLogin_CorrectCredentials_SetsSessionCookie(t *testing.T) {
 	}
 }
 
+// TestLogin_SecureCookiesDisabled_CookieNotSecure asserts H9's opt-out: with
+// secureCookies=false (VANE_SECURE_COOKIES=false), the vane_session cookie's
+// Secure attribute is false, so a browser will send it back over plain HTTP
+// - required for a self-hosted instance reached by internal IP/hostname
+// without a TLS-terminating reverse proxy. Every other attribute is
+// unchanged.
+func TestLogin_SecureCookiesDisabled_CookieNotSecure(t *testing.T) {
+	dsn := testDatabaseURL(t)
+	if err := db.MigrateUp(dsn, "../db/migrations"); err != nil {
+		t.Fatalf("MigrateUp() returned unexpected error: %v", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	pool, err := db.NewPool(ctx, dsn)
+	if err != nil {
+		t.Fatalf("NewPool() returned unexpected error: %v", err)
+	}
+	t.Cleanup(pool.Close)
+	dbtest.LockAdminsTable(t, context.Background(), dsn)
+
+	repo := db.NewAdminRepository(pool)
+	handler := NewAuthHandler(repo, zap.NewNop(), testSessionSecret, false)
+	r := chi.NewRouter()
+	r.Post("/api/auth/login", handler.Login)
+
+	email := uniqueTestEmail(t)
+	createTestAdmin(t, repo, pool, email, "correct-horse-battery-staple")
+
+	rec := postLogin(t, r, email, "correct-horse-battery-staple")
+
+	var sessionCookie *http.Cookie
+	for _, c := range rec.Result().Cookies() {
+		if c.Name == "vane_session" {
+			sessionCookie = c
+			break
+		}
+	}
+	if sessionCookie == nil {
+		t.Fatal("no vane_session cookie in response, want one set")
+	}
+	if sessionCookie.Secure {
+		t.Error("vane_session cookie Secure = true, want false with secureCookies=false")
+	}
+	if !sessionCookie.HttpOnly {
+		t.Error("vane_session cookie HttpOnly = false, want true (unaffected by secureCookies)")
+	}
+}
+
 func TestLogin_WrongPassword_401Generic(t *testing.T) {
 	r, repo, pool := newLoginRouter(t)
 	email := uniqueTestEmail(t)
@@ -215,7 +267,7 @@ func newMeRouter(t *testing.T) (http.Handler, *db.AdminRepository, *db.Pool) {
 	dbtest.LockAdminsTable(t, context.Background(), dsn)
 
 	repo := db.NewAdminRepository(pool)
-	handler := NewAuthHandler(repo, zap.NewNop(), testSessionSecret)
+	handler := NewAuthHandler(repo, zap.NewNop(), testSessionSecret, true)
 
 	r := chi.NewRouter()
 	r.With(RequireAuth(testSessionSecret, repo)).Get("/api/auth/me", handler.Me)
@@ -300,7 +352,7 @@ func newLogoutRouter(t *testing.T) (http.Handler, *db.AdminRepository, *db.Pool)
 	dbtest.LockAdminsTable(t, context.Background(), dsn)
 
 	repo := db.NewAdminRepository(pool)
-	handler := NewAuthHandler(repo, zap.NewNop(), testSessionSecret)
+	handler := NewAuthHandler(repo, zap.NewNop(), testSessionSecret, true)
 
 	r := chi.NewRouter()
 	protected := chi.NewRouter()

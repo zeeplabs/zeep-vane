@@ -186,6 +186,38 @@ func TestLoad_HTTPSEnabledFalse_DisablesHTTPS(t *testing.T) {
 	}
 }
 
+// TestLoad_SecureCookiesUnset_DefaultsToTrue asserts the vane_session
+// cookie stays Secure-only by default (H9 fix must not weaken the existing
+// behavior for anyone not opting out).
+func TestLoad_SecureCookiesUnset_DefaultsToTrue(t *testing.T) {
+	setAllRequiredEnv(t)
+	t.Setenv("VANE_SECURE_COOKIES", "")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() returned unexpected error: %v", err)
+	}
+	if !cfg.SecureCookies {
+		t.Error("SecureCookies = false, want true when VANE_SECURE_COOKIES is unset")
+	}
+}
+
+// TestLoad_SecureCookiesFalse_DisablesSecureCookies asserts an operator can
+// opt out explicitly (H9: an HTTP-only internal deployment must be able to
+// keep the session cookie working, not just fail silently after login).
+func TestLoad_SecureCookiesFalse_DisablesSecureCookies(t *testing.T) {
+	setAllRequiredEnv(t)
+	t.Setenv("VANE_SECURE_COOKIES", "false")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() returned unexpected error: %v", err)
+	}
+	if cfg.SecureCookies {
+		t.Error("SecureCookies = true, want false when VANE_SECURE_COOKIES=false")
+	}
+}
+
 // TestLoad_PublicDNSTargetUnset_DefaultsToEmptyString asserts SPD-10's
 // default: when PUBLIC_DNS_TARGET is unset, Config.PublicDNSTarget is ""
 // (the operator hasn't configured this value), not an error.

@@ -23,6 +23,7 @@ type Config struct {
 	PublicDNSTarget     string
 	DevTokenLogging     bool
 	HTTPSEnabled        bool
+	SecureCookies       bool
 }
 
 // defaultCORSAllowedOrigin is the Vite dev server's origin - the CORS
@@ -106,6 +107,17 @@ func Load() (Config, error) {
 	// HTTP listener down with it (H8).
 	httpsEnabled := os.Getenv("VANE_HTTPS_ENABLED") != "false"
 
+	// secureCookies defaults to true (unchanged behavior: vane_session is
+	// Secure-only). A browser only sends a Secure cookie back over HTTPS -
+	// with one exception it treats as a secure context anyway: the literal
+	// host "localhost". Any other HTTP-only deployment (an internal IP or
+	// hostname, common for a self-hosted instance without a reverse-proxy
+	// TLS terminator) gets a 200 on login and a silent 401 on every request
+	// after, because the browser never sends the cookie back (H9). An
+	// operator in that situation sets VANE_SECURE_COOKIES=false - understanding
+	// the session token then travels in the clear on their own network.
+	secureCookies := os.Getenv("VANE_SECURE_COOKIES") != "false"
+
 	return Config{
 		DatabaseURL:         databaseURL,
 		MasterKey:           masterKey,
@@ -118,6 +130,7 @@ func Load() (Config, error) {
 		PublicDNSTarget:     publicDNSTarget,
 		DevTokenLogging:     devTokenLogging,
 		HTTPSEnabled:        httpsEnabled,
+		SecureCookies:       secureCookies,
 	}, nil
 }
 

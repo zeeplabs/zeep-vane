@@ -162,6 +162,7 @@ Loaded by `internal/config.Load()` (`internal/config/config.go`). A `.env` file 
 | `HTTPS_PORT` | no | `443` | Port the public, TLS-terminated status page listener binds to |
 | `CERTMAGIC_STORAGE_PATH` | no | `./certmagic-data` | Where CertMagic persists issued certificates. **Must be a persistent volume in production** |
 | `VANE_DEV_TOKEN_LOGGING` | no | `false` | Set to `true` to log the raw password-reset/admin-invite token, standing in for real email delivery (see [Known gaps](#known-gaps--backlog)). The token is a bearer credential for account takeover — **leave this off in any deployment whose logs reach a shared sink** |
+| `VANE_SECURE_COOKIES` | no | `true` | Set to `false` if this instance is reached over plain HTTP by anything other than `http://localhost` — browsers only send a `Secure` cookie back over HTTPS (or the `localhost` exception), so with the default `true` the admin API returns `200` on login and a silent `401` on every request after, on any other HTTP-only host. Setting it `false` means the session token then travels unencrypted on whatever network reaches this instance — **only do this on a network you trust**, and prefer terminating TLS in front of Vane instead |
 
 ## Running in development
 

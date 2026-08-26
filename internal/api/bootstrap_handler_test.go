@@ -39,7 +39,9 @@ func newBootstrapRouter(t *testing.T) (http.Handler, *db.AdminRepository, *db.Po
 	t.Cleanup(pool.Close)
 
 	repo := db.NewAdminRepository(pool)
-	handler := NewBootstrapHandler(pool, repo, zap.NewNop(), testBootstrapSessionSecret)
+	// secureCookies=true: default behavior, no test in this file exercises
+	// the VANE_SECURE_COOKIES=false path (covered in auth_handler_test.go).
+	handler := NewBootstrapHandler(pool, repo, zap.NewNop(), testBootstrapSessionSecret, true)
 
 	r := chi.NewRouter()
 	r.Get("/api/bootstrap/status", handler.Status)

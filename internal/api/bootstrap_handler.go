@@ -26,15 +26,17 @@ type BootstrapHandler struct {
 	admins        bootstrapCreator
 	logger        *zap.Logger
 	sessionSecret string
+	secureCookies bool
 }
 
 // NewBootstrapHandler builds a BootstrapHandler. pool backs Status's
 // existence check directly (a single COUNT query, no need for a
 // dedicated repository method); admins backs Create's race-safe insert.
 // sessionSecret signs the session token Create issues on success, same as
-// AuthHandler.
-func NewBootstrapHandler(pool *db.Pool, admins bootstrapCreator, logger *zap.Logger, sessionSecret string) *BootstrapHandler {
-	return &BootstrapHandler{pool: pool, admins: admins, logger: logger, sessionSecret: sessionSecret}
+// AuthHandler. secureCookies controls the vane_session cookie's Secure
+// attribute (H9), same as AuthHandler.
+func NewBootstrapHandler(pool *db.Pool, admins bootstrapCreator, logger *zap.Logger, sessionSecret string, secureCookies bool) *BootstrapHandler {
+	return &BootstrapHandler{pool: pool, admins: admins, logger: logger, sessionSecret: sessionSecret, secureCookies: secureCookies}
 }
 
 type bootstrapStatusResponse struct {
@@ -105,7 +107,7 @@ func (h *BootstrapHandler) Create(w http.ResponseWriter, r *http.Request) {
 		writeInternalError(w)
 		return
 	}
-	http.SetCookie(w, sessionCookie(token, int(auth.SessionTTL.Seconds())))
+	http.SetCookie(w, sessionCookie(token, int(auth.SessionTTL.Seconds()), h.secureCookies))
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)

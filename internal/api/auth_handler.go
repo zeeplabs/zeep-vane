@@ -25,12 +25,16 @@ type AuthHandler struct {
 	admins        adminGetter
 	logger        *zap.Logger
 	sessionSecret string
+	secureCookies bool
 }
 
 // NewAuthHandler builds an AuthHandler backed by admins. sessionSecret signs
-// issued session tokens (see internal/auth.IssueSession).
-func NewAuthHandler(admins adminGetter, logger *zap.Logger, sessionSecret string) *AuthHandler {
-	return &AuthHandler{admins: admins, logger: logger, sessionSecret: sessionSecret}
+// issued session tokens (see internal/auth.IssueSession). secureCookies
+// controls the vane_session cookie's Secure attribute (H9) - false only for
+// an operator who has explicitly accepted plaintext-network session risk via
+// VANE_SECURE_COOKIES=false.
+func NewAuthHandler(admins adminGetter, logger *zap.Logger, sessionSecret string, secureCookies bool) *AuthHandler {
+	return &AuthHandler{admins: admins, logger: logger, sessionSecret: sessionSecret, secureCookies: secureCookies}
 }
 
 type loginRequest struct {
@@ -76,7 +80,7 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	http.SetCookie(w, sessionCookie(token, int(auth.SessionTTL.Seconds())))
+	http.SetCookie(w, sessionCookie(token, int(auth.SessionTTL.Seconds()), h.secureCookies))
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
@@ -89,14 +93,16 @@ const sessionCookieName = "vane_session"
 
 // sessionCookie builds the vane_session cookie with the attributes AD-004
 // requires. maxAge is in seconds - pass a negative value to build an
-// already-expired cookie (used by logout).
-func sessionCookie(value string, maxAge int) *http.Cookie {
+// already-expired cookie (used by logout). secure controls the Secure
+// attribute - true unless the operator has opted out via
+// VANE_SECURE_COOKIES=false (H9).
+func sessionCookie(value string, maxAge int, secure bool) *http.Cookie {
 	return &http.Cookie{
 		Name:     sessionCookieName,
 		Value:    value,
 		Path:     "/",
 		HttpOnly: true,
-		Secure:   true,
+		Secure:   secure,
 		SameSite: http.SameSiteStrictMode,
 		MaxAge:   maxAge,
 	}
@@ -126,7 +132,7 @@ func (h *AuthHandler) Me(w http.ResponseWriter, r *http.Request) {
 // Logout expires the vane_session cookie set at login. It requires no
 // role beyond being authenticated - any admin can end their own session.
 func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
-	http.SetCookie(w, sessionCookie("", -1))
+	http.SetCookie(w, sessionCookie("", -1, h.secureCookies))
 	w.WriteHeader(http.StatusOK)
 }
 
