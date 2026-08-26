@@ -71,6 +71,18 @@ func RequireAuth(secret string, admins adminLoader) func(http.Handler) http.Hand
 				return
 			}
 
+			// claims.IssuedAt is a JWT NumericDate - second precision by
+			// spec (RFC 7519), always floor()'d from the real issue instant.
+			// SessionsRevokedAt is a Postgres timestamptz with microsecond
+			// precision (L22). This asymmetry is fail-closed, never
+			// fail-open: floor(issued) <= issued always, so this check can
+			// only ever treat a token as revoked earlier than the real
+			// comparison would (worst case, a token minted in the exact
+			// same wall-clock second as a revocation event, and genuinely
+			// after it, gets rejected once - it succeeds on retry a moment
+			// later). It can never accept a token that was truly issued
+			// before revocation, because floor(issued) can never round
+			// forward past the real issue instant.
 			if admin.SessionsRevokedAt != nil && claims.IssuedAt.Before(*admin.SessionsRevokedAt) {
 				writeUnauthorized(w)
 				return
