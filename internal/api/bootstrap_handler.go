@@ -67,6 +67,11 @@ type bootstrapCreateRequest struct {
 const invalidBootstrapRequestBody = `{"error":"email and password are required"}`
 const alreadyBootstrappedBody = `{"error":"already bootstrapped"}`
 
+// weakPasswordBody is returned by every handler that sets a new password
+// (bootstrap, invite-accept, password-reset-confirm) when it fails
+// auth.ValidatePassword (H11).
+const weakPasswordBody = `{"error":"password must be between 8 and 72 characters"}`
+
 // Create creates the first admin (owner role, by the admins table's
 // existing column default) and, on success, logs them in immediately by
 // setting the same session cookie Login sets (AD-004) - the new owner
@@ -79,6 +84,10 @@ func (h *BootstrapHandler) Create(w http.ResponseWriter, r *http.Request) {
 	var req bootstrapCreateRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Email == "" || req.Password == "" {
 		writeAdminError(w, http.StatusUnprocessableEntity, invalidBootstrapRequestBody)
+		return
+	}
+	if err := auth.ValidatePassword(req.Password); err != nil {
+		writeAdminError(w, http.StatusUnprocessableEntity, weakPasswordBody)
 		return
 	}
 

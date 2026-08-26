@@ -207,6 +207,41 @@ func TestPasswordResetConfirm_ValidUnexpiredToken_ChangesPassword(t *testing.T) 
 	}
 }
 
+// TestPasswordResetConfirm_WeakPassword_422NoChange is the H11 regression
+// guard: a password below auth.MinPasswordLength must be rejected before
+// the admin's password hash is updated, even with a valid unexpired token.
+func TestPasswordResetConfirm_WeakPassword_422NoChange(t *testing.T) {
+	r, admins, pool, logs := newPasswordResetRouter(t)
+	email := uniqueTestEmail(t)
+	createTestAdmin(t, admins, pool, email, "old-password")
+
+	ctx := context.Background()
+	t.Cleanup(func() {
+		_, _ = pool.Exec(ctx, "DELETE FROM password_reset_tokens WHERE admin_id IN (SELECT id FROM admins WHERE email = $1)", email)
+	})
+
+	reqRec := postJSON(t, r, "/api/auth/password-reset/request", passwordResetRequestBody{Email: email})
+	if reqRec.Code != http.StatusOK {
+		t.Fatalf("request status = %d, want %d", reqRec.Code, http.StatusOK)
+	}
+	rawToken := rawTokenFromLogs(t, logs)
+
+	confirmRec := postJSON(t, r, "/api/auth/password-reset/confirm", passwordResetConfirmBody{
+		Token: rawToken, NewPassword: "1234567",
+	})
+	if confirmRec.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("confirm status = %d, want %d", confirmRec.Code, http.StatusUnprocessableEntity)
+	}
+
+	unchanged, err := admins.GetByEmail(ctx, email)
+	if err != nil {
+		t.Fatalf("GetByEmail() returned unexpected error: %v", err)
+	}
+	if !auth.VerifyPassword(unchanged.PasswordHash, "old-password") {
+		t.Error("password was changed despite a weak new password, want unchanged")
+	}
+}
+
 func TestPasswordResetConfirm_ExpiredToken_Rejected(t *testing.T) {
 	r, admins, pool, _ := newPasswordResetRouter(t)
 	email := uniqueTestEmail(t)

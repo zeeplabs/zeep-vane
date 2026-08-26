@@ -306,3 +306,28 @@ func TestBootstrapHandler_Create_EmptyPassword_Returns422NoAdminCreated(t *testi
 		t.Errorf("admins row count after a 422-rejected bootstrap = %d, want 0", count)
 	}
 }
+
+// TestBootstrapHandler_Create_WeakPassword_Returns422NoAdminCreated is the
+// H11 regression guard: a password below auth.MinPasswordLength must be
+// rejected before hashing, not silently accepted as the first owner's
+// credential.
+func TestBootstrapHandler_Create_WeakPassword_Returns422NoAdminCreated(t *testing.T) {
+	r, _, pool := newBootstrapRouter(t)
+	restore := clearAdminsForBootstrapTest(t, pool)
+	t.Cleanup(restore)
+
+	rec := postBootstrap(t, r, bootstrapCreateRequest{Email: bootstrapUniqueTestEmail(t), Password: "1234567"})
+
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("status = %d, want 422", rec.Code)
+	}
+
+	ctx := context.Background()
+	var count int
+	if err := pool.QueryRow(ctx, "SELECT COUNT(*) FROM admins").Scan(&count); err != nil {
+		t.Fatalf("counting admins returned unexpected error: %v", err)
+	}
+	if count != 0 {
+		t.Errorf("admins row count after a weak-password-rejected bootstrap = %d, want 0", count)
+	}
+}

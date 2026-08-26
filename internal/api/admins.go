@@ -189,6 +189,10 @@ func (h *AdminsHandler) AcceptInvite(w http.ResponseWriter, r *http.Request) {
 		writeAdminError(w, http.StatusUnprocessableEntity, invalidAcceptInviteRequestBody)
 		return
 	}
+	if err := auth.ValidatePassword(req.Password); err != nil {
+		writeAdminError(w, http.StatusUnprocessableEntity, weakPasswordBody)
+		return
+	}
 
 	if token == "" {
 		writeAdminError(w, http.StatusUnauthorized, acceptInviteErrorBody)

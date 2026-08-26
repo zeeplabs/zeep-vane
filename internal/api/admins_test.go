@@ -434,6 +434,30 @@ func TestAcceptInvite_MissingPassword_422(t *testing.T) {
 	}
 }
 
+// TestAcceptInvite_WeakPassword_422 is the H11 regression guard: a password
+// below auth.MinPasswordLength must be rejected before an invited admin
+// account is created.
+func TestAcceptInvite_WeakPassword_422(t *testing.T) {
+	r, _, admins, invites := newAdminsRouter(t)
+	inviterAdmin := &db.Admin{Email: uniqueTestEmail(t), PasswordHash: "hash"}
+	if err := admins.Create(context.Background(), inviterAdmin); err != nil {
+		t.Fatalf("admins.Create() returned unexpected error: %v", err)
+	}
+	t.Cleanup(func() { _ = admins.Delete(context.Background(), inviterAdmin.ID) })
+
+	inviteEmail := uniqueTestEmail(t)
+	rawToken := createTestInvite(t, invites, inviterAdmin.ID, inviteEmail, db.RoleViewer, 1*time.Hour)
+
+	rec := postAcceptInvite(t, r, rawToken, "1234567")
+
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Errorf("status = %d, want %d, body = %s", rec.Code, http.StatusUnprocessableEntity, rec.Body.String())
+	}
+	if _, err := admins.GetByEmail(context.Background(), inviteEmail); !errors.Is(err, db.ErrNotFound) {
+		t.Errorf("GetByEmail() err = %v, want db.ErrNotFound (no admin created for a weak-password-rejected invite)", err)
+	}
+}
+
 func patchAdminRole(t *testing.T, r http.Handler, token, targetID, role string) *httptest.ResponseRecorder {
 	t.Helper()
 	body, err := json.Marshal(updateAdminRoleRequest{Role: role})

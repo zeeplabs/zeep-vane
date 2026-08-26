@@ -153,6 +153,11 @@ func (h *PasswordResetHandler) Confirm(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if err := auth.ValidatePassword(body.NewPassword); err != nil {
+		writeAdminError(w, http.StatusUnprocessableEntity, weakPasswordBody)
+		return
+	}
+
 	newHash, err := auth.HashPassword(body.NewPassword)
 	if err != nil {
 		h.logger.Error("password-reset: failed to hash new password", zap.Error(err))

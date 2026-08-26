@@ -136,6 +136,7 @@ Core tables (see `internal/db/migrations/` for exact schema and `internal/db/*_r
   - **operator** — all `mvp-core` write routes (domains, services, integrations, incidents, status pages) and reads.
   - **viewer** — read-only across `mvp-core` resources and poller status.
 - `POST /api/auth/logout` clears the cookie; an admin's `sessions_revoked_at` timestamp can invalidate all of that admin's existing sessions at once (used on role change/removal).
+- Every path that sets a password — bootstrap, invite-accept, password-reset-confirm — requires 8–72 characters (`internal/auth.ValidatePassword`). No forced complexity rule (uppercase/digit/symbol): NIST SP 800-63B recommends length over complexity, since complexity rules push users toward predictable substitutions instead of real entropy. 72 is bcrypt's own hard input limit.
 
 ## Public status page routing
 
