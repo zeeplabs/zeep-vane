@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"net/http"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"go.uber.org/zap"
@@ -12,9 +13,20 @@ import (
 	"github.com/zeeplabs/zeep-vane/internal/config"
 	"github.com/zeeplabs/zeep-vane/internal/connectors/datadog"
 	"github.com/zeeplabs/zeep-vane/internal/db"
+	"github.com/zeeplabs/zeep-vane/internal/ratelimit"
 	"github.com/zeeplabs/zeep-vane/internal/router"
 	"github.com/zeeplabs/zeep-vane/web"
 )
+
+// credentialRouteRateLimit/Burst/IdleTTL bound login, password-reset, and
+// account-creation attempts per client IP (H10) - none of these routes had
+// any limit before. 10/min with a burst of 10 tolerates a legitimate user
+// mistyping a password a few times in a row without a lockout, while still
+// bounding an automated guesser to a rate that makes brute-forcing a real
+// password or token impractical.
+const credentialRouteRateLimit = 10
+const credentialRouteBurst = 10
+const credentialRouteIdleTTL = 10 * time.Minute
 
 // buildAdminRouter mounts the admin-facing API on top of router.New's base
 // (/healthz): authentication, admin-dashboard admin management, and the
@@ -55,17 +67,24 @@ func buildAdminRouter(pool *db.Pool, cfg config.Config, logger *zap.Logger, poll
 	anyRole := api.RequireRole(db.RoleOwner, db.RoleOperator, db.RoleViewer)
 	ownerOnly := api.RequireRole(db.RoleOwner)
 
+	// One shared limiter (not one per route) - login, password-reset, and
+	// bootstrap/invite-accept are all the same threat (credential/token
+	// guessing), so a single IP's budget is shared across all of them.
+	// Otherwise an attacker could just spread guesses across routes to get
+	// a multiple of the intended rate (H10).
+	credentialLimiter := ratelimit.NewIPLimiter(credentialRouteRateLimit, credentialRouteBurst, credentialRouteIdleTTL)
+
 	// Public - no authentication.
-	r.Post("/api/auth/login", authHandler.Login)
-	r.Post("/api/auth/password-reset/request", passwordResetHandler.Request)
-	r.Post("/api/auth/password-reset/confirm", passwordResetHandler.Confirm)
-	r.Post("/api/admins/invite/{token}/accept", adminsHandler.AcceptInvite)
+	r.With(credentialLimiter.Middleware).Post("/api/auth/login", authHandler.Login)
+	r.With(credentialLimiter.Middleware).Post("/api/auth/password-reset/request", passwordResetHandler.Request)
+	r.With(credentialLimiter.Middleware).Post("/api/auth/password-reset/confirm", passwordResetHandler.Confirm)
+	r.With(credentialLimiter.Middleware).Post("/api/admins/invite/{token}/accept", adminsHandler.AcceptInvite)
 
 	// First-run bootstrap (SHD-14/SHD-15) - public and unauthenticated by
 	// necessity: no authenticated caller can exist before the very first
 	// admin does, same structural reason AcceptInvite above is public.
 	r.Get("/api/bootstrap/status", bootstrapHandler.Status)
-	r.Post("/api/bootstrap", bootstrapHandler.Create)
+	r.With(credentialLimiter.Middleware).Post("/api/bootstrap", bootstrapHandler.Create)
 
 	// Public branding (login screen + sidebar, both render without an
 	// owner-role check) - deliberately not behind ownerOnly like

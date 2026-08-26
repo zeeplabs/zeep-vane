@@ -872,3 +872,84 @@ func TestAdminRouter_UnmatchedAPIPath_ReturnsJSON404NotHTML(t *testing.T) {
 		t.Error(`response body missing a non-empty "error" field`)
 	}
 }
+
+// TestAdminRouter_LoginRateLimit_ExceedsBurst_429 is the H10 regression
+// guard, exercised through the real production router (not a standalone
+// test-only chi mux): login had no rate limit at all before - an attacker
+// could brute-force a password with unbounded, unthrottled requests.
+func TestAdminRouter_LoginRateLimit_ExceedsBurst_429(t *testing.T) {
+	r, _, _ := newAdminRouterForTest(t)
+
+	body, err := json.Marshal(map[string]string{"email": "nobody@example.com", "password": "wrong-password"})
+	if err != nil {
+		t.Fatalf("json.Marshal() returned unexpected error: %v", err)
+	}
+
+	postLogin := func() *httptest.ResponseRecorder {
+		req := httptest.NewRequest(http.MethodPost, "/api/auth/login", bytes.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		req.RemoteAddr = "203.0.113.9:54321"
+		rec := httptest.NewRecorder()
+		r.ServeHTTP(rec, req)
+		return rec
+	}
+
+	// credentialRouteBurst (10) requests should all pass the rate limiter
+	// (each still 401s on the wrong credentials - only the limiter's
+	// behavior is under test here).
+	for i := 0; i < credentialRouteBurst; i++ {
+		rec := postLogin()
+		if rec.Code != http.StatusUnauthorized {
+			t.Fatalf("request %d: status = %d, want %d (rate limiter must not block within burst)", i, rec.Code, http.StatusUnauthorized)
+		}
+	}
+
+	rec := postLogin()
+	if rec.Code != http.StatusTooManyRequests {
+		t.Errorf("request past burst: status = %d, want %d", rec.Code, http.StatusTooManyRequests)
+	}
+}
+
+// TestAdminRouter_LoginRateLimit_SharedAcrossCredentialRoutes_429 asserts
+// the limiter's budget is shared across every credential-sensitive route,
+// not reset per-route - otherwise an attacker could multiply their
+// effective rate simply by spreading guesses across login/password-reset
+// (H10).
+func TestAdminRouter_LoginRateLimit_SharedAcrossCredentialRoutes_429(t *testing.T) {
+	r, _, _ := newAdminRouterForTest(t)
+
+	loginBody, err := json.Marshal(map[string]string{"email": "nobody@example.com", "password": "wrong-password"})
+	if err != nil {
+		t.Fatalf("json.Marshal() returned unexpected error: %v", err)
+	}
+	resetBody, err := json.Marshal(map[string]string{"email": "nobody@example.com"})
+	if err != nil {
+		t.Fatalf("json.Marshal() returned unexpected error: %v", err)
+	}
+
+	post := func(path string, body []byte) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(http.MethodPost, path, bytes.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		req.RemoteAddr = "203.0.113.10:54321"
+		rec := httptest.NewRecorder()
+		r.ServeHTTP(rec, req)
+		return rec
+	}
+
+	for i := 0; i < credentialRouteBurst; i++ {
+		var rec *httptest.ResponseRecorder
+		if i%2 == 0 {
+			rec = post("/api/auth/login", loginBody)
+		} else {
+			rec = post("/api/auth/password-reset/request", resetBody)
+		}
+		if rec.Code == http.StatusTooManyRequests {
+			t.Fatalf("request %d: got 429 within the shared burst, want it exhausted only after %d total requests across both routes", i, credentialRouteBurst)
+		}
+	}
+
+	rec := post("/api/auth/login", loginBody)
+	if rec.Code != http.StatusTooManyRequests {
+		t.Errorf("status = %d, want %d (budget shared with password-reset/request must already be exhausted)", rec.Code, http.StatusTooManyRequests)
+	}
+}

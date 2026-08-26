@@ -137,6 +137,7 @@ Core tables (see `internal/db/migrations/` for exact schema and `internal/db/*_r
   - **viewer** — read-only across `mvp-core` resources and poller status.
 - `POST /api/auth/logout` clears the cookie; an admin's `sessions_revoked_at` timestamp can invalidate all of that admin's existing sessions at once (used on role change/removal).
 - Every path that sets a password — bootstrap, invite-accept, password-reset-confirm — requires 8–72 characters (`internal/auth.ValidatePassword`). No forced complexity rule (uppercase/digit/symbol): NIST SP 800-63B recommends length over complexity, since complexity rules push users toward predictable substitutions instead of real entropy. 72 is bcrypt's own hard input limit.
+- Login, password-reset (request + confirm), invite-accept, and bootstrap all share one per-client-IP rate limit (`internal/ratelimit`) — 10 requests/minute with a burst of 10, shared across all of them so spreading guesses across routes doesn't multiply the effective rate. The client IP is read from the connection (`net/http`'s `RemoteAddr`), never from `X-Forwarded-For`/`X-Real-IP` — if this instance sits behind a reverse proxy, make sure that proxy preserves the real client address in the connection it opens to Vane rather than relying on a spoofable header.
 
 ## Public status page routing
 
