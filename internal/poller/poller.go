@@ -72,10 +72,23 @@ func NewPoller(services serviceLister, statuses serviceStatusUpdater, statusInte
 	}
 }
 
-// Run ticks every p.interval, polling all configured services each cycle,
-// until ctx is canceled - at which point it returns, letting the caller
-// (cmd/vane serve) shut down cleanly without leaking the goroutine.
+// Run polls once immediately, then ticks every p.interval polling all
+// configured services each cycle, until ctx is canceled - at which point it
+// returns, letting the caller (cmd/vane serve) shut down cleanly without
+// leaking the goroutine. The immediate poll (M17) matters because Run is
+// also what PollerManager.Restart starts right after an admin connects
+// Datadog (PLD-01) - without it, time.NewTicker's first tick doesn't fire
+// until a full p.interval has elapsed, leaving every service silently
+// unconfirmed for up to POLL_INTERVAL_SECONDS right when an admin is
+// actively watching for the connection to start working.
 func (p *Poller) Run(ctx context.Context) {
+	select {
+	case <-ctx.Done():
+		return
+	default:
+		p.pollOnce(ctx)
+	}
+
 	ticker := time.NewTicker(p.interval)
 	defer ticker.Stop()
 

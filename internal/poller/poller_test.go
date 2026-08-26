@@ -367,3 +367,50 @@ func TestPoller_Run_StopsOnContextCancel(t *testing.T) {
 		t.Fatal("Run() did not return after context cancellation")
 	}
 }
+
+// TestPoller_Run_PollsImmediatelyBeforeFirstTick is the M17 regression
+// guard: Run must not wait a full interval for time.NewTicker's first tick
+// before fetching status - an admin who just connected Datadog watches the
+// dashboard update immediately, not after a silent up-to-interval gap.
+func TestPoller_Run_PollsImmediatelyBeforeFirstTick(t *testing.T) {
+	pool, dsn := newTestPool(t)
+	ctx := context.Background()
+
+	services := db.NewServiceRepository(pool)
+	statusIntervals := db.NewStatusIntervalRepository(pool)
+	integrations := db.NewIntegrationRepository(pool)
+	svc := createTestService(t, pool, services)
+	createTestIntegration(t, pool, dsn, integrations)
+
+	provider := &fakeProvider{errs: []error{nil}, status: datadog.SLOStatus{State: "ok", ErrorBudgetRemaining: 100}}
+	// A long interval - if Run waited for the ticker's first tick instead
+	// of polling immediately, this test would time out waiting for a
+	// status that shouldn't take an hour to appear.
+	p := NewPoller(services, services, statusIntervals, integrations, provider, time.Hour, zap.NewNop())
+
+	runCtx, cancel := context.WithCancel(ctx)
+	done := make(chan struct{})
+	go func() {
+		p.Run(runCtx)
+		close(done)
+	}()
+	t.Cleanup(func() {
+		cancel()
+		<-done
+	})
+
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		all, err := services.List(ctx)
+		if err != nil {
+			t.Fatalf("List() returned unexpected error: %v", err)
+		}
+		for i := range all {
+			if all[i].ID == svc.ID && all[i].CurrentStatus == "operational" {
+				return
+			}
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	t.Fatal("service CurrentStatus never reached operational within 2s of Run() starting - want an immediate poll, not a wait for the 1h ticker's first tick")
+}
