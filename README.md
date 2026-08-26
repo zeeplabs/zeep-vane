@@ -152,7 +152,7 @@ Loaded by `internal/config.Load()` (`internal/config/config.go`). A `.env` file 
 | Variable | Required | Default | Notes |
 |---|---|---|---|
 | `DATABASE_URL` | yes | — | Postgres connection string, e.g. `postgres://user:pass@host:5432/dbname?sslmode=disable` |
-| `VANE_MASTER_KEY` | yes | — | Symmetric key used to encrypt stored Datadog credentials at rest |
+| `VANE_MASTER_KEY` | yes | — | Symmetric key used to encrypt stored Datadog credentials at rest. Stretched into the actual AES-256 key via PBKDF2-HMAC-SHA256 (210,000 iterations, `internal/crypto`) rather than a single unsalted hash, so a weak-but-long key still costs real compute per guess |
 | `VANE_SESSION_SECRET` | yes | — | Signing secret for session JWTs |
 | `PORT` | yes | — | Port the admin HTTP API (and SPA) listens on |
 | `POLL_INTERVAL_SECONDS` | yes | — | How often the poller queries Datadog for SLO status |
