@@ -4,7 +4,8 @@ bin/
 *.test
 test-local/
 web/node_modules/
-web/dist/
+web/dist/*
+!web/dist/.gitkeep
 internal/webui/static/
 .DS_Store
 data/

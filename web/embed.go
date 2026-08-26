@@ -16,12 +16,16 @@ import (
 	"strings"
 )
 
-// distFS embeds every file npm run build produces under web/dist. It is
-// empty (compiles, but contains no files) until the frontend has been
-// built at least once - the same accepted "must build once" convention
-// zeep-orbit's own embedded static/ directory already requires.
+// distFS embeds every file npm run build produces under web/dist. A
+// go:embed directory pattern fails to compile if the directory has no
+// matching files, so web/dist/.gitkeep is committed to guarantee the
+// pattern always has at least one file - even before the frontend has
+// been built. The "all:" prefix is required because go:embed otherwise
+// silently skips dotfiles, and .gitkeep would not count as a match.
+// Run `make web-build` (or `npm run build` in web/) at least once
+// before `go build`/`go test` on a fresh clone.
 //
-//go:embed dist
+//go:embed all:dist
 var distFS embed.FS
 
 // StaticHandler serves the embedded SPA with client-side route fallback:
