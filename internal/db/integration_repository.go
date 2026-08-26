@@ -69,6 +69,25 @@ func (r *IntegrationRepository) MarkDatadogInvalid(ctx context.Context, lastErro
 	return nil
 }
 
+// MarkDatadogChecked records a successful poll cycle: the Datadog
+// integration is (re)marked active, any previously recorded failure reason
+// is cleared, and last_checked_at advances to now. Called once per poll
+// cycle when at least one service was fetched successfully (H5/H6) - not
+// per-service - so a single misconfigured SLO among several reachable
+// services never leaves the integration stuck reporting invalid, and a
+// poller that has recovered after a prior failure clears that failure
+// instead of staying invalid forever.
+func (r *IntegrationRepository) MarkDatadogChecked(ctx context.Context) error {
+	_, err := r.pool.Exec(ctx,
+		`UPDATE integrations SET status = 'active', last_error = NULL, last_checked_at = now() WHERE provider = 'datadog'`,
+	)
+	if err != nil {
+		return fmt.Errorf("db: failed to mark datadog integration checked: %w", err)
+	}
+
+	return nil
+}
+
 // List returns every connected integration (admin-dashboard ADM-13/ADM-14 -
 // the poller status view reads this directly, with no new fetch logic).
 // Ordered by provider for a stable response.

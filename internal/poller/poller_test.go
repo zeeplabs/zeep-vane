@@ -185,6 +185,161 @@ func TestPoller_PollOnce_ConnectionFailure_MarksIntegrationInvalidAndKeepsLastSt
 	}
 }
 
+// sloKeyedFakeProvider returns a fixed result or error per SLO ID,
+// independent across services - unlike fakeProvider, whose single
+// call-indexed sequence can't represent one service succeeding while
+// another fails within the same pollOnce cycle.
+type sloKeyedFakeProvider struct {
+	statuses map[string]datadog.SLOStatus
+	errs     map[string]error
+}
+
+func (f *sloKeyedFakeProvider) FetchSLOStatus(ctx context.Context, sloID string) (datadog.SLOStatus, error) {
+	if err, ok := f.errs[sloID]; ok {
+		return datadog.SLOStatus{}, err
+	}
+	return f.statuses[sloID], nil
+}
+
+func createTestServiceWithSLO(t *testing.T, pool *db.Pool, services *db.ServiceRepository, sloID string) db.Service {
+	t.Helper()
+	ctx := context.Background()
+
+	svc := &db.Service{
+		Name:  fmt.Sprintf("poller-test-%d", time.Now().UnixNano()),
+		SLOID: sloID,
+	}
+	if err := services.Create(ctx, svc); err != nil {
+		t.Fatalf("Create() returned unexpected error: %v", err)
+	}
+	t.Cleanup(func() { _, _ = pool.Exec(ctx, "DELETE FROM services WHERE id = $1", svc.ID) })
+
+	return *svc
+}
+
+// TestPoller_PollOnce_Success_MarksIntegrationChecked is the H5 regression
+// guard: a successful cycle must record that success on the Datadog
+// integration - previously nothing ever did, so an integration once marked
+// invalid stayed invalid forever, even after the poller recovered.
+func TestPoller_PollOnce_Success_MarksIntegrationChecked(t *testing.T) {
+	pool, dsn := newTestPool(t)
+	ctx := context.Background()
+
+	services := db.NewServiceRepository(pool)
+	statusIntervals := db.NewStatusIntervalRepository(pool)
+	integrations := db.NewIntegrationRepository(pool)
+	createTestService(t, pool, services)
+	createTestIntegration(t, pool, dsn, integrations)
+
+	provider := &fakeProvider{errs: []error{nil}, status: datadog.SLOStatus{State: "ok", ErrorBudgetRemaining: 100}}
+	p := NewPoller(services, services, statusIntervals, integrations, provider, time.Hour, zap.NewNop())
+	p.pollOnce(ctx)
+
+	integration, err := integrations.GetDatadog(ctx)
+	if err != nil {
+		t.Fatalf("GetDatadog() returned unexpected error: %v", err)
+	}
+	if integration.Status != "active" {
+		t.Errorf("Status = %q, want %q", integration.Status, "active")
+	}
+	if integration.LastCheckedAt == nil {
+		t.Error("LastCheckedAt is nil, want a timestamp set by a successful poll")
+	}
+}
+
+// TestPoller_PollOnce_RecoversFromInvalid_AfterSubsequentSuccess is the
+// other half of H5: a cycle that succeeds after a prior cycle failed must
+// clear the invalid state and the recorded error, not leave the admin
+// looking at a stale failure the poller has already recovered from.
+func TestPoller_PollOnce_RecoversFromInvalid_AfterSubsequentSuccess(t *testing.T) {
+	pool, dsn := newTestPool(t)
+	ctx := context.Background()
+
+	services := db.NewServiceRepository(pool)
+	statusIntervals := db.NewStatusIntervalRepository(pool)
+	integrations := db.NewIntegrationRepository(pool)
+	createTestService(t, pool, services)
+	createTestIntegration(t, pool, dsn, integrations)
+
+	if err := integrations.MarkDatadogInvalid(ctx, "seeded failure"); err != nil {
+		t.Fatalf("setup MarkDatadogInvalid() returned unexpected error: %v", err)
+	}
+
+	provider := &fakeProvider{errs: []error{nil}, status: datadog.SLOStatus{State: "ok", ErrorBudgetRemaining: 100}}
+	p := NewPoller(services, services, statusIntervals, integrations, provider, time.Hour, zap.NewNop())
+	p.pollOnce(ctx)
+
+	integration, err := integrations.GetDatadog(ctx)
+	if err != nil {
+		t.Fatalf("GetDatadog() returned unexpected error: %v", err)
+	}
+	if integration.Status != "active" {
+		t.Errorf("Status = %q, want %q (must clear the seeded invalid state)", integration.Status, "active")
+	}
+	if integration.LastError != nil {
+		t.Errorf("LastError = %q, want nil (must clear the seeded failure reason)", *integration.LastError)
+	}
+}
+
+// TestPoller_PollOnce_OneOfTwoServicesFails_IntegrationStaysActive is the H6
+// regression guard: a single misconfigured SLO among several reachable
+// services must not mark the whole Datadog integration invalid - that would
+// hide every other service's real status behind one bad SLO ID.
+func TestPoller_PollOnce_OneOfTwoServicesFails_IntegrationStaysActive(t *testing.T) {
+	pool, dsn := newTestPool(t)
+	ctx := context.Background()
+
+	services := db.NewServiceRepository(pool)
+	statusIntervals := db.NewStatusIntervalRepository(pool)
+	integrations := db.NewIntegrationRepository(pool)
+	createTestIntegration(t, pool, dsn, integrations)
+
+	okSvc := createTestServiceWithSLO(t, pool, services, "slo-ok")
+	badSvc := createTestServiceWithSLO(t, pool, services, "slo-not-found")
+
+	backoffBase = time.Millisecond
+	provider := &sloKeyedFakeProvider{
+		statuses: map[string]datadog.SLOStatus{"slo-ok": {State: "ok", ErrorBudgetRemaining: 100}},
+		errs:     map[string]error{"slo-not-found": datadog.ErrTimeout},
+	}
+	p := NewPoller(services, services, statusIntervals, integrations, provider, time.Hour, zap.NewNop())
+	p.pollOnce(ctx)
+
+	integration, err := integrations.GetDatadog(ctx)
+	if err != nil {
+		t.Fatalf("GetDatadog() returned unexpected error: %v", err)
+	}
+	if integration.Status != "active" {
+		t.Errorf("Status = %q, want %q (one bad SLO must not invalidate the whole integration)", integration.Status, "active")
+	}
+
+	all, err := services.List(ctx)
+	if err != nil {
+		t.Fatalf("List() returned unexpected error: %v", err)
+	}
+	var foundOK, foundBad *db.Service
+	for i := range all {
+		switch all[i].ID {
+		case okSvc.ID:
+			foundOK = &all[i]
+		case badSvc.ID:
+			foundBad = &all[i]
+		}
+	}
+	if foundOK == nil {
+		t.Fatalf("service %s not found after pollOnce", okSvc.ID)
+	}
+	if foundOK.CurrentStatus != "operational" {
+		t.Errorf("ok service CurrentStatus = %q, want %q", foundOK.CurrentStatus, "operational")
+	}
+	if foundBad == nil {
+		t.Fatalf("service %s not found after pollOnce", badSvc.ID)
+	}
+	if foundBad.CurrentStatus == "operational" {
+		t.Errorf("bad service CurrentStatus = %q, want unchanged from its default (never successfully fetched)", foundBad.CurrentStatus)
+	}
+}
+
 // TestPoller_Run_StopsOnContextCancel confirms the ticker loop exits
 // cleanly when its context is canceled, so cmd/vane serve (T25) can shut it
 // down without a goroutine leak.
