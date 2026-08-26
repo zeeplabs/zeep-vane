@@ -22,6 +22,7 @@ type Config struct {
 	UploadsDir          string
 	PublicDNSTarget     string
 	DevTokenLogging     bool
+	HTTPSEnabled        bool
 }
 
 // defaultCORSAllowedOrigin is the Vite dev server's origin - the CORS
@@ -97,6 +98,14 @@ func Load() (Config, error) {
 	// is worse for a self-hosted deploy whose operator hasn't set up email.
 	devTokenLogging := os.Getenv("VANE_DEV_TOKEN_LOGGING") == "true"
 
+	// httpsEnabled defaults to true (unchanged behavior: the on-demand-TLS
+	// listener for custom status-page domains always starts). An operator
+	// with no custom domain to serve - or whose environment can't bind :443
+	// (unprivileged container, port already taken by a reverse proxy) -
+	// sets VANE_HTTPS_ENABLED=false so that failure doesn't take the admin
+	// HTTP listener down with it (H8).
+	httpsEnabled := os.Getenv("VANE_HTTPS_ENABLED") != "false"
+
 	return Config{
 		DatabaseURL:         databaseURL,
 		MasterKey:           masterKey,
@@ -108,6 +117,7 @@ func Load() (Config, error) {
 		UploadsDir:          uploadsDir,
 		PublicDNSTarget:     publicDNSTarget,
 		DevTokenLogging:     devTokenLogging,
+		HTTPSEnabled:        httpsEnabled,
 	}, nil
 }
 

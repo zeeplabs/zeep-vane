@@ -153,6 +153,39 @@ func TestLoad_PublicDNSTargetSet_UsesGivenValue(t *testing.T) {
 	}
 }
 
+// TestLoad_HTTPSEnabledUnset_DefaultsToTrue asserts the on-demand-TLS
+// listener still starts by default (H8 fix must not change existing
+// deploys that rely on custom status-page domains without setting
+// anything new).
+func TestLoad_HTTPSEnabledUnset_DefaultsToTrue(t *testing.T) {
+	setAllRequiredEnv(t)
+	t.Setenv("VANE_HTTPS_ENABLED", "")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() returned unexpected error: %v", err)
+	}
+	if !cfg.HTTPSEnabled {
+		t.Error("HTTPSEnabled = false, want true when VANE_HTTPS_ENABLED is unset")
+	}
+}
+
+// TestLoad_HTTPSEnabledFalse_DisablesHTTPS asserts an operator can opt out
+// of the HTTPS listener explicitly (H8: no way to bind :443 - or no custom
+// domain to serve - must not be fatal).
+func TestLoad_HTTPSEnabledFalse_DisablesHTTPS(t *testing.T) {
+	setAllRequiredEnv(t)
+	t.Setenv("VANE_HTTPS_ENABLED", "false")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() returned unexpected error: %v", err)
+	}
+	if cfg.HTTPSEnabled {
+		t.Error("HTTPSEnabled = true, want false when VANE_HTTPS_ENABLED=false")
+	}
+}
+
 // TestLoad_PublicDNSTargetUnset_DefaultsToEmptyString asserts SPD-10's
 // default: when PUBLIC_DNS_TARGET is unset, Config.PublicDNSTarget is ""
 // (the operator hasn't configured this value), not an error.

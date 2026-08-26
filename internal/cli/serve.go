@@ -110,8 +110,7 @@ func NewServeCmd() *cobra.Command {
 			addr := fmt.Sprintf(":%d", cfg.Port)
 			srv := &http.Server{Addr: addr, Handler: buildAdminRouter(pool, cfg, logger, pollerManager)}
 
-			httpsSrv := newHTTPSServer(pool, cfg.UploadsDir, logger)
-
+			var httpsSrv *http.Server
 			serverErrs := make(chan error, 2)
 			go func() {
 				logger.Info("serve: listening", zap.String("addr", addr))
@@ -121,14 +120,19 @@ func NewServeCmd() *cobra.Command {
 				}
 				serverErrs <- nil
 			}()
-			go func() {
-				logger.Info("serve: https listening (on-demand tls)", zap.String("addr", httpsSrv.Addr))
-				if err := httpsSrv.ListenAndServeTLS("", ""); err != nil && !errors.Is(err, http.ErrServerClosed) {
-					serverErrs <- err
-					return
-				}
-				serverErrs <- nil
-			}()
+			if cfg.HTTPSEnabled {
+				httpsSrv = newHTTPSServer(pool, cfg.UploadsDir, logger)
+				go func() {
+					logger.Info("serve: https listening (on-demand tls)", zap.String("addr", httpsSrv.Addr))
+					if err := httpsSrv.ListenAndServeTLS("", ""); err != nil && !errors.Is(err, http.ErrServerClosed) {
+						serverErrs <- err
+						return
+					}
+					serverErrs <- nil
+				}()
+			} else {
+				logger.Warn("serve: https listener disabled (VANE_HTTPS_ENABLED=false) - custom status-page domains will not be reachable")
+			}
 
 			select {
 			case <-ctx.Done():
@@ -145,8 +149,10 @@ func NewServeCmd() *cobra.Command {
 			if err := srv.Shutdown(shutdownCtx); err != nil {
 				logger.Error("serve: http shutdown error", zap.Error(err))
 			}
-			if err := httpsSrv.Shutdown(shutdownCtx); err != nil {
-				logger.Error("serve: https shutdown error", zap.Error(err))
+			if httpsSrv != nil {
+				if err := httpsSrv.Shutdown(shutdownCtx); err != nil {
+					logger.Error("serve: https shutdown error", zap.Error(err))
+				}
 			}
 
 			pollerManager.Stop()
