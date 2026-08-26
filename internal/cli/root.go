@@ -11,6 +11,7 @@ func NewRootCmd() *cobra.Command {
 
 	root.AddCommand(NewServeCmd())
 	root.AddCommand(NewMigrateCmd())
+	root.AddCommand(NewHealthcheckCmd())
 
 	return root
 }

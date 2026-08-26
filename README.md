@@ -27,7 +27,7 @@ Vane is a single Go binary (`cmd/vane`) that embeds the compiled React admin fro
 
 1. **Admin API + Admin SPA** (`internal/api/*_handler.go`, `web/`) — authenticated, cookie-session based. Company staff manage domains, services, the Datadog integration, incidents, status pages, and other admins here.
 2. **Public status page** (`internal/api/public_status_handler.go`, `internal/router/host_router.go`) — unauthenticated. Resolved by the `Host` header of the incoming request: each published `status_pages` row owns a hostname (its own domain or a subdomain), and `HostRouter` dispatches to the public handler scoped to that specific page. No cross-tenant leakage is possible because each request is scoped to exactly one `StatusPage.ID` resolved from the hostname.
-3. **A background poller** (`internal/poller`) — polls Datadog's SLO API on an interval (`POLL_INTERVAL_SECONDS`) once a Datadog integration is connected, and writes `status_snapshots` rows that both the admin dashboard and the public status page read from. The public status page **never** calls Datadog directly on a visitor request — it only ever reads the last snapshot the poller wrote, with a silent cache-fallback if the poller falls behind (visitors never see a technical error).
+3. **A background poller** (`internal/poller`) — polls Datadog's SLO API on an interval (`POLL_INTERVAL_SECONDS`) once a Datadog integration is connected, and writes `status_intervals` rows (an open/closed interval per service, not a point-in-time snapshot) that both the admin dashboard and the public status page read from. The public status page **never** calls Datadog directly on a visitor request — it only ever reads the last interval the poller wrote, with a silent cache-fallback if the poller falls behind (visitors never see a technical error).
 
 TLS for custom domains is automatic and on-demand: `internal/tls` wraps [CertMagic](https://github.com/caddyserver/certmagic) (the library behind Caddy's automatic HTTPS) so that any hostname belonging to a published, domain-attached status page gets a certificate issued via ACME the first time it's requested — no manual certificate management, no external proxy like nginx/Caddy/Traefik in front of the binary.
 
@@ -122,7 +122,7 @@ Core tables (see `internal/db/migrations/` for exact schema and `internal/db/*_r
 | `password_reset_tokens` | Single-use tokens for the forgot-password flow. |
 | `integrations` | Stored (encrypted) Datadog API key + application key pair, one row per installation. |
 | `services` | Logical services the company wants to expose, each mapped to a Datadog SLO. |
-| `status_snapshots` | Poller-written point-in-time status per service — what both the admin dashboard and public page actually read. |
+| `status_intervals` | Poller-written status per service as open/closed intervals (an interval opens on a status change and stays open, `ends_at IS NULL`, until the next one; at most one open interval per service, enforced by a partial unique index) — what both the admin dashboard and public page actually read, and what the public page's hourly bars/uptime % are computed from. |
 | `domains` | Custom hostnames the operator has registered with Vane (validated ownership, DNS target). |
 | `status_pages` | A publishable page: a set of services + incidents to expose, an optional `domain_id`/`subdomain` (nullable — a page can exist and be previewed before any domain is attached, see AD-008), and a `state` (`draft`/`published`). |
 | `incidents` + updates | Incident timeline entries linked to one or more services, surfaced on the public page for 90 days after resolution. |
@@ -245,7 +245,7 @@ A fresh, admin-less instance lands on an in-product **bootstrap screen** (`/boot
 ## Running tests
 
 ```bash
-# Backend
+# Backend - unit tests, no database needed
 go test ./...
 go vet ./...
 gofmt -l .        # should print nothing
@@ -256,7 +256,14 @@ npm run test        # vitest run
 npx tsc -b --noEmit  # type-check
 ```
 
-Backend tests that touch Postgres use `internal/dbtest` and expect a reachable test database — check `internal/dbtest/lock.go` and any `*_test.go` file's `TestMain`/setup for the connection string it expects before running the full suite.
+Most backend test files carry `//go:build integration` and are skipped by a plain `go test ./...` above - they touch a real Postgres via `internal/dbtest`. To run them, start a test database (`make dev-db` reuses the same Postgres container as local dev - see [Running in development](#running-in-development)) and set `TEST_DATABASE_URL`:
+
+```bash
+make dev-db
+TEST_DATABASE_URL="postgres://vane:vane@localhost:5432/vane?sslmode=disable" go test -tags=integration ./...
+```
+
+These apply every migration against that database on their own (`db.MigrateUp`) - no separate migration step needed first.
 
 ## Database migrations
 
@@ -271,10 +278,10 @@ There is currently only a `migrate up` subcommand (no `down`/rollback command ex
 ## Building for production
 
 ```bash
-make build   # go build -o bin/vane ./cmd/vane
+make build
 ```
 
-The frontend is built and embedded into the Go binary via `go:embed` (per `.specs/STATE.md` AD-001) — build `web/` (`npm run build`) before building the Go binary if you're producing a release artifact, so the embedded assets are current.
+`make build` already depends on `web-build` (`cd web && npm install && npm run build`) and runs it first, then `go build -o bin/vane ./cmd/vane` — one command, no separate manual frontend-build step needed. The frontend is embedded into the Go binary via `go:embed` (per `.specs/STATE.md` AD-001), which is exactly why `web-build` has to run first: a `go build`/`go test` invoked directly (bypassing `make build`) against a clean clone with no `web/dist/` populated yet will fail to compile.
 
 ## Known gaps / backlog
 

@@ -19,6 +19,14 @@ services:
       db:
         condition: service_healthy
     restart: on-failure
+    healthcheck:
+      # No shell/curl/wget in this image (FROM scratch) - `vane healthcheck`
+      # is a Go subcommand that GETs its own /healthz.
+      test: ["CMD", "/vane", "healthcheck"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
 
   db:
     image: postgres:16-alpine
