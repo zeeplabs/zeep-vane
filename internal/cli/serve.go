@@ -208,7 +208,9 @@ func newHTTPSServer(pool *db.Pool, uploadsDir string, logger *zap.Logger) *http.
 	publicMux.Handle("/uploads/", logoFileHandler)
 	publicMux.HandleFunc("/", publicHandler.Get)
 
-	handler := router.HostRouter(statusPages, publicMux)
+	// hsts=true - this listener really does terminate TLS, unlike the admin
+	// HTTP listener (M14).
+	handler := api.SecurityHeaders(true)(router.HostRouter(statusPages, publicMux))
 
 	tlsConfig := manager.TLSConfig()
 	tlsConfig.NextProtos = append([]string{"h2", "http/1.1"}, tlsConfig.NextProtos...)

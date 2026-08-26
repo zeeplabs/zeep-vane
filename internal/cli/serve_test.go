@@ -389,3 +389,39 @@ func TestNewHTTPSServer_RootPath_StillServesStatusJSON(t *testing.T) {
 		t.Errorf("root path response missing its own service %q after dual-mounting /uploads/", serviceName)
 	}
 }
+
+// TestNewHTTPSServer_SecurityHeaders_IncludesHSTS is the M14 regression
+// guard for the public HTTPS listener specifically: unlike the admin HTTP
+// listener, this one really does terminate TLS, so it must send
+// Strict-Transport-Security in addition to the baseline nosniff/CSP headers
+// every listener gets.
+func TestNewHTTPSServer_SecurityHeaders_IncludesHSTS(t *testing.T) {
+	pool := newServeTestPool(t)
+	uploadsDir := t.TempDir()
+
+	serviceID := createServeTestService(t, pool, "svc-headers")
+	hostname := createServePublishedStatusPageFixture(t, pool, serviceID)
+
+	httpsSrv := newHTTPSServer(pool, uploadsDir, zap.NewNop())
+	testServer := httptest.NewServer(httpsSrv.Handler)
+	defer testServer.Close()
+
+	req, err := http.NewRequest(http.MethodGet, testServer.URL+"/", nil)
+	if err != nil {
+		t.Fatalf("http.NewRequest() returned unexpected error: %v", err)
+	}
+	req.Host = hostname
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("client.Do() returned unexpected error: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if got := resp.Header.Get("X-Content-Type-Options"); got != "nosniff" {
+		t.Errorf("X-Content-Type-Options = %q, want %q", got, "nosniff")
+	}
+	if got := resp.Header.Get("Strict-Transport-Security"); got == "" {
+		t.Error("Strict-Transport-Security header is empty, want a max-age directive")
+	}
+}

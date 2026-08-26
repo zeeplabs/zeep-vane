@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/go-chi/chi/v5"
@@ -99,5 +100,36 @@ func TestLogoFileHandler_NoAuthenticationRequired_200(t *testing.T) {
 
 	if rec.Code != http.StatusOK {
 		t.Errorf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+}
+
+// TestLogoFileHandler_SVGFile_SandboxedCSPAndNosniff is the M13 regression
+// guard: an uploaded .svg (SVG is XML - it can contain <script>) must never
+// be served in a way a browser would execute script from, even if the
+// upload path's own content sniffing was fooled into accepting a malicious
+// file. The response's own CSP sandbox directive is the last line of
+// defense, independent of Content-Type.
+func TestLogoFileHandler_SVGFile_SandboxedCSPAndNosniff(t *testing.T) {
+	r, uploadsDir := newLogoFileHandlerRouter(t)
+	if err := os.WriteFile(filepath.Join(uploadsDir, "logo.svg"), []byte("<svg><script>alert(1)</script></svg>"), 0o644); err != nil {
+		t.Fatalf("os.WriteFile() returned unexpected error: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/uploads/logo.svg", nil)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
+	}
+	if got := rec.Header().Get("X-Content-Type-Options"); got != "nosniff" {
+		t.Errorf("X-Content-Type-Options = %q, want %q", got, "nosniff")
+	}
+	csp := rec.Header().Get("Content-Security-Policy")
+	if !strings.Contains(csp, "sandbox") {
+		t.Errorf("Content-Security-Policy = %q, want it to contain %q", csp, "sandbox")
+	}
+	if !strings.Contains(csp, "default-src 'none'") {
+		t.Errorf("Content-Security-Policy = %q, want it to contain %q", csp, "default-src 'none'")
 	}
 }

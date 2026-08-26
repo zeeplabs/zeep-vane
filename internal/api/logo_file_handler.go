@@ -15,6 +15,19 @@ import (
 // http.ServeMux, outside chi).
 const logoFilePathPrefix = "/uploads/"
 
+// logoServeCSP is stricter than the general SecurityHeaders default:
+// sandbox disables script execution, plugins, and form submission
+// unconditionally, regardless of the served file's Content-Type. An
+// uploaded .svg can contain <script> (SVG is XML, not a raster format) -
+// the upload path's own content-type sniffing (logoExtensionFor) only
+// confirms a file *looks like* SVG, it doesn't sanitize what's inside one,
+// so this response's own headers are the last line of defense against a
+// malicious admin-uploaded logo executing script when rendered (M13). This
+// is deliberately set here rather than relying on the general middleware,
+// which allows same-origin script for the SPA itself - this route serves
+// untrusted uploaded content, not vane's own code.
+const logoServeCSP = "default-src 'none'; sandbox"
+
 // NewLogoFileHandler builds the handler that serves the one stored logo
 // file back over HTTP with no authentication required (SET-12 - the
 // public status page must render it unauthenticated). It rejects any
@@ -41,6 +54,8 @@ func NewLogoFileHandler(uploadsDir string) http.Handler {
 			return
 		}
 
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+		w.Header().Set("Content-Security-Policy", logoServeCSP)
 		http.ServeFile(w, r, fullPath)
 	})
 }

@@ -154,8 +154,9 @@ func buildAdminRouter(pool *db.Pool, cfg config.Config, logger *zap.Logger, poll
 
 	// Wraps the whole mux rather than r.Use(...): router.New already
 	// registers /healthz before returning, and chi panics if Use is called
-	// after any route is registered on the same mux.
-	return api.NewCORSMiddleware(cfg.CORSAllowedOrigin)(r)
+	// after any route is registered on the same mux. hsts=false - this is
+	// the plain HTTP admin listener, not the TLS-terminating one (M14).
+	return api.NewCORSMiddleware(cfg.CORSAllowedOrigin)(api.SecurityHeaders(false)(r))
 }
 
 // validateDatadogCredentials adapts datadog.Client.ValidateCredentials to

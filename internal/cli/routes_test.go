@@ -873,6 +873,27 @@ func TestAdminRouter_UnmatchedAPIPath_ReturnsJSON404NotHTML(t *testing.T) {
 	}
 }
 
+// TestAdminRouter_SecurityHeaders_SetOnAdminListener is the M14 regression
+// guard for the admin HTTP listener specifically: previously nothing but
+// CORS touched response headers on this listener.
+func TestAdminRouter_SecurityHeaders_SetOnAdminListener(t *testing.T) {
+	r, _, _ := newAdminRouterForTest(t)
+
+	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+
+	if got := rec.Header().Get("X-Content-Type-Options"); got != "nosniff" {
+		t.Errorf("X-Content-Type-Options = %q, want %q", got, "nosniff")
+	}
+	if got := rec.Header().Get("Content-Security-Policy"); got == "" {
+		t.Error("Content-Security-Policy header is empty, want a policy set")
+	}
+	if got := rec.Header().Get("Strict-Transport-Security"); got != "" {
+		t.Errorf("Strict-Transport-Security = %q, want empty on the plain HTTP admin listener", got)
+	}
+}
+
 // TestAdminRouter_LoginRateLimit_ExceedsBurst_429 is the H10 regression
 // guard, exercised through the real production router (not a standalone
 // test-only chi mux): login had no rate limit at all before - an attacker
