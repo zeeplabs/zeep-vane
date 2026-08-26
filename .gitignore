@@ -9,3 +9,4 @@ web/dist/*
 internal/webui/static/
 .DS_Store
 data/
+*.tsbuildinfo
