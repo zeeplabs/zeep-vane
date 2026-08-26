@@ -35,11 +35,19 @@ func Save(dir, ext string, r io.Reader) (servedPath string, err error) {
 		return "", err
 	}
 
-	tmpPath := filepath.Join(dir, logoBaseName+".tmp")
-	tmpFile, err := os.Create(tmpPath)
+	// A per-request-unique temp name (L19) - a fixed "logo.tmp" name meant
+	// two concurrent uploads' os.Create calls raced on the same path:
+	// os.Create truncates on open, so the second call could truncate the
+	// first's in-progress file out from under it, and both io.Copy calls
+	// could interleave writes to the same underlying file. The "." prefix
+	// keeps the temp name outside removeExistingLogoFiles' "logo.*" glob
+	// above, so a concurrent upload's cleanup pass can never delete
+	// another upload's still-open temp file either.
+	tmpFile, err := os.CreateTemp(dir, "."+logoBaseName+"-*.tmp")
 	if err != nil {
 		return "", fmt.Errorf("uploads: failed to create temp file: %w", err)
 	}
+	tmpPath := tmpFile.Name()
 
 	if _, err := io.Copy(tmpFile, r); err != nil {
 		_ = tmpFile.Close()

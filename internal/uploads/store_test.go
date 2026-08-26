@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 )
 
@@ -92,5 +93,65 @@ func TestSave_SecondSaveSameExtension_OverwritesContent(t *testing.T) {
 	}
 	if len(matches) != 1 {
 		t.Fatalf("logo.* files in dir = %v, want exactly 1", matches)
+	}
+}
+
+// TestSave_ConcurrentUploads_NeverInterleaveBytes is the L19 regression
+// guard: Save used to create every temp file at the same fixed path
+// (logo.tmp) - two concurrent uploads' os.Create calls raced on it, and
+// their io.Copy calls could write to the same underlying file descriptor
+// at once, corrupting whichever upload finished second. With a unique temp
+// name per call, every concurrent Save must end up with the single final
+// file containing exactly one of the uploads' complete, unmixed content -
+// never a byte-interleaved mix of two.
+func TestSave_ConcurrentUploads_NeverInterleaveBytes(t *testing.T) {
+	dir := t.TempDir()
+
+	const uploadSize = 64 * 1024
+	contentA := strings.Repeat("A", uploadSize)
+	contentB := strings.Repeat("B", uploadSize)
+
+	var wg sync.WaitGroup
+	errs := make([]error, 2)
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		_, errs[0] = Save(dir, ".png", strings.NewReader(contentA))
+	}()
+	go func() {
+		defer wg.Done()
+		_, errs[1] = Save(dir, ".png", strings.NewReader(contentB))
+	}()
+	wg.Wait()
+
+	for i, err := range errs {
+		if err != nil {
+			t.Fatalf("Save() call %d returned unexpected error: %v", i, err)
+		}
+	}
+
+	data, err := os.ReadFile(filepath.Join(dir, "logo.png"))
+	if err != nil {
+		t.Fatalf("ReadFile() returned unexpected error: %v", err)
+	}
+	content := string(data)
+	if content != contentA && content != contentB {
+		t.Errorf("final logo.png content is neither upload's complete content unmixed (len=%d) - want exactly contentA or contentB, got a corrupted/interleaved result", len(content))
+	}
+
+	matches, err := filepath.Glob(filepath.Join(dir, "logo.*"))
+	if err != nil {
+		t.Fatalf("Glob() returned unexpected error: %v", err)
+	}
+	if len(matches) != 1 {
+		t.Fatalf("logo.* files in dir = %v, want exactly 1 (no leftover temp files)", matches)
+	}
+
+	tmpMatches, err := filepath.Glob(filepath.Join(dir, ".*"))
+	if err != nil {
+		t.Fatalf("Glob() returned unexpected error: %v", err)
+	}
+	if len(tmpMatches) != 0 {
+		t.Errorf("leftover dotfiles in dir = %v, want none", tmpMatches)
 	}
 }
