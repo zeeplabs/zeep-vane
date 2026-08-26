@@ -3,15 +3,18 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Routes, Route } from "react-router-dom";
 import { PasswordResetRequestPage } from "./PasswordResetRequestPage";
+import { TestQueryProvider } from "../../test/queryClient";
 
 function App() {
   return (
-    <MemoryRouter initialEntries={["/reset-password"]}>
-      <Routes>
-        <Route path="/reset-password" element={<PasswordResetRequestPage />} />
-        <Route path="/login" element={<div>login page</div>} />
-      </Routes>
-    </MemoryRouter>
+    <TestQueryProvider>
+      <MemoryRouter initialEntries={["/reset-password"]}>
+        <Routes>
+          <Route path="/reset-password" element={<PasswordResetRequestPage />} />
+          <Route path="/login" element={<div>login page</div>} />
+        </Routes>
+      </MemoryRouter>
+    </TestQueryProvider>
   );
 }
 
