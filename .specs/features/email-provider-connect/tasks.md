@@ -86,16 +86,18 @@ Tasks: T11, T12, executed in that order.
 - Skill: NONE
 
 **Done when**:
-- [ ] `email_providers` table exists with `provider UNIQUE CHECK IN ('sendgrid','resend')`, `status CHECK IN ('connected','invalid')` DEFAULT `'connected'`
-- [ ] `email_settings` singleton exists (`id SMALLINT PRIMARY KEY DEFAULT 1 CHECK (id=1)`), seeded, `active_provider` nullable FK to `email_providers(provider)` `ON DELETE SET NULL`
-- [ ] `down.sql` drops both tables cleanly
-- [ ] Migration test confirms seed row + both CHECK constraints reject invalid values
-- [ ] Gate passes: `gofmt -l . && go vet ./... && go test -tags=integration ./...`
+- [x] `email_providers` table exists with `provider UNIQUE CHECK IN ('sendgrid','resend')`, `status CHECK IN ('connected','invalid')` DEFAULT `'connected'`
+- [x] `email_settings` singleton exists (`id SMALLINT PRIMARY KEY DEFAULT 1 CHECK (id=1)`), seeded, `active_provider` nullable FK to `email_providers(provider)` `ON DELETE SET NULL`
+- [x] `down.sql` drops both tables cleanly
+- [x] Migration test confirms seed row + both CHECK constraints reject invalid values
+- [x] Gate passes: `gofmt -l . && go vet ./... && go test -tags=integration ./...`
 
 **Tests**: integration
 **Gate**: full
 
 **Commit**: `feat(db): add email_providers and email_settings tables`
+
+**Status**: ✅ Complete
 
 ---
 

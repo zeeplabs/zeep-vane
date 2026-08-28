@@ -147,7 +147,7 @@ Explicitly excluded. Documented to prevent scope creep.
 | EMAIL-01 | P1: Connect an email provider | Design | Pending |
 | EMAIL-02 | P1: Connect an email provider | Design | Pending |
 | EMAIL-03 | P1: Connect an email provider | Design | Pending |
-| EMAIL-04 | P1: Switch the active provider | Design | Pending |
+| EMAIL-04 | P1: Switch the active provider | Design | Implementing |
 | EMAIL-05 | P1: Switch the active provider | Design | Pending |
 | EMAIL-06 | P1: List connected providers and their status | Design | Pending |
 | EMAIL-07 | P1: Send the admin-invite email through the active provider | Design | Pending |
