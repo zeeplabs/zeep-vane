@@ -136,12 +136,12 @@ Consumes the finished backend contract. Tasks: T8.
 
 **Done when**:
 
-- [ ] `NewAdminsHandler` takes the two new dependencies plus an `httpsEnabled bool`; all existing call sites (`internal/cli/routes.go`, `internal/api/admins_test.go`) updated to compile (routes.go wiring itself is T7 - here it's just making the signature change compile with a fake/real dependency in tests)
-- [ ] `Invite`'s success response body is `{"status":"invited","email_sent":true|false}` in both the send-succeeds and send-fails branches, `201` either way
-- [ ] A `SendAdminInvite` failure (fake provider returns error, or `ErrNoActiveProvider`) is logged at Error with the invite ID and does NOT roll back the created invite row or change the HTTP status
-- [ ] Stale "Email delivery is out of scope" comment removed/rewritten to describe the actual send-then-log-failure behavior
-- [ ] Gate check passes: `go test -tags=integration ./internal/api/...`
-- [ ] Test count: existing `admins_test.go` invite tests (6) still pass + at least 3 new/modified (email sent → `email_sent:true`; email fails → `email_sent:false`, invite still created; no active provider → same as fails) = 9+ pass, no silent deletions
+- [x] `NewAdminsHandler` takes the two new dependencies plus an `httpsEnabled bool`; all existing call sites (`internal/cli/routes.go`, `internal/api/admins_test.go`) updated to compile (routes.go's `adminsHandler` construction now passes real `emailService`/`companySettingsRepo`/`cfg.HTTPSEnabled`, reordered earlier in `buildAdminRouter` so they exist by then - registering the two new routes themselves is still T7)
+- [x] `Invite`'s success response body is `{"status":"invited","email_sent":true|false}` in both the send-succeeds and send-fails branches, `201` either way
+- [x] A `SendAdminInvite` failure (fake provider returns error, or `ErrNoActiveProvider`) is logged at Error with the invite ID and does NOT roll back the created invite row or change the HTTP status
+- [x] Stale "Email delivery is out of scope" comment removed/rewritten to describe the actual send-then-log-failure behavior
+- [x] Gate check passes: `go test -tags=integration ./internal/api/...`
+- [x] Test count: existing `admins_test.go` invite tests (6) still pass + 3 new (email sent → `email_sent:true` + no-token-in-response assertion added to the existing happy-path test; email fails → `email_sent:false`, invite still created; no active provider → same as fails) = 9 pass, no silent deletions
 
 **Tests**: integration
 **Gate**: full

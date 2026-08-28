@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"time"
 
@@ -16,6 +17,7 @@ import (
 	"github.com/zeeplabs/zeep-vane/internal/audit"
 	"github.com/zeeplabs/zeep-vane/internal/auth"
 	"github.com/zeeplabs/zeep-vane/internal/db"
+	"github.com/zeeplabs/zeep-vane/internal/email"
 )
 
 // adminInviteTTL is how long an admin invite token stays valid (ADM-01).
@@ -37,16 +39,56 @@ type AdminsHandler struct {
 	pool            *db.Pool
 	admins          *db.AdminRepository
 	invites         *db.AdminInviteRepository
+	emailSvc        *email.Service
+	companySettings *db.CompanySettingsRepository
 	audit           *audit.Log
 	logger          *zap.Logger
 	devTokenLogging bool
+	httpsEnabled    bool
 }
 
 // NewAdminsHandler builds an AdminsHandler. devTokenLogging gates whether
 // the raw invite token is logged when an invite is created (see the
-// PasswordResetHandler doc for why this defaults to off).
-func NewAdminsHandler(pool *db.Pool, admins *db.AdminRepository, invites *db.AdminInviteRepository, auditLog *audit.Log, logger *zap.Logger, devTokenLogging bool) *AdminsHandler {
-	return &AdminsHandler{pool: pool, admins: admins, invites: invites, audit: auditLog, logger: logger, devTokenLogging: devTokenLogging}
+// PasswordResetHandler doc for why this defaults to off). httpsEnabled
+// (mirrors cfg.HTTPSEnabled) picks the scheme used to build the invite
+// AcceptURL sent by email.
+func NewAdminsHandler(pool *db.Pool, admins *db.AdminRepository, invites *db.AdminInviteRepository, emailSvc *email.Service, companySettings *db.CompanySettingsRepository, auditLog *audit.Log, logger *zap.Logger, devTokenLogging, httpsEnabled bool) *AdminsHandler {
+	return &AdminsHandler{
+		pool: pool, admins: admins, invites: invites,
+		emailSvc: emailSvc, companySettings: companySettings,
+		audit: auditLog, logger: logger,
+		devTokenLogging: devTokenLogging, httpsEnabled: httpsEnabled,
+	}
+}
+
+// sendAdminInviteEmail looks up the company display name and sends the
+// admin-invite email for rawToken via h.emailSvc, returning whether the send
+// succeeded. It never returns an error to the caller - a lookup or send
+// failure is logged and treated as email_sent:false, matching the
+// non-blocking convention (spec.md: invite/resend must never fail on email).
+func (h *AdminsHandler) sendAdminInviteEmail(r *http.Request, inviteID, to, role, rawToken string) bool {
+	settings, err := h.companySettings.Get(r.Context())
+	if err != nil {
+		h.logger.Error("admins: failed to load company settings for invite email", zap.String("invite_id", inviteID), zap.Error(err))
+		return false
+	}
+
+	scheme := "http"
+	if h.httpsEnabled {
+		scheme = "https"
+	}
+	data := email.AdminInviteEmailData{
+		CompanyName: settings.Name,
+		Role:        role,
+		AcceptURL:   fmt.Sprintf("%s://%s/accept-invite/%s", scheme, r.Host, rawToken),
+	}
+
+	if err := h.emailSvc.SendAdminInvite(r.Context(), to, data); err != nil {
+		h.logger.Error("admins: failed to send admin invite email", zap.String("invite_id", inviteID), zap.Error(err))
+		return false
+	}
+
+	return true
 }
 
 // wouldLeaveZeroOwners is the ADM-06 lockout decision: true when applying
@@ -142,12 +184,11 @@ func (h *AdminsHandler) Invite(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Email delivery is out of scope for the MVP (same convention as the
-	// password reset flow, T14 of mvp-core), standing in for a real
-	// provider. The raw token grants account creation for the invited
-	// role, so it is only logged when VANE_DEV_TOKEN_LOGGING=true is
-	// explicitly set (see PasswordResetHandler.Request for why). The raw
-	// token itself is never persisted (see AdminInvite.TokenHash).
+	// The raw token grants account creation for the invited role, so it is
+	// only logged when VANE_DEV_TOKEN_LOGGING=true is explicitly set (see
+	// PasswordResetHandler.Request for why). The raw token itself is never
+	// persisted (see AdminInvite.TokenHash) or included in this response -
+	// it only ever reaches the invitee via the email sent below.
 	if h.devTokenLogging {
 		h.logger.Info("admins: invite issued",
 			zap.String("email", req.Email), zap.String("role", req.Role), zap.String("token", rawToken))
@@ -156,13 +197,15 @@ func (h *AdminsHandler) Invite(w http.ResponseWriter, r *http.Request) {
 			zap.String("email", req.Email), zap.String("role", req.Role))
 	}
 
+	emailSent := h.sendAdminInviteEmail(r, invite.ID, req.Email, req.Role, rawToken)
+
 	if err := h.audit.Record(r.Context(), actor.ID, invite.ID, "invited"); err != nil {
 		h.logger.Error("admins: failed to record invite audit entry", zap.Error(err))
 	}
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
-	_ = json.NewEncoder(w).Encode(map[string]string{"status": "invited"})
+	_ = json.NewEncoder(w).Encode(map[string]any{"status": "invited", "email_sent": emailSent})
 }
 
 type acceptAdminInviteRequest struct {

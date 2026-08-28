@@ -124,8 +124,8 @@ Explicitly excluded. Documented to prevent scope creep.
 
 | Requirement ID | Story                                        | Phase  | Status  |
 | --------------- | --------------------------------------------- | ------ | ------- |
-| INVITE-01       | P1: Invite emails are actually delivered      | Design | Pending |
-| INVITE-02       | P1: Invite emails are actually delivered      | Design | Pending |
+| INVITE-01       | P1: Invite emails are actually delivered      | Tasks | Implementing |
+| INVITE-02       | P1: Invite emails are actually delivered      | Tasks | Implementing |
 | INVITE-03       | P1: Owner resends a pending invite            | Tasks | Implementing |
 | INVITE-04       | P1: Owner resends a pending invite            | Design | Pending |
 | INVITE-05       | P1: Owner cancels a pending invite            | Tasks | Implementing |

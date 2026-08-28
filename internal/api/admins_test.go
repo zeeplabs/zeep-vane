@@ -18,11 +18,109 @@ import (
 
 	"github.com/zeeplabs/zeep-vane/internal/audit"
 	"github.com/zeeplabs/zeep-vane/internal/auth"
+	"github.com/zeeplabs/zeep-vane/internal/crypto"
 	"github.com/zeeplabs/zeep-vane/internal/db"
 	"github.com/zeeplabs/zeep-vane/internal/dbtest"
+	"github.com/zeeplabs/zeep-vane/internal/email"
 )
 
-func newAdminsRouter(t *testing.T) (http.Handler, *db.Pool, *db.AdminRepository, *db.AdminInviteRepository) {
+const adminsTestMasterKey = "admins-test-master-key"
+
+// fakeEmailProviderStore is an in-memory email.EmailProviderStore double, so
+// admins_test.go can exercise real email.Service.SendAdminInvite calls
+// without a real provider/DB row (same pattern as internal/email's own
+// service_test.go fakeStore, duplicated here since that one is unexported).
+type fakeEmailProviderStore struct {
+	rows           map[string]*db.EmailProvider
+	activeProvider string
+}
+
+func newFakeEmailProviderStore() *fakeEmailProviderStore {
+	return &fakeEmailProviderStore{rows: map[string]*db.EmailProvider{}}
+}
+
+func (f *fakeEmailProviderStore) UpsertProvider(_ context.Context, provider string, encryptedAPIKey []byte, fromEmail, fromName string) error {
+	f.rows[provider] = &db.EmailProvider{Provider: provider, EncryptedAPIKey: encryptedAPIKey, FromEmail: fromEmail, FromName: fromName, Status: "connected"}
+	return nil
+}
+func (f *fakeEmailProviderStore) Get(_ context.Context, provider string) (*db.EmailProvider, error) {
+	row, ok := f.rows[provider]
+	if !ok {
+		return nil, db.ErrNotFound
+	}
+	return row, nil
+}
+func (f *fakeEmailProviderStore) List(_ context.Context) ([]db.EmailProvider, error) {
+	rows := make([]db.EmailProvider, 0, len(f.rows))
+	for _, row := range f.rows {
+		rows = append(rows, *row)
+	}
+	return rows, nil
+}
+func (f *fakeEmailProviderStore) GetActiveProvider(_ context.Context) (string, error) {
+	return f.activeProvider, nil
+}
+func (f *fakeEmailProviderStore) SetActiveProvider(_ context.Context, provider string) error {
+	f.activeProvider = provider
+	return nil
+}
+
+// fakeEmailProvider is an email.Provider double recording Send calls.
+type fakeEmailProvider struct {
+	sendErr   error
+	sendCalls int
+}
+
+func (f *fakeEmailProvider) ValidateCredentials(context.Context) error { return nil }
+func (f *fakeEmailProvider) Send(context.Context, email.Message) error {
+	f.sendCalls++
+	return f.sendErr
+}
+
+// newTestEmailService builds a real *email.Service backed by an in-memory
+// store, with "test" connected and active so SendAdminInvite succeeds
+// (unless sendErr is set on the returned fakeEmailProvider) - lets handler
+// tests exercise the actual send-then-log-failure code path instead of
+// mocking AdminsHandler's email dependency away.
+func newTestEmailService(t *testing.T) (*email.Service, *fakeEmailProvider) {
+	t.Helper()
+	store := newFakeEmailProviderStore()
+	provider := &fakeEmailProvider{}
+	encryptedKey, err := crypto.Encrypt(adminsTestMasterKey, []byte("fake-api-key"))
+	if err != nil {
+		t.Fatalf("crypto.Encrypt() returned unexpected error: %v", err)
+	}
+	if err := store.UpsertProvider(context.Background(), "test", encryptedKey, "noreply@example.com", "Vane"); err != nil {
+		t.Fatalf("UpsertProvider() returned unexpected error: %v", err)
+	}
+	if err := store.SetActiveProvider(context.Background(), "test"); err != nil {
+		t.Fatalf("SetActiveProvider() returned unexpected error: %v", err)
+	}
+
+	svc, err := email.NewService(store, func(string, string) (email.Provider, error) { return provider, nil }, adminsTestMasterKey, zap.NewNop())
+	if err != nil {
+		t.Fatalf("email.NewService() returned unexpected error: %v", err)
+	}
+	return svc, provider
+}
+
+// newTestEmailServiceNoActiveProvider builds a *email.Service with no
+// connected/active provider, so SendAdminInvite always returns
+// email.ErrNoActiveProvider (exercises the email_sent:false path without a
+// send error).
+func newTestEmailServiceNoActiveProvider(t *testing.T) *email.Service {
+	t.Helper()
+	svc, err := email.NewService(newFakeEmailProviderStore(), func(string, string) (email.Provider, error) {
+		t.Fatal("factory should not be called with no active provider")
+		return nil, nil
+	}, adminsTestMasterKey, zap.NewNop())
+	if err != nil {
+		t.Fatalf("email.NewService() returned unexpected error: %v", err)
+	}
+	return svc
+}
+
+func newAdminsRouterWithEmail(t *testing.T, emailSvc *email.Service) (http.Handler, *db.Pool, *db.AdminRepository, *db.AdminInviteRepository) {
 	t.Helper()
 	dsn := testDatabaseURL(t)
 
@@ -58,7 +156,8 @@ func newAdminsRouter(t *testing.T) (http.Handler, *db.Pool, *db.AdminRepository,
 	admins := db.NewAdminRepository(pool)
 	invites := db.NewAdminInviteRepository(pool)
 	auditLog := audit.NewLog(pool)
-	handler := NewAdminsHandler(pool, admins, invites, auditLog, zap.NewNop(), false)
+	companySettings := db.NewCompanySettingsRepository(pool)
+	handler := NewAdminsHandler(pool, admins, invites, emailSvc, companySettings, auditLog, zap.NewNop(), false, false)
 
 	r := chi.NewRouter()
 	r.Group(func(protected chi.Router) {
@@ -71,6 +170,15 @@ func newAdminsRouter(t *testing.T) (http.Handler, *db.Pool, *db.AdminRepository,
 	r.Post("/api/admins/invite/{token}/accept", handler.AcceptInvite)
 
 	return r, pool, admins, invites
+}
+
+// newAdminsRouter builds a router with a default working email service
+// (active provider connected) - used by every existing test that doesn't
+// specifically exercise email send-success/failure behavior.
+func newAdminsRouter(t *testing.T) (http.Handler, *db.Pool, *db.AdminRepository, *db.AdminInviteRepository) {
+	t.Helper()
+	svc, _ := newTestEmailService(t)
+	return newAdminsRouterWithEmail(t, svc)
 }
 
 // issueTestSessionTokenWithRole is issueTestSessionToken, additionally
@@ -204,6 +312,76 @@ func TestInviteAdmin_Owner_201_CreatesInviteAndAuditEntry(t *testing.T) {
 	}
 	if gotAction != "invited" {
 		t.Errorf("admin_audit_log action = %q, want %q", gotAction, "invited")
+	}
+
+	var resp map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+	if resp["status"] != "invited" {
+		t.Errorf(`response["status"] = %v, want "invited"`, resp["status"])
+	}
+	if resp["email_sent"] != true {
+		t.Errorf(`response["email_sent"] = %v, want true (active provider connected)`, resp["email_sent"])
+	}
+	if _, hasToken := resp["token"]; hasToken {
+		t.Error("response body must never include the raw invite token")
+	}
+}
+
+func TestInviteAdmin_EmailSendFails_StillCreatesInviteWithEmailSentFalse(t *testing.T) {
+	svc, provider := newTestEmailService(t)
+	provider.sendErr = errors.New("provider: send failed")
+	r, pool, admins, _ := newAdminsRouterWithEmail(t, svc)
+	token := issueTestSessionToken(t, admins)
+	email := uniqueTestEmail(t)
+	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), "DELETE FROM admin_invites WHERE email = $1", email) })
+
+	rec := postInviteAdmin(t, r, token, email, db.RoleOperator)
+
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusCreated, rec.Body.String())
+	}
+	var resp map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+	if resp["email_sent"] != false {
+		t.Errorf(`response["email_sent"] = %v, want false (send failed)`, resp["email_sent"])
+	}
+
+	invite := latestInviteForEmail(t, pool, email)
+	if invite.usedAt != nil {
+		t.Error("invite.usedAt = non-nil, want nil - email send failure must not affect the created invite")
+	}
+	if provider.sendCalls != 1 {
+		t.Errorf("provider.sendCalls = %d, want 1", provider.sendCalls)
+	}
+}
+
+func TestInviteAdmin_NoActiveEmailProvider_StillCreatesInviteWithEmailSentFalse(t *testing.T) {
+	svc := newTestEmailServiceNoActiveProvider(t)
+	r, pool, admins, _ := newAdminsRouterWithEmail(t, svc)
+	token := issueTestSessionToken(t, admins)
+	email := uniqueTestEmail(t)
+	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), "DELETE FROM admin_invites WHERE email = $1", email) })
+
+	rec := postInviteAdmin(t, r, token, email, db.RoleOperator)
+
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusCreated, rec.Body.String())
+	}
+	var resp map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+	if resp["email_sent"] != false {
+		t.Errorf(`response["email_sent"] = %v, want false (no active provider)`, resp["email_sent"])
+	}
+
+	invite := latestInviteForEmail(t, pool, email)
+	if invite.usedAt != nil {
+		t.Error("invite.usedAt = non-nil, want nil - no active provider must not affect the created invite")
 	}
 }
 
