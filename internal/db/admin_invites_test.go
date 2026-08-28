@@ -394,6 +394,70 @@ func TestAdminInviteRepository_Refresh_AlreadyCanceled_ErrNotFound(t *testing.T)
 	}
 }
 
+func TestAdminInviteRepository_Refresh_MalformedID_ErrNotFound(t *testing.T) {
+	repo, _, _ := newAdminInviteRepositoryForTest(t)
+
+	_, err := repo.Refresh(context.Background(), "not-a-uuid", "irrelevant-hash", time.Now().Add(1*time.Hour))
+	if !errors.Is(err, ErrNotFound) {
+		t.Errorf("Refresh() with malformed id error = %v, want ErrNotFound", err)
+	}
+}
+
+func TestAdminInviteRepository_Cancel_AlreadyAccepted_ErrNotFound(t *testing.T) {
+	repo, admins, pool := newAdminInviteRepositoryForTest(t)
+	inviter := createTestAdminForInvite(t, admins, pool)
+	ctx := context.Background()
+	email := uniqueTestEmail(t)
+	t.Cleanup(func() { _, _ = pool.Exec(ctx, "DELETE FROM admin_invites WHERE email = $1", email) })
+
+	invite := &AdminInvite{
+		Email: email, Role: "operator", TokenHash: "hash-" + email,
+		InvitedByID: inviter.ID, ExpiresAt: time.Now().Add(1 * time.Hour),
+	}
+	if err := repo.Create(ctx, invite); err != nil {
+		t.Fatalf("Create() returned unexpected error: %v", err)
+	}
+	if err := repo.MarkUsed(ctx, invite.ID); err != nil {
+		t.Fatalf("MarkUsed() returned unexpected error: %v", err)
+	}
+
+	if err := repo.Cancel(ctx, invite.ID); !errors.Is(err, ErrNotFound) {
+		t.Errorf("Cancel() on already-accepted invite error = %v, want ErrNotFound", err)
+	}
+}
+
+func TestAdminInviteRepository_Cancel_AlreadyCanceled_ErrNotFound(t *testing.T) {
+	repo, admins, pool := newAdminInviteRepositoryForTest(t)
+	inviter := createTestAdminForInvite(t, admins, pool)
+	ctx := context.Background()
+	email := uniqueTestEmail(t)
+	t.Cleanup(func() { _, _ = pool.Exec(ctx, "DELETE FROM admin_invites WHERE email = $1", email) })
+
+	invite := &AdminInvite{
+		Email: email, Role: "operator", TokenHash: "hash-" + email,
+		InvitedByID: inviter.ID, ExpiresAt: time.Now().Add(1 * time.Hour),
+	}
+	if err := repo.Create(ctx, invite); err != nil {
+		t.Fatalf("Create() returned unexpected error: %v", err)
+	}
+	if err := repo.Cancel(ctx, invite.ID); err != nil {
+		t.Fatalf("first Cancel() returned unexpected error: %v", err)
+	}
+
+	if err := repo.Cancel(ctx, invite.ID); !errors.Is(err, ErrNotFound) {
+		t.Errorf("Cancel() on already-canceled invite error = %v, want ErrNotFound", err)
+	}
+}
+
+func TestAdminInviteRepository_Cancel_MalformedID_ErrNotFound(t *testing.T) {
+	repo, _, _ := newAdminInviteRepositoryForTest(t)
+
+	err := repo.Cancel(context.Background(), "not-a-uuid")
+	if !errors.Is(err, ErrNotFound) {
+		t.Errorf("Cancel() with malformed id error = %v, want ErrNotFound", err)
+	}
+}
+
 func TestAdminInviteRepository_Cancel_Success(t *testing.T) {
 	repo, admins, pool := newAdminInviteRepositoryForTest(t)
 	inviter := createTestAdminForInvite(t, admins, pool)

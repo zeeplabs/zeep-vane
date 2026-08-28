@@ -9,6 +9,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -67,13 +68,15 @@ func (f *fakeEmailProviderStore) SetActiveProvider(_ context.Context, provider s
 
 // fakeEmailProvider is an email.Provider double recording Send calls.
 type fakeEmailProvider struct {
-	sendErr   error
-	sendCalls int
+	sendErr     error
+	sendCalls   int
+	lastMessage email.Message
 }
 
 func (f *fakeEmailProvider) ValidateCredentials(context.Context) error { return nil }
-func (f *fakeEmailProvider) Send(context.Context, email.Message) error {
+func (f *fakeEmailProvider) Send(_ context.Context, msg email.Message) error {
 	f.sendCalls++
+	f.lastMessage = msg
 	return f.sendErr
 }
 
@@ -262,7 +265,8 @@ func latestInviteForEmail(t *testing.T, pool *db.Pool, email string) pendingInvi
 }
 
 func TestInviteAdmin_Owner_201_CreatesInviteAndAuditEntry(t *testing.T) {
-	r, pool, admins, _ := newAdminsRouter(t)
+	svc, provider := newTestEmailService(t)
+	r, pool, admins, _ := newAdminsRouterWithEmail(t, svc)
 	ctx := context.Background()
 	inviterEmail := uniqueTestEmail(t)
 	inviter := &db.Admin{Email: inviterEmail, PasswordHash: "hash"}
@@ -329,6 +333,39 @@ func TestInviteAdmin_Owner_201_CreatesInviteAndAuditEntry(t *testing.T) {
 	if _, hasToken := resp["token"]; hasToken {
 		t.Error("response body must never include the raw invite token")
 	}
+
+	// INVITE-01 AC1: the sent email must actually address the invitee, in
+	// their invited role, with a *working* (raw, not hashed) accept link -
+	// not merely "some email got sent somewhere" (provider.sendCalls == 1).
+	if provider.lastMessage.To != email {
+		t.Errorf("sent email To = %q, want %q", provider.lastMessage.To, email)
+	}
+	if !strings.Contains(provider.lastMessage.TextBody, db.RoleOperator) {
+		t.Errorf("sent email TextBody = %q, want it to mention invited role %q", provider.lastMessage.TextBody, db.RoleOperator)
+	}
+	rawToken := extractAcceptToken(t, provider.lastMessage.TextBody)
+	acceptRec := postAcceptInvite(t, r, rawToken, "correct-horse-battery-staple")
+	if acceptRec.Code != http.StatusCreated {
+		t.Errorf("accepting the token from the sent email status = %d, want %d (proves AcceptURL carries the raw, unhashed token) - body = %s", acceptRec.Code, http.StatusCreated, acceptRec.Body.String())
+	}
+}
+
+// extractAcceptToken pulls the raw invite token out of an AcceptURL embedded
+// in a sent email's TextBody ("...://.../accept-invite/<token>"), so a test
+// can prove the link is genuinely usable rather than just present.
+func extractAcceptToken(t *testing.T, textBody string) string {
+	t.Helper()
+	const marker = "/accept-invite/"
+	idx := strings.Index(textBody, marker)
+	if idx < 0 {
+		t.Fatalf("email TextBody = %q, want it to contain %q", textBody, marker)
+	}
+	rest := textBody[idx+len(marker):]
+	end := strings.IndexAny(rest, " \n\r\t")
+	if end < 0 {
+		end = len(rest)
+	}
+	return rest[:end]
 }
 
 func TestInviteAdmin_EmailSendFails_StillCreatesInviteWithEmailSentFalse(t *testing.T) {
@@ -1161,7 +1198,8 @@ func postResendInvite(t *testing.T, r http.Handler, token, id string) *httptest.
 }
 
 func TestResendInvite_Owner_200_NewTokenWorksOldTokenRejected(t *testing.T) {
-	r, pool, admins, invites := newAdminsRouter(t)
+	svc, provider := newTestEmailService(t)
+	r, pool, admins, invites := newAdminsRouterWithEmail(t, svc)
 	inviter := &db.Admin{Email: uniqueTestEmail(t), PasswordHash: "hash"}
 	if err := admins.Create(context.Background(), inviter); err != nil {
 		t.Fatalf("admins.Create() returned unexpected error: %v", err)
@@ -1195,6 +1233,30 @@ func TestResendInvite_Owner_200_NewTokenWorksOldTokenRejected(t *testing.T) {
 	oldAcceptRec := postAcceptInvite(t, r, oldRawToken, "correct-horse-battery-staple")
 	if oldAcceptRec.Code != http.StatusUnauthorized {
 		t.Errorf("accepting old token after resend status = %d, want %d", oldAcceptRec.Code, http.StatusUnauthorized)
+	}
+
+	// ADM-01/INVITE-04: resend resets expires_at to exactly now()+adminInviteTTL,
+	// not merely "some future value" - same precision the Invite path already
+	// asserts for its own TTL (see TestInviteAdmin_Owner_201's gotTTL check).
+	refreshed := latestInviteForEmail(t, pool, email)
+	gotExpiresIn := time.Until(refreshed.expiresAt)
+	const ttlTolerance = 2 * time.Second
+	if diff := gotExpiresIn - adminInviteTTL; diff < -ttlTolerance || diff > ttlTolerance {
+		t.Errorf("resend expires_at - now() = %v, want %v (+/- %v)", gotExpiresIn, adminInviteTTL, ttlTolerance)
+	}
+
+	// INVITE-03/04: the resend email itself must address the invitee with a
+	// working (raw) accept link, not merely trigger *a* send.
+	if provider.lastMessage.To != email {
+		t.Errorf("resent email To = %q, want %q", provider.lastMessage.To, email)
+	}
+	newRawToken := extractAcceptToken(t, provider.lastMessage.TextBody)
+	if newRawToken == oldRawToken {
+		t.Error("resend email carries the same token as before resend, want a freshly-minted one")
+	}
+	newAcceptRec := postAcceptInvite(t, r, newRawToken, "correct-horse-battery-staple")
+	if newAcceptRec.Code != http.StatusCreated {
+		t.Errorf("accepting the resend email's token status = %d, want %d - body = %s", newAcceptRec.Code, http.StatusCreated, newAcceptRec.Body.String())
 	}
 
 	var gotActorID, gotAction string
@@ -1242,6 +1304,46 @@ func TestResendInvite_UnknownID_404(t *testing.T) {
 	token := issueTestSessionToken(t, admins)
 
 	rec := postResendInvite(t, r, token, "00000000-0000-0000-0000-000000000000")
+
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("status = %d, want %d, body = %s", rec.Code, http.StatusNotFound, rec.Body.String())
+	}
+}
+
+// TestResendInvite_AlreadyExpiredInvite_200_RefreshesExpiry covers spec.md
+// P2 AC2: resending an invite whose expires_at has already passed behaves
+// identically to resending a not-yet-expired one - new token, expires_at
+// pushed back into the future - rather than being treated as unmanageable.
+func TestResendInvite_AlreadyExpiredInvite_200_RefreshesExpiry(t *testing.T) {
+	r, pool, admins, invites := newAdminsRouter(t)
+	inviter := &db.Admin{Email: uniqueTestEmail(t), PasswordHash: "hash"}
+	if err := admins.Create(context.Background(), inviter); err != nil {
+		t.Fatalf("admins.Create() returned unexpected error: %v", err)
+	}
+	t.Cleanup(func() { _ = admins.Delete(context.Background(), inviter.ID) })
+	token := issueTestSessionToken(t, admins)
+
+	email := uniqueTestEmail(t)
+	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), "DELETE FROM admin_invites WHERE email = $1", email) })
+	createTestInvite(t, invites, inviter.ID, email, db.RoleOperator, -1*time.Hour)
+	inviteID := latestInviteForEmail(t, pool, email).id
+
+	rec := postResendInvite(t, r, token, inviteID)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	got := latestInviteForEmail(t, pool, email)
+	if !got.expiresAt.After(time.Now()) {
+		t.Errorf("expires_at after resending an expired invite = %v, want in the future", got.expiresAt)
+	}
+}
+
+func TestResendInvite_MalformedID_404(t *testing.T) {
+	r, _, admins, _ := newAdminsRouter(t)
+	token := issueTestSessionToken(t, admins)
+
+	rec := postResendInvite(t, r, token, "not-a-uuid")
 
 	if rec.Code != http.StatusNotFound {
 		t.Errorf("status = %d, want %d, body = %s", rec.Code, http.StatusNotFound, rec.Body.String())
@@ -1376,6 +1478,17 @@ func TestCancelInvite_Owner_200_TokenRejectedAfterCancel(t *testing.T) {
 	}
 	if gotActorID != inviter.ID {
 		t.Errorf("admin_audit_log actor_id = %q, want %q", gotActorID, inviter.ID)
+	}
+}
+
+func TestCancelInvite_MalformedID_404(t *testing.T) {
+	r, _, admins, _ := newAdminsRouter(t)
+	token := issueTestSessionToken(t, admins)
+
+	rec := deleteCancelInvite(t, r, token, "not-a-uuid")
+
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("status = %d, want %d, body = %s", rec.Code, http.StatusNotFound, rec.Body.String())
 	}
 }
 

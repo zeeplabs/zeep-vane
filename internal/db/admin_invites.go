@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/jackc/pgerrcode"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 )
 
 // AdminInvite tracks a single admin invitation. TokenHash is always a hash
@@ -108,6 +110,16 @@ func (r *AdminInviteRepository) ClaimForUse(ctx context.Context, tokenHash strin
 	return &invite, nil
 }
 
+// isInvalidUUIDText reports whether err is Postgres rejecting id as a
+// malformed uuid literal (22P02) before the WHERE clause ever runs - a
+// caller-supplied id like "not-a-uuid" fails at the type-input stage, not
+// as a no-rows result, so it would otherwise surface as a 500 instead of
+// the ErrNotFound/404 spec.md requires for any unrecognized id.
+func isInvalidUUIDText(err error) bool {
+	var pgErr *pgconn.PgError
+	return errors.As(err, &pgErr) && pgErr.Code == pgerrcode.InvalidTextRepresentation
+}
+
 // Refresh atomically replaces an invite's token hash and expiry, provided
 // the invite hasn't already been accepted/canceled (used_at IS NULL). Same
 // atomic-guard shape as ClaimForUse: only one concurrent Refresh/Cancel call
@@ -126,7 +138,7 @@ func (r *AdminInviteRepository) Refresh(ctx context.Context, id, newTokenHash st
 		&invite.ID, &invite.Email, &invite.Role, &invite.TokenHash,
 		&invite.InvitedByID, &invite.ExpiresAt, &invite.UsedAt, &invite.CreatedAt,
 	); err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
+		if errors.Is(err, pgx.ErrNoRows) || isInvalidUUIDText(err) {
 			return nil, ErrNotFound
 		}
 		return nil, fmt.Errorf("db: failed to refresh admin invite: %w", err)
@@ -137,12 +149,16 @@ func (r *AdminInviteRepository) Refresh(ctx context.Context, id, newTokenHash st
 
 // Cancel atomically marks an invite used (so its token becomes permanently
 // unacceptable) without creating an admin account for it, returning
-// ErrNotFound if no unused invite with the given id exists.
+// ErrNotFound if no unused invite with the given id exists (including a
+// malformed, non-uuid id - see isInvalidUUIDText).
 func (r *AdminInviteRepository) Cancel(ctx context.Context, id string) error {
 	tag, err := r.pool.Exec(ctx,
 		"UPDATE admin_invites SET used_at = now() WHERE id = $1 AND used_at IS NULL", id,
 	)
 	if err != nil {
+		if isInvalidUUIDText(err) {
+			return ErrNotFound
+		}
 		return fmt.Errorf("db: failed to cancel admin invite: %w", err)
 	}
 	if tag.RowsAffected() == 0 {
