@@ -250,18 +250,20 @@ Tasks: T11, T12, executed in that order.
 - Skill: NONE
 
 **Done when**:
-- [ ] `Connect`: calls `factory(provider, apiKey)` then `ValidateCredentials`; on failure returns `ErrValidationFailed`, persists nothing; on success encrypts + upserts (EMAIL-01, EMAIL-03)
-- [ ] `Connect`: missing/malformed input (`ErrInvalidInput`) never reaches the factory/network call (EMAIL-02)
-- [ ] `Connect`: reconnecting a provider with a bad key leaves the previously-stored valid row untouched (edge case from spec)
-- [ ] `Activate`: succeeds only when the target provider's stored `status == "connected"`; otherwise `ErrProviderNotConnected` (EMAIL-04, EMAIL-05)
-- [ ] `List`: returns every connected provider + current `active_provider` (possibly `""`/none), never includes the encrypted key in any returned struct exposed beyond this package (EMAIL-06)
-- [ ] Unit tests use a fake `EmailProviderStore` and fake `ProviderFactory` (no real DB, no real HTTP) - 1:1 coverage of every `Done when` item above plus every EMAIL-01..06 acceptance criterion and the two edge cases in spec's Edge Cases section that apply to Connect/Activate
-- [ ] Gate passes: `gofmt -l . && go vet ./... && go test ./...`
+- [x] `Connect`: calls `factory(provider, apiKey)` then `ValidateCredentials`; on failure returns `ErrValidationFailed`, persists nothing; on success encrypts + upserts (EMAIL-01, EMAIL-03)
+- [x] `Connect`: missing/malformed input (`ErrInvalidInput`) never reaches the factory/network call (EMAIL-02)
+- [x] `Connect`: reconnecting a provider with a bad key leaves the previously-stored valid row untouched (edge case from spec)
+- [x] `Activate`: succeeds only when the target provider's stored `status == "connected"`; otherwise `ErrProviderNotConnected` (EMAIL-04, EMAIL-05)
+- [x] `List`: returns every connected provider + current `active_provider` (possibly `""`/none), never includes the encrypted key in any returned struct exposed beyond this package (EMAIL-06)
+- [x] Unit tests use a fake `EmailProviderStore` and fake `ProviderFactory` (no real DB, no real HTTP) - 1:1 coverage of every `Done when` item above plus every EMAIL-01..06 acceptance criterion and the two edge cases in spec's Edge Cases section that apply to Connect/Activate
+- [x] Gate passes: `gofmt -l . && go vet ./... && go test ./...`
 
 **Tests**: unit
 **Gate**: quick
 
 **Commit**: `feat(email): implement Service connect/activate/list`
+
+**Status**: ✅ Complete
 
 ---
 
