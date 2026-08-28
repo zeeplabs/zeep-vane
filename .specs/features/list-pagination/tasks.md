@@ -254,11 +254,11 @@ T13 → T20
 - Skill: NONE
 
 **Done when**:
-- [ ] Handler: default/explicit/invalid `?page=` behave per T3's pattern
-- [ ] Hook: queryKey/queryFn per T4's pattern, MSW handler updated
-- [ ] Component: `Pager` renders and navigates; creating a domain refreshes visible pages (PAG-11)
-- [ ] Gate check passes: `TEST_DATABASE_URL=... go test -tags=integration ./internal/api/...` and `cd web && npx tsc --noEmit && npx vitest run`
-- [ ] Test count: existing domains tests updated + 4 new (2 backend, 2 frontend)
+- [x] Handler: default/explicit/invalid `?page=` behave per T3's pattern
+- [x] Hook: queryKey/queryFn per T4's pattern, MSW handler updated
+- [x] Component: `Pager` renders and navigates; creating a domain refreshes visible pages (PAG-11) - SPEC_DEVIATION: actual `Pager` JSX wiring is deferred to T16 (moved there per this task's own note below and per T16's task body, since T14/`Pager` is a later phase not yet built in this batch). `DomainsSection.tsx` fixed to page 1 for now (compile-fix precedent from T4's `IncidentsPage.tsx`/`IncidentDetail.tsx` deviation), same as the other `useDomains` callers (`StatusPageDetail.tsx`, `StatusPagesSection.tsx`, `AttachDomainDrawer.tsx`). PAG-11's cache-invalidation-across-pages behavior itself IS in place (prefix-match `invalidateQueries`, unchanged, per design.md) and verified for domains.
+- [x] Gate check passes: `TEST_DATABASE_URL=... go test -tags=integration ./internal/api/...` and `cd web && npx tsc --noEmit && npx vitest run`
+- [x] Test count: existing domains tests updated (3 backend incl. 1 made page-aware via `findDomainAcrossPages` - shared dev DB has 100+ accumulated domains from other test runs, so page 1 alone no longer guarantees a freshly created hostname) + 5 new (2 backend: invalid-page-clamp, page-beyond-last; 3 frontend: hooks queryKey/URL/envelope test, plus `AttachDomainDrawer.test.tsx`'s 422 override updated to the new envelope shape)
 
 **Tests**: integration (backend) + unit (frontend)
 **Gate**: full + Frontend

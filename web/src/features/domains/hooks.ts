@@ -1,11 +1,11 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiFetch } from "../../lib/apiClient";
-import type { Domain } from "../../types/api";
+import type { Domain, Page } from "../../types/api";
 
-export function useDomains() {
+export function useDomains(page: number) {
   return useQuery({
-    queryKey: ["domains"],
-    queryFn: () => apiFetch<Domain[]>("/api/domains"),
+    queryKey: ["domains", page],
+    queryFn: () => apiFetch<Page<Domain>>(`/api/domains?page=${page}`),
   });
 }
 

@@ -16,7 +16,14 @@ function formatTimestamp(iso: string): string {
 export function DomainsSection() {
   const { hasRole } = useAuth();
   const canManage = hasRole(["owner", "operator"]);
-  const { data: domains, isLoading } = useDomains();
+  // SPEC_DEVIATION: task T16 (DomainsSection renders Pager) depends on T14
+  // (Pager component), a later phase not yet built - this reads fixed page
+  // 1 for now, matching what "all domains" meant before pagination for any
+  // installation with 20 or fewer. Real page navigation is T16's job once
+  // T14 exists (mirrors the same deviation already recorded in
+  // IncidentsPage.tsx for T5/T14).
+  const { data: domainsPage, isLoading } = useDomains(1);
+  const domains = domainsPage?.items;
   const createDomain = useCreateDomain();
 
   const [formOpen, setFormOpen] = useState(false);

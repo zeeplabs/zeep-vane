@@ -111,7 +111,12 @@ describe("AttachDomainDrawer", () => {
   it("422 (domain_id inválido) mostra erro inline e mantém o painel aberto", async () => {
     server.use(
       http.get("/api/domains", () =>
-        HttpResponse.json([{ id: "dom-stale", hostname: "stale.example.com", created_at: new Date().toISOString() }])
+        HttpResponse.json({
+          items: [{ id: "dom-stale", hostname: "stale.example.com", created_at: new Date().toISOString() }],
+          total: 1,
+          page: 1,
+          page_size: 20,
+        })
       ),
     );
     await loginAsOwner();

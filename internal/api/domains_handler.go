@@ -12,11 +12,16 @@ import (
 	"github.com/zeeplabs/zeep-vane/internal/db"
 )
 
+// domainsPageSize is the fixed page size for /api/domains (spec.md
+// Assumptions: 20 for domains/services/status-pages/email-providers/
+// poller-status/admins).
+const domainsPageSize = 20
+
 // domainCreatorLister is the subset of *db.DomainRepository the domains
 // handler depends on.
 type domainCreatorLister interface {
 	Create(ctx context.Context, domain *db.Domain) error
-	List(ctx context.Context) ([]db.Domain, error)
+	ListPaginated(ctx context.Context, page, pageSize int) ([]db.Domain, int, error)
 }
 
 // DomainsHandler serves the domain admin routes.
@@ -75,9 +80,12 @@ func (h *DomainsHandler) Create(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(domainResponse{ID: domain.ID, Hostname: domain.Hostname, CreatedAt: domain.CreatedAt})
 }
 
-// List handles GET /api/domains, returning every registered root domain.
+// List handles GET /api/domains, returning one page of registered root
+// domains (20 per page, PAG-08).
 func (h *DomainsHandler) List(w http.ResponseWriter, r *http.Request) {
-	domains, err := h.domains.List(r.Context())
+	page := parsePage(r)
+
+	domains, total, err := h.domains.ListPaginated(r.Context(), page, domainsPageSize)
 	if err != nil {
 		h.logger.Error("domains: failed to list domains", zap.Error(err))
 		writeInternalError(w)
@@ -91,5 +99,5 @@ func (h *DomainsHandler) List(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	_ = json.NewEncoder(w).Encode(resp)
+	_ = json.NewEncoder(w).Encode(Page[domainResponse]{Items: resp, Total: total, Page: page, PageSize: domainsPageSize})
 }

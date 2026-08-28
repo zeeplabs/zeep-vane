@@ -323,9 +323,12 @@ export const handlers = [
     return new HttpResponse(null, { status: 200 });
   }),
 
-  http.get("/api/domains", () => {
+  // GET /api/domains (PAG-08) - mirrors DomainsHandler.List: ordered by
+  // hostname, paginated 20 per page.
+  http.get("/api/domains", ({ request }) => {
     if (!sessionAdminId) return HttpResponse.json({ error: "unauthorized" }, { status: 401 });
-    return HttpResponse.json(domainsState.map(toDomainResponse));
+    const sorted = [...domainsState].sort((a, b) => a.hostname.localeCompare(b.hostname));
+    return HttpResponse.json(paginatedPage(request.url, sorted.map(toDomainResponse), 20));
   }),
 
   http.post("/api/domains", async ({ request }) => {

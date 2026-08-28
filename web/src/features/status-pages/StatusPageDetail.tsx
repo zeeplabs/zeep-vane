@@ -31,7 +31,12 @@ function sameServiceSet(a: string[], b: string[]): boolean {
 export function StatusPageDetail() {
   const { id = "" } = useParams();
   const { data: page, isLoading } = useStatusPage(id);
-  const { data: domains } = useDomains();
+  // SPEC_DEVIATION: fixed page 1 for now - Pager UI for the domains
+  // dropdown is out of scope here (this reads domains only to resolve a
+  // hostname/build a select list); T14/T16 (Pager) is a later phase not
+  // yet built. Mirrors the same deviation in DomainsSection.tsx.
+  const { data: domainsPage } = useDomains(1);
+  const domains = domainsPage?.items;
   const { data: services } = useServices();
   const { hasRole } = useAuth();
   const canManage = hasRole(["owner", "operator"]);

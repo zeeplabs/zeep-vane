@@ -138,6 +138,44 @@ func getListDomains(t *testing.T, r http.Handler, token string) *httptest.Respon
 	return rec
 }
 
+func getListDomainsPage(t *testing.T, r http.Handler, token string, page int) *httptest.ResponseRecorder {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodGet, fmt.Sprintf("/api/domains?page=%d", page), nil)
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+	return rec
+}
+
+// findDomainAcrossPages pages through every page of GET /api/domains
+// looking for hostname - the shared dev DB this integration suite runs
+// against accumulates domains across many tests (PAG-08 exposes this: page
+// 1 alone is no longer guaranteed to include a hostname created just now,
+// once total exceeds one page).
+func findDomainAcrossPages(t *testing.T, r http.Handler, token, hostname string) bool {
+	t.Helper()
+	for page := 1; ; page++ {
+		rec := getListDomainsPage(t, r, token, page)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("page=%d status = %d, want %d, body = %s", page, rec.Code, http.StatusOK, rec.Body.String())
+		}
+		var got Page[domainResponse]
+		if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+			t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+		}
+		for _, d := range got.Items {
+			if d.Hostname == hostname {
+				return true
+			}
+		}
+		if len(got.Items) == 0 || page*got.PageSize >= got.Total {
+			return false
+		}
+	}
+}
+
 func TestListDomains_AnyRole_200IncludesCreated(t *testing.T) {
 	r, pool, admins := newDomainsRouter(t)
 	token := issueTestSessionToken(t, admins)
@@ -154,20 +192,70 @@ func TestListDomains_AnyRole_200IncludesCreated(t *testing.T) {
 		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
 	}
 
-	var domains []domainResponse
-	if err := json.Unmarshal(rec.Body.Bytes(), &domains); err != nil {
+	var page Page[domainResponse]
+	if err := json.Unmarshal(rec.Body.Bytes(), &page); err != nil {
 		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
 	}
-
-	found := false
-	for _, d := range domains {
-		if d.Hostname == hostname {
-			found = true
-			break
-		}
+	if page.Page != 1 {
+		t.Errorf("page.Page = %d, want 1 (default)", page.Page)
 	}
-	if !found {
-		t.Errorf("List() response %+v does not include created hostname %q", domains, hostname)
+	if page.PageSize != 20 {
+		t.Errorf("page.PageSize = %d, want 20", page.PageSize)
+	}
+
+	if !findDomainAcrossPages(t, r, token, hostname) {
+		t.Errorf("created hostname %q not found across any page of GET /api/domains", hostname)
+	}
+}
+
+func TestListDomains_InvalidPage_ClampsToPage1(t *testing.T) {
+	r, pool, admins := newDomainsRouter(t)
+	token := issueTestSessionToken(t, admins)
+	hostname := uniqueHostname(t)
+	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), "DELETE FROM domains WHERE hostname = $1", hostname) })
+
+	createRec := postCreateDomain(t, r, token, hostname)
+	if createRec.Code != http.StatusCreated {
+		t.Fatalf("setup create status = %d, want %d", createRec.Code, http.StatusCreated)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/domains?page=abc", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	var page Page[domainResponse]
+	if err := json.Unmarshal(rec.Body.Bytes(), &page); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+	if page.Page != 1 {
+		t.Errorf("page.Page = %d, want 1 (clamped from invalid ?page=abc)", page.Page)
+	}
+}
+
+func TestListDomains_PageBeyondLast_EmptyItems200(t *testing.T) {
+	r, _, admins := newDomainsRouter(t)
+	token := issueTestSessionToken(t, admins)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/domains?page=999999", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	var page Page[domainResponse]
+	if err := json.Unmarshal(rec.Body.Bytes(), &page); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+	if len(page.Items) != 0 {
+		t.Errorf("len(page.Items) = %d, want 0 for a page far beyond the last", len(page.Items))
 	}
 }
 
