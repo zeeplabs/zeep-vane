@@ -372,6 +372,18 @@ func adminManagementRouteCases() []routeCase {
 			path:   "/api/admins/" + routesTestNonexistentID,
 			body:   func() []byte { return nil },
 		},
+		{
+			name:   "POST /api/admins/invites/{id}/resend",
+			method: http.MethodPost,
+			path:   "/api/admins/invites/" + routesTestNonexistentID + "/resend",
+			body:   func() []byte { return nil },
+		},
+		{
+			name:   "DELETE /api/admins/invites/{id}",
+			method: http.MethodDelete,
+			path:   "/api/admins/invites/" + routesTestNonexistentID,
+			body:   func() []byte { return nil },
+		},
 	}
 }
 

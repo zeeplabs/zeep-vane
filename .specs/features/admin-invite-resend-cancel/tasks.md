@@ -249,10 +249,10 @@ Consumes the finished backend contract. Tasks: T8.
 
 **Done when**:
 
-- [ ] Both new routes reachable end-to-end (owner can resend/cancel a real invite through the full router, not just the handler in isolation)
-- [ ] Operator and viewer roles get `403` on both new routes (extend `routes_test.go`'s existing role-auth table, same pattern as the other admin-management routes)
-- [ ] Gate check passes: `go test -tags=integration ./internal/cli/...` and full build gate (`gofmt -l . && go vet ./... && go test ./... && go test -tags=integration ./...`)
-- [ ] Test count: existing `routes_test.go` role-auth cases + at least 4 new rows (owner/operator/viewer × 2 routes, collapsed to however many rows the existing table format uses) pass, no silent deletions
+- [x] Both new routes reachable end-to-end (owner can resend/cancel a real invite through the full router, not just the handler in isolation)
+- [x] Operator and viewer roles get `403` on both new routes (extend `routes_test.go`'s existing role-auth table, same pattern as the other admin-management routes)
+- [x] Gate check passes: `go test -tags=integration ./internal/cli/...` and full build gate (`gofmt -l . && go vet ./... && go test ./... && go test -tags=integration ./...`)
+- [x] Test count: existing `routes_test.go` role-auth cases (`adminManagementRouteCases`) + 2 new rows (resend, cancel) - each exercised for owner-pass and operator/viewer-403 via the existing shared test functions, no silent deletions. Constructor wiring (`emailService`/`companySettingsRepo`/`cfg.HTTPSEnabled` into `adminsHandler`) was already done in T3 to keep that task compiling; T7 added only the two route registrations plus these test rows.
 
 **Tests**: integration
 **Gate**: full

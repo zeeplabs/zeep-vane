@@ -131,6 +131,8 @@ func buildAdminRouter(pool *db.Pool, cfg config.Config, logger *zap.Logger, poll
 		protected.With(ownerOnly).Get("/api/admins", adminsHandler.List)
 		protected.With(ownerOnly).Patch("/api/admins/{id}/role", adminsHandler.UpdateRole)
 		protected.With(ownerOnly).Delete("/api/admins/{id}", adminsHandler.Delete)
+		protected.With(ownerOnly).Post("/api/admins/invites/{id}/resend", adminsHandler.ResendInvite)
+		protected.With(ownerOnly).Delete("/api/admins/invites/{id}", adminsHandler.CancelInvite)
 
 		// Company settings (SET-02) - owner only, per SettingsPage.tsx's
 		// own "Visível apenas para Owners" copy (spec.md Assumptions).
