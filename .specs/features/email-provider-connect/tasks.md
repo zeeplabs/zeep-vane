@@ -394,17 +394,19 @@ Tasks: T11, T12, executed in that order.
 - Skill: NONE
 
 **Done when**:
-- [ ] Page displays both providers' state (not connected / connected / invalid) and which is active
-- [ ] Connect form submits and shows inline `422` error on failure (matching `IntegrationsPage`'s `ApiError` handling)
-- [ ] Activate action updates displayed active provider without a full reload
-- [ ] Non-`writeRoles` users see the page in read-only form (no connect/activate controls), matching `IntegrationsPage`'s `canManage` gate
-- [ ] Tests pass via MSW-mocked fetch, same depth as `web/src/features/integrations/IntegrationsPage.test.tsx`
-- [ ] Gate passes: `cd web && npx tsc -b --noEmit && npm run test`
+- [x] Page displays both providers' state (not connected / connected / invalid) and which is active
+- [x] Connect form submits and shows inline `422` error on failure (matching `IntegrationsPage`'s `ApiError` handling)
+- [x] Activate action updates displayed active provider without a full reload
+- [x] Non-`writeRoles` users see the page in read-only form (no connect/activate controls), matching `IntegrationsPage`'s `canManage` gate
+- [x] Tests pass via MSW-mocked fetch, same depth as `web/src/features/integrations/IntegrationsPage.test.tsx`
+- [x] Gate passes: `cd web && npx tsc -b --noEmit && npm run test`
 
 **Tests**: unit
 **Gate**: web quick
 
 **Commit**: `feat(web): add email providers admin page`
+
+**Status**: ✅ Complete
 
 ---
 
