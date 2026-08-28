@@ -103,10 +103,10 @@ Explicitly excluded. Documented to prevent scope creep.
 | --------------- | ------ | ------ | ------- |
 | AIP-01 | P1: Invited admin accepts their invite and lands logged in | Execute | ✅ Verified |
 | AIP-02 | P1: Invited admin accepts their invite and lands logged in | Execute | ✅ Verified |
-| AIP-03 | P1: Invited admin accepts their invite and lands logged in | Execute | ❌ Needs Fix |
-| AIP-04 | P1: Invited admin accepts their invite and lands logged in | Execute | ❌ Needs Fix |
+| AIP-03 | P1: Invited admin accepts their invite and lands logged in | Execute | ✅ Verified |
+| AIP-04 | P1: Invited admin accepts their invite and lands logged in | Execute | ✅ Verified |
 | AIP-05 | P1: Password confirmation prevents typo lockout | Execute | ✅ Verified |
-| AIP-06 | P1: Password confirmation prevents typo lockout | Execute | ❌ Needs Fix |
+| AIP-06 | P1: Password confirmation prevents typo lockout | Execute | ✅ Verified |
 | AIP-07 | P2: Clear, distinct error messages for every accept failure | Execute | ✅ Verified |
 | AIP-08 | P2: Clear, distinct error messages for every accept failure | Execute | ✅ Verified |
 | AIP-09 | P2: Clear, distinct error messages for every accept failure | Execute | ✅ Verified |
@@ -117,10 +117,11 @@ Explicitly excluded. Documented to prevent scope creep.
 
 **Coverage:** 9 total, 9 mapped to tasks, 0 unmapped
 
-**Validation (2026-08-28, `94db681..e507396`):** 6/9 Verified, 3 Needs Fix. See
-`.specs/features/accept-invite-page/validation.md` — AIP-03 and AIP-06 are
-claimed by tests that never assert them (discrimination-sensor mutants M6 and
-M8 survived); AIP-04 has no assertion at all.
+**Validation (2026-08-28, `94db681..0684eed`, re-verification iteration 2):** 9/9
+Verified — PASS. See `.specs/features/accept-invite-page/validation.md`. Iteration 1
+(`94db681..e507396`) failed with AIP-03/AIP-04/AIP-06 uncovered; `0684eed` closed all
+three (test-only change) and the two previously surviving discrimination-sensor mutants
+now die. Sensor 6/6 killed, gate 654 passed / 0 failed.
 
 ---
 

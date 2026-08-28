@@ -3,7 +3,7 @@
   "promote_threshold": 2,
   "window_days": 45,
   "quarantine_threshold": 2,
-  "next_id": 23,
+  "next_id": 27,
   "lessons": [
     {
       "id": "L-001",
@@ -400,6 +400,78 @@
       ],
       "created": "2026-08-28T19:26:31Z",
       "last_seen": "2026-08-28T19:26:31Z"
+    },
+    {
+      "id": "L-023",
+      "key": "surviving_mutant::assert a submit control s disabled state while the request is still in flight not just that the success side effect eventually fired",
+      "text": "Assert a submit control's disabled state while the request is still in flight, not just that the success side effect eventually fired",
+      "signal": "surviving_mutant",
+      "scope": "web",
+      "status": "candidate",
+      "features": [
+        "accept-invite-page"
+      ],
+      "recurrence": 1,
+      "harmful": 0,
+      "evidence": [
+        "validation.md sensor M6 - web/src/features/auth/AcceptInvitePage.test.tsx:113 (web)"
+      ],
+      "created": "2026-08-28T20:06:59Z",
+      "last_seen": "2026-08-28T20:06:59Z"
+    },
+    {
+      "id": "L-024",
+      "key": "surviving_mutant::verify that a stale validation error is cleared by submitting the form a second time not by asserting the first error appeared",
+      "text": "Verify that a stale validation error is cleared by submitting the form a second time, not by asserting the first error appeared",
+      "signal": "surviving_mutant",
+      "scope": "web",
+      "status": "candidate",
+      "features": [
+        "accept-invite-page"
+      ],
+      "recurrence": 1,
+      "harmful": 0,
+      "evidence": [
+        "validation.md sensor M8 - web/src/features/auth/AcceptInvitePage.tsx:27 (web)"
+      ],
+      "created": "2026-08-28T20:06:59Z",
+      "last_seen": "2026-08-28T20:06:59Z"
+    },
+    {
+      "id": "L-025",
+      "key": "ac_gap::assert a never leak requirement explicitly by checking the secret is absent from the rendered dom and from console output never by code inspection alone",
+      "text": "Assert a never-leak requirement explicitly by checking the secret is absent from the rendered DOM and from console output, never by code inspection alone",
+      "signal": "ac_gap",
+      "scope": "web",
+      "status": "candidate",
+      "features": [
+        "accept-invite-page"
+      ],
+      "recurrence": 1,
+      "harmful": 0,
+      "evidence": [
+        "AIP-04 - spec.md:55 (web)"
+      ],
+      "created": "2026-08-28T20:06:59Z",
+      "last_seen": "2026-08-28T20:06:59Z"
+    },
+    {
+      "id": "L-026",
+      "key": "spec_precision_gap::when the api client converts every non 2xx response into a typed error never attribute 5xx to the untyped error fallback branch in a spec or a test",
+      "text": "When the API client converts every non-2xx response into a typed error, never attribute 5xx to the untyped-error fallback branch in a spec or a test",
+      "signal": "spec_precision_gap",
+      "scope": "web",
+      "status": "candidate",
+      "features": [
+        "accept-invite-page"
+      ],
+      "recurrence": 1,
+      "harmful": 0,
+      "evidence": [
+        "AIP-09 - spec.md:86 vs web/src/lib/apiClient.ts:82 (web)"
+      ],
+      "created": "2026-08-28T20:06:59Z",
+      "last_seen": "2026-08-28T20:06:59Z"
     }
   ]
 }

@@ -146,6 +146,30 @@ Seen once or not yet corroborated. Tracked, not trusted.
 - evidence: internal/db/company_settings_migration_test.go:56 (asserts the shared singleton is blank without resetting it first; fails at baseline fa661cc too) (integration-tests)
 - last seen: 2026-08-28T19:26:31Z
 
+### L-023 - Assert a submit control's disabled state while the request is still in flight, not just that the success side effect eventually fired
+- signal: `surviving_mutant` · recurrence: 1 feature(s) · scope: `web` · harmful: 0
+- features: accept-invite-page
+- evidence: validation.md sensor M6 - web/src/features/auth/AcceptInvitePage.test.tsx:113 (web)
+- last seen: 2026-08-28T20:06:59Z
+
+### L-024 - Verify that a stale validation error is cleared by submitting the form a second time, not by asserting the first error appeared
+- signal: `surviving_mutant` · recurrence: 1 feature(s) · scope: `web` · harmful: 0
+- features: accept-invite-page
+- evidence: validation.md sensor M8 - web/src/features/auth/AcceptInvitePage.tsx:27 (web)
+- last seen: 2026-08-28T20:06:59Z
+
+### L-025 - Assert a never-leak requirement explicitly by checking the secret is absent from the rendered DOM and from console output, never by code inspection alone
+- signal: `ac_gap` · recurrence: 1 feature(s) · scope: `web` · harmful: 0
+- features: accept-invite-page
+- evidence: AIP-04 - spec.md:55 (web)
+- last seen: 2026-08-28T20:06:59Z
+
+### L-026 - When the API client converts every non-2xx response into a typed error, never attribute 5xx to the untyped-error fallback branch in a spec or a test
+- signal: `spec_precision_gap` · recurrence: 1 feature(s) · scope: `web` · harmful: 0
+- features: accept-invite-page
+- evidence: AIP-09 - spec.md:86 vs web/src/lib/apiClient.ts:82 (web)
+- last seen: 2026-08-28T20:06:59Z
+
 ## Quarantined (failed when applied - ignore)
 
 A confirmed lesson that recurred alongside failure. Kept for the maintainer to review.
