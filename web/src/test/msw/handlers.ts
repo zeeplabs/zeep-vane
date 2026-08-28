@@ -125,12 +125,28 @@ let adminsState: Admin[] = [];
 let adminInvitesState: AdminInvite[] = [];
 let adminInviteIdCounter = 0;
 
+// adminInviteTokensState maps a raw accept-invite token to the invite it was
+// issued for. The real backend never exposes a raw token to any client that
+// didn't just mint it (only the emailed link carries one), so this mock-only
+// map exists purely so a frontend test can drive
+// POST /api/admins/invite/:token/accept with a token it chose itself - see
+// seedAdminInviteToken.
+let adminInviteTokensState: Record<string, { email: string; role: Role }> = {};
+
 export function resetAdmins(): void {
   adminsState = seedAdmins.map((a) => toPublicAdmin(a));
   adminInvitesState = seedAdminInvites.map((i) => ({ ...i }));
   adminInviteIdCounter = 0;
+  adminInviteTokensState = {};
 }
 resetAdmins();
+
+// Test-only helper (accept-invite-page): registers rawToken as accepting for
+// email/role via POST /api/admins/invite/:token/accept, mirroring how the
+// real backend hashes a freshly-minted token at Invite() time.
+export function seedAdminInviteToken(rawToken: string, email: string, role: Role): void {
+  adminInviteTokensState[rawToken] = { email, role };
+}
 
 // Test-only helper (INVITE-07): seeds a pending invite whose expires_at is
 // already in the past, so a test can assert List's expired:true tagging
@@ -712,6 +728,32 @@ export const handlers = [
     if (!invite) return HttpResponse.json({ error: "invite not found" }, { status: 404 });
     adminInvitesState = adminInvitesState.filter((i) => i.id !== invite.id);
     return HttpResponse.json({ status: "canceled" });
+  }),
+
+  // POST /api/admins/invite/:token/accept (AIP-01/05/07/08/09) - mirrors
+  // AdminsHandler.AcceptInvite: 422 on missing/weak password, 401 on an
+  // unknown/already-consumed token, otherwise consumes the token (a second
+  // accept with the same token 401s, matching the real single-use
+  // invariant) and responds with the invite's email/role. Public - no
+  // sessionAdminId gate, matching the real route's un-authenticated wiring.
+  http.post("/api/admins/invite/:token/accept", async ({ request, params }) => {
+    const body = (await request.json()) as { password?: string };
+    if (!body.password) {
+      return HttpResponse.json({ error: "password is required" }, { status: 422 });
+    }
+    if (body.password.length < 8 || body.password.length > 72) {
+      return HttpResponse.json(
+        { error: "password must be between 8 and 72 characters" },
+        { status: 422 },
+      );
+    }
+    const token = params.token as string;
+    const entry = adminInviteTokensState[token];
+    if (!entry) {
+      return HttpResponse.json({ error: "invalid or expired invite token" }, { status: 401 });
+    }
+    delete adminInviteTokensState[token];
+    return HttpResponse.json({ email: entry.email, role: entry.role }, { status: 201 });
   }),
 
   // PATCH /api/admins/:id/role (I19) - mirrors AdminsHandler.UpdateRole:

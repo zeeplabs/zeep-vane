@@ -123,9 +123,9 @@ Consumes the backend contract (unchanged request/response body; only a new respo
 
 **Done when**:
 
-- [ ] New handler registered for `POST /api/admins/invite/:token/accept`, matching the four response shapes above
-- [ ] New `seedAdminInviteToken(token, email, role)` export lets a test seed a specific, known token (the real backend never lets a test choose the raw token - the mock must, since the frontend test drives the URL directly)
-- [ ] Gate check passes: `cd web && npx tsc -b --noEmit` (no dedicated test of the mock itself - it's exercised indirectly by T4's page tests)
+- [x] New handler registered for `POST /api/admins/invite/:token/accept`, matching the four response shapes above
+- [x] New `seedAdminInviteToken(token, email, role)` export lets a test seed a specific, known token (the real backend never lets a test choose the raw token - the mock must, since the frontend test drives the URL directly)
+- [x] Gate check passes: `cd web && npx tsc -b --noEmit` (no dedicated test of the mock itself - it's exercised indirectly by T4's page tests)
 
 **Tests**: none
 **Gate**: build
