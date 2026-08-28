@@ -280,10 +280,10 @@ T13 → T20
 - Skill: NONE
 
 **Done when**:
-- [ ] Same boundary tests as T2/T6, run against `ListPaginated` only
-- [ ] Existing `List(ctx)` untouched — a test confirms `internal/poller` still compiles and its existing tests still pass unmodified
-- [ ] Gate check passes: `TEST_DATABASE_URL=... go test -tags=integration ./internal/db/... ./internal/poller/...`
-- [ ] Test count: 4+ new tests pass, 0 poller tests broken
+- [x] Same boundary tests as T2/T6, run against `ListPaginated` only
+- [x] Existing `List(ctx)` untouched — a test confirms `internal/poller` still compiles and its existing tests still pass unmodified
+- [x] Gate check passes: `TEST_DATABASE_URL=... go test -tags=integration ./internal/db/... ./internal/poller/...`
+- [x] Test count: 5 new tests pass (4 ListPaginated boundary + 1 confirming List(ctx) stays unpaginated for the poller), 0 poller tests broken
 
 **Tests**: integration
 **Gate**: full

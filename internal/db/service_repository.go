@@ -42,8 +42,63 @@ func (r *ServiceRepository) Create(ctx context.Context, service *Service) error 
 	return nil
 }
 
+// ListPaginated returns one page of registered services, ordered by name,
+// with each service's current status (PAG-08). total is computed via
+// COUNT(*) OVER() in the same query, with a zero-row fallback COUNT(*),
+// same pattern as IncidentRepository/DomainRepository's ListPaginated.
+func (r *ServiceRepository) ListPaginated(ctx context.Context, page, pageSize int) ([]Service, int, error) {
+	offset := (page - 1) * pageSize
+
+	rows, err := r.pool.Query(ctx,
+		`SELECT id, name, slo_id, current_status, last_status_change_at, COUNT(*) OVER() AS total
+		 FROM services
+		 ORDER BY name
+		 LIMIT $1 OFFSET $2`,
+		pageSize, offset,
+	)
+	if err != nil {
+		return nil, 0, fmt.Errorf("db: failed to list services: %w", err)
+	}
+	defer rows.Close()
+
+	services := []Service{}
+	total := 0
+	for rows.Next() {
+		var service Service
+		if err := rows.Scan(&service.ID, &service.Name, &service.SLOID, &service.CurrentStatus, &service.LastStatusChangeAt, &total); err != nil {
+			return nil, 0, fmt.Errorf("db: failed to scan service: %w", err)
+		}
+		services = append(services, service)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, 0, fmt.Errorf("db: failed to iterate services: %w", err)
+	}
+
+	if len(services) == 0 {
+		total, err = r.countServices(ctx)
+		if err != nil {
+			return nil, 0, err
+		}
+	}
+
+	return services, total, nil
+}
+
+// countServices is the zero-row fallback for ListPaginated's total (PAG-08).
+func (r *ServiceRepository) countServices(ctx context.Context) (int, error) {
+	var total int
+	row := r.pool.QueryRow(ctx, "SELECT COUNT(*) FROM services")
+	if err := row.Scan(&total); err != nil {
+		return 0, fmt.Errorf("db: failed to count services: %w", err)
+	}
+	return total, nil
+}
+
 // List returns every registered service, ordered by name, with its current
-// status.
+// status. Kept unpaginated (not removed, unlike DomainRepository.List) -
+// internal/poller/poller.go polls every service every cycle and must never
+// see only one page (SPEC_DEVIATION already documented by design.md itself:
+// this is the ServiceRepository/poller.go precedent, not a new deviation).
 func (r *ServiceRepository) List(ctx context.Context) ([]Service, error) {
 	rows, err := r.pool.Query(ctx,
 		"SELECT id, name, slo_id, current_status, last_status_change_at FROM services ORDER BY name")
