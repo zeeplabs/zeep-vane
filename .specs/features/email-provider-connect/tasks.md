@@ -114,17 +114,19 @@ Tasks: T11, T12, executed in that order.
 - Skill: NONE
 
 **Done when**:
-- [ ] `UpsertProvider` inserts on first connect, overwrites on reconnect (never a second row for the same `provider`)
-- [ ] `Get` returns `ErrNotFound` for a never-connected provider
-- [ ] `List` returns all connected providers ordered by `provider`, and an empty slice (not an error) when none exist
-- [ ] `GetActiveProvider` returns `""` (not an error) when `active_provider IS NULL`
-- [ ] `SetActiveProvider` updates the singleton row
-- [ ] Gate passes: `gofmt -l . && go vet ./... && go test -tags=integration ./...`
+- [x] `UpsertProvider` inserts on first connect, overwrites on reconnect (never a second row for the same `provider`)
+- [x] `Get` returns `ErrNotFound` for a never-connected provider
+- [x] `List` returns all connected providers ordered by `provider`, and an empty slice (not an error) when none exist
+- [x] `GetActiveProvider` returns `""` (not an error) when `active_provider IS NULL`
+- [x] `SetActiveProvider` updates the singleton row
+- [x] Gate passes: `gofmt -l . && go vet ./... && go test -tags=integration ./...`
 
 **Tests**: integration
 **Gate**: full
 
 **Commit**: `feat(db): add EmailProviderRepository`
+
+**Status**: ✅ Complete
 
 ---
 

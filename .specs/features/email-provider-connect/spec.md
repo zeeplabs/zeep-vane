@@ -144,12 +144,12 @@ Explicitly excluded. Documented to prevent scope creep.
 
 | Requirement ID | Story | Phase | Status |
 | --- | --- | --- | --- |
-| EMAIL-01 | P1: Connect an email provider | Design | Pending |
+| EMAIL-01 | P1: Connect an email provider | Design | Implementing |
 | EMAIL-02 | P1: Connect an email provider | Design | Pending |
-| EMAIL-03 | P1: Connect an email provider | Design | Pending |
+| EMAIL-03 | P1: Connect an email provider | Design | Implementing |
 | EMAIL-04 | P1: Switch the active provider | Design | Implementing |
 | EMAIL-05 | P1: Switch the active provider | Design | Pending |
-| EMAIL-06 | P1: List connected providers and their status | Design | Pending |
+| EMAIL-06 | P1: List connected providers and their status | Design | Implementing |
 | EMAIL-07 | P1: Send the admin-invite email through the active provider | Design | Pending |
 | EMAIL-08 | P1: Send the admin-invite email through the active provider | Design | Pending |
 | EMAIL-09 | P1: Send the admin-invite email through the active provider | Design | Pending |
