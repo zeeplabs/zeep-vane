@@ -91,7 +91,7 @@
 
 **AD-009 registrado**: features de deployment devem espelhar as convenções já provadas de `zeep-orbit` por padrão, salvo razão específica do Vane pra divergir.
 
-**Next steps**: nenhum solicitado ainda nesta sessão. Backlog não-bloqueante herdado de rodadas anteriores continua em aberto (resend/cancel de convite de admin, gap residual de concorrência do `PollerManager`) — ver handoffs anteriores. Teste 404 em update de incidente (`TestTransitionIncident_UnknownIncident_404`) e flake `L-017` corrigidos em 2026-08-28 ao preparar a primeira release (CI configurado em `.github/workflows/ci.yml`).
+**Next steps**: nenhum solicitado ainda nesta sessão. Backlog não-bloqueante herdado de rodadas anteriores continua em aberto (resend/cancel de convite de admin, gap residual de concorrência do `PollerManager`) — ver handoffs anteriores. Teste 404 em update de incidente (`TestTransitionIncident_UnknownIncident_404`), flake `L-017` e upload de logo em multi-réplica (Postgres via `company_settings.logo_data`/`logo_content_type`, migration 0015) corrigidos em 2026-08-28 ao preparar a primeira release (CI configurado em `.github/workflows/ci.yml`). Branch protection exigindo os checks de CI antes de merge em `main` — configurado pelo usuário diretamente no GitHub (fora do repo, não versionado).
 
 ---
 
