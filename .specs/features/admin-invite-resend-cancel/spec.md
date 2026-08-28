@@ -131,7 +131,7 @@ Explicitly excluded. Documented to prevent scope creep.
 | INVITE-04       | P1: Owner resends a pending invite            | Tasks | Implementing |
 | INVITE-05       | P1: Owner cancels a pending invite            | Tasks | Implementing |
 | INVITE-06       | P1: Owner cancels a pending invite            | Tasks | Implementing |
-| INVITE-07       | P2: Expired-but-unused invites remain manageable | Design | Pending |
+| INVITE-07       | P2: Expired-but-unused invites remain manageable | Tasks | Implementing |
 | INVITE-08       | Concurrency safety (resend/cancel race)       | Tasks | Implementing |
 | INVITE-09       | Auth boundary (owner-only)                    | Design | Pending |
 

@@ -374,6 +374,7 @@ type adminResponse struct {
 	Role      string     `json:"role"`
 	Status    string     `json:"status"`
 	ExpiresAt *time.Time `json:"expires_at,omitempty"`
+	Expired   bool       `json:"expired,omitempty"`
 }
 
 // UpdateRole handles PATCH /api/admins/{id}/role (role: owner). The role
@@ -576,6 +577,7 @@ func (h *AdminsHandler) List(w http.ResponseWriter, r *http.Request) {
 			Role:      invite.Role,
 			Status:    "pending",
 			ExpiresAt: &invite.ExpiresAt,
+			Expired:   invite.ExpiresAt.Before(time.Now()),
 		})
 	}
 

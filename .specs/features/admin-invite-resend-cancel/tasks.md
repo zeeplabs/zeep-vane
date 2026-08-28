@@ -222,10 +222,10 @@ Consumes the finished backend contract. Tasks: T8.
 
 **Done when**:
 
-- [ ] A pending invite whose `expires_at` is in the past appears in `GET /api/admins`'s response with `"expired":true`; a not-yet-expired one has `"expired":false` (or omitted per `omitempty` - pick one and assert it consistently in tests)
-- [ ] Active admin entries never carry an `expired` field
-- [ ] Gate check passes: `go test -tags=integration ./internal/api/...`
-- [ ] Test count: at least 2 new tests (expired invite flagged, non-expired invite not flagged) pass, no silent deletions
+- [x] A pending invite whose `expires_at` is in the past appears in `GET /api/admins`'s response with `"expired":true`; a not-yet-expired one omits the key entirely (`omitempty` on `false`) - asserted consistently via `Expired bool` decode in tests
+- [x] Active admin entries never carry an `expired` field
+- [x] Gate check passes: `go test -tags=integration ./internal/api/...`
+- [x] Test count: 2 new tests (expired invite flagged via updated `TestListAdmins_Owner_200_ExcludesUsedIncludesExpiredInvites`, non-expired invite not flagged + active admins never flagged) pass, no silent deletions
 
 **Tests**: integration
 **Gate**: full
