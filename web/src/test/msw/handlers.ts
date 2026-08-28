@@ -132,6 +132,20 @@ export function resetAdmins(): void {
 }
 resetAdmins();
 
+// Test-only helper (INVITE-07): seeds a pending invite whose expires_at is
+// already in the past, so a test can assert List's expired:true tagging
+// without waiting an hour or faking the clock.
+export function seedExpiredAdminInvite(email: string, role: Role): void {
+  adminInviteIdCounter += 1;
+  adminInvitesState.push({
+    id: `invite-msw-expired-${adminInviteIdCounter}`,
+    email,
+    role,
+    status: "pending",
+    expires_at: new Date(Date.now() - 1000 * 60 * 60).toISOString(),
+  });
+}
+
 // In-memory company_settings state (SET-01, SET-07), seeded the same way
 // as the other fixtures above - the real backend's row is a singleton, so
 // this mirrors that with a single mutable object rather than an array.
@@ -629,22 +643,28 @@ export const handlers = [
     return HttpResponse.json(incident);
   }),
 
-  // GET /api/admins (I18/I19) - mirrors AdminsHandler.List: active admins
-  // (status "active") merged with pending, non-expired invites (status
-  // "pending", each with expires_at).
+  // GET /api/admins (I18/I19/INVITE-07) - mirrors AdminsHandler.List: active
+  // admins (status "active") merged with every pending invite regardless of
+  // expiry, each tagged expired:true once its expires_at has passed.
   http.get("/api/admins", () => {
     if (!sessionAdminId) return HttpResponse.json({ error: "unauthorized" }, { status: 401 });
     const active = adminsState.map((a) => ({ ...a, status: "active" as const }));
-    const pending = adminInvitesState
-      .filter((i) => new Date(i.expires_at).getTime() > Date.now())
-      .map((i) => ({ id: i.id, email: i.email, role: i.role, status: "pending" as const, expires_at: i.expires_at }));
+    const pending = adminInvitesState.map((i) => ({
+      id: i.id,
+      email: i.email,
+      role: i.role,
+      status: "pending" as const,
+      expires_at: i.expires_at,
+      expired: new Date(i.expires_at).getTime() <= Date.now(),
+    }));
     return HttpResponse.json([...active, ...pending]);
   }),
 
-  // POST /api/admins (I19) - mirrors AdminsHandler.Invite: 422 on missing
-  // email/invalid role, 409 if an active admin already owns the email,
-  // otherwise replaces any pending invite for the email and issues a new
-  // one.
+  // POST /api/admins (I19/INVITE-01) - mirrors AdminsHandler.Invite: 422 on
+  // missing email/invalid role, 409 if an active admin already owns the
+  // email, otherwise replaces any pending invite for the email and issues a
+  // new one. email_sent is always true here - there's no real email
+  // provider in this mock environment to fail.
   http.post("/api/admins", async ({ request }) => {
     if (!sessionAdminId) return HttpResponse.json({ error: "unauthorized" }, { status: 401 });
     const body = (await request.json()) as { email?: string; role?: string };
@@ -666,7 +686,32 @@ export const handlers = [
       status: "pending",
       expires_at: new Date(Date.now() + 1000 * 60 * 60).toISOString(),
     });
-    return HttpResponse.json({ status: "invited" }, { status: 201 });
+    return HttpResponse.json({ status: "invited", email_sent: true }, { status: 201 });
+  }),
+
+  // POST /api/admins/invites/:id/resend (INVITE-03/04) - mirrors
+  // AdminsHandler.ResendInvite: 404 unknown id, otherwise extends
+  // expires_at by another hour (also un-expiring it, same as the real
+  // Refresh) and reports email_sent:true.
+  http.post("/api/admins/invites/:id/resend", ({ params }) => {
+    if (!sessionAdminId) return HttpResponse.json({ error: "unauthorized" }, { status: 401 });
+    const invite = adminInvitesState.find((i) => i.id === params.id);
+    if (!invite) return HttpResponse.json({ error: "invite not found" }, { status: 404 });
+    invite.expires_at = new Date(Date.now() + 1000 * 60 * 60).toISOString();
+    return HttpResponse.json({ status: "resent", email_sent: true });
+  }),
+
+  // DELETE /api/admins/invites/:id (INVITE-05/06) - mirrors
+  // AdminsHandler.CancelInvite: 404 unknown id, otherwise removes the
+  // invite (the real backend sets used_at instead of deleting the row, but
+  // from List's point of view - the only thing this mock exposes - the
+  // outcome is identical: the invite stops appearing).
+  http.delete("/api/admins/invites/:id", ({ params }) => {
+    if (!sessionAdminId) return HttpResponse.json({ error: "unauthorized" }, { status: 401 });
+    const invite = adminInvitesState.find((i) => i.id === params.id);
+    if (!invite) return HttpResponse.json({ error: "invite not found" }, { status: 404 });
+    adminInvitesState = adminInvitesState.filter((i) => i.id !== invite.id);
+    return HttpResponse.json({ status: "canceled" });
   }),
 
   // PATCH /api/admins/:id/role (I19) - mirrors AdminsHandler.UpdateRole:

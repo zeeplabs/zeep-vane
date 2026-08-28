@@ -9,7 +9,15 @@ import { IconRoleSelector } from "../../components/ui/IconRoleSelector";
 import { Tooltip } from "../../components/ui/Tooltip";
 import { ApiError } from "../../lib/apiClient";
 import type { Role } from "../../types/api";
-import { useAdmins, useDeleteAdmin, useInviteAdmin, useUpdateAdminRole, type AdminRow } from "./hooks";
+import {
+  useAdmins,
+  useCancelInvite,
+  useDeleteAdmin,
+  useInviteAdmin,
+  useResendInvite,
+  useUpdateAdminRole,
+  type AdminRow,
+} from "./hooks";
 
 const roleOptions: Role[] = ["owner", "operator", "viewer"];
 
@@ -34,6 +42,8 @@ export function AdminsPage() {
   const inviteAdmin = useInviteAdmin();
   const updateRole = useUpdateAdminRole();
   const deleteAdmin = useDeleteAdmin();
+  const resendInvite = useResendInvite();
+  const cancelInvite = useCancelInvite();
 
   const [inviteOpen, setInviteOpen] = useState(false);
   const [email, setEmail] = useState("");
@@ -124,25 +134,52 @@ export function AdminsPage() {
     },
   ];
 
+  async function handleResend(a: AdminRow) {
+    try {
+      const result = await resendInvite.mutateAsync(a.id);
+      toast.success(
+        result.email_sent
+          ? `Convite reenviado para ${a.email}.`
+          : `Convite reenviado para ${a.email}, mas o e-mail não pôde ser entregue.`
+      );
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : "Não foi possível reenviar o convite.");
+    }
+  }
+
+  async function handleCancel(a: AdminRow) {
+    try {
+      await cancelInvite.mutateAsync(a.id);
+      toast.success(`Convite de ${a.email} cancelado.`);
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : "Não foi possível cancelar o convite.");
+    }
+  }
+
   const pendingColumns: TableColumn<AdminRow>[] = [
     { key: "email", header: "E-mail", render: (a) => a.email },
     { key: "role", header: "Papel", render: (a) => a.role },
-    { key: "status", header: "", render: () => <Tag variant="accent-outline">Pendente</Tag> },
+    {
+      key: "status",
+      header: "",
+      render: (a) => (
+        <div className="flex justify-end gap-1">
+          <Tag variant="accent-outline">Pendente</Tag>
+          {a.expired ? <Tag variant="critical">Expirado</Tag> : null}
+        </div>
+      ),
+    },
     {
       key: "actions",
       header: "",
-      render: () => (
+      render: (a) => (
         <div className="flex justify-end gap-2">
-          <Tooltip label="Ainda não disponível">
-            <Button variant="ghost" disabled>
-              Reenviar
-            </Button>
-          </Tooltip>
-          <Tooltip label="Ainda não disponível">
-            <Button variant="ghost" disabled>
-              Cancelar
-            </Button>
-          </Tooltip>
+          <Button variant="ghost" onClick={() => handleResend(a)} disabled={resendInvite.isPending}>
+            Reenviar
+          </Button>
+          <Button variant="ghost" onClick={() => handleCancel(a)} disabled={cancelInvite.isPending}>
+            Cancelar
+          </Button>
         </div>
       ),
     },

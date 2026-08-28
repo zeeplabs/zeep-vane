@@ -7,6 +7,7 @@ import "../../lib/i18n";
 import { AuthProvider } from "../../auth/AuthProvider";
 import { TestQueryProvider } from "../../test/queryClient";
 import { apiFetch } from "../../lib/apiClient";
+import { seedExpiredAdminInvite } from "../../test/msw/handlers";
 import { AdminsPage } from "./AdminsPage";
 
 async function loginAsOwner() {
@@ -126,25 +127,41 @@ describe("AdminsPage", () => {
     expect(within(newRow).getByText("Pendente")).toBeInTheDocument();
   });
 
-  it("convites pendentes tem ações Reenviar/Cancelar desabilitadas (sem backend, backlog AD-007)", async () => {
+  it("reenviar convite pendente mantém a linha e exibe toast de confirmação (INVITE-03)", async () => {
     await loginAsOwner();
     renderPage();
     await screen.findByText("novo-operador@vane.app");
 
-    const resendButton = screen.getByRole("button", { name: "Reenviar" });
-    const cancelButton = screen.getByRole("button", { name: "Cancelar" });
-    expect(resendButton).toBeDisabled();
-    expect(cancelButton).toBeDisabled();
+    const inviteRow = screen.getByText("novo-operador@vane.app").closest("tr")!;
+    await userEvent.click(within(inviteRow).getByRole("button", { name: "Reenviar" }));
+
+    expect(await screen.findByText("Convite reenviado para novo-operador@vane.app.")).toBeInTheDocument();
+    expect(screen.getByText("novo-operador@vane.app")).toBeInTheDocument();
   });
 
-  it("clicar em Reenviar/Cancelar desabilitados não dispara requisição nem remove a linha", async () => {
+  it("cancelar convite pendente remove a linha e exibe toast de confirmação (INVITE-05)", async () => {
     await loginAsOwner();
     renderPage();
     await screen.findByText("novo-operador@vane.app");
 
-    await userEvent.click(screen.getByRole("button", { name: "Reenviar" }));
-    await userEvent.click(screen.getByRole("button", { name: "Cancelar" }));
+    const inviteRow = screen.getByText("novo-operador@vane.app").closest("tr")!;
+    await userEvent.click(within(inviteRow).getByRole("button", { name: "Cancelar" }));
 
-    expect(screen.getByText("novo-operador@vane.app")).toBeInTheDocument();
+    await waitFor(() => expect(screen.queryByText("novo-operador@vane.app")).not.toBeInTheDocument());
+    expect(await screen.findByText("Convite de novo-operador@vane.app cancelado.")).toBeInTheDocument();
+  });
+
+  it("convite pendente expirado exibe tag Expirado além de Pendente (INVITE-07)", async () => {
+    await loginAsOwner();
+    seedExpiredAdminInvite("expirado@vane.app", "viewer");
+    renderPage();
+    await screen.findByText("expirado@vane.app");
+
+    const expiredRow = screen.getByText("expirado@vane.app").closest("tr")!;
+    expect(within(expiredRow).getByText("Expirado")).toBeInTheDocument();
+    expect(within(expiredRow).getByText("Pendente")).toBeInTheDocument();
+
+    const freshRow = screen.getByText("novo-operador@vane.app").closest("tr")!;
+    expect(within(freshRow).queryByText("Expirado")).not.toBeInTheDocument();
   });
 });

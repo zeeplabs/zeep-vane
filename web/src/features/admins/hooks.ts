@@ -8,6 +8,12 @@ export interface AdminRow {
   role: Role;
   status: "active" | "pending";
   expires_at?: string;
+  expired?: boolean;
+}
+
+export interface InviteEmailResult {
+  status: string;
+  email_sent: boolean;
 }
 
 export function useAdmins() {
@@ -26,7 +32,7 @@ export function useInviteAdmin() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (input: InviteAdminInput) =>
-      apiFetch<{ status: string }>("/api/admins", { method: "POST", body: JSON.stringify(input) }),
+      apiFetch<InviteEmailResult>("/api/admins", { method: "POST", body: JSON.stringify(input) }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["admins"] });
     },
@@ -61,7 +67,7 @@ export function useResendInvite() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (id: string) =>
-      apiFetch<void>(`/api/admins/invites/${id}/resend`, { method: "POST" }),
+      apiFetch<InviteEmailResult>(`/api/admins/invites/${id}/resend`, { method: "POST" }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["admins"] });
     },

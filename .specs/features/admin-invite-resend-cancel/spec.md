@@ -139,7 +139,7 @@ Explicitly excluded. Documented to prevent scope creep.
 
 **Status values:** Pending → In Design → In Tasks → Implementing → Verified
 
-**Coverage:** 9 total, 0 mapped to tasks, 9 unmapped ⚠️ (expected pre-Design)
+**Coverage:** 9 total, 9 mapped to tasks (T1-T8), 0 unmapped
 
 ---
 

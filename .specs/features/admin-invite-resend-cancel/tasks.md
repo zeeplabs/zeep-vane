@@ -276,12 +276,12 @@ Consumes the finished backend contract. Tasks: T8.
 
 **Done when**:
 
-- [ ] Clicking "Reenviar" on a pending row calls `POST /api/admins/invites/{id}/resend` and invalidates the `["admins"]` query on success (already implemented in the hook - just needs to be reachable from the UI)
-- [ ] Clicking "Cancelar" on a pending row calls `DELETE /api/admins/invites/{id}` and invalidates `["admins"]` on success
-- [ ] A pending row with `expired: true` shows an additional "Expirado" tag next to "Pendente"
-- [ ] No remaining `disabled`/"Ainda não disponível" tooltip on either button
-- [ ] Gate check passes: `cd web && npx tsc -b --noEmit && npm run test`
-- [ ] Test count: existing `AdminsPage.test.tsx`/`hooks.test.ts` suites + at least 3 new tests (resend click → mutation called, cancel click → mutation called, expired tag renders) pass, no silent deletions
+- [x] Clicking "Reenviar" on a pending row calls `POST /api/admins/invites/{id}/resend` and invalidates the `["admins"]` query on success (already implemented in the hook - just needs to be reachable from the UI)
+- [x] Clicking "Cancelar" on a pending row calls `DELETE /api/admins/invites/{id}` and invalidates `["admins"]` on success
+- [x] A pending row with `expired: true` shows an additional "Expirado" tag next to "Pendente"
+- [x] No remaining `disabled`/"Ainda não disponível" tooltip on either button
+- [x] Gate check passes: `cd web && npx tsc -b --noEmit && npm run test`
+- [x] Test count: existing suites + 2 replaced tests (the old "disabled buttons" pair was direct fallout of this task, same category as T2's backend fallout - replaced with resend-success and cancel-success behavioral tests) + 1 new expired-tag test + 4 new `hooks.test.ts` cases (resend success/404, cancel success/404) = 7 net-new/replaced, no silent deletions. Also extended `web/src/test/msw/handlers.ts` (test infrastructure, not in the task's `Where`, but required fallout - the mock lacked resend/cancel routes and the expired-flag contract entirely) with the two new routes, `expired` in `GET /api/admins`, `email_sent` in the invite/resend responses, and a `seedExpiredAdminInvite` test helper.
 
 **Tests**: unit
 **Gate**: build
