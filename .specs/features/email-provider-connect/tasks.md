@@ -339,15 +339,17 @@ Tasks: T11, T12, executed in that order.
 - Skill: NONE
 
 **Done when**:
-- [ ] `POST /api/integrations/email/{provider}` and `POST /api/integrations/email/{provider}/activate` gated by `writeRoles`; `GET /api/integrations/email` gated by `anyRole` - matching the Datadog split exactly
-- [ ] `routes_test.go`'s role-auth table includes all 3 new routes and passes for owner/operator/viewer per the existing pattern
-- [ ] Full admin router boots successfully with the new handler wired (no nil-dependency panic)
-- [ ] Gate passes: `gofmt -l . && go vet ./... && go test ./... && go test -tags=integration ./...`
+- [x] `POST /api/integrations/email/{provider}` and `POST /api/integrations/email/{provider}/activate` gated by `writeRoles`; `GET /api/integrations/email` gated by `anyRole` - matching the Datadog split exactly
+- [x] `routes_test.go`'s role-auth table includes all 3 new routes and passes for owner/operator/viewer per the existing pattern
+- [x] Full admin router boots successfully with the new handler wired (no nil-dependency panic)
+- [x] Gate passes: `gofmt -l . && go vet ./... && go test ./... && go test -tags=integration ./...`
 
 **Tests**: integration
 **Gate**: full
 
 **Commit**: `feat(cli): wire email provider routes`
+
+**Status**: ✅ Complete
 
 ---
 

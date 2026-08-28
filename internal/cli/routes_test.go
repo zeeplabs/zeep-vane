@@ -250,6 +250,25 @@ func writeRouteCases() []routeCase {
 			body:   func() []byte { return nil },
 		},
 		{
+			name:   "POST /api/integrations/email/{provider}",
+			method: http.MethodPost,
+			path:   "/api/integrations/email/sendgrid",
+			body: func() []byte {
+				b, _ := json.Marshal(map[string]string{
+					"api_key":    "cli-routes-test-email-api-key",
+					"from_email": "cli-routes-test@example.com",
+					"from_name":  "cli-routes-test",
+				})
+				return b
+			},
+		},
+		{
+			name:   "POST /api/integrations/email/{provider}/activate",
+			method: http.MethodPost,
+			path:   "/api/integrations/email/sendgrid/activate",
+			body:   func() []byte { return nil },
+		},
+		{
 			name:   "POST /api/incidents",
 			method: http.MethodPost,
 			path:   "/api/incidents",
@@ -467,6 +486,24 @@ func TestAdminRouter_Viewer_PollerStatus_200(t *testing.T) {
 	token := issueRoutesTestToken(t, admins, db.RoleViewer)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/poller/status", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Errorf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+}
+
+// TestAdminRouter_Viewer_EmailProvidersList_200 asserts EMAIL-06: viewer
+// must be able to read GET /api/integrations/email (anyRole), the same
+// read/write role split as the existing Datadog integration routes
+// (design.md's auth boundary assumption).
+func TestAdminRouter_Viewer_EmailProvidersList_200(t *testing.T) {
+	r, _, admins := newAdminRouterForTest(t)
+	token := issueRoutesTestToken(t, admins, db.RoleViewer)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/integrations/email", nil)
 	req.Header.Set("Authorization", "Bearer "+token)
 	rec := httptest.NewRecorder()
 	r.ServeHTTP(rec, req)

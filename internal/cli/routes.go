@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"time"
 
@@ -12,7 +13,10 @@ import (
 	"github.com/zeeplabs/zeep-vane/internal/audit"
 	"github.com/zeeplabs/zeep-vane/internal/config"
 	"github.com/zeeplabs/zeep-vane/internal/connectors/datadog"
+	"github.com/zeeplabs/zeep-vane/internal/connectors/resend"
+	"github.com/zeeplabs/zeep-vane/internal/connectors/sendgrid"
 	"github.com/zeeplabs/zeep-vane/internal/db"
+	"github.com/zeeplabs/zeep-vane/internal/email"
 	"github.com/zeeplabs/zeep-vane/internal/ratelimit"
 	"github.com/zeeplabs/zeep-vane/internal/router"
 	"github.com/zeeplabs/zeep-vane/web"
@@ -61,6 +65,24 @@ func buildAdminRouter(pool *db.Pool, cfg config.Config, logger *zap.Logger, poll
 	companySettingsHandler := api.NewCompanySettingsHandler(companySettingsRepo, logger)
 	logoFileHandler := api.NewLogoFileHandler(companySettingsRepo)
 	instanceConfigHandler := api.NewInstanceConfigHandler(cfg.PublicDNSTarget, companySettingsRepo, logger)
+
+	// emailService is built with a ProviderFactory closure rather than a
+	// direct import of internal/connectors/sendgrid|resend from
+	// internal/email itself - the same function-typed dependency injection
+	// pattern used above for the Datadog integration
+	// (validateDatadogCredentials/searchDatadogSLOs), keeping internal/email
+	// decoupled from which concrete connector packages exist (design.md).
+	emailService, err := email.NewService(db.NewEmailProviderRepository(pool), emailProviderFactory, cfg.MasterKey, logger)
+	if err != nil {
+		// NewService only errors if the embedded admin-invite templates
+		// fail to parse (fail-fast-at-boot, design.md) - that source is
+		// compiled into the binary via go:embed, so this is a build-time
+		// defect, not a runtime condition. Fatal rather than propagating
+		// the error, since buildAdminRouter's signature is not error-return
+		// (matches this package's existing boot-assembly style).
+		logger.Fatal("cli: failed to build email service", zap.Error(err))
+	}
+	emailProvidersHandler := api.NewEmailProvidersHandler(emailService, logger)
 
 	requireAuth := api.RequireAuth(cfg.SessionSecret, admins)
 	writeRoles := api.RequireRole(db.RoleOwner, db.RoleOperator)
@@ -119,6 +141,8 @@ func buildAdminRouter(pool *db.Pool, cfg config.Config, logger *zap.Logger, poll
 		protected.With(writeRoles).Post("/api/domains", domainsHandler.Create)
 		protected.With(writeRoles).Post("/api/services", servicesHandler.Create)
 		protected.With(writeRoles).Post("/api/integrations/datadog", integrationsHandler.ConnectDatadog)
+		protected.With(writeRoles).Post("/api/integrations/email/{provider}", emailProvidersHandler.Connect)
+		protected.With(writeRoles).Post("/api/integrations/email/{provider}/activate", emailProvidersHandler.Activate)
 		protected.With(writeRoles).Post("/api/incidents", incidentsHandler.Create)
 		protected.With(writeRoles).Post("/api/incidents/{id}/updates", incidentsHandler.AddUpdate)
 		protected.With(writeRoles).Patch("/api/incidents/{id}", incidentsHandler.Transition)
@@ -136,6 +160,7 @@ func buildAdminRouter(pool *db.Pool, cfg config.Config, logger *zap.Logger, poll
 		protected.With(anyRole).Get("/api/incidents/{id}/updates", incidentsHandler.ListUpdates)
 		protected.With(anyRole).Get("/api/status-pages/{id}/public-preview", publicStatusPreviewHandler.Get)
 		protected.With(anyRole).Get("/api/integrations/datadog/status", integrationsHandler.Status)
+		protected.With(anyRole).Get("/api/integrations/email", emailProvidersHandler.List)
 
 		// SLO search decrypts the stored Datadog key pair server-side and
 		// calls out to Datadog on the admin's behalf - part of the
@@ -170,4 +195,20 @@ func validateDatadogCredentials(ctx context.Context, apiKey, appKey string) erro
 // IntegrationsHandler depends on (I14).
 func searchDatadogSLOs(ctx context.Context, apiKey, appKey, query string) ([]datadog.SLOSummary, error) {
 	return datadog.NewClient(apiKey, appKey).SearchSLOs(ctx, query)
+}
+
+// emailProviderFactory builds the concrete connector for provider,
+// authenticated with apiKey. It is email.Service's only dependency on a
+// concrete connector package - internal/email itself never imports
+// internal/connectors/sendgrid or internal/connectors/resend directly
+// (design.md's "breaking the potential import cycle" decision).
+func emailProviderFactory(provider, apiKey string) (email.Provider, error) {
+	switch provider {
+	case "sendgrid":
+		return sendgrid.NewClient(apiKey), nil
+	case "resend":
+		return resend.NewClient(apiKey), nil
+	default:
+		return nil, fmt.Errorf("cli: unknown email provider %q", provider)
+	}
 }
