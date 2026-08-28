@@ -83,9 +83,9 @@ Explicitly excluded. Documented to prevent scope creep.
 
 1. IF the backend responds `401` THEN the system SHALL show: "This invite link is invalid or has expired. Ask your admin to send a new one." (no enumeration of which of the three causes applied - see Assumptions)
 2. IF the backend responds `422` THEN the system SHALL show the server's exact `error` message verbatim (covers both "password is required" and the 8-72 char rule)
-3. IF the request fails for a reason other than a parsed `ApiError` (network failure, 5xx) THEN the system SHALL show a generic fallback message, never a raw error object or blank screen
+3. IF the request fails below the HTTP layer (the `fetch()` call itself rejects - offline, DNS failure, CORS) THEN the system SHALL show a generic fallback message, never a raw error object or blank screen. Note: `apiFetch` (`web/src/lib/apiClient.ts`) converts every non-2xx HTTP response, including a 5xx, into a parsed `ApiError` - so a backend 500 is handled by AC2's `ApiError` branch (showing whatever `error` string the response carries, or the HTTP status text if the body isn't JSON), never by this generic-fallback branch. This criterion covers true network-level failures only.
 
-**Independent Test**: Point the mock backend at each of 401/422/500 in turn, submit the form each time, confirm the exact expected message renders and the form remains usable (not stuck in a permanent loading state).
+**Independent Test**: Point the mock backend at each of 401/422/a network-level failure (e.g. an aborted/errored request, not merely a 500 status) in turn, submit the form each time, confirm the exact expected message renders and the form remains usable (not stuck in a permanent loading state).
 
 ---
 
@@ -101,21 +101,26 @@ Explicitly excluded. Documented to prevent scope creep.
 
 | Requirement ID | Story | Phase | Status |
 | --------------- | ------ | ------ | ------- |
-| AIP-01 | P1: Invited admin accepts their invite and lands logged in | Tasks | Implementing |
-| AIP-02 | P1: Invited admin accepts their invite and lands logged in | Tasks | Implementing |
-| AIP-03 | P1: Invited admin accepts their invite and lands logged in | Tasks | Implementing |
-| AIP-04 | P1: Invited admin accepts their invite and lands logged in | Tasks | Implementing |
-| AIP-05 | P1: Password confirmation prevents typo lockout | Tasks | Implementing |
-| AIP-06 | P1: Password confirmation prevents typo lockout | Tasks | Implementing |
-| AIP-07 | P2: Clear, distinct error messages for every accept failure | Tasks | Implementing |
-| AIP-08 | P2: Clear, distinct error messages for every accept failure | Tasks | Implementing |
-| AIP-09 | P2: Clear, distinct error messages for every accept failure | Tasks | Implementing |
+| AIP-01 | P1: Invited admin accepts their invite and lands logged in | Execute | ✅ Verified |
+| AIP-02 | P1: Invited admin accepts their invite and lands logged in | Execute | ✅ Verified |
+| AIP-03 | P1: Invited admin accepts their invite and lands logged in | Execute | ❌ Needs Fix |
+| AIP-04 | P1: Invited admin accepts their invite and lands logged in | Execute | ❌ Needs Fix |
+| AIP-05 | P1: Password confirmation prevents typo lockout | Execute | ✅ Verified |
+| AIP-06 | P1: Password confirmation prevents typo lockout | Execute | ❌ Needs Fix |
+| AIP-07 | P2: Clear, distinct error messages for every accept failure | Execute | ✅ Verified |
+| AIP-08 | P2: Clear, distinct error messages for every accept failure | Execute | ✅ Verified |
+| AIP-09 | P2: Clear, distinct error messages for every accept failure | Execute | ✅ Verified |
 
 **ID format:** `AIP-[NUMBER]`
 
 **Status values:** Pending → In Design → In Tasks → Implementing → Verified
 
-**Coverage:** 9 total, 0 mapped to tasks, 9 unmapped ⚠️ (expected pre-Design)
+**Coverage:** 9 total, 9 mapped to tasks, 0 unmapped
+
+**Validation (2026-08-28, `94db681..e507396`):** 6/9 Verified, 3 Needs Fix. See
+`.specs/features/accept-invite-page/validation.md` — AIP-03 and AIP-06 are
+claimed by tests that never assert them (discrimination-sensor mutants M6 and
+M8 survived); AIP-04 has no assertion at all.
 
 ---
 
@@ -124,5 +129,5 @@ Explicitly excluded. Documented to prevent scope creep.
 How we know the feature is successful:
 
 - [ ] An invited admin can go from "clicks email link" to "sees the authenticated dashboard" with zero manual API calls and zero separate login step
-- [ ] Every one of `AcceptInvite`'s documented response codes (201, 401, 422, and the underlying 500) renders a distinct, non-blank, non-raw-JSON message on the page
+- [ ] Every one of `AcceptInvite`'s documented response codes (201, 401, 422, and a 5xx via the `ApiError` branch) plus a true network-level failure renders a distinct, non-blank, non-raw-JSON message on the page
 - [ ] Zero regressions in `AcceptInvite`'s existing backend test suite (the only backend change - `SetCookie` on success - is additive)
