@@ -173,13 +173,13 @@ T13 → T20
 - Skill: NONE
 
 **Done when**:
-- [ ] `GET /api/incidents` (no `?page=`) returns page 1, envelope shape `{items,total,page,page_size}`
-- [ ] `GET /api/incidents?page=2` returns the second page
-- [ ] `GET /api/incidents?page=abc` (or `0`, or `-1`) clamps to page 1, `200`
-- [ ] `GET /api/incidents/{id}/updates?page=N` returns the same envelope shape
-- [ ] Existing role-gate tests (`TestListIncidents_*`, `TestListIncidentUpdates_*`) updated for the new response shape, still passing
-- [ ] Gate check passes: `TEST_DATABASE_URL=... go test -tags=integration ./internal/api/...`
-- [ ] Test count: existing incidents handler tests (10+) still pass + 6 new pagination tests
+- [x] `GET /api/incidents` (no `?page=`) returns page 1, envelope shape `{items,total,page,page_size}`
+- [x] `GET /api/incidents?page=2` returns the second page
+- [x] `GET /api/incidents?page=abc` (or `0`, or `-1`) clamps to page 1, `200`
+- [x] `GET /api/incidents/{id}/updates?page=N` returns the same envelope shape
+- [x] Existing role-gate tests (`TestListIncidents_*`, `TestListIncidentUpdates_*`) updated for the new response shape, still passing
+- [x] Gate check passes: `TEST_DATABASE_URL=... go test -tags=integration ./internal/api/...`
+- [x] Test count: existing incidents handler tests (12) still pass + 6 new pagination tests
 
 **Tests**: integration
 **Gate**: full

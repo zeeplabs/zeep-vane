@@ -13,13 +13,18 @@ import (
 	"github.com/zeeplabs/zeep-vane/internal/db"
 )
 
+// incidentsPageSize is the fixed page size for both /api/incidents and
+// /api/incidents/{id}/updates (spec.md Assumptions: 25 for incidents and
+// incident updates).
+const incidentsPageSize = 25
+
 // incidentCreator is the subset of *db.IncidentRepository the incidents
 // handler depends on.
 type incidentCreator interface {
 	Create(ctx context.Context, incident *db.Incident, serviceIDs []string) error
-	List(ctx context.Context) ([]db.Incident, error)
+	ListPaginated(ctx context.Context, page, pageSize int) ([]db.Incident, int, error)
 	AddUpdate(ctx context.Context, incidentID, body string) (*db.IncidentUpdate, error)
-	ListUpdates(ctx context.Context, incidentID string) ([]db.IncidentUpdate, error)
+	ListUpdatesPaginated(ctx context.Context, incidentID string, page, pageSize int) ([]db.IncidentUpdate, int, error)
 	Transition(ctx context.Context, incidentID, status string) (*db.Incident, error)
 }
 
@@ -74,10 +79,13 @@ func (h *IncidentsHandler) Create(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(toIncidentResponse(incident))
 }
 
-// List handles GET /api/incidents, returning every incident most recently
-// created first, each with the service_ids it's linked to (I16).
+// List handles GET /api/incidents, returning one page of incidents (25 per
+// page, PAG-01), most recently created first, each with the service_ids it's
+// linked to (I16).
 func (h *IncidentsHandler) List(w http.ResponseWriter, r *http.Request) {
-	incidents, err := h.incidents.List(r.Context())
+	page := parsePage(r)
+
+	incidents, total, err := h.incidents.ListPaginated(r.Context(), page, incidentsPageSize)
 	if err != nil {
 		h.logger.Error("incidents: failed to list incidents", zap.Error(err))
 		writeInternalError(w)
@@ -91,7 +99,7 @@ func (h *IncidentsHandler) List(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	_ = json.NewEncoder(w).Encode(resp)
+	_ = json.NewEncoder(w).Encode(Page[incidentResponse]{Items: resp, Total: total, Page: page, PageSize: incidentsPageSize})
 }
 
 type incidentUpdateResponse struct {
@@ -132,7 +140,12 @@ func (h *IncidentsHandler) AddUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	updates, err := h.incidents.ListUpdates(r.Context(), incidentID)
+	// Re-fetch page 1 of the timeline to return in the response (design.md:
+	// this is the same page the client re-fetches anyway; an incident with
+	// more than incidentsPageSize updates shows only the most recent page
+	// here, already true today for the initial render since both orderings
+	// are created_at DESC).
+	updates, _, err := h.incidents.ListUpdatesPaginated(r.Context(), incidentID, 1, incidentsPageSize)
 	if err != nil {
 		h.logger.Error("incidents: failed to list incident updates", zap.Error(err))
 		writeInternalError(w)
@@ -149,13 +162,14 @@ func (h *IncidentsHandler) AddUpdate(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(resp)
 }
 
-// ListUpdates handles GET /api/incidents/{id}/updates, returning the
-// incident's timeline, most recent first (I16). Returns 404 if the incident
-// doesn't exist.
+// ListUpdates handles GET /api/incidents/{id}/updates, returning one page of
+// the incident's timeline (25 per page, PAG-05), most recent first (I16).
+// Returns 404 if the incident doesn't exist.
 func (h *IncidentsHandler) ListUpdates(w http.ResponseWriter, r *http.Request) {
 	incidentID := chi.URLParam(r, "id")
+	page := parsePage(r)
 
-	updates, err := h.incidents.ListUpdates(r.Context(), incidentID)
+	updates, total, err := h.incidents.ListUpdatesPaginated(r.Context(), incidentID, page, incidentsPageSize)
 	if err != nil {
 		if errors.Is(err, db.ErrNotFound) {
 			writeIncidentNotFound(w)
@@ -173,7 +187,7 @@ func (h *IncidentsHandler) ListUpdates(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	_ = json.NewEncoder(w).Encode(resp)
+	_ = json.NewEncoder(w).Encode(Page[incidentUpdateResponse]{Items: resp, Total: total, Page: page, PageSize: incidentsPageSize})
 }
 
 type transitionIncidentRequest struct {
