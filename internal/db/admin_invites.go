@@ -108,6 +108,50 @@ func (r *AdminInviteRepository) ClaimForUse(ctx context.Context, tokenHash strin
 	return &invite, nil
 }
 
+// Refresh atomically replaces an invite's token hash and expiry, provided
+// the invite hasn't already been accepted/canceled (used_at IS NULL). Same
+// atomic-guard shape as ClaimForUse: only one concurrent Refresh/Cancel call
+// on the same id can match the row, so a losing caller gets ErrNotFound
+// instead of silently overwriting a settled invite.
+func (r *AdminInviteRepository) Refresh(ctx context.Context, id, newTokenHash string, newExpiresAt time.Time) (*AdminInvite, error) {
+	row := r.pool.QueryRow(ctx,
+		`UPDATE admin_invites SET token_hash = $2, expires_at = $3
+		 WHERE id = $1 AND used_at IS NULL
+		 RETURNING id, email, role, token_hash, invited_by_id, expires_at, used_at, created_at`,
+		id, newTokenHash, newExpiresAt,
+	)
+
+	var invite AdminInvite
+	if err := row.Scan(
+		&invite.ID, &invite.Email, &invite.Role, &invite.TokenHash,
+		&invite.InvitedByID, &invite.ExpiresAt, &invite.UsedAt, &invite.CreatedAt,
+	); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrNotFound
+		}
+		return nil, fmt.Errorf("db: failed to refresh admin invite: %w", err)
+	}
+
+	return &invite, nil
+}
+
+// Cancel atomically marks an invite used (so its token becomes permanently
+// unacceptable) without creating an admin account for it, returning
+// ErrNotFound if no unused invite with the given id exists.
+func (r *AdminInviteRepository) Cancel(ctx context.Context, id string) error {
+	tag, err := r.pool.Exec(ctx,
+		"UPDATE admin_invites SET used_at = now() WHERE id = $1 AND used_at IS NULL", id,
+	)
+	if err != nil {
+		return fmt.Errorf("db: failed to cancel admin invite: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+
+	return nil
+}
+
 // MarkUsed sets used_at on the invite with the given ID to now, returning
 // ErrNotFound if no such invite exists.
 func (r *AdminInviteRepository) MarkUsed(ctx context.Context, id string) error {

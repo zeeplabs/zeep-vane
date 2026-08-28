@@ -5,6 +5,7 @@ package db
 import (
 	"context"
 	"errors"
+	"sync"
 	"testing"
 	"time"
 
@@ -294,6 +295,177 @@ func TestAdminInviteRepository_List_ReturnsOnlyPendingNotExpiredMostRecentFirst(
 	}
 	if foundOlder && foundNewer && newerIdx > olderIdx {
 		t.Errorf("List() order = %v, want pendingNewer (created after) before pendingOlder", gotEmails)
+	}
+}
+
+func TestAdminInviteRepository_Refresh_Success(t *testing.T) {
+	repo, admins, pool := newAdminInviteRepositoryForTest(t)
+	inviter := createTestAdminForInvite(t, admins, pool)
+	ctx := context.Background()
+	email := uniqueTestEmail(t)
+	t.Cleanup(func() { _, _ = pool.Exec(ctx, "DELETE FROM admin_invites WHERE email = $1", email) })
+
+	invite := &AdminInvite{
+		Email: email, Role: "operator", TokenHash: "hash-old-" + email,
+		InvitedByID: inviter.ID, ExpiresAt: time.Now().Add(1 * time.Hour),
+	}
+	if err := repo.Create(ctx, invite); err != nil {
+		t.Fatalf("Create() returned unexpected error: %v", err)
+	}
+
+	newHash := "hash-new-" + email
+	newExpiresAt := time.Now().Add(2 * time.Hour).Truncate(time.Second)
+	got, err := repo.Refresh(ctx, invite.ID, newHash, newExpiresAt)
+	if err != nil {
+		t.Fatalf("Refresh() returned unexpected error: %v", err)
+	}
+	if got.TokenHash != newHash {
+		t.Errorf("Refresh() TokenHash = %q, want %q", got.TokenHash, newHash)
+	}
+	if !got.ExpiresAt.Equal(newExpiresAt) {
+		t.Errorf("Refresh() ExpiresAt = %v, want %v", got.ExpiresAt, newExpiresAt)
+	}
+
+	if _, err := repo.GetByTokenHash(ctx, invite.TokenHash); !errors.Is(err, ErrNotFound) {
+		t.Errorf("GetByTokenHash(old hash) after Refresh() error = %v, want ErrNotFound", err)
+	}
+	if _, err := repo.GetByTokenHash(ctx, newHash); err != nil {
+		t.Errorf("GetByTokenHash(new hash) after Refresh() returned unexpected error: %v", err)
+	}
+}
+
+func TestAdminInviteRepository_Refresh_UnknownID_ErrNotFound(t *testing.T) {
+	repo, _, _ := newAdminInviteRepositoryForTest(t)
+
+	_, err := repo.Refresh(context.Background(), "00000000-0000-0000-0000-000000000000", "irrelevant-hash", time.Now().Add(1*time.Hour))
+	if !errors.Is(err, ErrNotFound) {
+		t.Errorf("Refresh() error = %v, want ErrNotFound", err)
+	}
+}
+
+func TestAdminInviteRepository_Refresh_AlreadyAccepted_ErrNotFound(t *testing.T) {
+	repo, admins, pool := newAdminInviteRepositoryForTest(t)
+	inviter := createTestAdminForInvite(t, admins, pool)
+	ctx := context.Background()
+	email := uniqueTestEmail(t)
+	t.Cleanup(func() { _, _ = pool.Exec(ctx, "DELETE FROM admin_invites WHERE email = $1", email) })
+
+	invite := &AdminInvite{
+		Email: email, Role: "operator", TokenHash: "hash-" + email,
+		InvitedByID: inviter.ID, ExpiresAt: time.Now().Add(1 * time.Hour),
+	}
+	if err := repo.Create(ctx, invite); err != nil {
+		t.Fatalf("Create() returned unexpected error: %v", err)
+	}
+	if err := repo.MarkUsed(ctx, invite.ID); err != nil {
+		t.Fatalf("MarkUsed() returned unexpected error: %v", err)
+	}
+
+	_, err := repo.Refresh(ctx, invite.ID, "hash-new-"+email, time.Now().Add(1*time.Hour))
+	if !errors.Is(err, ErrNotFound) {
+		t.Errorf("Refresh() on already-accepted invite error = %v, want ErrNotFound", err)
+	}
+}
+
+func TestAdminInviteRepository_Refresh_AlreadyCanceled_ErrNotFound(t *testing.T) {
+	repo, admins, pool := newAdminInviteRepositoryForTest(t)
+	inviter := createTestAdminForInvite(t, admins, pool)
+	ctx := context.Background()
+	email := uniqueTestEmail(t)
+	t.Cleanup(func() { _, _ = pool.Exec(ctx, "DELETE FROM admin_invites WHERE email = $1", email) })
+
+	invite := &AdminInvite{
+		Email: email, Role: "operator", TokenHash: "hash-" + email,
+		InvitedByID: inviter.ID, ExpiresAt: time.Now().Add(1 * time.Hour),
+	}
+	if err := repo.Create(ctx, invite); err != nil {
+		t.Fatalf("Create() returned unexpected error: %v", err)
+	}
+	if err := repo.Cancel(ctx, invite.ID); err != nil {
+		t.Fatalf("Cancel() returned unexpected error: %v", err)
+	}
+
+	_, err := repo.Refresh(ctx, invite.ID, "hash-new-"+email, time.Now().Add(1*time.Hour))
+	if !errors.Is(err, ErrNotFound) {
+		t.Errorf("Refresh() on already-canceled invite error = %v, want ErrNotFound", err)
+	}
+}
+
+func TestAdminInviteRepository_Cancel_Success(t *testing.T) {
+	repo, admins, pool := newAdminInviteRepositoryForTest(t)
+	inviter := createTestAdminForInvite(t, admins, pool)
+	ctx := context.Background()
+	email := uniqueTestEmail(t)
+	t.Cleanup(func() { _, _ = pool.Exec(ctx, "DELETE FROM admin_invites WHERE email = $1", email) })
+
+	invite := &AdminInvite{
+		Email: email, Role: "operator", TokenHash: "hash-" + email,
+		InvitedByID: inviter.ID, ExpiresAt: time.Now().Add(1 * time.Hour),
+	}
+	if err := repo.Create(ctx, invite); err != nil {
+		t.Fatalf("Create() returned unexpected error: %v", err)
+	}
+
+	if err := repo.Cancel(ctx, invite.ID); err != nil {
+		t.Fatalf("Cancel() returned unexpected error: %v", err)
+	}
+
+	got, err := repo.GetByTokenHash(ctx, invite.TokenHash)
+	if err != nil {
+		t.Fatalf("GetByTokenHash() returned unexpected error: %v", err)
+	}
+	if got.UsedAt == nil {
+		t.Error("Cancel() did not set UsedAt")
+	}
+}
+
+func TestAdminInviteRepository_Cancel_UnknownID_ErrNotFound(t *testing.T) {
+	repo, _, _ := newAdminInviteRepositoryForTest(t)
+
+	err := repo.Cancel(context.Background(), "00000000-0000-0000-0000-000000000000")
+	if !errors.Is(err, ErrNotFound) {
+		t.Errorf("Cancel() error = %v, want ErrNotFound", err)
+	}
+}
+
+func TestAdminInviteRepository_RefreshCancel_Concurrent_OnlyOneSucceeds(t *testing.T) {
+	repo, admins, pool := newAdminInviteRepositoryForTest(t)
+	inviter := createTestAdminForInvite(t, admins, pool)
+	ctx := context.Background()
+	email := uniqueTestEmail(t)
+	t.Cleanup(func() { _, _ = pool.Exec(ctx, "DELETE FROM admin_invites WHERE email = $1", email) })
+
+	invite := &AdminInvite{
+		Email: email, Role: "operator", TokenHash: "hash-" + email,
+		InvitedByID: inviter.ID, ExpiresAt: time.Now().Add(1 * time.Hour),
+	}
+	if err := repo.Create(ctx, invite); err != nil {
+		t.Fatalf("Create() returned unexpected error: %v", err)
+	}
+
+	var wg sync.WaitGroup
+	errs := make([]error, 2)
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		_, errs[0] = repo.Refresh(ctx, invite.ID, "hash-race-new-"+email, time.Now().Add(1*time.Hour))
+	}()
+	go func() {
+		defer wg.Done()
+		errs[1] = repo.Cancel(ctx, invite.ID)
+	}()
+	wg.Wait()
+
+	successes := 0
+	for _, err := range errs {
+		if err == nil {
+			successes++
+		} else if !errors.Is(err, ErrNotFound) {
+			t.Errorf("concurrent Refresh/Cancel returned unexpected error: %v", err)
+		}
+	}
+	if successes != 1 {
+		t.Errorf("concurrent Refresh/Cancel successes = %d, want exactly 1", successes)
 	}
 }
 
