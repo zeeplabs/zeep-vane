@@ -168,15 +168,17 @@ Tasks: T11, T12, executed in that order.
 - Skill: NONE
 
 **Done when**:
-- [ ] `ValidateCredentials` returns nil on 200, `email.ErrUnauthorized` on 401
-- [ ] `Send` posts the message to `/v3/mail/send` with correct auth header and body shape
-- [ ] Timeout and 5xx classified as `email.ErrTimeout`/`email.ErrServer` (test via `httptest.Server` with delayed/5xx handlers, same pattern as `datadog/client_test.go`)
-- [ ] Gate passes: `gofmt -l . && go vet ./... && go test ./...`
+- [x] `ValidateCredentials` returns nil on 200, `email.ErrUnauthorized` on 401
+- [x] `Send` posts the message to `/v3/mail/send` with correct auth header and body shape
+- [x] Timeout and 5xx classified as `email.ErrTimeout`/`email.ErrServer` (test via `httptest.Server` with delayed/5xx handlers, same pattern as `datadog/client_test.go`)
+- [x] Gate passes: `gofmt -l . && go vet ./... && go test ./...`
 
 **Tests**: unit
 **Gate**: quick
 
 **Commit**: `feat(connectors): add sendgrid email client`
+
+**Status**: ✅ Complete
 
 ---
 
