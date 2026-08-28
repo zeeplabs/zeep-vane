@@ -3,7 +3,7 @@
   "promote_threshold": 2,
   "window_days": 45,
   "quarantine_threshold": 2,
-  "next_id": 18,
+  "next_id": 23,
   "lessons": [
     {
       "id": "L-001",
@@ -310,6 +310,96 @@
       ],
       "created": "2026-08-24T23:44:47Z",
       "last_seen": "2026-08-24T23:44:47Z"
+    },
+    {
+      "id": "L-018",
+      "key": "surviving_mutant::a test double for an outbound side effect must capture and assert the payload not just count invocations",
+      "text": "A test double for an outbound side effect must capture and assert the payload, not just count invocations.",
+      "signal": "surviving_mutant",
+      "scope": "test-doubles",
+      "status": "candidate",
+      "features": [
+        "admin-invite-resend-cancel"
+      ],
+      "recurrence": 1,
+      "harmful": 0,
+      "evidence": [
+        "internal/api/admins_test.go:75 (fakeEmailProvider.Send discards email.Message; sensor mutant 4 survived) (test-doubles)"
+      ],
+      "created": "2026-08-28T19:26:31Z",
+      "last_seen": "2026-08-28T19:26:31Z"
+    },
+    {
+      "id": "L-019",
+      "key": "ac_gap::a path parameter bound to a typed database column must be validated in the handler an invalid literal raises a driver error not a no rows result",
+      "text": "A path parameter bound to a typed database column must be validated in the handler; an invalid literal raises a driver error, not a no-rows result.",
+      "signal": "ac_gap",
+      "scope": "routes",
+      "status": "candidate",
+      "features": [
+        "admin-invite-resend-cancel"
+      ],
+      "recurrence": 1,
+      "harmful": 0,
+      "evidence": [
+        "internal/api/admins.go:314 (non-UUID id yields a driver error, handler returns 500; spec Edge Case requires 404) (routes)"
+      ],
+      "created": "2026-08-28T19:26:31Z",
+      "last_seen": "2026-08-28T19:26:31Z"
+    },
+    {
+      "id": "L-020",
+      "key": "ac_gap::when an acceptance criterion says a state variant behaves identically write a test that actually seeds that variant",
+      "text": "When an acceptance criterion says a state variant behaves identically, write a test that actually seeds that variant.",
+      "signal": "ac_gap",
+      "scope": "test-coverage",
+      "status": "candidate",
+      "features": [
+        "admin-invite-resend-cancel"
+      ],
+      "recurrence": 1,
+      "harmful": 0,
+      "evidence": [
+        "internal/api/admins_test.go:1177 (every resend test seeds a future TTL; P2 AC2 expired-invite resend uncovered) (test-coverage)"
+      ],
+      "created": "2026-08-28T19:26:31Z",
+      "last_seen": "2026-08-28T19:26:31Z"
+    },
+    {
+      "id": "L-021",
+      "key": "spec_precision_gap::assert the recomputed value of a refreshed timestamp against its documented ttl not merely that the operation returned success",
+      "text": "Assert the recomputed value of a refreshed timestamp against its documented TTL, not merely that the operation returned success.",
+      "signal": "spec_precision_gap",
+      "scope": "api",
+      "status": "candidate",
+      "features": [
+        "admin-invite-resend-cancel"
+      ],
+      "recurrence": 1,
+      "harmful": 0,
+      "evidence": [
+        "internal/api/admins_test.go:1181 (resend asserts status and body but never the recomputed expires_at window) (api)"
+      ],
+      "created": "2026-08-28T19:26:31Z",
+      "last_seen": "2026-08-28T19:26:31Z"
+    },
+    {
+      "id": "L-022",
+      "key": "gate_fail::a test asserting the exact contents of a shared singleton row must reset that row before asserting not only on cleanup",
+      "text": "A test asserting the exact contents of a shared singleton row must reset that row before asserting, not only on cleanup.",
+      "signal": "gate_fail",
+      "scope": "integration-tests",
+      "status": "candidate",
+      "features": [
+        "admin-invite-resend-cancel"
+      ],
+      "recurrence": 1,
+      "harmful": 0,
+      "evidence": [
+        "internal/db/company_settings_migration_test.go:56 (asserts the shared singleton is blank without resetting it first; fails at baseline fa661cc too) (integration-tests)"
+      ],
+      "created": "2026-08-28T19:26:31Z",
+      "last_seen": "2026-08-28T19:26:31Z"
     }
   ]
 }

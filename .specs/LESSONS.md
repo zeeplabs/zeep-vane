@@ -116,6 +116,36 @@ Seen once or not yet corroborated. Tracked, not trusted.
 - evidence: internal/api/public_status_preview_handler_test.go (TestPublicStatusPreview_PublishedPage_200Unaffected) (internal/api)
 - last seen: 2026-08-24T23:44:47Z
 
+### L-018 - A test double for an outbound side effect must capture and assert the payload, not just count invocations.
+- signal: `surviving_mutant` · recurrence: 1 feature(s) · scope: `test-doubles` · harmful: 0
+- features: admin-invite-resend-cancel
+- evidence: internal/api/admins_test.go:75 (fakeEmailProvider.Send discards email.Message; sensor mutant 4 survived) (test-doubles)
+- last seen: 2026-08-28T19:26:31Z
+
+### L-019 - A path parameter bound to a typed database column must be validated in the handler; an invalid literal raises a driver error, not a no-rows result.
+- signal: `ac_gap` · recurrence: 1 feature(s) · scope: `routes` · harmful: 0
+- features: admin-invite-resend-cancel
+- evidence: internal/api/admins.go:314 (non-UUID id yields a driver error, handler returns 500; spec Edge Case requires 404) (routes)
+- last seen: 2026-08-28T19:26:31Z
+
+### L-020 - When an acceptance criterion says a state variant behaves identically, write a test that actually seeds that variant.
+- signal: `ac_gap` · recurrence: 1 feature(s) · scope: `test-coverage` · harmful: 0
+- features: admin-invite-resend-cancel
+- evidence: internal/api/admins_test.go:1177 (every resend test seeds a future TTL; P2 AC2 expired-invite resend uncovered) (test-coverage)
+- last seen: 2026-08-28T19:26:31Z
+
+### L-021 - Assert the recomputed value of a refreshed timestamp against its documented TTL, not merely that the operation returned success.
+- signal: `spec_precision_gap` · recurrence: 1 feature(s) · scope: `api` · harmful: 0
+- features: admin-invite-resend-cancel
+- evidence: internal/api/admins_test.go:1181 (resend asserts status and body but never the recomputed expires_at window) (api)
+- last seen: 2026-08-28T19:26:31Z
+
+### L-022 - A test asserting the exact contents of a shared singleton row must reset that row before asserting, not only on cleanup.
+- signal: `gate_fail` · recurrence: 1 feature(s) · scope: `integration-tests` · harmful: 0
+- features: admin-invite-resend-cancel
+- evidence: internal/db/company_settings_migration_test.go:56 (asserts the shared singleton is blank without resetting it first; fails at baseline fa661cc too) (integration-tests)
+- last seen: 2026-08-28T19:26:31Z
+
 ## Quarantined (failed when applied - ignore)
 
 A confirmed lesson that recurred alongside failure. Kept for the maintainer to review.

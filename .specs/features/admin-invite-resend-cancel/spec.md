@@ -125,19 +125,21 @@ Explicitly excluded. Documented to prevent scope creep.
 
 | Requirement ID | Story                                        | Phase  | Status  |
 | --------------- | --------------------------------------------- | ------ | ------- |
-| INVITE-01       | P1: Invite emails are actually delivered      | Tasks | Implementing |
-| INVITE-02       | P1: Invite emails are actually delivered      | Tasks | Implementing |
-| INVITE-03       | P1: Owner resends a pending invite            | Tasks | Implementing |
-| INVITE-04       | P1: Owner resends a pending invite            | Tasks | Implementing |
-| INVITE-05       | P1: Owner cancels a pending invite            | Tasks | Implementing |
-| INVITE-06       | P1: Owner cancels a pending invite            | Tasks | Implementing |
-| INVITE-07       | P2: Expired-but-unused invites remain manageable | Tasks | Implementing |
-| INVITE-08       | Concurrency safety (resend/cancel race)       | Tasks | Implementing |
-| INVITE-09       | Auth boundary (owner-only)                    | Tasks | Implementing |
+| INVITE-01       | P1: Invite emails are actually delivered      | Execute | ✅ Verified |
+| INVITE-02       | P1: Invite emails are actually delivered      | Execute | ✅ Verified |
+| INVITE-03       | P1: Owner resends a pending invite            | Execute | ✅ Verified |
+| INVITE-04       | P1: Owner resends a pending invite            | Execute | ✅ Verified |
+| INVITE-05       | P1: Owner cancels a pending invite            | Execute | ✅ Verified |
+| INVITE-06       | P1: Owner cancels a pending invite            | Execute | ✅ Verified |
+| INVITE-07       | P2: Expired-but-unused invites remain manageable | Execute | ✅ Verified |
+| INVITE-08       | Concurrency safety (resend/cancel race)       | Execute | ✅ Verified |
+| INVITE-09       | Auth boundary (owner-only)                    | Execute | ✅ Verified |
 
 **ID format:** `INVITE-[NUMBER]`
 
 **Status values:** Pending → In Design → In Tasks → Implementing → Verified
+
+**Verification:** see `.specs/features/admin-invite-resend-cancel/validation.md` (2026-08-28, re-verification iteration 2, diff `fa661cc..7bea522`) - verdict PASS. Iteration 1 (diff `fa661cc..f3a3241`) failed with 4 gaps; all 4 were closed by fix commit `7bea522` and re-proven by a 7/7-killed discrimination sensor.
 
 **Coverage:** 9 total, 9 mapped to tasks (T1-T8), 0 unmapped
 
