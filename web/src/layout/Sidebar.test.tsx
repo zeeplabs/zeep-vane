@@ -48,6 +48,13 @@ describe("Sidebar", () => {
     await waitFor(() => expect(screen.getByText("Equipe")).toBeInTheDocument());
   });
 
+  it("mostra link para Serviços apontando pra /services", async () => {
+    await loginAs("owner@vane.app");
+    renderSidebar();
+    const link = await screen.findByRole("link", { name: "Serviços" });
+    expect(link).toHaveAttribute("href", "/services");
+  });
+
   it("mostra o controle 'Visualizando como' em DEV", async () => {
     await loginAs("owner@vane.app");
     renderSidebar();

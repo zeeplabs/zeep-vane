@@ -5,7 +5,6 @@ import { Button } from "../../components/ui/Button";
 import { Tag } from "../../components/ui/Tag";
 import { useAuth } from "../../auth/AuthProvider";
 import { ApiError } from "../../lib/apiClient";
-import { ServicesSection } from "../services/ServicesSection";
 import { EmailProvidersPage } from "../email-providers/EmailProvidersPage";
 import { useConnectDatadog, useIntegrationStatus } from "./hooks";
 
@@ -158,8 +157,6 @@ export function IntegrationsPage() {
       ) : null}
 
       <EmailProvidersPage />
-
-      <ServicesSection />
     </div>
   );
 }
