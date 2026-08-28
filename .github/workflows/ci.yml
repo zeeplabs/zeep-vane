@@ -1,0 +1,91 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  GO_VERSION: "1.26.5"
+
+jobs:
+  go:
+    name: Go (vet, fmt, unit tests)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+      - name: gofmt
+        run: |
+          fmt_out="$(gofmt -l .)"
+          if [ -n "$fmt_out" ]; then
+            echo "gofmt found unformatted files:"
+            echo "$fmt_out"
+            exit 1
+          fi
+      - run: go vet ./...
+      - run: go test ./...
+
+  go-integration:
+    name: Go (integration tests)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: vane
+          POSTGRES_PASSWORD: vane
+          POSTGRES_DB: vane
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U vane"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+      - name: Run integration tests
+        env:
+          TEST_DATABASE_URL: "postgres://vane:vane@localhost:5432/vane?sslmode=disable"
+        run: go test -tags=integration ./...
+
+  web:
+    name: Web (typecheck, tests, build)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: npm ci
+      - run: npx tsc -b --noEmit
+      - run: npm run test
+      - run: npm run build
+
+  build:
+    name: Full build (front embedded in Go binary)
+    runs-on: ubuntu-latest
+    needs: [go, go-integration, web]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: make build
