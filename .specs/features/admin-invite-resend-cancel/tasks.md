@@ -109,10 +109,10 @@ Consumes the finished backend contract. Tasks: T8.
 
 **Done when**:
 
-- [ ] `List` returns invites with `used_at IS NULL` regardless of `expires_at`, still ordered `created_at DESC`
-- [ ] Existing test `TestAdminInviteRepository_List_ReturnsOnlyPendingNotExpiredMostRecentFirst` updated to reflect the new contract (rename + adjust assertion so an expired-unused invite IS included; add a case proving a used/accepted invite is still excluded)
-- [ ] Gate check passes: `go test -tags=integration ./internal/db/...`
-- [ ] Test count: no net loss versus T1's baseline; the modified test still exercises "excludes used", now also asserts "includes expired-unused"
+- [x] `List` returns invites with `used_at IS NULL` regardless of `expires_at`, still ordered `created_at DESC`
+- [x] Existing test `TestAdminInviteRepository_List_ReturnsOnlyPendingNotExpiredMostRecentFirst` updated to reflect the new contract (rename + adjust assertion so an expired-unused invite IS included; add a case proving a used/accepted invite is still excluded)
+- [x] Gate check passes: `go test -tags=integration ./internal/db/...`
+- [x] Test count: no net loss versus T1's baseline; the modified test still exercises "excludes used", now also asserts "includes expired-unused". Also updated the downstream handler test `TestListAdmins_Owner_200_ExcludesUsedAndExpiredInvites` (renamed `TestListAdmins_Owner_200_ExcludesUsedIncludesExpiredInvites`), whose exclusion assertion was direct fallout of this contract change and is superseded by INVITE-07 in T6.
 
 **Tests**: integration
 **Gate**: full

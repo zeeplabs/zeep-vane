@@ -168,14 +168,16 @@ func (r *AdminInviteRepository) MarkUsed(ctx context.Context, id string) error {
 	return nil
 }
 
-// List returns every pending invite - not used and not expired - most
-// recent first. TokenHash is never selected: the raw list is exposed via
-// the admins API and must never leak the hash needed to accept an invite.
+// List returns every pending invite - not used, regardless of expiry - most
+// recent first. Expired-but-unused invites stay listed so an owner can
+// resend/cancel them instead of them silently disappearing (spec P2).
+// TokenHash is never selected: the raw list is exposed via the admins API
+// and must never leak the hash needed to accept an invite.
 func (r *AdminInviteRepository) List(ctx context.Context) ([]AdminInvite, error) {
 	rows, err := r.pool.Query(ctx,
 		`SELECT id, email, role, invited_by_id, expires_at, created_at
 		 FROM admin_invites
-		 WHERE used_at IS NULL AND expires_at > now()
+		 WHERE used_at IS NULL
 		 ORDER BY created_at DESC`,
 	)
 	if err != nil {

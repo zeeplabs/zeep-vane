@@ -211,7 +211,7 @@ func TestAdminInviteRepository_InvalidatePendingForEmail_MarksPendingUsed_Leaves
 	}
 }
 
-func TestAdminInviteRepository_List_ReturnsOnlyPendingNotExpiredMostRecentFirst(t *testing.T) {
+func TestAdminInviteRepository_List_ReturnsPendingIncludingExpiredMostRecentFirst(t *testing.T) {
 	repo, admins, pool := newAdminInviteRepositoryForTest(t)
 	inviter := createTestAdminForInvite(t, admins, pool)
 	ctx := context.Background()
@@ -269,14 +269,14 @@ func TestAdminInviteRepository_List_ReturnsOnlyPendingNotExpiredMostRecentFirst(
 		}
 	}
 
-	foundOlder, foundNewer := false, false
+	foundOlder, foundNewer, foundExpired := false, false, false
 	newerIdx, olderIdx := -1, -1
 	for i, email := range gotEmails {
 		if email == used.Email {
 			t.Error("List() included a used invite, want excluded")
 		}
 		if email == expired.Email {
-			t.Error("List() included an expired invite, want excluded")
+			foundExpired = true
 		}
 		if email == pendingOlder.Email {
 			foundOlder = true
@@ -292,6 +292,9 @@ func TestAdminInviteRepository_List_ReturnsOnlyPendingNotExpiredMostRecentFirst(
 	}
 	if !foundNewer {
 		t.Error("List() did not include pendingNewer invite")
+	}
+	if !foundExpired {
+		t.Error("List() did not include expired-but-unused invite, want included (spec P2)")
 	}
 	if foundOlder && foundNewer && newerIdx > olderIdx {
 		t.Errorf("List() order = %v, want pendingNewer (created after) before pendingOlder", gotEmails)

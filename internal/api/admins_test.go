@@ -969,7 +969,7 @@ func TestListAdmins_Owner_200_MergesPendingInviteWithStatus(t *testing.T) {
 	}
 }
 
-func TestListAdmins_Owner_200_ExcludesUsedAndExpiredInvites(t *testing.T) {
+func TestListAdmins_Owner_200_ExcludesUsedIncludesExpiredInvites(t *testing.T) {
 	r, _, admins, invites := newAdminsRouter(t)
 	token := issueTestSessionToken(t, admins)
 	inviter := &db.Admin{Email: uniqueTestEmail(t), PasswordHash: "hash"}
@@ -990,6 +990,8 @@ func TestListAdmins_Owner_200_ExcludesUsedAndExpiredInvites(t *testing.T) {
 		t.Fatalf("invites.MarkUsed() returned unexpected error: %v", err)
 	}
 
+	// Expired-but-unused invites stay listed (spec P2, INVITE-07) - only a
+	// used_at (accepted or canceled) invite ever drops out of List().
 	expiredEmail := uniqueTestEmail(t)
 	createTestInvite(t, invites, inviter.ID, expiredEmail, db.RoleViewer, -1*time.Hour)
 
@@ -1003,13 +1005,17 @@ func TestListAdmins_Owner_200_ExcludesUsedAndExpiredInvites(t *testing.T) {
 		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
 	}
 
+	foundExpired := false
 	for _, item := range list {
 		if item.Email == usedEmail {
 			t.Errorf("list included used invite %q, want excluded", usedEmail)
 		}
 		if item.Email == expiredEmail {
-			t.Errorf("list included expired invite %q, want excluded", expiredEmail)
+			foundExpired = true
 		}
+	}
+	if !foundExpired {
+		t.Errorf("list did not include expired-but-unused invite %q, want included", expiredEmail)
 	}
 }
 
