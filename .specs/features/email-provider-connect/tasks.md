@@ -366,16 +366,18 @@ Tasks: T11, T12, executed in that order.
 - Skill: NONE
 
 **Done when**:
-- [ ] `useEmailProviders` fetches and exposes `active_provider` + `providers` list
-- [ ] `useConnectEmailProvider`/`useActivateEmailProvider` mutate and invalidate/update the `useEmailProviders` cache on success
-- [ ] Error paths (`422`) surface via `ApiError`, matching `useConnectDatadog`'s existing error-propagation shape
-- [ ] Tests pass via MSW-mocked fetch (no real network), same depth as `web/src/features/integrations/hooks.test.ts`
-- [ ] Gate passes: `cd web && npx tsc -b --noEmit && npm run test`
+- [x] `useEmailProviders` fetches and exposes `active_provider` + `providers` list
+- [x] `useConnectEmailProvider`/`useActivateEmailProvider` mutate and invalidate/update the `useEmailProviders` cache on success
+- [x] Error paths (`422`) surface via `ApiError`, matching `useConnectDatadog`'s existing error-propagation shape
+- [x] Tests pass via MSW-mocked fetch (no real network), same depth as `web/src/features/integrations/hooks.test.ts`
+- [x] Gate passes: `cd web && npx tsc -b --noEmit && npm run test`
 
 **Tests**: unit
 **Gate**: web quick
 
 **Commit**: `feat(web): add email provider hooks`
+
+**Status**: ✅ Complete
 
 ---
 

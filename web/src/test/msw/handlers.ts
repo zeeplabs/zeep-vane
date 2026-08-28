@@ -76,6 +76,29 @@ export function resetServicesAndIntegration(): void {
 }
 resetServicesAndIntegration();
 
+// In-memory email provider state (EMAIL-01..06) - no seed fixture, since
+// spec.md's default is "no provider has ever been connected" (empty list,
+// active_provider null); tests that need a connected/active provider drive
+// it through the connect/activate handlers below, same as a real flow
+// would.
+interface EmailProviderRecord {
+  provider: "sendgrid" | "resend";
+  status: "connected" | "invalid";
+  from_email: string;
+  from_name: string;
+  last_checked_at: string | null;
+  last_error: string | null;
+}
+
+let emailProvidersState: EmailProviderRecord[] = [];
+let emailActiveProvider: "sendgrid" | "resend" | null = null;
+
+export function resetEmailProviders(): void {
+  emailProvidersState = [];
+  emailActiveProvider = null;
+}
+resetEmailProviders();
+
 // In-memory incidents + timeline state (I16), seeded the same way as
 // domains/status-pages/services above. incident_updates is real-backend
 // shaped: mirrors IncidentRepository.ListUpdates/AddUpdate - most recent
@@ -424,6 +447,70 @@ export const handlers = [
     }
     const needle = query.toLowerCase();
     return HttpResponse.json(sloCatalog.filter((slo) => slo.name.toLowerCase().includes(needle)));
+  }),
+
+  // GET /api/integrations/email (EMAIL-06) - mirrors
+  // EmailProvidersHandler.List: never a 404, empty list + null
+  // active_provider when nothing has ever been connected.
+  http.get("/api/integrations/email", () => {
+    if (!sessionAdminId) return HttpResponse.json({ error: "unauthorized" }, { status: 401 });
+    return HttpResponse.json({
+      active_provider: emailActiveProvider,
+      providers: emailProvidersState,
+    });
+  }),
+
+  // POST /api/integrations/email/:provider (EMAIL-01) - mirrors
+  // EmailProvidersHandler.Connect: unknown provider 404, missing/invalid
+  // input 422 (never persisted), success upserts and never echoes api_key.
+  http.post("/api/integrations/email/:provider", async ({ request, params }) => {
+    if (!sessionAdminId) return HttpResponse.json({ error: "unauthorized" }, { status: 401 });
+    const provider = params.provider as string;
+    if (provider !== "sendgrid" && provider !== "resend") {
+      return HttpResponse.json({ error: "unknown email provider" }, { status: 404 });
+    }
+    const body = (await request.json()) as { api_key?: string; from_email?: string; from_name?: string };
+    // "invalid-key" is this fixture's stand-in for a provider rejecting the
+    // submitted key at validation time (EMAIL-01 AC1/AC2) - lets a test
+    // drive the inline-422 path without a dedicated server.use() override.
+    if (!body.api_key || !body.from_email || !body.from_name || body.api_key === "invalid-key") {
+      return HttpResponse.json(
+        { error: "invalid email provider api key, from_email, or from_name" },
+        { status: 422 },
+      );
+    }
+    const record: EmailProviderRecord = {
+      provider,
+      status: "connected",
+      from_email: body.from_email,
+      from_name: body.from_name,
+      last_checked_at: new Date().toISOString(),
+      last_error: null,
+    };
+    const existing = emailProvidersState.find((p) => p.provider === provider);
+    if (existing) {
+      Object.assign(existing, record);
+    } else {
+      emailProvidersState.push(record);
+    }
+    return HttpResponse.json({ status: "connected" }, { status: 201 });
+  }),
+
+  // POST /api/integrations/email/:provider/activate (EMAIL-04) - mirrors
+  // EmailProvidersHandler.Activate: unknown provider 404, not-connected 422,
+  // success flips active_provider.
+  http.post("/api/integrations/email/:provider/activate", ({ params }) => {
+    if (!sessionAdminId) return HttpResponse.json({ error: "unauthorized" }, { status: 401 });
+    const provider = params.provider as string;
+    if (provider !== "sendgrid" && provider !== "resend") {
+      return HttpResponse.json({ error: "unknown email provider" }, { status: 404 });
+    }
+    const connected = emailProvidersState.find((p) => p.provider === provider && p.status === "connected");
+    if (!connected) {
+      return HttpResponse.json({ error: "email provider not connected" }, { status: 422 });
+    }
+    emailActiveProvider = provider;
+    return HttpResponse.json({ status: "active" });
   }),
 
   http.get("/api/services", () => {

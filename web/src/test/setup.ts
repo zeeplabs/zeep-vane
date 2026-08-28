@@ -9,6 +9,7 @@ import {
   resetAdmins,
   resetCompanySettings,
   resetBootstrapState,
+  resetEmailProviders,
 } from "./msw/handlers";
 
 beforeAll(() => server.listen({ onUnhandledRequest: "error" }));
@@ -21,5 +22,6 @@ afterEach(() => {
   resetAdmins();
   resetCompanySettings();
   resetBootstrapState();
+  resetEmailProviders();
 });
 afterAll(() => server.close());
