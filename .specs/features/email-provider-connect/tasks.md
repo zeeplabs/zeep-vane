@@ -195,15 +195,19 @@ Tasks: T11, T12, executed in that order.
 - Skill: NONE
 
 **Done when**:
-- [ ] `ValidateCredentials`/`Send` implemented against the endpoints above, request/response shapes confirmed via Context7/docs (not left as inferred)
-- [ ] Same test shape as T4 (`httptest.Server`-backed: valid, invalid, timeout, 5xx, successful send)
-- [ ] If live/doc verification confirms a different status code or shape than assumed in design.md, update design.md's Risks & Concerns row accordingly (SPEC_DEVIATION-style correction, same convention as `datadog/client.go`'s documented corrections)
-- [ ] Gate passes: `gofmt -l . && go vet ./... && go test ./...`
+- [x] `ValidateCredentials`/`Send` implemented against the endpoints above, request/response shapes confirmed via Context7/docs (not left as inferred)
+- [x] Same test shape as T4 (`httptest.Server`-backed: valid, invalid, timeout, 5xx, successful send)
+- [x] If live/doc verification confirms a different status code or shape than assumed in design.md, update design.md's Risks & Concerns row accordingly (SPEC_DEVIATION-style correction, same convention as `datadog/client.go`'s documented corrections)
+- [x] Gate passes: `gofmt -l . && go vet ./... && go test ./...`
 
 **Tests**: unit
 **Gate**: quick
 
 **Commit**: `feat(connectors): add resend email client`
+
+**Status**: ✅ Complete
+
+**Research finding**: Resend's docs (`introduction` + `errors` reference pages) state a genuinely invalid/unrecognized API key returns **403** ("The API key used was invalid"), not 401 as design.md originally assumed - 401 is reserved for a missing `Authorization` header or a send-only key hitting a non-send endpoint. `ValidateCredentials`/`Send` already classify both 401 and 403 as unauthorized (same pattern as the SendGrid/Datadog clients), so no code changed as a result - `design.md`'s Risks & Concerns row and `spec.md`'s Assumptions table were corrected to record the confirmed behavior instead of the stale `[Provável]` guess.
 
 ---
 
