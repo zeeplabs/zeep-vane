@@ -310,16 +310,18 @@ Tasks: T11, T12, executed in that order.
 - Skill: NONE
 
 **Done when**:
-- [ ] `POST /api/integrations/email/{provider}`: unknown provider -> `404`; validation failure -> `422`; success -> `201` with no key material in the body
-- [ ] `GET /api/integrations/email`: returns `{active_provider, providers: [...]}` shape, empty list (not `404`) when nothing connected, no key material
-- [ ] `POST /api/integrations/email/{provider}/activate`: not-connected provider -> `422`; success -> `200`
-- [ ] Handler tests use a fake `emailProviderService` (no real DB) - happy path + every edge case above
-- [ ] Gate passes: `gofmt -l . && go vet ./... && go test ./...`
+- [x] `POST /api/integrations/email/{provider}`: unknown provider -> `404`; validation failure -> `422`; success -> `201` with no key material in the body
+- [x] `GET /api/integrations/email`: returns `{active_provider, providers: [...]}` shape, empty list (not `404`) when nothing connected, no key material
+- [x] `POST /api/integrations/email/{provider}/activate`: not-connected provider -> `422`; success -> `200`
+- [x] Handler tests use a fake `emailProviderService` (no real DB) - happy path + every edge case above
+- [x] Gate passes: `gofmt -l . && go vet ./... && go test ./...`
 
 **Tests**: unit
 **Gate**: quick
 
 **Commit**: `feat(api): add email providers handler`
+
+**Status**: ✅ Complete
 
 ---
 
