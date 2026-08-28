@@ -542,3 +542,108 @@ func TestAttachDomain_ConcurrentAttachesOnSamePage_ExactlyOneWins(t *testing.T) 
 		t.Errorf("Subdomain after contended attach = %v, want holder's %q (no lost update)", page.Subdomain, "status-a")
 	}
 }
+
+// createSetServicesTestService inserts a minimal service fixture (no SLO
+// integration needed - SetServices only cares about the service's id) and
+// registers its cleanup.
+func createSetServicesTestService(t *testing.T, pool *Pool, namePrefix string) string {
+	t.Helper()
+	services := NewServiceRepository(pool)
+	service := &Service{Name: fmt.Sprintf("%s-%d", namePrefix, time.Now().UnixNano()), SLOID: "slo-fixture-id"}
+	if err := services.Create(context.Background(), service); err != nil {
+		t.Fatalf("setup service Create() returned unexpected error: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = pool.Exec(context.Background(), "DELETE FROM services WHERE id = $1", service.ID)
+	})
+	return service.ID
+}
+
+// TestStatusPageRepository_SetServices_ReplacesFullSet asserts SetServices
+// fully replaces the linked-service set: an existing link not present in
+// the new call is dropped, and a new one is added - not merged.
+func TestStatusPageRepository_SetServices_ReplacesFullSet(t *testing.T) {
+	repo, pool := newAttachDomainTestRepo(t)
+	pageID := createDomainlessStatusPage(t, repo, pool, "set-services-page")
+	serviceA := createSetServicesTestService(t, pool, "set-services-svc-a")
+	serviceB := createSetServicesTestService(t, pool, "set-services-svc-b")
+
+	if err := repo.SetServices(context.Background(), pageID, []string{serviceA}); err != nil {
+		t.Fatalf("SetServices() first call returned unexpected error: %v", err)
+	}
+	page, err := repo.GetByID(context.Background(), pageID)
+	if err != nil {
+		t.Fatalf("GetByID() returned unexpected error: %v", err)
+	}
+	if len(page.ServiceIDs) != 1 || page.ServiceIDs[0] != serviceA {
+		t.Fatalf("ServiceIDs after first SetServices() = %v, want [%q]", page.ServiceIDs, serviceA)
+	}
+
+	if err := repo.SetServices(context.Background(), pageID, []string{serviceB}); err != nil {
+		t.Fatalf("SetServices() second call returned unexpected error: %v", err)
+	}
+	page, err = repo.GetByID(context.Background(), pageID)
+	if err != nil {
+		t.Fatalf("GetByID() returned unexpected error: %v", err)
+	}
+	if len(page.ServiceIDs) != 1 || page.ServiceIDs[0] != serviceB {
+		t.Fatalf("ServiceIDs after second SetServices() = %v, want [%q] (serviceA should have been dropped)", page.ServiceIDs, serviceB)
+	}
+}
+
+// TestStatusPageRepository_SetServices_EmptySlice_UnlinksAll asserts an
+// empty (non-nil) slice is a valid way to unlink every service.
+func TestStatusPageRepository_SetServices_EmptySlice_UnlinksAll(t *testing.T) {
+	repo, pool := newAttachDomainTestRepo(t)
+	pageID := createDomainlessStatusPage(t, repo, pool, "set-services-unlink-page")
+	serviceA := createSetServicesTestService(t, pool, "set-services-unlink-svc")
+
+	if err := repo.SetServices(context.Background(), pageID, []string{serviceA}); err != nil {
+		t.Fatalf("SetServices() (link) returned unexpected error: %v", err)
+	}
+	if err := repo.SetServices(context.Background(), pageID, []string{}); err != nil {
+		t.Fatalf("SetServices() (unlink) returned unexpected error: %v", err)
+	}
+
+	page, err := repo.GetByID(context.Background(), pageID)
+	if err != nil {
+		t.Fatalf("GetByID() returned unexpected error: %v", err)
+	}
+	if len(page.ServiceIDs) != 0 {
+		t.Errorf("ServiceIDs after unlink = %v, want empty", page.ServiceIDs)
+	}
+}
+
+// TestStatusPageRepository_SetServices_NonexistentPage_ErrNotFound asserts
+// SetServices distinguishes "page doesn't exist" rather than silently
+// succeeding on a no-op delete+insert.
+func TestStatusPageRepository_SetServices_NonexistentPage_ErrNotFound(t *testing.T) {
+	repo, pool := newAttachDomainTestRepo(t)
+	serviceA := createSetServicesTestService(t, pool, "set-services-missing-page-svc")
+
+	err := repo.SetServices(context.Background(), "00000000-0000-0000-0000-000000000000", []string{serviceA})
+	if !errors.Is(err, ErrNotFound) {
+		t.Fatalf("SetServices() error = %v, want ErrNotFound", err)
+	}
+}
+
+// TestStatusPageRepository_Create_PopulatesServiceIDs asserts Create fills
+// in ServiceIDs on the returned StatusPage from exactly the ids it was
+// given, so callers (the admin API's create response) don't need a
+// separate reload to show what got linked.
+func TestStatusPageRepository_Create_PopulatesServiceIDs(t *testing.T) {
+	repo, pool := newAttachDomainTestRepo(t)
+	serviceA := createSetServicesTestService(t, pool, "create-populates-svc")
+
+	statusPage := &StatusPage{Name: fmt.Sprintf("create-populates-page-%d", time.Now().UnixNano())}
+	if err := repo.Create(context.Background(), statusPage, []string{serviceA}); err != nil {
+		t.Fatalf("Create() returned unexpected error: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = pool.Exec(context.Background(), "DELETE FROM status_pages WHERE id = $1", statusPage.ID)
+	})
+
+	if len(statusPage.ServiceIDs) != 1 || statusPage.ServiceIDs[0] != serviceA {
+		t.Errorf("ServiceIDs = %v, want [%q]", statusPage.ServiceIDs, serviceA)
+	}
+}

@@ -35,6 +35,7 @@ type StatusPage struct {
 	State        string
 	TLSLastError *string
 	CreatedAt    time.Time
+	ServiceIDs   []string
 }
 
 // StatusPageRepository accesses the status_pages and status_page_services
@@ -81,7 +82,79 @@ func (r *StatusPageRepository) Create(ctx context.Context, statusPage *StatusPag
 		return fmt.Errorf("db: failed to commit status page create transaction: %w", err)
 	}
 
+	statusPage.ServiceIDs = serviceIDs
 	return nil
+}
+
+// SetServices replaces the full set of services linked to the status page
+// identified by id with serviceIDs, inside a single transaction (delete
+// all existing links, then insert the given set) - the same replace-all
+// semantics as Create's initial linking, so a partial update never leaves
+// a mix of old and new links. It returns ErrNotFound if no status page
+// matches id.
+func (r *StatusPageRepository) SetServices(ctx context.Context, id string, serviceIDs []string) error {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("db: failed to begin set services transaction: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	var exists bool
+	row := tx.QueryRow(ctx, "SELECT EXISTS(SELECT 1 FROM status_pages WHERE id = $1)", id)
+	if err := row.Scan(&exists); err != nil {
+		return fmt.Errorf("db: failed to check status page existence: %w", err)
+	}
+	if !exists {
+		return ErrNotFound
+	}
+
+	if _, err := tx.Exec(ctx, "DELETE FROM status_page_services WHERE status_page_id = $1", id); err != nil {
+		return fmt.Errorf("db: failed to clear existing service links: %w", err)
+	}
+	for _, serviceID := range serviceIDs {
+		if _, err := tx.Exec(ctx,
+			"INSERT INTO status_page_services (status_page_id, service_id) VALUES ($1, $2)",
+			id, serviceID,
+		); err != nil {
+			return fmt.Errorf("db: failed to link service %s to status page: %w", serviceID, err)
+		}
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("db: failed to commit set services transaction: %w", err)
+	}
+
+	return nil
+}
+
+// serviceIDsByStatusPage batch-loads every status_page_services link for
+// pageIDs into a map, so List can attach ServiceIDs to each row with one
+// extra query instead of one per page.
+func (r *StatusPageRepository) serviceIDsByStatusPage(ctx context.Context, pageIDs []string) (map[string][]string, error) {
+	result := make(map[string][]string, len(pageIDs))
+	if len(pageIDs) == 0 {
+		return result, nil
+	}
+
+	rows, err := r.pool.Query(ctx,
+		"SELECT status_page_id, service_id FROM status_page_services WHERE status_page_id = ANY($1)", pageIDs)
+	if err != nil {
+		return nil, fmt.Errorf("db: failed to list service links: %w", err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var statusPageID, serviceID string
+		if err := rows.Scan(&statusPageID, &serviceID); err != nil {
+			return nil, fmt.Errorf("db: failed to scan service link: %w", err)
+		}
+		result[statusPageID] = append(result[statusPageID], serviceID)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("db: failed to list service links: %w", err)
+	}
+
+	return result, nil
 }
 
 // AttachDomain sets domain_id/subdomain on the status page identified by
@@ -166,6 +239,18 @@ func (r *StatusPageRepository) List(ctx context.Context) ([]StatusPage, error) {
 		return nil, fmt.Errorf("db: failed to list status pages: %w", err)
 	}
 
+	pageIDs := make([]string, len(statusPages))
+	for i, sp := range statusPages {
+		pageIDs[i] = sp.ID
+	}
+	serviceIDsByPage, err := r.serviceIDsByStatusPage(ctx, pageIDs)
+	if err != nil {
+		return nil, err
+	}
+	for i := range statusPages {
+		statusPages[i].ServiceIDs = serviceIDsByPage[statusPages[i].ID]
+	}
+
 	return statusPages, nil
 }
 
@@ -184,6 +269,12 @@ func (r *StatusPageRepository) GetByID(ctx context.Context, id string) (*StatusP
 		}
 		return nil, fmt.Errorf("db: failed to get status page by id: %w", err)
 	}
+
+	serviceIDsByPage, err := r.serviceIDsByStatusPage(ctx, []string{sp.ID})
+	if err != nil {
+		return nil, err
+	}
+	sp.ServiceIDs = serviceIDsByPage[sp.ID]
 
 	return &sp, nil
 }

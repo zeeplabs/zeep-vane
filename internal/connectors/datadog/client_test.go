@@ -160,8 +160,11 @@ const searchResponseBody = `{
 
 func TestSearchSLOs_ValidResponse_ReturnsSummaries(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if got := r.URL.Query().Get("query"); got != "checkout" {
-			t.Errorf("query param = %q, want %q", got, "checkout")
+		// Wrapped in *…* wildcards: Datadog's slo/search matches whole
+		// tokens, not substrings, so an unwrapped query would miss a
+		// name fragment that isn't a full token (see SearchSLOs' doc).
+		if got := r.URL.Query().Get("query"); got != "*checkout*" {
+			t.Errorf("query param = %q, want %q", got, "*checkout*")
 		}
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
@@ -182,6 +185,29 @@ func TestSearchSLOs_ValidResponse_ReturnsSummaries(t *testing.T) {
 	}
 	if summaries[0].Name != "Checkout latência p95" {
 		t.Errorf("summaries[0].Name = %q, want %q", summaries[0].Name, "Checkout latência p95")
+	}
+}
+
+// TestSearchSLOs_FacetFilterQuery_NotWildcarded guards against a
+// regression where every query got wrapped in *…* wildcards
+// unconditionally: "*id:<sloID>*" is not a valid Datadog filter and
+// matches nothing (confirmed live), breaking fetchSLOName's SLO-name
+// lookup by id (web/src/features/integrations/hooks.ts), which is the
+// only caller that sends a facet-filter query rather than free text.
+func TestSearchSLOs_FacetFilterQuery_NotWildcarded(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.URL.Query().Get("query"); got != "id:abc123" {
+			t.Errorf("query param = %q, want %q", got, "id:abc123")
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(searchResponseBody))
+	}))
+	defer server.Close()
+
+	client := newTestClient(t, server)
+	if _, err := client.SearchSLOs(t.Context(), "id:abc123"); err != nil {
+		t.Fatalf("SearchSLOs() returned unexpected error: %v", err)
 	}
 }
 

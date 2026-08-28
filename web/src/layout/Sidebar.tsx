@@ -79,15 +79,6 @@ function SettingsIcon() {
   );
 }
 
-function SimulateExpiredIcon() {
-  return (
-    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <rect x="4" y="10" width="16" height="10" rx="2" />
-      <path d="M8 10V7a4 4 0 0 1 8 0v3" />
-    </svg>
-  );
-}
-
 function LogoutIcon() {
   return (
     <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -107,7 +98,7 @@ const DEV_ROLES: { value: Role; label: string }[] = [
 ];
 
 export function Sidebar() {
-  const { admin, hasRole, logout, setDevRole, simulateSessionExpired } = useAuth();
+  const { admin, hasRole, logout, setDevRole } = useAuth();
   const logoUrl = useBrandLogoUrl();
   const { t } = useTranslation();
   const location = useLocation();
@@ -200,14 +191,6 @@ export function Sidebar() {
           </div>
         ) : null}
 
-        <button
-          type="button"
-          onClick={simulateSessionExpired}
-          className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-left text-[12.5px] text-text opacity-55 transition-opacity hover:opacity-80"
-        >
-          <SimulateExpiredIcon />
-          {t("sidebar.simulateSessionExpired")}
-        </button>
         <button
           type="button"
           onClick={() => setConfirmOpen(true)}

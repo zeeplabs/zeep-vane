@@ -6,11 +6,15 @@ export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: ButtonVariant;
 }
 
-const base =
+// Exported alongside buttonVariantClasses (see below) for the same reason.
+export const buttonBaseClasses =
   "inline-flex items-center justify-center gap-2 rounded-md text-sm font-medium transition-colors cursor-pointer " +
   "disabled:opacity-45 disabled:pointer-events-none focus-visible:outline-none";
 
-const variantClasses: Record<ButtonVariant, string> = {
+// Exported so non-<button> elements that must look like a Button (e.g. an
+// <a> that opens an external link and needs real link semantics/role) can
+// reuse the same classes instead of hand-duplicating them out of sync.
+export const buttonVariantClasses: Record<ButtonVariant, string> = {
   primary:
     "border border-accent text-accent bg-transparent px-4 h-9 " +
     "hover:bg-accent-900 active:bg-accent-800",
@@ -29,7 +33,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
     <button
       ref={ref}
       data-variant={variant}
-      className={`${base} ${variantClasses[variant]} ${className}`.trim()}
+      className={`${buttonBaseClasses} ${buttonVariantClasses[variant]} ${className}`.trim()}
       {...props}
     />
   );

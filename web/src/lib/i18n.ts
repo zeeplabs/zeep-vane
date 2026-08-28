@@ -22,7 +22,6 @@ const resources = {
         pollerStatus: "Status do poller",
         settings: "Configurações",
         viewingAs: "Visualizando como",
-        simulateSessionExpired: "Simular sessão expirada",
         logout: "Sair",
       },
       logoutDialog: {
@@ -70,7 +69,6 @@ const resources = {
         pollerStatus: "Poller status",
         settings: "Settings",
         viewingAs: "Viewing as",
-        simulateSessionExpired: "Simulate expired session",
         logout: "Sign out",
       },
       logoutDialog: {

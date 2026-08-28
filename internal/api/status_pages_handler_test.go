@@ -45,6 +45,7 @@ func newStatusPagesRouter(t *testing.T) (http.Handler, *db.Pool, *db.AdminReposi
 		protected.Post("/api/status-pages", handler.Create)
 		protected.Get("/api/status-pages", handler.List)
 		protected.Patch("/api/status-pages/{id}/domain", handler.AttachDomain)
+		protected.Patch("/api/status-pages/{id}/services", handler.SetServices)
 	})
 
 	return r, pool, admins
@@ -459,6 +460,119 @@ func TestAttachDomain_NonexistentStatusPageID_404(t *testing.T) {
 	rec := patchAttachDomain(t, r, token, "00000000-0000-0000-0000-000000000000", attachDomainRequest{
 		DomainID: domainID, Subdomain: "status",
 	})
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("status = %d, want %d, body = %s", rec.Code, http.StatusNotFound, rec.Body.String())
+	}
+}
+
+func patchSetServices(t *testing.T, r http.Handler, token, statusPageID string, req setServicesRequest) *httptest.ResponseRecorder {
+	t.Helper()
+	body, err := json.Marshal(req)
+	if err != nil {
+		t.Fatalf("json.Marshal() returned unexpected error: %v", err)
+	}
+
+	httpReq := httptest.NewRequest(http.MethodPatch, "/api/status-pages/"+statusPageID+"/services", bytes.NewReader(body))
+	httpReq.Header.Set("Content-Type", "application/json")
+	if token != "" {
+		httpReq.Header.Set("Authorization", "Bearer "+token)
+	}
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, httpReq)
+	return rec
+}
+
+// TestSetServices_ReplacesLinkedSet asserts SPD-15: PATCHing services
+// replaces the full set (drops what isn't in the new list, adds what is),
+// and the response reflects the new set immediately - no separate reload
+// needed by the caller.
+func TestSetServices_ReplacesLinkedSet(t *testing.T) {
+	r, pool, admins := newStatusPagesRouter(t)
+	token := issueTestSessionToken(t, admins)
+	serviceA := createTestService(t, pool)
+	serviceB := createTestService(t, pool)
+	pageID := createDomainlessStatusPageViaAPI(t, r, pool, token, "Set Services Page")
+	cleanupStatusPage(t, pool, pageID)
+
+	rec := patchSetServices(t, r, token, pageID, setServicesRequest{ServiceIDs: []string{serviceA}})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("first PATCH status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	var first statusPageResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &first); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+	if len(first.ServiceIDs) != 1 || first.ServiceIDs[0] != serviceA {
+		t.Fatalf("ServiceIDs after first PATCH = %v, want [%q]", first.ServiceIDs, serviceA)
+	}
+
+	rec = patchSetServices(t, r, token, pageID, setServicesRequest{ServiceIDs: []string{serviceB}})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("second PATCH status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	var second statusPageResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &second); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+	if len(second.ServiceIDs) != 1 || second.ServiceIDs[0] != serviceB {
+		t.Fatalf("ServiceIDs after second PATCH = %v, want [%q] (serviceA should be dropped)", second.ServiceIDs, serviceB)
+	}
+}
+
+// TestSetServices_EmptyServiceIDs_200UnlinksAll asserts an empty array is
+// a valid request body (unlink everything), not a validation error - only
+// a missing/null field is rejected.
+func TestSetServices_EmptyServiceIDs_200UnlinksAll(t *testing.T) {
+	r, pool, admins := newStatusPagesRouter(t)
+	token := issueTestSessionToken(t, admins)
+	serviceA := createTestService(t, pool)
+	pageID := createDomainlessStatusPageViaAPI(t, r, pool, token, "Set Services Unlink Page")
+	cleanupStatusPage(t, pool, pageID)
+
+	if rec := patchSetServices(t, r, token, pageID, setServicesRequest{ServiceIDs: []string{serviceA}}); rec.Code != http.StatusOK {
+		t.Fatalf("setup PATCH status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	rec := patchSetServices(t, r, token, pageID, setServicesRequest{ServiceIDs: []string{}})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	var resp statusPageResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+	if len(resp.ServiceIDs) != 0 {
+		t.Errorf("ServiceIDs = %v, want empty", resp.ServiceIDs)
+	}
+}
+
+// TestSetServices_MissingServiceIDs_422 asserts a request body with no
+// service_ids field at all is rejected, distinguishing it from the valid
+// "empty array" unlink-everything case above.
+func TestSetServices_MissingServiceIDs_422(t *testing.T) {
+	r, pool, admins := newStatusPagesRouter(t)
+	token := issueTestSessionToken(t, admins)
+	pageID := createDomainlessStatusPageViaAPI(t, r, pool, token, "Set Services Missing Field Page")
+	cleanupStatusPage(t, pool, pageID)
+
+	httpReq := httptest.NewRequest(http.MethodPatch, "/api/status-pages/"+pageID+"/services", bytes.NewReader([]byte(`{}`)))
+	httpReq.Header.Set("Content-Type", "application/json")
+	httpReq.Header.Set("Authorization", "Bearer "+token)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, httpReq)
+
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Errorf("status = %d, want %d, body = %s", rec.Code, http.StatusUnprocessableEntity, rec.Body.String())
+	}
+}
+
+// TestSetServices_NonexistentStatusPageID_404 mirrors
+// TestAttachDomain_NonexistentStatusPageID_404 for the services endpoint.
+func TestSetServices_NonexistentStatusPageID_404(t *testing.T) {
+	r, _, admins := newStatusPagesRouter(t)
+	token := issueTestSessionToken(t, admins)
+
+	rec := patchSetServices(t, r, token, "00000000-0000-0000-0000-000000000000", setServicesRequest{ServiceIDs: []string{}})
 	if rec.Code != http.StatusNotFound {
 		t.Errorf("status = %d, want %d, body = %s", rec.Code, http.StatusNotFound, rec.Body.String())
 	}

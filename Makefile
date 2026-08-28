@@ -1,4 +1,4 @@
-.PHONY: build web-build test lint vet dev-db dev-db-stop migrate dev-backend dev-frontend dev
+.PHONY: build web-build run test lint vet dev-db dev-db-stop migrate dev-backend dev-frontend dev
 
 DEV_DB_CONTAINER := vane-dev-pg
 DEV_DB_PORT := 5432
@@ -9,6 +9,17 @@ web-build:
 
 build: web-build
 	go build -o bin/vane ./cmd/vane
+
+
+# Runs the built binary (front + back in one process) on :8080. Requires
+# `make build` first, plus dev-db + migrate already run.
+run:
+	DATABASE_URL=$(DATABASE_URL) \
+	VANE_MASTER_KEY=dev-master-key-change-me-0123456789 \
+	VANE_SESSION_SECRET=dev-session-secret-change-me-0123456789 \
+	PORT=8080 \
+	POLL_INTERVAL_SECONDS=60 \
+	./bin/vane serve
 
 test:
 	go test ./...

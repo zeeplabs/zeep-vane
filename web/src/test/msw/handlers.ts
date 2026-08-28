@@ -165,10 +165,11 @@ function toServiceResponse(service: Service) {
   };
 }
 
-// toDomainResponse/toStatusPageResponse strip fields the real backend
-// never returns (StatusPage.service_ids only exists in the frontend
-// fixture, for UI convenience - GET /api/status-pages, like
-// POST /api/status-pages before it, never includes it).
+// toDomainResponse strips fields the real backend never returns.
+// toStatusPageResponse mirrors the real StatusPagesHandler response shape,
+// service_ids included - GET/POST/PATCH .../services on the real backend
+// all return it (internal/api/status_pages_handler.go's
+// toStatusPageResponse).
 function toDomainResponse(domain: Domain) {
   return { id: domain.id, hostname: domain.hostname, created_at: domain.created_at };
 }
@@ -182,6 +183,7 @@ function toStatusPageResponse(statusPage: StatusPage) {
     state: statusPage.state,
     tls_last_error: statusPage.tls_last_error,
     created_at: statusPage.created_at,
+    service_ids: statusPage.service_ids,
   };
 }
 
@@ -346,6 +348,24 @@ export const handlers = [
     }
     page.domain_id = body.domain_id;
     page.subdomain = body.subdomain;
+    return HttpResponse.json(toStatusPageResponse(page));
+  }),
+
+  // PATCH /api/status-pages/:id/services (SPD-15) - mirrors
+  // StatusPagesHandler.SetServices: 404 unknown page, 422 missing
+  // service_ids field (an empty array is valid - unlinks everything),
+  // else 200 with the page's full linked set replaced.
+  http.patch("/api/status-pages/:id/services", async ({ request, params }) => {
+    if (!sessionAdminId) return HttpResponse.json({ error: "unauthorized" }, { status: 401 });
+    const page = statusPagesState.find((p) => p.id === params.id);
+    if (!page) {
+      return HttpResponse.json({ error: "status page not found" }, { status: 404 });
+    }
+    const body = (await request.json()) as { service_ids?: string[] };
+    if (!body.service_ids) {
+      return HttpResponse.json({ error: "service_ids is required" }, { status: 422 });
+    }
+    page.service_ids = body.service_ids;
     return HttpResponse.json(toStatusPageResponse(page));
   }),
 

@@ -81,6 +81,30 @@ export function useAttachDomain() {
   });
 }
 
+export interface SetStatusPageServicesInput {
+  id: string;
+  service_ids: string[];
+}
+
+// useSetStatusPageServices replaces the full set of services shown on a
+// status page (SPD-15) via PATCH /api/status-pages/{id}/services. Unlike
+// useCreateStatusPage's one-time service_ids, this can be called
+// repeatedly as an admin edits which services a page shows after
+// creation - each call replaces the set rather than merging into it.
+export function useSetStatusPageServices() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, service_ids }: SetStatusPageServicesInput) =>
+      apiFetch<StatusPage>(`/api/status-pages/${id}/services`, {
+        method: "PATCH",
+        body: JSON.stringify({ service_ids }),
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["status-pages"] });
+    },
+  });
+}
+
 interface DNSTargetResponse {
   target: string | null;
 }

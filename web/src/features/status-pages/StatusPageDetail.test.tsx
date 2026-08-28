@@ -18,6 +18,13 @@ async function loginAsOwner() {
   });
 }
 
+async function loginAs(email: string) {
+  await apiClient.apiFetch("/api/auth/login", {
+    method: "POST",
+    body: JSON.stringify({ email, password: "demo1234" }),
+  });
+}
+
 async function createDomainlessPage(name: string): Promise<StatusPage> {
   return apiClient.apiFetch<StatusPage>("/api/status-pages", {
     method: "POST",
@@ -140,5 +147,84 @@ describe("StatusPageDetail", () => {
     expect(document.body.textContent).not.toContain("https://null");
     expect(document.body.textContent).not.toContain("undefined");
     expect(screen.queryByRole("link", { name: /^https:\/\//i })).not.toBeInTheDocument();
+  });
+
+  it("exibe os serviços vinculados marcados e os demais desmarcados", async () => {
+    await loginAsOwner();
+    renderDetail("sp-1");
+
+    expect(await screen.findByText("Serviços vinculados")).toBeInTheDocument();
+    // sp-1 fixture: service_ids = ["svc-1", "svc-2"] (API pública, Checkout).
+    // Vinculados são checkboxes marcados no grupo "Vinculados"; os demais
+    // aparecem desmarcados no grupo "Disponíveis" (SPD-16 redesign).
+    expect(screen.getByRole("checkbox", { name: "API pública" })).toBeChecked();
+    expect(screen.getByRole("checkbox", { name: "Checkout" })).toBeChecked();
+    expect(screen.getByRole("checkbox", { name: "Notificações" })).not.toBeChecked();
+    expect(screen.getByRole("checkbox", { name: "Fila de processamento" })).not.toBeChecked();
+  });
+
+  it("owner alterna um serviço e salva, persistindo o novo conjunto via PATCH (SPD-15)", async () => {
+    await loginAsOwner();
+    renderDetail("sp-1");
+    await screen.findByText("Serviços vinculados");
+
+    const saveButton = screen.getByRole("button", { name: "Salvar serviços" });
+    expect(saveButton).toBeDisabled();
+
+    await userEvent.click(screen.getByRole("checkbox", { name: "Notificações" }));
+    expect(saveButton).toBeEnabled();
+
+    await userEvent.click(saveButton);
+
+    await vi.waitFor(() => expect(saveButton).toBeDisabled());
+    expect(screen.getByRole("checkbox", { name: "API pública" })).toBeChecked();
+    expect(screen.getByRole("checkbox", { name: "Checkout" })).toBeChecked();
+    expect(screen.getByRole("checkbox", { name: "Notificações" })).toBeChecked();
+
+    // Confirma que persistiu de fato (reflete o servidor, não só estado local
+    // otimista): reconsulta via GET /api/status-pages.
+    const reloaded = await apiClient.apiFetch<StatusPage[]>("/api/status-pages");
+    const page = reloaded.find((p) => p.id === "sp-1");
+    expect(page?.service_ids.sort()).toEqual(["svc-1", "svc-2", "svc-3"]);
+  });
+
+  it("desmarcar todos e salvar substitui o conjunto inteiro por vazio (replace-all, não incremental)", async () => {
+    await loginAsOwner();
+    renderDetail("sp-1");
+    await screen.findByText("Serviços vinculados");
+
+    await userEvent.click(screen.getByRole("checkbox", { name: "API pública" }));
+    await userEvent.click(screen.getByRole("checkbox", { name: "Checkout" }));
+    await userEvent.click(screen.getByRole("button", { name: "Salvar serviços" }));
+
+    await vi.waitFor(async () => {
+      const reloaded = await apiClient.apiFetch<StatusPage[]>("/api/status-pages");
+      expect(reloaded.find((p) => p.id === "sp-1")?.service_ids).toEqual([]);
+    });
+  });
+
+  it("busca filtra o grupo Disponíveis sem afetar o grupo Vinculados (SPD-16)", async () => {
+    await loginAsOwner();
+    renderDetail("sp-1");
+    await screen.findByText("Serviços vinculados");
+
+    // sp-1 fixture: vinculados = API pública, Checkout; disponíveis =
+    // Notificações, Fila de processamento.
+    await userEvent.type(screen.getByLabelText("Buscar serviço"), "notif");
+
+    expect(screen.getByRole("checkbox", { name: "Notificações" })).toBeInTheDocument();
+    expect(screen.queryByRole("checkbox", { name: "Fila de processamento" })).not.toBeInTheDocument();
+    // Vinculados nunca é afetado pelo filtro, mesmo sem match no texto buscado.
+    expect(screen.getByRole("checkbox", { name: "API pública" })).toBeInTheDocument();
+    expect(screen.getByRole("checkbox", { name: "Checkout" })).toBeInTheDocument();
+  });
+
+  it("viewer vê os serviços vinculados mas não pode alterá-los nem vê o botão salvar", async () => {
+    await loginAs("viewer@vane.app");
+    renderDetail("sp-1");
+
+    expect(await screen.findByText("Serviços vinculados")).toBeInTheDocument();
+    expect(screen.getByRole("checkbox", { name: "API pública" })).toBeDisabled();
+    expect(screen.queryByRole("button", { name: "Salvar serviços" })).not.toBeInTheDocument();
   });
 });

@@ -10,6 +10,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"strings"
 	"time"
 )
 
@@ -172,8 +173,26 @@ func (c *Client) FetchSLOStatus(ctx context.Context, sloID string) (SLOStatus, e
 // id:<sloID>. Returns an empty slice (not ErrNotFound) when nothing
 // matches - unlike FetchSLOStatus, an empty result here is a normal,
 // expected outcome of a search, not a lookup failure.
+//
+// A free-text query (no ":") is wrapped in *…* wildcards: Datadog's
+// slo/search matches whole tokens (split on non-alphanumerics), not
+// arbitrary substrings, so an unwrapped query like "atewa" against an SLO
+// named "...-gateway-..." returns zero results even though the admin
+// typed a real fragment of the name. Confirmed live against the Datadog
+// API: "gateway" (whole token) matches, "atewa" (mid-token) doesn't,
+// "*atewa*" does.
+//
+// A query already using Datadog's field-filter syntax (e.g. "id:<sloID>",
+// used by the frontend's fetchSLOName to resolve a linked SLO's display
+// name - web/src/features/integrations/hooks.ts) must NOT be wrapped:
+// "*id:<sloID>*" is not a valid filter and matches nothing, confirmed
+// live. Presence of ":" is what distinguishes the two callers.
 func (c *Client) SearchSLOs(ctx context.Context, query string) ([]SLOSummary, error) {
-	endpoint := fmt.Sprintf("%s%s?query=%s", c.baseURL, sloSearchPath, url.QueryEscape(query))
+	wildcardQuery := query
+	if wildcardQuery != "" && !strings.Contains(wildcardQuery, ":") {
+		wildcardQuery = "*" + wildcardQuery + "*"
+	}
+	endpoint := fmt.Sprintf("%s%s?query=%s", c.baseURL, sloSearchPath, url.QueryEscape(wildcardQuery))
 
 	resp, err := c.get(ctx, endpoint)
 	if err != nil {

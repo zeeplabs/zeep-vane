@@ -19,6 +19,8 @@ type statusPageCreatorLister interface {
 	Create(ctx context.Context, statusPage *db.StatusPage, serviceIDs []string) error
 	List(ctx context.Context) ([]db.StatusPage, error)
 	AttachDomain(ctx context.Context, id, domainID, subdomain string) (*db.StatusPage, error)
+	SetServices(ctx context.Context, id string, serviceIDs []string) error
+	GetByID(ctx context.Context, id string) (*db.StatusPage, error)
 }
 
 // StatusPagesHandler serves the status page admin routes.
@@ -47,6 +49,27 @@ type statusPageResponse struct {
 	State        string    `json:"state"`
 	TLSLastError *string   `json:"tls_last_error"`
 	CreatedAt    time.Time `json:"created_at"`
+	ServiceIDs   []string  `json:"service_ids"`
+}
+
+// toStatusPageResponse converts sp to its wire shape, normalizing a nil
+// ServiceIDs (no links) to an empty array rather than JSON null - the
+// frontend's StatusPage type declares service_ids as always an array.
+func toStatusPageResponse(sp *db.StatusPage) statusPageResponse {
+	serviceIDs := sp.ServiceIDs
+	if serviceIDs == nil {
+		serviceIDs = []string{}
+	}
+	return statusPageResponse{
+		ID:           sp.ID,
+		Name:         sp.Name,
+		Subdomain:    sp.Subdomain,
+		DomainID:     sp.DomainID,
+		State:        sp.State,
+		TLSLastError: sp.TLSLastError,
+		CreatedAt:    sp.CreatedAt,
+		ServiceIDs:   serviceIDs,
+	}
 }
 
 const invalidStatusPageRequestBody = `{"error":"name is required"}`
@@ -90,15 +113,7 @@ func (h *StatusPagesHandler) Create(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
-	_ = json.NewEncoder(w).Encode(statusPageResponse{
-		ID:           statusPage.ID,
-		Name:         statusPage.Name,
-		Subdomain:    statusPage.Subdomain,
-		DomainID:     statusPage.DomainID,
-		State:        statusPage.State,
-		TLSLastError: statusPage.TLSLastError,
-		CreatedAt:    statusPage.CreatedAt,
-	})
+	_ = json.NewEncoder(w).Encode(toStatusPageResponse(statusPage))
 }
 
 type attachDomainRequest struct {
@@ -153,15 +168,50 @@ func (h *StatusPagesHandler) AttachDomain(w http.ResponseWriter, r *http.Request
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	_ = json.NewEncoder(w).Encode(statusPageResponse{
-		ID:           statusPage.ID,
-		Name:         statusPage.Name,
-		Subdomain:    statusPage.Subdomain,
-		DomainID:     statusPage.DomainID,
-		State:        statusPage.State,
-		TLSLastError: statusPage.TLSLastError,
-		CreatedAt:    statusPage.CreatedAt,
-	})
+	_ = json.NewEncoder(w).Encode(toStatusPageResponse(statusPage))
+}
+
+const invalidSetServicesRequestBody = `{"error":"service_ids is required"}`
+
+type setServicesRequest struct {
+	ServiceIDs []string `json:"service_ids"`
+}
+
+// SetServices handles PATCH /api/status-pages/{id}/services, replacing the
+// full set of services shown on this status page with req.ServiceIDs
+// (SPD-15) - an empty array is valid (unlinks every service), so only a
+// missing/malformed field is rejected, not an empty one.
+func (h *StatusPagesHandler) SetServices(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+
+	var req setServicesRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.ServiceIDs == nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusUnprocessableEntity)
+		_, _ = w.Write([]byte(invalidSetServicesRequestBody))
+		return
+	}
+
+	if err := h.statusPages.SetServices(r.Context(), id, req.ServiceIDs); err != nil {
+		if errors.Is(err, db.ErrNotFound) {
+			http.NotFound(w, r)
+			return
+		}
+		h.logger.Error("status-pages: failed to set linked services", zap.Error(err))
+		writeInternalError(w)
+		return
+	}
+
+	statusPage, err := h.statusPages.GetByID(r.Context(), id)
+	if err != nil {
+		h.logger.Error("status-pages: failed to reload status page after setting services", zap.Error(err))
+		writeInternalError(w)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(toStatusPageResponse(statusPage))
 }
 
 // List handles GET /api/status-pages, returning every registered status
@@ -176,15 +226,7 @@ func (h *StatusPagesHandler) List(w http.ResponseWriter, r *http.Request) {
 
 	resp := make([]statusPageResponse, len(statusPages))
 	for i, sp := range statusPages {
-		resp[i] = statusPageResponse{
-			ID:           sp.ID,
-			Name:         sp.Name,
-			Subdomain:    sp.Subdomain,
-			DomainID:     sp.DomainID,
-			State:        sp.State,
-			TLSLastError: sp.TLSLastError,
-			CreatedAt:    sp.CreatedAt,
-		}
+		resp[i] = toStatusPageResponse(&sp)
 	}
 
 	w.Header().Set("Content-Type", "application/json")
