@@ -229,10 +229,10 @@ T13 → T20
 - Skill: NONE
 
 **Done when**:
-- [ ] Same boundary tests as T2 (page 1 partial, page N exact, beyond-last, empty table)
-- [ ] Old `List` removed (confirmed single caller via grep)
-- [ ] Gate check passes: `TEST_DATABASE_URL=... go test -tags=integration ./internal/db/...`
-- [ ] Test count: 4+ new tests pass
+- [x] Same boundary tests as T2 (page 1 partial, page N exact, beyond-last, empty table)
+- [x] Old `List` removed (confirmed single caller via grep)
+- [x] Gate check passes: `TEST_DATABASE_URL=... go test -tags=integration ./internal/db/...`
+- [x] Test count: 4+ new tests pass (4: Page1, Page2, PageBeyondLast, OrderByHostnameUnchanged)
 
 **Tests**: integration
 **Gate**: full

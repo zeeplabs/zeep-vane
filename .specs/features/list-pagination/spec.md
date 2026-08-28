@@ -122,7 +122,7 @@ Explicitly excluded. Documented to prevent scope creep.
 | PAG-05 | P1: Admin navigates a growing incident list without loading everything | Specify | Implementing |
 | PAG-06 | P1: Admin navigates a growing incident list without loading everything | Specify | Implementing |
 | PAG-07 | P1: Admin navigates a growing incident list without loading everything | Specify | Pending |
-| PAG-08 | P2: The same pagination pattern applies to every other admin list screen | Specify | Pending |
+| PAG-08 | P2: The same pagination pattern applies to every other admin list screen | Specify | Implementing |
 | PAG-09 | P2: The same pagination pattern applies to every other admin list screen | Specify | Pending |
 | PAG-10 | P2: The same pagination pattern applies to every other admin list screen | Specify | Pending |
 | PAG-11 | P2: The same pagination pattern applies to every other admin list screen | Specify | Implementing |

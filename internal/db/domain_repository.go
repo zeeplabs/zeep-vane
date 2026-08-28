@@ -52,25 +52,57 @@ func (r *DomainRepository) Create(ctx context.Context, domain *Domain) error {
 	return nil
 }
 
-// List returns every registered domain, ordered by hostname.
-func (r *DomainRepository) List(ctx context.Context) ([]Domain, error) {
-	rows, err := r.pool.Query(ctx, "SELECT id, hostname, created_at FROM domains ORDER BY hostname")
+// ListPaginated returns one page of registered domains, ordered by
+// hostname (PAG-08). total is the total number of domains in the table,
+// computed via COUNT(*) OVER() in the same query; when the requested page
+// is beyond the last page (or the table is empty) the primary query
+// returns zero rows and can't carry a window-function total, so a fallback
+// plain COUNT(*) runs only in that case (same pattern as
+// IncidentRepository.ListPaginated).
+func (r *DomainRepository) ListPaginated(ctx context.Context, page, pageSize int) ([]Domain, int, error) {
+	offset := (page - 1) * pageSize
+
+	rows, err := r.pool.Query(ctx,
+		`SELECT id, hostname, created_at, COUNT(*) OVER() AS total
+		 FROM domains
+		 ORDER BY hostname
+		 LIMIT $1 OFFSET $2`,
+		pageSize, offset,
+	)
 	if err != nil {
-		return nil, fmt.Errorf("db: failed to list domains: %w", err)
+		return nil, 0, fmt.Errorf("db: failed to list domains: %w", err)
 	}
 	defer rows.Close()
 
-	var domains []Domain
+	domains := []Domain{}
+	total := 0
 	for rows.Next() {
 		var domain Domain
-		if err := rows.Scan(&domain.ID, &domain.Hostname, &domain.CreatedAt); err != nil {
-			return nil, fmt.Errorf("db: failed to scan domain: %w", err)
+		if err := rows.Scan(&domain.ID, &domain.Hostname, &domain.CreatedAt, &total); err != nil {
+			return nil, 0, fmt.Errorf("db: failed to scan domain: %w", err)
 		}
 		domains = append(domains, domain)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("db: failed to list domains: %w", err)
+		return nil, 0, fmt.Errorf("db: failed to iterate domains: %w", err)
 	}
 
-	return domains, nil
+	if len(domains) == 0 {
+		total, err = r.countDomains(ctx)
+		if err != nil {
+			return nil, 0, err
+		}
+	}
+
+	return domains, total, nil
+}
+
+// countDomains is the zero-row fallback for ListPaginated's total (PAG-08).
+func (r *DomainRepository) countDomains(ctx context.Context) (int, error) {
+	var total int
+	row := r.pool.QueryRow(ctx, "SELECT COUNT(*) FROM domains")
+	if err := row.Scan(&total); err != nil {
+		return 0, fmt.Errorf("db: failed to count domains: %w", err)
+	}
+	return total, nil
 }
