@@ -45,19 +45,24 @@ type AdminsHandler struct {
 	logger          *zap.Logger
 	devTokenLogging bool
 	httpsEnabled    bool
+	sessionSecret   string
+	secureCookies   bool
 }
 
 // NewAdminsHandler builds an AdminsHandler. devTokenLogging gates whether
 // the raw invite token is logged when an invite is created (see the
 // PasswordResetHandler doc for why this defaults to off). httpsEnabled
 // (mirrors cfg.HTTPSEnabled) picks the scheme used to build the invite
-// AcceptURL sent by email.
-func NewAdminsHandler(pool *db.Pool, admins *db.AdminRepository, invites *db.AdminInviteRepository, emailSvc *email.Service, companySettings *db.CompanySettingsRepository, auditLog *audit.Log, logger *zap.Logger, devTokenLogging, httpsEnabled bool) *AdminsHandler {
+// AcceptURL sent by email. sessionSecret/secureCookies authenticate the
+// admin created by AcceptInvite, same pair AuthHandler/BootstrapHandler
+// already take.
+func NewAdminsHandler(pool *db.Pool, admins *db.AdminRepository, invites *db.AdminInviteRepository, emailSvc *email.Service, companySettings *db.CompanySettingsRepository, auditLog *audit.Log, logger *zap.Logger, devTokenLogging, httpsEnabled bool, sessionSecret string, secureCookies bool) *AdminsHandler {
 	return &AdminsHandler{
 		pool: pool, admins: admins, invites: invites,
 		emailSvc: emailSvc, companySettings: companySettings,
 		audit: auditLog, logger: logger,
 		devTokenLogging: devTokenLogging, httpsEnabled: httpsEnabled,
+		sessionSecret: sessionSecret, secureCookies: secureCookies,
 	}
 }
 
@@ -275,6 +280,18 @@ func (h *AdminsHandler) AcceptInvite(w http.ResponseWriter, r *http.Request) {
 		writeInternalError(w)
 		return
 	}
+
+	// Authenticate the newly created admin immediately (accept-invite-page
+	// AIP-01/02) - same issue-then-set-cookie sequence
+	// BootstrapHandler.Create already uses, so the invitee lands on an
+	// active session without a separate login step.
+	sessionToken, err := auth.IssueSession(admin.ID, h.sessionSecret)
+	if err != nil {
+		h.logger.Error("admins: failed to issue session after invite acceptance", zap.Error(err))
+		writeInternalError(w)
+		return
+	}
+	http.SetCookie(w, sessionCookie(sessionToken, int(auth.SessionTTL.Seconds()), h.secureCookies))
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)

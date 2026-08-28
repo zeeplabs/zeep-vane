@@ -160,7 +160,7 @@ func newAdminsRouterWithEmail(t *testing.T, emailSvc *email.Service) (http.Handl
 	invites := db.NewAdminInviteRepository(pool)
 	auditLog := audit.NewLog(pool)
 	companySettings := db.NewCompanySettingsRepository(pool)
-	handler := NewAdminsHandler(pool, admins, invites, emailSvc, companySettings, auditLog, zap.NewNop(), false, false)
+	handler := NewAdminsHandler(pool, admins, invites, emailSvc, companySettings, auditLog, zap.NewNop(), false, false, middlewareTestSecret, true)
 
 	r := chi.NewRouter()
 	r.Group(func(protected chi.Router) {
@@ -587,6 +587,68 @@ func TestAcceptInvite_ValidToken_201_ActivatesAccountWithInvitedRole(t *testing.
 	}
 	if invite.UsedAt == nil {
 		t.Error("invite.UsedAt = nil after accept, want non-nil (marked used)")
+	}
+}
+
+// TestAcceptInvite_ValidToken_SetsAuthenticatingSessionCookie covers
+// AIP-01/AIP-02: accepting an invite must authenticate the invitee
+// immediately (mirrors BootstrapHandler.Create's issue-then-set-cookie
+// sequence) - not merely set some cookie, but one that actually verifies
+// back to the newly created admin's own ID.
+func TestAcceptInvite_ValidToken_SetsAuthenticatingSessionCookie(t *testing.T) {
+	r, pool, admins, invites := newAdminsRouter(t)
+	inviterAdmin := &db.Admin{Email: uniqueTestEmail(t), PasswordHash: "hash"}
+	if err := admins.Create(context.Background(), inviterAdmin); err != nil {
+		t.Fatalf("admins.Create() returned unexpected error: %v", err)
+	}
+	t.Cleanup(func() { _ = admins.Delete(context.Background(), inviterAdmin.ID) })
+
+	email := uniqueTestEmail(t)
+	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), "DELETE FROM admins WHERE email = $1", email) })
+	rawToken := createTestInvite(t, invites, inviterAdmin.ID, email, db.RoleOperator, 1*time.Hour)
+
+	rec := postAcceptInvite(t, r, rawToken, "a-strong-password")
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusCreated, rec.Body.String())
+	}
+
+	var sessionCookie *http.Cookie
+	for _, c := range rec.Result().Cookies() {
+		if c.Name == sessionCookieName {
+			sessionCookie = c
+			break
+		}
+	}
+	if sessionCookie == nil {
+		t.Fatalf("no %s cookie in response, want one set", sessionCookieName)
+	}
+	if sessionCookie.Value == "" {
+		t.Error("session cookie has empty value, want the session token")
+	}
+	if !sessionCookie.HttpOnly {
+		t.Error("session cookie HttpOnly = false, want true")
+	}
+	if !sessionCookie.Secure {
+		t.Error("session cookie Secure = false, want true")
+	}
+	if sessionCookie.SameSite != http.SameSiteStrictMode {
+		t.Errorf("session cookie SameSite = %v, want %v", sessionCookie.SameSite, http.SameSiteStrictMode)
+	}
+	wantMaxAge := int(auth.SessionTTL.Seconds())
+	if sessionCookie.MaxAge != wantMaxAge {
+		t.Errorf("session cookie MaxAge = %d, want %d", sessionCookie.MaxAge, wantMaxAge)
+	}
+
+	created, err := admins.GetByEmail(context.Background(), email)
+	if err != nil {
+		t.Fatalf("GetByEmail() returned unexpected error: %v", err)
+	}
+	gotAdminID, err := auth.VerifySession(sessionCookie.Value, middlewareTestSecret)
+	if err != nil {
+		t.Fatalf("auth.VerifySession() on the accept-invite cookie returned unexpected error: %v", err)
+	}
+	if gotAdminID != created.ID {
+		t.Errorf("session cookie authenticates admin %q, want the newly created admin %q", gotAdminID, created.ID)
 	}
 }
 
