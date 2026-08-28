@@ -36,7 +36,8 @@ Explicitly excluded. Documented to prevent scope creep.
 | Resend token/expiry semantics | Resend generates a brand-new random token (invalidates the old link) and resets `expires_at` to `now() + 1h`; it does not reuse the old token | Matches the existing `Invite()` convention of always minting a fresh token; keeping the old token alive after resend would mean two valid links for one invite, which nothing in the schema (`token_hash` has no uniqueness requirement across time) was designed to support |
 | Resend/cancel of an invite past its original expiry | Allowed, since expired-but-unused invites remain in the manageable set (see first row) - resend on an expired invite is exactly the "fix" for that owner-facing case |
 | Resend/cancel target already accepted (`used_at` already set from acceptance) | Returns 404 (`ErrNotFound` from the same atomic `WHERE used_at IS NULL` clause) - indistinguishable from "invite id doesn't exist" | Accepted invites are gone from `List()` already (only `admins` rows represent them going forward); no legitimate caller has an ID for an accepted invite except by guessing, so a generic 404 is fine and avoids leaking acceptance state to a caller who only has a stale ID |
-| Concurrent resend/resend or resend/cancel race on the same invite | The atomic `UPDATE ... WHERE used_at IS NULL RETURNING` pattern (same as `ClaimForUse`) ensures only one of two concurrent requests succeeds; the loser gets 404 | Prevents the same TOCTOU class of bug already fixed for accept (see `ClaimForUse` doc comment in `admin_invites.go`) |
+| Concurrent resend/cancel or cancel/cancel race on the same invite | The atomic `UPDATE ... WHERE used_at IS NULL RETURNING`/`... WHERE used_at IS NULL` pattern (same as `ClaimForUse`) ensures only one of two concurrent requests succeeds; the loser gets 404 | Prevents the same TOCTOU class of bug already fixed for accept (see `ClaimForUse` doc comment in `admin_invites.go`) - this holds whenever one side of the race *consumes* the invite (sets `used_at`) |
+| Concurrent resend/resend race on the same invite | **Not** mutually exclusive by design - `Refresh` never sets `used_at`, so two concurrent resends can both succeed against the same row. Accepted: no data corruption results, just two token-refresh + email-send cycles instead of one - whichever resend's `UPDATE` commits last leaves its token as the only valid one (the other resend's token is silently superseded, not left dangling) | Making resend/resend mutually exclusive would require a compare-and-swap on the invite's current `token_hash` (an extra read before the update), reopening the repository contract already committed for `Refresh` (T1) for a race with no real consequence - not worth the added complexity for a self-inflicted double-click, which a UI-level debounce could also prevent without any backend change |
 
 **Open questions:** none - all resolved or logged above.
 
@@ -73,7 +74,7 @@ Explicitly excluded. Documented to prevent scope creep.
 2. IF `{id}` does not match any invite with `used_at IS NULL` (never existed, or already accepted/canceled) THEN the system SHALL respond `404` without altering any row
 3. The system SHALL record a `"resent"` audit entry (actor = requesting owner, target = invite ID) on success
 4. WHILE the requesting admin's role is not `owner` THEN the system SHALL respond `403` (existing `RequireRole(owner)` gate, same as `Invite`/`Delete`)
-5. WHEN two concurrent resend requests target the same invite ID THEN the system SHALL ensure exactly one succeeds (200) and the other receives 404, via the atomic `WHERE used_at IS NULL RETURNING` update
+5. WHEN a resend request races a cancel (or another cancel) on the same invite ID THEN the system SHALL ensure exactly one succeeds (200) and the other receives 404, via the atomic `WHERE used_at IS NULL RETURNING`/`WHERE used_at IS NULL` update (a resend racing another resend is not required to be mutually exclusive - see Assumptions)
 
 **Independent Test**: Create an invite, call resend, confirm the old token no longer works via `AcceptInvite` (401) while the new token does; call resend twice concurrently on the same ID and confirm only one 200.
 
@@ -127,7 +128,7 @@ Explicitly excluded. Documented to prevent scope creep.
 | INVITE-01       | P1: Invite emails are actually delivered      | Tasks | Implementing |
 | INVITE-02       | P1: Invite emails are actually delivered      | Tasks | Implementing |
 | INVITE-03       | P1: Owner resends a pending invite            | Tasks | Implementing |
-| INVITE-04       | P1: Owner resends a pending invite            | Design | Pending |
+| INVITE-04       | P1: Owner resends a pending invite            | Tasks | Implementing |
 | INVITE-05       | P1: Owner cancels a pending invite            | Tasks | Implementing |
 | INVITE-06       | P1: Owner cancels a pending invite            | Design | Pending |
 | INVITE-07       | P2: Expired-but-unused invites remain manageable | Design | Pending |

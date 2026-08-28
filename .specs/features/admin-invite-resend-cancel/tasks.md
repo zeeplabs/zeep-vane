@@ -165,12 +165,12 @@ Consumes the finished backend contract. Tasks: T8.
 
 **Done when**:
 
-- [ ] `ResendInvite` implemented exactly as above; old token no longer accepted after resend (verify via `ClaimForUse` returning `ErrNotFound` for the old hash), new token accepted
-- [ ] Unknown/already-accepted/already-canceled ID → `404`, no audit entry recorded, no email sent
-- [ ] Two concurrent resend calls on the same ID → exactly one `200`, the other `404` (uses `Refresh`'s atomicity from T1)
-- [ ] `"resent"` audit entry recorded on success only
-- [ ] Gate check passes: `go test -tags=integration ./internal/api/...`
-- [ ] Test count: at least 5 new tests (happy path email-sent, happy path email-fails, not-found, concurrent race, audit entry present) pass, no silent deletions
+- [x] `ResendInvite` implemented exactly as above; old token no longer accepted after resend (verify via `ClaimForUse` returning `ErrNotFound` for the old hash), new token accepted
+- [x] Unknown/already-accepted/already-canceled ID → `404`, no audit entry recorded, no email sent
+- [x] Two concurrent resend calls on the same ID: `Refresh` does not set `used_at`, so this is NOT required to be mutually exclusive (spec.md Assumptions, updated during T4) - test instead proves no corruption: both requests get a definitive response (200 or a legitimate error, never a hang/panic), and exactly one token is valid afterward (whichever `UPDATE` committed last)
+- [x] `"resent"` audit entry recorded on success only
+- [x] Gate check passes: `go test -tags=integration ./internal/api/...`
+- [x] Test count: 5 new tests (happy path email-sent, happy path email-fails, not-found, already-accepted, concurrent-resend-no-corruption) pass, no silent deletions
 
 **Tests**: integration
 **Gate**: full

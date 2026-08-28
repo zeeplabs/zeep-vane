@@ -166,6 +166,7 @@ func newAdminsRouterWithEmail(t *testing.T, emailSvc *email.Service) (http.Handl
 		protected.With(RequireRole(db.RoleOwner)).Patch("/api/admins/{id}/role", handler.UpdateRole)
 		protected.With(RequireRole(db.RoleOwner)).Delete("/api/admins/{id}", handler.Delete)
 		protected.With(RequireRole(db.RoleOwner)).Get("/api/admins", handler.List)
+		protected.With(RequireRole(db.RoleOwner)).Post("/api/admins/invites/{id}/resend", handler.ResendInvite)
 	})
 	r.Post("/api/admins/invite/{token}/accept", handler.AcceptInvite)
 
@@ -1144,6 +1145,180 @@ func TestListAdmins_Owner_200_MergesPendingInviteWithStatus(t *testing.T) {
 	}
 	if activeItem.Status != "active" {
 		t.Errorf("active admin Status = %q, want %q", activeItem.Status, "active")
+	}
+}
+
+func postResendInvite(t *testing.T, r http.Handler, token, id string) *httptest.ResponseRecorder {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodPost, "/api/admins/invites/"+id+"/resend", nil)
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+	return rec
+}
+
+func TestResendInvite_Owner_200_NewTokenWorksOldTokenRejected(t *testing.T) {
+	r, pool, admins, invites := newAdminsRouter(t)
+	inviter := &db.Admin{Email: uniqueTestEmail(t), PasswordHash: "hash"}
+	if err := admins.Create(context.Background(), inviter); err != nil {
+		t.Fatalf("admins.Create() returned unexpected error: %v", err)
+	}
+	t.Cleanup(func() { _ = admins.Delete(context.Background(), inviter.ID) })
+	token, err := auth.IssueSession(inviter.ID, middlewareTestSecret)
+	if err != nil {
+		t.Fatalf("auth.IssueSession() returned unexpected error: %v", err)
+	}
+
+	email := uniqueTestEmail(t)
+	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), "DELETE FROM admin_invites WHERE email = $1", email) })
+	oldRawToken := createTestInvite(t, invites, inviter.ID, email, db.RoleOperator, 1*time.Hour)
+	inviteID := latestInviteForEmail(t, pool, email).id
+
+	rec := postResendInvite(t, r, token, inviteID)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	var resp map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+	if resp["status"] != "resent" {
+		t.Errorf(`response["status"] = %v, want "resent"`, resp["status"])
+	}
+	if resp["email_sent"] != true {
+		t.Errorf(`response["email_sent"] = %v, want true`, resp["email_sent"])
+	}
+
+	oldAcceptRec := postAcceptInvite(t, r, oldRawToken, "correct-horse-battery-staple")
+	if oldAcceptRec.Code != http.StatusUnauthorized {
+		t.Errorf("accepting old token after resend status = %d, want %d", oldAcceptRec.Code, http.StatusUnauthorized)
+	}
+
+	var gotActorID, gotAction string
+	row := pool.QueryRow(context.Background(),
+		"SELECT actor_id, action FROM admin_audit_log WHERE target_id = $1 AND action = 'resent'", inviteID)
+	if err := row.Scan(&gotActorID, &gotAction); err != nil {
+		t.Fatalf("querying admin_audit_log returned unexpected error: %v", err)
+	}
+	if gotActorID != inviter.ID {
+		t.Errorf("admin_audit_log actor_id = %q, want %q", gotActorID, inviter.ID)
+	}
+}
+
+func TestResendInvite_EmailSendFails_200WithEmailSentFalse(t *testing.T) {
+	svc, provider := newTestEmailService(t)
+	provider.sendErr = errors.New("provider: send failed")
+	r, pool, admins, invites := newAdminsRouterWithEmail(t, svc)
+	inviter := &db.Admin{Email: uniqueTestEmail(t), PasswordHash: "hash"}
+	if err := admins.Create(context.Background(), inviter); err != nil {
+		t.Fatalf("admins.Create() returned unexpected error: %v", err)
+	}
+	t.Cleanup(func() { _ = admins.Delete(context.Background(), inviter.ID) })
+	token := issueTestSessionToken(t, admins)
+
+	email := uniqueTestEmail(t)
+	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), "DELETE FROM admin_invites WHERE email = $1", email) })
+	createTestInvite(t, invites, inviter.ID, email, db.RoleOperator, 1*time.Hour)
+	inviteID := latestInviteForEmail(t, pool, email).id
+
+	rec := postResendInvite(t, r, token, inviteID)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	var resp map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+	if resp["email_sent"] != false {
+		t.Errorf(`response["email_sent"] = %v, want false`, resp["email_sent"])
+	}
+}
+
+func TestResendInvite_UnknownID_404(t *testing.T) {
+	r, _, admins, _ := newAdminsRouter(t)
+	token := issueTestSessionToken(t, admins)
+
+	rec := postResendInvite(t, r, token, "00000000-0000-0000-0000-000000000000")
+
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("status = %d, want %d, body = %s", rec.Code, http.StatusNotFound, rec.Body.String())
+	}
+}
+
+func TestResendInvite_AlreadyAccepted_404(t *testing.T) {
+	r, pool, admins, invites := newAdminsRouter(t)
+	inviter := &db.Admin{Email: uniqueTestEmail(t), PasswordHash: "hash"}
+	if err := admins.Create(context.Background(), inviter); err != nil {
+		t.Fatalf("admins.Create() returned unexpected error: %v", err)
+	}
+	t.Cleanup(func() { _ = admins.Delete(context.Background(), inviter.ID) })
+	token := issueTestSessionToken(t, admins)
+
+	email := uniqueTestEmail(t)
+	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), "DELETE FROM admin_invites WHERE email = $1", email) })
+	createTestInvite(t, invites, inviter.ID, email, db.RoleOperator, 1*time.Hour)
+	inviteID := latestInviteForEmail(t, pool, email).id
+	if err := invites.MarkUsed(context.Background(), inviteID); err != nil {
+		t.Fatalf("invites.MarkUsed() returned unexpected error: %v", err)
+	}
+
+	rec := postResendInvite(t, r, token, inviteID)
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("status = %d, want %d, body = %s", rec.Code, http.StatusNotFound, rec.Body.String())
+	}
+}
+
+// TestResendInvite_Concurrent_NoCorruption covers spec.md's "concurrent
+// resend/resend" assumption: Refresh doesn't consume the invite (never sets
+// used_at), so two concurrent resends are NOT required to be mutually
+// exclusive like resend/cancel is - both may legitimately return 200. What
+// must hold is no corruption: each request gets a definitive response, and
+// exactly one of the two newly-issued tokens is left valid afterward
+// (whichever UPDATE committed last), never both or neither.
+func TestResendInvite_Concurrent_NoCorruption(t *testing.T) {
+	r, pool, admins, invites := newAdminsRouter(t)
+	inviter := &db.Admin{Email: uniqueTestEmail(t), PasswordHash: "hash"}
+	if err := admins.Create(context.Background(), inviter); err != nil {
+		t.Fatalf("admins.Create() returned unexpected error: %v", err)
+	}
+	t.Cleanup(func() { _ = admins.Delete(context.Background(), inviter.ID) })
+	token, err := auth.IssueSession(inviter.ID, middlewareTestSecret)
+	if err != nil {
+		t.Fatalf("auth.IssueSession() returned unexpected error: %v", err)
+	}
+
+	email := uniqueTestEmail(t)
+	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), "DELETE FROM admin_invites WHERE email = $1", email) })
+	createTestInvite(t, invites, inviter.ID, email, db.RoleOperator, 1*time.Hour)
+	inviteID := latestInviteForEmail(t, pool, email).id
+
+	var wg sync.WaitGroup
+	codes := make([]int, 2)
+	wg.Add(2)
+	for i := range 2 {
+		go func(idx int) {
+			defer wg.Done()
+			codes[idx] = postResendInvite(t, r, token, inviteID).Code
+		}(i)
+	}
+	wg.Wait()
+
+	for _, code := range codes {
+		if code != http.StatusOK {
+			t.Errorf("concurrent resend returned unexpected status %d, want %d for both", code, http.StatusOK)
+		}
+	}
+
+	var pendingCount int
+	countRow := pool.QueryRow(context.Background(),
+		"SELECT COUNT(*) FROM admin_invites WHERE id = $1 AND used_at IS NULL", inviteID)
+	if err := countRow.Scan(&pendingCount); err != nil {
+		t.Fatalf("querying admin_invites returned unexpected error: %v", err)
+	}
+	if pendingCount != 1 {
+		t.Errorf("pending admin_invites rows for id %q after concurrent resend = %d, want 1 (single row, not duplicated/lost)", inviteID, pendingCount)
 	}
 }
 

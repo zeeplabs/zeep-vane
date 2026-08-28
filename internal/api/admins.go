@@ -281,6 +281,52 @@ func (h *AdminsHandler) AcceptInvite(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(acceptAdminInviteResponse{Email: admin.Email, Role: invite.Role})
 }
 
+const inviteNotFoundBody = `{"error":"invite not found"}`
+
+// ResendInvite handles POST /api/admins/invites/{id}/resend (role: owner).
+// It mints a fresh token, extends the invite's expiry by another
+// adminInviteTTL, and re-sends the invite email - invalidating the old
+// token in the same atomic update (Refresh). Works on an expired-but-unused
+// invite exactly like a not-yet-expired one (spec P2/P1 resend story); an
+// unknown, already-accepted, or already-canceled id gets 404 (INVITE-03,
+// INVITE-04, INVITE-08, INVITE-09).
+func (h *AdminsHandler) ResendInvite(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	actor, ok := AdminFromContext(r.Context())
+	if !ok {
+		writeForbidden(w)
+		return
+	}
+
+	rawToken, err := generateAdminInviteToken()
+	if err != nil {
+		h.logger.Error("admins: failed to generate resend token", zap.Error(err))
+		writeInternalError(w)
+		return
+	}
+
+	invite, err := h.invites.Refresh(r.Context(), id, hashAdminInviteToken(rawToken), time.Now().Add(adminInviteTTL))
+	switch {
+	case errors.Is(err, db.ErrNotFound):
+		writeAdminError(w, http.StatusNotFound, inviteNotFoundBody)
+		return
+	case err != nil:
+		h.logger.Error("admins: failed to refresh invite", zap.String("invite_id", id), zap.Error(err))
+		writeInternalError(w)
+		return
+	}
+
+	emailSent := h.sendAdminInviteEmail(r, invite.ID, invite.Email, invite.Role, rawToken)
+
+	if err := h.audit.Record(r.Context(), actor.ID, invite.ID, "resent"); err != nil {
+		h.logger.Error("admins: failed to record resend audit entry", zap.Error(err))
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(map[string]any{"status": "resent", "email_sent": emailSent})
+}
+
 type updateAdminRoleRequest struct {
 	Role string `json:"role"`
 }
