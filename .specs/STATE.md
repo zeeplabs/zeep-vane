@@ -77,6 +77,22 @@
 - **Date**: 2026-08-24
 - **Status**: active
 
+### AD-010
+- **Decision**: Logo da empresa migrada de arquivo em disco (`UPLOADS_DIR`) pra `BYTEA` no Postgres (`company_settings.logo_data` + `logo_content_type`, migração `0015`).
+- **Reason**: Reverte decisão original de `company-settings` (2026-08-23, "volume, não blob de banco"). Em deploy multi-réplica sem volume RWX compartilhado, upload numa réplica dava 404 nas outras — Postgres já é a única dependência externa obrigatória do projeto, evita introduzir S3/object storage como infra nova.
+- **Trade-off**: Linha de `company_settings` cresce com o binário da imagem — aceitável pra logo de empresa, não pra assets grandes/numerosos.
+- **Scope**: `internal/db` (migração 0015, `CompanySettingsRepository`), `internal/api` (`logoFileHandler`, `CompanySettingsHandler`) — remove `internal/uploads` por completo, `UPLOADS_DIR` sai de config/compose/`.env.example`/README. URL da logo vira fixa (`/uploads/logo`).
+- **Date**: 2026-08-28
+- **Status**: active — commit confirmado (`43a7aed`, `git status` limpo)
+
+### AD-011
+- **Decision**: `pgxpool.MaxConns` limitado a 4 por pool (`internal/db/pool.go`), inclusive no pool único de produção.
+- **Reason**: Causa raiz confirmada do flake `L-017` — sem cap, cada pool assumia o default `max(4, NumCPU())`; com ~17 pacotes de teste de integração abrindo pool próprio sob paralelismo do `go test`, o total de conexões concorrentes podia estourar o `max_connections` do Postgres. Provado deliberadamente (reprodução da mesma falha noutro teste ao reduzir `max_connections` do servidor).
+- **Trade-off**: 4 é suficiente pra escala atual do MVP (1 instalação = 1 empresa, AD-002); reavaliar se volume de tráfego por instalação crescer.
+- **Scope**: `internal/db/pool.go`, todo consumidor de pool (produção + testes de integração).
+- **Date**: 2026-08-28
+- **Status**: active — commit confirmado
+
 ## Handoff
 
 **Feature**: `self-hosted-docker-bootstrap` — **status: PASS ✅** (Verifier iteração 3/3, limite do skill, 2 rodadas de fix→re-verify). Relatório: `.specs/features/self-hosted-docker-bootstrap/validation.md`. 22/22 ACs (SHD-01 a SHD-22), sensor de discriminação 3/3 mortos.
