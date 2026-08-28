@@ -194,11 +194,11 @@ Consumes the finished backend contract. Tasks: T8.
 
 **Done when**:
 
-- [ ] `CancelInvite` implemented exactly as above; a canceled invite's original token subsequently rejected by `AcceptInvite` with `401` (falls out of `ClaimForUse`'s existing `WHERE used_at IS NULL` - no code change needed there, just a test proving it)
-- [ ] Unknown/already-accepted/already-canceled ID → `404`, no audit entry recorded
-- [ ] `"canceled"` audit entry recorded on success only
-- [ ] Gate check passes: `go test -tags=integration ./internal/api/...`
-- [ ] Test count: at least 4 new tests (happy path, not-found, audit entry present, canceled-then-accept-401) pass, no silent deletions
+- [x] `CancelInvite` implemented exactly as above; a canceled invite's original token subsequently rejected by `AcceptInvite` with `401` (falls out of `ClaimForUse`'s existing `WHERE used_at IS NULL` - no code change needed there, just a test proving it)
+- [x] Unknown/already-accepted/already-canceled ID → `404`, no audit entry recorded
+- [x] `"canceled"` audit entry recorded on success only
+- [x] Gate check passes: `go test -tags=integration ./internal/api/...`
+- [x] Test count: 3 new tests (happy path + canceled-then-accept-401 + audit entry present in one test, not-found, already-canceled-no-duplicate-audit) pass, no silent deletions
 
 **Tests**: integration
 **Gate**: full

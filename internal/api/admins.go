@@ -327,6 +327,39 @@ func (h *AdminsHandler) ResendInvite(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(map[string]any{"status": "resent", "email_sent": emailSent})
 }
 
+// CancelInvite handles DELETE /api/admins/invites/{id} (role: owner). It
+// marks the invite used (without creating an admin account), so its token
+// is subsequently rejected by AcceptInvite exactly like an already-used one
+// (falls out of ClaimForUse's existing WHERE used_at IS NULL - no change
+// needed there). An unknown, already-accepted, or already-canceled id gets
+// 404 (INVITE-05, INVITE-06, INVITE-09).
+func (h *AdminsHandler) CancelInvite(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	actor, ok := AdminFromContext(r.Context())
+	if !ok {
+		writeForbidden(w)
+		return
+	}
+
+	if err := h.invites.Cancel(r.Context(), id); err != nil {
+		if errors.Is(err, db.ErrNotFound) {
+			writeAdminError(w, http.StatusNotFound, inviteNotFoundBody)
+			return
+		}
+		h.logger.Error("admins: failed to cancel invite", zap.String("invite_id", id), zap.Error(err))
+		writeInternalError(w)
+		return
+	}
+
+	if err := h.audit.Record(r.Context(), actor.ID, id, "canceled"); err != nil {
+		h.logger.Error("admins: failed to record cancel audit entry", zap.Error(err))
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(map[string]string{"status": "canceled"})
+}
+
 type updateAdminRoleRequest struct {
 	Role string `json:"role"`
 }

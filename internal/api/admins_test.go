@@ -167,6 +167,7 @@ func newAdminsRouterWithEmail(t *testing.T, emailSvc *email.Service) (http.Handl
 		protected.With(RequireRole(db.RoleOwner)).Delete("/api/admins/{id}", handler.Delete)
 		protected.With(RequireRole(db.RoleOwner)).Get("/api/admins", handler.List)
 		protected.With(RequireRole(db.RoleOwner)).Post("/api/admins/invites/{id}/resend", handler.ResendInvite)
+		protected.With(RequireRole(db.RoleOwner)).Delete("/api/admins/invites/{id}", handler.CancelInvite)
 	})
 	r.Post("/api/admins/invite/{token}/accept", handler.AcceptInvite)
 
@@ -1319,6 +1320,111 @@ func TestResendInvite_Concurrent_NoCorruption(t *testing.T) {
 	}
 	if pendingCount != 1 {
 		t.Errorf("pending admin_invites rows for id %q after concurrent resend = %d, want 1 (single row, not duplicated/lost)", inviteID, pendingCount)
+	}
+}
+
+func deleteCancelInvite(t *testing.T, r http.Handler, token, id string) *httptest.ResponseRecorder {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodDelete, "/api/admins/invites/"+id, nil)
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+	return rec
+}
+
+func TestCancelInvite_Owner_200_TokenRejectedAfterCancel(t *testing.T) {
+	r, pool, admins, invites := newAdminsRouter(t)
+	inviter := &db.Admin{Email: uniqueTestEmail(t), PasswordHash: "hash"}
+	if err := admins.Create(context.Background(), inviter); err != nil {
+		t.Fatalf("admins.Create() returned unexpected error: %v", err)
+	}
+	t.Cleanup(func() { _ = admins.Delete(context.Background(), inviter.ID) })
+	token, err := auth.IssueSession(inviter.ID, middlewareTestSecret)
+	if err != nil {
+		t.Fatalf("auth.IssueSession() returned unexpected error: %v", err)
+	}
+
+	email := uniqueTestEmail(t)
+	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), "DELETE FROM admin_invites WHERE email = $1", email) })
+	rawToken := createTestInvite(t, invites, inviter.ID, email, db.RoleOperator, 1*time.Hour)
+	inviteID := latestInviteForEmail(t, pool, email).id
+
+	rec := deleteCancelInvite(t, r, token, inviteID)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	var resp map[string]string
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+	if resp["status"] != "canceled" {
+		t.Errorf(`response["status"] = %v, want "canceled"`, resp["status"])
+	}
+
+	acceptRec := postAcceptInvite(t, r, rawToken, "correct-horse-battery-staple")
+	if acceptRec.Code != http.StatusUnauthorized {
+		t.Errorf("accepting canceled invite status = %d, want %d", acceptRec.Code, http.StatusUnauthorized)
+	}
+
+	var gotActorID, gotAction string
+	row := pool.QueryRow(context.Background(),
+		"SELECT actor_id, action FROM admin_audit_log WHERE target_id = $1 AND action = 'canceled'", inviteID)
+	if err := row.Scan(&gotActorID, &gotAction); err != nil {
+		t.Fatalf("querying admin_audit_log returned unexpected error: %v", err)
+	}
+	if gotActorID != inviter.ID {
+		t.Errorf("admin_audit_log actor_id = %q, want %q", gotActorID, inviter.ID)
+	}
+}
+
+func TestCancelInvite_UnknownID_404(t *testing.T) {
+	r, _, admins, _ := newAdminsRouter(t)
+	token := issueTestSessionToken(t, admins)
+
+	rec := deleteCancelInvite(t, r, token, "00000000-0000-0000-0000-000000000000")
+
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("status = %d, want %d, body = %s", rec.Code, http.StatusNotFound, rec.Body.String())
+	}
+}
+
+func TestCancelInvite_AlreadyCanceled_404NoDuplicateAuditEntry(t *testing.T) {
+	r, pool, admins, invites := newAdminsRouter(t)
+	inviter := &db.Admin{Email: uniqueTestEmail(t), PasswordHash: "hash"}
+	if err := admins.Create(context.Background(), inviter); err != nil {
+		t.Fatalf("admins.Create() returned unexpected error: %v", err)
+	}
+	t.Cleanup(func() { _ = admins.Delete(context.Background(), inviter.ID) })
+	token, err := auth.IssueSession(inviter.ID, middlewareTestSecret)
+	if err != nil {
+		t.Fatalf("auth.IssueSession() returned unexpected error: %v", err)
+	}
+
+	email := uniqueTestEmail(t)
+	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), "DELETE FROM admin_invites WHERE email = $1", email) })
+	createTestInvite(t, invites, inviter.ID, email, db.RoleOperator, 1*time.Hour)
+	inviteID := latestInviteForEmail(t, pool, email).id
+
+	first := deleteCancelInvite(t, r, token, inviteID)
+	if first.Code != http.StatusOK {
+		t.Fatalf("first cancel status = %d, want %d", first.Code, http.StatusOK)
+	}
+
+	second := deleteCancelInvite(t, r, token, inviteID)
+	if second.Code != http.StatusNotFound {
+		t.Errorf("second cancel status = %d, want %d", second.Code, http.StatusNotFound)
+	}
+
+	var canceledCount int
+	countRow := pool.QueryRow(context.Background(),
+		"SELECT COUNT(*) FROM admin_audit_log WHERE target_id = $1 AND action = 'canceled'", inviteID)
+	if err := countRow.Scan(&canceledCount); err != nil {
+		t.Fatalf("querying admin_audit_log returned unexpected error: %v", err)
+	}
+	if canceledCount != 1 {
+		t.Errorf("canceled audit entries for invite %q = %d, want 1 (no duplicate on the failed second cancel)", inviteID, canceledCount)
 	}
 }
 
