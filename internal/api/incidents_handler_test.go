@@ -360,6 +360,17 @@ func createTestIncident(t *testing.T, r http.Handler, pool *db.Pool, token, titl
 	return incident
 }
 
+func TestTransitionIncident_UnknownIncident_404(t *testing.T) {
+	r, _, admins := newIncidentsRouter(t)
+	token := issueTestSessionToken(t, admins)
+
+	rec := patchIncidentStatus(t, r, token, "00000000-0000-0000-0000-000000000000", "resolved")
+
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("status = %d, want %d, body = %s", rec.Code, http.StatusNotFound, rec.Body.String())
+	}
+}
+
 func TestTransitionIncident_ToResolved_SetsResolvedAt(t *testing.T) {
 	r, pool, admins := newIncidentsRouter(t)
 	token := issueTestSessionToken(t, admins)
