@@ -103,13 +103,13 @@ Explicitly excluded. Documented to prevent scope creep.
 | --------------- | ------ | ------ | ------- |
 | AIP-01 | P1: Invited admin accepts their invite and lands logged in | Tasks | Implementing |
 | AIP-02 | P1: Invited admin accepts their invite and lands logged in | Tasks | Implementing |
-| AIP-03 | P1: Invited admin accepts their invite and lands logged in | Design | Pending |
-| AIP-04 | P1: Invited admin accepts their invite and lands logged in | Design | Pending |
-| AIP-05 | P1: Password confirmation prevents typo lockout | Design | Pending |
-| AIP-06 | P1: Password confirmation prevents typo lockout | Design | Pending |
-| AIP-07 | P2: Clear, distinct error messages for every accept failure | Design | Pending |
-| AIP-08 | P2: Clear, distinct error messages for every accept failure | Design | Pending |
-| AIP-09 | P2: Clear, distinct error messages for every accept failure | Design | Pending |
+| AIP-03 | P1: Invited admin accepts their invite and lands logged in | Tasks | Implementing |
+| AIP-04 | P1: Invited admin accepts their invite and lands logged in | Tasks | Implementing |
+| AIP-05 | P1: Password confirmation prevents typo lockout | Tasks | Implementing |
+| AIP-06 | P1: Password confirmation prevents typo lockout | Tasks | Implementing |
+| AIP-07 | P2: Clear, distinct error messages for every accept failure | Tasks | Implementing |
+| AIP-08 | P2: Clear, distinct error messages for every accept failure | Tasks | Implementing |
+| AIP-09 | P2: Clear, distinct error messages for every accept failure | Tasks | Implementing |
 
 **ID format:** `AIP-[NUMBER]`
 

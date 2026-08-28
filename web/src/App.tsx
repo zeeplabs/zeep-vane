@@ -8,6 +8,7 @@ import { Sidebar } from "./layout/Sidebar";
 import { LoginPage } from "./features/auth/LoginPage";
 import { BootstrapPage } from "./features/auth/BootstrapPage";
 import { PasswordResetRequestPage } from "./features/auth/PasswordResetRequestPage";
+import { AcceptInvitePage } from "./features/auth/AcceptInvitePage";
 import { IntegrationsPage } from "./features/integrations/IntegrationsPage";
 import { ServicesPage } from "./features/services/ServicesPage";
 import { DomainsStatusPagesPage } from "./features/domains/DomainsStatusPagesPage";
@@ -91,6 +92,10 @@ export default function App() {
           }
         />
         <Route path="/status/:id" element={<PublicStatusPage />} />
+        {/* No RedirectToBootstrapIfNeeded/auth guard - matches /status/:id's
+            precedent (spec.md accept-invite-page: an already-authenticated
+            admin opening this link renders normally, no redirect). */}
+        <Route path="/accept-invite/:token" element={<AcceptInvitePage />} />
         <Route
           element={
             <RedirectToBootstrapIfNeeded>

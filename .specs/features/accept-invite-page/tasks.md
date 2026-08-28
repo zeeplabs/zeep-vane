@@ -149,15 +149,15 @@ Consumes the backend contract (unchanged request/response body; only a new respo
 
 **Done when**:
 
-- [ ] Visiting `/accept-invite/:token` renders the password/confirm form (no email field)
-- [ ] Valid submit → `apiFetch` called with the exact body/URL shape above → `window.location.assign("/")` called with `"/"` (spy-asserted, per `BootstrapPage.test.tsx`'s pattern)
-- [ ] Mismatched password/confirm → inline message shown, `apiFetch`/`fetch` never called, submit stays enabled
-- [ ] Mocked `401` → `acceptInvite.invalidOrExpired` message shown, form still usable (not stuck disabled)
-- [ ] Mocked `422` → the mock's exact `error` string shown verbatim
-- [ ] Mocked network failure / 500 → `acceptInvite.genericError` shown
-- [ ] Submit button disabled while the request is in flight (no double-submit)
-- [ ] Gate check passes: `cd web && npx tsc -b --noEmit && npm run test`
-- [ ] Test count: at least 6 new tests (happy path, mismatch, 401, 422, generic error, disabled-while-submitting) pass, no silent deletions
+- [x] Visiting `/accept-invite/:token` renders the password/confirm form (no email field)
+- [x] Valid submit → `apiFetch` called with the exact body/URL shape above → `window.location.assign("/")` called with `"/"` (spy-asserted, per `BootstrapPage.test.tsx`'s pattern)
+- [x] Mismatched password/confirm → inline message shown, `apiFetch`/`fetch` never called, submit stays enabled
+- [x] Mocked `401` → `acceptInvite.invalidOrExpired` message shown, form still usable (not stuck disabled)
+- [x] Mocked `422` → the mock's exact `error` string shown verbatim
+- [x] Genuine network failure (`HttpResponse.error()`, not a 5xx HTTP response - a 5xx always becomes an `ApiError` with a parsed message, not the generic branch) → `acceptInvite.genericError` shown
+- [x] Submit button disabled while the request is in flight (no double-submit)
+- [x] Gate check passes: `cd web && npx tsc -b --noEmit && npm run test`
+- [x] Test count: 7 new tests (happy path, mismatch, 401, 422, generic network-failure, disabled-while-submitting, required fields) pass, no silent deletions
 
 **Tests**: unit
 **Gate**: build
