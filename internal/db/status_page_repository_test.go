@@ -259,37 +259,44 @@ func TestStatusPageRepository_List_MixOfDomainedAndDomainless_CorrectNullability
 		_, _ = pool.Exec(context.Background(), "DELETE FROM status_pages WHERE id = $1", withDomainPage.ID)
 	})
 
-	statusPages, err := repo.List(context.Background())
-	if err != nil {
-		t.Fatalf("List() returned unexpected error: %v", err)
-	}
-
+	// ListPaginated (PAG-08) replaced List(ctx) - page through every page
+	// since the shared dev DB this suite runs against can hold more than
+	// one page's worth of status pages across many tests.
 	var foundNoDomain, foundWithDomain bool
-	for _, sp := range statusPages {
-		switch sp.Name {
-		case noDomainName:
-			foundNoDomain = true
-			if sp.DomainID != nil {
-				t.Errorf("no-domain page DomainID = %v, want nil", *sp.DomainID)
+	for page := 1; ; page++ {
+		statusPages, total, err := repo.ListPaginated(context.Background(), page, 20)
+		if err != nil {
+			t.Fatalf("ListPaginated() returned unexpected error: %v", err)
+		}
+		for _, sp := range statusPages {
+			switch sp.Name {
+			case noDomainName:
+				foundNoDomain = true
+				if sp.DomainID != nil {
+					t.Errorf("no-domain page DomainID = %v, want nil", *sp.DomainID)
+				}
+				if sp.Subdomain != nil {
+					t.Errorf("no-domain page Subdomain = %v, want nil", *sp.Subdomain)
+				}
+			case withDomainName:
+				foundWithDomain = true
+				if sp.DomainID == nil || *sp.DomainID != domain.ID {
+					t.Errorf("with-domain page DomainID = %v, want %q", sp.DomainID, domain.ID)
+				}
+				if sp.Subdomain == nil || *sp.Subdomain != subdomain {
+					t.Errorf("with-domain page Subdomain = %v, want %q", sp.Subdomain, subdomain)
+				}
 			}
-			if sp.Subdomain != nil {
-				t.Errorf("no-domain page Subdomain = %v, want nil", *sp.Subdomain)
-			}
-		case withDomainName:
-			foundWithDomain = true
-			if sp.DomainID == nil || *sp.DomainID != domain.ID {
-				t.Errorf("with-domain page DomainID = %v, want %q", sp.DomainID, domain.ID)
-			}
-			if sp.Subdomain == nil || *sp.Subdomain != subdomain {
-				t.Errorf("with-domain page Subdomain = %v, want %q", sp.Subdomain, subdomain)
-			}
+		}
+		if len(statusPages) == 0 || page*20 >= total {
+			break
 		}
 	}
 	if !foundNoDomain {
-		t.Error("List() did not include the domain-less status page")
+		t.Error("ListPaginated() did not include the domain-less status page across any page")
 	}
 	if !foundWithDomain {
-		t.Error("List() did not include the with-domain status page")
+		t.Error("ListPaginated() did not include the with-domain status page across any page")
 	}
 }
 
@@ -645,5 +652,140 @@ func TestStatusPageRepository_Create_PopulatesServiceIDs(t *testing.T) {
 
 	if len(statusPage.ServiceIDs) != 1 || statusPage.ServiceIDs[0] != serviceA {
 		t.Errorf("ServiceIDs = %v, want [%q]", statusPage.ServiceIDs, serviceA)
+	}
+}
+
+// seedStatusPageFixtures creates n domain-less status pages named
+// prefix-0..prefix-(n-1) and registers their cleanup.
+func seedStatusPageFixtures(t *testing.T, repo *StatusPageRepository, pool *Pool, prefix string, n int) []*StatusPage {
+	t.Helper()
+	pages := make([]*StatusPage, n)
+	for i := 0; i < n; i++ {
+		sp := &StatusPage{Name: fmt.Sprintf("%s-%d", prefix, i)}
+		if err := repo.Create(context.Background(), sp, nil); err != nil {
+			t.Fatalf("setup Create() returned unexpected error: %v", err)
+		}
+		t.Cleanup(func() {
+			_, _ = pool.Exec(context.Background(), "DELETE FROM status_pages WHERE id = $1", sp.ID)
+		})
+		pages[i] = sp
+	}
+	return pages
+}
+
+func TestStatusPageRepository_ListPaginated_Page1_ReturnsExactlyPageSizeAndCorrectTotal(t *testing.T) {
+	repo, pool := newAttachDomainTestRepo(t)
+	prefix := fmt.Sprintf("list-paginated-p1-%d", time.Now().UnixNano())
+	seedStatusPageFixtures(t, repo, pool, prefix, 22)
+
+	items, total, err := repo.ListPaginated(context.Background(), 1, 20)
+	if err != nil {
+		t.Fatalf("ListPaginated() returned unexpected error: %v", err)
+	}
+
+	if len(items) != 20 {
+		t.Errorf("len(items) = %d, want 20 (page_size)", len(items))
+	}
+	if total < 22 {
+		t.Errorf("total = %d, want >= 22", total)
+	}
+}
+
+func TestStatusPageRepository_ListPaginated_Page2_ReturnsRemainder(t *testing.T) {
+	repo, pool := newAttachDomainTestRepo(t)
+	prefix := fmt.Sprintf("list-paginated-p2-%d", time.Now().UnixNano())
+	seedStatusPageFixtures(t, repo, pool, prefix, 22)
+
+	page1, total1, err := repo.ListPaginated(context.Background(), 1, 20)
+	if err != nil {
+		t.Fatalf("ListPaginated(page=1) returned unexpected error: %v", err)
+	}
+	page2, total2, err := repo.ListPaginated(context.Background(), 2, 20)
+	if err != nil {
+		t.Fatalf("ListPaginated(page=2) returned unexpected error: %v", err)
+	}
+
+	if total1 != total2 {
+		t.Errorf("total differs between page 1 (%d) and page 2 (%d), want equal", total1, total2)
+	}
+
+	wantPage2Len := total1 - 20
+	if wantPage2Len > 20 {
+		wantPage2Len = 20
+	}
+	if len(page2) != wantPage2Len {
+		t.Errorf("len(page2 items) = %d, want %d (min(page_size, total-page_size))", len(page2), wantPage2Len)
+	}
+
+	seen := map[string]bool{}
+	for _, sp := range page1 {
+		seen[sp.ID] = true
+	}
+	for _, sp := range page2 {
+		if seen[sp.ID] {
+			t.Errorf("status page %s appeared on both page 1 and page 2", sp.ID)
+		}
+	}
+}
+
+func TestStatusPageRepository_ListPaginated_PageBeyondLast_EmptyItemsCorrectTotal(t *testing.T) {
+	repo, pool := newAttachDomainTestRepo(t)
+	prefix := fmt.Sprintf("list-paginated-beyond-%d", time.Now().UnixNano())
+	seedStatusPageFixtures(t, repo, pool, prefix, 3)
+
+	_, totalFirst, err := repo.ListPaginated(context.Background(), 1, 20)
+	if err != nil {
+		t.Fatalf("ListPaginated(page=1) returned unexpected error: %v", err)
+	}
+
+	items, total, err := repo.ListPaginated(context.Background(), 999, 20)
+	if err != nil {
+		t.Fatalf("ListPaginated(page=999) returned unexpected error: %v", err)
+	}
+
+	if len(items) != 0 {
+		t.Errorf("len(items) = %d, want 0 for a page beyond the last", len(items))
+	}
+	if total != totalFirst {
+		t.Errorf("total for out-of-range page = %d, want %d (same as page 1's total, via the zero-row fallback)", total, totalFirst)
+	}
+}
+
+// TestStatusPageRepository_ListPaginated_PopulatesServiceIDs asserts the
+// serviceIDsByStatusPage batch lookup still attaches ServiceIDs correctly
+// when scoped to just the paged subset of IDs (design.md: this now runs
+// against only the paged IDs, not every status page in the table).
+func TestStatusPageRepository_ListPaginated_PopulatesServiceIDs(t *testing.T) {
+	repo, pool := newAttachDomainTestRepo(t)
+	serviceA := createSetServicesTestService(t, pool, "list-paginated-svc-ids")
+
+	statusPage := &StatusPage{Name: fmt.Sprintf("list-paginated-svc-ids-page-%d", time.Now().UnixNano())}
+	if err := repo.Create(context.Background(), statusPage, []string{serviceA}); err != nil {
+		t.Fatalf("setup Create() returned unexpected error: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = pool.Exec(context.Background(), "DELETE FROM status_pages WHERE id = $1", statusPage.ID)
+	})
+
+	found := false
+	for page := 1; ; page++ {
+		items, total, err := repo.ListPaginated(context.Background(), page, 20)
+		if err != nil {
+			t.Fatalf("ListPaginated() returned unexpected error: %v", err)
+		}
+		for _, sp := range items {
+			if sp.ID == statusPage.ID {
+				found = true
+				if len(sp.ServiceIDs) != 1 || sp.ServiceIDs[0] != serviceA {
+					t.Errorf("ServiceIDs = %v, want [%q]", sp.ServiceIDs, serviceA)
+				}
+			}
+		}
+		if found || len(items) == 0 || page*20 >= total {
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("status page %s not found across any page of ListPaginated()", statusPage.ID)
 	}
 }

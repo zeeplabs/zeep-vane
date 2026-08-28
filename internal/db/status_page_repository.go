@@ -218,25 +218,45 @@ func (r *StatusPageRepository) AttachDomain(ctx context.Context, id, domainID, s
 	return &sp, nil
 }
 
-// List returns every registered status page, ordered by name.
-func (r *StatusPageRepository) List(ctx context.Context) ([]StatusPage, error) {
+// ListPaginated returns one page of registered status pages, ordered by
+// name, each with its linked service_ids (PAG-08). total is computed via
+// COUNT(*) OVER() in the same query, with a zero-row fallback COUNT(*),
+// same pattern as Incident/Domain/ServiceRepository's ListPaginated. The
+// serviceIDsByStatusPage batch lookup now runs against only this page's
+// IDs instead of every status page in the table.
+func (r *StatusPageRepository) ListPaginated(ctx context.Context, page, pageSize int) ([]StatusPage, int, error) {
+	offset := (page - 1) * pageSize
+
 	rows, err := r.pool.Query(ctx,
-		"SELECT id, name, subdomain, domain_id, state, tls_last_error, created_at FROM status_pages ORDER BY name")
+		`SELECT id, name, subdomain, domain_id, state, tls_last_error, created_at, COUNT(*) OVER() AS total
+		 FROM status_pages
+		 ORDER BY name
+		 LIMIT $1 OFFSET $2`,
+		pageSize, offset,
+	)
 	if err != nil {
-		return nil, fmt.Errorf("db: failed to list status pages: %w", err)
+		return nil, 0, fmt.Errorf("db: failed to list status pages: %w", err)
 	}
 	defer rows.Close()
 
-	var statusPages []StatusPage
+	statusPages := []StatusPage{}
+	total := 0
 	for rows.Next() {
 		var sp StatusPage
-		if err := rows.Scan(&sp.ID, &sp.Name, &sp.Subdomain, &sp.DomainID, &sp.State, &sp.TLSLastError, &sp.CreatedAt); err != nil {
-			return nil, fmt.Errorf("db: failed to scan status page: %w", err)
+		if err := rows.Scan(&sp.ID, &sp.Name, &sp.Subdomain, &sp.DomainID, &sp.State, &sp.TLSLastError, &sp.CreatedAt, &total); err != nil {
+			return nil, 0, fmt.Errorf("db: failed to scan status page: %w", err)
 		}
 		statusPages = append(statusPages, sp)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("db: failed to list status pages: %w", err)
+		return nil, 0, fmt.Errorf("db: failed to iterate status pages: %w", err)
+	}
+
+	if len(statusPages) == 0 {
+		total, err = r.countStatusPages(ctx)
+		if err != nil {
+			return nil, 0, err
+		}
 	}
 
 	pageIDs := make([]string, len(statusPages))
@@ -245,13 +265,24 @@ func (r *StatusPageRepository) List(ctx context.Context) ([]StatusPage, error) {
 	}
 	serviceIDsByPage, err := r.serviceIDsByStatusPage(ctx, pageIDs)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	for i := range statusPages {
 		statusPages[i].ServiceIDs = serviceIDsByPage[statusPages[i].ID]
 	}
 
-	return statusPages, nil
+	return statusPages, total, nil
+}
+
+// countStatusPages is the zero-row fallback for ListPaginated's total
+// (PAG-08).
+func (r *StatusPageRepository) countStatusPages(ctx context.Context) (int, error) {
+	var total int
+	row := r.pool.QueryRow(ctx, "SELECT COUNT(*) FROM status_pages")
+	if err := row.Scan(&total); err != nil {
+		return 0, fmt.Errorf("db: failed to count status pages: %w", err)
+	}
+	return total, nil
 }
 
 // GetByID returns the full StatusPage row with id. It returns ErrNotFound

@@ -330,11 +330,13 @@ T13 → T20
 - Skill: NONE
 
 **Done when**:
-- [ ] Same boundary tests as T2/T6/T8
-- [ ] `serviceIDsByStatusPage` still returns correct `service_ids` for the paged subset
-- [ ] Old `List` removed (confirmed single caller)
-- [ ] Gate check passes: `TEST_DATABASE_URL=... go test -tags=integration ./internal/db/...`
-- [ ] Test count: 4+ new tests pass
+- [x] Same boundary tests as T2/T6/T8
+- [x] `serviceIDsByStatusPage` still returns correct `service_ids` for the paged subset
+- [x] Old `List` removed (confirmed single caller: `status_pages_handler.go:220`)
+- [x] Gate check passes: `TEST_DATABASE_URL=... go test -tags=integration ./internal/db/...`
+- [x] Test count: 4 new tests pass (Page1, Page2, PageBeyondLast, PopulatesServiceIDs) + 1 existing test (`TestStatusPageRepository_List_MixOfDomainedAndDomainless_CorrectNullability`) updated to page through `ListPaginated`
+
+**Note (same as T2's precedent)**: removing `List(ctx)` here temporarily breaks `internal/api` and `internal/cli`'s build (`StatusPagesHandler` still expects the old signature) until T11 wires the handler - expected per tasks.md's phase ordering (T10 → T11), and T10's gate is scoped to `internal/db` only, which builds and passes independently.
 
 **Tests**: integration
 **Gate**: full
