@@ -115,12 +115,12 @@ Explicitly excluded. Documented to prevent scope creep.
 
 | Requirement ID | Story | Phase | Status |
 | --------------- | ------ | ------ | ------- |
-| PAG-01 | P1: Admin navigates a growing incident list without loading everything | Specify | Pending |
+| PAG-01 | P1: Admin navigates a growing incident list without loading everything | Specify | Implementing |
 | PAG-02 | P1: Admin navigates a growing incident list without loading everything | Specify | Implementing |
 | PAG-03 | P1: Admin navigates a growing incident list without loading everything | Specify | Implementing |
-| PAG-04 | P1: Admin navigates a growing incident list without loading everything | Specify | Pending |
-| PAG-05 | P1: Admin navigates a growing incident list without loading everything | Specify | Pending |
-| PAG-06 | P1: Admin navigates a growing incident list without loading everything | Specify | Pending |
+| PAG-04 | P1: Admin navigates a growing incident list without loading everything | Specify | Implementing |
+| PAG-05 | P1: Admin navigates a growing incident list without loading everything | Specify | Implementing |
+| PAG-06 | P1: Admin navigates a growing incident list without loading everything | Specify | Implementing |
 | PAG-07 | P1: Admin navigates a growing incident list without loading everything | Specify | Pending |
 | PAG-08 | P2: The same pagination pattern applies to every other admin list screen | Specify | Pending |
 | PAG-09 | P2: The same pagination pattern applies to every other admin list screen | Specify | Pending |

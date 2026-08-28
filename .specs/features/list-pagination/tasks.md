@@ -147,11 +147,11 @@ T13 → T20
 - Skill: NONE
 
 **Done when**:
-- [ ] `ListPaginated`: page 1 of >25 incidents returns exactly 25, correct `total`; page 2 returns the remainder; page beyond last returns `[]` + correct `total` (via fallback `COUNT(*)`); `ORDER BY created_at DESC` unchanged
-- [ ] `ListUpdatesPaginated`: same boundary tests scoped to one incident with >25 updates; still 404s via existing `mustExist` for an unknown incident ID
-- [ ] Old `List`/`ListUpdates` methods removed (no dead code - confirmed no other caller via `grep -rn "\.incidents\.List\b\|\.ListUpdates\b" internal/`)
-- [ ] Gate check passes: `TEST_DATABASE_URL=... go test -tags=integration ./internal/db/...`
-- [ ] Test count: 8+ new tests pass
+- [x] `ListPaginated`: page 1 of >25 incidents returns exactly 25, correct `total`; page 2 returns the remainder; page beyond last returns `[]` + correct `total` (via fallback `COUNT(*)`); `ORDER BY created_at DESC` unchanged
+- [x] `ListUpdatesPaginated`: same boundary tests scoped to one incident with >25 updates; still 404s via existing `mustExist` for an unknown incident ID
+- [x] Old `List` method removed (confirmed no other caller via grep). `ListUpdates` KEPT, not removed — SPEC_DEVIATION: it has an internal caller (`withTimelinesSplit`, used by `ListPublic`/`ListPublicForStatusPage` for the public status page's per-incident timeline) that design.md missed when it said "single caller" for `ListUpdates`. `ListUpdatesPaginated` added alongside it for the two handler call sites, mirroring the already-documented `ServiceRepository`/`poller.go` precedent. See the code comment in `internal/db/incident_repository.go` above `ListUpdates`.
+- [x] Gate check passes: `TEST_DATABASE_URL=... go test -tags=integration ./internal/db/...`
+- [x] Test count: 10 new tests pass
 
 **Tests**: integration
 **Gate**: full

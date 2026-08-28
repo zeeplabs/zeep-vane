@@ -96,32 +96,68 @@ func (r *IncidentRepository) AddUpdate(ctx context.Context, incidentID, body str
 	return update, nil
 }
 
-// List returns every incident, most recently created first, each with its
-// linked service_ids (I16 - the admin incidents list badges each incident
-// with the services it affects).
-func (r *IncidentRepository) List(ctx context.Context) ([]Incident, error) {
+// ListPaginated returns one page of incidents, most recently created first,
+// each with its linked service_ids (I16 - the admin incidents list badges
+// each incident with the services it affects). total is the total number of
+// incidents in the table, computed via COUNT(*) OVER() in the same query;
+// when the requested page is beyond the last page (or the table is empty)
+// the primary query returns zero rows and can't carry a window-function
+// total, so a fallback plain COUNT(*) runs only in that case (PAG-04, PAG-06).
+func (r *IncidentRepository) ListPaginated(ctx context.Context, page, pageSize int) ([]Incident, int, error) {
+	offset := (page - 1) * pageSize
+
 	rows, err := r.pool.Query(ctx,
-		"SELECT id, title, status, created_at, resolved_at FROM incidents ORDER BY created_at DESC",
+		`SELECT id, title, status, created_at, resolved_at, COUNT(*) OVER() AS total
+		 FROM incidents
+		 ORDER BY created_at DESC
+		 LIMIT $1 OFFSET $2`,
+		pageSize, offset,
 	)
 	if err != nil {
-		return nil, fmt.Errorf("db: failed to list incidents: %w", err)
+		return nil, 0, fmt.Errorf("db: failed to list incidents: %w", err)
 	}
 	defer rows.Close()
 
-	incidents, err := scanIncidentRows(rows)
-	if err != nil {
-		return nil, err
+	incidents := []Incident{}
+	total := 0
+	for rows.Next() {
+		var incident Incident
+		if err := rows.Scan(&incident.ID, &incident.Title, &incident.Status, &incident.CreatedAt, &incident.ResolvedAt, &total); err != nil {
+			return nil, 0, fmt.Errorf("db: failed to scan incident: %w", err)
+		}
+		incidents = append(incidents, incident)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, 0, fmt.Errorf("db: failed to iterate incidents: %w", err)
+	}
+
+	if len(incidents) == 0 {
+		total, err = r.countIncidents(ctx)
+		if err != nil {
+			return nil, 0, err
+		}
 	}
 
 	for i := range incidents {
 		serviceIDs, err := r.listServiceIDs(ctx, incidents[i].ID)
 		if err != nil {
-			return nil, err
+			return nil, 0, err
 		}
 		incidents[i].ServiceIDs = serviceIDs
 	}
 
-	return incidents, nil
+	return incidents, total, nil
+}
+
+// countIncidents is the zero-row fallback for ListPaginated's total, used
+// when the primary query's COUNT(*) OVER() has no row to carry it (PAG-04).
+func (r *IncidentRepository) countIncidents(ctx context.Context) (int, error) {
+	var total int
+	row := r.pool.QueryRow(ctx, "SELECT COUNT(*) FROM incidents")
+	if err := row.Scan(&total); err != nil {
+		return 0, fmt.Errorf("db: failed to count incidents: %w", err)
+	}
+	return total, nil
 }
 
 // listServiceIDs returns the service IDs linked to incidentID via
@@ -147,10 +183,23 @@ func (r *IncidentRepository) listServiceIDs(ctx context.Context, incidentID stri
 	return ids, nil
 }
 
-// ListUpdates returns incidentID's timeline, most recent update first
+// SPEC_DEVIATION: design.md assumed ListUpdates(ctx, id) had a single caller
+// (the handler) and would be fully replaced by ListUpdatesPaginated. It also
+// has an internal caller: withTimelinesSplit, used by ListPublic/
+// ListPublicForStatusPage to build each incident's full public timeline.
+// That caller must keep seeing the complete, unpaginated timeline (the
+// public page's per-incident update list is out of scope for this feature -
+// see spec.md's Out of Scope table), so ListUpdates is kept unchanged and
+// ListUpdatesPaginated is added alongside it for the two handler call sites,
+// mirroring the ServiceRepository/poller.go precedent already established
+// in design.md for exactly this "internal caller must stay unpaginated"
+// situation.
+
+// ListUpdates returns incidentID's full timeline, most recent update first
 // (spec.md: "ordenado do mais recente para o mais antigo"). Returns
-// ErrNotFound if incidentID doesn't exist, so the GET .../updates route
-// (I16) can distinguish "no updates yet" from "no such incident".
+// ErrNotFound if incidentID doesn't exist. Used internally by
+// withTimelinesSplit for the public status page's per-incident timeline,
+// which is not paginated by this feature.
 func (r *IncidentRepository) ListUpdates(ctx context.Context, incidentID string) ([]IncidentUpdate, error) {
 	if err := r.mustExist(ctx, incidentID); err != nil {
 		return nil, err
@@ -178,6 +227,65 @@ func (r *IncidentRepository) ListUpdates(ctx context.Context, incidentID string)
 	}
 
 	return updates, nil
+}
+
+// ListUpdatesPaginated returns one page of incidentID's timeline, most
+// recent update first, scoped by incident_id (PAG-05). Returns ErrNotFound
+// if incidentID doesn't exist. total is computed via COUNT(*) OVER() in the
+// same query, with a zero-row fallback COUNT(*) matching ListPaginated's
+// pattern (PAG-06).
+func (r *IncidentRepository) ListUpdatesPaginated(ctx context.Context, incidentID string, page, pageSize int) ([]IncidentUpdate, int, error) {
+	if err := r.mustExist(ctx, incidentID); err != nil {
+		return nil, 0, err
+	}
+
+	offset := (page - 1) * pageSize
+
+	rows, err := r.pool.Query(ctx,
+		`SELECT id, incident_id, body, created_at, COUNT(*) OVER() AS total
+		 FROM incident_updates
+		 WHERE incident_id = $1
+		 ORDER BY created_at DESC
+		 LIMIT $2 OFFSET $3`,
+		incidentID, pageSize, offset,
+	)
+	if err != nil {
+		return nil, 0, fmt.Errorf("db: failed to list incident updates: %w", err)
+	}
+	defer rows.Close()
+
+	updates := []IncidentUpdate{}
+	total := 0
+	for rows.Next() {
+		var update IncidentUpdate
+		if err := rows.Scan(&update.ID, &update.IncidentID, &update.Body, &update.CreatedAt, &total); err != nil {
+			return nil, 0, fmt.Errorf("db: failed to scan incident update: %w", err)
+		}
+		updates = append(updates, update)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, 0, fmt.Errorf("db: failed to iterate incident updates: %w", err)
+	}
+
+	if len(updates) == 0 {
+		total, err = r.countIncidentUpdates(ctx, incidentID)
+		if err != nil {
+			return nil, 0, err
+		}
+	}
+
+	return updates, total, nil
+}
+
+// countIncidentUpdates is the zero-row fallback for ListUpdatesPaginated's
+// total (PAG-06).
+func (r *IncidentRepository) countIncidentUpdates(ctx context.Context, incidentID string) (int, error) {
+	var total int
+	row := r.pool.QueryRow(ctx, "SELECT COUNT(*) FROM incident_updates WHERE incident_id = $1", incidentID)
+	if err := row.Scan(&total); err != nil {
+		return 0, fmt.Errorf("db: failed to count incident updates: %w", err)
+	}
+	return total, nil
 }
 
 // Transition sets incidentID's status (SP-19), setting ResolvedAt when
