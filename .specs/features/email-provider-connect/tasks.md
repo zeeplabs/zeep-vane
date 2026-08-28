@@ -224,14 +224,16 @@ Tasks: T11, T12, executed in that order.
 - Skill: NONE
 
 **Done when**:
-- [ ] Both templates exist, include `AcceptURL`, `Role`, `CompanyName` placeholders (spec EMAIL-09)
-- [ ] `templates.go` parses both via `//go:embed` + `template.Must(template.ParseFS(...))` (or non-panicking equivalent returning an error, per design's `NewService` fail-fast-at-boot decision)
-- [ ] `go build ./...` succeeds
+- [x] Both templates exist, include `AcceptURL`, `Role`, `CompanyName` placeholders (spec EMAIL-09)
+- [x] `templates.go` parses both via `//go:embed` + `template.Must(template.ParseFS(...))` (or non-panicking equivalent returning an error, per design's `NewService` fail-fast-at-boot decision)
+- [x] `go build ./...` succeeds
 
 **Tests**: none
 **Gate**: quick
 
 **Commit**: `feat(email): add admin-invite email templates`
+
+**Status**: ✅ Complete
 
 ---
 
