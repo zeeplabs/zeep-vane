@@ -32,7 +32,14 @@ function formatTimestamp(iso: string): string {
 export function ServicesSection() {
   const { hasRole } = useAuth();
   const canManage = hasRole(["owner", "operator"]);
-  const { data: services, isLoading } = useServices();
+  // SPEC_DEVIATION: task T16 (ServicesSection renders Pager) depends on T14
+  // (Pager component), a later phase not yet built - this reads fixed page
+  // 1 for now, matching what "all services" meant before pagination for
+  // any installation with 20 or fewer. Real page navigation is T16's job
+  // once T14 exists (mirrors the deviation already recorded for
+  // DomainsSection.tsx and IncidentsPage.tsx).
+  const { data: servicesPage, isLoading } = useServices(1);
+  const services = servicesPage?.items;
   const createService = useCreateService();
 
   const [dialogOpen, setDialogOpen] = useState(false);

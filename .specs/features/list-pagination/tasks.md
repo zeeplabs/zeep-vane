@@ -305,10 +305,10 @@ T13 → T20
 - Skill: NONE
 
 **Done when**:
-- [ ] Handler/hook/component follow the same pattern validated in T7
-- [ ] SLO-name enrichment still works per-row on the paginated page (not the whole table)
-- [ ] Gate check passes: same commands as T7
-- [ ] Test count: existing services tests updated + 4 new (2 backend, 2 frontend)
+- [x] Handler/hook/component follow the same pattern validated in T7
+- [x] SLO-name enrichment still works per-row on the paginated page (not the whole table)
+- [x] Gate check passes: same commands as T7
+- [x] Test count: existing services tests updated (2, made page-aware via `findServiceAcrossPages`) + 5 new (2 backend: invalid-page-clamp, page-beyond-last; 2 frontend: hooks queryKey/URL/envelope test; component wiring deferred - SPEC_DEVIATION, same as T7's DomainsSection: `ServicesSection.tsx` fixed to page 1, actual `Pager` JSX moved to T16 since T14 doesn't exist in this batch)
 
 **Tests**: integration (backend) + unit (frontend)
 **Gate**: full + Frontend

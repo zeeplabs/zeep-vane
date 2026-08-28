@@ -32,7 +32,11 @@ export function StatusPagesSection() {
   // yet built. Mirrors the same deviation in DomainsSection.tsx.
   const { data: domainsPage } = useDomains(1);
   const domains = domainsPage?.items;
-  const { data: services } = useServices();
+  // SPEC_DEVIATION: fixed page 1 for now - Pager UI for the services
+  // dropdown/lookup is out of scope here; T14/T16 (Pager) is a later
+  // phase not yet built. Mirrors the same deviation in ServicesSection.tsx.
+  const { data: servicesPage } = useServices(1);
+  const services = servicesPage?.items;
   const createStatusPage = useCreateStatusPage();
 
   const [dialogOpen, setDialogOpen] = useState(false);

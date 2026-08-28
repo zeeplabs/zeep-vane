@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiFetch } from "../../lib/apiClient";
-import type { Service, ServiceStatus } from "../../types/api";
+import type { Page, Service, ServiceStatus } from "../../types/api";
 import { fetchSLOName } from "../integrations/hooks";
 
 // The real backend's serviceResponse (internal/api/services_handler.go) has
@@ -25,12 +25,13 @@ async function toService(raw: ServiceResponse): Promise<Service> {
   };
 }
 
-export function useServices() {
+export function useServices(page: number) {
   return useQuery({
-    queryKey: ["services"],
-    queryFn: async (): Promise<Service[]> => {
-      const raw = await apiFetch<ServiceResponse[]>("/api/services");
-      return Promise.all(raw.map(toService));
+    queryKey: ["services", page],
+    queryFn: async (): Promise<Page<Service>> => {
+      const raw = await apiFetch<Page<ServiceResponse>>(`/api/services?page=${page}`);
+      const items = await Promise.all(raw.items.map(toService));
+      return { ...raw, items };
     },
   });
 }

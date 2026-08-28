@@ -199,7 +199,11 @@ export function IncidentsPage() {
   // page navigation (Pager wired to page state) is T5's job once T14 exists.
   const { data: incidentsPage, isLoading } = useIncidents(1);
   const incidents = incidentsPage?.items;
-  const { data: services } = useServices();
+  // SPEC_DEVIATION: fixed page 1 for now - Pager UI for the services
+  // dropdown/lookup is out of scope here; T14/T16 (Pager) is a later
+  // phase not yet built. Mirrors the same deviation in ServicesSection.tsx.
+  const { data: servicesPage } = useServices(1);
+  const services = servicesPage?.items;
   const createIncident = useCreateIncident();
 
   const [dialogOpen, setDialogOpen] = useState(false);

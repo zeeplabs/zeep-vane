@@ -564,9 +564,12 @@ export const handlers = [
     return HttpResponse.json({ status: "active" });
   }),
 
-  http.get("/api/services", () => {
+  // GET /api/services (PAG-08) - mirrors ServicesHandler.List: ordered by
+  // name, paginated 20 per page.
+  http.get("/api/services", ({ request }) => {
     if (!sessionAdminId) return HttpResponse.json({ error: "unauthorized" }, { status: 401 });
-    return HttpResponse.json(servicesState.map(toServiceResponse));
+    const sorted = [...servicesState].sort((a, b) => a.name.localeCompare(b.name));
+    return HttpResponse.json(paginatedPage(request.url, sorted.map(toServiceResponse), 20));
   }),
 
   http.post("/api/services", async ({ request }) => {

@@ -82,6 +82,44 @@ func getServices(t *testing.T, r http.Handler, token string) *httptest.ResponseR
 	return rec
 }
 
+func getServicesPage(t *testing.T, r http.Handler, token string, page int) *httptest.ResponseRecorder {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodGet, fmt.Sprintf("/api/services?page=%d", page), nil)
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+	return rec
+}
+
+// findServiceAcrossPages pages through every page of GET /api/services
+// looking for name - the shared dev DB this integration suite runs against
+// can accumulate services across many tests, so page 1 alone is not
+// guaranteed to include one created just now (same reasoning as domains
+// handler's findDomainAcrossPages, PAG-08).
+func findServiceAcrossPages(t *testing.T, r http.Handler, token, name string) *serviceResponse {
+	t.Helper()
+	for page := 1; ; page++ {
+		rec := getServicesPage(t, r, token, page)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("page=%d status = %d, want %d, body = %s", page, rec.Code, http.StatusOK, rec.Body.String())
+		}
+		var got Page[serviceResponse]
+		if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+			t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+		}
+		for i := range got.Items {
+			if got.Items[i].Name == name {
+				return &got.Items[i]
+			}
+		}
+		if len(got.Items) == 0 || page*got.PageSize >= got.Total {
+			return nil
+		}
+	}
+}
+
 func TestCreateService_ValidRequest_201SavesSLOLink(t *testing.T) {
 	r, pool, admins := newServicesRouter(t)
 	token := issueTestSessionToken(t, admins)
@@ -128,23 +166,59 @@ func TestListServices_ReturnsAllWithCurrentStatus(t *testing.T) {
 		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
 	}
 
-	var services []serviceResponse
-	if err := json.Unmarshal(rec.Body.Bytes(), &services); err != nil {
+	var page Page[serviceResponse]
+	if err := json.Unmarshal(rec.Body.Bytes(), &page); err != nil {
 		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
 	}
-
-	var found *serviceResponse
-	for i := range services {
-		if services[i].Name == name {
-			found = &services[i]
-			break
-		}
+	if page.Page != 1 {
+		t.Errorf("page.Page = %d, want 1 (default)", page.Page)
 	}
+	if page.PageSize != 20 {
+		t.Errorf("page.PageSize = %d, want 20", page.PageSize)
+	}
+
+	found := findServiceAcrossPages(t, r, token, name)
 	if found == nil {
-		t.Fatalf("created service %q not present in list response", name)
+		t.Fatalf("created service %q not present across any page of GET /api/services", name)
 	}
 	if found.CurrentStatus != "not_configured" {
 		t.Errorf("CurrentStatus = %q, want %q", found.CurrentStatus, "not_configured")
+	}
+}
+
+func TestListServices_InvalidPage_ClampsToPage1(t *testing.T) {
+	r, _, admins := newServicesRouter(t)
+	token := issueTestSessionToken(t, admins)
+
+	rec := getServicesPage(t, r, token, 0)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	var page Page[serviceResponse]
+	if err := json.Unmarshal(rec.Body.Bytes(), &page); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+	if page.Page != 1 {
+		t.Errorf("page.Page = %d, want 1 (clamped from invalid ?page=0)", page.Page)
+	}
+}
+
+func TestListServices_PageBeyondLast_EmptyItems200(t *testing.T) {
+	r, _, admins := newServicesRouter(t)
+	token := issueTestSessionToken(t, admins)
+
+	rec := getServicesPage(t, r, token, 999999)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	var page Page[serviceResponse]
+	if err := json.Unmarshal(rec.Body.Bytes(), &page); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+	if len(page.Items) != 0 {
+		t.Errorf("len(page.Items) = %d, want 0 for a page far beyond the last", len(page.Items))
 	}
 }
 

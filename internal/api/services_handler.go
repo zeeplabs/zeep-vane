@@ -11,11 +11,16 @@ import (
 	"github.com/zeeplabs/zeep-vane/internal/db"
 )
 
+// servicesPageSize is the fixed page size for /api/services (spec.md
+// Assumptions: 20 for domains/services/status-pages/email-providers/
+// poller-status/admins).
+const servicesPageSize = 20
+
 // serviceCreatorLister is the subset of *db.ServiceRepository the services
 // handler depends on.
 type serviceCreatorLister interface {
 	Create(ctx context.Context, service *db.Service) error
-	List(ctx context.Context) ([]db.Service, error)
+	ListPaginated(ctx context.Context, page, pageSize int) ([]db.Service, int, error)
 }
 
 // ServicesHandler serves the service admin routes.
@@ -67,10 +72,12 @@ func (h *ServicesHandler) Create(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(toServiceResponse(service))
 }
 
-// List handles GET /api/services, returning every registered service with
-// its current status.
+// List handles GET /api/services, returning one page of registered
+// services with their current status (20 per page, PAG-08).
 func (h *ServicesHandler) List(w http.ResponseWriter, r *http.Request) {
-	services, err := h.services.List(r.Context())
+	page := parsePage(r)
+
+	services, total, err := h.services.ListPaginated(r.Context(), page, servicesPageSize)
 	if err != nil {
 		h.logger.Error("services: failed to list services", zap.Error(err))
 		writeInternalError(w)
@@ -84,7 +91,7 @@ func (h *ServicesHandler) List(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	_ = json.NewEncoder(w).Encode(resp)
+	_ = json.NewEncoder(w).Encode(Page[serviceResponse]{Items: resp, Total: total, Page: page, PageSize: servicesPageSize})
 }
 
 func toServiceResponse(service *db.Service) serviceResponse {
