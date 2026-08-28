@@ -143,13 +143,15 @@ Tasks: T11, T12, executed in that order.
 - Skill: NONE
 
 **Done when**:
-- [ ] `Message`, `Provider`, `ProviderFactory`, `Sender`, `AdminInviteEmailData` all defined per design
-- [ ] `go build ./...` succeeds (no consumers yet, so this is a compile-only check)
+- [x] `Message`, `Provider`, `ProviderFactory`, `Sender`, `AdminInviteEmailData` all defined per design
+- [x] `go build ./...` succeeds (no consumers yet, so this is a compile-only check)
 
 **Tests**: none
 **Gate**: quick
 
 **Commit**: `feat(email): define provider-agnostic contract types`
+
+**Status**: ✅ Complete
 
 ---
 

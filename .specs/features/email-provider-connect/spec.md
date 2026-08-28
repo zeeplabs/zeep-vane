@@ -150,7 +150,7 @@ Explicitly excluded. Documented to prevent scope creep.
 | EMAIL-04 | P1: Switch the active provider | Design | Implementing |
 | EMAIL-05 | P1: Switch the active provider | Design | Pending |
 | EMAIL-06 | P1: List connected providers and their status | Design | Implementing |
-| EMAIL-07 | P1: Send the admin-invite email through the active provider | Design | Pending |
+| EMAIL-07 | P1: Send the admin-invite email through the active provider | Design | Implementing |
 | EMAIL-08 | P1: Send the admin-invite email through the active provider | Design | Pending |
 | EMAIL-09 | P1: Send the admin-invite email through the active provider | Design | Pending |
 | EMAIL-10 | P2: Admin UI to connect, list, and switch providers | - | Pending |
