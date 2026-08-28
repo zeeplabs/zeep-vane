@@ -107,37 +107,6 @@ func TestLoad_InvalidPollIntervalFormat_Error(t *testing.T) {
 	}
 }
 
-// TestLoad_UploadsDirSet_UsesGivenValue asserts SET-11: UPLOADS_DIR, when
-// set, is reflected verbatim in Config.UploadsDir.
-func TestLoad_UploadsDirSet_UsesGivenValue(t *testing.T) {
-	setAllRequiredEnv(t)
-	t.Setenv("UPLOADS_DIR", "/mnt/vane-uploads")
-
-	cfg, err := Load()
-	if err != nil {
-		t.Fatalf("Load() returned unexpected error: %v", err)
-	}
-	if cfg.UploadsDir != "/mnt/vane-uploads" {
-		t.Errorf("UploadsDir = %q, want %q", cfg.UploadsDir, "/mnt/vane-uploads")
-	}
-}
-
-// TestLoad_UploadsDirUnset_DefaultsToDataUploads asserts SET-11's default:
-// when UPLOADS_DIR is unset, Config.UploadsDir falls back to
-// "./data/uploads" so local dev works without any extra setup.
-func TestLoad_UploadsDirUnset_DefaultsToDataUploads(t *testing.T) {
-	setAllRequiredEnv(t)
-	t.Setenv("UPLOADS_DIR", "")
-
-	cfg, err := Load()
-	if err != nil {
-		t.Fatalf("Load() returned unexpected error: %v", err)
-	}
-	if cfg.UploadsDir != "./data/uploads" {
-		t.Errorf("UploadsDir = %q, want %q", cfg.UploadsDir, "./data/uploads")
-	}
-}
-
 // TestLoad_PublicDNSTargetSet_UsesGivenValue asserts SPD-10: PUBLIC_DNS_TARGET,
 // when set, is reflected verbatim in Config.PublicDNSTarget.
 func TestLoad_PublicDNSTargetSet_UsesGivenValue(t *testing.T) {

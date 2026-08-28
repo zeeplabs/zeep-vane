@@ -22,7 +22,7 @@ describe("usePublicStatusPage", () => {
     server.use(
       http.get("/api/status-pages/:id/public-preview", () =>
         HttpResponse.json({
-          company: { name: "Acme Status", logo_url: "/uploads/logo.svg" },
+          company: { name: "Acme Status", logo_url: "/uploads/logo" },
           services: [],
           incidents: { active: [], resolved: [] },
         }),
@@ -34,7 +34,7 @@ describe("usePublicStatusPage", () => {
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
 
     expect(result.current.data!.company_name).toBe("Acme Status");
-    expect(result.current.data!.logo_url).toBe("/uploads/logo.svg");
+    expect(result.current.data!.logo_url).toBe("/uploads/logo");
   });
 
   it("logo_url null na resposta da API é preservado, nunca substituído por um placeholder", async () => {

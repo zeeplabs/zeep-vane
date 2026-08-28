@@ -217,7 +217,7 @@ func (h *PublicStatusHandler) composeResponse(ctx context.Context, statusPageID 
 	}
 
 	resp := publicStatusResponse{
-		Company:  publicCompanyResponse{Name: companySettings.Name, LogoURL: companySettings.LogoURL},
+		Company:  publicCompanyResponse{Name: companySettings.Name, LogoURL: companySettings.LogoServedURL()},
 		Services: []publicServiceResponse{},
 		Incidents: publicIncidentsResponse{
 			Active:   toPublicIncidentResponses(activeIncidents),

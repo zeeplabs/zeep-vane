@@ -121,7 +121,7 @@ func NewServeCmd() *cobra.Command {
 				serverErrs <- nil
 			}()
 			if cfg.HTTPSEnabled {
-				httpsSrv = newHTTPSServer(pool, cfg.UploadsDir, logger)
+				httpsSrv = newHTTPSServer(pool, logger)
 				go func() {
 					logger.Info("serve: https listening (on-demand tls)", zap.String("addr", httpsSrv.Addr))
 					if err := httpsSrv.ListenAndServeTLS("", ""); err != nil && !errors.Is(err, http.ErrServerClosed) {
@@ -183,7 +183,7 @@ func NewServeCmd() *cobra.Command {
 // scoping - the logo file is a single, install-wide singleton (SET-06).
 // The admin API/SPA is served on the separate HTTP listener built in RunE
 // (router.New) - HostRouter here never touches it (design.md placeholder).
-func newHTTPSServer(pool *db.Pool, uploadsDir string, logger *zap.Logger) *http.Server {
+func newHTTPSServer(pool *db.Pool, logger *zap.Logger) *http.Server {
 	httpsPort := os.Getenv("HTTPS_PORT")
 	if httpsPort == "" {
 		httpsPort = defaultHTTPSPort
@@ -202,7 +202,7 @@ func newHTTPSServer(pool *db.Pool, uploadsDir string, logger *zap.Logger) *http.
 	incidents := db.NewIncidentRepository(pool)
 	companySettings := db.NewCompanySettingsRepository(pool)
 	publicHandler := api.NewPublicStatusHandler(services, intervals, incidents, companySettings, logger)
-	logoFileHandler := api.NewLogoFileHandler(uploadsDir)
+	logoFileHandler := api.NewLogoFileHandler(companySettings)
 
 	publicMux := http.NewServeMux()
 	publicMux.Handle("/uploads/", logoFileHandler)

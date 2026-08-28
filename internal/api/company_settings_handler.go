@@ -11,11 +11,11 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/zeeplabs/zeep-vane/internal/db"
-	"github.com/zeeplabs/zeep-vane/internal/uploads"
 )
 
 // maxLogoBytes bounds an uploaded logo to 10 MB (SET-08) - an owner-only
-// endpoint, but still a bound against disk/memory abuse.
+// endpoint, but still a bound against memory abuse (the logo is held in
+// memory and stored as a Postgres bytea, not streamed to disk).
 const maxLogoBytes = 10 << 20
 
 // companySettingsStore is the subset of *db.CompanySettingsRepository the
@@ -23,21 +23,20 @@ const maxLogoBytes = 10 << 20
 type companySettingsStore interface {
 	Get(ctx context.Context) (*db.CompanySettings, error)
 	Update(ctx context.Context, name, contactEmail string) (*db.CompanySettings, error)
-	UpdateLogoURL(ctx context.Context, logoURL string) (*db.CompanySettings, error)
+	UpdateLogo(ctx context.Context, contentType string, data []byte) (*db.CompanySettings, error)
 }
 
 // CompanySettingsHandler serves the company settings admin routes: GET/PATCH
 // /api/company-settings and POST /api/company-settings/logo.
 type CompanySettingsHandler struct {
-	settings   companySettingsStore
-	uploadsDir string
-	logger     *zap.Logger
+	settings companySettingsStore
+	logger   *zap.Logger
 }
 
 // NewCompanySettingsHandler builds a CompanySettingsHandler backed by
-// settings, writing uploaded logos under uploadsDir.
-func NewCompanySettingsHandler(settings companySettingsStore, uploadsDir string, logger *zap.Logger) *CompanySettingsHandler {
-	return &CompanySettingsHandler{settings: settings, uploadsDir: uploadsDir, logger: logger}
+// settings.
+func NewCompanySettingsHandler(settings companySettingsStore, logger *zap.Logger) *CompanySettingsHandler {
+	return &CompanySettingsHandler{settings: settings, logger: logger}
 }
 
 type companySettingsResponse struct {
@@ -54,7 +53,7 @@ type updateCompanySettingsRequest struct {
 const invalidCompanySettingsRequestBody = `{"error":"name is required and contact_email must be a valid e-mail address"}`
 
 func toCompanySettingsResponse(settings *db.CompanySettings) companySettingsResponse {
-	return companySettingsResponse{Name: settings.Name, ContactEmail: settings.ContactEmail, LogoURL: settings.LogoURL}
+	return companySettingsResponse{Name: settings.Name, ContactEmail: settings.ContactEmail, LogoURL: settings.LogoServedURL()}
 }
 
 // Get handles GET /api/company-settings, returning the singleton company
@@ -119,9 +118,8 @@ const (
 // of the company logo. It bounds the request body to maxLogoBytes (SET-08)
 // before parsing, sniffs the uploaded bytes to confirm they are a PNG or
 // SVG image (SET-09) rather than trusting the client-sent Content-Type
-// header alone, writes the file via uploads.Save (SET-10, SET-11), and
-// only then updates the persisted logo_url (SET-13: a failed write never
-// updates the DB).
+// header alone, and only then persists the logo (SET-13: a rejected
+// upload never touches the previously stored logo).
 func (h *CompanySettingsHandler) UploadLogo(w http.ResponseWriter, r *http.Request) {
 	r.Body = http.MaxBytesReader(w, r.Body, maxLogoBytes)
 
@@ -148,24 +146,17 @@ func (h *CompanySettingsHandler) UploadLogo(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	ext, ok := logoExtensionFor(data)
+	contentType, ok := logoContentTypeFor(data)
 	if !ok {
 		// SET-09: neither image/png nor image/svg+xml - previous logo (if
-		// any) is left untouched, since we return before uploads.Save.
+		// any) is left untouched, since we return before UpdateLogo.
 		writeLogoUploadError(w)
 		return
 	}
 
-	servedPath, err := uploads.Save(h.uploadsDir, ext, bytes.NewReader(data))
+	settings, err := h.settings.UpdateLogo(r.Context(), contentType, data)
 	if err != nil {
-		h.logger.Error("company-settings: failed to save logo file", zap.Error(err))
-		writeInternalError(w)
-		return
-	}
-
-	settings, err := h.settings.UpdateLogoURL(r.Context(), servedPath)
-	if err != nil {
-		h.logger.Error("company-settings: failed to update logo url", zap.Error(err))
+		h.logger.Error("company-settings: failed to persist logo", zap.Error(err))
 		writeInternalError(w)
 		return
 	}
@@ -181,9 +172,9 @@ func writeLogoUploadError(w http.ResponseWriter) {
 	_, _ = w.Write([]byte(invalidLogoUploadBody))
 }
 
-// logoExtensionFor sniffs data (the uploaded file's actual bytes, never
-// the client-declared Content-Type alone) and returns the file extension
-// to store it under, and whether it was recognized as an allowed image
+// logoContentTypeFor sniffs data (the uploaded file's actual bytes, never
+// the client-declared Content-Type alone) and returns the content type to
+// persist alongside it, and whether it was recognized as an allowed image
 // type (SET-09: image/png or image/svg+xml).
 //
 // SPEC_DEVIATION: design.md describes sniffing via a plain
@@ -196,12 +187,12 @@ func writeLogoUploadError(w http.ResponseWriter) {
 // recognized, while still rejecting arbitrary non-image files.
 // Reason: net/http has no SVG sniffing signature; recognizing SVGs is
 // required by the spec's stated MIME allowlist.
-func logoExtensionFor(data []byte) (ext string, ok bool) {
+func logoContentTypeFor(data []byte) (contentType string, ok bool) {
 	if http.DetectContentType(data) == "image/png" {
-		return ".png", true
+		return "image/png", true
 	}
 	if isLikelySVG(data) {
-		return ".svg", true
+		return "image/svg+xml", true
 	}
 	return "", false
 }

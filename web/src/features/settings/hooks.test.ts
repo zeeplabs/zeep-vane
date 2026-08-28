@@ -74,8 +74,8 @@ describe("company settings hooks", () => {
     const file = testLogoFile();
     const updated = await result.current.upload.mutateAsync(file);
 
-    expect(updated.logo_url).toBe("/uploads/logo.png");
-    await waitFor(() => expect(result.current.settings.data!.logo_url).toBe("/uploads/logo.png"));
+    expect(updated.logo_url).toBe("/uploads/logo");
+    await waitFor(() => expect(result.current.settings.data!.logo_url).toBe("/uploads/logo"));
   });
 
   it("useUploadCompanyLogo monta o FormData com a chave 'logo' esperada pelo backend", async () => {

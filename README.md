@@ -92,7 +92,6 @@ internal/
   poller/              background SLO polling loop + retry logic
   router/              base router (/healthz) + HostRouter (public status pages)
   tls/                 CertMagic wiring (on-demand TLS policy)
-  uploads/             local filesystem storage for uploaded logos
 web/
   src/
     auth/              AuthProvider (session state), session-expired handling
@@ -158,7 +157,6 @@ Loaded by `internal/config.Load()` (`internal/config/config.go`). A `.env` file 
 | `POLL_INTERVAL_SECONDS` | yes | — | How often the poller queries Datadog for SLO status |
 | `LOG_LEVEL` | no | `info` | zap log level |
 | `CORS_ALLOWED_ORIGIN` | no | `http://localhost:5173` | Single allowed CORS origin — defaults to the Vite dev server |
-| `UPLOADS_DIR` | no | `./data/uploads` | Local filesystem path for uploaded logos. **In production, must point to a volume that survives restarts** — there is no shared/object storage support yet (see [Known gaps](#known-gaps--backlog)) |
 | `PUBLIC_DNS_TARGET` | no | *(empty)* | The DNS target (e.g. an IP or CNAME) this instance's admins should point their custom domain at. Left empty, the "attach domain" screen shows "not configured" instead of blocking — Vane cannot reliably discover its own public hostname |
 | `VANE_HTTPS_ENABLED` | no | `true` | Set to `false` to skip starting the public HTTPS listener entirely — e.g. no custom status-page domain to serve yet, or the environment can't bind `HTTPS_PORT` (unprivileged container, port already owned by a reverse proxy). With HTTPS enabled and its bind failing, `vane serve` still exits non-zero (unchanged) — this flag is how an operator avoids that failure mode altogether, rather than a way to survive it |
 | `HTTPS_PORT` | no | `443` | Port the public, TLS-terminated status page listener binds to |
@@ -289,8 +287,6 @@ Tracked in `.specs/STATE.md`. Not yet solved, not yet requested to be solved:
 
 - **No email delivery.** The password-reset and admin-invite flows generate a real token but have no way to send it — there is no configured mail provider. By default the token is not logged anywhere (`VANE_DEV_TOKEN_LOGGING=false`), which means, out of the box, **neither flow can be completed** without wiring up a mail provider or setting `VANE_DEV_TOKEN_LOGGING=true` and retrieving the token from `docker logs`/your log sink — acceptable for a single self-hosted operator bootstrapping their own instance, not for anything beyond that.
 - Admin invite **resend/cancel** — frontend hooks exist, backend endpoints don't.
-- No test coverage for a 404 on updating a non-existent incident.
 - No auto-discovery of Datadog services/SLOs/monitors (would have to be added as a connector feature).
-- `UPLOADS_DIR` assumes a single filesystem — **multi-replica deployments need a shared/RWX volume or object storage**; not implemented.
-- An intermittent `pg_advisory_lock` test flake under parallel test execution (`internal/dbtest`) — recommended fix is to pin `go test -p 1` in CI, not yet applied.
+- An intermittent `pg_advisory_lock`/connection-pressure test flake under sustained back-to-back full-suite runs (`internal/dbtest`'s dedicated lock connections don't always get reaped by Postgres fast enough between rapid consecutive invocations) — doesn't reproduce on a normal single CI run against a rested database; recommended fix is still to pin `go test -p 1` (or reduce dbtest's dedicated-connection footprint), not yet applied.
 - Manual validation against a **real** Datadog account/API (current test coverage relies on MSW/mocks) hasn't been done.

@@ -48,7 +48,7 @@ func (h *InstanceConfigHandler) Branding(w http.ResponseWriter, r *http.Request)
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	_ = json.NewEncoder(w).Encode(brandingResponse{LogoURL: companySettings.LogoURL})
+	_ = json.NewEncoder(w).Encode(brandingResponse{LogoURL: companySettings.LogoServedURL()})
 }
 
 // DNSTarget handles GET /api/instance/dns-target, surfacing the DNS

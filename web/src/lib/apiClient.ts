@@ -28,7 +28,7 @@ export function triggerUnauthorized(): void {
 const baseUrl = import.meta.env.VITE_API_BASE_URL ?? "";
 
 // resolveAssetUrl prefixa uma URL relativa vinda do backend (ex.:
-// logo_url = "/uploads/logo.png") com o mesmo baseUrl usado por apiFetch -
+// logo_url = "/uploads/logo") com o mesmo baseUrl usado por apiFetch -
 // necessário para <img src> etc., que o browser resolve contra a própria
 // origem da página, não contra o backend. Em produção baseUrl é vazio (SPA
 // e API na mesma origem) então isto é um no-op; em dev (front em :5173,

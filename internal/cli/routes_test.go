@@ -27,7 +27,7 @@ const routesTestSessionSecret = "cli-routes-test-session-secret-32b!!"
 func newAdminRouterForTest(t *testing.T) (http.Handler, *db.Pool, *db.AdminRepository) {
 	t.Helper()
 	pool := newServeTestPool(t)
-	cfg := config.Config{SessionSecret: routesTestSessionSecret, MasterKey: "cli-routes-test-master-key", UploadsDir: t.TempDir()}
+	cfg := config.Config{SessionSecret: routesTestSessionSecret, MasterKey: "cli-routes-test-master-key"}
 	pollerManager := NewPollerManager(context.Background(), pool, cfg, zap.NewNop())
 	handler := buildAdminRouter(pool, cfg, zap.NewNop(), pollerManager)
 

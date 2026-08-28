@@ -10,13 +10,13 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
-	"path/filepath"
 	"testing"
 	"time"
 
 	"go.uber.org/zap"
 
 	"github.com/zeeplabs/zeep-vane/internal/db"
+	"github.com/zeeplabs/zeep-vane/internal/dbtest"
 )
 
 // testDatabaseURL returns TEST_DATABASE_URL, skipping the test if unset -
@@ -227,7 +227,7 @@ func TestNewHTTPSServer_TwoPublishedStatusPages_ReturnDisjointServices(t *testin
 		}
 	}
 
-	httpsSrv := newHTTPSServer(pool, t.TempDir(), zap.NewNop())
+	httpsSrv := newHTTPSServer(pool, zap.NewNop())
 	testServer := httptest.NewServer(httpsSrv.Handler)
 	defer testServer.Close()
 
@@ -267,7 +267,7 @@ func TestNewHTTPSServer_TwoPublishedStatusPages_ReturnDisjointIncidents(t *testi
 	titleA := createServeTestIncident(t, pool, serviceA, "incident-a")
 	titleB := createServeTestIncident(t, pool, serviceB, "incident-b")
 
-	httpsSrv := newHTTPSServer(pool, t.TempDir(), zap.NewNop())
+	httpsSrv := newHTTPSServer(pool, zap.NewNop())
 	testServer := httptest.NewServer(httpsSrv.Handler)
 	defer testServer.Close()
 
@@ -295,7 +295,7 @@ func TestNewHTTPSServer_TwoPublishedStatusPages_ReturnDisjointIncidents(t *testi
 func TestNewHTTPSServer_UnregisteredHost_404(t *testing.T) {
 	pool := newServeTestPool(t)
 
-	httpsSrv := newHTTPSServer(pool, t.TempDir(), zap.NewNop())
+	httpsSrv := newHTTPSServer(pool, zap.NewNop())
 	testServer := httptest.NewServer(httpsSrv.Handler)
 	defer testServer.Close()
 
@@ -323,19 +323,29 @@ func TestNewHTTPSServer_UnregisteredHost_404(t *testing.T) {
 // every other path to when handed a single handler.
 func TestNewHTTPSServer_UploadsPath_ServesLogoFile_NotStatusJSON(t *testing.T) {
 	pool := newServeTestPool(t)
-	uploadsDir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(uploadsDir, "logo.png"), []byte("fake-logo-bytes"), 0o644); err != nil {
-		t.Fatalf("os.WriteFile() returned unexpected error: %v", err)
+
+	// The logo lives in the shared company_settings singleton row now
+	// (not a throwaway temp dir), so this races internal/db's and
+	// internal/api's own company_settings tests across the separate
+	// concurrent processes `go test ./...` runs them as - see
+	// LockCompanySettings' doc comment.
+	dsn := testDatabaseURL(t)
+	dbtest.LockCompanySettings(t, context.Background(), dsn)
+	t.Cleanup(func() {
+		_, _ = pool.Exec(context.Background(), "UPDATE company_settings SET logo_data = NULL, logo_content_type = NULL WHERE id = 1")
+	})
+	if _, err := db.NewCompanySettingsRepository(pool).UpdateLogo(context.Background(), "image/png", []byte("fake-logo-bytes")); err != nil {
+		t.Fatalf("UpdateLogo() returned unexpected error: %v", err)
 	}
 
 	serviceID := createServeTestService(t, pool, "svc-uploads")
 	hostname := createServePublishedStatusPageFixture(t, pool, serviceID)
 
-	httpsSrv := newHTTPSServer(pool, uploadsDir, zap.NewNop())
+	httpsSrv := newHTTPSServer(pool, zap.NewNop())
 	testServer := httptest.NewServer(httpsSrv.Handler)
 	defer testServer.Close()
 
-	req, err := http.NewRequest(http.MethodGet, testServer.URL+"/uploads/logo.png", nil)
+	req, err := http.NewRequest(http.MethodGet, testServer.URL+"/uploads/logo", nil)
 	if err != nil {
 		t.Fatalf("http.NewRequest() returned unexpected error: %v", err)
 	}
@@ -364,7 +374,6 @@ func TestNewHTTPSServer_UploadsPath_ServesLogoFile_NotStatusJSON(t *testing.T) {
 // hostname still serves the public status JSON, unchanged.
 func TestNewHTTPSServer_RootPath_StillServesStatusJSON(t *testing.T) {
 	pool := newServeTestPool(t)
-	uploadsDir := t.TempDir()
 
 	serviceID := createServeTestService(t, pool, "svc-root")
 	hostname := createServePublishedStatusPageFixture(t, pool, serviceID)
@@ -380,7 +389,7 @@ func TestNewHTTPSServer_RootPath_StillServesStatusJSON(t *testing.T) {
 		}
 	}
 
-	httpsSrv := newHTTPSServer(pool, uploadsDir, zap.NewNop())
+	httpsSrv := newHTTPSServer(pool, zap.NewNop())
 	testServer := httptest.NewServer(httpsSrv.Handler)
 	defer testServer.Close()
 
@@ -397,12 +406,11 @@ func TestNewHTTPSServer_RootPath_StillServesStatusJSON(t *testing.T) {
 // every listener gets.
 func TestNewHTTPSServer_SecurityHeaders_IncludesHSTS(t *testing.T) {
 	pool := newServeTestPool(t)
-	uploadsDir := t.TempDir()
 
 	serviceID := createServeTestService(t, pool, "svc-headers")
 	hostname := createServePublishedStatusPageFixture(t, pool, serviceID)
 
-	httpsSrv := newHTTPSServer(pool, uploadsDir, zap.NewNop())
+	httpsSrv := newHTTPSServer(pool, zap.NewNop())
 	testServer := httptest.NewServer(httpsSrv.Handler)
 	defer testServer.Close()
 

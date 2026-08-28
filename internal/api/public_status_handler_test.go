@@ -670,9 +670,8 @@ func TestPublicStatusGet_ResolvedIncidentWithinRetention_AppearsInHistory(t *tes
 
 // resetCompanySettingsForPublicStatusTest resets the company_settings
 // singleton row to a known state, registering the same reset as cleanup -
-// mirrors newCompanySettingsRouterWithUploadsDir's reset in
-// company_settings_handler_test.go, since the row is shared across every
-// test in this package.
+// mirrors newCompanySettingsRouter's reset in company_settings_handler_test.go,
+// since the row is shared across every test in this package.
 func resetCompanySettingsForPublicStatusTest(t *testing.T, pool *db.Pool) {
 	t.Helper()
 
@@ -683,7 +682,7 @@ func resetCompanySettingsForPublicStatusTest(t *testing.T, pool *db.Pool) {
 	dbtest.LockCompanySettings(t, context.Background(), testDatabaseURL(t))
 
 	reset := func() {
-		_, _ = pool.Exec(context.Background(), "UPDATE company_settings SET name = '', contact_email = '', logo_url = NULL WHERE id = 1")
+		_, _ = pool.Exec(context.Background(), "UPDATE company_settings SET name = '', contact_email = '', logo_data = NULL, logo_content_type = NULL WHERE id = 1")
 	}
 	reset()
 	t.Cleanup(reset)
@@ -700,8 +699,8 @@ func TestPublicStatusGet_CompanySettingsSet_IncludesNameAndLogo(t *testing.T) {
 	if _, err := companySettings.Update(context.Background(), "Acme Status", "contato@acme.example"); err != nil {
 		t.Fatalf("setup Update() returned unexpected error: %v", err)
 	}
-	if _, err := companySettings.UpdateLogoURL(context.Background(), "/uploads/logo.png"); err != nil {
-		t.Fatalf("setup UpdateLogoURL() returned unexpected error: %v", err)
+	if _, err := companySettings.UpdateLogo(context.Background(), "image/png", []byte("fake-png-bytes")); err != nil {
+		t.Fatalf("setup UpdateLogo() returned unexpected error: %v", err)
 	}
 
 	statusPageID := createPublicStatusPageFixture(t, pool)
@@ -722,8 +721,8 @@ func TestPublicStatusGet_CompanySettingsSet_IncludesNameAndLogo(t *testing.T) {
 	if body.Company.Name != "Acme Status" {
 		t.Errorf("Company.Name = %q, want %q", body.Company.Name, "Acme Status")
 	}
-	if body.Company.LogoURL == nil || *body.Company.LogoURL != "/uploads/logo.png" {
-		t.Errorf("Company.LogoURL = %v, want %q", body.Company.LogoURL, "/uploads/logo.png")
+	if body.Company.LogoURL == nil || *body.Company.LogoURL != "/uploads/logo" {
+		t.Errorf("Company.LogoURL = %v, want %q", body.Company.LogoURL, "/uploads/logo")
 	}
 }
 

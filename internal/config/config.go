@@ -19,7 +19,6 @@ type Config struct {
 	PollIntervalSeconds int
 	LogLevel            string
 	CORSAllowedOrigin   string
-	UploadsDir          string
 	PublicDNSTarget     string
 	DevTokenLogging     bool
 	HTTPSEnabled        bool
@@ -29,11 +28,6 @@ type Config struct {
 // defaultCORSAllowedOrigin is the Vite dev server's origin - the CORS
 // allowlist entry when CORS_ALLOWED_ORIGIN is unset (local development).
 const defaultCORSAllowedOrigin = "http://localhost:5173"
-
-// defaultUploadsDir is used when UPLOADS_DIR is unset (local development).
-// In production, operators are expected to set UPLOADS_DIR to a mounted
-// persistent volume so an uploaded logo survives a pod restart (SET-11).
-const defaultUploadsDir = "./data/uploads"
 
 // PublicDNSTarget has no default: an unset PUBLIC_DNS_TARGET means the
 // operator hasn't configured the value this server's admins should point
@@ -83,11 +77,6 @@ func Load() (Config, error) {
 		corsAllowedOrigin = defaultCORSAllowedOrigin
 	}
 
-	uploadsDir := os.Getenv("UPLOADS_DIR")
-	if uploadsDir == "" {
-		uploadsDir = defaultUploadsDir
-	}
-
 	publicDNSTarget := os.Getenv("PUBLIC_DNS_TARGET")
 
 	// devTokenLogging gates logging the raw password-reset/admin-invite
@@ -126,7 +115,6 @@ func Load() (Config, error) {
 		PollIntervalSeconds: pollIntervalSeconds,
 		LogLevel:            logLevel,
 		CORSAllowedOrigin:   corsAllowedOrigin,
-		UploadsDir:          uploadsDir,
 		PublicDNSTarget:     publicDNSTarget,
 		DevTokenLogging:     devTokenLogging,
 		HTTPSEnabled:        httpsEnabled,

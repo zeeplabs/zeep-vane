@@ -6,11 +6,10 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
-	"os"
-	"path/filepath"
 	"testing"
 	"time"
 
@@ -68,15 +67,30 @@ func buildMultipartLogoRequest(t *testing.T, filename string, content []byte, to
 // newCompanySettingsRouter builds a router mounting only RequireAuth (no
 // RequireRole) in front of CompanySettingsHandler, mirroring
 // newDomainsRouter: RBAC for these routes is asserted at the routes.go
-// wiring level (T8), not by the handler itself. Uploaded logos are written
-// under a fresh t.TempDir(), isolated per test.
+// wiring level (T8), not by the handler itself.
 func newCompanySettingsRouter(t *testing.T) (http.Handler, *db.Pool, *db.AdminRepository) {
 	t.Helper()
-	r, pool, admins, _ := newCompanySettingsRouterWithUploadsDir(t)
-	return r, pool, admins
+	pool, admins := newCompanySettingsTestPool(t)
+	repo := db.NewCompanySettingsRepository(pool)
+	return buildCompanySettingsRouter(admins, repo), pool, admins
 }
 
-func newCompanySettingsRouterWithUploadsDir(t *testing.T) (http.Handler, *db.Pool, *db.AdminRepository, string) {
+// failingLogoStore wraps a real *db.CompanySettingsRepository, forcing
+// UpdateLogo to fail while Get/Update still hit the real database - used
+// by TestUploadLogo_PersistFailure_500NoLogoChange to force a persistence
+// failure deterministically (SET-13), the same "force a dependency to
+// fail" pattern integrations_handler_test.go's spyPollerRestarter uses,
+// rather than relying on filesystem permissions now that the logo has no
+// on-disk representation to break.
+type failingLogoStore struct {
+	*db.CompanySettingsRepository
+}
+
+func (s *failingLogoStore) UpdateLogo(ctx context.Context, contentType string, data []byte) (*db.CompanySettings, error) {
+	return nil, errors.New("forced UpdateLogo failure for test")
+}
+
+func newCompanySettingsTestPool(t *testing.T) (*db.Pool, *db.AdminRepository) {
 	t.Helper()
 	dsn := testDatabaseURL(t)
 
@@ -104,15 +118,17 @@ func newCompanySettingsRouterWithUploadsDir(t *testing.T) (http.Handler, *db.Poo
 	// function returns.
 	dbtest.LockCompanySettings(t, context.Background(), dsn)
 	reset := func() {
-		_, _ = pool.Exec(context.Background(), "UPDATE company_settings SET name = '', contact_email = '', logo_url = NULL WHERE id = 1")
+		_, _ = pool.Exec(context.Background(), "UPDATE company_settings SET name = '', contact_email = '', logo_data = NULL, logo_content_type = NULL WHERE id = 1")
 	}
 	reset()
 	t.Cleanup(reset)
 
-	uploadsDir := t.TempDir()
-	repo := db.NewCompanySettingsRepository(pool)
 	admins := db.NewAdminRepository(pool)
-	handler := NewCompanySettingsHandler(repo, uploadsDir, zap.NewNop())
+	return pool, admins
+}
+
+func buildCompanySettingsRouter(admins *db.AdminRepository, store companySettingsStore) http.Handler {
+	handler := NewCompanySettingsHandler(store, zap.NewNop())
 
 	r := chi.NewRouter()
 	r.Group(func(protected chi.Router) {
@@ -121,8 +137,7 @@ func newCompanySettingsRouterWithUploadsDir(t *testing.T) (http.Handler, *db.Poo
 		protected.Patch("/api/company-settings", handler.Update)
 		protected.Post("/api/company-settings/logo", handler.UploadLogo)
 	})
-
-	return r, pool, admins, uploadsDir
+	return r
 }
 
 func getCompanySettings(t *testing.T, r http.Handler, token string) *httptest.ResponseRecorder {
@@ -266,9 +281,10 @@ func TestCompanySettingsUpdate_MalformedContactEmail_422NoPersistence(t *testing
 }
 
 // TestUploadLogo_ValidPNG_200UpdatesLogoURL asserts SET-07: a valid PNG
-// upload under 10 MB stores the file, updates logo_url, and responds 200.
+// upload under 10 MB is persisted and responds 200 with the fixed
+// "/uploads/logo" URL.
 func TestUploadLogo_ValidPNG_200UpdatesLogoURL(t *testing.T) {
-	r, _, admins, uploadsDir := newCompanySettingsRouterWithUploadsDir(t)
+	r, pool, admins := newCompanySettingsRouter(t)
 	token := issueTestSessionToken(t, admins)
 
 	req := buildMultipartLogoRequest(t, "logo.png", pngSignatureBytes, token)
@@ -282,12 +298,22 @@ func TestUploadLogo_ValidPNG_200UpdatesLogoURL(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
 	}
-	if resp.LogoURL == nil || *resp.LogoURL != "/uploads/logo.png" {
-		t.Fatalf("LogoURL = %v, want %q", resp.LogoURL, "/uploads/logo.png")
+	if resp.LogoURL == nil || *resp.LogoURL != "/uploads/logo" {
+		t.Fatalf("LogoURL = %v, want %q", resp.LogoURL, "/uploads/logo")
 	}
 
-	if _, err := os.Stat(filepath.Join(uploadsDir, "logo.png")); err != nil {
-		t.Errorf("expected logo.png to exist in uploads dir, Stat() returned error: %v", err)
+	contentType, data, found, err := db.NewCompanySettingsRepository(pool).GetLogo(context.Background())
+	if err != nil {
+		t.Fatalf("GetLogo() returned unexpected error: %v", err)
+	}
+	if !found {
+		t.Fatal("GetLogo() found = false, want true after a successful upload")
+	}
+	if contentType != "image/png" {
+		t.Errorf("GetLogo() contentType = %q, want %q", contentType, "image/png")
+	}
+	if string(data) != string(pngSignatureBytes) {
+		t.Errorf("GetLogo() data does not match the uploaded bytes")
 	}
 
 	getRec := getCompanySettings(t, r, token)
@@ -295,15 +321,15 @@ func TestUploadLogo_ValidPNG_200UpdatesLogoURL(t *testing.T) {
 	if err := json.Unmarshal(getRec.Body.Bytes(), &getResp); err != nil {
 		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
 	}
-	if getResp.LogoURL == nil || *getResp.LogoURL != "/uploads/logo.png" {
-		t.Errorf("persisted LogoURL = %v, want %q", getResp.LogoURL, "/uploads/logo.png")
+	if getResp.LogoURL == nil || *getResp.LogoURL != "/uploads/logo" {
+		t.Errorf("persisted LogoURL = %v, want %q", getResp.LogoURL, "/uploads/logo")
 	}
 }
 
 // TestUploadLogo_ValidSVG_200UpdatesLogoURL asserts SET-07 for the other
 // allowed MIME type: a valid SVG upload succeeds the same way a PNG does.
 func TestUploadLogo_ValidSVG_200UpdatesLogoURL(t *testing.T) {
-	r, _, admins, uploadsDir := newCompanySettingsRouterWithUploadsDir(t)
+	r, pool, admins := newCompanySettingsRouter(t)
 	token := issueTestSessionToken(t, admins)
 
 	req := buildMultipartLogoRequest(t, "logo.svg", []byte(validSVGBody), token)
@@ -317,11 +343,19 @@ func TestUploadLogo_ValidSVG_200UpdatesLogoURL(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
 	}
-	if resp.LogoURL == nil || *resp.LogoURL != "/uploads/logo.svg" {
-		t.Fatalf("LogoURL = %v, want %q", resp.LogoURL, "/uploads/logo.svg")
+	if resp.LogoURL == nil || *resp.LogoURL != "/uploads/logo" {
+		t.Fatalf("LogoURL = %v, want %q", resp.LogoURL, "/uploads/logo")
 	}
-	if _, err := os.Stat(filepath.Join(uploadsDir, "logo.svg")); err != nil {
-		t.Errorf("expected logo.svg to exist in uploads dir, Stat() returned error: %v", err)
+
+	contentType, _, found, err := db.NewCompanySettingsRepository(pool).GetLogo(context.Background())
+	if err != nil {
+		t.Fatalf("GetLogo() returned unexpected error: %v", err)
+	}
+	if !found {
+		t.Fatal("GetLogo() found = false, want true after a successful upload")
+	}
+	if contentType != "image/svg+xml" {
+		t.Errorf("GetLogo() contentType = %q, want %q", contentType, "image/svg+xml")
 	}
 }
 
@@ -333,10 +367,10 @@ func TestUploadLogo_ValidSVG_200UpdatesLogoURL(t *testing.T) {
 const specMaxLogoBytes = 10 * 1024 * 1024
 
 // TestUploadLogo_OverSizeLimit_422NoLogoURLChange asserts SET-08: a file
-// over the spec's fixed 10 MB bound is rejected with 422, no file is
-// written, and logo_url is left unchanged.
+// over the spec's fixed 10 MB bound is rejected with 422 and the stored
+// logo is left unchanged.
 func TestUploadLogo_OverSizeLimit_422NoLogoURLChange(t *testing.T) {
-	r, _, admins, uploadsDir := newCompanySettingsRouterWithUploadsDir(t)
+	r, pool, admins := newCompanySettingsRouter(t)
 	token := issueTestSessionToken(t, admins)
 
 	oversized := make([]byte, specMaxLogoBytes+1024)
@@ -350,12 +384,12 @@ func TestUploadLogo_OverSizeLimit_422NoLogoURLChange(t *testing.T) {
 		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusUnprocessableEntity, rec.Body.String())
 	}
 
-	entries, err := os.ReadDir(uploadsDir)
-	if err != nil && !os.IsNotExist(err) {
-		t.Fatalf("os.ReadDir() returned unexpected error: %v", err)
+	_, _, found, err := db.NewCompanySettingsRepository(pool).GetLogo(context.Background())
+	if err != nil {
+		t.Fatalf("GetLogo() returned unexpected error: %v", err)
 	}
-	if len(entries) != 0 {
-		t.Errorf("uploads dir contains %d entries after a rejected oversized upload, want 0", len(entries))
+	if found {
+		t.Error("GetLogo() found = true after a rejected oversized upload, want false (unchanged)")
 	}
 
 	getRec := getCompanySettings(t, r, token)
@@ -374,7 +408,7 @@ func TestUploadLogo_OverSizeLimit_422NoLogoURLChange(t *testing.T) {
 // file content is sized so that, once wrapped in multipart framing, the
 // total request body lands at exactly specMaxLogoBytes-1.
 func TestUploadLogo_JustUnderSizeLimit_200UpdatesLogoURL(t *testing.T) {
-	r, _, admins, uploadsDir := newCompanySettingsRouterWithUploadsDir(t)
+	r, _, admins := newCompanySettingsRouter(t)
 	token := issueTestSessionToken(t, admins)
 
 	emptyBody, _ := multipartLogoBody(t, "logo.png", nil)
@@ -394,28 +428,25 @@ func TestUploadLogo_JustUnderSizeLimit_200UpdatesLogoURL(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
 	}
-	if resp.LogoURL == nil || *resp.LogoURL != "/uploads/logo.png" {
-		t.Fatalf("LogoURL = %v, want %q", resp.LogoURL, "/uploads/logo.png")
-	}
-	if _, err := os.Stat(filepath.Join(uploadsDir, "logo.png")); err != nil {
-		t.Errorf("expected logo.png to exist in uploads dir, Stat() returned error: %v", err)
+	if resp.LogoURL == nil || *resp.LogoURL != "/uploads/logo" {
+		t.Fatalf("LogoURL = %v, want %q", resp.LogoURL, "/uploads/logo")
 	}
 }
 
-// TestUploadLogo_SaveFailure_500NoLogoURLChange asserts SET-13: when
-// uploads.Save cannot write the file (permission denied, disk full, ...)
-// the handler responds 500 and never calls UpdateLogoURL - a subsequent GET
-// still returns the logo_url from the last successful upload, unchanged.
-// The write failure is forced for real, not mocked: the uploads dir is
-// chmod'd to read+execute only (0o500) after a first successful upload has
-// seeded a non-nil logo_url, so removeExistingLogoFiles/os.Create inside
-// uploads.Save genuinely fails with a permission error.
-func TestUploadLogo_SaveFailure_500NoLogoURLChange(t *testing.T) {
-	r, _, admins, uploadsDir := newCompanySettingsRouterWithUploadsDir(t)
+// TestUploadLogo_PersistFailure_500NoLogoChange asserts SET-13: when
+// persisting the logo fails (e.g. a database error), the handler responds
+// 500 and the previously stored logo is left unchanged - a subsequent GET
+// still returns the logo_url from the last successful upload. The failure
+// is forced via failingLogoStore rather than a real disk/DB fault, since
+// the logo has no on-disk representation left to break.
+func TestUploadLogo_PersistFailure_500NoLogoChange(t *testing.T) {
+	pool, admins := newCompanySettingsTestPool(t)
+	realRepo := db.NewCompanySettingsRepository(pool)
+	r := buildCompanySettingsRouter(admins, realRepo)
 	token := issueTestSessionToken(t, admins)
 
-	// Seed a known-good logo_url first so "unchanged" is a non-nil value -
-	// the stronger form of the AC than proving it merely stayed null.
+	// Seed a known-good logo first so "unchanged" is a non-nil value - the
+	// stronger form of the AC than proving it merely stayed null.
 	seedReq := buildMultipartLogoRequest(t, "logo.png", pngSignatureBytes, token)
 	seedRec := httptest.NewRecorder()
 	r.ServeHTTP(seedRec, seedReq)
@@ -423,24 +454,14 @@ func TestUploadLogo_SaveFailure_500NoLogoURLChange(t *testing.T) {
 		t.Fatalf("seed upload status = %d, want %d, body = %s", seedRec.Code, http.StatusOK, seedRec.Body.String())
 	}
 
-	if err := os.Chmod(uploadsDir, 0o500); err != nil {
-		t.Fatalf("os.Chmod() returned unexpected error: %v", err)
-	}
-	t.Cleanup(func() { _ = os.Chmod(uploadsDir, 0o755) })
+	failingRouter := buildCompanySettingsRouter(admins, &failingLogoStore{CompanySettingsRepository: realRepo})
 
 	req := buildMultipartLogoRequest(t, "logo.svg", []byte(validSVGBody), token)
 	rec := httptest.NewRecorder()
-	r.ServeHTTP(rec, req)
+	failingRouter.ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusInternalServerError {
 		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusInternalServerError, rec.Body.String())
-	}
-
-	// Restore write access before the follow-up GET so it isn't affected by
-	// the induced failure, then confirm logo_url still points at the seeded
-	// upload.
-	if err := os.Chmod(uploadsDir, 0o755); err != nil {
-		t.Fatalf("os.Chmod() restore returned unexpected error: %v", err)
 	}
 
 	getRec := getCompanySettings(t, r, token)
@@ -448,8 +469,16 @@ func TestUploadLogo_SaveFailure_500NoLogoURLChange(t *testing.T) {
 	if err := json.Unmarshal(getRec.Body.Bytes(), &getResp); err != nil {
 		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
 	}
-	if getResp.LogoURL == nil || *getResp.LogoURL != "/uploads/logo.png" {
-		t.Errorf("LogoURL after failed write = %v, want unchanged %q", getResp.LogoURL, "/uploads/logo.png")
+	if getResp.LogoURL == nil || *getResp.LogoURL != "/uploads/logo" {
+		t.Errorf("LogoURL after failed persist = %v, want unchanged %q", getResp.LogoURL, "/uploads/logo")
+	}
+
+	contentType, _, found, err := realRepo.GetLogo(context.Background())
+	if err != nil {
+		t.Fatalf("GetLogo() returned unexpected error: %v", err)
+	}
+	if !found || contentType != "image/png" {
+		t.Errorf("GetLogo() contentType = %q, found = %v, want unchanged %q/true (the seeded PNG)", contentType, found, "image/png")
 	}
 }
 
@@ -464,7 +493,7 @@ func TestUploadLogo_SaveFailure_500NoLogoURLChange(t *testing.T) {
 // logoFormFieldName away from "logo" (breaking the real wire contract with
 // the frontend) fails here.
 func TestUploadLogo_MultipartFieldNameContract_LogoAccepted(t *testing.T) {
-	r, _, admins, _ := newCompanySettingsRouterWithUploadsDir(t)
+	r, _, admins := newCompanySettingsRouter(t)
 	token := issueTestSessionToken(t, admins)
 
 	var buf bytes.Buffer
@@ -495,7 +524,7 @@ func TestUploadLogo_MultipartFieldNameContract_LogoAccepted(t *testing.T) {
 // non-PNG/SVG payload is rejected with 422 and the previously stored logo
 // (none, here) is left untouched.
 func TestUploadLogo_WrongMIMEType_422NoLogoURLChange(t *testing.T) {
-	r, _, admins, _ := newCompanySettingsRouterWithUploadsDir(t)
+	r, _, admins := newCompanySettingsRouter(t)
 	token := issueTestSessionToken(t, admins)
 
 	req := buildMultipartLogoRequest(t, "logo.txt", []byte("just some plain text, not an image"), token)
@@ -516,11 +545,12 @@ func TestUploadLogo_WrongMIMEType_422NoLogoURLChange(t *testing.T) {
 	}
 }
 
-// TestUploadLogo_SecondValidUpload_OverwritesFirst asserts SET-10: a
-// second successful upload leaves exactly one logo file on disk - the
-// first one is removed/overwritten, never left orphaned.
+// TestUploadLogo_SecondValidUpload_OverwritesFirst asserts SET-10: a second
+// successful upload replaces the first - the served URL is still the same
+// fixed "/uploads/logo" path, but its content type/bytes now reflect the
+// second upload, never a mix of the two.
 func TestUploadLogo_SecondValidUpload_OverwritesFirst(t *testing.T) {
-	r, _, admins, uploadsDir := newCompanySettingsRouterWithUploadsDir(t)
+	r, pool, admins := newCompanySettingsRouter(t)
 	token := issueTestSessionToken(t, admins)
 
 	firstReq := buildMultipartLogoRequest(t, "logo.png", pngSignatureBytes, token)
@@ -537,19 +567,18 @@ func TestUploadLogo_SecondValidUpload_OverwritesFirst(t *testing.T) {
 		t.Fatalf("second upload status = %d, want %d, body = %s", secondRec.Code, http.StatusOK, secondRec.Body.String())
 	}
 
-	entries, err := os.ReadDir(uploadsDir)
+	contentType, data, found, err := db.NewCompanySettingsRepository(pool).GetLogo(context.Background())
 	if err != nil {
-		t.Fatalf("os.ReadDir() returned unexpected error: %v", err)
+		t.Fatalf("GetLogo() returned unexpected error: %v", err)
 	}
-	if len(entries) != 1 {
-		names := make([]string, len(entries))
-		for i, e := range entries {
-			names[i] = e.Name()
-		}
-		t.Fatalf("uploads dir entries = %v, want exactly 1", names)
+	if !found {
+		t.Fatal("GetLogo() found = false, want true")
 	}
-	if entries[0].Name() != "logo.svg" {
-		t.Errorf("remaining file = %q, want %q", entries[0].Name(), "logo.svg")
+	if contentType != "image/svg+xml" {
+		t.Errorf("GetLogo() contentType = %q, want %q (the second upload)", contentType, "image/svg+xml")
+	}
+	if string(data) != validSVGBody {
+		t.Errorf("GetLogo() data does not match the second upload's bytes")
 	}
 
 	getRec := getCompanySettings(t, r, token)
@@ -557,7 +586,7 @@ func TestUploadLogo_SecondValidUpload_OverwritesFirst(t *testing.T) {
 	if err := json.Unmarshal(getRec.Body.Bytes(), &getResp); err != nil {
 		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
 	}
-	if getResp.LogoURL == nil || *getResp.LogoURL != "/uploads/logo.svg" {
-		t.Errorf("persisted LogoURL = %v, want %q", getResp.LogoURL, "/uploads/logo.svg")
+	if getResp.LogoURL == nil || *getResp.LogoURL != "/uploads/logo" {
+		t.Errorf("persisted LogoURL = %v, want %q", getResp.LogoURL, "/uploads/logo")
 	}
 }

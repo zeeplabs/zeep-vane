@@ -142,10 +142,10 @@ func TestBranding_LogoUploaded_ReturnsLogoURL(t *testing.T) {
 	r, _, pool := newInstanceConfigRouter(t, "vane.example.com")
 	companySettings := db.NewCompanySettingsRepository(pool)
 	t.Cleanup(func() {
-		_, _ = pool.Exec(context.Background(), "UPDATE company_settings SET logo_url = NULL WHERE id = 1")
+		_, _ = pool.Exec(context.Background(), "UPDATE company_settings SET logo_data = NULL, logo_content_type = NULL WHERE id = 1")
 	})
-	if _, err := companySettings.UpdateLogoURL(context.Background(), "/uploads/logo.png"); err != nil {
-		t.Fatalf("setup UpdateLogoURL() returned unexpected error: %v", err)
+	if _, err := companySettings.UpdateLogo(context.Background(), "image/png", []byte("fake-png-bytes")); err != nil {
+		t.Fatalf("setup UpdateLogo() returned unexpected error: %v", err)
 	}
 
 	rec := getBranding(t, r)
@@ -157,8 +157,8 @@ func TestBranding_LogoUploaded_ReturnsLogoURL(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
 		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
 	}
-	if body.LogoURL == nil || *body.LogoURL != "/uploads/logo.png" {
-		t.Errorf("LogoURL = %v, want %q", body.LogoURL, "/uploads/logo.png")
+	if body.LogoURL == nil || *body.LogoURL != "/uploads/logo" {
+		t.Errorf("LogoURL = %v, want %q", body.LogoURL, "/uploads/logo")
 	}
 }
 
@@ -173,9 +173,9 @@ func TestBranding_NoLogoUploaded_ReturnsNull(t *testing.T) {
 
 	r, _, pool := newInstanceConfigRouter(t, "vane.example.com")
 	t.Cleanup(func() {
-		_, _ = pool.Exec(context.Background(), "UPDATE company_settings SET logo_url = NULL WHERE id = 1")
+		_, _ = pool.Exec(context.Background(), "UPDATE company_settings SET logo_data = NULL, logo_content_type = NULL WHERE id = 1")
 	})
-	if _, err := pool.Exec(context.Background(), "UPDATE company_settings SET logo_url = NULL WHERE id = 1"); err != nil {
+	if _, err := pool.Exec(context.Background(), "UPDATE company_settings SET logo_data = NULL, logo_content_type = NULL WHERE id = 1"); err != nil {
 		t.Fatalf("setup returned unexpected error: %v", err)
 	}
 

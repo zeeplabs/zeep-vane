@@ -39,9 +39,9 @@ func newCompanySettingsTestRepo(t *testing.T) (*CompanySettingsRepository, *Pool
 	// Reset the singleton row to a known state before each test - other
 	// tests in this suite/package mutate the same row (there is only one).
 	t.Cleanup(func() {
-		_, _ = pool.Exec(context.Background(), "UPDATE company_settings SET name = '', contact_email = '', logo_url = NULL WHERE id = 1")
+		_, _ = pool.Exec(context.Background(), "UPDATE company_settings SET name = '', contact_email = '', logo_data = NULL, logo_content_type = NULL WHERE id = 1")
 	})
-	if _, err := pool.Exec(context.Background(), "UPDATE company_settings SET name = '', contact_email = '', logo_url = NULL WHERE id = 1"); err != nil {
+	if _, err := pool.Exec(context.Background(), "UPDATE company_settings SET name = '', contact_email = '', logo_data = NULL, logo_content_type = NULL WHERE id = 1"); err != nil {
 		t.Fatalf("failed to reset company_settings fixture: %v", err)
 	}
 
@@ -64,8 +64,11 @@ func TestCompanySettingsRepository_Get_ReturnsSingletonRow_NoNotFoundBranch(t *t
 	if settings.ContactEmail != "" {
 		t.Errorf("ContactEmail = %q, want \"\"", settings.ContactEmail)
 	}
-	if settings.LogoURL != nil {
-		t.Errorf("LogoURL = %q, want nil", *settings.LogoURL)
+	if settings.LogoContentType != nil {
+		t.Errorf("LogoContentType = %q, want nil", *settings.LogoContentType)
+	}
+	if settings.LogoServedURL() != nil {
+		t.Errorf("LogoServedURL() = %v, want nil", *settings.LogoServedURL())
 	}
 }
 
@@ -98,25 +101,25 @@ func TestCompanySettingsRepository_Update_PersistsNameAndContactEmail(t *testing
 	}
 }
 
-// TestCompanySettingsRepository_UpdateLogoURL_PersistsIndependentlyOfUpdate
-// asserts design.md's UpdateLogoURL contract: it persists logo_url without
+// TestCompanySettingsRepository_UpdateLogo_PersistsIndependentlyOfUpdate
+// asserts design.md's UpdateLogo contract: it persists the logo without
 // touching name/contact_email, and vice versa - the two mutations are
 // independent (SET-07 groundwork).
-func TestCompanySettingsRepository_UpdateLogoURL_PersistsIndependentlyOfUpdate(t *testing.T) {
+func TestCompanySettingsRepository_UpdateLogo_PersistsIndependentlyOfUpdate(t *testing.T) {
 	repo, _ := newCompanySettingsTestRepo(t)
 
 	if _, err := repo.Update(context.Background(), "Acme Inc.", "owner@acme.example.com"); err != nil {
 		t.Fatalf("Update() returned unexpected error: %v", err)
 	}
 
-	updated, err := repo.UpdateLogoURL(context.Background(), "/uploads/logo.png")
+	updated, err := repo.UpdateLogo(context.Background(), "image/png", []byte("fake-png-bytes"))
 	if err != nil {
-		t.Fatalf("UpdateLogoURL() returned unexpected error: %v", err)
+		t.Fatalf("UpdateLogo() returned unexpected error: %v", err)
 	}
-	if updated.LogoURL == nil || *updated.LogoURL != "/uploads/logo.png" {
-		t.Fatalf("LogoURL = %v, want %q", updated.LogoURL, "/uploads/logo.png")
+	if updated.LogoServedURL() == nil || *updated.LogoServedURL() != "/uploads/logo" {
+		t.Fatalf("LogoServedURL() = %v, want %q", updated.LogoServedURL(), "/uploads/logo")
 	}
-	// name/contact_email untouched by UpdateLogoURL.
+	// name/contact_email untouched by UpdateLogo.
 	if updated.Name != "Acme Inc." {
 		t.Errorf("Name = %q, want unchanged %q", updated.Name, "Acme Inc.")
 	}
@@ -128,7 +131,39 @@ func TestCompanySettingsRepository_UpdateLogoURL_PersistsIndependentlyOfUpdate(t
 	if err != nil {
 		t.Fatalf("Get() returned unexpected error: %v", err)
 	}
-	if fetched.LogoURL == nil || *fetched.LogoURL != "/uploads/logo.png" {
-		t.Fatalf("persisted LogoURL = %v, want %q", fetched.LogoURL, "/uploads/logo.png")
+	if fetched.LogoServedURL() == nil || *fetched.LogoServedURL() != "/uploads/logo" {
+		t.Fatalf("persisted LogoServedURL() = %v, want %q", fetched.LogoServedURL(), "/uploads/logo")
+	}
+
+	// The bytes/content type themselves round-trip via GetLogo (Get above
+	// deliberately never fetches them, so this is the one path that does).
+	contentType, data, found, err := repo.GetLogo(context.Background())
+	if err != nil {
+		t.Fatalf("GetLogo() returned unexpected error: %v", err)
+	}
+	if !found {
+		t.Fatal("GetLogo() found = false, want true")
+	}
+	if contentType != "image/png" {
+		t.Errorf("GetLogo() contentType = %q, want %q", contentType, "image/png")
+	}
+	if string(data) != "fake-png-bytes" {
+		t.Errorf("GetLogo() data = %q, want %q", data, "fake-png-bytes")
+	}
+}
+
+// TestCompanySettingsRepository_GetLogo_NeverUploaded_NotFound asserts the
+// fresh-install state: no logo has ever been uploaded, so GetLogo reports
+// found=false rather than a zero-length byte slice a caller could
+// mistakenly serve as a 200.
+func TestCompanySettingsRepository_GetLogo_NeverUploaded_NotFound(t *testing.T) {
+	repo, _ := newCompanySettingsTestRepo(t)
+
+	_, _, found, err := repo.GetLogo(context.Background())
+	if err != nil {
+		t.Fatalf("GetLogo() returned unexpected error: %v", err)
+	}
+	if found {
+		t.Error("GetLogo() found = true, want false (no logo ever uploaded)")
 	}
 }

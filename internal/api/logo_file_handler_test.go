@@ -3,37 +3,69 @@
 package api
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
-	"github.com/go-chi/chi/v5"
+	"github.com/zeeplabs/zeep-vane/internal/db"
+	"github.com/zeeplabs/zeep-vane/internal/dbtest"
 )
 
-func newLogoFileHandlerRouter(t *testing.T) (http.Handler, string) {
+// newLogoFileHandlerTestPool returns a fresh *db.Pool against
+// TEST_DATABASE_URL, migrated and with the shared company_settings
+// singleton row locked/reset for the duration of the calling test - the
+// logo now lives in that row, not on a per-test temp dir, so every test
+// here races internal/db's and internal/cli's own company_settings tests
+// the same way company_settings_handler_test.go's does.
+func newLogoFileHandlerTestPool(t *testing.T) *db.Pool {
 	t.Helper()
-	uploadsDir := t.TempDir()
+	dsn := testDatabaseURL(t)
 
-	r := chi.NewRouter()
-	r.Get("/uploads/{filename}", NewLogoFileHandler(uploadsDir).ServeHTTP)
-
-	return r, uploadsDir
-}
-
-// TestLogoFileHandler_ExistingFile_200ServesBytes asserts the happy path:
-// requesting the exact stored filename serves the file's bytes with 200.
-func TestLogoFileHandler_ExistingFile_200ServesBytes(t *testing.T) {
-	r, uploadsDir := newLogoFileHandlerRouter(t)
-	if err := os.WriteFile(filepath.Join(uploadsDir, "logo.png"), []byte("fake-png-bytes"), 0o644); err != nil {
-		t.Fatalf("os.WriteFile() returned unexpected error: %v", err)
+	if err := db.MigrateUp(dsn, "../db/migrations"); err != nil {
+		t.Fatalf("MigrateUp() returned unexpected error: %v", err)
 	}
 
-	req := httptest.NewRequest(http.MethodGet, "/uploads/logo.png", nil)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	pool, err := db.NewPool(ctx, dsn)
+	if err != nil {
+		t.Fatalf("NewPool() returned unexpected error: %v", err)
+	}
+	t.Cleanup(pool.Close)
+
+	dbtest.LockCompanySettings(t, context.Background(), dsn)
+	reset := func() {
+		_, _ = pool.Exec(context.Background(), "UPDATE company_settings SET logo_data = NULL, logo_content_type = NULL WHERE id = 1")
+	}
+	reset()
+	t.Cleanup(reset)
+
+	return pool
+}
+
+func getLogoFile(t *testing.T, r http.Handler) *httptest.ResponseRecorder {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodGet, "/uploads/logo", nil)
 	rec := httptest.NewRecorder()
 	r.ServeHTTP(rec, req)
+	return rec
+}
+
+// TestLogoFileHandler_LogoStored_200ServesBytes asserts the happy path: a
+// logo persisted via CompanySettingsRepository.UpdateLogo is served back
+// with its stored content type and bytes.
+func TestLogoFileHandler_LogoStored_200ServesBytes(t *testing.T) {
+	pool := newLogoFileHandlerTestPool(t)
+	repo := db.NewCompanySettingsRepository(pool)
+	if _, err := repo.UpdateLogo(context.Background(), "image/png", []byte("fake-png-bytes")); err != nil {
+		t.Fatalf("UpdateLogo() returned unexpected error: %v", err)
+	}
+
+	rec := getLogoFile(t, NewLogoFileHandler(repo))
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
@@ -41,42 +73,18 @@ func TestLogoFileHandler_ExistingFile_200ServesBytes(t *testing.T) {
 	if rec.Body.String() != "fake-png-bytes" {
 		t.Errorf("body = %q, want %q", rec.Body.String(), "fake-png-bytes")
 	}
-}
-
-// TestLogoFileHandler_PathTraversalFilename_404 asserts the edge case: a
-// ".." filename segment never resolves outside uploadsDir - the handler
-// rejects it directly (isSafeLogoFilename), rather than joining it into a
-// path and letting the filesystem walk upward.
-func TestLogoFileHandler_PathTraversalFilename_404(t *testing.T) {
-	r, uploadsDir := newLogoFileHandlerRouter(t)
-
-	// A real secret file outside uploadsDir, one level up, that a
-	// traversal attempt would try to reach.
-	secretDir := filepath.Dir(uploadsDir)
-	secretPath := filepath.Join(secretDir, "secret.txt")
-	if err := os.WriteFile(secretPath, []byte("should never be served"), 0o644); err != nil {
-		t.Fatalf("os.WriteFile() returned unexpected error: %v", err)
-	}
-	t.Cleanup(func() { _ = os.Remove(secretPath) })
-
-	req := httptest.NewRequest(http.MethodGet, "/uploads/..", nil)
-	rec := httptest.NewRecorder()
-	r.ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusNotFound {
-		t.Errorf("status = %d, want %d, body = %s", rec.Code, http.StatusNotFound, rec.Body.String())
+	if ct := rec.Header().Get("Content-Type"); ct != "image/png" {
+		t.Errorf("Content-Type = %q, want %q", ct, "image/png")
 	}
 }
 
-// TestLogoFileHandler_MissingFile_404 asserts the edge case from spec.md:
-// a stored filename missing from disk (e.g. a misconfigured volume) 404s,
-// the same way any missing static asset would.
-func TestLogoFileHandler_MissingFile_404(t *testing.T) {
-	r, _ := newLogoFileHandlerRouter(t)
+// TestLogoFileHandler_NeverUploaded_404 asserts the edge case: a fresh
+// install (no logo ever uploaded) 404s rather than serving an empty body.
+func TestLogoFileHandler_NeverUploaded_404(t *testing.T) {
+	pool := newLogoFileHandlerTestPool(t)
+	repo := db.NewCompanySettingsRepository(pool)
 
-	req := httptest.NewRequest(http.MethodGet, "/uploads/logo.png", nil)
-	rec := httptest.NewRecorder()
-	r.ServeHTTP(rec, req)
+	rec := getLogoFile(t, NewLogoFileHandler(repo))
 
 	if rec.Code != http.StatusNotFound {
 		t.Errorf("status = %d, want %d", rec.Code, http.StatusNotFound)
@@ -84,19 +92,20 @@ func TestLogoFileHandler_MissingFile_404(t *testing.T) {
 }
 
 // TestLogoFileHandler_NoAuthenticationRequired_200 asserts SET-12: the
-// file is served with no session/Authorization header at all - this test
+// logo is served with no session/Authorization header at all - this test
 // never sets one, and mounts the handler with no RequireAuth/RequireRole
 // in front of it, unlike every other admin route in this package.
 func TestLogoFileHandler_NoAuthenticationRequired_200(t *testing.T) {
-	r, uploadsDir := newLogoFileHandlerRouter(t)
-	if err := os.WriteFile(filepath.Join(uploadsDir, "logo.svg"), []byte("<svg></svg>"), 0o644); err != nil {
-		t.Fatalf("os.WriteFile() returned unexpected error: %v", err)
+	pool := newLogoFileHandlerTestPool(t)
+	repo := db.NewCompanySettingsRepository(pool)
+	if _, err := repo.UpdateLogo(context.Background(), "image/svg+xml", []byte("<svg></svg>")); err != nil {
+		t.Fatalf("UpdateLogo() returned unexpected error: %v", err)
 	}
 
-	req := httptest.NewRequest(http.MethodGet, "/uploads/logo.svg", nil)
+	req := httptest.NewRequest(http.MethodGet, "/uploads/logo", nil)
 	// Deliberately no Authorization header and no session cookie.
 	rec := httptest.NewRecorder()
-	r.ServeHTTP(rec, req)
+	NewLogoFileHandler(repo).ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusOK {
 		t.Errorf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
@@ -110,14 +119,13 @@ func TestLogoFileHandler_NoAuthenticationRequired_200(t *testing.T) {
 // file. The response's own CSP sandbox directive is the last line of
 // defense, independent of Content-Type.
 func TestLogoFileHandler_SVGFile_SandboxedCSPAndNosniff(t *testing.T) {
-	r, uploadsDir := newLogoFileHandlerRouter(t)
-	if err := os.WriteFile(filepath.Join(uploadsDir, "logo.svg"), []byte("<svg><script>alert(1)</script></svg>"), 0o644); err != nil {
-		t.Fatalf("os.WriteFile() returned unexpected error: %v", err)
+	pool := newLogoFileHandlerTestPool(t)
+	repo := db.NewCompanySettingsRepository(pool)
+	if _, err := repo.UpdateLogo(context.Background(), "image/svg+xml", []byte("<svg><script>alert(1)</script></svg>")); err != nil {
+		t.Fatalf("UpdateLogo() returned unexpected error: %v", err)
 	}
 
-	req := httptest.NewRequest(http.MethodGet, "/uploads/logo.svg", nil)
-	rec := httptest.NewRecorder()
-	r.ServeHTTP(rec, req)
+	rec := getLogoFile(t, NewLogoFileHandler(repo))
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
@@ -131,5 +139,43 @@ func TestLogoFileHandler_SVGFile_SandboxedCSPAndNosniff(t *testing.T) {
 	}
 	if !strings.Contains(csp, "default-src 'none'") {
 		t.Errorf("Content-Security-Policy = %q, want it to contain %q", csp, "default-src 'none'")
+	}
+}
+
+// TestLogoFileHandler_MultiReplica_SecondReplicaServesFirstReplicasUpload
+// is the actual multi-replica regression guard this whole redesign exists
+// for: two independent *db.Pool/handler pairs - standing in for two
+// separate `vane serve` processes/containers with no shared filesystem
+// between them - both read the one Postgres database. A logo persisted
+// through "replica" A must be servable through "replica" B without either
+// process needing to see the other's local disk, since there no longer is
+// one: the old design (a file under UPLOADS_DIR) would 404 on B here,
+// because B's local disk never received A's upload.
+func TestLogoFileHandler_MultiReplica_SecondReplicaServesFirstReplicasUpload(t *testing.T) {
+	poolA := newLogoFileHandlerTestPool(t)
+	dsn := testDatabaseURL(t)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	poolB, err := db.NewPool(ctx, dsn)
+	if err != nil {
+		t.Fatalf("NewPool() for replica B returned unexpected error: %v", err)
+	}
+	t.Cleanup(poolB.Close)
+
+	replicaA := db.NewCompanySettingsRepository(poolA)
+	replicaB := db.NewCompanySettingsRepository(poolB)
+
+	if _, err := replicaA.UpdateLogo(context.Background(), "image/png", []byte("uploaded-via-replica-a")); err != nil {
+		t.Fatalf("replica A UpdateLogo() returned unexpected error: %v", err)
+	}
+
+	rec := getLogoFile(t, NewLogoFileHandler(replicaB))
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("replica B status = %d, want %d - a logo uploaded through replica A must be servable through replica B", rec.Code, http.StatusOK)
+	}
+	if rec.Body.String() != "uploaded-via-replica-a" {
+		t.Errorf("replica B body = %q, want %q", rec.Body.String(), "uploaded-via-replica-a")
 	}
 }

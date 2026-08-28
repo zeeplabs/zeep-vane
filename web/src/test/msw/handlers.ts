@@ -717,7 +717,7 @@ export const handlers = [
     if (!contentType.startsWith("multipart/form-data")) {
       return HttpResponse.json({ error: "logo must be a PNG or SVG image no larger than 10 MB" }, { status: 422 });
     }
-    companySettingsState = { ...companySettingsState, logo_url: "/uploads/logo.png" };
+    companySettingsState = { ...companySettingsState, logo_url: "/uploads/logo" };
     return HttpResponse.json(companySettingsState);
   }),
 ];

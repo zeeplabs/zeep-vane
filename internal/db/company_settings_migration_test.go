@@ -46,9 +46,10 @@ func TestCompanySettingsMigration_AppliesClean_SeedsSingletonRow(t *testing.T) {
 	}
 
 	var name, contactEmail string
-	var logoURL *string
-	row := pool.QueryRow(ctx, "SELECT name, contact_email, logo_url FROM company_settings WHERE id = 1")
-	if err := row.Scan(&name, &contactEmail, &logoURL); err != nil {
+	var logoData []byte
+	var logoContentType *string
+	row := pool.QueryRow(ctx, "SELECT name, contact_email, logo_data, logo_content_type FROM company_settings WHERE id = 1")
+	if err := row.Scan(&name, &contactEmail, &logoData, &logoContentType); err != nil {
 		t.Fatalf("seed row query returned unexpected error: %v", err)
 	}
 	if name != "" {
@@ -57,8 +58,11 @@ func TestCompanySettingsMigration_AppliesClean_SeedsSingletonRow(t *testing.T) {
 	if contactEmail != "" {
 		t.Errorf("seeded contact_email = %q, want \"\"", contactEmail)
 	}
-	if logoURL != nil {
-		t.Errorf("seeded logo_url = %q, want nil", *logoURL)
+	if logoData != nil {
+		t.Errorf("seeded logo_data = %v, want nil", logoData)
+	}
+	if logoContentType != nil {
+		t.Errorf("seeded logo_content_type = %q, want nil", *logoContentType)
 	}
 }
 

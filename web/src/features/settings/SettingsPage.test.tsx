@@ -70,7 +70,7 @@ describe("SettingsPage", () => {
 
     await waitFor(async () => {
       const updated = await apiFetch<{ logo_url: string | null }>("/api/company-settings");
-      expect(updated.logo_url).toBe("/uploads/logo.png");
+      expect(updated.logo_url).toBe("/uploads/logo");
     });
 
     // The name/e-mail form was never submitted - only the logo upload ran.
