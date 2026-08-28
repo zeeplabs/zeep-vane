@@ -98,8 +98,8 @@ Consumes the backend contract (unchanged request/response body; only a new respo
 
 **Done when**:
 
-- [ ] `adminsHandler` is constructed with `cfg.SessionSecret` and `cfg.SecureCookies`
-- [ ] Gate check passes: full build gate (`gofmt -l . && go vet ./... && go test ./... && go test -tags=integration ./...` plus `make build`) - no dedicated new test for this task (public route, no role gate to exercise; T1's tests already prove the handler behavior end-to-end)
+- [x] `adminsHandler` is constructed with `cfg.SessionSecret` and `cfg.SecureCookies`
+- [x] Gate check passes: full build gate (`gofmt -l . && go vet ./... && go test ./... && go test -tags=integration ./...` plus `make build`) - no dedicated new test for this task (public route, no role gate to exercise; T1's tests already prove the handler behavior end-to-end)
 
 **Tests**: none
 **Gate**: build
