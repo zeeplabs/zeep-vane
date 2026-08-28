@@ -280,16 +280,20 @@ Tasks: T11, T12, executed in that order.
 - Skill: NONE
 
 **Done when**:
-- [ ] No active provider -> `ErrNoActiveProvider`, fake `Provider.Send` never called (EMAIL-08's "no active provider" AC)
-- [ ] Active provider connected -> template rendered with `data` and passed to `Provider.Send` via the decrypted key + stored `from_email`/`from_name` (EMAIL-07, EMAIL-09)
-- [ ] `Provider.Send` failure -> error returned to caller unmodified, exactly one call made (no retry) (EMAIL-08's failure-propagation AC)
-- [ ] Rendered content (both HTML and text bodies) contains the `AcceptURL`, `Role`, and `CompanyName` substitutions - the actual template-correctness test deferred from T6
-- [ ] Gate passes: `gofmt -l . && go vet ./... && go test ./...`
+- [x] No active provider -> `ErrNoActiveProvider`, fake `Provider.Send` never called (EMAIL-08's "no active provider" AC)
+- [x] Active provider connected -> template rendered with `data` and passed to `Provider.Send` via the decrypted key + stored `from_email`/`from_name` (EMAIL-07, EMAIL-09)
+- [x] `Provider.Send` failure -> error returned to caller unmodified, exactly one call made (no retry) (EMAIL-08's failure-propagation AC)
+- [x] Rendered content (both HTML and text bodies) contains the `AcceptURL`, `Role`, and `CompanyName` substitutions - the actual template-correctness test deferred from T6
+- [x] Gate passes: `gofmt -l . && go vet ./... && go test ./...`
 
 **Tests**: unit
 **Gate**: quick
 
 **Commit**: `feat(email): implement Service.SendAdminInvite`
+
+**Status**: ✅ Complete
+
+**Phase 3 close (build gate)**: `gofmt -l . && go vet ./... && go test ./... && go test -tags=integration ./...` (full), `cd web && npx tsc -b --noEmit && npm run test` (web quick), `cd web && npm run build`, `make build` - all green.
 
 ---
 

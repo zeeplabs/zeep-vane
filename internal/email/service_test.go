@@ -3,6 +3,7 @@ package email
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	"go.uber.org/zap"
@@ -80,16 +81,18 @@ func (f *fakeStore) SetActiveProvider(_ context.Context, provider string) error 
 }
 
 // fakeProvider is a Provider double recording whether it was asked to
-// validate/send and what to return.
+// validate/send, what was sent, and what to return.
 type fakeProvider struct {
 	validateErr error
 	sendErr     error
 	sendCalls   int
+	lastMessage Message
 }
 
 func (f *fakeProvider) ValidateCredentials(context.Context) error { return f.validateErr }
-func (f *fakeProvider) Send(context.Context, Message) error {
+func (f *fakeProvider) Send(_ context.Context, msg Message) error {
 	f.sendCalls++
+	f.lastMessage = msg
 	return f.sendErr
 }
 
@@ -336,5 +339,97 @@ func TestList_ConnectedAndActive_ReflectsBothWithoutKeyMaterial(t *testing.T) {
 		if p.Status != "connected" {
 			t.Errorf("provider %q Status = %q, want %q", p.Provider, p.Status, "connected")
 		}
+	}
+}
+
+func TestSendAdminInvite_NoActiveProvider_ReturnsErrNoActiveProvider_NeverCallsSend(t *testing.T) {
+	store := newFakeStore()
+	sentProvider := &fakeProvider{}
+	svc := newTestService(t, store, func(provider, apiKey string) (Provider, error) { return sentProvider, nil })
+
+	err := svc.SendAdminInvite(t.Context(), "invitee@example.com", AdminInviteEmailData{
+		CompanyName: "Acme", Role: "operator", AcceptURL: "https://vane.example.com/invite/abc",
+	})
+	if !errors.Is(err, ErrNoActiveProvider) {
+		t.Fatalf("SendAdminInvite() error = %v, want ErrNoActiveProvider", err)
+	}
+	if sentProvider.sendCalls != 0 {
+		t.Errorf("Provider.Send call count = %d, want 0 (zero network calls with no active provider)", sentProvider.sendCalls)
+	}
+}
+
+func TestSendAdminInvite_ActiveProvider_RendersTemplateAndSendsWithDecryptedKeyAndStoredSender(t *testing.T) {
+	store := newFakeStore()
+	sentProvider := &fakeProvider{}
+	var factoryProvider, factoryAPIKey string
+	factory := func(provider, apiKey string) (Provider, error) {
+		factoryProvider = provider
+		factoryAPIKey = apiKey
+		return sentProvider, nil
+	}
+	svc := newTestService(t, store, factory)
+
+	if err := svc.Connect(t.Context(), "sendgrid", "decrypted-api-key", "invites@acme.example.com", "Acme Invites"); err != nil {
+		t.Fatalf("Connect() returned unexpected error: %v", err)
+	}
+	if err := svc.Activate(t.Context(), "sendgrid"); err != nil {
+		t.Fatalf("Activate() returned unexpected error: %v", err)
+	}
+
+	data := AdminInviteEmailData{
+		CompanyName: "Acme Inc.",
+		Role:        "operator",
+		AcceptURL:   "https://vane.example.com/invite/abc123",
+	}
+	if err := svc.SendAdminInvite(t.Context(), "invitee@example.com", data); err != nil {
+		t.Fatalf("SendAdminInvite() returned unexpected error: %v", err)
+	}
+
+	if sentProvider.sendCalls != 1 {
+		t.Fatalf("Provider.Send call count = %d, want 1", sentProvider.sendCalls)
+	}
+	if factoryProvider != "sendgrid" {
+		t.Errorf("factory provider = %q, want %q", factoryProvider, "sendgrid")
+	}
+	if factoryAPIKey != "decrypted-api-key" {
+		t.Errorf("factory apiKey = %q, want decrypted value %q (EMAIL-07: Send must be called with the decrypted api_key)", factoryAPIKey, "decrypted-api-key")
+	}
+
+	msg := sentProvider.lastMessage
+	if msg.To != "invitee@example.com" {
+		t.Errorf("Message.To = %q, want %q", msg.To, "invitee@example.com")
+	}
+	if msg.FromEmail != "invites@acme.example.com" || msg.FromName != "Acme Invites" {
+		t.Errorf("Message.FromEmail/FromName = %q/%q, want stored %q/%q (EMAIL-07)", msg.FromEmail, msg.FromName, "invites@acme.example.com", "Acme Invites")
+	}
+	if !strings.Contains(msg.HTMLBody, data.AcceptURL) || !strings.Contains(msg.HTMLBody, data.Role) || !strings.Contains(msg.HTMLBody, data.CompanyName) {
+		t.Errorf("HTMLBody = %q, want it to contain AcceptURL=%q, Role=%q, CompanyName=%q (EMAIL-09)", msg.HTMLBody, data.AcceptURL, data.Role, data.CompanyName)
+	}
+	if !strings.Contains(msg.TextBody, data.AcceptURL) || !strings.Contains(msg.TextBody, data.Role) || !strings.Contains(msg.TextBody, data.CompanyName) {
+		t.Errorf("TextBody = %q, want it to contain AcceptURL=%q, Role=%q, CompanyName=%q (EMAIL-09)", msg.TextBody, data.AcceptURL, data.Role, data.CompanyName)
+	}
+}
+
+func TestSendAdminInvite_ProviderSendFails_ReturnsErrorUnmodified_ExactlyOneCall(t *testing.T) {
+	store := newFakeStore()
+	sendFailure := errors.New("sendgrid: server error")
+	sentProvider := &fakeProvider{sendErr: sendFailure}
+	svc := newTestService(t, store, func(provider, apiKey string) (Provider, error) { return sentProvider, nil })
+
+	if err := svc.Connect(t.Context(), "sendgrid", "api-key", "owner@example.com", "Owner"); err != nil {
+		t.Fatalf("Connect() returned unexpected error: %v", err)
+	}
+	if err := svc.Activate(t.Context(), "sendgrid"); err != nil {
+		t.Fatalf("Activate() returned unexpected error: %v", err)
+	}
+
+	err := svc.SendAdminInvite(t.Context(), "invitee@example.com", AdminInviteEmailData{
+		CompanyName: "Acme", Role: "operator", AcceptURL: "https://vane.example.com/invite/abc",
+	})
+	if !errors.Is(err, sendFailure) {
+		t.Fatalf("SendAdminInvite() error = %v, want the underlying send failure %v unmodified", err, sendFailure)
+	}
+	if sentProvider.sendCalls != 1 {
+		t.Errorf("Provider.Send call count = %d, want exactly 1 (no retry)", sentProvider.sendCalls)
 	}
 }

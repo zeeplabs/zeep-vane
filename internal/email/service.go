@@ -165,3 +165,56 @@ func (s *Service) List(ctx context.Context) (ListResult, error) {
 
 	return ListResult{ActiveProvider: active, Providers: statuses}, nil
 }
+
+// SendAdminInvite renders the admin-invite template and sends it through
+// whichever provider is currently active (EMAIL-07). If no provider is
+// active it returns ErrNoActiveProvider without building a Provider or
+// calling any send API (EMAIL-08). A send failure is returned to the
+// caller unmodified - no retry, no queue (EMAIL-08).
+func (s *Service) SendAdminInvite(ctx context.Context, to string, data AdminInviteEmailData) error {
+	active, err := s.repo.GetActiveProvider(ctx)
+	if err != nil {
+		return fmt.Errorf("email: failed to get active provider: %w", err)
+	}
+	if active == "" {
+		return ErrNoActiveProvider
+	}
+
+	ep, err := s.repo.Get(ctx, active)
+	if err != nil {
+		if errors.Is(err, db.ErrNotFound) {
+			// The active_provider FK guarantees this row exists in
+			// practice; treat it the same as "no active provider" rather
+			// than a distinct error, since from the caller's point of
+			// view sending is equally impossible either way.
+			return ErrNoActiveProvider
+		}
+		return fmt.Errorf("email: failed to get active provider row: %w", err)
+	}
+
+	apiKey, err := crypto.Decrypt(s.masterKey, ep.EncryptedAPIKey)
+	if err != nil {
+		return fmt.Errorf("email: failed to decrypt active provider api key: %w", err)
+	}
+
+	provider, err := s.factory(active, string(apiKey))
+	if err != nil {
+		return fmt.Errorf("email: failed to build active provider client: %w", err)
+	}
+
+	htmlBody, textBody, err := s.templates.renderAdminInvite(data)
+	if err != nil {
+		return err
+	}
+
+	msg := Message{
+		To:        to,
+		FromEmail: ep.FromEmail,
+		FromName:  ep.FromName,
+		Subject:   fmt.Sprintf("You've been invited to join %s", data.CompanyName),
+		HTMLBody:  htmlBody,
+		TextBody:  textBody,
+	}
+
+	return provider.Send(ctx, msg)
+}
