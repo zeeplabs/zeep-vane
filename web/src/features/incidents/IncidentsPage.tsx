@@ -94,7 +94,10 @@ function ActiveIncidentCard({
   serviceName: (id: string) => string;
 }) {
   const [expanded, setExpanded] = useState(false);
-  const { data: updates } = useIncidentUpdates(incident.id);
+  // SPEC_DEVIATION: fixed page 1, no Pager for this per-incident timeline -
+  // see the equivalent note in IncidentDetail.tsx.
+  const { data: updatesPage } = useIncidentUpdates(incident.id, 1);
+  const updates = updatesPage?.items;
   const addUpdate = useAddIncidentUpdate(incident.id);
   const transition = useTransitionIncident(incident.id);
   const [body, setBody] = useState("");
@@ -189,7 +192,13 @@ export function IncidentsPage() {
   const { hasRole } = useAuth();
   const canManage = hasRole(["owner", "operator"]);
   const [tab, setTab] = useState<"active" | "resolved">("active");
-  const { data: incidents, isLoading } = useIncidents();
+  // SPEC_DEVIATION: task T5 (IncidentsPage renders Pager) depends on T14
+  // (Pager component), which is a later phase not yet built - this reads
+  // fixed page 1 for now (25 incidents), matching what "all incidents"
+  // meant before pagination for any installation with 25 or fewer. Real
+  // page navigation (Pager wired to page state) is T5's job once T14 exists.
+  const { data: incidentsPage, isLoading } = useIncidents(1);
+  const incidents = incidentsPage?.items;
   const { data: services } = useServices();
   const createIncident = useCreateIncident();
 

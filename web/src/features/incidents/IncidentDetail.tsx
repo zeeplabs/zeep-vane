@@ -23,8 +23,22 @@ export function IncidentDetail() {
   const { id = "" } = useParams();
   const { hasRole } = useAuth();
   const canManage = hasRole(["owner", "operator"]);
-  const { data: incidents } = useIncidents();
-  const { data: updates } = useIncidentUpdates(id);
+  // SPEC_DEVIATION: design.md/tasks.md didn't account for IncidentDetail.tsx
+  // as a caller of these hooks (only IncidentsPage.tsx is named in T5). Both
+  // hooks now require a page argument and return a Page<T> envelope, so this
+  // fixes compilation with the minimum change: fixed page 1, read .items.
+  // spec.md's Out of Scope table already defers any dedicated Pager UI for
+  // this timeline view; this file gets no Pager, matching that decision.
+  // A real gap remains: an incident whose id isn't on page 1 of /api/incidents
+  // (more than 25 incidents exist) won't be found here, since there is no
+  // GET /api/incidents/{id} endpoint - this pre-dates pagination (the page
+  // was already fetching "all" incidents to find one by id) but pagination
+  // makes the ceiling explicit. Out of scope for this feature; flagged for
+  // a future task.
+  const { data: incidentsPage } = useIncidents(1);
+  const { data: updatesPage } = useIncidentUpdates(id, 1);
+  const incidents = incidentsPage?.items;
+  const updates = updatesPage?.items;
   const addUpdate = useAddIncidentUpdate(id);
   const transition = useTransitionIncident(id);
 

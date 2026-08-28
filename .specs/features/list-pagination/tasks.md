@@ -201,12 +201,14 @@ T13 → T20
 - Skill: NONE
 
 **Done when**:
-- [ ] `useIncidents(1)` queryKey is `["incidents", 1]`, fetches `/api/incidents?page=1`
-- [ ] `useIncidentUpdates(id, 1)` queryKey is `["incidents", id, "updates", 1]`, fetches `/api/incidents/{id}/updates?page=1`
-- [ ] Both return the full `Page<T>` object (not just `.items`)
-- [ ] MSW handler in `web/src/test/msw/handlers.ts` updated to return the paginated envelope for `/api/incidents` and `/api/incidents/:id/updates`
-- [ ] Gate check passes: `cd web && npx vitest run`
-- [ ] Test count: existing incidents hook tests (2+) updated and passing + 2 new tests asserting queryKey/URL
+- [x] `useIncidents(1)` queryKey is `["incidents", 1]`, fetches `/api/incidents?page=1`
+- [x] `useIncidentUpdates(id, 1)` queryKey is `["incidents", id, "updates", 1]`, fetches `/api/incidents/{id}/updates?page=1`
+- [x] Both return the full `Page<T>` object (not just `.items`)
+- [x] MSW handler in `web/src/test/msw/handlers.ts` updated to return the paginated envelope for `/api/incidents` and `/api/incidents/:id/updates`
+- [x] Gate check passes: `cd web && npx vitest run` (also verified clean against the stricter Frontend-tier gate, `npx tsc --noEmit && npx vitest run` - see SPEC_DEVIATION note below)
+- [x] Test count: existing incidents hook tests (2) updated and passing + 2 new tests asserting queryKey/URL
+
+**SPEC_DEVIATION**: changing `useIncidents`/`useIncidentUpdates`'s signatures broke compilation in two callers tasks.md never lists against this task: `IncidentsPage.tsx` (T5's real target, blocked on T14/`Pager` which doesn't exist yet) and `IncidentDetail.tsx` (not named in any task - spec.md's Out of Scope table only defers a *Pager UI* for its timeline, not the hook signature change). Left broken, this would hand off a non-compiling `web/` to the next batch. Fixed both minimally in this commit: fixed `page=1`, read `.items` instead of a bare array, no `Pager` added (that's still T5's job once T14 lands). `IncidentDetail.tsx` also carries a pre-existing, pagination-exposed gap noted in-code: it finds an incident by id inside the fetched list (no `GET /api/incidents/{id}` endpoint exists), so an incident past page 1 (>25 incidents) won't resolve there - out of scope for this feature, flagged for a future task.
 
 **Tests**: unit
 **Gate**: Frontend

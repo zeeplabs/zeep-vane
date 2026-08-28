@@ -125,7 +125,7 @@ Explicitly excluded. Documented to prevent scope creep.
 | PAG-08 | P2: The same pagination pattern applies to every other admin list screen | Specify | Pending |
 | PAG-09 | P2: The same pagination pattern applies to every other admin list screen | Specify | Pending |
 | PAG-10 | P2: The same pagination pattern applies to every other admin list screen | Specify | Pending |
-| PAG-11 | P2: The same pagination pattern applies to every other admin list screen | Specify | Pending |
+| PAG-11 | P2: The same pagination pattern applies to every other admin list screen | Specify | Implementing |
 | PAG-12 | P3: Public status page visitors load incident history progressively | Specify | Pending |
 | PAG-13 | P3: Public status page visitors load incident history progressively | Specify | Pending |
 | PAG-14 | P3: Public status page visitors load incident history progressively | Specify | Pending |

@@ -1,11 +1,11 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiFetch } from "../../lib/apiClient";
-import type { Incident, IncidentStatus, IncidentUpdate } from "../../types/api";
+import type { Incident, IncidentStatus, IncidentUpdate, Page } from "../../types/api";
 
-export function useIncidents() {
+export function useIncidents(page: number) {
   return useQuery({
-    queryKey: ["incidents"],
-    queryFn: () => apiFetch<Incident[]>("/api/incidents"),
+    queryKey: ["incidents", page],
+    queryFn: () => apiFetch<Page<Incident>>(`/api/incidents?page=${page}`),
   });
 }
 
@@ -25,10 +25,10 @@ export function useCreateIncident() {
   });
 }
 
-export function useIncidentUpdates(incidentId: string) {
+export function useIncidentUpdates(incidentId: string, page: number) {
   return useQuery({
-    queryKey: ["incidents", incidentId, "updates"],
-    queryFn: () => apiFetch<IncidentUpdate[]>(`/api/incidents/${incidentId}/updates`),
+    queryKey: ["incidents", incidentId, "updates", page],
+    queryFn: () => apiFetch<Page<IncidentUpdate>>(`/api/incidents/${incidentId}/updates?page=${page}`),
     enabled: Boolean(incidentId),
   });
 }

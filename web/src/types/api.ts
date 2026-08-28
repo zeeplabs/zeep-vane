@@ -90,3 +90,12 @@ export interface CompanySettings {
   contact_email: string;
   logo_url: string | null;
 }
+
+// Page is the shared response envelope for every paginated list endpoint
+// (design.md § Data Models), mirroring the backend's internal/api.Page[T].
+export interface Page<T> {
+  items: T[];
+  total: number;
+  page: number;
+  page_size: number;
+}

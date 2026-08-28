@@ -24,6 +24,7 @@ import type {
   IncidentUpdate,
   IncidentStatus,
   CompanySettings,
+  Page,
 } from "../../types/api";
 
 // Simulates the vane_session cookie server-side: real cookie semantics
@@ -203,6 +204,23 @@ function timelineFor(incidentId: string): IncidentUpdate[] {
   return incidentUpdatesState
     .filter((u) => u.incident_id === incidentId)
     .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+}
+
+// paginatedPage mirrors the backend's internal/api.Page[T] envelope
+// (LIMIT/OFFSET slicing over an already-ordered array), reading ?page=
+// from requestUrl the same way parsePage does: missing/invalid/non-positive
+// clamps to 1.
+function paginatedPage<T>(requestUrl: string, items: T[], pageSize: number): Page<T> {
+  const rawPage = new URL(requestUrl).searchParams.get("page");
+  const parsed = rawPage ? Number.parseInt(rawPage, 10) : 1;
+  const page = Number.isFinite(parsed) && parsed >= 1 ? parsed : 1;
+  const start = (page - 1) * pageSize;
+  return {
+    items: items.slice(start, start + pageSize),
+    total: items.length,
+    page,
+    page_size: pageSize,
+  };
 }
 
 // toServiceResponse strips slo_name - the real serviceResponse
@@ -569,12 +587,12 @@ export const handlers = [
 
   // GET /api/incidents (I16) - mirrors IncidentsHandler.List: most recently
   // created first, each with its service_ids.
-  http.get("/api/incidents", () => {
+  http.get("/api/incidents", ({ request }) => {
     if (!sessionAdminId) return HttpResponse.json({ error: "unauthorized" }, { status: 401 });
     const sorted = [...incidentsState].sort(
       (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
     );
-    return HttpResponse.json(sorted);
+    return HttpResponse.json(paginatedPage(request.url, sorted, 25));
   }),
 
   http.post("/api/incidents", async ({ request }) => {
@@ -599,13 +617,13 @@ export const handlers = [
   // GET/POST /api/incidents/:id/updates (I16) - mirrors
   // IncidentsHandler.ListUpdates/AddUpdate: timeline ordered most-recent
   // first, 404 for an incident id that doesn't exist.
-  http.get("/api/incidents/:id/updates", ({ params }) => {
+  http.get("/api/incidents/:id/updates", ({ request, params }) => {
     if (!sessionAdminId) return HttpResponse.json({ error: "unauthorized" }, { status: 401 });
     const incidentId = params.id as string;
     if (!incidentsState.some((i) => i.id === incidentId)) {
       return HttpResponse.json({ error: "incident not found" }, { status: 404 });
     }
-    return HttpResponse.json(timelineFor(incidentId));
+    return HttpResponse.json(paginatedPage(request.url, timelineFor(incidentId), 25));
   }),
 
   http.post("/api/incidents/:id/updates", async ({ request, params }) => {
