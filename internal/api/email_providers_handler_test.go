@@ -43,7 +43,7 @@ func (f *fakeEmailProviderService) Activate(ctx context.Context, provider string
 	return f.activateErr
 }
 
-func (f *fakeEmailProviderService) List(ctx context.Context) (email.ListResult, error) {
+func (f *fakeEmailProviderService) List(ctx context.Context, page, pageSize int) (email.ListResult, error) {
 	return f.listResult, f.listErr
 }
 

@@ -13,11 +13,16 @@ import (
 	"github.com/zeeplabs/zeep-vane/internal/db"
 )
 
+// statusPagesPageSize is the fixed page size for /api/status-pages
+// (spec.md Assumptions: 20 for domains/services/status-pages/
+// email-providers/poller-status/admins).
+const statusPagesPageSize = 20
+
 // statusPageCreatorLister is the subset of *db.StatusPageRepository the
 // status pages handler depends on.
 type statusPageCreatorLister interface {
 	Create(ctx context.Context, statusPage *db.StatusPage, serviceIDs []string) error
-	List(ctx context.Context) ([]db.StatusPage, error)
+	ListPaginated(ctx context.Context, page, pageSize int) ([]db.StatusPage, int, error)
 	AttachDomain(ctx context.Context, id, domainID, subdomain string) (*db.StatusPage, error)
 	SetServices(ctx context.Context, id string, serviceIDs []string) error
 	GetByID(ctx context.Context, id string) (*db.StatusPage, error)
@@ -214,10 +219,12 @@ func (h *StatusPagesHandler) SetServices(w http.ResponseWriter, r *http.Request)
 	_ = json.NewEncoder(w).Encode(toStatusPageResponse(statusPage))
 }
 
-// List handles GET /api/status-pages, returning every registered status
-// page.
+// List handles GET /api/status-pages, returning one page of registered
+// status pages (20 per page, PAG-08).
 func (h *StatusPagesHandler) List(w http.ResponseWriter, r *http.Request) {
-	statusPages, err := h.statusPages.List(r.Context())
+	page := parsePage(r)
+
+	statusPages, total, err := h.statusPages.ListPaginated(r.Context(), page, statusPagesPageSize)
 	if err != nil {
 		h.logger.Error("status-pages: failed to list status pages", zap.Error(err))
 		writeInternalError(w)
@@ -231,5 +238,5 @@ func (h *StatusPagesHandler) List(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	_ = json.NewEncoder(w).Encode(resp)
+	_ = json.NewEncoder(w).Encode(Page[statusPageResponse]{Items: resp, Total: total, Page: page, PageSize: statusPagesPageSize})
 }

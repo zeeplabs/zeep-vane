@@ -54,15 +54,25 @@ func (f *fakeStore) Get(_ context.Context, provider string) (*db.EmailProvider, 
 	return row, nil
 }
 
-func (f *fakeStore) List(_ context.Context) ([]db.EmailProvider, error) {
+func (f *fakeStore) ListPaginated(_ context.Context, page, pageSize int) ([]db.EmailProvider, int, error) {
 	if f.listErr != nil {
-		return nil, f.listErr
+		return nil, 0, f.listErr
 	}
 	rows := make([]db.EmailProvider, 0, len(f.rows))
 	for _, row := range f.rows {
 		rows = append(rows, *row)
 	}
-	return rows, nil
+	total := len(rows)
+
+	start := (page - 1) * pageSize
+	if start >= total {
+		return []db.EmailProvider{}, total, nil
+	}
+	end := start + pageSize
+	if end > total {
+		end = total
+	}
+	return rows[start:end], total, nil
 }
 
 func (f *fakeStore) GetActiveProvider(_ context.Context) (string, error) {
@@ -299,7 +309,7 @@ func TestList_NoneConnected_ReturnsEmptyProvidersAndNoActive(t *testing.T) {
 	store := newFakeStore()
 	svc := newTestService(t, store, func(provider, apiKey string) (Provider, error) { return &fakeProvider{}, nil })
 
-	result, err := svc.List(t.Context())
+	result, err := svc.List(t.Context(), 1, 20)
 	if err != nil {
 		t.Fatalf("List() returned unexpected error: %v", err)
 	}
@@ -325,7 +335,7 @@ func TestList_ConnectedAndActive_ReflectsBothWithoutKeyMaterial(t *testing.T) {
 		t.Fatalf("Activate(resend) returned unexpected error: %v", err)
 	}
 
-	result, err := svc.List(t.Context())
+	result, err := svc.List(t.Context(), 1, 20)
 	if err != nil {
 		t.Fatalf("List() returned unexpected error: %v", err)
 	}

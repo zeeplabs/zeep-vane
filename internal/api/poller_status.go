@@ -11,10 +11,15 @@ import (
 	"github.com/zeeplabs/zeep-vane/internal/db"
 )
 
+// pollerStatusPageSize is the fixed page size for /api/poller/status
+// (spec.md Assumptions: 20 for domains/services/status-pages/
+// email-providers/poller-status/admins).
+const pollerStatusPageSize = 20
+
 // integrationLister is the subset of *db.IntegrationRepository the poller
 // status handler depends on.
 type integrationLister interface {
-	List(ctx context.Context) ([]db.Integration, error)
+	ListPaginated(ctx context.Context, page, pageSize int) ([]db.Integration, int, error)
 }
 
 // PollerStatusHandler serves the poller status route (admin-dashboard
@@ -45,7 +50,9 @@ type pollerIntegrationStatus struct {
 // attempt succeeded, or "invalid" with last_error populated when it didn't
 // (SP-09, reused verbatim, no new logic).
 func (h *PollerStatusHandler) List(w http.ResponseWriter, r *http.Request) {
-	integrations, err := h.integrations.List(r.Context())
+	page := parsePage(r)
+
+	integrations, total, err := h.integrations.ListPaginated(r.Context(), page, pollerStatusPageSize)
 	if err != nil {
 		h.logger.Error("poller-status: failed to list integrations", zap.Error(err))
 		writeInternalError(w)
@@ -64,5 +71,5 @@ func (h *PollerStatusHandler) List(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	_ = json.NewEncoder(w).Encode(resp)
+	_ = json.NewEncoder(w).Encode(Page[pollerIntegrationStatus]{Items: resp, Total: total, Page: page, PageSize: pollerStatusPageSize})
 }

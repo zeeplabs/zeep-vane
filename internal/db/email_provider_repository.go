@@ -83,34 +83,64 @@ func (r *EmailProviderRepository) Get(ctx context.Context, provider string) (*Em
 	return &ep, nil
 }
 
-// List returns every connected email provider, ordered by provider for a
-// stable response. Returns an empty slice (not an error) when none exist
-// (EMAIL-06).
-func (r *EmailProviderRepository) List(ctx context.Context) ([]EmailProvider, error) {
+// ListPaginated returns one page of connected email providers, ordered by
+// provider for a stable response (PAG-08). Returns an empty slice (not an
+// error) when none exist (EMAIL-06). total is computed via COUNT(*)
+// OVER() in the same query, with a zero-row fallback COUNT(*), same
+// pattern as the other ListPaginated methods. Single caller confirmed
+// (email/service.go's List, itself called only by
+// email_providers_handler.go) - internal/poller/poller.go never calls
+// EmailProviderRepository.List.
+func (r *EmailProviderRepository) ListPaginated(ctx context.Context, page, pageSize int) ([]EmailProvider, int, error) {
+	offset := (page - 1) * pageSize
+
 	rows, err := r.pool.Query(ctx,
-		`SELECT id, provider, encrypted_api_key, from_email, from_name, status, last_checked_at, last_error
-		 FROM email_providers ORDER BY provider`)
+		`SELECT id, provider, encrypted_api_key, from_email, from_name, status, last_checked_at, last_error, COUNT(*) OVER() AS total
+		 FROM email_providers
+		 ORDER BY provider
+		 LIMIT $1 OFFSET $2`,
+		pageSize, offset,
+	)
 	if err != nil {
-		return nil, fmt.Errorf("db: failed to list email providers: %w", err)
+		return nil, 0, fmt.Errorf("db: failed to list email providers: %w", err)
 	}
 	defer rows.Close()
 
 	providers := []EmailProvider{}
+	total := 0
 	for rows.Next() {
 		var ep EmailProvider
 		if err := rows.Scan(
 			&ep.ID, &ep.Provider, &ep.EncryptedAPIKey, &ep.FromEmail, &ep.FromName,
-			&ep.Status, &ep.LastCheckedAt, &ep.LastError,
+			&ep.Status, &ep.LastCheckedAt, &ep.LastError, &total,
 		); err != nil {
-			return nil, fmt.Errorf("db: failed to scan email provider row: %w", err)
+			return nil, 0, fmt.Errorf("db: failed to scan email provider row: %w", err)
 		}
 		providers = append(providers, ep)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("db: failed reading email provider rows: %w", err)
+		return nil, 0, fmt.Errorf("db: failed reading email provider rows: %w", err)
 	}
 
-	return providers, nil
+	if len(providers) == 0 {
+		total, err = r.countEmailProviders(ctx)
+		if err != nil {
+			return nil, 0, err
+		}
+	}
+
+	return providers, total, nil
+}
+
+// countEmailProviders is the zero-row fallback for ListPaginated's total
+// (PAG-08).
+func (r *EmailProviderRepository) countEmailProviders(ctx context.Context) (int, error) {
+	var total int
+	row := r.pool.QueryRow(ctx, "SELECT COUNT(*) FROM email_providers")
+	if err := row.Scan(&total); err != nil {
+		return 0, fmt.Errorf("db: failed to count email providers: %w", err)
+	}
+	return total, nil
 }
 
 // GetActiveProvider returns the currently active provider's name, or ""

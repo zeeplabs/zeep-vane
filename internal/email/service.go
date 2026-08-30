@@ -37,7 +37,7 @@ var (
 type EmailProviderStore interface {
 	UpsertProvider(ctx context.Context, provider string, encryptedAPIKey []byte, fromEmail, fromName string) error
 	Get(ctx context.Context, provider string) (*db.EmailProvider, error)
-	List(ctx context.Context) ([]db.EmailProvider, error)
+	ListPaginated(ctx context.Context, page, pageSize int) ([]db.EmailProvider, int, error)
 	GetActiveProvider(ctx context.Context) (string, error)
 	SetActiveProvider(ctx context.Context, provider string) error
 }
@@ -53,11 +53,15 @@ type ProviderStatus struct {
 	LastError     *string
 }
 
-// ListResult is List's return shape: every connected provider plus which
-// one, if any, is active.
+// ListResult is List's return shape: one page of connected providers plus
+// which one, if any, is active, and Total/Page/PageSize so the caller can
+// build a pagination envelope (PAG-08) without a second round-trip.
 type ListResult struct {
 	ActiveProvider string
 	Providers      []ProviderStatus
+	Total          int
+	Page           int
+	PageSize       int
 }
 
 // Service implements connect/activate/list/send for email providers.
@@ -138,10 +142,11 @@ func (s *Service) Activate(ctx context.Context, provider string) error {
 	return nil
 }
 
-// List returns every connected provider plus the current active provider
-// (EMAIL-06). It never includes any provider's encrypted API key.
-func (s *Service) List(ctx context.Context) (ListResult, error) {
-	providers, err := s.repo.List(ctx)
+// List returns one page of connected providers plus the current active
+// provider (EMAIL-06, PAG-08). It never includes any provider's encrypted
+// API key.
+func (s *Service) List(ctx context.Context, page, pageSize int) (ListResult, error) {
+	providers, total, err := s.repo.ListPaginated(ctx, page, pageSize)
 	if err != nil {
 		return ListResult{}, fmt.Errorf("email: failed to list providers: %w", err)
 	}
@@ -163,7 +168,7 @@ func (s *Service) List(ctx context.Context) (ListResult, error) {
 		})
 	}
 
-	return ListResult{ActiveProvider: active, Providers: statuses}, nil
+	return ListResult{ActiveProvider: active, Providers: statuses, Total: total, Page: page, PageSize: pageSize}, nil
 }
 
 // SendAdminInvite renders the admin-invite template and sends it through

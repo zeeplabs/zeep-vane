@@ -13,13 +13,18 @@ import (
 	"github.com/zeeplabs/zeep-vane/internal/email"
 )
 
+// emailProvidersPageSize is the fixed page size for /api/integrations/email
+// (spec.md Assumptions: 20 for domains/services/status-pages/
+// email-providers/poller-status/admins).
+const emailProvidersPageSize = 20
+
 // emailProviderService is the subset of *email.Service EmailProvidersHandler
 // depends on - the same narrowing convention datadogIntegrationUpserter
 // uses for the Datadog integration handler.
 type emailProviderService interface {
 	Connect(ctx context.Context, provider, apiKey, fromEmail, fromName string) error
 	Activate(ctx context.Context, provider string) error
-	List(ctx context.Context) (email.ListResult, error)
+	List(ctx context.Context, page, pageSize int) (email.ListResult, error)
 }
 
 // EmailProvidersHandler serves the /api/integrations/email/* admin routes.
@@ -124,22 +129,31 @@ type emailProviderResponse struct {
 type listEmailProvidersResponse struct {
 	ActiveProvider *string                 `json:"active_provider"`
 	Providers      []emailProviderResponse `json:"providers"`
+	Total          int                     `json:"total"`
+	Page           int                     `json:"page"`
+	PageSize       int                     `json:"page_size"`
 }
 
-// List handles GET /api/integrations/email. It returns every connected
-// provider plus which one, if any, is active (EMAIL-06 AC1) - an empty
-// list and a null active_provider when nothing has ever been connected
-// (EMAIL-06 AC2, EMAIL-04 AC4), never a 404. The response never includes
-// api_key in any form.
+// List handles GET /api/integrations/email. It returns one page of
+// connected providers (PAG-08, page_size 20) plus which one, if any, is
+// active (EMAIL-06 AC1) - an empty list and a null active_provider when
+// nothing has ever been connected (EMAIL-06 AC2, EMAIL-04 AC4), never a
+// 404. The response never includes api_key in any form.
 func (h *EmailProvidersHandler) List(w http.ResponseWriter, r *http.Request) {
-	result, err := h.svc.List(r.Context())
+	page := parsePage(r)
+	result, err := h.svc.List(r.Context(), page, emailProvidersPageSize)
 	if err != nil {
 		h.logger.Error("email providers: failed to list providers", zap.Error(err))
 		writeInternalError(w)
 		return
 	}
 
-	resp := listEmailProvidersResponse{Providers: make([]emailProviderResponse, 0, len(result.Providers))}
+	resp := listEmailProvidersResponse{
+		Providers: make([]emailProviderResponse, 0, len(result.Providers)),
+		Total:     result.Total,
+		Page:      result.Page,
+		PageSize:  result.PageSize,
+	}
 	if result.ActiveProvider != "" {
 		active := result.ActiveProvider
 		resp.ActiveProvider = &active

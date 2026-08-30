@@ -91,12 +91,12 @@ func TestPollerStatus_SuccessfulIntegration_ReflectsPersistedState(t *testing.T)
 		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
 	}
 
-	var list []pollerIntegrationStatus
-	if err := json.Unmarshal(rec.Body.Bytes(), &list); err != nil {
+	var page Page[pollerIntegrationStatus]
+	if err := json.Unmarshal(rec.Body.Bytes(), &page); err != nil {
 		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
 	}
 
-	got, ok := findPollerStatus(list, "datadog")
+	got, ok := findPollerStatus(page.Items, "datadog")
 	if !ok {
 		t.Fatalf("response missing datadog integration: %s", rec.Body.String())
 	}
@@ -127,12 +127,12 @@ func TestPollerStatus_PersistedFailure_ReflectsInvalidStatusAndError(t *testing.
 		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
 	}
 
-	var list []pollerIntegrationStatus
-	if err := json.Unmarshal(rec.Body.Bytes(), &list); err != nil {
+	var page Page[pollerIntegrationStatus]
+	if err := json.Unmarshal(rec.Body.Bytes(), &page); err != nil {
 		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
 	}
 
-	got, ok := findPollerStatus(list, "datadog")
+	got, ok := findPollerStatus(page.Items, "datadog")
 	if !ok {
 		t.Fatalf("response missing datadog integration: %s", rec.Body.String())
 	}
@@ -177,5 +177,52 @@ func TestPollerStatus_Viewer_200(t *testing.T) {
 
 	if rec.Code != http.StatusOK {
 		t.Errorf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+}
+
+func TestPollerStatus_InvalidPage_ClampsToPage1(t *testing.T) {
+	r, _, admins := newPollerStatusRouter(t)
+	token := issueTestSessionToken(t, admins)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/poller/status?page=abc", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	var page Page[pollerIntegrationStatus]
+	if err := json.Unmarshal(rec.Body.Bytes(), &page); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+	if page.Page != 1 {
+		t.Errorf("page.Page = %d, want 1 (clamped from invalid ?page=abc)", page.Page)
+	}
+	if page.PageSize != 20 {
+		t.Errorf("page.PageSize = %d, want 20", page.PageSize)
+	}
+}
+
+func TestPollerStatus_PageBeyondLast_EmptyItems200(t *testing.T) {
+	r, _, admins := newPollerStatusRouter(t)
+	token := issueTestSessionToken(t, admins)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/poller/status?page=999999", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	var page Page[pollerIntegrationStatus]
+	if err := json.Unmarshal(rec.Body.Bytes(), &page); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+	if len(page.Items) != 0 {
+		t.Errorf("len(page.Items) = %d, want 0 for a page far beyond the last", len(page.Items))
 	}
 }

@@ -123,12 +123,15 @@ func TestEmailProviderRepository_List_NoneConnected_ReturnsEmptySlice(t *testing
 	repo, _ := newEmailProviderRepoForTest(t)
 	ctx := context.Background()
 
-	providers, err := repo.List(ctx)
+	providers, total, err := repo.ListPaginated(ctx, 1, 20)
 	if err != nil {
-		t.Fatalf("List() returned unexpected error: %v", err)
+		t.Fatalf("ListPaginated() returned unexpected error: %v", err)
 	}
 	if len(providers) != 0 {
-		t.Fatalf("List() returned %d providers, want 0", len(providers))
+		t.Fatalf("ListPaginated() returned %d providers, want 0", len(providers))
+	}
+	if total != 0 {
+		t.Fatalf("ListPaginated() total = %d, want 0", total)
 	}
 }
 
@@ -143,15 +146,18 @@ func TestEmailProviderRepository_List_MultipleConnected_ReturnsAllOrderedByProvi
 		t.Fatalf("UpsertProvider(sendgrid) returned unexpected error: %v", err)
 	}
 
-	providers, err := repo.List(ctx)
+	providers, total, err := repo.ListPaginated(ctx, 1, 20)
 	if err != nil {
-		t.Fatalf("List() returned unexpected error: %v", err)
+		t.Fatalf("ListPaginated() returned unexpected error: %v", err)
 	}
 	if len(providers) != 2 {
-		t.Fatalf("List() returned %d providers, want 2", len(providers))
+		t.Fatalf("ListPaginated() returned %d providers, want 2", len(providers))
+	}
+	if total != 2 {
+		t.Fatalf("ListPaginated() total = %d, want 2", total)
 	}
 	if providers[0].Provider != "resend" || providers[1].Provider != "sendgrid" {
-		t.Fatalf("List() order = [%q, %q], want [resend, sendgrid] (ordered by provider)", providers[0].Provider, providers[1].Provider)
+		t.Fatalf("ListPaginated() order = [%q, %q], want [resend, sendgrid] (ordered by provider)", providers[0].Provider, providers[1].Provider)
 	}
 }
 

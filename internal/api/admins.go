@@ -548,13 +548,22 @@ func (h *AdminsHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(map[string]string{"status": "removed"})
 }
 
-// List handles GET /api/admins (role: owner), returning every active
-// admin's email and current role merged with pending admin invites - not
-// yet accepted and not expired - each item tagged with Status ("active" or
-// "pending") (AF-38). ADM-09 scopes this to owner via router-level
-// RequireRole, not a check here.
+// adminsPageSize is the fixed page size for GET /api/admins (spec.md
+// Assumptions: 20 for admins/domains/services/status-pages/
+// email-providers/poller-status).
+const adminsPageSize = 20
+
+// List handles GET /api/admins (role: owner), returning one page (PAG-08,
+// page_size 20) of every active admin's email and current role merged with
+// pending admin invites - not yet accepted and not expired - each item
+// tagged with Status ("active" or "pending") (AF-38). The merge itself is
+// unbounded (both queries still fetch everything); only the resulting
+// slice is paginated in Go, per spec Assumption - no repository signature
+// change. ADM-09 scopes this to owner via router-level RequireRole, not a
+// check here.
 func (h *AdminsHandler) List(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
+	page := parsePage(r)
 
 	rows, err := h.pool.Query(ctx, "SELECT id, email, role FROM admins ORDER BY email")
 	if err != nil {
@@ -598,9 +607,20 @@ func (h *AdminsHandler) List(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
+	total := len(list)
+	start := (page - 1) * adminsPageSize
+	items := []adminResponse{}
+	if start < total {
+		end := start + adminsPageSize
+		if end > total {
+			end = total
+		}
+		items = list[start:end]
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	_ = json.NewEncoder(w).Encode(list)
+	_ = json.NewEncoder(w).Encode(Page[adminResponse]{Items: items, Total: total, Page: page, PageSize: adminsPageSize})
 }
 
 func writeAdminError(w http.ResponseWriter, status int, body string) {

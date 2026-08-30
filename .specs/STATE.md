@@ -93,6 +93,14 @@
 - **Date**: 2026-08-28
 - **Status**: active — commit confirmado
 
+### AD-012
+- **Decision**: Qualquer endpoint de lista futuro que precise paginar segue o padrão de `list-pagination` (2026-08-28): offset-based (`page`/`page_size` via `LIMIT`/`OFFSET`, não cursor), envelope `{items,total,page,page_size}` (`internal/api.Page[T]`), `page_size` fixo por endpoint (sem `?page_size=` configurável), `total` via `COUNT(*) OVER()` com fallback `SELECT COUNT(*)` só quando a página vem vazia, `?page=` inválido/ausente vira `1` sem erro 400. Repositório com caller interno não-HTTP (ex. poller) ganha `ListPaginated` novo em vez de mutar `List(ctx)` existente.
+- **Reason**: `list-pagination` fechou 9 endpoints sem paginação nenhuma (nem `LIMIT`). Só `incidents` (admin) cresce sem limite de verdade hoje; os demais são pequenos por design (AD-002), mas o usuário decidiu aplicar o padrão em todos os 9 pra consistência, excluindo só `admin_audit_log` (sem rota de leitura) e `status_intervals` (já bounded por janela de tempo, contrato usado por `internal/history`).
+- **Trade-off**: Esforço mecânico em endpoints que não precisam (dezenas de linhas) — aceito pelo usuário em troca de consistência de padrão em todo o painel admin.
+- **Scope**: Qualquer `Repository.List`/handler futuro que hoje devolve array cru sem `LIMIT`.
+- **Date**: 2026-08-28
+- **Status**: active
+
 ## Handoff
 
 **Feature**: `self-hosted-docker-bootstrap` — **status: PASS ✅** (Verifier iteração 3/3, limite do skill, 2 rodadas de fix→re-verify). Relatório: `.specs/features/self-hosted-docker-bootstrap/validation.md`. 22/22 ACs (SHD-01 a SHD-22), sensor de discriminação 3/3 mortos.

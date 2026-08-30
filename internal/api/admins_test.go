@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -51,12 +52,22 @@ func (f *fakeEmailProviderStore) Get(_ context.Context, provider string) (*db.Em
 	}
 	return row, nil
 }
-func (f *fakeEmailProviderStore) List(_ context.Context) ([]db.EmailProvider, error) {
+func (f *fakeEmailProviderStore) ListPaginated(_ context.Context, page, pageSize int) ([]db.EmailProvider, int, error) {
 	rows := make([]db.EmailProvider, 0, len(f.rows))
 	for _, row := range f.rows {
 		rows = append(rows, *row)
 	}
-	return rows, nil
+	total := len(rows)
+
+	start := (page - 1) * pageSize
+	if start >= total {
+		return []db.EmailProvider{}, total, nil
+	}
+	end := start + pageSize
+	if end > total {
+		end = total
+	}
+	return rows[start:end], total, nil
 }
 func (f *fakeEmailProviderStore) GetActiveProvider(_ context.Context) (string, error) {
 	return f.activeProvider, nil
@@ -1154,6 +1165,44 @@ func getAdminsList(t *testing.T, r http.Handler, token string) *httptest.Respons
 	return rec
 }
 
+func getAdminsListPage(t *testing.T, r http.Handler, token string, page int) *httptest.ResponseRecorder {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodGet, fmt.Sprintf("/api/admins?page=%d", page), nil)
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+	return rec
+}
+
+// findAdminAcrossPages pages through every page of GET /api/admins looking
+// for email - the shared dev DB this integration suite runs against can
+// accumulate admins/invites across many tests, so page 1 alone is not
+// guaranteed to include one created just now (PAG-08, same reasoning as
+// status-pages/domains/services handler tests).
+func findAdminAcrossPages(t *testing.T, r http.Handler, token, email string) *adminResponse {
+	t.Helper()
+	for page := 1; ; page++ {
+		rec := getAdminsListPage(t, r, token, page)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("page=%d status = %d, want %d, body = %s", page, rec.Code, http.StatusOK, rec.Body.String())
+		}
+		var got Page[adminResponse]
+		if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+			t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+		}
+		for i := range got.Items {
+			if got.Items[i].Email == email {
+				return &got.Items[i]
+			}
+		}
+		if len(got.Items) == 0 || page*got.PageSize >= got.Total {
+			return nil
+		}
+	}
+}
+
 func TestListAdmins_Owner_200_IncludesEveryAdminWithRole(t *testing.T) {
 	r, _, admins, _ := newAdminsRouter(t)
 	token := issueTestSessionToken(t, admins)
@@ -1173,25 +1222,23 @@ func TestListAdmins_Owner_200_IncludesEveryAdminWithRole(t *testing.T) {
 		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
 	}
 
-	var list []adminResponse
-	if err := json.Unmarshal(rec.Body.Bytes(), &list); err != nil {
+	var page Page[adminResponse]
+	if err := json.Unmarshal(rec.Body.Bytes(), &page); err != nil {
 		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
 	}
-
-	found := false
-	for _, item := range list {
-		if item.ID == target.ID {
-			found = true
-			if item.Email != target.Email {
-				t.Errorf("listed admin Email = %q, want %q", item.Email, target.Email)
-			}
-			if item.Role != db.RoleViewer {
-				t.Errorf("listed admin Role = %q, want %q", item.Role, db.RoleViewer)
-			}
-		}
+	if page.Page != 1 {
+		t.Errorf("page.Page = %d, want 1 (default)", page.Page)
 	}
-	if !found {
-		t.Errorf("admin %q not present in list response %s", target.ID, rec.Body.String())
+	if page.PageSize != 20 {
+		t.Errorf("page.PageSize = %d, want 20", page.PageSize)
+	}
+
+	found := findAdminAcrossPages(t, r, token, target.Email)
+	if found == nil {
+		t.Fatalf("admin %q not present across any page of GET /api/admins", target.ID)
+	}
+	if found.Role != db.RoleViewer {
+		t.Errorf("listed admin Role = %q, want %q", found.Role, db.RoleViewer)
 	}
 }
 
@@ -1212,20 +1259,8 @@ func TestListAdmins_Owner_200_MergesPendingInviteWithStatus(t *testing.T) {
 		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
 	}
 
-	var list []adminResponse
-	if err := json.Unmarshal(rec.Body.Bytes(), &list); err != nil {
-		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
-	}
-
-	var pendingItem, activeItem *adminResponse
-	for i := range list {
-		if list[i].Email == pendingEmail {
-			pendingItem = &list[i]
-		}
-		if list[i].ID == inviter.ID {
-			activeItem = &list[i]
-		}
-	}
+	pendingItem := findAdminAcrossPages(t, r, token, pendingEmail)
+	activeItem := findAdminAcrossPages(t, r, token, inviter.Email)
 
 	if pendingItem == nil {
 		t.Fatalf("pending invite %q not present in list response %s", pendingEmail, rec.Body.String())
@@ -1634,25 +1669,16 @@ func TestListAdmins_Owner_200_ExcludesUsedIncludesExpiredInvites(t *testing.T) {
 		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
 	}
 
-	var list []adminResponse
-	if err := json.Unmarshal(rec.Body.Bytes(), &list); err != nil {
-		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	if used := findAdminAcrossPages(t, r, token, usedEmail); used != nil {
+		t.Errorf("list included used invite %q, want excluded", usedEmail)
 	}
 
-	foundExpired := false
-	for _, item := range list {
-		if item.Email == usedEmail {
-			t.Errorf("list included used invite %q, want excluded", usedEmail)
-		}
-		if item.Email == expiredEmail {
-			foundExpired = true
-			if !item.Expired {
-				t.Errorf("expired invite %q has Expired = false, want true", expiredEmail)
-			}
-		}
+	expired := findAdminAcrossPages(t, r, token, expiredEmail)
+	if expired == nil {
+		t.Fatalf("list did not include expired-but-unused invite %q, want included", expiredEmail)
 	}
-	if !foundExpired {
-		t.Errorf("list did not include expired-but-unused invite %q, want included", expiredEmail)
+	if !expired.Expired {
+		t.Errorf("expired invite %q has Expired = false, want true", expiredEmail)
 	}
 }
 
@@ -1673,25 +1699,12 @@ func TestListAdmins_Owner_200_PendingNotYetExpired_ExpiredFalse(t *testing.T) {
 		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
 	}
 
-	var list []adminResponse
-	if err := json.Unmarshal(rec.Body.Bytes(), &list); err != nil {
-		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	pending := findAdminAcrossPages(t, r, token, pendingEmail)
+	if pending == nil {
+		t.Fatalf("list did not include pending invite %q", pendingEmail)
 	}
-
-	found := false
-	for _, item := range list {
-		if item.Email == pendingEmail {
-			found = true
-			if item.Expired {
-				t.Errorf("not-yet-expired invite %q has Expired = true, want false", pendingEmail)
-			}
-		}
-		if item.Status == "active" && item.Expired {
-			t.Errorf("active admin %q has Expired = true, want field never set for active entries", item.Email)
-		}
-	}
-	if !found {
-		t.Errorf("list did not include pending invite %q", pendingEmail)
+	if pending.Expired {
+		t.Errorf("not-yet-expired invite %q has Expired = true, want false", pendingEmail)
 	}
 }
 

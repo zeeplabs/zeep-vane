@@ -88,34 +88,66 @@ func (r *IntegrationRepository) MarkDatadogChecked(ctx context.Context) error {
 	return nil
 }
 
-// List returns every connected integration (admin-dashboard ADM-13/ADM-14 -
-// the poller status view reads this directly, with no new fetch logic).
-// Ordered by provider for a stable response.
-func (r *IntegrationRepository) List(ctx context.Context) ([]Integration, error) {
+// ListPaginated returns one page of connected integrations
+// (admin-dashboard ADM-13/ADM-14 - the poller status view reads this
+// directly, with no new fetch logic), ordered by provider for a stable
+// response (PAG-08). total is computed via COUNT(*) OVER() in the same
+// query, with a zero-row fallback COUNT(*), same pattern as the other
+// ListPaginated methods. Single caller confirmed (poller_status.go) -
+// internal/poller/poller.go never calls IntegrationRepository.List, only
+// MarkDatadogChecked/MarkDatadogInvalid, so replacing List outright (no
+// ServiceRepository-style "keep the old method" precedent needed here) is
+// safe.
+func (r *IntegrationRepository) ListPaginated(ctx context.Context, page, pageSize int) ([]Integration, int, error) {
+	offset := (page - 1) * pageSize
+
 	rows, err := r.pool.Query(ctx,
-		`SELECT id, provider, encrypted_api_key, encrypted_app_key, status, last_checked_at, last_error
-		 FROM integrations ORDER BY provider`)
+		`SELECT id, provider, encrypted_api_key, encrypted_app_key, status, last_checked_at, last_error, COUNT(*) OVER() AS total
+		 FROM integrations
+		 ORDER BY provider
+		 LIMIT $1 OFFSET $2`,
+		pageSize, offset,
+	)
 	if err != nil {
-		return nil, fmt.Errorf("db: failed to list integrations: %w", err)
+		return nil, 0, fmt.Errorf("db: failed to list integrations: %w", err)
 	}
 	defer rows.Close()
 
-	var integrations []Integration
+	integrations := []Integration{}
+	total := 0
 	for rows.Next() {
 		var integration Integration
 		if err := rows.Scan(
 			&integration.ID, &integration.Provider, &integration.EncryptedAPIKey, &integration.EncryptedAppKey,
-			&integration.Status, &integration.LastCheckedAt, &integration.LastError,
+			&integration.Status, &integration.LastCheckedAt, &integration.LastError, &total,
 		); err != nil {
-			return nil, fmt.Errorf("db: failed to scan integration row: %w", err)
+			return nil, 0, fmt.Errorf("db: failed to scan integration row: %w", err)
 		}
 		integrations = append(integrations, integration)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("db: failed reading integration rows: %w", err)
+		return nil, 0, fmt.Errorf("db: failed reading integration rows: %w", err)
 	}
 
-	return integrations, nil
+	if len(integrations) == 0 {
+		total, err = r.countIntegrations(ctx)
+		if err != nil {
+			return nil, 0, err
+		}
+	}
+
+	return integrations, total, nil
+}
+
+// countIntegrations is the zero-row fallback for ListPaginated's total
+// (PAG-08).
+func (r *IntegrationRepository) countIntegrations(ctx context.Context) (int, error) {
+	var total int
+	row := r.pool.QueryRow(ctx, "SELECT COUNT(*) FROM integrations")
+	if err := row.Scan(&total); err != nil {
+		return 0, fmt.Errorf("db: failed to count integrations: %w", err)
+	}
+	return total, nil
 }
 
 // GetDatadog returns the Datadog integration's current status, last error,
