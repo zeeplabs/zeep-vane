@@ -14,11 +14,12 @@ Rules for any AI agent (Claude Code, Codex, Cursor, etc.) working in this reposi
 
 ## 2. Branching and commits
 
-- All work happens on `main` — there is no `develop`/release-branch flow in this repo (unlike `zeep-orbit`). Don't invent one.
-- Commit style follows `CONTRIBUTING.md`: `type: short description` (types: `feat`, `fix`, `refactor`, `test`, `docs`, `chore`). Keep messages about *why*, not just *what*.
+- Day-to-day work happens on `develop` (adopted 2026-08-30, mirroring `zeep-orbit`'s model). `main` is release-only and never pushed to directly — a release branch (`release-vX.Y.Z`, cut from `develop`) carries the version-bump commit, gets opened as a PR into `main`, and only lands after CI is green and it's reviewed. Merge that PR via **"Squash and merge"** — pre-adopted from `zeep-orbit` before vane hits the same failure mode: if `develop` ever gets a `merge --no-ff` reconciliation commit from `main` after a release (the pattern that broke "Rebase and merge" repeatedly in orbit, since GitHub can't replay a merge commit via cherry-pick), squashing sidesteps it entirely. See `RELEASE.md` for full steps.
+- Never commit directly to `main` outside that release PR flow.
+- Commit style follows `CONTRIBUTING.md`: `type: short description` (types: `feat`, `fix`, `refactor`, `test`, `docs`, `chore`, `release`). Keep messages about *why*, not just *what*.
 - **Never commit unless explicitly asked to.** Staging/committing on your own initiative is not acceptable, even at the end of a task.
 - **Never push unless explicitly asked to.** Local commits are fine to accumulate; pushing is a separate, explicit decision.
-- Never `--force` push, `--amend` a pushed commit, or rewrite `main` history without explicit instruction.
+- Never `--force` push, `--amend` a pushed commit, or rewrite `main`/`develop` history without explicit instruction.
 
 ## 3. Before considering any change done
 

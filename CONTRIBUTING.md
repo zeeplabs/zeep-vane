@@ -48,11 +48,11 @@ npx tsc -b --noEmit   # type-check
 ## Making changes
 
 1. Fork the repository
-2. Create a branch: `git checkout -b feat/my-change`
+2. Branch from `develop`: `git checkout develop && git checkout -b feat/my-change`
 3. Make your changes
 4. Run the relevant test/gate commands above for whatever you touched (backend, frontend, or both)
 5. Commit with a clear message (see style below)
-6. Open a pull request against `main`
+6. Open a pull request against `develop` — `main` only receives merges from a release branch (see `RELEASE.md`), never a feature PR directly
 
 ## Commit style
 
@@ -62,7 +62,7 @@ type: short description
 Longer explanation if needed.
 ```
 
-Types: `feat`, `fix`, `refactor`, `test`, `docs`, `chore`
+Types: `feat`, `fix`, `refactor`, `test`, `docs`, `chore`, `release`
 
 ## Spec-driven changes
 
