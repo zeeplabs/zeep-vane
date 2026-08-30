@@ -93,12 +93,16 @@ func NewServeCmd() *cobra.Command {
 			// IntegrationsHandler.ConnectDatadog after every successful
 			// connect/rotate, which is what lets an admin start seeing real
 			// data without restarting serve (PLD-01/PLD-05).
-			pollerManager := NewPollerManager(ctx, pool, cfg, logger)
-			if started, err := pollerManager.Restart(ctx); err != nil {
-				return err
-			} else if !started {
-				logger.Warn("serve: no datadog integration connected yet, poller not started")
-			}
+			//
+			// RunLeaderLoop (not a direct boot-time Restart call) gates
+			// which replica actually runs the poller: it acquires a
+			// Postgres advisory lock before calling Restart, so with more
+			// than one replica sharing this database, only the lock holder
+			// ever polls (ha-multi-replica HA-01..HA-07). With a single
+			// replica this resolves immediately and behaves exactly like
+			// the unconditional Restart it replaces.
+			pollerManager := NewPollerManager(ctx, pool, cfg, logger, cfg.DatabaseURL)
+			go pollerManager.RunLeaderLoop(ctx)
 
 			// The retention Pruner runs on its own ticker, independent of
 			// the poller's (design.md: polling and pruning are unrelated

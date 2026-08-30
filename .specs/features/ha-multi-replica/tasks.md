@@ -183,13 +183,13 @@ T10 → T11 → T12 → T13
 - Skill: NONE
 
 **Done when**:
-- [ ] `pollerLeaderLockKey = 727200001` defined with a doc comment explaining the distinct namespace from `internal/dbtest`'s `727100001`-`727100003`
-- [ ] Single-replica case (HA-07): one `PollerManager` against a fresh test database acquires the lock immediately and polls exactly as before this feature
-- [ ] Two-replica case (HA-01, HA-02): two `PollerManager` instances against the same test database - only one runs poll cycles at a time; the other retries acquisition without polling
-- [ ] Failover case (HA-04): killing/stopping the lock-holding `PollerManager` (or closing its lock connection out-of-band) lets the other acquire the lock and start polling within one `leaderHeartbeatInterval`
-- [ ] Mid-cycle loss case (HA-05): simulated heartbeat failure aborts the in-flight cycle without completing/writing it
-- [ ] No new environment variable introduced (HA-06) - confirmed by `grep`
-- [ ] Full gate passes
+- [x] `pollerLeaderLockKey = 727200001` defined with a doc comment explaining the distinct namespace from `internal/dbtest`'s `727100001`-`727100003`
+- [x] Single-replica case (HA-07): one `PollerManager` against a fresh test database acquires the lock immediately and polls exactly as before this feature
+- [x] Two-replica case (HA-01, HA-02): two `PollerManager` instances against the same test database - only one runs poll cycles at a time; the other retries acquisition without polling
+- [x] Failover case (HA-04): killing/stopping the lock-holding `PollerManager` (or closing its lock connection out-of-band) lets the other acquire the lock and start polling within one `leaderHeartbeatInterval`
+- [x] Mid-cycle loss case (HA-05): simulated heartbeat failure aborts the in-flight cycle without completing/writing it
+- [x] No new environment variable introduced (HA-06) - confirmed by `grep`
+- [x] Full gate passes
 
 **Tests**: integration
 **Gate**: Full

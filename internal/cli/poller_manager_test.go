@@ -59,7 +59,7 @@ func TestPollerManager_Restart_WithStoredIntegration_StartsAndTracksRunning(t *t
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	mgr := NewPollerManager(ctx, pool, pollerManagerTestConfig(), zap.NewNop())
+	mgr := NewPollerManager(ctx, pool, pollerManagerTestConfig(), zap.NewNop(), testDatabaseURL(t))
 	t.Cleanup(mgr.Stop)
 
 	started, err := mgr.Restart(context.Background())
@@ -88,7 +88,7 @@ func TestPollerManager_Restart_NoIntegration_ReturnsFalseWithoutError(t *testing
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	mgr := NewPollerManager(ctx, pool, pollerManagerTestConfig(), zap.NewNop())
+	mgr := NewPollerManager(ctx, pool, pollerManagerTestConfig(), zap.NewNop(), testDatabaseURL(t))
 	t.Cleanup(mgr.Stop)
 
 	started, err := mgr.Restart(context.Background())
@@ -111,7 +111,7 @@ func TestPollerManager_Stop_ExitsPromptlyAndClearsState(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	mgr := NewPollerManager(ctx, pool, pollerManagerTestConfig(), zap.NewNop())
+	mgr := NewPollerManager(ctx, pool, pollerManagerTestConfig(), zap.NewNop(), testDatabaseURL(t))
 
 	if started, err := mgr.Restart(context.Background()); err != nil || !started {
 		t.Fatalf("Restart() = (%v, %v), want (true, nil)", started, err)
@@ -150,7 +150,7 @@ func TestPollerManager_Restart_CalledTwice_TearsDownPreviousBeforeStartingNew(t 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	mgr := NewPollerManager(ctx, pool, pollerManagerTestConfig(), zap.NewNop())
+	mgr := NewPollerManager(ctx, pool, pollerManagerTestConfig(), zap.NewNop(), testDatabaseURL(t))
 	t.Cleanup(mgr.Stop)
 
 	if started, err := mgr.Restart(context.Background()); err != nil || !started {
@@ -179,5 +179,169 @@ func TestPollerManager_Restart_CalledTwice_TearsDownPreviousBeforeStartingNew(t 
 	}
 	if secondDone == firstDone {
 		t.Error("second Restart reused the first run's done channel, want a fresh one per Restart")
+	}
+}
+
+// leaderTestPollerManager builds a PollerManager with short leader
+// retry/heartbeat intervals (same package as poller_manager.go, so the
+// unexported fields are directly settable) - the production defaults
+// (10s each) would make these tests unnecessarily slow.
+func leaderTestPollerManager(t *testing.T, parentCtx context.Context, pool *db.Pool, dsn string) *PollerManager {
+	t.Helper()
+	mgr := NewPollerManager(parentCtx, pool, pollerManagerTestConfig(), zap.NewNop(), dsn)
+	mgr.leaderRetryInterval = 50 * time.Millisecond
+	mgr.leaderHeartbeatInterval = 100 * time.Millisecond
+	return mgr
+}
+
+// isLeading reports whether mgr currently believes it is running a poller
+// (i.e. currently holds leadership and Restart succeeded).
+func isLeading(mgr *PollerManager) bool {
+	mgr.mu.Lock()
+	defer mgr.mu.Unlock()
+	return mgr.cancel != nil && mgr.done != nil
+}
+
+// waitUntil polls cond every 20ms until it returns true or timeout elapses,
+// returning whether cond became true in time.
+func waitUntil(timeout time.Duration, cond func() bool) bool {
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		if cond() {
+			return true
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	return cond()
+}
+
+// killPollerLeaderBackend terminates the Postgres backend currently holding
+// the poller leadership advisory lock, simulating a replica crashing
+// (rather than gracefully releasing) while leader. pollerLeaderLockKey fits
+// in 32 bits, so pg_advisory_lock(bigint) stores it as classid=0,
+// objid=pollerLeaderLockKey, objsubid=1 in pg_locks - this queries that
+// shape directly rather than reaching into PollerManager's internal
+// pglock.Handle (which RunLeaderLoop keeps unexported and unreachable from
+// a test), the same way an operator killing a pod has no cooperation from
+// the process being killed.
+func killPollerLeaderBackend(t *testing.T, pool *db.Pool) bool {
+	t.Helper()
+	ctx := context.Background()
+	var pid int
+	err := pool.QueryRow(ctx,
+		`SELECT pid FROM pg_locks WHERE locktype = 'advisory' AND classid = 0 AND objid = $1 AND objsubid = 1 LIMIT 1`,
+		pollerLeaderLockKey,
+	).Scan(&pid)
+	if err != nil {
+		return false
+	}
+	if _, err := pool.Exec(ctx, "SELECT pg_terminate_backend($1)", pid); err != nil {
+		t.Fatalf("pg_terminate_backend() returned unexpected error: %v", err)
+	}
+	return true
+}
+
+// TestPollerManager_RunLeaderLoop_SingleReplica_AcquiresAndPolls covers
+// HA-07: with a single replica, RunLeaderLoop acquires the lock immediately
+// and starts polling, same as the unconditional boot-time Restart it
+// replaces.
+func TestPollerManager_RunLeaderLoop_SingleReplica_AcquiresAndPolls(t *testing.T) {
+	pool := newServeTestPool(t)
+	dsn := testDatabaseURL(t)
+	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), "DELETE FROM integrations WHERE provider = 'datadog'") })
+	storeTestDatadogIntegration(t, pool)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	mgr := leaderTestPollerManager(t, ctx, pool, dsn)
+	go mgr.RunLeaderLoop(ctx)
+	t.Cleanup(mgr.Stop)
+
+	if !waitUntil(3*time.Second, func() bool { return isLeading(mgr) }) {
+		t.Fatal("single-replica RunLeaderLoop did not start polling within 3s, want immediate acquisition")
+	}
+}
+
+// TestPollerManager_RunLeaderLoop_TwoReplicas_OnlyOneRuns covers
+// HA-01/HA-02: with two PollerManager instances sharing the same database,
+// only one ever runs the poller at a time; the other keeps retrying
+// acquisition without polling.
+func TestPollerManager_RunLeaderLoop_TwoReplicas_OnlyOneRuns(t *testing.T) {
+	pool := newServeTestPool(t)
+	dsn := testDatabaseURL(t)
+	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), "DELETE FROM integrations WHERE provider = 'datadog'") })
+	storeTestDatadogIntegration(t, pool)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	mgrA := leaderTestPollerManager(t, ctx, pool, dsn)
+	mgrB := leaderTestPollerManager(t, ctx, pool, dsn)
+	go mgrA.RunLeaderLoop(ctx)
+	go mgrB.RunLeaderLoop(ctx)
+	t.Cleanup(mgrA.Stop)
+	t.Cleanup(mgrB.Stop)
+
+	if !waitUntil(3*time.Second, func() bool { return isLeading(mgrA) || isLeading(mgrB) }) {
+		t.Fatal("neither replica acquired leadership within 3s")
+	}
+
+	// Give the loser every chance to (wrongly) also start polling before
+	// asserting exclusivity - a flaky implementation racing both Restarts
+	// through would likely show it within a few retry intervals.
+	time.Sleep(300 * time.Millisecond)
+
+	leadingA, leadingB := isLeading(mgrA), isLeading(mgrB)
+	if leadingA == leadingB {
+		t.Fatalf("exactly one replica should be leading, got A=%v B=%v", leadingA, leadingB)
+	}
+}
+
+// TestPollerManager_RunLeaderLoop_LeaderBackendKilled_FailoverAndAbort
+// covers HA-04 (failover: the standby acquires and starts polling once the
+// leader's session dies) and HA-05 (the leader aborts rather than
+// continuing to run once it can no longer prove it holds the lock) in one
+// scenario, since killing the leader's backend is the single event both
+// requirements react to.
+func TestPollerManager_RunLeaderLoop_LeaderBackendKilled_FailoverAndAbort(t *testing.T) {
+	pool := newServeTestPool(t)
+	dsn := testDatabaseURL(t)
+	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), "DELETE FROM integrations WHERE provider = 'datadog'") })
+	storeTestDatadogIntegration(t, pool)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	mgrA := leaderTestPollerManager(t, ctx, pool, dsn)
+	mgrB := leaderTestPollerManager(t, ctx, pool, dsn)
+	go mgrA.RunLeaderLoop(ctx)
+	go mgrB.RunLeaderLoop(ctx)
+	t.Cleanup(mgrA.Stop)
+	t.Cleanup(mgrB.Stop)
+
+	if !waitUntil(3*time.Second, func() bool { return isLeading(mgrA) || isLeading(mgrB) }) {
+		t.Fatal("neither replica acquired leadership within 3s")
+	}
+
+	leader, standby := mgrA, mgrB
+	if isLeading(mgrB) {
+		leader, standby = mgrB, mgrA
+	}
+
+	if !killPollerLeaderBackend(t, pool) {
+		t.Fatal("could not find the leader's advisory-lock backend to kill - test setup problem")
+	}
+
+	// HA-05: the killed leader must stop believing it's running within
+	// roughly one heartbeat interval of its session dying.
+	if !waitUntil(3*time.Second, func() bool { return !isLeading(leader) }) {
+		t.Fatal("killed leader still reports itself as leading, want it to detect lock loss and stop (HA-05)")
+	}
+
+	// HA-04: the standby must take over within roughly one heartbeat/retry
+	// interval of the leader's session dying.
+	if !waitUntil(3*time.Second, func() bool { return isLeading(standby) }) {
+		t.Fatal("standby did not acquire leadership and start polling after the leader's session died (HA-04)")
 	}
 }
