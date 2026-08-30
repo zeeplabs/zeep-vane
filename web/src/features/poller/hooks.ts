@@ -1,11 +1,11 @@
 import { useQuery } from "@tanstack/react-query";
 import { apiFetch } from "../../lib/apiClient";
-import type { PollerStatusEntry } from "../../types/api";
+import type { Page, PollerStatusEntry } from "../../types/api";
 
-export function usePollerStatus() {
+export function usePollerStatus(page: number) {
   return useQuery({
-    queryKey: ["poller", "status"],
-    queryFn: () => apiFetch<PollerStatusEntry[]>("/api/poller/status"),
+    queryKey: ["poller", "status", page],
+    queryFn: () => apiFetch<Page<PollerStatusEntry>>(`/api/poller/status?page=${page}`),
     refetchInterval: 30_000,
   });
 }

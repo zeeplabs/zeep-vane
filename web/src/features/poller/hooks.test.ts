@@ -14,10 +14,10 @@ async function loginAsOwner() {
 describe("poller hooks", () => {
   it("usePollerStatus expõe a lista [{provider,status,last_checked_at,last_error}]", async () => {
     await loginAsOwner();
-    const { result } = renderHook(() => usePollerStatus(), { wrapper: TestQueryProvider });
+    const { result } = renderHook(() => usePollerStatus(1), { wrapper: TestQueryProvider });
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
 
-    const entry = result.current.data![0];
+    const entry = result.current.data!.items[0];
     expect(entry).toHaveProperty("provider");
     expect(entry).toHaveProperty("status");
     expect(entry).toHaveProperty("last_checked_at");

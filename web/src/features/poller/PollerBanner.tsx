@@ -18,9 +18,13 @@ function WarningTriangleIcon() {
 }
 
 export function PollerBanner() {
-  const { data } = usePollerStatus();
+  // PAG-08: PollerBanner shows a summary, not a paginated list - it never
+  // needs its own Pager (T18). Page 1 (page_size 20) is enough in practice
+  // (AD-002: single-tenant installs have a handful of integrations at
+  // most), so this deliberately doesn't scan every page for a failure.
+  const { data } = usePollerStatus(1);
   const navigate = useNavigate();
-  const hasFailure = (data ?? []).some((entry) => entry.status !== "active");
+  const hasFailure = (data?.items ?? []).some((entry) => entry.status !== "active");
 
   if (!hasFailure) return null;
 

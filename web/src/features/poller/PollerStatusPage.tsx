@@ -1,3 +1,5 @@
+import { useState } from "react";
+import { Pager } from "../../components/ui/Pager";
 import { Table, type TableColumn } from "../../components/ui/Table";
 import { Tag } from "../../components/ui/Tag";
 import type { PollerStatusEntry } from "../../types/api";
@@ -13,7 +15,9 @@ function providerLabel(provider: string): string {
 }
 
 export function PollerStatusPage() {
-  const { data, isLoading } = usePollerStatus();
+  const [page, setPage] = useState(1);
+  const { data, isLoading } = usePollerStatus(page);
+  const totalPages = Math.max(1, Math.ceil((data?.total ?? 0) / (data?.page_size ?? 20)));
 
   const columns: TableColumn<PollerStatusEntry>[] = [
     {
@@ -51,11 +55,14 @@ export function PollerStatusPage() {
           Última execução de cada integração conectada — apenas leitura.
         </p>
       </div>
-      <div className="mt-2">
+      <div className="mt-2 flex flex-col gap-3">
         {isLoading ? (
           <p className="text-neutral-400">Carregando…</p>
         ) : (
-          <Table columns={columns} rows={data ?? []} rowKey={(e) => e.provider} />
+          <>
+            <Table columns={columns} rows={data?.items ?? []} rowKey={(e) => e.provider} />
+            <Pager page={page} totalPages={totalPages} onChange={setPage} />
+          </>
         )}
       </div>
     </div>

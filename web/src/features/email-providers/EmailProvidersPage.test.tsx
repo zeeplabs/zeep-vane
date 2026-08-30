@@ -117,6 +117,9 @@ describe("EmailProvidersPage", () => {
               last_error: "chave revogada",
             },
           ],
+          total: 1,
+          page: 1,
+          page_size: 20,
         })
       )
     );
@@ -125,5 +128,47 @@ describe("EmailProvidersPage", () => {
     const card = await providerCard("SendGrid");
     expect(await within(card).findByText("Inválido")).toBeInTheDocument();
     expect(within(card).getByText(/chave revogada/)).toBeInTheDocument();
+  });
+
+  it("renderiza Pager com Página 1 de 1 quando nada foi conectado", async () => {
+    await loginAs("owner@vane.app");
+    renderPage();
+
+    await screen.findByText("SendGrid");
+    expect(screen.getByText("Página 1 de 1")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Anterior" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Próximo" })).toBeDisabled();
+  });
+
+  it("clicar em Próximo busca a próxima página", async () => {
+    server.use(
+      http.get("/api/integrations/email", ({ request }) => {
+        const page = new URL(request.url).searchParams.get("page") === "2" ? 2 : 1;
+        return HttpResponse.json({
+          active_provider: null,
+          providers: [
+            {
+              provider: "sendgrid",
+              status: "invalid",
+              from_email: "a@b.com",
+              from_name: "A",
+              last_checked_at: null,
+              last_error: page === 1 ? "erro página 1" : "erro página 2",
+            },
+          ],
+          total: 21,
+          page,
+          page_size: 20,
+        });
+      })
+    );
+    await loginAs("owner@vane.app");
+    renderPage();
+
+    await screen.findByText(/erro página 1/);
+    await userEvent.click(screen.getByRole("button", { name: "Próximo" }));
+
+    await screen.findByText(/erro página 2/);
+    expect(screen.getByText("Página 2 de 2")).toBeInTheDocument();
   });
 });

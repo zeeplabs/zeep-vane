@@ -15,15 +15,22 @@ export interface EmailProviderStatus {
   last_error: string | null;
 }
 
+// Mirrors EmailProvidersHandler.List's paginated response shape (PAG-08) -
+// active_provider/providers sit alongside the pagination fields rather
+// than nesting providers under a generic Page<T> envelope, since
+// active_provider is not itself a list item.
 export interface EmailProvidersResponse {
   active_provider: EmailProviderName | null;
   providers: EmailProviderStatus[];
+  total: number;
+  page: number;
+  page_size: number;
 }
 
-export function useEmailProviders() {
+export function useEmailProviders(page: number) {
   return useQuery({
-    queryKey: ["integrations", "email"],
-    queryFn: () => apiFetch<EmailProvidersResponse>("/api/integrations/email"),
+    queryKey: ["integrations", "email", page],
+    queryFn: () => apiFetch<EmailProvidersResponse>(`/api/integrations/email?page=${page}`),
   });
 }
 

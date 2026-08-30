@@ -2,6 +2,7 @@ import { useState, type FormEvent } from "react";
 import { Card } from "../../components/ui/Card";
 import { Field } from "../../components/ui/Field";
 import { Button } from "../../components/ui/Button";
+import { Pager } from "../../components/ui/Pager";
 import { Tag } from "../../components/ui/Tag";
 import { useAuth } from "../../auth/AuthProvider";
 import { ApiError } from "../../lib/apiClient";
@@ -164,13 +165,15 @@ function ProviderRow({ id, label, status, isActive, canManage }: ProviderRowProp
 export function EmailProvidersPage() {
   const { hasRole } = useAuth();
   const canManage = hasRole(["owner", "operator"]);
-  const { data, isLoading } = useEmailProviders();
+  const [page, setPage] = useState(1);
+  const { data, isLoading } = useEmailProviders(page);
 
   if (isLoading) {
     return <p className="text-neutral-400">Carregando…</p>;
   }
 
   const byProvider = new Map(data?.providers.map((p) => [p.provider, p]));
+  const totalPages = Math.max(1, Math.ceil((data?.total ?? 0) / (data?.page_size ?? 20)));
 
   return (
     <div className="mx-auto flex w-full max-w-[1280px] flex-col gap-6">
@@ -191,6 +194,8 @@ export function EmailProvidersPage() {
           canManage={canManage}
         />
       ))}
+
+      <Pager page={page} totalPages={totalPages} onChange={setPage} />
     </div>
   );
 }

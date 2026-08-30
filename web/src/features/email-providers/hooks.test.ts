@@ -14,7 +14,7 @@ async function loginAsOwner() {
 describe("email-providers hooks", () => {
   it("useEmailProviders retorna lista vazia e active_provider nulo quando nada foi conectado", async () => {
     await loginAsOwner();
-    const { result } = renderHook(() => useEmailProviders(), { wrapper: TestQueryProvider });
+    const { result } = renderHook(() => useEmailProviders(1), { wrapper: TestQueryProvider });
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(result.current.data?.active_provider).toBeNull();
     expect(result.current.data?.providers).toEqual([]);
@@ -23,7 +23,7 @@ describe("email-providers hooks", () => {
   it("useConnectEmailProvider conecta e invalida useEmailProviders em sucesso", async () => {
     await loginAsOwner();
     const { result } = renderHook(
-      () => ({ list: useEmailProviders(), connect: useConnectEmailProvider("sendgrid") }),
+      () => ({ list: useEmailProviders(1), connect: useConnectEmailProvider("sendgrid") }),
       { wrapper: TestQueryProvider }
     );
     await waitFor(() => expect(result.current.list.isSuccess).toBe(true));
@@ -54,7 +54,7 @@ describe("email-providers hooks", () => {
     await loginAsOwner();
     const { result } = renderHook(
       () => ({
-        list: useEmailProviders(),
+        list: useEmailProviders(1),
         connect: useConnectEmailProvider("resend"),
         activate: useActivateEmailProvider(),
       }),

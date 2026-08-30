@@ -503,11 +503,15 @@ export const handlers = [
   // GET /api/integrations/email (EMAIL-06) - mirrors
   // EmailProvidersHandler.List: never a 404, empty list + null
   // active_provider when nothing has ever been connected.
-  http.get("/api/integrations/email", () => {
+  http.get("/api/integrations/email", ({ request }) => {
     if (!sessionAdminId) return HttpResponse.json({ error: "unauthorized" }, { status: 401 });
+    const paged = paginatedPage(request.url, emailProvidersState, 20);
     return HttpResponse.json({
       active_provider: emailActiveProvider,
-      providers: emailProvidersState,
+      providers: paged.items,
+      total: paged.total,
+      page: paged.page,
+      page_size: paged.page_size,
     });
   }),
 
@@ -872,9 +876,9 @@ export const handlers = [
   // (internal/api/poller_status.go): read-only reflection of the last
   // status the poller persisted per integration, no live re-check.
   // Read-only, no per-test state to reset - always seeded from mockData.
-  http.get("/api/poller/status", () => {
+  http.get("/api/poller/status", ({ request }) => {
     if (!sessionAdminId) return HttpResponse.json({ error: "unauthorized" }, { status: 401 });
-    return HttpResponse.json(seedPollerStatus);
+    return HttpResponse.json(paginatedPage(request.url, seedPollerStatus, 20));
   }),
 
   // GET/PATCH /api/company-settings, POST /api/company-settings/logo
