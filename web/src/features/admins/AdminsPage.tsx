@@ -6,6 +6,7 @@ import { Button } from "../../components/ui/Button";
 import { Field } from "../../components/ui/Field";
 import { Tag } from "../../components/ui/Tag";
 import { IconRoleSelector } from "../../components/ui/IconRoleSelector";
+import { Pager } from "../../components/ui/Pager";
 import { Tooltip } from "../../components/ui/Tooltip";
 import { ApiError } from "../../lib/apiClient";
 import type { Role } from "../../types/api";
@@ -38,7 +39,10 @@ function TrashIcon() {
 }
 
 export function AdminsPage() {
-  const { data: admins, isLoading } = useAdmins();
+  const [page, setPage] = useState(1);
+  const { data: adminsPage, isLoading } = useAdmins(page);
+  const admins = adminsPage?.items;
+  const totalPages = Math.max(1, Math.ceil((adminsPage?.total ?? 0) / (adminsPage?.page_size ?? 20)));
   const inviteAdmin = useInviteAdmin();
   const updateRole = useUpdateAdminRole();
   const deleteAdmin = useDeleteAdmin();
@@ -224,6 +228,8 @@ export function AdminsPage() {
           </div>
         </div>
       ) : null}
+
+      <Pager page={page} totalPages={totalPages} onChange={setPage} />
 
       <Dialog open={inviteOpen} onOpenChange={setInviteOpen} title="Convidar admin">
         <form onSubmit={handleInvite} className="flex flex-col gap-3">

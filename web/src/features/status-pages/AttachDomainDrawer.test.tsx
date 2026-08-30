@@ -5,7 +5,7 @@ import userEvent from "@testing-library/user-event";
 import { server } from "../../test/msw/server";
 import { TestQueryProvider } from "../../test/queryClient";
 import { apiFetch } from "../../lib/apiClient";
-import type { StatusPage } from "../../types/api";
+import type { Page, StatusPage } from "../../types/api";
 import { AttachDomainDrawer } from "./AttachDomainDrawer";
 
 async function loginAsOwner() {
@@ -70,8 +70,8 @@ describe("AttachDomainDrawer", () => {
 
     await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false));
 
-    const updated = await apiFetch<StatusPage[]>("/api/status-pages");
-    const attached = updated.find((p) => p.id === page.id);
+    const updated = await apiFetch<Page<StatusPage>>("/api/status-pages?page=1");
+    const attached = updated.items.find((p) => p.id === page.id);
     expect(attached?.domain_id).toBe("dom-1");
     expect(attached?.subdomain).toBe("novo-anexado");
   });

@@ -14,10 +14,10 @@ async function loginAsOwner() {
 describe("admins hooks", () => {
   it("useAdmins reflete status active|pending do backend mock", async () => {
     await loginAsOwner();
-    const { result } = renderHook(() => useAdmins(), { wrapper: TestQueryProvider });
+    const { result } = renderHook(() => useAdmins(1), { wrapper: TestQueryProvider });
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
 
-    const statuses = result.current.data!.map((a) => a.status);
+    const statuses = result.current.data!.items.map((a) => a.status);
     expect(statuses).toContain("active");
     expect(statuses).toContain("pending");
   });
@@ -25,7 +25,7 @@ describe("admins hooks", () => {
   it("erro 409 de useUpdateAdminRole (lockout de último owner) propaga a mensagem sem invalidar a lista", async () => {
     await loginAsOwner();
     const { result } = renderHook(
-      () => ({ admins: useAdmins(), update: useUpdateAdminRole() }),
+      () => ({ admins: useAdmins(1), update: useUpdateAdminRole() }),
       { wrapper: TestQueryProvider }
     );
     await waitFor(() => expect(result.current.admins.isSuccess).toBe(true));
@@ -41,7 +41,7 @@ describe("admins hooks", () => {
   it("erro 409 de useDeleteAdmin (lockout de último owner) propaga a mensagem sem invalidar a lista", async () => {
     await loginAsOwner();
     const { result } = renderHook(
-      () => ({ admins: useAdmins(), del: useDeleteAdmin() }),
+      () => ({ admins: useAdmins(1), del: useDeleteAdmin() }),
       { wrapper: TestQueryProvider }
     );
     await waitFor(() => expect(result.current.admins.isSuccess).toBe(true));
@@ -55,7 +55,7 @@ describe("admins hooks", () => {
   it("useResendInvite retorna status/email_sent e invalida a lista de admins (INVITE-03)", async () => {
     await loginAsOwner();
     const { result } = renderHook(
-      () => ({ admins: useAdmins(), resend: useResendInvite() }),
+      () => ({ admins: useAdmins(1), resend: useResendInvite() }),
       { wrapper: TestQueryProvider }
     );
     await waitFor(() => expect(result.current.admins.isSuccess).toBe(true));
@@ -75,16 +75,16 @@ describe("admins hooks", () => {
   it("useCancelInvite remove o convite da lista de admins (INVITE-05)", async () => {
     await loginAsOwner();
     const { result } = renderHook(
-      () => ({ admins: useAdmins(), cancel: useCancelInvite() }),
+      () => ({ admins: useAdmins(1), cancel: useCancelInvite() }),
       { wrapper: TestQueryProvider }
     );
     await waitFor(() => expect(result.current.admins.isSuccess).toBe(true));
-    expect(result.current.admins.data!.some((a) => a.id === "invite-1")).toBe(true);
+    expect(result.current.admins.data!.items.some((a) => a.id === "invite-1")).toBe(true);
 
     await result.current.cancel.mutateAsync("invite-1");
 
     await waitFor(() =>
-      expect(result.current.admins.data!.some((a) => a.id === "invite-1")).toBe(false)
+      expect(result.current.admins.data!.items.some((a) => a.id === "invite-1")).toBe(false)
     );
   });
 

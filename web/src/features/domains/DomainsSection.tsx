@@ -3,6 +3,7 @@ import { Table, type TableColumn } from "../../components/ui/Table";
 import { Button } from "../../components/ui/Button";
 import { Field } from "../../components/ui/Field";
 import { Card } from "../../components/ui/Card";
+import { Pager } from "../../components/ui/Pager";
 import { useAuth } from "../../auth/AuthProvider";
 import { ApiError } from "../../lib/apiClient";
 import type { Domain } from "../../types/api";
@@ -16,14 +17,10 @@ function formatTimestamp(iso: string): string {
 export function DomainsSection() {
   const { hasRole } = useAuth();
   const canManage = hasRole(["owner", "operator"]);
-  // SPEC_DEVIATION: task T16 (DomainsSection renders Pager) depends on T14
-  // (Pager component), a later phase not yet built - this reads fixed page
-  // 1 for now, matching what "all domains" meant before pagination for any
-  // installation with 20 or fewer. Real page navigation is T16's job once
-  // T14 exists (mirrors the same deviation already recorded in
-  // IncidentsPage.tsx for T5/T14).
-  const { data: domainsPage, isLoading } = useDomains(1);
+  const [page, setPage] = useState(1);
+  const { data: domainsPage, isLoading } = useDomains(page);
   const domains = domainsPage?.items;
+  const totalPages = Math.max(1, Math.ceil((domainsPage?.total ?? 0) / (domainsPage?.page_size ?? 20)));
   const createDomain = useCreateDomain();
 
   const [formOpen, setFormOpen] = useState(false);
@@ -89,12 +86,15 @@ export function DomainsSection() {
         {isLoading ? (
           <p className="text-neutral-400">Carregando…</p>
         ) : (
-          <Table
-            columns={columns}
-            rows={domains ?? []}
-            rowKey={(d) => d.id}
-            emptyMessage="Nenhum domínio cadastrado."
-          />
+          <>
+            <Table
+              columns={columns}
+              rows={domains ?? []}
+              rowKey={(d) => d.id}
+              emptyMessage="Nenhum domínio cadastrado."
+            />
+            <Pager page={page} totalPages={totalPages} onChange={setPage} />
+          </>
         )}
       </div>
     </div>

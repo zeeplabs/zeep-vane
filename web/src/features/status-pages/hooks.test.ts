@@ -16,15 +16,15 @@ async function loginAsOwner() {
 describe("status-pages hooks", () => {
   it("useStatusPages retorna a lista da fixture", async () => {
     await loginAsOwner();
-    const { result } = renderHook(() => useStatusPages(), { wrapper: TestQueryProvider });
+    const { result } = renderHook(() => useStatusPages(1), { wrapper: TestQueryProvider });
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(result.current.data!.length).toBeGreaterThan(0);
+    expect(result.current.data!.items.length).toBeGreaterThan(0);
   });
 
   it("useCreateStatusPage envia corpo sem campos de domínio e a nova página nasce sem domínio, em draft (SPD-01)", async () => {
     await loginAsOwner();
     const { result } = renderHook(
-      () => ({ pages: useStatusPages(), create: useCreateStatusPage() }),
+      () => ({ pages: useStatusPages(1), create: useCreateStatusPage() }),
       { wrapper: TestQueryProvider }
     );
     await waitFor(() => expect(result.current.pages.isSuccess).toBe(true));
@@ -38,14 +38,14 @@ describe("status-pages hooks", () => {
     expect(created.subdomain).toBeNull();
 
     await waitFor(() =>
-      expect(result.current.pages.data!.some((p) => p.id === created.id)).toBe(true)
+      expect(result.current.pages.data!.items.some((p) => p.id === created.id)).toBe(true)
     );
   });
 
   it("useAttachDomain caminho feliz seta domain_id/subdomain e invalida a lista (SPD-06)", async () => {
     await loginAsOwner();
     const { result } = renderHook(
-      () => ({ pages: useStatusPages(), create: useCreateStatusPage(), attach: useAttachDomain() }),
+      () => ({ pages: useStatusPages(1), create: useCreateStatusPage(), attach: useAttachDomain() }),
       { wrapper: TestQueryProvider }
     );
     await waitFor(() => expect(result.current.pages.isSuccess).toBe(true));
@@ -64,7 +64,7 @@ describe("status-pages hooks", () => {
     expect(attached.subdomain).toBe("attached-hooks-test");
 
     await waitFor(() =>
-      expect(result.current.pages.data!.find((p) => p.id === domainless.id)?.domain_id).toBe("dom-1")
+      expect(result.current.pages.data!.items.find((p) => p.id === domainless.id)?.domain_id).toBe("dom-1")
     );
   });
 

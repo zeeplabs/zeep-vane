@@ -2,6 +2,7 @@ import { useState, type FormEvent } from "react";
 import { Link } from "react-router-dom";
 import { Table, type TableColumn } from "../../components/ui/Table";
 import { Drawer } from "../../components/ui/Drawer";
+import { Pager } from "../../components/ui/Pager";
 import { Button } from "../../components/ui/Button";
 import { Field } from "../../components/ui/Field";
 import { Tag } from "../../components/ui/Tag";
@@ -25,7 +26,10 @@ function publicUrl(page: StatusPage, hostname: string | undefined): string | nul
 export function StatusPagesSection() {
   const { hasRole } = useAuth();
   const canManage = hasRole(["owner", "operator"]);
-  const { data: pages, isLoading } = useStatusPages();
+  const [page, setPage] = useState(1);
+  const { data: statusPages, isLoading } = useStatusPages(page);
+  const pages = statusPages?.items;
+  const totalPages = Math.max(1, Math.ceil((statusPages?.total ?? 0) / (statusPages?.page_size ?? 20)));
   // SPEC_DEVIATION: fixed page 1 for now - Pager UI for the domains
   // dropdown is out of scope here (this reads domains only to resolve a
   // hostname/build a select list); T14/T16 (Pager) is a later phase not
@@ -157,12 +161,15 @@ export function StatusPagesSection() {
         {isLoading ? (
           <p className="text-neutral-400">Carregando…</p>
         ) : (
-          <Table
-            columns={columns}
-            rows={pages ?? []}
-            rowKey={(p) => p.id}
-            emptyMessage="Nenhuma status page criada."
-          />
+          <>
+            <Table
+              columns={columns}
+              rows={pages ?? []}
+              rowKey={(p) => p.id}
+              emptyMessage="Nenhuma status page criada."
+            />
+            <Pager page={page} totalPages={totalPages} onChange={setPage} />
+          </>
         )}
       </div>
 

@@ -3,6 +3,7 @@ import { Table, type TableColumn } from "../../components/ui/Table";
 import { Dialog } from "../../components/ui/Dialog";
 import { Button } from "../../components/ui/Button";
 import { Field } from "../../components/ui/Field";
+import { Pager } from "../../components/ui/Pager";
 import { Tag, type TagVariant } from "../../components/ui/Tag";
 import { useAuth } from "../../auth/AuthProvider";
 import { ApiError } from "../../lib/apiClient";
@@ -32,14 +33,10 @@ function formatTimestamp(iso: string): string {
 export function ServicesSection() {
   const { hasRole } = useAuth();
   const canManage = hasRole(["owner", "operator"]);
-  // SPEC_DEVIATION: task T16 (ServicesSection renders Pager) depends on T14
-  // (Pager component), a later phase not yet built - this reads fixed page
-  // 1 for now, matching what "all services" meant before pagination for
-  // any installation with 20 or fewer. Real page navigation is T16's job
-  // once T14 exists (mirrors the deviation already recorded for
-  // DomainsSection.tsx and IncidentsPage.tsx).
-  const { data: servicesPage, isLoading } = useServices(1);
+  const [page, setPage] = useState(1);
+  const { data: servicesPage, isLoading } = useServices(page);
   const services = servicesPage?.items;
+  const totalPages = Math.max(1, Math.ceil((servicesPage?.total ?? 0) / (servicesPage?.page_size ?? 20)));
   const createService = useCreateService();
 
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -119,12 +116,15 @@ export function ServicesSection() {
         {isLoading ? (
           <p className="text-neutral-400">Carregando…</p>
         ) : (
-          <Table
-            columns={columns}
-            rows={services ?? []}
-            rowKey={(s) => s.id}
-            emptyMessage="Nenhum serviço cadastrado."
-          />
+          <>
+            <Table
+              columns={columns}
+              rows={services ?? []}
+              rowKey={(s) => s.id}
+              emptyMessage="Nenhum serviço cadastrado."
+            />
+            <Pager page={page} totalPages={totalPages} onChange={setPage} />
+          </>
         )}
       </div>
 

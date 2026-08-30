@@ -8,7 +8,7 @@ import { AuthProvider } from "../../auth/AuthProvider";
 import { TestQueryProvider } from "../../test/queryClient";
 import { server } from "../../test/msw/server";
 import * as apiClient from "../../lib/apiClient";
-import type { StatusPage } from "../../types/api";
+import type { Page, StatusPage } from "../../types/api";
 import { StatusPageDetail } from "./StatusPageDetail";
 
 async function loginAsOwner() {
@@ -138,7 +138,9 @@ describe("StatusPageDetail", () => {
       service_ids: [],
     };
     server.use(
-      http.get("/api/status-pages", () => HttpResponse.json([impossiblePublished]))
+      http.get("/api/status-pages", () =>
+        HttpResponse.json({ items: [impossiblePublished], total: 1, page: 1, page_size: 20 })
+      )
     );
 
     renderDetail(impossiblePublished.id);
@@ -183,8 +185,8 @@ describe("StatusPageDetail", () => {
 
     // Confirma que persistiu de fato (reflete o servidor, não só estado local
     // otimista): reconsulta via GET /api/status-pages.
-    const reloaded = await apiClient.apiFetch<StatusPage[]>("/api/status-pages");
-    const page = reloaded.find((p) => p.id === "sp-1");
+    const reloaded = await apiClient.apiFetch<Page<StatusPage>>("/api/status-pages?page=1");
+    const page = reloaded.items.find((p) => p.id === "sp-1");
     expect(page?.service_ids.sort()).toEqual(["svc-1", "svc-2", "svc-3"]);
   });
 
@@ -198,8 +200,8 @@ describe("StatusPageDetail", () => {
     await userEvent.click(screen.getByRole("button", { name: "Salvar serviços" }));
 
     await vi.waitFor(async () => {
-      const reloaded = await apiClient.apiFetch<StatusPage[]>("/api/status-pages");
-      expect(reloaded.find((p) => p.id === "sp-1")?.service_ids).toEqual([]);
+      const reloaded = await apiClient.apiFetch<Page<StatusPage>>("/api/status-pages?page=1");
+      expect(reloaded.items.find((p) => p.id === "sp-1")?.service_ids).toEqual([]);
     });
   });
 

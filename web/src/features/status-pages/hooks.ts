@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient, type Query } from "@tanstack/react-query";
 import { apiFetch } from "../../lib/apiClient";
-import type { StatusPage, StatusPageState } from "../../types/api";
+import type { Page, StatusPage, StatusPageState } from "../../types/api";
 
 const terminalStates: StatusPageState[] = ["published", "tls_failed"];
 
@@ -8,30 +8,32 @@ function isTerminal(state: StatusPageState | undefined): boolean {
   return state === undefined || terminalStates.includes(state);
 }
 
-export function useStatusPages() {
+export function useStatusPages(page: number) {
   return useQuery({
-    queryKey: ["status-pages"],
-    queryFn: () => apiFetch<StatusPage[]>("/api/status-pages"),
-    refetchInterval: (query: Query<StatusPage[]>) => {
-      const pages = query.state.data;
-      if (!pages) return false;
-      const anyPending = pages.some((p) => !isTerminal(p.state));
+    queryKey: ["status-pages", page],
+    queryFn: () => apiFetch<Page<StatusPage>>(`/api/status-pages?page=${page}`),
+    refetchInterval: (query: Query<Page<StatusPage>>) => {
+      const data = query.state.data;
+      if (!data) return false;
+      const anyPending = data.items.some((p) => !isTerminal(p.state));
       return anyPending ? 10_000 : false;
     },
   });
 }
 
-/** Deriva uma única status page da mesma query/cache da listagem, com seu
- * próprio `refetchInterval` — para na tela de detalhe (T27) assim que ESSE
- * item específico chega a um estado terminal, independentemente dos demais. */
+/** Deriva uma única status page da mesma query/cache da página 1 da listagem,
+ * com seu próprio `refetchInterval` — para na tela de detalhe (T27) assim que
+ * ESSE item específico chega a um estado terminal, independentemente dos
+ * demais. Só busca a página do item na página 1 (instalação single-tenant,
+ * AD-002 — a status page recém-criada sempre está na primeira página). */
 export function useStatusPage(id: string) {
   return useQuery({
-    queryKey: ["status-pages"],
-    queryFn: () => apiFetch<StatusPage[]>("/api/status-pages"),
-    select: (pages: StatusPage[]) => pages.find((p) => p.id === id),
-    refetchInterval: (query: Query<StatusPage[]>) => {
-      const pages = query.state.data;
-      const page = pages?.find((p) => p.id === id);
+    queryKey: ["status-pages", 1],
+    queryFn: () => apiFetch<Page<StatusPage>>("/api/status-pages?page=1"),
+    select: (data: Page<StatusPage>) => data.items.find((p) => p.id === id),
+    refetchInterval: (query: Query<Page<StatusPage>>) => {
+      const data = query.state.data;
+      const page = data?.items.find((p) => p.id === id);
       return isTerminal(page?.state) ? false : 10_000;
     },
   });

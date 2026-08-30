@@ -350,9 +350,9 @@ export const handlers = [
     return HttpResponse.json(toDomainResponse(created), { status: 201 });
   }),
 
-  http.get("/api/status-pages", () => {
+  http.get("/api/status-pages", ({ request }) => {
     if (!sessionAdminId) return HttpResponse.json({ error: "unauthorized" }, { status: 401 });
-    return HttpResponse.json(statusPagesState.map(toStatusPageResponse));
+    return HttpResponse.json(paginatedPage(request.url, statusPagesState.map(toStatusPageResponse), 20));
   }),
 
   // POST /api/status-pages (SPD-01, SPD-05) - mirrors the relaxed
@@ -690,7 +690,7 @@ export const handlers = [
   // GET /api/admins (I18/I19/INVITE-07) - mirrors AdminsHandler.List: active
   // admins (status "active") merged with every pending invite regardless of
   // expiry, each tagged expired:true once its expires_at has passed.
-  http.get("/api/admins", () => {
+  http.get("/api/admins", ({ request }) => {
     if (!sessionAdminId) return HttpResponse.json({ error: "unauthorized" }, { status: 401 });
     const active = adminsState.map((a) => ({ ...a, status: "active" as const }));
     const pending = adminInvitesState.map((i) => ({
@@ -701,7 +701,7 @@ export const handlers = [
       expires_at: i.expires_at,
       expired: new Date(i.expires_at).getTime() <= Date.now(),
     }));
-    return HttpResponse.json([...active, ...pending]);
+    return HttpResponse.json(paginatedPage(request.url, [...active, ...pending], 20));
   }),
 
   // POST /api/admins (I19/INVITE-01) - mirrors AdminsHandler.Invite: 422 on

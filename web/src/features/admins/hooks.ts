@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiFetch } from "../../lib/apiClient";
-import type { Role } from "../../types/api";
+import type { Page, Role } from "../../types/api";
 
 export interface AdminRow {
   id: string;
@@ -16,10 +16,10 @@ export interface InviteEmailResult {
   email_sent: boolean;
 }
 
-export function useAdmins() {
+export function useAdmins(page: number) {
   return useQuery({
-    queryKey: ["admins"],
-    queryFn: () => apiFetch<AdminRow[]>("/api/admins"),
+    queryKey: ["admins", page],
+    queryFn: () => apiFetch<Page<AdminRow>>(`/api/admins?page=${page}`),
   });
 }
 

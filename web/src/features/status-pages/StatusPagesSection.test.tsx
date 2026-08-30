@@ -119,7 +119,9 @@ describe("StatusPagesSection", () => {
       service_ids: [],
     };
     server.use(
-      http.get("/api/status-pages", () => HttpResponse.json([impossiblePublished]))
+      http.get("/api/status-pages", () =>
+        HttpResponse.json({ items: [impossiblePublished], total: 1, page: 1, page_size: 20 })
+      )
     );
 
     renderSection();
