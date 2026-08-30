@@ -118,8 +118,10 @@ type servePublicStatusResponse struct {
 		Active []struct {
 			Title string `json:"title"`
 		} `json:"active"`
-		Resolved []struct {
-			Title string `json:"title"`
+		Resolved struct {
+			Items []struct {
+				Title string `json:"title"`
+			} `json:"items"`
 		} `json:"resolved"`
 	} `json:"incidents"`
 }

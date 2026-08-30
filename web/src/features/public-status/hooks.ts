@@ -28,10 +28,23 @@ interface PreviewService {
   hourly_history: PublicHourlyBucket[];
 }
 
+// SPEC_DEVIATION (list-pagination T12/T13): the backend now paginates
+// resolved incidents ({items,total,page,page_size}, page_size 10); this
+// hook still only consumes page 1's items pending T13's
+// loadMoreResolvedIncidents/"Carregar mais" progressive-loading UX
+// (list-pagination tasks.md T13/T20, not yet implemented) - it never
+// fabricates the shape of a bare array from the new envelope.
+interface PreviewResolvedPage {
+  items: PreviewIncident[];
+  total: number;
+  page: number;
+  page_size: number;
+}
+
 interface PreviewResponse {
   company: PreviewCompany;
   services: PreviewService[];
-  incidents: { active: PreviewIncident[]; resolved: PreviewIncident[] };
+  incidents: { active: PreviewIncident[]; resolved: PreviewResolvedPage };
 }
 
 // SPEC_DEVIATION (AD-007, I13): the real backend's public response has no
@@ -81,7 +94,7 @@ export function usePublicStatusPage(id: string) {
         })),
         incidents: {
           active: data.incidents.active.map(toPublicIncidentEntry),
-          resolved: data.incidents.resolved.map(toPublicIncidentEntry),
+          resolved: data.incidents.resolved.items.map(toPublicIncidentEntry),
         },
       };
     },

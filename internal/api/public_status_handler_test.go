@@ -630,7 +630,7 @@ func TestPublicStatusGet_UnresolvedIncident_AppearsInActive(t *testing.T) {
 	if found := findPublicIncident(body.Incidents.Active, incidentID); found == nil {
 		t.Fatalf("unresolved incident %s not present in active incidents, want it featured", incidentID)
 	}
-	if found := findPublicIncident(body.Incidents.Resolved, incidentID); found != nil {
+	if found := findPublicIncident(body.Incidents.Resolved.Items, incidentID); found != nil {
 		t.Errorf("unresolved incident %s present in resolved incidents, want it absent", incidentID)
 	}
 }
@@ -663,7 +663,7 @@ func TestPublicStatusGet_ResolvedIncidentWithinRetention_AppearsInHistory(t *tes
 		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
 	}
 
-	if found := findPublicIncident(body.Incidents.Resolved, incidentID); found == nil {
+	if found := findPublicIncident(body.Incidents.Resolved.Items, incidentID); found == nil {
 		t.Fatalf("incident %s resolved 10 days ago not present in resolved history, want it within the 90-day window", incidentID)
 	}
 }
@@ -781,10 +781,111 @@ func TestPublicStatusGet_ResolvedIncidentBeyondRetention_Hidden(t *testing.T) {
 		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
 	}
 
-	if found := findPublicIncident(body.Incidents.Resolved, incidentID); found != nil {
+	if found := findPublicIncident(body.Incidents.Resolved.Items, incidentID); found != nil {
 		t.Errorf("incident %s resolved 91 days ago present in resolved history, want it hidden past the 90-day window", incidentID)
 	}
 	if found := findPublicIncident(body.Incidents.Active, incidentID); found != nil {
 		t.Errorf("incident %s present in active incidents, want it hidden entirely", incidentID)
+	}
+}
+
+// createResolvedPublicIncidentFixture creates an incident linked to
+// serviceID and marks it resolved well within the retention window,
+// registering cleanup. Used by the resolved-incidents pagination tests
+// below to seed more than one page's worth of history.
+func createResolvedPublicIncidentFixture(t *testing.T, pool *db.Pool, serviceID, title string) string {
+	t.Helper()
+	ctx := context.Background()
+
+	incidents := db.NewIncidentRepository(pool)
+	incident := &db.Incident{Title: title}
+	if err := incidents.Create(ctx, incident, []string{serviceID}); err != nil {
+		t.Fatalf("setup incident Create() returned unexpected error: %v", err)
+	}
+	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), "DELETE FROM incidents WHERE id = $1", incident.ID) })
+
+	if _, err := pool.Exec(ctx,
+		"UPDATE incidents SET status = 'resolved', resolved_at = now() - interval '1 hour' WHERE id = $1",
+		incident.ID,
+	); err != nil {
+		t.Fatalf("setup resolved_at update returned unexpected error: %v", err)
+	}
+
+	return incident.ID
+}
+
+// TestPublicStatusGet_ResolvedIncidents_Page1ExactlyPageSizeCorrectTotal
+// covers PAG-12/PAG-13: page 1 of more than page_size (10) resolved
+// incidents within retention returns exactly 10 items and the correct
+// total, never the whole unbounded history.
+func TestPublicStatusGet_ResolvedIncidents_Page1ExactlyPageSizeCorrectTotal(t *testing.T) {
+	r, pool := newPublicStatusRouter(t)
+	serviceID := createIncidentTestService(t, pool)
+	statusPageID := createPublicStatusPageFixture(t, pool, serviceID)
+
+	for i := 0; i < 11; i++ {
+		createResolvedPublicIncidentFixture(t, pool, serviceID, fmt.Sprintf("paginated resolved incident %d", i))
+	}
+
+	req := withStatusPageContext(httptest.NewRequest(http.MethodGet, "/", nil), statusPageID)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	var body publicStatusResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+
+	if len(body.Incidents.Resolved.Items) != 10 {
+		t.Errorf("len(Resolved.Items) = %d, want 10 (page_size)", len(body.Incidents.Resolved.Items))
+	}
+	if body.Incidents.Resolved.Total != 11 {
+		t.Errorf("Resolved.Total = %d, want 11", body.Incidents.Resolved.Total)
+	}
+	if body.Incidents.Resolved.Page != 1 {
+		t.Errorf("Resolved.Page = %d, want 1 (default)", body.Incidents.Resolved.Page)
+	}
+	if body.Incidents.Resolved.PageSize != 10 {
+		t.Errorf("Resolved.PageSize = %d, want 10", body.Incidents.Resolved.PageSize)
+	}
+}
+
+// TestPublicStatusGet_ResolvedIncidents_Page2ReturnsRemainder covers
+// PAG-13/14: page 2 of an 11-incident seed (page_size 10) returns exactly
+// the 1 remaining incident, with the same total as page 1.
+func TestPublicStatusGet_ResolvedIncidents_Page2ReturnsRemainder(t *testing.T) {
+	r, pool := newPublicStatusRouter(t)
+	serviceID := createIncidentTestService(t, pool)
+	statusPageID := createPublicStatusPageFixture(t, pool, serviceID)
+
+	for i := 0; i < 11; i++ {
+		createResolvedPublicIncidentFixture(t, pool, serviceID, fmt.Sprintf("paginated resolved incident page2 %d", i))
+	}
+
+	req := withStatusPageContext(httptest.NewRequest(http.MethodGet, "/?page=2", nil), statusPageID)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	var body publicStatusResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+
+	if len(body.Incidents.Resolved.Items) != 1 {
+		t.Errorf("len(Resolved.Items) = %d, want 1 (11-incident seed remainder)", len(body.Incidents.Resolved.Items))
+	}
+	if body.Incidents.Resolved.Total != 11 {
+		t.Errorf("Resolved.Total = %d, want 11", body.Incidents.Resolved.Total)
+	}
+	if body.Incidents.Resolved.Page != 2 {
+		t.Errorf("Resolved.Page = %d, want 2", body.Incidents.Resolved.Page)
 	}
 }

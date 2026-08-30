@@ -24,7 +24,7 @@ describe("usePublicStatusPage", () => {
         HttpResponse.json({
           company: { name: "Acme Status", logo_url: "/uploads/logo" },
           services: [],
-          incidents: { active: [], resolved: [] },
+          incidents: { active: [], resolved: { items: [], total: 0, page: 1, page_size: 10 } },
         }),
       ),
     );
@@ -43,7 +43,7 @@ describe("usePublicStatusPage", () => {
         HttpResponse.json({
           company: { name: "Sem Logo Ltda.", logo_url: null },
           services: [],
-          incidents: { active: [], resolved: [] },
+          incidents: { active: [], resolved: { items: [], total: 0, page: 1, page_size: 10 } },
         }),
       ),
     );

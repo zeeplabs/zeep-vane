@@ -864,7 +864,7 @@ export const handlers = [
         last_updated_at: s.last_status_change_at,
         hourly_history: buildFixtureHourlyHistory(s.current_status),
       })),
-      incidents: { active, resolved },
+      incidents: { active, resolved: { items: resolved, total: resolved.length, page: 1, page_size: 10 } },
     });
   }),
 

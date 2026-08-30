@@ -339,12 +339,22 @@ type IncidentPublic struct {
 }
 
 // ListPublic returns incidents for the public status page (SP-18): active
-// splits out every incident whose status isn't "resolved" (shown in
-// destaque at the top), resolved splits out incidents resolved within the
-// last retentionDays (spec.md's 90-day retention assumption) - a resolved
-// incident older than that is omitted entirely. Both are ordered most
-// recently created first, each with its timeline ordered most-recent-update
-// first.
+// is every incident whose status isn't "resolved" (shown in destaque at the
+// top, never paginated - by construction there is at most one active
+// incident per service, design.md), resolved is one page of incidents
+// resolved within the last retentionDays (spec.md's 90-day retention
+// assumption) - a resolved incident older than that is omitted entirely.
+// Both are ordered most recently created first, each with its timeline
+// ordered most-recent-update first. resolvedTotal is computed via
+// COUNT(*) OVER() in the same resolved query, with a zero-row fallback
+// COUNT(*) matching the ListPaginated/PAG-06 pattern.
+//
+// SPEC_DEVIATION (list-pagination T12): ListPublic has zero callers today
+// (dead code - the only production/preview path is
+// ListPublicForStatusPage) and zero test coverage, so paginating it here
+// as well would be an untested, unrequested change to unused surface. Left
+// unpaginated; if a caller is ever added, it should gain the same
+// page/pageSize signature as ListPublicForStatusPage below.
 func (r *IncidentRepository) ListPublic(ctx context.Context, retentionDays int) (active, resolved []IncidentPublic, err error) {
 	rows, err := r.pool.Query(ctx,
 		`SELECT id, title, status, created_at, resolved_at FROM incidents
@@ -370,29 +380,84 @@ func (r *IncidentRepository) ListPublic(ctx context.Context, retentionDays int) 
 // that itself belongs to statusPageID (via status_page_services) - a status
 // page's public page must never surface an incident for a service it
 // doesn't publish. Active/resolved splitting and the retention window
-// behave exactly as in ListPublic.
-func (r *IncidentRepository) ListPublicForStatusPage(ctx context.Context, statusPageID string, retentionDays int) (active, resolved []IncidentPublic, err error) {
-	rows, err := r.pool.Query(ctx,
+// behave as in ListPublic; resolved is paginated (PAG-12), active is not
+// (design.md: at most one active incident per service).
+func (r *IncidentRepository) ListPublicForStatusPage(ctx context.Context, statusPageID string, retentionDays, page, pageSize int) (active, resolved []IncidentPublic, resolvedTotal int, err error) {
+	activeRows, err := r.pool.Query(ctx,
 		`SELECT DISTINCT i.id, i.title, i.status, i.created_at, i.resolved_at
 		 FROM incidents i
 		 JOIN incident_services isv ON isv.incident_id = i.id
 		 JOIN status_page_services sps ON sps.service_id = isv.service_id
-		 WHERE sps.status_page_id = $1
-		   AND (i.status <> 'resolved' OR i.resolved_at > now() - make_interval(days => $2))
+		 WHERE sps.status_page_id = $1 AND i.status <> 'resolved'
 		 ORDER BY i.created_at DESC`,
-		statusPageID, retentionDays,
+		statusPageID,
 	)
 	if err != nil {
-		return nil, nil, fmt.Errorf("db: failed to list public incidents for status page: %w", err)
+		return nil, nil, 0, fmt.Errorf("db: failed to list active public incidents for status page: %w", err)
 	}
-	defer rows.Close()
-
-	incidents, err := scanIncidentRows(rows)
+	activeIncidents, err := scanIncidentRows(activeRows)
+	activeRows.Close()
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, 0, err
 	}
 
-	return r.withTimelinesSplit(ctx, incidents)
+	offset := (page - 1) * pageSize
+	resolvedRows, err := r.pool.Query(ctx,
+		`SELECT DISTINCT i.id, i.title, i.status, i.created_at, i.resolved_at, COUNT(*) OVER() AS total
+		 FROM incidents i
+		 JOIN incident_services isv ON isv.incident_id = i.id
+		 JOIN status_page_services sps ON sps.service_id = isv.service_id
+		 WHERE sps.status_page_id = $1
+		   AND i.status = 'resolved' AND i.resolved_at > now() - make_interval(days => $2)
+		 ORDER BY i.created_at DESC
+		 LIMIT $3 OFFSET $4`,
+		statusPageID, retentionDays, pageSize, offset,
+	)
+	if err != nil {
+		return nil, nil, 0, fmt.Errorf("db: failed to list resolved public incidents for status page: %w", err)
+	}
+	resolvedIncidents, total, err := scanIncidentRowsWithTotal(resolvedRows)
+	resolvedRows.Close()
+	if err != nil {
+		return nil, nil, 0, err
+	}
+
+	if len(resolvedIncidents) == 0 {
+		total, err = r.countResolvedPublicForStatusPage(ctx, statusPageID, retentionDays)
+		if err != nil {
+			return nil, nil, 0, err
+		}
+	}
+
+	active, err = r.withTimelines(ctx, activeIncidents)
+	if err != nil {
+		return nil, nil, 0, err
+	}
+	resolved, err = r.withTimelines(ctx, resolvedIncidents)
+	if err != nil {
+		return nil, nil, 0, err
+	}
+
+	return active, resolved, total, nil
+}
+
+// countResolvedPublicForStatusPage is the zero-row fallback for
+// ListPublicForStatusPage's resolvedTotal (PAG-06 pattern).
+func (r *IncidentRepository) countResolvedPublicForStatusPage(ctx context.Context, statusPageID string, retentionDays int) (int, error) {
+	var total int
+	row := r.pool.QueryRow(ctx,
+		`SELECT COUNT(DISTINCT i.id)
+		 FROM incidents i
+		 JOIN incident_services isv ON isv.incident_id = i.id
+		 JOIN status_page_services sps ON sps.service_id = isv.service_id
+		 WHERE sps.status_page_id = $1
+		   AND i.status = 'resolved' AND i.resolved_at > now() - make_interval(days => $2)`,
+		statusPageID, retentionDays,
+	)
+	if err := row.Scan(&total); err != nil {
+		return 0, fmt.Errorf("db: failed to count resolved public incidents for status page: %w", err)
+	}
+	return total, nil
 }
 
 // scanIncidentRows scans the (id, title, status, created_at, resolved_at)
@@ -412,9 +477,30 @@ func scanIncidentRows(rows pgx.Rows) ([]Incident, error) {
 	return incidents, nil
 }
 
+// scanIncidentRowsWithTotal scans the same shape as scanIncidentRows plus a
+// trailing COUNT(*) OVER() column, for ListPublicForStatusPage's paginated
+// resolved query.
+func scanIncidentRowsWithTotal(rows pgx.Rows) ([]Incident, int, error) {
+	var incidents []Incident
+	total := 0
+	for rows.Next() {
+		var incident Incident
+		if err := rows.Scan(&incident.ID, &incident.Title, &incident.Status, &incident.CreatedAt, &incident.ResolvedAt, &total); err != nil {
+			return nil, 0, fmt.Errorf("db: failed to scan public incident: %w", err)
+		}
+		incidents = append(incidents, incident)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, 0, fmt.Errorf("db: failed to iterate public incidents: %w", err)
+	}
+	return incidents, total, nil
+}
+
 // withTimelinesSplit loads each incident's timeline and splits the result
 // into active (status <> "resolved", shown in destaque) and resolved
-// (shown in history within the retention window) groups, per SP-18.
+// (shown in history within the retention window) groups, per SP-18. Used
+// by ListPublic, which queries both groups together in one unpaginated
+// query.
 func (r *IncidentRepository) withTimelinesSplit(ctx context.Context, incidents []Incident) (active, resolved []IncidentPublic, err error) {
 	for _, incident := range incidents {
 		updates, err := r.ListUpdates(ctx, incident.ID)
@@ -431,6 +517,21 @@ func (r *IncidentRepository) withTimelinesSplit(ctx context.Context, incidents [
 	}
 
 	return active, resolved, nil
+}
+
+// withTimelines loads each incident's timeline, preserving order. Used by
+// ListPublicForStatusPage, which queries active and resolved incidents
+// separately so it can paginate resolved alone.
+func (r *IncidentRepository) withTimelines(ctx context.Context, incidents []Incident) ([]IncidentPublic, error) {
+	result := make([]IncidentPublic, 0, len(incidents))
+	for _, incident := range incidents {
+		updates, err := r.ListUpdates(ctx, incident.ID)
+		if err != nil {
+			return nil, err
+		}
+		result = append(result, IncidentPublic{Incident: incident, Updates: updates})
+	}
+	return result, nil
 }
 
 // mustExist confirms incidentID exists, returning ErrNotFound if it doesn't.

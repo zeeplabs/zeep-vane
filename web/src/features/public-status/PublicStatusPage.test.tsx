@@ -54,7 +54,7 @@ function mockPublicPreview(serviceName: string, hourlyHistory: ReturnType<typeof
             hourly_history: hourlyHistory,
           },
         ],
-        incidents: { active: [], resolved: [] },
+        incidents: { active: [], resolved: { items: [], total: 0, page: 1, page_size: 10 } },
       }),
     ),
   );

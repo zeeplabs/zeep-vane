@@ -37,7 +37,7 @@ type statusIntervalReader interface {
 // status handler depends on. It is scoped to a single status page (SP-15):
 // only incidents linked to a service that status page publishes may appear.
 type publicIncidentLister interface {
-	ListPublicForStatusPage(ctx context.Context, statusPageID string, retentionDays int) (active, resolved []db.IncidentPublic, err error)
+	ListPublicForStatusPage(ctx context.Context, statusPageID string, retentionDays, page, pageSize int) (active, resolved []db.IncidentPublic, resolvedTotal int, err error)
 }
 
 // companySettingsGetter is the subset of *db.CompanySettingsRepository the
@@ -51,6 +51,11 @@ type companySettingsGetter interface {
 // retention window (spec.md Assumptions: "Janela de retenção de histórico
 // de incidentes/uptime" - 90 dias).
 const incidentRetentionDays = 90
+
+// publicResolvedIncidentsPageSize is the fixed page size for the public
+// status page's resolved-incidents history (spec.md Assumptions: 10 for
+// public status page incidents - tuned for "Carregar mais" click cadence).
+const publicResolvedIncidentsPageSize = 10
 
 // PublicStatusHandler serves the public, unauthenticated status page
 // endpoint (SP-10). It never talks to Datadog directly - it only reads
@@ -120,8 +125,8 @@ type publicIncidentResponse struct {
 }
 
 type publicIncidentsResponse struct {
-	Active   []publicIncidentResponse `json:"active"`
-	Resolved []publicIncidentResponse `json:"resolved"`
+	Active   []publicIncidentResponse     `json:"active"`
+	Resolved Page[publicIncidentResponse] `json:"resolved"`
 }
 
 // publicCompanyResponse carries the real company identity (SET-15) - a
@@ -155,7 +160,8 @@ func (h *PublicStatusHandler) Get(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	resp, err := h.composeResponse(r.Context(), statusPageID)
+	page := parsePage(r)
+	resp, err := h.composeResponse(r.Context(), statusPageID, page)
 	if err != nil {
 		h.logger.Error("public-status: failed to compose response", zap.Error(err))
 		writeInternalError(w)
@@ -167,10 +173,11 @@ func (h *PublicStatusHandler) Get(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(resp)
 }
 
-// composeResponse builds the public status response for statusPageID -
-// shared by Get (resolved by Host header, production) and
+// composeResponse builds the public status response for statusPageID, with
+// resolvedPage selecting the page of resolved-incident history to include
+// (PAG-12) - shared by Get (resolved by Host header, production) and
 // PublicStatusPreviewHandler.Get (resolved by ID, dev/preview - I12).
-func (h *PublicStatusHandler) composeResponse(ctx context.Context, statusPageID string) (publicStatusResponse, error) {
+func (h *PublicStatusHandler) composeResponse(ctx context.Context, statusPageID string, resolvedPage int) (publicStatusResponse, error) {
 	services, err := h.services.ListForStatusPage(ctx, statusPageID)
 	if err != nil {
 		return publicStatusResponse{}, fmt.Errorf("failed to list services: %w", err)
@@ -181,7 +188,7 @@ func (h *PublicStatusHandler) composeResponse(ctx context.Context, statusPageID 
 		return publicStatusResponse{}, fmt.Errorf("failed to load open status intervals: %w", err)
 	}
 
-	activeIncidents, resolvedIncidents, err := h.incidents.ListPublicForStatusPage(ctx, statusPageID, incidentRetentionDays)
+	activeIncidents, resolvedIncidents, resolvedTotal, err := h.incidents.ListPublicForStatusPage(ctx, statusPageID, incidentRetentionDays, resolvedPage, publicResolvedIncidentsPageSize)
 	if err != nil {
 		return publicStatusResponse{}, fmt.Errorf("failed to list public incidents: %w", err)
 	}
@@ -220,8 +227,13 @@ func (h *PublicStatusHandler) composeResponse(ctx context.Context, statusPageID 
 		Company:  publicCompanyResponse{Name: companySettings.Name, LogoURL: companySettings.LogoServedURL()},
 		Services: []publicServiceResponse{},
 		Incidents: publicIncidentsResponse{
-			Active:   toPublicIncidentResponses(activeIncidents),
-			Resolved: toPublicIncidentResponses(resolvedIncidents),
+			Active: toPublicIncidentResponses(activeIncidents),
+			Resolved: Page[publicIncidentResponse]{
+				Items:    toPublicIncidentResponses(resolvedIncidents),
+				Total:    resolvedTotal,
+				Page:     resolvedPage,
+				PageSize: publicResolvedIncidentsPageSize,
+			},
 		},
 	}
 	for _, service := range shownServices {
