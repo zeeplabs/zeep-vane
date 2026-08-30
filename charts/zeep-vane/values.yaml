@@ -1,0 +1,181 @@
+# ── Global ──────────────────────────────────────────────
+nameOverride: ""
+fullnameOverride: ""
+
+# CertMagic's on-demand TLS storage (see `persistence` below) is a local
+# ReadWriteOnce disk by default (`certmagic.FileStorage`, internal/tls). It
+# does support coordinating across replicas that all mount the *same* path
+# (file-based locking), but that only works with a shared ReadWriteMany
+# volume (e.g. NFS/EFS) — untested by this project. Until you've validated
+# that yourself, keep replicaCount at 1.
+replicaCount: 1
+
+# ── Image ───────────────────────────────────────────────
+image:
+  repository: ghcr.io/zeeplabs/zeep-vane
+  tag: "latest"
+  pullPolicy: Always
+  # digest: "sha256:abc123..."   # pin for immutable production deploys
+  pullSecrets: []
+
+# ── Admin API + SPA service (internal, cookie-session admin UI) ─────────
+service:
+  type: ClusterIP
+  port: 80
+
+# ── Ingress for the admin API + SPA only ─────────────────
+# Do NOT put customer-attached status-page domains behind this ingress —
+# those are served directly by Vane's own CertMagic listener (see
+# `publicService` below), which issues certificates on demand for hostnames
+# not known at deploy time. A conventional ingress/cert-manager setup can't
+# do that: it needs every host declared up front.
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+    # kubernetes.io/ingress.class: nginx
+    # cert-manager.io/cluster-issuer: letsencrypt-prod
+  hosts:
+    - host: admin.vane.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls:
+    - secretName: zeep-vane-admin-tls
+      hosts:
+        - admin.vane.example.com
+
+# ── Public status page service (internet-facing, Vane's own TLS) ────────
+# Exposes Vane's CertMagic-terminated listener directly. Point your
+# customers' custom domains (CNAME/A record) at this Service's external
+# IP/hostname — not at the ingress above. `containerPort`/`targetPort` are
+# intentionally >1024 (8443) so the container can bind them without root or
+# added capabilities; the Service itself still publishes the standard 443.
+publicService:
+  enabled: true
+  type: LoadBalancer
+  port: 443
+  targetPort: 8443
+  annotations: {}
+  loadBalancerIP: ""
+
+# ── CertMagic certificate storage (persistent) ─────────────────────────
+persistence:
+  enabled: true
+  storageClassName: ""
+  accessMode: ReadWriteOnce
+  size: 1Gi
+  mountPath: /data/certmagic
+
+# ── Autoscaling (HPA) ───────────────────────────────────
+# Disabled by default — see the replicaCount note above about
+# CertMagic's storage before enabling this with more than 1 replica.
+autoscaling:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 3
+  targetCPUUtilizationPercentage: 75
+  targetMemoryUtilizationPercentage: 80
+
+# ── PodDisruptionBudget ─────────────────────────────────
+podDisruptionBudget:
+  enabled: false
+  minAvailable: 1
+  # maxUnavailable: 1
+
+# ── ServiceAccount ──────────────────────────────────────
+serviceAccount:
+  create: false
+  name: ""
+  annotations: {}
+
+# ── Security ────────────────────────────────────────────
+# The production image is FROM scratch (no shell, no user database) — a
+# numeric UID/GID still works for filesystem permissions on the mounted
+# PVC, it just isn't tied to a named user inside the image.
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 65532
+  runAsGroup: 65532
+  fsGroup: 65532
+  seccompProfile:
+    type: RuntimeDefault
+
+containerSecurityContext:
+  allowPrivilegeEscalation: false
+  privileged: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop: ["ALL"]
+  seccompProfile:
+    type: RuntimeDefault
+
+# ── Topology Spread ─────────────────────────────────────
+topologySpreadConstraints: []
+
+# ── Node & Scheduling ───────────────────────────────────
+nodeSelector: {}
+tolerations: []
+affinity: {}
+
+# ── Pod Extra ───────────────────────────────────────────
+podAnnotations: {}
+podLabels: {}
+
+# ── Resources ───────────────────────────────────────────
+resources:
+  requests:
+    memory: "64Mi"
+    cpu: "50m"
+  limits:
+    memory: "256Mi"
+    cpu: "500m"
+
+# ── Probes ──────────────────────────────────────────────
+# Always against the admin listener's /healthz (internal/cli/healthcheck.go)
+# — the public :8443 listener requires on-demand TLS and isn't meaningful
+# to probe until a real hostname has a certificate issued.
+probes:
+  liveness:
+    path: /healthz
+    initialDelaySeconds: 5
+    periodSeconds: 10
+    failureThreshold: 3
+  readiness:
+    path: /healthz
+    initialDelaySeconds: 3
+    periodSeconds: 5
+    failureThreshold: 2
+
+# ── Secrets (required) ──────────────────────────────────
+secrets:
+  # (required) PostgreSQL connection string
+  databaseUrl: ""
+  # (required) Symmetric key that encrypts stored Datadog credentials at
+  # rest (see README's Configuration table) — generate with `openssl rand -hex 32`
+  vaneMasterKey: ""
+  # (required) Signing secret for session JWTs — generate with `openssl rand -hex 32`
+  vaneSessionSecret: ""
+
+# ── Application configuration (non-secret) ──────────────
+config:
+  pollIntervalSeconds: 60
+  logLevel: "info"
+  corsAllowedOrigin: "http://localhost:5173"
+  # DNS target admins should point custom status-page domains at. Usually
+  # the external IP/hostname of `publicService` once the cloud LB assigns
+  # one — set this after your first `helm install` and `helm upgrade`.
+  publicDnsTarget: ""
+  httpsEnabled: true
+  httpsPort: 8443
+  vaneDevTokenLogging: false
+  vaneSecureCookies: true
+
+# ── Metrics ─────────────────────────────────────────────
+# Vane does not currently expose a /metrics endpoint — this is reserved
+# for when that lands (see README's Known gaps). Leave disabled.
+serviceMonitor:
+  enabled: false
+  interval: 30s
+  scrapeTimeout: 10s
+  labels: {}

@@ -106,6 +106,18 @@ make build                 # frontend build + go build -o bin/vane
 ./bin/vane serve
 ```
 
+### Kubernetes (Helm)
+
+```bash
+helm repo add zeeplabs https://zeeplabs.github.io/zeep-vane/helm
+helm install zeep-vane zeeplabs/zeep-vane \
+  --set secrets.databaseUrl="postgres://user:pass@host:5432/vane?sslmode=require" \
+  --set secrets.vaneMasterKey="$(openssl rand -hex 32)" \
+  --set secrets.vaneSessionSecret="$(openssl rand -hex 32)"
+```
+
+The chart deploys two Services: an internal `ClusterIP` for the admin API/SPA (put it behind your own ingress if you want it reachable from outside the cluster), and a `LoadBalancer` exposing Vane's own CertMagic-terminated `:443` listener directly — this is what customer-attached status-page domains should point their DNS at, since CertMagic issues certificates for hostnames not known at deploy time and a conventional ingress/cert-manager setup can't do that. CertMagic's certificate storage is a `ReadWriteOnce` PVC by default; see `charts/zeep-vane/values.yaml` before running more than one replica. Full chart source: [`charts/zeep-vane`](charts/zeep-vane).
+
 ---
 
 ## 🏗️ Architecture overview
@@ -414,7 +426,7 @@ Tracked in `.specs/STATE.md`. Not yet solved, not yet requested to be solved:
 
 ## 🤝 Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md). All contributions welcome — bug fixes, features, docs, tests. Please review the [Code of Conduct](CODE_OF_CONDUCT.md) and [Security Policy](SECURITY.md) before opening a PR or reporting a vulnerability.
+See [CONTRIBUTING.md](CONTRIBUTING.md). All contributions welcome — bug fixes, features, docs, tests. Please review the [Code of Conduct](CODE_OF_CONDUCT.md) and [Security Policy](SECURITY.md) before opening a PR or reporting a vulnerability. Maintainers cutting a release should follow [RELEASE.md](RELEASE.md).
 
 ---
 

@@ -1,0 +1,24 @@
+{{- if .Values.publicService.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "zeep-vane.fullname" . }}-public
+  labels:
+    {{- include "zeep-vane.labels" . | nindent 4 }}
+  {{- with .Values.publicService.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  type: {{ .Values.publicService.type }}
+  {{- if and (eq .Values.publicService.type "LoadBalancer") .Values.publicService.loadBalancerIP }}
+  loadBalancerIP: {{ .Values.publicService.loadBalancerIP }}
+  {{- end }}
+  selector:
+    {{- include "zeep-vane.selectorLabels" . | nindent 4 }}
+  ports:
+    - name: https-public
+      port: {{ .Values.publicService.port }}
+      targetPort: {{ .Values.publicService.targetPort }}
+      protocol: TCP
+{{- end }}

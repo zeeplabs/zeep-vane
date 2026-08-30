@@ -1,0 +1,65 @@
+zeep-vane installed.
+
+  Chart version: {{ .Chart.Version }}
+  App version:   {{ .Chart.AppVersion }}
+  Namespace:     {{ .Release.Namespace }}
+
+Admin API + SPA (internal, cookie-session):
+
+  kubectl port-forward svc/{{ include "zeep-vane.fullname" . }} 8080:{{ .Values.service.port }} -n {{ .Release.Namespace }}
+
+{{- if .Values.ingress.enabled }}
+{{- range .Values.ingress.hosts }}
+  Or via ingress: https://{{ .host }}
+{{- end }}
+{{- end }}
+
+Visit /bootstrap on the admin URL above to create the first owner account.
+
+{{- if .Values.publicService.enabled }}
+
+Public status pages ({{ .Values.publicService.type }}, Vane's own on-demand TLS):
+
+  kubectl get svc {{ include "zeep-vane.fullname" . }}-public -n {{ .Release.Namespace }}
+
+  ================================================================
+  IMPORTANT: if this cluster already has an ingress controller
+  (ingress-nginx, Traefik, etc.) with cert-manager, do NOT route
+  customer/status-page domains through it. That path only handles
+  hosts declared up front. Status-page domains are added by
+  operators at runtime, through this app's own UI, long after
+  `helm install` — the cluster's ingress has no way to know about
+  them. Point those DNS records at the `-public` Service above
+  instead; Vane's own CertMagic/ACME listener issues a certificate
+  for each one automatically the first time it's requested.
+  Your existing ingress/cert-manager setup is still the right
+  choice for the ADMIN API/SPA host above — just not for these.
+  ================================================================
+
+Once that Service has an external IP/hostname:
+  1. Set `config.publicDnsTarget` in your values to that IP/hostname and
+     run `helm upgrade` — this is what the admin UI's "attach domain" screen
+     shows operators as the DNS target to point their CNAME/A record at.
+  2. In the Vane admin UI, register the domain and attach it to a status
+     page. A certificate is issued automatically (CertMagic/ACME) the first
+     time that hostname is requested — no manual cert management.
+
+{{- if gt (int .Values.replicaCount) 1 }}
+  WARNING: replicaCount > 1 with the public listener enabled. CertMagic's
+  certificate storage is a local/shared-disk file store — make sure
+  `persistence.accessMode` is ReadWriteMany and you've validated concurrent
+  ACME issuance across replicas yourself; this hasn't been tested upstream.
+{{- end }}
+{{- end }}
+
+Check pods:
+
+  kubectl get pods -l app.kubernetes.io/name={{ include "zeep-vane.name" . }} -n {{ .Release.Namespace }}
+
+Logs:
+
+  kubectl logs -l app.kubernetes.io/name={{ include "zeep-vane.name" . }} -n {{ .Release.Namespace }} --follow
+
+All installed resources:
+
+  kubectl get all,ingress,pvc,hpa,pdb,secret,servicemonitor -l app.kubernetes.io/instance={{ .Release.Name }} -n {{ .Release.Namespace }}

@@ -1,0 +1,149 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "zeep-vane.fullname" . }}
+  labels:
+    {{- include "zeep-vane.labels" . | nindent 4 }}
+  {{- with .Values.podAnnotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  {{- if not .Values.autoscaling.enabled }}
+  replicas: {{ .Values.replicaCount }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "zeep-vane.selectorLabels" . | nindent 6 }}
+  {{- if gt (int .Values.replicaCount) 1 }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  {{- else }}
+  strategy:
+    type: Recreate
+  {{- end }}
+  template:
+    metadata:
+      labels:
+        {{- include "zeep-vane.selectorLabels" . | nindent 8 }}
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      {{- with .Values.image.pullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "zeep-vane.serviceAccountName" . }}
+      terminationGracePeriodSeconds: 35
+
+      {{- with .Values.podSecurityContext }}
+      securityContext:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+
+      {{- with .Values.topologySpreadConstraints }}
+      topologySpreadConstraints:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+
+      containers:
+        - name: {{ .Chart.Name }}
+          image: {{ include "zeep-vane.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args: ["serve"]
+
+          {{- with .Values.containerSecurityContext }}
+          securityContext:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+            {{- if .Values.publicService.enabled }}
+            - name: https-public
+              containerPort: {{ .Values.config.httpsPort }}
+              protocol: TCP
+            {{- end }}
+
+          envFrom:
+            - secretRef:
+                name: {{ include "zeep-vane.fullname" . }}
+
+          env:
+            - name: PORT
+              value: "8080"
+            - name: POLL_INTERVAL_SECONDS
+              value: {{ .Values.config.pollIntervalSeconds | quote }}
+            - name: LOG_LEVEL
+              value: {{ .Values.config.logLevel | quote }}
+            - name: CORS_ALLOWED_ORIGIN
+              value: {{ .Values.config.corsAllowedOrigin | quote }}
+            {{- if .Values.config.publicDnsTarget }}
+            - name: PUBLIC_DNS_TARGET
+              value: {{ .Values.config.publicDnsTarget | quote }}
+            {{- end }}
+            - name: VANE_HTTPS_ENABLED
+              value: {{ .Values.publicService.enabled | ternary .Values.config.httpsEnabled false | quote }}
+            - name: HTTPS_PORT
+              value: {{ .Values.config.httpsPort | quote }}
+            {{- if .Values.persistence.enabled }}
+            - name: CERTMAGIC_STORAGE_PATH
+              value: {{ .Values.persistence.mountPath | quote }}
+            {{- end }}
+            - name: VANE_DEV_TOKEN_LOGGING
+              value: {{ .Values.config.vaneDevTokenLogging | quote }}
+            - name: VANE_SECURE_COOKIES
+              value: {{ .Values.config.vaneSecureCookies | quote }}
+
+          {{- if .Values.persistence.enabled }}
+          volumeMounts:
+            - name: certmagic-data
+              mountPath: {{ .Values.persistence.mountPath }}
+          {{- end }}
+
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+
+          livenessProbe:
+            httpGet:
+              path: {{ .Values.probes.liveness.path }}
+              port: http
+            initialDelaySeconds: {{ .Values.probes.liveness.initialDelaySeconds }}
+            periodSeconds: {{ .Values.probes.liveness.periodSeconds }}
+            failureThreshold: {{ .Values.probes.liveness.failureThreshold }}
+
+          readinessProbe:
+            httpGet:
+              path: {{ .Values.probes.readiness.path }}
+              port: http
+            initialDelaySeconds: {{ .Values.probes.readiness.initialDelaySeconds }}
+            periodSeconds: {{ .Values.probes.readiness.periodSeconds }}
+            failureThreshold: {{ .Values.probes.readiness.failureThreshold }}
+
+      {{- if .Values.persistence.enabled }}
+      volumes:
+        - name: certmagic-data
+          persistentVolumeClaim:
+            claimName: {{ include "zeep-vane.fullname" . }}-certmagic
+      {{- end }}
+
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

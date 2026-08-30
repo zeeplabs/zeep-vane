@@ -1,0 +1,50 @@
+name: Publish Helm Chart
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "charts/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: azure/setup-helm@v4
+
+      - name: Package Helm chart
+        run: |
+          mkdir -p build/helm
+          helm package charts/zeep-vane --destination build/helm
+
+      - name: Generate Helm repo index
+        run: |
+          helm repo index build/helm --url https://zeeplabs.github.io/zeep-vane/helm
+
+      - name: Upload
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: build
+
+  deploy:
+    runs-on: ubuntu-latest
+    needs: build
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
