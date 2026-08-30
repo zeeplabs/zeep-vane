@@ -127,9 +127,9 @@ T10 → T11 → T12 → T13
 - Skill: NONE
 
 **Done when**:
-- [ ] `.up.sql` creates `certmagic_storage (key TEXT PRIMARY KEY, value BYTEA NOT NULL, modified_at TIMESTAMPTZ NOT NULL DEFAULT now())` and `certmagic_storage_key_prefix_idx` on `key text_pattern_ops`
-- [ ] `.down.sql` drops the table (index drops implicitly)
-- [ ] Full gate passes (migration applies cleanly)
+- [x] `.up.sql` creates `certmagic_storage (key TEXT PRIMARY KEY, value BYTEA NOT NULL, modified_at TIMESTAMPTZ NOT NULL DEFAULT now())` and `certmagic_storage_key_prefix_idx` on `key text_pattern_ops`
+- [x] `.down.sql` drops the table (index drops implicitly)
+- [x] Full gate passes (migration applies cleanly)
 
 **Tests**: integration (exercised transitively)
 **Gate**: Full
