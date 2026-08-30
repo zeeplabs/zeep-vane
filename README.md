@@ -173,7 +173,7 @@ TLS for custom domains is automatic and on-demand: `internal/tls` wraps [CertMag
 | --- | --- |
 | React Router | Client-side routing |
 | TanStack Query | Server-state / data-fetching layer |
-| Tailwind CSS v4 | Styling (design system: **Nocturne** — see `dashboard-handoff/README.md` and `status-page-handoff/README.md` for the original design references) |
+| Tailwind CSS v4 | Styling (design system: **Nocturne**, dark-mode, mono-accent — tokens in `web/src/styles/tokens.css`, components in `web/src/components/ui/`) |
 | i18next / react-i18next | Internationalization |
 | Radix UI (`react-dialog`) | Accessible dialog primitive |
 | Vitest + Testing Library + **MSW** | Component/hook tests — real `fetch` calls intercepted by MSW rather than a hand-rolled mock router |
@@ -211,9 +211,8 @@ web/
     lib/                apiClient (fetch wrapper), mockData (pre-integration
                         fixtures, superseded by real API calls), i18n
     routes/            RequireRole route guard
+    styles/            tokens.css — Nocturne design tokens (Tailwind @theme)
     test/               Vitest setup + MSW handlers
-dashboard-handoff/      original HTML/CSS design reference for the admin SPA
-status-page-handoff/    original HTML/CSS design reference for the public page
 .specs/                 spec-driven feature history: STATE.md (decisions +
                         handoff log per feature), LESSONS.md, per-feature specs
 ```
