@@ -64,6 +64,36 @@ function hourlyBars(serviceName: string) {
   return screen.getAllByTestId(new RegExp(`^hourly-bar-${serviceName}-\\d+$`));
 }
 
+// mockManyResolvedIncidents overrides the public-preview handler with
+// `total` resolved incidents, paginated the same way the real backend does
+// (page_size 10, ?page= query param) - so T20's "Carregar mais" can be
+// exercised against more than one page without touching the shared fixture.
+function mockManyResolvedIncidents(total: number) {
+  const all = Array.from({ length: total }, (_, i) => ({
+    id: `res-${i + 1}`,
+    title: `Resolvido ${i + 1}`,
+    status: "resolved" as const,
+    created_at: new Date().toISOString(),
+    resolved_at: new Date().toISOString(),
+    updates: [],
+  }));
+  server.use(
+    http.get("/api/status-pages/:id/public-preview", ({ request }) => {
+      const page = Number(new URL(request.url).searchParams.get("page")) || 1;
+      const pageSize = 10;
+      const start = (page - 1) * pageSize;
+      return HttpResponse.json({
+        company: { name: "Acme Status", logo_url: null },
+        services: [],
+        incidents: {
+          active: [],
+          resolved: { items: all.slice(start, start + pageSize), total: all.length, page, page_size: pageSize },
+        },
+      });
+    }),
+  );
+}
+
 describe("PublicStatusPage", () => {
   it("página sem incidentes mostra banda de operacional e nenhum incidente ativo", async () => {
     await renderAt("/status/sp-4");
@@ -160,5 +190,40 @@ describe("PublicStatusPage", () => {
     for (const bar of bars) {
       expect(bar.style.background).toContain("--color-neutral-600");
     }
+  });
+
+  // list-pagination T20: resolved incidents load progressively, 10 at a
+  // time, via a "Carregar mais" button - never all at once.
+  it("mostra 10 incidentes resolvidos e o botão Carregar mais quando há mais de 10", async () => {
+    mockManyResolvedIncidents(11);
+    await renderAt("/status/resolved-many-test");
+
+    expect(await screen.findByText("Resolvido 1")).toBeInTheDocument();
+    expect(screen.getByText("Resolvido 10")).toBeInTheDocument();
+    expect(screen.queryByText("Resolvido 11")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Carregar mais" })).toBeInTheDocument();
+  });
+
+  it("clicar em Carregar mais adiciona a página seguinte sem duplicar nem reordenar a primeira", async () => {
+    mockManyResolvedIncidents(11);
+    await renderAt("/status/resolved-many-test");
+    await screen.findByText("Resolvido 1");
+
+    await userEvent.click(screen.getByRole("button", { name: "Carregar mais" }));
+
+    expect(await screen.findByText("Resolvido 11")).toBeInTheDocument();
+    expect(screen.getByText("Resolvido 1")).toBeInTheDocument();
+    expect(screen.getAllByText(/^Resolvido \d+$/)).toHaveLength(11);
+  });
+
+  it("botão Carregar mais desaparece quando todos os incidentes resolvidos foram carregados", async () => {
+    mockManyResolvedIncidents(11);
+    await renderAt("/status/resolved-many-test");
+    await screen.findByText("Resolvido 1");
+
+    await userEvent.click(screen.getByRole("button", { name: "Carregar mais" }));
+    await screen.findByText("Resolvido 11");
+
+    expect(screen.queryByRole("button", { name: "Carregar mais" })).not.toBeInTheDocument();
   });
 });

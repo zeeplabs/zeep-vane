@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useParams } from "react-router-dom";
 import { Card } from "../../components/ui/Card";
+import { Button } from "../../components/ui/Button";
 import { Tag } from "../../components/ui/Tag";
 import type { TagVariant } from "../../components/ui/Tag";
 import type { PublicHourlyBucket, PublicHourlyStatus, PublicIncidentEntry, PublicServiceStatus } from "../../lib/publicStatus";
@@ -176,7 +177,17 @@ function LoadingSkeleton() {
 
 export function PublicStatusPage() {
   const { id = "" } = useParams();
-  const { data, isLoading, isError } = usePublicStatusPage(id);
+  const { data, isLoading, isError, hasMoreResolved, loadMoreResolvedIncidents } = usePublicStatusPage(id);
+  const [loadingMore, setLoadingMore] = useState(false);
+
+  async function handleLoadMore() {
+    setLoadingMore(true);
+    try {
+      await loadMoreResolvedIncidents();
+    } finally {
+      setLoadingMore(false);
+    }
+  }
 
   if (isLoading) return <LoadingSkeleton />;
 
@@ -290,6 +301,16 @@ export function PublicStatusPage() {
             {data.incidents.resolved.map((incident) => (
               <IncidentCard key={incident.id} incident={incident} tone="resolved" />
             ))}
+            {hasMoreResolved ? (
+              <Button
+                variant="secondary"
+                className="self-center"
+                onClick={handleLoadMore}
+                disabled={loadingMore}
+              >
+                Carregar mais
+              </Button>
+            ) : null}
           </div>
         ) : (
           <p className="text-sm text-neutral-500">Nenhum incidente nos últimos 90 dias.</p>

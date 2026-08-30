@@ -48,4 +48,10 @@ export interface PublicStatusPageData {
     active: PublicIncidentEntry[];
     resolved: PublicIncidentEntry[];
   };
+  // resolvedTotal is the backend's total count of resolved incidents across
+  // all pages (list-pagination T13) - incidents.resolved above only holds
+  // what's been loaded so far (page 1, plus any page appended by
+  // loadMoreResolvedIncidents). Compare its length against this to know
+  // whether "Carregar mais" (T20) should still show.
+  resolvedTotal: number;
 }

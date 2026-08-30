@@ -1,3 +1,4 @@
+import { useCallback, useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { apiFetch } from "../../lib/apiClient";
 import type { PublicHourlyBucket, PublicIncidentEntry, PublicStatusPageData, PublicServiceStatus } from "../../lib/publicStatus";
@@ -28,12 +29,6 @@ interface PreviewService {
   hourly_history: PublicHourlyBucket[];
 }
 
-// SPEC_DEVIATION (list-pagination T12/T13): the backend now paginates
-// resolved incidents ({items,total,page,page_size}, page_size 10); this
-// hook still only consumes page 1's items pending T13's
-// loadMoreResolvedIncidents/"Carregar mais" progressive-loading UX
-// (list-pagination tasks.md T13/T20, not yet implemented) - it never
-// fabricates the shape of a bare array from the new envelope.
 interface PreviewResolvedPage {
   items: PreviewIncident[];
   total: number;
@@ -74,31 +69,67 @@ function latestServiceChange(services: PreviewService[]): string | null {
   }, null);
 }
 
-export function usePublicStatusPage(id: string) {
-  return useQuery({
-    queryKey: ["public-status-page", id],
-    queryFn: async (): Promise<PublicStatusPageData> => {
-      const data = await apiFetch<PreviewResponse>(`/api/status-pages/${id}/public-preview`);
-      const latestChange = latestServiceChange(data.services);
+async function fetchPublicStatusPage(id: string, resolvedPage: number): Promise<PublicStatusPageData> {
+  const data = await apiFetch<PreviewResponse>(`/api/status-pages/${id}/public-preview?page=${resolvedPage}`);
+  const latestChange = latestServiceChange(data.services);
 
-      return {
-        company_name: data.company.name,
-        logo_url: data.company.logo_url,
-        updated_at: latestChange ?? new Date().toISOString(),
-        stale: false,
-        services: data.services.map((service) => ({
-          name: service.name,
-          status: service.status,
-          last_updated_at: service.last_updated_at,
-          hourly_history: service.hourly_history,
-        })),
-        incidents: {
-          active: data.incidents.active.map(toPublicIncidentEntry),
-          resolved: data.incidents.resolved.items.map(toPublicIncidentEntry),
-        },
-      };
+  return {
+    company_name: data.company.name,
+    logo_url: data.company.logo_url,
+    updated_at: latestChange ?? new Date().toISOString(),
+    stale: false,
+    services: data.services.map((service) => ({
+      name: service.name,
+      status: service.status,
+      last_updated_at: service.last_updated_at,
+      hourly_history: service.hourly_history,
+    })),
+    incidents: {
+      active: data.incidents.active.map(toPublicIncidentEntry),
+      resolved: data.incidents.resolved.items.map(toPublicIncidentEntry),
     },
+    resolvedTotal: data.incidents.resolved.total,
+  };
+}
+
+// usePublicStatusPage fetches page 1 of resolved incidents through the
+// normal polled query (refetchInterval unchanged), then tracks any
+// additional pages loaded via loadMoreResolvedIncidents in local state -
+// appended after page 1's items, never replacing/reordering them
+// (list-pagination T13). Extra pages reset whenever `id` changes so
+// switching status pages never leaks the previous page's loaded history.
+export function usePublicStatusPage(id: string) {
+  const [extraResolved, setExtraResolved] = useState<PublicIncidentEntry[]>([]);
+  const [loadedPage, setLoadedPage] = useState(1);
+
+  useEffect(() => {
+    setExtraResolved([]);
+    setLoadedPage(1);
+  }, [id]);
+
+  const query = useQuery({
+    queryKey: ["public-status-page", id],
+    queryFn: () => fetchPublicStatusPage(id, 1),
     refetchInterval: 120_000,
     retry: false,
   });
+
+  const loadMoreResolvedIncidents = useCallback(async () => {
+    const nextPage = loadedPage + 1;
+    const next = await fetchPublicStatusPage(id, nextPage);
+    setExtraResolved((prev) => [...prev, ...next.incidents.resolved]);
+    setLoadedPage(nextPage);
+  }, [id, loadedPage]);
+
+  const data: PublicStatusPageData | undefined = query.data && {
+    ...query.data,
+    incidents: {
+      ...query.data.incidents,
+      resolved: [...query.data.incidents.resolved, ...extraResolved],
+    },
+  };
+  const resolvedTotal = query.data?.resolvedTotal ?? 0;
+  const hasMoreResolved = (data?.incidents.resolved.length ?? 0) < resolvedTotal;
+
+  return { ...query, data, resolvedTotal, hasMoreResolved, loadMoreResolvedIncidents };
 }

@@ -824,7 +824,7 @@ export const handlers = [
   // doesn't return that either, see public-status/hooks.ts SPEC_DEVIATION),
   // gated the same way router.HostRouter gates production traffic: only a
   // "published" status page composes, anything else 404s.
-  http.get("/api/status-pages/:id/public-preview", ({ params }) => {
+  http.get("/api/status-pages/:id/public-preview", ({ params, request }) => {
     if (!sessionAdminId) return HttpResponse.json({ error: "unauthorized" }, { status: 401 });
     const page = statusPagesState.find((p) => p.id === params.id);
     if (!page || page.state !== "published") {
@@ -868,7 +868,7 @@ export const handlers = [
         last_updated_at: s.last_status_change_at,
         hourly_history: buildFixtureHourlyHistory(s.current_status),
       })),
-      incidents: { active, resolved: { items: resolved, total: resolved.length, page: 1, page_size: 10 } },
+      incidents: { active, resolved: paginatedPage(request.url, resolved, 10) },
     });
   }),
 
