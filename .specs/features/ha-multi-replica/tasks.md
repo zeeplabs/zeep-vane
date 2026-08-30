@@ -151,15 +151,15 @@ T10 → T11 → T12 → T13
 - Skill: NONE
 
 **Done when**:
-- [ ] `TryAcquire(ctx, dsn string, key int64) (*Handle, bool, error)` returns `(handle, true, nil)` on success, `(nil, false, nil)` when already held, `(nil, false, err)` on connection failure
-- [ ] `Acquire(ctx, dsn, name string) (*Handle, error)` blocks until acquired or `ctx` is canceled (canceled `ctx` returns promptly, not after the full Postgres wait)
-- [ ] `(*Handle) Healthy(ctx) bool` returns `false` once the handle's connection is closed/broken
-- [ ] `(*Handle) Release(ctx) error` unlocks and closes the connection; safe to call once per successful acquire
-- [ ] Unit test: `TryAcquire` against a second concurrent attempt for the same key (fakeable in-process behavior where a code-execution tool for Postgres isn't required, OR integration-only if no meaningful fake exists - see note below)
-- [ ] Integration test: two `TryAcquire` calls for the same `key` against the same `TEST_DATABASE_URL` - second fails while first holds; releasing the first lets the second succeed
-- [ ] Integration test: `Healthy()` returns `false` after the handle's own connection is closed out-of-band (simulating a crash)
-- [ ] Integration test: `Acquire`/blocking variant honors context cancellation (canceled context returns an error promptly instead of hanging)
-- [ ] Full gate passes (disposable Postgres container)
+- [x] `TryAcquire(ctx, dsn string, key int64) (*Handle, bool, error)` returns `(handle, true, nil)` on success, `(nil, false, nil)` when already held, `(nil, false, err)` on connection failure
+- [x] `Acquire(ctx, dsn, name string) (*Handle, error)` blocks until acquired or `ctx` is canceled (canceled `ctx` returns promptly, not after the full Postgres wait)
+- [x] `(*Handle) Healthy(ctx) bool` returns `false` once the handle's connection is closed/broken
+- [x] `(*Handle) Release(ctx) error` unlocks and closes the connection; safe to call once per successful acquire
+- [x] Unit test: N/A - no meaningful fake-free branch exists (all behavior requires a real Postgres session); covered by the integration tests below instead, per this task's own Note.
+- [x] Integration test: two `TryAcquire` calls for the same `key` against the same `TEST_DATABASE_URL` - second fails while first holds; releasing the first lets the second succeed
+- [x] Integration test: `Healthy()` returns `false` after the handle's own connection is closed out-of-band (simulating a crash)
+- [x] Integration test: `Acquire`/blocking variant honors context cancellation (canceled context returns an error promptly instead of hanging)
+- [x] Full gate passes (disposable Postgres container)
 
 **Note**: `pg_advisory_lock` semantics require a real Postgres connection - there is no meaningful in-memory fake for the acquire/contend/release behavior itself. If no unit-testable branch exists (e.g. input validation), mark unit as N/A in the task's own test list rather than fabricating a trivial unit test; the coverage matrix's "unit + integration" applies over the whole layer, not necessarily every function.
 
