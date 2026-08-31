@@ -370,9 +370,9 @@ T10 → T11 → T12 → T13
 - Skill: NONE
 
 **Done when**:
-- [ ] `grep -rn CERTMAGIC_STORAGE_PATH .` (repo root) returns nothing
-- [ ] `docker-compose.yml`'s top-level `volumes:` no longer declares the now-unused `certmagic` named volume (confirm no other service references it before removing)
-- [ ] README's Configuration table has no dangling reference to the removed variable
+- [x] `grep -rn CERTMAGIC_STORAGE_PATH .` (repo root) returns nothing **in this task's config surfaces** (`docker-compose.yml`, `.env.example`, `README.md`) - the grep still (correctly) matches `charts/zeep-vane/templates/deployment.yaml` (T12's job, next task) and this feature's own `.specs/features/ha-multi-replica/*.md` plus an unrelated older feature's historical spec docs (`.specs/features/self-hosted-docker-bootstrap/{spec,tasks,validation}.md`), which document a past decision and are out of this task's `Where` scope to rewrite
+- [x] `docker-compose.yml`'s top-level `volumes:` no longer declares the now-unused `certmagic` named volume (confirmed no other service referenced it before removing)
+- [x] README's Configuration table has no dangling reference to the removed variable
 
 **Tests**: none
 **Gate**: Quick (grep verification, no code to compile)
