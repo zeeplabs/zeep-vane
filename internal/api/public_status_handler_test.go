@@ -387,7 +387,13 @@ func TestPublicStatusGet_LastUpdatedAt_AdvancesOnRepeatedSameStatusPoll(t *testi
 	t.Cleanup(cleanup)
 	statusPageID := createPublicStatusPageFixture(t, pool, serviceID)
 
-	secondSeenAt := time.Now().Add(-1 * time.Hour)
+	// Truncated to microsecond precision: Postgres TIMESTAMPTZ stores at
+	// most microsecond resolution, so the value read back after
+	// OpenOrExtend below loses time.Now()'s nanosecond digits - comparing
+	// against an untruncated secondSeenAt would fail on Equal() nearly
+	// every run (rounding to the microsecond changes the value with high
+	// probability).
+	secondSeenAt := time.Now().Add(-1 * time.Hour).Truncate(time.Microsecond)
 	intervals := db.NewStatusIntervalRepository(pool)
 	if err := intervals.OpenOrExtend(context.Background(), serviceID, "operational", 0.5, secondSeenAt); err != nil {
 		t.Fatalf("setup second OpenOrExtend() returned unexpected error: %v", err)
