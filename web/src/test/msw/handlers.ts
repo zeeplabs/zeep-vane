@@ -518,10 +518,12 @@ export const handlers = [
     page.tls_last_error = null;
     return HttpResponse.json({
       hostname: `${page.subdomain}.${domain?.hostname ?? "?"}`,
-      resolved_cname: dnsTargetState,
+      resolved_ips: ["203.0.113.10"],
       dns_resolved: true,
+      dns_matches_target: dnsTargetState ? true : null,
       tls_reachable: true,
-      tls_dial_error: null,
+      tls_cert_valid: true,
+      tls_error: null,
       state: page.state,
       tls_last_error: page.tls_last_error,
       checked_at: new Date().toISOString(),

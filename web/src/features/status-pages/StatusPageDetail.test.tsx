@@ -120,6 +120,65 @@ describe("StatusPageDetail", () => {
     expect(screen.getByRole("link", { name: "Pré-visualizar página pública" })).toBeInTheDocument();
   });
 
+  it("owner com página pending_tls vê o painel de verificação de DNS e pode acionar a checagem", async () => {
+    await loginAsOwner();
+    renderDetail("sp-2");
+    await screen.findByText("Aguardando validação de DNS/certificado");
+
+    expect(screen.getByText("Configuração de DNS")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Verificar DNS/certificado" })).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "Verificar DNS/certificado" }));
+
+    // O mock de verify-domain publica a página (ver handlers.ts) - o painel
+    // some assim que a mutation invalida a query e o state vira
+    // "published" (não dá pra garantir observar o resultado intermediário
+    // do painel de forma não-racy, já que ele desmonta no mesmo instante).
+    expect(await screen.findByText("Publicada")).toBeInTheDocument();
+    expect(screen.queryByText("Configuração de DNS")).not.toBeInTheDocument();
+  });
+
+  it("resultado de verificação com DNS incorreto/certificado inválido é exibido sem publicar a página", async () => {
+    await loginAsOwner();
+    server.use(
+      http.post("/api/status-pages/:id/verify-domain", () =>
+        HttpResponse.json({
+          hostname: "status.beta.com",
+          resolved_ips: ["198.51.100.20"],
+          dns_resolved: true,
+          dns_matches_target: false,
+          tls_reachable: true,
+          tls_cert_valid: false,
+          tls_error: "x509: certificate signed by unknown authority",
+          state: "pending_tls",
+          tls_last_error: null,
+          checked_at: new Date().toISOString(),
+        })
+      )
+    );
+    renderDetail("sp-2");
+    await screen.findByText("Aguardando validação de DNS/certificado");
+
+    await userEvent.click(screen.getByRole("button", { name: "Verificar DNS/certificado" }));
+
+    expect(await screen.findByText(/DNS resolve para 198.51.100.20, diferente do destino esperado/)).toBeInTheDocument();
+    expect(
+      await screen.findByText(/Conexão HTTPS respondeu, mas o certificado não é válido/)
+    ).toBeInTheDocument();
+    // Não publicou - painel continua visível pro admin tentar de novo.
+    expect(screen.getByText("Configuração de DNS")).toBeInTheDocument();
+    expect(screen.queryByText("Publicada")).not.toBeInTheDocument();
+  });
+
+  it("viewer não vê o painel de verificação de DNS (endpoints que ele usa são write-role-gated)", async () => {
+    await loginAs("viewer@vane.app");
+    renderDetail("sp-2");
+
+    expect(await screen.findByText("Aguardando validação de DNS/certificado")).toBeInTheDocument();
+    expect(screen.queryByText("Configuração de DNS")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Verificar DNS/certificado" })).not.toBeInTheDocument();
+  });
+
   it("estado 'published' com domain_id/subdomain nulos (formato defendido, nunca produzido pelo fluxo real) não renderiza URL quebrada nem lança (mutante #5)", async () => {
     await loginAsOwner();
     // Mesmo raciocínio de StatusPagesSection.test.tsx: MarkPublished só

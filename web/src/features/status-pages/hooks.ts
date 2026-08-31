@@ -119,10 +119,20 @@ export function useDeleteStatusPage() {
 
 export interface VerifyDomainResult {
   hostname: string;
-  resolved_cname: string | null;
+  resolved_ips: string[];
   dns_resolved: boolean;
+  // null when the operator never configured PUBLIC_DNS_TARGET - nothing
+  // to compare against. Computed server-side by IP-set overlap, not by
+  // comparing DNS record strings (a CNAME chain of any length, or a plain
+  // A record with no CNAME at all, both defeat a literal string compare).
+  dns_matches_target: boolean | null;
   tls_reachable: boolean;
-  tls_dial_error: string | null;
+  // true only if tls_reachable AND the served certificate chain verifies
+  // against the system root pool for this hostname - tls_reachable alone
+  // just means *something* answered TLS (a parked domain, a wrong cert,
+  // a self-signed cert all complete a handshake too).
+  tls_cert_valid: boolean;
+  tls_error: string | null;
   state: StatusPageState;
   tls_last_error: string | null;
   checked_at: string;

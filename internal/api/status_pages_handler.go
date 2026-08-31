@@ -49,18 +49,25 @@ type StatusPagesHandler struct {
 	audit       *audit.Log
 	logger      *zap.Logger
 	verifier    domainVerifier
+	// dnsTarget is config.Config.PublicDNSTarget - VerifyDomain passes it
+	// to the verifier so DNSMatchesTarget can be computed by IP overlap,
+	// not string comparison (domain_verifier.go's doc comment on
+	// DNSMatchesTarget explains why string comparison against a raw CNAME
+	// record is wrong). Empty means the operator never configured it.
+	dnsTarget string
 
 	lastVerifyMu sync.Mutex
 	lastVerifyAt map[string]time.Time
 }
 
 // NewStatusPagesHandler builds a StatusPagesHandler backed by statusPages.
-func NewStatusPagesHandler(statusPages statusPageCreatorLister, auditLog *audit.Log, logger *zap.Logger) *StatusPagesHandler {
+func NewStatusPagesHandler(statusPages statusPageCreatorLister, auditLog *audit.Log, dnsTarget string, logger *zap.Logger) *StatusPagesHandler {
 	return &StatusPagesHandler{
 		statusPages:  statusPages,
 		audit:        auditLog,
 		logger:       logger,
 		verifier:     newNetDomainVerifier(),
+		dnsTarget:    dnsTarget,
 		lastVerifyAt: make(map[string]time.Time),
 	}
 }
@@ -271,14 +278,16 @@ func (h *StatusPagesHandler) Delete(w http.ResponseWriter, r *http.Request) {
 }
 
 type verifyDomainResponse struct {
-	Hostname      string    `json:"hostname"`
-	ResolvedCNAME *string   `json:"resolved_cname"`
-	DNSResolved   bool      `json:"dns_resolved"`
-	TLSReachable  bool      `json:"tls_reachable"`
-	TLSDialError  *string   `json:"tls_dial_error"`
-	State         string    `json:"state"`
-	TLSLastError  *string   `json:"tls_last_error"`
-	CheckedAt     time.Time `json:"checked_at"`
+	Hostname         string    `json:"hostname"`
+	ResolvedIPs      []string  `json:"resolved_ips"`
+	DNSResolved      bool      `json:"dns_resolved"`
+	DNSMatchesTarget *bool     `json:"dns_matches_target"`
+	TLSReachable     bool      `json:"tls_reachable"`
+	TLSCertValid     bool      `json:"tls_cert_valid"`
+	TLSError         *string   `json:"tls_error"`
+	State            string    `json:"state"`
+	TLSLastError     *string   `json:"tls_last_error"`
+	CheckedAt        time.Time `json:"checked_at"`
 }
 
 const noDomainAttachedBody = `{"error":"this status page has no domain attached yet"}`
@@ -333,7 +342,7 @@ func (h *StatusPagesHandler) VerifyDomain(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	result := h.verifier.Verify(r.Context(), hostname)
+	result := h.verifier.Verify(r.Context(), hostname, h.dnsTarget)
 
 	statusPage, err := h.statusPages.GetByID(r.Context(), id)
 	if err != nil {
@@ -342,17 +351,25 @@ func (h *StatusPagesHandler) VerifyDomain(w http.ResponseWriter, r *http.Request
 		return
 	}
 
+	if actor, ok := AdminFromContext(r.Context()); ok {
+		if err := h.audit.Record(r.Context(), actor.ID, id, "status_page_domain_verified"); err != nil {
+			h.logger.Error("status-pages: failed to record audit entry", zap.Error(err))
+		}
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	_ = json.NewEncoder(w).Encode(verifyDomainResponse{
-		Hostname:      hostname,
-		ResolvedCNAME: result.ResolvedCNAME,
-		DNSResolved:   result.DNSResolved,
-		TLSReachable:  result.TLSReachable,
-		TLSDialError:  result.TLSDialError,
-		State:         statusPage.State,
-		TLSLastError:  statusPage.TLSLastError,
-		CheckedAt:     time.Now(),
+		Hostname:         hostname,
+		ResolvedIPs:      result.ResolvedIPs,
+		DNSResolved:      result.DNSResolved,
+		DNSMatchesTarget: result.DNSMatchesTarget,
+		TLSReachable:     result.TLSReachable,
+		TLSCertValid:     result.TLSCertValid,
+		TLSError:         result.TLSError,
+		State:            statusPage.State,
+		TLSLastError:     statusPage.TLSLastError,
+		CheckedAt:        time.Now(),
 	})
 }
 

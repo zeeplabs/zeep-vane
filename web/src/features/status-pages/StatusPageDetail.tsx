@@ -168,8 +168,13 @@ export function StatusPageDetail() {
           domínio customizado de plataformas como Vercel/Render) - permanece
           visível enquanto a página tem domínio anexado e ainda não está
           publicada, mesmo que o polling automático (useStatusPage) já
-          esteja tentando detectar a transição sozinho a cada 10s. */}
-      {page.domain_id !== null && page.state !== "published" ? (
+          esteja tentando detectar a transição sozinho a cada 10s. Restrito
+          a canManage: o endpoint que ele lê (GET /api/instance/dns-target)
+          e o que ele aciona (POST .../verify-domain) são ambos
+          write-role-gated no backend - um viewer só veria um 403
+          confuso/enganoso ("DNS não configurado" quando na verdade só não
+          teve permissão de ler) em vez de nada. */}
+      {page.domain_id !== null && page.subdomain !== null && page.state !== "published" && canManage ? (
         <DomainVerificationPanel statusPageId={page.id} fullHostname={`${page.subdomain}.${hostname ?? "?"}`} />
       ) : null}
 
@@ -260,11 +265,6 @@ function DomainVerificationPanel({ statusPageId, fullHostname }: DomainVerificat
   const verifyDomain = useVerifyDomain();
   const result: VerifyDomainResult | undefined = verifyDomain.data;
 
-  const dnsMatchesTarget =
-    result?.resolved_cname && dnsTarget
-      ? result.resolved_cname.toLowerCase().replace(/\.$/, "") === dnsTarget.toLowerCase().replace(/\.$/, "")
-      : null;
-
   return (
     <Card elevation="elev-sm" className="flex flex-col gap-3 p-4">
       <div className="flex items-center justify-between gap-3">
@@ -308,23 +308,27 @@ function DomainVerificationPanel({ statusPageId, fullHostname }: DomainVerificat
       {result ? (
         <div className="flex flex-col gap-1.5 border-t border-divider pt-3 text-xs">
           <VerificationRow
-            ok={result.dns_resolved && dnsMatchesTarget !== false}
+            ok={result.dns_resolved && result.dns_matches_target !== false}
             label={
               !result.dns_resolved
                 ? "DNS ainda não resolve para nenhum destino"
-                : dnsMatchesTarget === false
-                  ? `DNS resolve para "${result.resolved_cname}", diferente do destino esperado`
-                  : result.resolved_cname
-                    ? `DNS resolve corretamente para "${result.resolved_cname}"`
-                    : "DNS resolve (registro A, sem CNAME)"
+                : result.dns_matches_target === false
+                  ? `DNS resolve para ${result.resolved_ips.join(", ")}, diferente do destino esperado`
+                  : result.dns_matches_target === true
+                    ? `DNS resolve corretamente (${result.resolved_ips.join(", ")})`
+                    : `DNS resolve (${result.resolved_ips.join(", ")})`
             }
           />
           <VerificationRow
-            ok={result.tls_reachable}
+            ok={result.tls_cert_valid}
             label={
-              result.tls_reachable
-                ? "Certificado TLS emitido e servido corretamente"
-                : `Conexão HTTPS ainda falha${result.tls_dial_error ? `: ${result.tls_dial_error}` : ""}`
+              result.tls_cert_valid
+                ? "Certificado TLS emitido e válido"
+                : result.tls_reachable
+                  ? `Conexão HTTPS respondeu, mas o certificado não é válido para ${fullHostname}${
+                      result.tls_error ? `: ${result.tls_error}` : ""
+                    }`
+                  : `Conexão HTTPS ainda falha${result.tls_error ? `: ${result.tls_error}` : ""}`
             }
           />
           <p className="text-neutral-400">Última verificação: {new Date(result.checked_at).toLocaleString()}</p>

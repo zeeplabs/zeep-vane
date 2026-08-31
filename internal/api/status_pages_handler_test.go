@@ -27,7 +27,7 @@ type fakeDomainVerifier struct {
 	result domainVerificationResult
 }
 
-func (f *fakeDomainVerifier) Verify(ctx context.Context, hostname string) domainVerificationResult {
+func (f *fakeDomainVerifier) Verify(ctx context.Context, hostname, expectedTarget string) domainVerificationResult {
 	return f.result
 }
 
@@ -50,7 +50,7 @@ func newStatusPagesRouter(t *testing.T, opts ...func(*StatusPagesHandler)) (http
 
 	repo := db.NewStatusPageRepository(pool)
 	admins := db.NewAdminRepository(pool)
-	handler := NewStatusPagesHandler(repo, audit.NewLog(pool), zap.NewNop())
+	handler := NewStatusPagesHandler(repo, audit.NewLog(pool), "", zap.NewNop())
 	for _, opt := range opts {
 		opt(handler)
 	}
@@ -600,13 +600,15 @@ func TestVerifyDomain_NonexistentStatusPageID_404(t *testing.T) {
 // require a publicly resolvable hostname) and asserts the response
 // combines the fake check result with the status page's current DB state.
 func TestVerifyDomain_ValidRequest_200ReturnsCheckResult(t *testing.T) {
-	resolvedCNAME := "lb.example.com"
+	matchesTarget := true
 	r, pool, admins := newStatusPagesRouter(t, func(h *StatusPagesHandler) {
 		h.verifier = &fakeDomainVerifier{result: domainVerificationResult{
-			ResolvedCNAME: &resolvedCNAME,
-			DNSResolved:   true,
-			TLSReachable:  false,
-			TLSDialError:  strPtr("dial tcp: connection refused"),
+			ResolvedIPs:      []string{"203.0.113.10"},
+			DNSResolved:      true,
+			DNSMatchesTarget: &matchesTarget,
+			TLSReachable:     true,
+			TLSCertValid:     false,
+			TLSError:         strPtr("x509: certificate is valid for other.example.com, not status.empresa.com"),
 		}}
 	})
 	token := issueTestSessionToken(t, admins)
@@ -626,14 +628,23 @@ func TestVerifyDomain_ValidRequest_200ReturnsCheckResult(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
 		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
 	}
-	if got.ResolvedCNAME == nil || *got.ResolvedCNAME != resolvedCNAME {
-		t.Errorf("ResolvedCNAME = %v, want %q", got.ResolvedCNAME, resolvedCNAME)
+	if len(got.ResolvedIPs) != 1 || got.ResolvedIPs[0] != "203.0.113.10" {
+		t.Errorf("ResolvedIPs = %v, want [203.0.113.10]", got.ResolvedIPs)
 	}
 	if !got.DNSResolved {
 		t.Error("DNSResolved = false, want true")
 	}
-	if got.TLSReachable {
-		t.Error("TLSReachable = true, want false")
+	if got.DNSMatchesTarget == nil || !*got.DNSMatchesTarget {
+		t.Errorf("DNSMatchesTarget = %v, want true", got.DNSMatchesTarget)
+	}
+	if !got.TLSReachable {
+		t.Error("TLSReachable = false, want true")
+	}
+	if got.TLSCertValid {
+		t.Error("TLSCertValid = true, want false")
+	}
+	if got.TLSError == nil {
+		t.Error("TLSError = nil, want a certificate mismatch message")
 	}
 	if got.State != "pending_tls" {
 		t.Errorf("State = %q, want %q", got.State, "pending_tls")
@@ -664,6 +675,20 @@ func TestVerifyDomain_SecondCallWithinCooldown_429(t *testing.T) {
 	second := postVerifyDomain(t, r, token, pageID)
 	if second.Code != http.StatusTooManyRequests {
 		t.Errorf("second status = %d, want %d, body = %s", second.Code, http.StatusTooManyRequests, second.Body.String())
+	}
+}
+
+// TestCheckVerifyCooldown_AfterWindowElapsed_Allows asserts the cooldown
+// is a sliding window, not a one-shot lockout: a page verified once must
+// become verifiable again after verifyDomainCooldown passes. Manipulates
+// lastVerifyAt directly instead of a real 15s sleep (or the HTTP layer)
+// so this test stays fast and exercises checkVerifyCooldown in isolation.
+func TestCheckVerifyCooldown_AfterWindowElapsed_Allows(t *testing.T) {
+	h := &StatusPagesHandler{lastVerifyAt: make(map[string]time.Time)}
+	h.lastVerifyAt["page-1"] = time.Now().Add(-verifyDomainCooldown - time.Second)
+
+	if !h.checkVerifyCooldown("page-1") {
+		t.Error("checkVerifyCooldown() = false after the cooldown window elapsed, want true")
 	}
 }
 
