@@ -422,7 +422,7 @@ T10 → T11 → T12 → T13
 - Skill: NONE
 
 **Done when**:
-- [ ] `[Unreleased]` gains an `### Added` or `### Changed` bullet (as fits Keep a Changelog conventions) describing the three fixes and the PVC removal, in plain factual language, no invented version number
+- [x] `[Unreleased]` gains an `### Added` or `### Changed` bullet (as fits Keep a Changelog conventions) describing the three fixes and the PVC removal, in plain factual language, no invented version number
 
 **Tests**: none
 **Gate**: none (manual review)
