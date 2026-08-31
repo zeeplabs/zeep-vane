@@ -89,6 +89,42 @@ func newTestHandler() http.Handler {
 	})
 }
 
+// TestIPLimiter_SingleInstance_BurstThenReject_UnchangedFromBeforeHA covers
+// HA-12: with only one IPLimiter instance (the single-replica, pre-feature
+// case), burst/reject behavior must be observably identical to before this
+// feature's cross-replica changes - the Postgres-backed store's shared
+// token-bucket formula must not alter single-instance behavior in any way.
+// This is the direct, dedicated test HA-12 previously lacked; it does not
+// rely on inferring single-replica correctness from the cross-replica test
+// in ip_limiter_integration_test.go.
+func TestIPLimiter_SingleInstance_BurstThenReject_UnchangedFromBeforeHA(t *testing.T) {
+	limiter := newIPLimiterWithStore(newFakeBucketStore(), 60, 3, time.Minute)
+	handler := limiter.Middleware(newTestHandler())
+
+	const ip = "203.0.113.210:1"
+
+	for i := 0; i < 3; i++ {
+		req := httptest.NewRequest(http.MethodPost, "/", nil)
+		req.RemoteAddr = ip
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("request %d within burst: status = %d, want %d (HA-12: single-replica behavior unchanged)", i, rec.Code, http.StatusOK)
+		}
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/", nil)
+	req.RemoteAddr = ip
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusTooManyRequests {
+		t.Errorf("request past burst: status = %d, want %d (HA-12: single-replica behavior unchanged)", rec.Code, http.StatusTooManyRequests)
+	}
+	if got := rec.Body.String(); got != rateLimitedBody {
+		t.Errorf("429 body = %q, want %q (HA-12: byte-for-byte unchanged from before this feature)", got, rateLimitedBody)
+	}
+}
+
 func TestIPLimiter_WithinBurst_AllRequestsPass(t *testing.T) {
 	limiter := newIPLimiterWithStore(newFakeBucketStore(), 60, 3, time.Minute)
 	handler := limiter.Middleware(newTestHandler())

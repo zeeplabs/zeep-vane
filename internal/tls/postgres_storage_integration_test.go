@@ -432,3 +432,82 @@ func TestPostgresStorage_Lock_CrashedHolderAutoReleases(t *testing.T) {
 		t.Fatal("s2.Lock() did not succeed within 5s of s1's simulated crash")
 	}
 }
+
+// killAdvisoryLockHolderByName finds the Postgres backend holding the
+// session-scoped advisory lock that pglock.Acquire(dsn, name) would have
+// taken (hashtextextended(name, 0), the same hash pglock.Acquire/Release
+// use) and terminates it, simulating a replica's process dying mid-hold
+// without ever calling Unlock - the same out-of-band mechanism
+// internal/cli's killPollerLeaderBackend uses for the poller's leader lock,
+// generalized here to a name-hashed key rather than a raw int64 one.
+func killAdvisoryLockHolderByName(t *testing.T, pool *db.Pool, name string) bool {
+	t.Helper()
+	ctx := context.Background()
+
+	var key int64
+	if err := pool.QueryRow(ctx, "SELECT hashtextextended($1, 0)", name).Scan(&key); err != nil {
+		t.Fatalf("hashtextextended() returned unexpected error: %v", err)
+	}
+	// pg_advisory_lock(bigint) stores the 64-bit key as two unsigned 32-bit
+	// halves (classid = high bits, objid = low bits) in pg_locks, with
+	// objsubid = 1 - cast both sides to bigint so the comparison is exact
+	// regardless of the hashed key's sign.
+	classid := int64(uint32(uint64(key) >> 32))
+	objid := int64(uint32(uint64(key)))
+
+	var pid int
+	err := pool.QueryRow(ctx,
+		`SELECT pid FROM pg_locks WHERE locktype = 'advisory' AND classid::bigint = $1 AND objid::bigint = $2 AND objsubid = 1 LIMIT 1`,
+		classid, objid,
+	).Scan(&pid)
+	if err != nil {
+		return false
+	}
+	if _, err := pool.Exec(ctx, "SELECT pg_terminate_backend($1)", pid); err != nil {
+		t.Fatalf("pg_terminate_backend() returned unexpected error: %v", err)
+	}
+	return true
+}
+
+// TestPostgresStorage_Lock_OutOfBandKill_AutoReleases closes the real HA-17
+// gap TestPostgresStorage_Lock_CrashedHolderAutoReleases's own doc comment
+// disclosed: that test simulates a crash via handle.Release() (a graceful
+// unlock+close), not a true severed connection. This test instead kills
+// s1's actual advisory-lock backend directly at the Postgres level - the
+// same real out-of-band kill internal/cli's HA-04 poller test performs -
+// and proves PostgresStorage.Lock itself (not just the underlying pglock
+// package in isolation) observes the resulting auto-release and lets a
+// second instance proceed.
+func TestPostgresStorage_Lock_OutOfBandKill_AutoReleases(t *testing.T) {
+	s1, dsn := newTestPostgresStorageWithDSN(t)
+	s2, _ := newTestPostgresStorageWithDSN(t)
+	name := fmt.Sprintf("lock-test-oob-kill-%d", time.Now().UnixNano())
+	ctx := context.Background()
+
+	if err := s1.Lock(ctx, name); err != nil {
+		t.Fatalf("s1.Lock() returned unexpected error: %v", err)
+	}
+
+	pool, err := db.NewPool(ctx, dsn)
+	if err != nil {
+		t.Fatalf("NewPool() returned unexpected error: %v", err)
+	}
+	t.Cleanup(pool.Close)
+
+	if !killAdvisoryLockHolderByName(t, pool, name) {
+		t.Fatal("could not find s1's advisory-lock backend to kill - test setup problem")
+	}
+
+	done := make(chan error, 1)
+	go func() { done <- s2.Lock(context.Background(), name) }()
+
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("s2.Lock() after out-of-band kill returned unexpected error: %v", err)
+		}
+		_ = s2.Unlock(context.Background(), name)
+	case <-time.After(5 * time.Second):
+		t.Fatal("s2.Lock() did not succeed within 5s of s1's backend being killed out-of-band (HA-17)")
+	}
+}
