@@ -5,10 +5,10 @@ fullnameOverride: ""
 # The poller's leader election, the per-IP rate limiter, and CertMagic's
 # certificate storage are all Postgres-backed (ha-multi-replica, AD-013) —
 # no local disk, no PVC, no code-level blocker to running more than one
-# replica. The default stays at 1 anyway: raising it is a separate
-# operational decision (capacity planning, rollout strategy) independent of
-# this correctness fix, not something this chart should assume for you.
-replicaCount: 1
+# replica. Defaulted to 2 to exercise that in a real cluster (not just the
+# unit/integration tests the feature shipped with) — watch logs for leader
+# election/failover/rate-limit behavior under real pod scheduling.
+replicaCount: 2
 
 # ── Image ───────────────────────────────────────────────
 image:
