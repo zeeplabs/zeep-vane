@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { Routes, Route, Outlet, Navigate } from "react-router-dom";
 import { Toaster } from "sonner";
 import { AuthProvider, useAuth } from "./auth/AuthProvider";
@@ -52,6 +52,44 @@ function BootstrapRoute() {
   return <BootstrapPage />;
 }
 
+// RootRoute handles "/" for BOTH audiences the embedded SPA can be served
+// to (AD-018): a visitor on a published status page's own custom domain
+// (Host-routed by the Go backend, HostRouter -> web.StaticHandler), and an
+// operator on the admin domain. There is no way to tell these apart from
+// the URL alone - both request "/" - so it probes GET /api/public-status
+// (only ever wired up on the public HTTPS listener, 404 everywhere else,
+// including the admin listener) and renders accordingly. Deliberately
+// outside RedirectToBootstrapIfNeeded/RequireAuth: a status-page visitor
+// has no session and must never be redirected to /login.
+function RootRoute() {
+  const [isPublicStatusPage, setIsPublicStatusPage] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/public-status")
+      .then((res) => {
+        if (!cancelled) setIsPublicStatusPage(res.ok);
+      })
+      .catch(() => {
+        if (!cancelled) setIsPublicStatusPage(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  if (isPublicStatusPage === null) return null;
+  if (isPublicStatusPage) return <PublicStatusPage />;
+
+  return (
+    <RedirectToBootstrapIfNeeded>
+      <RequireAuth>
+        <Navigate to="/domains" replace />
+      </RequireAuth>
+    </RedirectToBootstrapIfNeeded>
+  );
+}
+
 function AuthenticatedLayout() {
   return (
     <div className="flex h-screen w-full bg-bg">
@@ -93,6 +131,7 @@ export default function App() {
           }
         />
         <Route path="/status/:id" element={<PublicStatusPage />} />
+        <Route path="/" element={<RootRoute />} />
         {/* No RedirectToBootstrapIfNeeded/auth guard - matches /status/:id's
             precedent (spec.md accept-invite-page: an already-authenticated
             admin opening this link renders normally, no redirect). */}
@@ -107,7 +146,6 @@ export default function App() {
             </RedirectToBootstrapIfNeeded>
           }
         >
-          <Route path="/" element={<Navigate to="/domains" replace />} />
           <Route path="/domains" element={<DomainsStatusPagesPage />} />
           <Route path="/status-pages" element={<StatusPagesPage />} />
           <Route path="/status-pages/:id" element={<StatusPageDetail />} />

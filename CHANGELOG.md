@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- A published status page's own custom domain served the raw status JSON instead of the actual rendered page: production traffic on a custom domain was never given anywhere to get HTML/JS from — only the JSON endpoint and the logo file were routed. The public listener now also serves the embedded SPA, with the JSON endpoint moved to its own `/api/public-status` path (`AD-018`).
+
 ## [0.2.1] — 2026-08-31
 
 ### Fixed

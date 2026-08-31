@@ -291,6 +291,17 @@ function buildFixtureHourlyHistory(status: Service["current_status"]) {
 }
 
 export const handlers = [
+  // GET /api/public-status - mirrors the production public status page
+  // endpoint (AD-018), only ever wired up on the public HTTPS listener in
+  // real deployments. Every test here simulates the admin domain/listener,
+  // where this route doesn't exist, so it 404s by default - App.tsx's
+  // RootRoute treats that as "not a status-page domain" and falls through
+  // to the normal bootstrap/login/dashboard flow. Tests exercising the
+  // production status page itself override this with server.use(...).
+  http.get("/api/public-status", () => {
+    return HttpResponse.json({ error: "not found" }, { status: 404 });
+  }),
+
   // GET /api/bootstrap/status - mirrors BootstrapHandler.Status: reports
   // whether any admin exists yet, for the SPA's boot-time redirect decision
   // (SHD-19). Public, unauthenticated - never gated on sessionAdminId.
