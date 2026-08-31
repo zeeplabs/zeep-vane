@@ -92,20 +92,10 @@ spec:
               value: {{ .Values.publicService.enabled | ternary .Values.config.httpsEnabled false | quote }}
             - name: HTTPS_PORT
               value: {{ .Values.config.httpsPort | quote }}
-            {{- if .Values.persistence.enabled }}
-            - name: CERTMAGIC_STORAGE_PATH
-              value: {{ .Values.persistence.mountPath | quote }}
-            {{- end }}
             - name: VANE_DEV_TOKEN_LOGGING
               value: {{ .Values.config.vaneDevTokenLogging | quote }}
             - name: VANE_SECURE_COOKIES
               value: {{ .Values.config.vaneSecureCookies | quote }}
-
-          {{- if .Values.persistence.enabled }}
-          volumeMounts:
-            - name: certmagic-data
-              mountPath: {{ .Values.persistence.mountPath }}
-          {{- end }}
 
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
@@ -125,13 +115,6 @@ spec:
             initialDelaySeconds: {{ .Values.probes.readiness.initialDelaySeconds }}
             periodSeconds: {{ .Values.probes.readiness.periodSeconds }}
             failureThreshold: {{ .Values.probes.readiness.failureThreshold }}
-
-      {{- if .Values.persistence.enabled }}
-      volumes:
-        - name: certmagic-data
-          persistentVolumeClaim:
-            claimName: {{ include "zeep-vane.fullname" . }}-certmagic
-      {{- end }}
 
       {{- with .Values.nodeSelector }}
       nodeSelector:

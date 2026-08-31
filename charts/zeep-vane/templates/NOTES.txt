@@ -44,12 +44,6 @@ Once that Service has an external IP/hostname:
      page. A certificate is issued automatically (CertMagic/ACME) the first
      time that hostname is requested — no manual cert management.
 
-{{- if gt (int .Values.replicaCount) 1 }}
-  WARNING: replicaCount > 1 with the public listener enabled. CertMagic's
-  certificate storage is a local/shared-disk file store — make sure
-  `persistence.accessMode` is ReadWriteMany and you've validated concurrent
-  ACME issuance across replicas yourself; this hasn't been tested upstream.
-{{- end }}
 {{- end }}
 
 Check pods:
@@ -62,4 +56,4 @@ Logs:
 
 All installed resources:
 
-  kubectl get all,ingress,pvc,hpa,pdb,secret,servicemonitor -l app.kubernetes.io/instance={{ .Release.Name }} -n {{ .Release.Namespace }}
+  kubectl get all,ingress,hpa,pdb,secret,servicemonitor -l app.kubernetes.io/instance={{ .Release.Name }} -n {{ .Release.Namespace }}

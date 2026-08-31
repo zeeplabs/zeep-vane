@@ -394,11 +394,13 @@ T10 → T11 → T12 → T13
 - Skill: NONE
 
 **Done when**:
-- [ ] `templates/pvc.yaml` no longer exists
-- [ ] `values.yaml` has no `persistence:` key
-- [ ] `deployment.yaml` has no reference to `.Values.persistence` or `CERTMAGIC_STORAGE_PATH`
-- [ ] `helm lint charts/zeep-vane` passes
-- [ ] `helm template charts/zeep-vane --set secrets.databaseUrl=x --set secrets.vaneMasterKey=x --set secrets.vaneSessionSecret=x` renders cleanly (both `replicaCount: 1` and `replicaCount: 2` in a `--set` override, to confirm nothing downstream still assumes the PVC)
+- [x] `templates/pvc.yaml` no longer exists
+- [x] `values.yaml` has no `persistence:` key
+- [x] `deployment.yaml` has no reference to `.Values.persistence` or `CERTMAGIC_STORAGE_PATH`
+- [x] `helm lint charts/zeep-vane` passes
+- [x] `helm template charts/zeep-vane --set secrets.databaseUrl=x --set secrets.vaneMasterKey=x --set secrets.vaneSessionSecret=x` renders cleanly (both `replicaCount: 1` and `replicaCount: 2` in a `--set` override, to confirm nothing downstream still assumes the PVC)
+
+**Deviation**: also updated `templates/NOTES.txt` (not in this task's original `Where` list) - it had a `replicaCount > 1` warning telling operators to check `persistence.accessMode` is `ReadWriteMany`, and a `kubectl get ... pvc ...` post-install hint - both now-stale references to the removed PVC that `helm lint`/`helm template` don't catch (NOTES.txt isn't schema-validated), left in place would actively mislead an operator scaling past 1 replica post-fix. `values.yaml`'s `replicaCount` comment and README.md's chart-section PVC mention (line ~119) were also corrected for the same reason (AGENTS.md §6: README must stay in sync) - `replicaCount`'s default itself is untouched, per spec.md's explicit out-of-scope item.
 
 **Tests**: none
 **Gate**: Chart

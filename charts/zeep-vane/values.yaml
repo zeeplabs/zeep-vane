@@ -2,12 +2,12 @@
 nameOverride: ""
 fullnameOverride: ""
 
-# CertMagic's on-demand TLS storage (see `persistence` below) is a local
-# ReadWriteOnce disk by default (`certmagic.FileStorage`, internal/tls). It
-# does support coordinating across replicas that all mount the *same* path
-# (file-based locking), but that only works with a shared ReadWriteMany
-# volume (e.g. NFS/EFS) — untested by this project. Until you've validated
-# that yourself, keep replicaCount at 1.
+# The poller's leader election, the per-IP rate limiter, and CertMagic's
+# certificate storage are all Postgres-backed (ha-multi-replica, AD-013) —
+# no local disk, no PVC, no code-level blocker to running more than one
+# replica. The default stays at 1 anyway: raising it is a separate
+# operational decision (capacity planning, rollout strategy) independent of
+# this correctness fix, not something this chart should assume for you.
 replicaCount: 1
 
 # ── Image ───────────────────────────────────────────────
@@ -59,17 +59,8 @@ publicService:
   annotations: {}
   loadBalancerIP: ""
 
-# ── CertMagic certificate storage (persistent) ─────────────────────────
-persistence:
-  enabled: true
-  storageClassName: ""
-  accessMode: ReadWriteOnce
-  size: 1Gi
-  mountPath: /data/certmagic
-
 # ── Autoscaling (HPA) ───────────────────────────────────
-# Disabled by default — see the replicaCount note above about
-# CertMagic's storage before enabling this with more than 1 replica.
+# Disabled by default.
 autoscaling:
   enabled: false
   minReplicas: 1
