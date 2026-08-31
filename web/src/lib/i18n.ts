@@ -38,7 +38,9 @@ const resources = {
       bootstrap: {
         title: "Crie a conta do primeiro administrador",
         subtitle: "Esta instância ainda não tem nenhum administrador. Crie a conta owner para começar.",
+        name: "Nome",
         email: "E-mail",
+        phone: "Celular (opcional)",
         password: "Senha",
         confirmPassword: "Confirmar senha",
         submit: "Criar administrador",
@@ -117,7 +119,9 @@ const resources = {
       bootstrap: {
         title: "Create the first administrator account",
         subtitle: "This instance has no administrator yet. Create the owner account to get started.",
+        name: "Name",
         email: "Email",
+        phone: "Phone (optional)",
         password: "Password",
         confirmPassword: "Confirm password",
         submit: "Create administrator",

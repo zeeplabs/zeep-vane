@@ -37,13 +37,12 @@ function renderPage() {
 }
 
 describe("PollerStatusPage", () => {
-  it("mostra tabela com Integração/Última execução/Resultado, mensagem de erro só em falha", async () => {
+  it("mostra integração, última execução e resultado, mensagem de erro só em falha", async () => {
     await loginAsOwner();
     renderPage();
     expect(await screen.findByText("Datadog")).toBeInTheDocument();
     expect(screen.getByText("Sucesso")).toBeInTheDocument();
-    expect(screen.getByText("Integração")).toBeInTheDocument();
-    expect(screen.getByText("Última execução")).toBeInTheDocument();
+    expect(screen.getAllByText("Última execução").length).toBeGreaterThan(0);
   });
 
   it("integração com falha mostra tag Falha e a mensagem de erro", async () => {

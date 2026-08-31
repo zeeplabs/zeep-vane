@@ -19,6 +19,8 @@ type AdminInvite struct {
 	ID          string
 	Email       string
 	Role        string
+	Name        string
+	Phone       *string // nil when the inviter left phone blank (optional field)
 	TokenHash   string
 	InvitedByID string
 	ExpiresAt   time.Time
@@ -41,10 +43,10 @@ func NewAdminInviteRepository(pool *Pool) *AdminInviteRepository {
 // TokenHash.
 func (r *AdminInviteRepository) Create(ctx context.Context, invite *AdminInvite) error {
 	row := r.pool.QueryRow(ctx,
-		`INSERT INTO admin_invites (email, role, token_hash, invited_by_id, expires_at)
-		 VALUES ($1, $2, $3, $4, $5)
+		`INSERT INTO admin_invites (email, role, name, phone, token_hash, invited_by_id, expires_at)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7)
 		 RETURNING id, created_at`,
-		invite.Email, invite.Role, invite.TokenHash, invite.InvitedByID, invite.ExpiresAt,
+		invite.Email, invite.Role, invite.Name, invite.Phone, invite.TokenHash, invite.InvitedByID, invite.ExpiresAt,
 	)
 
 	if err := row.Scan(&invite.ID, &invite.CreatedAt); err != nil {
@@ -58,14 +60,14 @@ func (r *AdminInviteRepository) Create(ctx context.Context, invite *AdminInvite)
 // none exists.
 func (r *AdminInviteRepository) GetByTokenHash(ctx context.Context, tokenHash string) (*AdminInvite, error) {
 	row := r.pool.QueryRow(ctx,
-		`SELECT id, email, role, token_hash, invited_by_id, expires_at, used_at, created_at
+		`SELECT id, email, role, name, phone, token_hash, invited_by_id, expires_at, used_at, created_at
 		 FROM admin_invites WHERE token_hash = $1`,
 		tokenHash,
 	)
 
 	var invite AdminInvite
 	if err := row.Scan(
-		&invite.ID, &invite.Email, &invite.Role, &invite.TokenHash,
+		&invite.ID, &invite.Email, &invite.Role, &invite.Name, &invite.Phone, &invite.TokenHash,
 		&invite.InvitedByID, &invite.ExpiresAt, &invite.UsedAt, &invite.CreatedAt,
 	); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -92,13 +94,13 @@ func (r *AdminInviteRepository) ClaimForUse(ctx context.Context, tokenHash strin
 	row := r.pool.QueryRow(ctx,
 		`UPDATE admin_invites SET used_at = now()
 		 WHERE token_hash = $1 AND used_at IS NULL AND expires_at > now()
-		 RETURNING id, email, role, token_hash, invited_by_id, expires_at, used_at, created_at`,
+		 RETURNING id, email, role, name, phone, token_hash, invited_by_id, expires_at, used_at, created_at`,
 		tokenHash,
 	)
 
 	var invite AdminInvite
 	if err := row.Scan(
-		&invite.ID, &invite.Email, &invite.Role, &invite.TokenHash,
+		&invite.ID, &invite.Email, &invite.Role, &invite.Name, &invite.Phone, &invite.TokenHash,
 		&invite.InvitedByID, &invite.ExpiresAt, &invite.UsedAt, &invite.CreatedAt,
 	); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -129,13 +131,13 @@ func (r *AdminInviteRepository) Refresh(ctx context.Context, id, newTokenHash st
 	row := r.pool.QueryRow(ctx,
 		`UPDATE admin_invites SET token_hash = $2, expires_at = $3
 		 WHERE id = $1 AND used_at IS NULL
-		 RETURNING id, email, role, token_hash, invited_by_id, expires_at, used_at, created_at`,
+		 RETURNING id, email, role, name, phone, token_hash, invited_by_id, expires_at, used_at, created_at`,
 		id, newTokenHash, newExpiresAt,
 	)
 
 	var invite AdminInvite
 	if err := row.Scan(
-		&invite.ID, &invite.Email, &invite.Role, &invite.TokenHash,
+		&invite.ID, &invite.Email, &invite.Role, &invite.Name, &invite.Phone, &invite.TokenHash,
 		&invite.InvitedByID, &invite.ExpiresAt, &invite.UsedAt, &invite.CreatedAt,
 	); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) || isInvalidUUIDText(err) {
@@ -191,7 +193,7 @@ func (r *AdminInviteRepository) MarkUsed(ctx context.Context, id string) error {
 // and must never leak the hash needed to accept an invite.
 func (r *AdminInviteRepository) List(ctx context.Context) ([]AdminInvite, error) {
 	rows, err := r.pool.Query(ctx,
-		`SELECT id, email, role, invited_by_id, expires_at, created_at
+		`SELECT id, email, role, name, phone, invited_by_id, expires_at, created_at
 		 FROM admin_invites
 		 WHERE used_at IS NULL
 		 ORDER BY created_at DESC`,
@@ -205,7 +207,7 @@ func (r *AdminInviteRepository) List(ctx context.Context) ([]AdminInvite, error)
 	for rows.Next() {
 		var invite AdminInvite
 		if err := rows.Scan(
-			&invite.ID, &invite.Email, &invite.Role,
+			&invite.ID, &invite.Email, &invite.Role, &invite.Name, &invite.Phone,
 			&invite.InvitedByID, &invite.ExpiresAt, &invite.CreatedAt,
 		); err != nil {
 			return nil, fmt.Errorf("db: failed to scan admin invite: %w", err)

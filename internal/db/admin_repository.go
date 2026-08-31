@@ -31,6 +31,8 @@ type Admin struct {
 	ID                string
 	Email             string
 	PasswordHash      string
+	Name              string
+	Phone             *string    // nil when the admin never gave a phone number (optional field)
 	Role              string     // "owner" | "operator" | "viewer" - see Role* constants
 	SessionsRevokedAt *time.Time // nil = no session ever revoked; a JWT issued before this timestamp is rejected by RequireAuth
 	CreatedAt         time.Time
@@ -50,8 +52,8 @@ func NewAdminRepository(pool *Pool) *AdminRepository {
 // returns ErrDuplicateEmail if the email is already registered.
 func (r *AdminRepository) Create(ctx context.Context, admin *Admin) error {
 	row := r.pool.QueryRow(ctx,
-		"INSERT INTO admins (email, password_hash) VALUES ($1, $2) RETURNING id, created_at",
-		admin.Email, admin.PasswordHash,
+		"INSERT INTO admins (email, password_hash, name, phone) VALUES ($1, $2, $3, $4) RETURNING id, created_at",
+		admin.Email, admin.PasswordHash, admin.Name, admin.Phone,
 	)
 
 	if err := row.Scan(&admin.ID, &admin.CreatedAt); err != nil {
@@ -75,8 +77,8 @@ func (r *AdminRepository) Create(ctx context.Context, admin *Admin) error {
 // (reportedly owner) instead of the invite's actual intended role.
 func (r *AdminRepository) CreateWithRole(ctx context.Context, admin *Admin, role string) error {
 	row := r.pool.QueryRow(ctx,
-		"INSERT INTO admins (email, password_hash, role) VALUES ($1, $2, $3) RETURNING id, created_at",
-		admin.Email, admin.PasswordHash, role,
+		"INSERT INTO admins (email, password_hash, role, name, phone) VALUES ($1, $2, $3, $4, $5) RETURNING id, created_at",
+		admin.Email, admin.PasswordHash, role, admin.Name, admin.Phone,
 	)
 
 	if err := row.Scan(&admin.ID, &admin.CreatedAt); err != nil {
@@ -95,12 +97,12 @@ func (r *AdminRepository) CreateWithRole(ctx context.Context, admin *Admin, role
 // exists.
 func (r *AdminRepository) GetByEmail(ctx context.Context, email string) (*Admin, error) {
 	row := r.pool.QueryRow(ctx,
-		"SELECT id, email, password_hash, created_at FROM admins WHERE email = $1",
+		"SELECT id, email, password_hash, name, phone, created_at FROM admins WHERE email = $1",
 		email,
 	)
 
 	var admin Admin
-	if err := row.Scan(&admin.ID, &admin.Email, &admin.PasswordHash, &admin.CreatedAt); err != nil {
+	if err := row.Scan(&admin.ID, &admin.Email, &admin.PasswordHash, &admin.Name, &admin.Phone, &admin.CreatedAt); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, ErrNotFound
 		}
@@ -131,12 +133,12 @@ func (r *AdminRepository) UpdatePasswordHash(ctx context.Context, adminID, passw
 // SessionsRevokedAt for the admin identified by a request's JWT.
 func (r *AdminRepository) GetByID(ctx context.Context, id string) (*Admin, error) {
 	row := r.pool.QueryRow(ctx,
-		"SELECT id, email, password_hash, role, sessions_revoked_at, created_at FROM admins WHERE id = $1",
+		"SELECT id, email, password_hash, role, sessions_revoked_at, name, phone, created_at FROM admins WHERE id = $1",
 		id,
 	)
 
 	var admin Admin
-	if err := row.Scan(&admin.ID, &admin.Email, &admin.PasswordHash, &admin.Role, &admin.SessionsRevokedAt, &admin.CreatedAt); err != nil {
+	if err := row.Scan(&admin.ID, &admin.Email, &admin.PasswordHash, &admin.Role, &admin.SessionsRevokedAt, &admin.Name, &admin.Phone, &admin.CreatedAt); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, ErrNotFound
 		}
@@ -247,8 +249,8 @@ func (r *AdminRepository) BootstrapFirst(ctx context.Context, admin *Admin) (cre
 	}
 
 	row := tx.QueryRow(ctx,
-		"INSERT INTO admins (email, password_hash) VALUES ($1, $2) RETURNING id, created_at",
-		admin.Email, admin.PasswordHash,
+		"INSERT INTO admins (email, password_hash, name, phone) VALUES ($1, $2, $3, $4) RETURNING id, created_at",
+		admin.Email, admin.PasswordHash, admin.Name, admin.Phone,
 	)
 	if err := row.Scan(&admin.ID, &admin.CreatedAt); err != nil {
 		return false, fmt.Errorf("db: failed to insert first admin for bootstrap: %w", err)

@@ -827,6 +827,7 @@ func TestAdminRouter_BootstrapRoutes_ReachableThroughRealRouter(t *testing.T) {
 	}
 
 	createBody, err := json.Marshal(map[string]string{
+		"name":     "CLI Routes Test Owner",
 		"email":    fmt.Sprintf("cli-routes-bootstrap-test-%d@example.com", time.Now().UnixNano()),
 		"password": "correct-horse-battery-staple",
 	})

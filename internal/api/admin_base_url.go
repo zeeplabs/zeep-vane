@@ -20,3 +20,14 @@ func adminBaseURL(configured string) string {
 	}
 	return configured
 }
+
+// nilIfEmpty normalizes an optional string field (e.g. an admin's phone
+// number) so an empty request value is stored as SQL NULL rather than an
+// empty string - "never given" and "given, blank" would otherwise be
+// indistinguishable in the admins/admin_invites tables.
+func nilIfEmpty(s string) *string {
+	if s == "" {
+		return nil
+	}
+	return &s
+}

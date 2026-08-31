@@ -65,14 +65,14 @@ export function AttachDomainDrawer({ statusPageId, open, onOpenChange }: AttachD
       title="Anexar domínio"
       description="Escolha o domínio e o subdomínio que essa status page vai usar. O certificado é emitido automaticamente depois que o DNS propagar."
       footer={
-        <div className="flex gap-2">
-          <Button type="submit" form="attach-domain-form" variant="primary" disabled={attachDomain.isPending}>
-            Anexar
-          </Button>
+        <>
           <Button type="button" variant="secondary" onClick={() => onOpenChange(false)}>
             Cancelar
           </Button>
-        </div>
+          <Button type="submit" form="attach-domain-form" variant="primary" disabled={attachDomain.isPending}>
+            Anexar
+          </Button>
+        </>
       }
     >
       <form id="attach-domain-form" onSubmit={handleSubmit} className="flex flex-col gap-3">

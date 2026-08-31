@@ -21,22 +21,25 @@ const variantClasses: Record<TagVariant, string> = {
   "accent-outline": "bg-transparent text-accent border border-accent",
   neutral: "bg-neutral-800 text-neutral-200 border border-transparent",
   "neutral-outline": "bg-transparent text-neutral-300 border border-neutral-600",
-  success: "border border-transparent",
-  warning: "border border-transparent",
-  critical: "border border-transparent",
+  success: "border",
+  warning: "border",
+  critical: "border",
 };
 
 const semanticStyle: Partial<Record<TagVariant, React.CSSProperties>> = {
   success: {
-    backgroundColor: "color-mix(in oklch, var(--color-success) 18%, transparent)",
+    backgroundColor: "color-mix(in oklch, var(--color-success) 14%, transparent)",
+    borderColor: "color-mix(in oklch, var(--color-success) 55%, transparent)",
     color: "var(--color-success)",
   },
   warning: {
-    backgroundColor: "color-mix(in oklch, var(--color-warning) 18%, transparent)",
+    backgroundColor: "color-mix(in oklch, var(--color-warning) 14%, transparent)",
+    borderColor: "color-mix(in oklch, var(--color-warning) 55%, transparent)",
     color: "var(--color-warning)",
   },
   critical: {
-    backgroundColor: "color-mix(in oklch, var(--color-critical) 18%, transparent)",
+    backgroundColor: "color-mix(in oklch, var(--color-critical) 14%, transparent)",
+    borderColor: "color-mix(in oklch, var(--color-critical) 55%, transparent)",
     color: "var(--color-critical)",
   },
 };

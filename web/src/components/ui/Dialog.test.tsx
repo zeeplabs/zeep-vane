@@ -35,4 +35,25 @@ describe("Dialog", () => {
     await userEvent.keyboard("{Escape}");
     expect(onOpenChange).toHaveBeenCalledWith(false);
   });
+
+  it("footer fica alinhado à direita e separado do conteúdo por uma borda", () => {
+    render(
+      <Dialog
+        open
+        onOpenChange={() => {}}
+        title="Excluir item"
+        footer={
+          <>
+            <button type="button">Cancelar</button>
+            <button type="button">Excluir</button>
+          </>
+        }
+      >
+        <p>Tem certeza?</p>
+      </Dialog>
+    );
+    const footer = screen.getByRole("button", { name: "Cancelar" }).parentElement!;
+    expect(footer.className).toContain("justify-end");
+    expect(footer.className).toContain("border-t");
+  });
 });

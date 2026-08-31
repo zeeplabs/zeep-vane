@@ -152,6 +152,8 @@ func buildAdminRouter(pool *db.Pool, cfg config.Config, logger *zap.Logger, poll
 		protected.With(writeRoles).Post("/api/status-pages", statusPagesHandler.Create)
 		protected.With(writeRoles).Patch("/api/status-pages/{id}/domain", statusPagesHandler.AttachDomain)
 		protected.With(writeRoles).Patch("/api/status-pages/{id}/services", statusPagesHandler.SetServices)
+		protected.With(writeRoles).Delete("/api/status-pages/{id}", statusPagesHandler.Delete)
+		protected.With(writeRoles).Delete("/api/domains/{id}", domainsHandler.Delete)
 		protected.With(writeRoles).Get("/api/instance/dns-target", instanceConfigHandler.DNSTarget)
 
 		// mvp-core read routes and poller status (admin-dashboard ADM-13) -

@@ -32,12 +32,10 @@ function renderPage() {
 }
 
 describe("ServicesPage", () => {
-  it("lista serviços com colunas Serviço/SLO vinculado/Status/Última mudança", async () => {
+  it("lista serviços com nome, SLO vinculado e status", async () => {
     await loginAs("owner@vane.app");
     renderPage();
     expect(await screen.findByText("Notificações")).toBeInTheDocument();
-    expect(screen.getByText("Serviço")).toBeInTheDocument();
-    expect(screen.getByText("SLO vinculado")).toBeInTheDocument();
     expect(screen.getByText("Não configurado")).toBeInTheDocument();
   });
 

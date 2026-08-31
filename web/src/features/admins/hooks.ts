@@ -5,6 +5,8 @@ import type { Page, Role } from "../../types/api";
 export interface AdminRow {
   id: string;
   email: string;
+  name?: string;
+  phone?: string;
   role: Role;
   status: "active" | "pending";
   expires_at?: string;
@@ -24,7 +26,9 @@ export function useAdmins(page: number) {
 }
 
 export interface InviteAdminInput {
+  name: string;
   email: string;
+  phone?: string;
   role: Role;
 }
 

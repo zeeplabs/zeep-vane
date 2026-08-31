@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
 import { Card } from "../../components/ui/Card";
 import { Button } from "../../components/ui/Button";
@@ -179,6 +179,37 @@ export function PublicStatusPage() {
   const { id = "" } = useParams();
   const { data, isLoading, isError, hasMoreResolved, loadMoreResolvedIncidents } = usePublicStatusPage(id);
   const [loadingMore, setLoadingMore] = useState(false);
+
+  // This is the one page in the SPA the public internet actually lands on
+  // (search results, shared links, embedded status badges) - index.html's
+  // static <title>/description describe the admin product, not this
+  // specific company's status, so they're overridden here per visit and
+  // restored on unmount (defaultTitle/defaultDescription captured once, on
+  // mount, so navigating between two different status pages client-side
+  // doesn't leak the wrong title if this component ever gets reused).
+  const defaultTitleRef = useRef<string>(document.title);
+  const defaultDescriptionRef = useRef<string | null>(
+    document.querySelector('meta[name="description"]')?.getAttribute("content") ?? null,
+  );
+
+  useEffect(() => {
+    if (!data) return;
+
+    document.title = `${data.company_name} Status`;
+
+    const descriptionTag = document.querySelector('meta[name="description"]');
+    descriptionTag?.setAttribute(
+      "content",
+      `${data.company_name} — ${overallCopy[worstServiceStatus(data.services.map((s) => s.status))].label}.`,
+    );
+
+    return () => {
+      document.title = defaultTitleRef.current;
+      if (defaultDescriptionRef.current !== null) {
+        descriptionTag?.setAttribute("content", defaultDescriptionRef.current);
+      }
+    };
+  }, [data]);
 
   async function handleLoadMore() {
     setLoadingMore(true);

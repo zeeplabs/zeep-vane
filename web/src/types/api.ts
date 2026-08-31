@@ -7,6 +7,8 @@ export type Role = "owner" | "operator" | "viewer";
 export interface Admin {
   id: string;
   email: string;
+  name?: string;
+  phone?: string;
   role: Role;
   status: "active" | "pending";
 }
@@ -14,6 +16,8 @@ export interface Admin {
 export interface AdminInvite {
   id: string;
   email: string;
+  name?: string;
+  phone?: string;
   role: Role;
   status: "pending";
   expires_at: string;

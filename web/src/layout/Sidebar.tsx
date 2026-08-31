@@ -189,6 +189,13 @@ export function Sidebar() {
           </div>
         ) : null}
 
+        {admin ? (
+          <div className="px-2 py-1">
+            <div className="truncate text-[13px] font-medium text-text">{admin.name || admin.email}</div>
+            {admin.name ? <div className="truncate text-[11.5px] text-neutral-400">{admin.email}</div> : null}
+          </div>
+        ) : null}
+
         <button
           type="button"
           onClick={() => setConfirmOpen(true)}
@@ -203,16 +210,17 @@ export function Sidebar() {
           onOpenChange={setConfirmOpen}
           title={t("logoutDialog.title")}
           description={t("logoutDialog.body")}
-        >
-          <div className="flex justify-end gap-2">
-            <Button variant="secondary" onClick={() => setConfirmOpen(false)}>
-              {t("logoutDialog.cancel")}
-            </Button>
-            <Button variant="primary" onClick={handleConfirmLogout}>
-              {t("logoutDialog.confirm")}
-            </Button>
-          </div>
-        </Dialog>
+          footer={
+            <>
+              <Button variant="secondary" onClick={() => setConfirmOpen(false)}>
+                {t("logoutDialog.cancel")}
+              </Button>
+              <Button variant="primary" onClick={handleConfirmLogout}>
+                {t("logoutDialog.confirm")}
+              </Button>
+            </>
+          }
+        />
       </div>
     </aside>
   );

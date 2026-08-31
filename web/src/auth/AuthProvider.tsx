@@ -19,6 +19,7 @@ type Status = "loading" | "authenticated" | "anonymous";
 export interface AuthenticatedAdmin {
   id: string;
   email: string;
+  name?: string;
   role: Role;
 }
 

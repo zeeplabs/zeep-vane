@@ -28,7 +28,9 @@ export function Drawer({ open, onOpenChange, title, description, children, foote
             ) : null}
           </div>
           <div className="flex-1 overflow-y-auto p-6">{children}</div>
-          {footer ? <div className="border-t border-divider p-4">{footer}</div> : null}
+          {footer ? (
+            <div className="flex justify-end gap-2 border-t border-divider p-4">{footer}</div>
+          ) : null}
         </RadixDialog.Content>
       </RadixDialog.Portal>
     </RadixDialog.Root>

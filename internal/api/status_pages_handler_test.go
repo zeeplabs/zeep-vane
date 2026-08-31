@@ -46,6 +46,7 @@ func newStatusPagesRouter(t *testing.T) (http.Handler, *db.Pool, *db.AdminReposi
 		protected.Get("/api/status-pages", handler.List)
 		protected.Patch("/api/status-pages/{id}/domain", handler.AttachDomain)
 		protected.Patch("/api/status-pages/{id}/services", handler.SetServices)
+		protected.Delete("/api/status-pages/{id}", handler.Delete)
 	})
 
 	return r, pool, admins
@@ -648,5 +649,71 @@ func TestSetServices_NonexistentStatusPageID_404(t *testing.T) {
 	rec := patchSetServices(t, r, token, "00000000-0000-0000-0000-000000000000", setServicesRequest{ServiceIDs: []string{}})
 	if rec.Code != http.StatusNotFound {
 		t.Errorf("status = %d, want %d, body = %s", rec.Code, http.StatusNotFound, rec.Body.String())
+	}
+}
+
+func deleteStatusPage(t *testing.T, r http.Handler, token, id string) *httptest.ResponseRecorder {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodDelete, "/api/status-pages/"+id, nil)
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+	return rec
+}
+
+func TestDeleteStatusPage_Existing_204RemovesItAndItsServiceLinks(t *testing.T) {
+	r, pool, admins := newStatusPagesRouter(t)
+	token := issueTestSessionToken(t, admins)
+	serviceID := createTestService(t, pool)
+
+	createRec := postCreateStatusPage(t, r, token, createStatusPageRequest{
+		Name: "To Be Deleted", ServiceIDs: []string{serviceID},
+	})
+	if createRec.Code != http.StatusCreated {
+		t.Fatalf("setup create status = %d, want %d, body = %s", createRec.Code, http.StatusCreated, createRec.Body.String())
+	}
+	id := decodeStatusPageID(t, createRec)
+
+	rec := deleteStatusPage(t, r, token, id)
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusNoContent, rec.Body.String())
+	}
+
+	var count int
+	row := pool.QueryRow(context.Background(), "SELECT COUNT(*) FROM status_pages WHERE id = $1", id)
+	if err := row.Scan(&count); err != nil {
+		t.Fatalf("Scan() returned unexpected error: %v", err)
+	}
+	if count != 0 {
+		t.Errorf("status_pages row still exists after delete")
+	}
+
+	row = pool.QueryRow(context.Background(), "SELECT COUNT(*) FROM status_page_services WHERE status_page_id = $1", id)
+	if err := row.Scan(&count); err != nil {
+		t.Fatalf("Scan() returned unexpected error: %v", err)
+	}
+	if count != 0 {
+		t.Errorf("status_page_services rows still exist after delete")
+	}
+}
+
+func TestDeleteStatusPage_NotFound_404(t *testing.T) {
+	r, _, admins := newStatusPagesRouter(t)
+	token := issueTestSessionToken(t, admins)
+
+	rec := deleteStatusPage(t, r, token, "00000000-0000-0000-0000-000000000000")
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("status = %d, want %d, body = %s", rec.Code, http.StatusNotFound, rec.Body.String())
+	}
+}
+
+func TestDeleteStatusPage_NoAuth_401(t *testing.T) {
+	r, _, _ := newStatusPagesRouter(t)
+
+	rec := deleteStatusPage(t, r, "", "00000000-0000-0000-0000-000000000000")
+	if rec.Code != http.StatusUnauthorized {
+		t.Errorf("status = %d, want %d", rec.Code, http.StatusUnauthorized)
 	}
 }

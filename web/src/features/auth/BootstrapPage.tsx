@@ -2,6 +2,7 @@ import { useState, type FormEvent } from "react";
 import { Link } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { Field } from "../../components/ui/Field";
+import { PhoneField } from "../../components/ui/PhoneField";
 import { Button } from "../../components/ui/Button";
 import { apiFetch, ApiError } from "../../lib/apiClient";
 import { useBrandLogoUrl } from "../../lib/branding";
@@ -16,7 +17,9 @@ export function BootstrapPage() {
   const { t } = useTranslation();
   const logoUrl = useBrandLogoUrl();
 
+  const [name, setName] = useState("");
   const [email, setEmail] = useState("");
+  const [phone, setPhone] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -40,7 +43,7 @@ export function BootstrapPage() {
       // login attempt.
       await apiFetch("/api/bootstrap", {
         method: "POST",
-        body: JSON.stringify({ email, password }),
+        body: JSON.stringify({ name, email, phone, password }),
         skipUnauthorizedHandler: true,
       });
       // Hard reload, not a client-side navigate: the new owner's session
@@ -132,6 +135,13 @@ export function BootstrapPage() {
           ) : (
             <form onSubmit={handleSubmit} className="flex flex-col gap-4">
               <Field
+                label={t("bootstrap.name")}
+                autoComplete="name"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                required
+              />
+              <Field
                 label={t("bootstrap.email")}
                 type="email"
                 autoComplete="username"
@@ -139,6 +149,7 @@ export function BootstrapPage() {
                 onChange={(e) => setEmail(e.target.value)}
                 required
               />
+              <PhoneField label={t("bootstrap.phone")} onChange={setPhone} />
               <Field
                 label={t("bootstrap.password")}
                 type="password"

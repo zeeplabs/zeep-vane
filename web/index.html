@@ -3,7 +3,49 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Vane</title>
+
+    <title>Vane — Self-Hosted Status Pages & Incident Management</title>
+    <meta
+      name="description"
+      content="Vane connects your Datadog SLOs to public status pages with automatic TLS, incident management, and role-based admin access — self-hosted, open source."
+    />
+    <meta name="theme-color" content="#161826" />
+    <link rel="manifest" href="/site.webmanifest" />
+
+    <!-- Favicon -->
+    <link rel="icon" type="image/x-icon" href="/favicon.ico" sizes="any" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png" />
+    <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
+
+    <!--
+      og:image/twitter:image are intentionally root-relative, not absolute:
+      this is a self-hosted app with no single canonical domain, so there is
+      no correct value to hardcode here. Browsers and virtually every link
+      scraper (Slack, Discord, WhatsApp, iMessage) resolve a relative
+      og:image against the page's own URL correctly; the handful of very
+      strict OG parsers that require an absolute URL are the one gap an
+      operator with a custom domain can close by overriding these two tags
+      in their own deployment if it matters to them.
+    -->
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Vane" />
+    <meta property="og:title" content="Vane — Self-Hosted Status Pages & Incident Management" />
+    <meta
+      property="og:description"
+      content="Connects your Datadog SLOs to public status pages with automatic TLS, incident management, and role-based admin access — self-hosted, open source."
+    />
+    <meta property="og:image" content="/og-image.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Vane — Self-Hosted Status Pages & Incident Management" />
+    <meta
+      name="twitter:description"
+      content="Connects your Datadog SLOs to public status pages with automatic TLS, incident management, and role-based admin access — self-hosted, open source."
+    />
+    <meta name="twitter:image" content="/og-image.png" />
   </head>
   <body>
     <div id="root"></div>

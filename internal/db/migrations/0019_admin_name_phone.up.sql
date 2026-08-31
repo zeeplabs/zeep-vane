@@ -1,0 +1,7 @@
+ALTER TABLE admins
+    ADD COLUMN name TEXT NOT NULL DEFAULT '',
+    ADD COLUMN phone TEXT;
+
+ALTER TABLE admin_invites
+    ADD COLUMN name TEXT NOT NULL DEFAULT '',
+    ADD COLUMN phone TEXT;

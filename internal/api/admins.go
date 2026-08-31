@@ -115,11 +115,13 @@ func isValidAdminRole(role string) bool {
 }
 
 type inviteAdminRequest struct {
+	Name  string `json:"name"`
 	Email string `json:"email"`
+	Phone string `json:"phone"`
 	Role  string `json:"role"`
 }
 
-const invalidInviteAdminRequestBody = `{"error":"email is required and role must be one of owner, operator, viewer"}`
+const invalidInviteAdminRequestBody = `{"error":"name and email are required, and role must be one of owner, operator, viewer"}`
 const adminAlreadyActiveBody = `{"error":"an active admin already exists for this email"}`
 
 // Invite handles POST /api/admins (role: owner). It rejects an email that
@@ -146,7 +148,7 @@ func (h *AdminsHandler) Invite(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req inviteAdminRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Email == "" || !isValidAdminRole(req.Role) {
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Name == "" || req.Email == "" || !isValidAdminRole(req.Role) {
 		writeAdminError(w, http.StatusUnprocessableEntity, invalidInviteAdminRequestBody)
 		return
 	}
@@ -176,6 +178,8 @@ func (h *AdminsHandler) Invite(w http.ResponseWriter, r *http.Request) {
 	invite := &db.AdminInvite{
 		Email:       req.Email,
 		Role:        req.Role,
+		Name:        req.Name,
+		Phone:       nilIfEmpty(req.Phone),
 		TokenHash:   hashAdminInviteToken(rawToken),
 		InvitedByID: actor.ID,
 		ExpiresAt:   time.Now().Add(adminInviteTTL),
@@ -271,7 +275,7 @@ func (h *AdminsHandler) AcceptInvite(w http.ResponseWriter, r *http.Request) {
 	// (M12) - no longer a separate UpdateRole call that could leave the
 	// account stuck on the admins.role column's default (owner) if it
 	// never ran.
-	admin := &db.Admin{Email: invite.Email, PasswordHash: passwordHash}
+	admin := &db.Admin{Email: invite.Email, PasswordHash: passwordHash, Name: invite.Name, Phone: invite.Phone}
 	if err := h.admins.CreateWithRole(r.Context(), admin, invite.Role); err != nil {
 		h.logger.Error("admins: failed to activate invited admin", zap.Error(err))
 		writeInternalError(w)
@@ -385,6 +389,8 @@ const adminLockoutBody = `{"error":"this action would leave zero active owners"}
 type adminResponse struct {
 	ID        string     `json:"id"`
 	Email     string     `json:"email"`
+	Name      string     `json:"name,omitempty"`
+	Phone     *string    `json:"phone,omitempty"`
 	Role      string     `json:"role"`
 	Status    string     `json:"status"`
 	ExpiresAt *time.Time `json:"expires_at,omitempty"`
@@ -562,7 +568,7 @@ func (h *AdminsHandler) List(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	page := parsePage(r)
 
-	rows, err := h.pool.Query(ctx, "SELECT id, email, role FROM admins ORDER BY email")
+	rows, err := h.pool.Query(ctx, "SELECT id, email, name, phone, role FROM admins ORDER BY email")
 	if err != nil {
 		h.logger.Error("admins: failed to list admins", zap.Error(err))
 		writeInternalError(w)
@@ -573,7 +579,7 @@ func (h *AdminsHandler) List(w http.ResponseWriter, r *http.Request) {
 	list := []adminResponse{}
 	for rows.Next() {
 		var item adminResponse
-		if err := rows.Scan(&item.ID, &item.Email, &item.Role); err != nil {
+		if err := rows.Scan(&item.ID, &item.Email, &item.Name, &item.Phone, &item.Role); err != nil {
 			h.logger.Error("admins: failed to scan admin row", zap.Error(err))
 			writeInternalError(w)
 			return
@@ -597,6 +603,8 @@ func (h *AdminsHandler) List(w http.ResponseWriter, r *http.Request) {
 		list = append(list, adminResponse{
 			ID:        invite.ID,
 			Email:     invite.Email,
+			Name:      invite.Name,
+			Phone:     invite.Phone,
 			Role:      invite.Role,
 			Status:    "pending",
 			ExpiresAt: &invite.ExpiresAt,

@@ -307,15 +307,15 @@ export const handlers = [
   // never depend on a subsequent /api/auth/me call succeeding within the
   // same test (that boot re-check only happens on a real page reload).
   http.post("/api/bootstrap", async ({ request }) => {
-    const body = (await request.json()) as { email?: string; password?: string };
-    if (!body.email || !body.password) {
-      return HttpResponse.json({ error: "email and password are required" }, { status: 422 });
+    const body = (await request.json()) as { name?: string; email?: string; phone?: string; password?: string };
+    if (!body.name || !body.email || !body.password) {
+      return HttpResponse.json({ error: "name, email, and password are required" }, { status: 422 });
     }
     if (bootstrapState) {
       return HttpResponse.json({ error: "already bootstrapped" }, { status: 409 });
     }
     bootstrapState = true;
-    return HttpResponse.json({ id: "admin-bootstrap-1", email: body.email, role: "owner" });
+    return HttpResponse.json({ id: "admin-bootstrap-1", email: body.email, name: body.name, phone: body.phone, role: "owner" });
   }),
 
   http.post("/api/auth/login", async ({ request }) => {
@@ -333,7 +333,7 @@ export const handlers = [
     if (!admin) {
       return HttpResponse.json({ error: "unauthorized" }, { status: 401 });
     }
-    return HttpResponse.json({ id: admin.id, email: admin.email, role: admin.role });
+    return HttpResponse.json({ id: admin.id, email: admin.email, name: admin.name, role: admin.role });
   }),
 
   http.post("/api/auth/logout", () => {
@@ -401,6 +401,22 @@ export const handlers = [
     };
     domainsState.push(created);
     return HttpResponse.json(toDomainResponse(created), { status: 201 });
+  }),
+
+  // DELETE /api/domains/:id - mirrors DomainsHandler.Delete: 404 unknown
+  // domain, 409 if a status page still references it via domain_id, else
+  // 204.
+  http.delete("/api/domains/:id", ({ params }) => {
+    if (!sessionAdminId) return HttpResponse.json({ error: "unauthorized" }, { status: 401 });
+    const domain = domainsState.find((d) => d.id === params.id);
+    if (!domain) {
+      return HttpResponse.json({ error: "domain not found" }, { status: 404 });
+    }
+    if (statusPagesState.some((p) => p.domain_id === domain.id)) {
+      return HttpResponse.json({ error: "domain is still attached to a status page" }, { status: 409 });
+    }
+    domainsState = domainsState.filter((d) => d.id !== domain.id);
+    return new HttpResponse(null, { status: 204 });
   }),
 
   http.get("/api/status-pages", ({ request }) => {
@@ -494,6 +510,18 @@ export const handlers = [
     }
     page.service_ids = body.service_ids;
     return HttpResponse.json(toStatusPageResponse(page));
+  }),
+
+  // DELETE /api/status-pages/:id - mirrors StatusPagesHandler.Delete: 404
+  // unknown page, else 204.
+  http.delete("/api/status-pages/:id", ({ params }) => {
+    if (!sessionAdminId) return HttpResponse.json({ error: "unauthorized" }, { status: 401 });
+    const page = statusPagesState.find((p) => p.id === params.id);
+    if (!page) {
+      return HttpResponse.json({ error: "status page not found" }, { status: 404 });
+    }
+    statusPagesState = statusPagesState.filter((p) => p.id !== page.id);
+    return new HttpResponse(null, { status: 204 });
   }),
 
   // GET /api/instance/dns-target (SPD-10) - mirrors InstanceConfigHandler
@@ -764,10 +792,10 @@ export const handlers = [
   // provider in this mock environment to fail.
   http.post("/api/admins", async ({ request }) => {
     if (!sessionAdminId) return HttpResponse.json({ error: "unauthorized" }, { status: 401 });
-    const body = (await request.json()) as { email?: string; role?: string };
-    if (!body.email || !body.role || !validAdminRoles.includes(body.role as Role)) {
+    const body = (await request.json()) as { name?: string; email?: string; phone?: string; role?: string };
+    if (!body.name || !body.email || !body.role || !validAdminRoles.includes(body.role as Role)) {
       return HttpResponse.json(
-        { error: "email is required and role must be one of owner, operator, viewer" },
+        { error: "name and email are required, and role must be one of owner, operator, viewer" },
         { status: 422 },
       );
     }
@@ -779,6 +807,8 @@ export const handlers = [
     adminInvitesState.push({
       id: `invite-msw-${adminInviteIdCounter}`,
       email: body.email,
+      name: body.name,
+      phone: body.phone,
       role: body.role as Role,
       status: "pending",
       expires_at: new Date(Date.now() + 1000 * 60 * 60).toISOString(),

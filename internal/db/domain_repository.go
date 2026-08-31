@@ -14,6 +14,13 @@ import (
 // hostname is already registered.
 var ErrDuplicateHostname = errors.New("db: hostname already registered")
 
+// ErrDomainInUse is returned by Delete when the domain is still referenced
+// by a status page's domain_id (no ON DELETE CASCADE on that FK - deleting
+// a domain out from under a published status page would silently break its
+// public URL, so the operator must detach the domain from the status page
+// first).
+var ErrDomainInUse = errors.New("db: domain is still attached to a status page")
+
 // Domain is a registered root domain a status page's subdomain can be
 // published under.
 type Domain struct {
@@ -95,6 +102,24 @@ func (r *DomainRepository) ListPaginated(ctx context.Context, page, pageSize int
 	}
 
 	return domains, total, nil
+}
+
+// Delete removes the domain identified by id. It returns ErrNotFound if no
+// domain matches id, or ErrDomainInUse if a status page still references it
+// via domain_id (the FK has no ON DELETE CASCADE by design).
+func (r *DomainRepository) Delete(ctx context.Context, id string) error {
+	tag, err := r.pool.Exec(ctx, "DELETE FROM domains WHERE id = $1", id)
+	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == pgerrcode.ForeignKeyViolation {
+			return ErrDomainInUse
+		}
+		return fmt.Errorf("db: failed to delete domain: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
 }
 
 // countDomains is the zero-row fallback for ListPaginated's total (PAG-08).

@@ -1,8 +1,7 @@
 import { useState } from "react";
+import { Card } from "../../components/ui/Card";
 import { Pager } from "../../components/ui/Pager";
-import { Table, type TableColumn } from "../../components/ui/Table";
 import { Tag } from "../../components/ui/Tag";
-import type { PollerStatusEntry } from "../../types/api";
 import { usePollerStatus } from "./hooks";
 
 function formatTimestamp(iso: string | null): string {
@@ -18,49 +17,53 @@ export function PollerStatusPage() {
   const [page, setPage] = useState(1);
   const { data, isLoading } = usePollerStatus(page);
   const totalPages = Math.max(1, Math.ceil((data?.total ?? 0) / (data?.page_size ?? 20)));
-
-  const columns: TableColumn<PollerStatusEntry>[] = [
-    {
-      key: "provider",
-      header: "Integração",
-      render: (e) => <span className="font-medium text-text">{providerLabel(e.provider)}</span>,
-    },
-    {
-      key: "last_checked_at",
-      header: "Última execução",
-      render: (e) => formatTimestamp(e.last_checked_at),
-    },
-    {
-      key: "result",
-      header: "Resultado",
-      render: (e) =>
-        e.status === "active" ? (
-          <Tag variant="success">Sucesso</Tag>
-        ) : (
-          <Tag variant="critical">Falha</Tag>
-        ),
-    },
-    {
-      key: "error",
-      header: "Mensagem de erro",
-      render: (e) => (e.status !== "active" ? e.last_error : ""),
-    },
-  ];
+  const items = data?.items ?? [];
 
   return (
-    <div className="mx-auto flex w-full max-w-[1280px] flex-col gap-4">
+    <div className="mx-auto flex w-full max-w-[1280px] flex-col gap-6">
       <div>
         <h2 className="text-text">Status do poller</h2>
         <p className="m-0 text-[13.5px] text-neutral-400">
           Última execução de cada integração conectada — apenas leitura.
         </p>
       </div>
-      <div className="mt-2 flex flex-col gap-3">
+      <div>
         {isLoading ? (
           <p className="text-neutral-400">Carregando…</p>
         ) : (
           <>
-            <Table columns={columns} rows={data?.items ?? []} rowKey={(e) => e.provider} />
+            <Card elevation="elev-sm" className="divide-y divide-divider overflow-hidden">
+              {items.length === 0 ? (
+                <p className="px-4 py-6 text-center text-neutral-400">Nenhuma integração conectada.</p>
+              ) : (
+                items.map((e) => (
+                  <div key={e.provider} data-testid="poller-row" className="flex items-center gap-3 px-4 py-3.5">
+                    <span
+                      className="h-2 w-2 flex-none rounded-full"
+                      style={{
+                        backgroundColor: e.status === "active" ? "var(--color-success)" : "var(--color-critical)",
+                      }}
+                      aria-hidden="true"
+                    />
+                    <div className="flex-1">
+                      <div className="text-[15px] font-medium text-text">{providerLabel(e.provider)}</div>
+                      {e.status !== "active" ? (
+                        <div className="mt-0.5 text-xs text-neutral-400">{e.last_error}</div>
+                      ) : null}
+                    </div>
+                    <div className="text-right text-xs text-neutral-400">
+                      <div>Última execução</div>
+                      <div className="mt-0.5 text-[13px] text-text">{formatTimestamp(e.last_checked_at)}</div>
+                    </div>
+                    {e.status === "active" ? (
+                      <Tag variant="success">Sucesso</Tag>
+                    ) : (
+                      <Tag variant="critical">Falha</Tag>
+                    )}
+                  </div>
+                ))
+              )}
+            </Card>
             <Pager page={page} totalPages={totalPages} onChange={setPage} />
           </>
         )}

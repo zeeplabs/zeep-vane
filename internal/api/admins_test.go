@@ -254,7 +254,7 @@ func issueTestSessionTokenWithRole(t *testing.T, admins *db.AdminRepository, rol
 
 func postInviteAdmin(t *testing.T, r http.Handler, token, email, role string) *httptest.ResponseRecorder {
 	t.Helper()
-	body, err := json.Marshal(inviteAdminRequest{Email: email, Role: role})
+	body, err := json.Marshal(inviteAdminRequest{Name: "Test Invitee", Email: email, Role: role})
 	if err != nil {
 		t.Fatalf("json.Marshal() returned unexpected error: %v", err)
 	}

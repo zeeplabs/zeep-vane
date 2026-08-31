@@ -26,15 +26,30 @@ interface AdminSeed extends Admin {
 }
 
 export const admins: AdminSeed[] = [
-  { id: "admin-1", email: "owner@vane.app", password: "demo1234", role: "owner", status: "active" },
+  {
+    id: "admin-1",
+    email: "owner@vane.app",
+    password: "demo1234",
+    name: "Ana Owner",
+    role: "owner",
+    status: "active",
+  },
   {
     id: "admin-2",
     email: "operator@vane.app",
     password: "demo1234",
+    name: "Bruno Operator",
     role: "operator",
     status: "active",
   },
-  { id: "admin-3", email: "viewer@vane.app", password: "demo1234", role: "viewer", status: "active" },
+  {
+    id: "admin-3",
+    email: "viewer@vane.app",
+    password: "demo1234",
+    name: "Carla Viewer",
+    role: "viewer",
+    status: "active",
+  },
 ];
 
 export function findAdminByEmail(email: string): AdminSeed | undefined {
@@ -42,7 +57,7 @@ export function findAdminByEmail(email: string): AdminSeed | undefined {
 }
 
 export function toPublicAdmin(admin: AdminSeed): Admin {
-  return { id: admin.id, email: admin.email, role: admin.role, status: admin.status };
+  return { id: admin.id, email: admin.email, name: admin.name, role: admin.role, status: admin.status };
 }
 
 // -- Convites pendentes de admin (AF-38: mesclados em GET /api/admins) --------

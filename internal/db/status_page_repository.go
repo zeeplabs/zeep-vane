@@ -274,6 +274,36 @@ func (r *StatusPageRepository) ListPaginated(ctx context.Context, page, pageSize
 	return statusPages, total, nil
 }
 
+// Delete removes the status page identified by id, along with its
+// status_page_services links (deleted first, in the same transaction,
+// since that join table has no ON DELETE CASCADE). It returns ErrNotFound
+// if no status page matches id.
+func (r *StatusPageRepository) Delete(ctx context.Context, id string) error {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("db: failed to begin delete status page transaction: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	if _, err := tx.Exec(ctx, "DELETE FROM status_page_services WHERE status_page_id = $1", id); err != nil {
+		return fmt.Errorf("db: failed to clear service links before delete: %w", err)
+	}
+
+	tag, err := tx.Exec(ctx, "DELETE FROM status_pages WHERE id = $1", id)
+	if err != nil {
+		return fmt.Errorf("db: failed to delete status page: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("db: failed to commit delete status page transaction: %w", err)
+	}
+
+	return nil
+}
+
 // countStatusPages is the zero-row fallback for ListPaginated's total
 // (PAG-08).
 func (r *StatusPageRepository) countStatusPages(ctx context.Context) (int, error) {

@@ -109,9 +109,11 @@ func sessionCookie(value string, maxAge int, secure bool) *http.Cookie {
 }
 
 type meResponse struct {
-	ID    string `json:"id"`
-	Email string `json:"email"`
-	Role  string `json:"role"`
+	ID    string  `json:"id"`
+	Email string  `json:"email"`
+	Name  string  `json:"name"`
+	Phone *string `json:"phone,omitempty"`
+	Role  string  `json:"role"`
 }
 
 // Me returns the authenticated admin's identity, as loaded into context by
@@ -126,7 +128,7 @@ func (h *AuthHandler) Me(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	_ = json.NewEncoder(w).Encode(meResponse{ID: admin.ID, Email: admin.Email, Role: admin.Role})
+	_ = json.NewEncoder(w).Encode(meResponse{ID: admin.ID, Email: admin.Email, Name: admin.Name, Phone: admin.Phone, Role: admin.Role})
 }
 
 // Logout expires the vane_session cookie set at login. It requires no

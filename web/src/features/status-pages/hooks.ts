@@ -107,6 +107,16 @@ export function useSetStatusPageServices() {
   });
 }
 
+export function useDeleteStatusPage() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => apiFetch<void>(`/api/status-pages/${id}`, { method: "DELETE" }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["status-pages"] });
+    },
+  });
+}
+
 interface DNSTargetResponse {
   target: string | null;
 }
