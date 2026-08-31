@@ -80,7 +80,7 @@ describe("AcceptInvitePage", () => {
     expect(screen.getByRole("button", { name: "Ativar conta" })).not.toBeDisabled();
   });
 
-  it("senha fraca (422) mostra a mensagem exata do servidor (AIP-08)", async () => {
+  it("senha fraca (422) mostra mensagem traduzida, não o texto cru do servidor (AIP-08)", async () => {
     seedAdminInviteToken("valid-token", "invitee@vane.app", "operator");
     render(App("valid-token"));
 
@@ -88,7 +88,7 @@ describe("AcceptInvitePage", () => {
     await userEvent.click(screen.getByRole("button", { name: "Ativar conta" }));
 
     expect(await screen.findByRole("alert")).toHaveTextContent(
-      "password must be between 8 and 72 characters"
+      "A senha deve ter entre 8 e 72 caracteres."
     );
     expect(assignSpy).not.toHaveBeenCalled();
   });

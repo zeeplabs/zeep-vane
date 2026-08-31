@@ -117,6 +117,22 @@
 - **Date**: 2026-08-31
 - **Status**: active
 
+### AD-015
+- **Decision**: An admin's `name` (required) and `phone` (optional) are collected once, at invite/bootstrap time — never re-collected from the invitee at accept time. `admins`/`admin_invites` both gained `name TEXT NOT NULL DEFAULT ''`/`phone TEXT` columns (migration `0019_admin_name_phone`); `AcceptInvite` copies `invite.Name`/`invite.Phone` onto the new `Admin` row unchanged. `phone` has a loose server-side format check (`internal/api.ValidatePhone`: optional, digits + `+ ( ) -` only, ≤32 chars) since Vane never dials the number itself — it exists so an admin who bypasses the frontend can't post arbitrary length/character garbage into the column, not to validate a real phone number.
+- **Reason**: The inviter (an existing owner/operator) already knows the invitee's name for real-world identification purposes (support tickets, audit log readability, "who is admin X"); asking the invitee to type it again at accept time is a redundant step in a flow whose only other input is a password. Same reasoning `AcceptInvite` already applies to `role` (also set by the inviter, not the invitee).
+- **Trade-off**: A typo in the name/phone the inviter enters can only be corrected by an owner re-inviting or a future "edit admin" endpoint (doesn't exist yet) — there is no self-service profile edit for the invitee. Accepted since this mirrors how `role` already works and the fields are informational, not security-relevant.
+- **Scope**: Any future required-at-signup field for an invited admin should default to being collected from the inviter, not the invitee, unless the field is inherently something only the invitee can supply (e.g. the password itself).
+- **Date**: 2026-08-31
+- **Status**: active
+
+### AD-016
+- **Decision**: `PhoneField` (`web/src/components/ui/PhoneField.tsx`) uses `@zeeptech/toolkit` (a ZeepLabs-authored npm package, not an Anthropic/Starbem one) for its country list and phone mask, imported from the package's deep subpaths — `@zeeptech/toolkit/dist/masks` and `@zeeptech/toolkit/dist/utils/countries` — never from the root `@zeeptech/toolkit` barrel.
+- **Reason**: The root barrel is CommonJS (`require`/`__exportStar` re-exports, `dist/index.js`), which Rollup/Vite cannot tree-shake even though the package declares `sideEffects: false` — importing just `{ countries, globalCellphoneMask }` from the barrel pulled in every other module transitively, including `utils/brazilian-cities.js` (~180KB uncompressed, completely unrelated to phone masking) and the full `dates`/`validators`/`normalize`/`diacritics` modules. This inflated the production bundle from 127KB to 186KB gzip (+46%) for two functions. Deep-importing only the subtree that `globalCellphoneMask` actually needs (`masks`, which itself requires `utils/countries`) dropped the regression to 141KB gzip (+11%) with identical runtime behavior.
+- **Trade-off**: The deep-import paths (`@zeeptech/toolkit/dist/...`) reach past the package's declared `main`/`types` entrypoints into its build output directly, since the package has no `exports` map restricting subpaths and ships no per-module entrypoints at its root. This is coupled to the package's current internal directory layout (`dist/masks/`, `dist/utils/countries`) — a future `@zeeptech/toolkit` release that reorganizes `dist/` or adds an `exports` map blocking deep imports would break this at build time (loud, not silent) and require re-verifying the import paths.
+- **Scope**: Any future dependency added for a narrow feature (a single mask, a single formatter) should be checked for tree-shakeability before adopting — prefer a package with real ESM + an `exports` map, or a deep/subpath import like this one, over trusting `sideEffects: false` alone on a CJS package.
+- **Date**: 2026-08-31
+- **Status**: active
+
 ## Handoff
 
 **Feature**: `self-hosted-docker-bootstrap` — **status: PASS ✅** (Verifier iteração 3/3, limite do skill, 2 rodadas de fix→re-verify). Relatório: `.specs/features/self-hosted-docker-bootstrap/validation.md`. 22/22 ACs (SHD-01 a SHD-22), sensor de discriminação 3/3 mortos.

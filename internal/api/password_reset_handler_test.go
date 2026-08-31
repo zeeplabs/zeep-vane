@@ -23,10 +23,30 @@ import (
 	"github.com/zeeplabs/zeep-vane/internal/email"
 )
 
-func newPasswordResetRouter(t *testing.T) (http.Handler, *db.AdminRepository, *db.Pool, *observer.ObservedLogs) {
+// newPasswordResetRouter also returns the *fakeEmailProvider backing the
+// router's email service, pre-armed with a buffered notifySent channel: a
+// test must waitForSend after posting to /request before reading anything
+// issueAndSendPasswordReset writes (the reset token, its log entry) - that
+// work all happens in a goroutine dispatched after Request has already
+// responded (see issueAndSendPasswordReset's doc comment), so there is no
+// other synchronization point.
+func newPasswordResetRouter(t *testing.T) (http.Handler, *db.AdminRepository, *db.Pool, *observer.ObservedLogs, *fakeEmailProvider) {
 	t.Helper()
-	emailSvc, _ := newTestEmailService(t)
-	return newPasswordResetRouterWithEmail(t, emailSvc)
+	emailSvc, provider := newTestEmailService(t)
+	provider.notifySent = make(chan struct{}, 1)
+	r, admins, pool, logs := newPasswordResetRouterWithEmail(t, emailSvc)
+	return r, admins, pool, logs, provider
+}
+
+// requestPasswordReset posts to /api/auth/password-reset/request and blocks
+// until issueAndSendPasswordReset's goroutine has run to completion (see
+// newPasswordResetRouter), so it's safe for the caller to read the token
+// from logs or the database immediately after this returns.
+func requestPasswordReset(t *testing.T, r http.Handler, provider *fakeEmailProvider, email string) *httptest.ResponseRecorder {
+	t.Helper()
+	rec := postJSON(t, r, "/api/auth/password-reset/request", passwordResetRequestBody{Email: email})
+	waitForSend(t, provider.notifySent)
+	return rec
 }
 
 // newPasswordResetRouterWithEmail is newPasswordResetRouter with the email
@@ -120,7 +140,8 @@ func TestPasswordResetRequest_DevTokenLoggingDisabled_TokenNotLogged(t *testing.
 	admins := db.NewAdminRepository(pool)
 	tokens := db.NewPasswordResetRepository(pool)
 	companySettings := db.NewCompanySettingsRepository(pool)
-	emailSvc, _ := newTestEmailService(t)
+	emailSvc, provider := newTestEmailService(t)
+	provider.notifySent = make(chan struct{}, 1)
 	observedCore, observedLogs := observer.New(zapcore.InfoLevel)
 	logger := zap.New(observedCore)
 
@@ -134,7 +155,7 @@ func TestPasswordResetRequest_DevTokenLoggingDisabled_TokenNotLogged(t *testing.
 		_, _ = pool.Exec(context.Background(), "DELETE FROM password_reset_tokens WHERE admin_id IN (SELECT id FROM admins WHERE email = $1)", email)
 	})
 
-	rec := postJSON(t, r, "/api/auth/password-reset/request", passwordResetRequestBody{Email: email})
+	rec := requestPasswordReset(t, r, provider, email)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
 	}
@@ -156,12 +177,12 @@ func TestPasswordResetRequest_DevTokenLoggingDisabled_TokenNotLogged(t *testing.
 }
 
 func TestPasswordResetRequest_GeneratesTokenWithOneHourExpiry(t *testing.T) {
-	r, admins, pool, _ := newPasswordResetRouter(t)
+	r, admins, pool, _, provider := newPasswordResetRouter(t)
 	email := uniqueTestEmail(t)
 	createTestAdmin(t, admins, pool, email, "old-password")
 
 	before := time.Now()
-	rec := postJSON(t, r, "/api/auth/password-reset/request", passwordResetRequestBody{Email: email})
+	rec := requestPasswordReset(t, r, provider, email)
 	after := time.Now()
 
 	if rec.Code != http.StatusOK {
@@ -189,7 +210,7 @@ func TestPasswordResetRequest_GeneratesTokenWithOneHourExpiry(t *testing.T) {
 }
 
 func TestPasswordResetConfirm_ValidUnexpiredToken_ChangesPassword(t *testing.T) {
-	r, admins, pool, logs := newPasswordResetRouter(t)
+	r, admins, pool, logs, provider := newPasswordResetRouter(t)
 	email := uniqueTestEmail(t)
 	createTestAdmin(t, admins, pool, email, "old-password")
 
@@ -198,7 +219,7 @@ func TestPasswordResetConfirm_ValidUnexpiredToken_ChangesPassword(t *testing.T) 
 		_, _ = pool.Exec(ctx, "DELETE FROM password_reset_tokens WHERE admin_id IN (SELECT id FROM admins WHERE email = $1)", email)
 	})
 
-	reqRec := postJSON(t, r, "/api/auth/password-reset/request", passwordResetRequestBody{Email: email})
+	reqRec := requestPasswordReset(t, r, provider, email)
 	if reqRec.Code != http.StatusOK {
 		t.Fatalf("request status = %d, want %d", reqRec.Code, http.StatusOK)
 	}
@@ -227,7 +248,7 @@ func TestPasswordResetConfirm_ValidUnexpiredToken_ChangesPassword(t *testing.T) 
 // guard: a password below auth.MinPasswordLength must be rejected before
 // the admin's password hash is updated, even with a valid unexpired token.
 func TestPasswordResetConfirm_WeakPassword_422NoChange(t *testing.T) {
-	r, admins, pool, logs := newPasswordResetRouter(t)
+	r, admins, pool, logs, provider := newPasswordResetRouter(t)
 	email := uniqueTestEmail(t)
 	createTestAdmin(t, admins, pool, email, "old-password")
 
@@ -236,7 +257,7 @@ func TestPasswordResetConfirm_WeakPassword_422NoChange(t *testing.T) {
 		_, _ = pool.Exec(ctx, "DELETE FROM password_reset_tokens WHERE admin_id IN (SELECT id FROM admins WHERE email = $1)", email)
 	})
 
-	reqRec := postJSON(t, r, "/api/auth/password-reset/request", passwordResetRequestBody{Email: email})
+	reqRec := requestPasswordReset(t, r, provider, email)
 	if reqRec.Code != http.StatusOK {
 		t.Fatalf("request status = %d, want %d", reqRec.Code, http.StatusOK)
 	}
@@ -259,7 +280,7 @@ func TestPasswordResetConfirm_WeakPassword_422NoChange(t *testing.T) {
 }
 
 func TestPasswordResetConfirm_ExpiredToken_Rejected(t *testing.T) {
-	r, admins, pool, _ := newPasswordResetRouter(t)
+	r, admins, pool, _, _ := newPasswordResetRouter(t)
 	email := uniqueTestEmail(t)
 	createTestAdmin(t, admins, pool, email, "old-password")
 
@@ -302,7 +323,7 @@ func TestPasswordResetConfirm_ExpiredToken_Rejected(t *testing.T) {
 }
 
 func TestPasswordResetConfirm_AlreadyUsedToken_Rejected(t *testing.T) {
-	r, admins, pool, logs := newPasswordResetRouter(t)
+	r, admins, pool, logs, provider := newPasswordResetRouter(t)
 	email := uniqueTestEmail(t)
 	createTestAdmin(t, admins, pool, email, "old-password")
 
@@ -311,7 +332,7 @@ func TestPasswordResetConfirm_AlreadyUsedToken_Rejected(t *testing.T) {
 		_, _ = pool.Exec(ctx, "DELETE FROM password_reset_tokens WHERE admin_id IN (SELECT id FROM admins WHERE email = $1)", email)
 	})
 
-	reqRec := postJSON(t, r, "/api/auth/password-reset/request", passwordResetRequestBody{Email: email})
+	reqRec := requestPasswordReset(t, r, provider, email)
 	if reqRec.Code != http.StatusOK {
 		t.Fatalf("request status = %d, want %d", reqRec.Code, http.StatusOK)
 	}

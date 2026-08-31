@@ -10,6 +10,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"go.uber.org/zap"
 
+	"github.com/zeeplabs/zeep-vane/internal/audit"
 	"github.com/zeeplabs/zeep-vane/internal/db"
 )
 
@@ -32,12 +33,13 @@ type statusPageCreatorLister interface {
 // StatusPagesHandler serves the status page admin routes.
 type StatusPagesHandler struct {
 	statusPages statusPageCreatorLister
+	audit       *audit.Log
 	logger      *zap.Logger
 }
 
 // NewStatusPagesHandler builds a StatusPagesHandler backed by statusPages.
-func NewStatusPagesHandler(statusPages statusPageCreatorLister, logger *zap.Logger) *StatusPagesHandler {
-	return &StatusPagesHandler{statusPages: statusPages, logger: logger}
+func NewStatusPagesHandler(statusPages statusPageCreatorLister, auditLog *audit.Log, logger *zap.Logger) *StatusPagesHandler {
+	return &StatusPagesHandler{statusPages: statusPages, audit: auditLog, logger: logger}
 }
 
 type createStatusPageRequest struct {
@@ -234,6 +236,12 @@ func (h *StatusPagesHandler) Delete(w http.ResponseWriter, r *http.Request) {
 		h.logger.Error("status-pages: failed to delete status page", zap.Error(err))
 		writeInternalError(w)
 		return
+	}
+
+	if actor, ok := AdminFromContext(r.Context()); ok {
+		if err := h.audit.Record(r.Context(), actor.ID, id, "status_page_deleted"); err != nil {
+			h.logger.Error("status-pages: failed to record audit entry", zap.Error(err))
+		}
 	}
 
 	w.WriteHeader(http.StatusNoContent)

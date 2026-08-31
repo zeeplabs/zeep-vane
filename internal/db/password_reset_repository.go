@@ -66,6 +66,23 @@ func (r *PasswordResetRepository) GetByTokenHash(ctx context.Context, tokenHash 
 	return &token, nil
 }
 
+// InvalidateOtherPending marks every other not-yet-used token for adminID
+// as used, excluding excludeID (the token Confirm is currently processing,
+// which MarkUsed already handles). Called after a successful password
+// change so a still-valid sibling reset link - requested earlier, or by an
+// attacker who triggered Request speculatively - can't be redeemed to reset
+// the password again.
+func (r *PasswordResetRepository) InvalidateOtherPending(ctx context.Context, adminID, excludeID string) error {
+	_, err := r.pool.Exec(ctx,
+		"UPDATE password_reset_tokens SET used_at = now() WHERE admin_id = $1 AND id != $2 AND used_at IS NULL",
+		adminID, excludeID,
+	)
+	if err != nil {
+		return fmt.Errorf("db: failed to invalidate other pending password reset tokens: %w", err)
+	}
+	return nil
+}
+
 // MarkUsed sets used_at on the token with the given ID to now.
 func (r *PasswordResetRepository) MarkUsed(ctx context.Context, id string) error {
 	tag, err := r.pool.Exec(ctx,

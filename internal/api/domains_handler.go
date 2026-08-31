@@ -10,6 +10,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"go.uber.org/zap"
 
+	"github.com/zeeplabs/zeep-vane/internal/audit"
 	"github.com/zeeplabs/zeep-vane/internal/db"
 )
 
@@ -29,12 +30,13 @@ type domainCreatorLister interface {
 // DomainsHandler serves the domain admin routes.
 type DomainsHandler struct {
 	domains domainCreatorLister
+	audit   *audit.Log
 	logger  *zap.Logger
 }
 
 // NewDomainsHandler builds a DomainsHandler backed by domains.
-func NewDomainsHandler(domains domainCreatorLister, logger *zap.Logger) *DomainsHandler {
-	return &DomainsHandler{domains: domains, logger: logger}
+func NewDomainsHandler(domains domainCreatorLister, auditLog *audit.Log, logger *zap.Logger) *DomainsHandler {
+	return &DomainsHandler{domains: domains, audit: auditLog, logger: logger}
 }
 
 type createDomainRequest struct {
@@ -128,6 +130,12 @@ func (h *DomainsHandler) Delete(w http.ResponseWriter, r *http.Request) {
 		h.logger.Error("domains: failed to delete domain", zap.Error(err))
 		writeInternalError(w)
 		return
+	}
+
+	if actor, ok := AdminFromContext(r.Context()); ok {
+		if err := h.audit.Record(r.Context(), actor.ID, id, "domain_deleted"); err != nil {
+			h.logger.Error("domains: failed to record audit entry", zap.Error(err))
+		}
 	}
 
 	w.WriteHeader(http.StatusNoContent)

@@ -47,6 +47,8 @@ export function PasswordResetConfirmPage() {
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) {
         setError(t("passwordResetConfirm.invalidOrExpired"));
+      } else if (err instanceof ApiError && err.status === 422) {
+        setError(t("passwordResetConfirm.weakPassword"));
       } else if (err instanceof ApiError) {
         setError(err.message);
       } else {

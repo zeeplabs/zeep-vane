@@ -15,6 +15,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"go.uber.org/zap"
 
+	"github.com/zeeplabs/zeep-vane/internal/audit"
 	"github.com/zeeplabs/zeep-vane/internal/db"
 )
 
@@ -37,7 +38,7 @@ func newStatusPagesRouter(t *testing.T) (http.Handler, *db.Pool, *db.AdminReposi
 
 	repo := db.NewStatusPageRepository(pool)
 	admins := db.NewAdminRepository(pool)
-	handler := NewStatusPagesHandler(repo, zap.NewNop())
+	handler := NewStatusPagesHandler(repo, audit.NewLog(pool), zap.NewNop())
 
 	r := chi.NewRouter()
 	r.Group(func(protected chi.Router) {

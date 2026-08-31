@@ -1,5 +1,12 @@
 import { useId, useState } from "react";
-import { countries, globalCellphoneMask } from "@zeeptech/toolkit";
+// Imported from the package's deep subpaths, not the root "@zeeptech/toolkit"
+// barrel: the barrel is CommonJS and re-exports every module (including
+// utils/brazilian-cities.js, ~180KB uncompressed, unrelated to phone
+// masking), which Rollup can't tree-shake out of a `require()` re-export -
+// see AD-016. Deep-importing only masks/ (which itself needs
+// utils/countries) avoids pulling that in.
+import { globalCellphoneMask } from "@zeeptech/toolkit/dist/masks";
+import { countries } from "@zeeptech/toolkit/dist/utils/countries";
 import { Input } from "./Input";
 
 export interface PhoneFieldProps {
@@ -15,7 +22,8 @@ const DEFAULT_COUNTRY_CODE = "BR";
 // Vane é usado por empresas fora do Brasil (AD-002 é sobre tenancy, não
 // sobre geografia) - um celular só com DDD brasileiro fixo excluiria
 // qualquer instalação internacional. globalCellphoneMask/countries vêm do
-// @zeeptech/toolkit em vez de reimplementar 200 máscaras nacionais aqui.
+// @zeeptech/toolkit (AD-016) em vez de reimplementar 200 máscaras nacionais
+// aqui.
 export function PhoneField({ label, onChange, required }: PhoneFieldProps) {
   const inputId = useId();
   const [countryCode, setCountryCode] = useState(DEFAULT_COUNTRY_CODE);

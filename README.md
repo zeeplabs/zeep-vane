@@ -53,6 +53,7 @@ docker compose up -d
 | --- | --- |
 | **Custom domains, automatic TLS** | Attach your own hostname to a status page; CertMagic issues an ACME certificate on first request — no nginx/Caddy/Traefik in front |
 | **Draft → Published pages** | A page can exist and be previewed (`/api/status-pages/{id}/public-preview`) before any domain is attached (AD-008) |
+| **Deletable domains & status pages** | Both can be deleted from the admin dashboard (with confirmation); deleting a domain still attached to a status page is rejected with a 409 instead |
 | **Incident timelines** | Incidents link to one or more services, surfaced on the public page for 90 days after resolution |
 | **Hourly uptime history** | Public page renders per-service hourly status bars computed from `status_intervals` |
 | **White-label branding** | Company name + logo shown on the public page (`company_settings` singleton) |

@@ -15,6 +15,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"go.uber.org/zap"
 
+	"github.com/zeeplabs/zeep-vane/internal/audit"
 	"github.com/zeeplabs/zeep-vane/internal/db"
 )
 
@@ -37,7 +38,7 @@ func newDomainsRouter(t *testing.T) (http.Handler, *db.Pool, *db.AdminRepository
 
 	repo := db.NewDomainRepository(pool)
 	admins := db.NewAdminRepository(pool)
-	handler := NewDomainsHandler(repo, zap.NewNop())
+	handler := NewDomainsHandler(repo, audit.NewLog(pool), zap.NewNop())
 
 	r := chi.NewRouter()
 	r.Group(func(protected chi.Router) {

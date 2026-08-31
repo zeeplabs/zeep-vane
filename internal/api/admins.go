@@ -152,6 +152,10 @@ func (h *AdminsHandler) Invite(w http.ResponseWriter, r *http.Request) {
 		writeAdminError(w, http.StatusUnprocessableEntity, invalidInviteAdminRequestBody)
 		return
 	}
+	if err := ValidatePhone(req.Phone); err != nil {
+		writeAdminError(w, http.StatusUnprocessableEntity, invalidPhoneBody)
+		return
+	}
 
 	if _, err := h.admins.GetByEmail(r.Context(), req.Email); err == nil {
 		writeAdminError(w, http.StatusConflict, adminAlreadyActiveBody)

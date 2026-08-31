@@ -31,6 +31,7 @@ type passwordResetRepo interface {
 	Create(ctx context.Context, token *db.PasswordResetToken) error
 	GetByTokenHash(ctx context.Context, tokenHash string) (*db.PasswordResetToken, error)
 	MarkUsed(ctx context.Context, id string) error
+	InvalidateOtherPending(ctx context.Context, adminID, excludeID string) error
 }
 
 // adminByEmailAndIDUpdater is the subset of *db.AdminRepository the password
@@ -38,6 +39,7 @@ type passwordResetRepo interface {
 type adminByEmailAndIDUpdater interface {
 	adminGetter
 	UpdatePasswordHash(ctx context.Context, adminID, passwordHash string) error
+	RevokeSessions(ctx context.Context, id string) error
 }
 
 // PasswordResetHandler serves the password reset request/confirm routes.
@@ -98,21 +100,45 @@ func (h *PasswordResetHandler) Request(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Token generation, persistence, and email dispatch all happen in a
+	// goroutine, deliberately not awaited: Request's response time and
+	// status must not depend on whether the admin's email lookup above hit
+	// or missed, otherwise either the outbound HTTPS call to the email
+	// provider (hundreds of ms) or a token-generation/DB failure turning
+	// into a 500 - both of which are only reachable on a hit - becomes an
+	// oracle for account enumeration, exactly what the identical 200
+	// status/body above exists to prevent. r.Context() is cancelled the
+	// moment Request returns, so the goroutine gets a detached context via
+	// context.WithoutCancel, and takes admin.ID/admin.Email by value rather
+	// than *r or *admin since nothing on either is safe to touch after the
+	// handler returns.
+	go h.issueAndSendPasswordReset(context.WithoutCancel(r.Context()), admin.ID, admin.Email)
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write([]byte(`{"status":"ok"}`))
+}
+
+// issueAndSendPasswordReset generates a reset token for adminID, persists
+// it, and sends the reset email to "to". Runs in its own goroutine (see
+// Request) - ctx must already be detached from the originating request. Any
+// failure is logged and otherwise ignored, same reasoning as
+// AdminsHandler.sendAdminInviteEmail: Request has already responded 200 by
+// the time this runs.
+func (h *PasswordResetHandler) issueAndSendPasswordReset(ctx context.Context, adminID, to string) {
 	rawToken, err := generateResetToken()
 	if err != nil {
-		h.logger.Error("password-reset: failed to generate token", zap.Error(err))
-		writeInternalError(w)
+		h.logger.Error("password-reset: failed to generate token", zap.String("admin_id", adminID), zap.Error(err))
 		return
 	}
 
 	resetToken := &db.PasswordResetToken{
-		AdminID:   admin.ID,
+		AdminID:   adminID,
 		TokenHash: hashResetToken(rawToken),
 		ExpiresAt: time.Now().Add(resetTokenTTL),
 	}
-	if err := h.tokens.Create(r.Context(), resetToken); err != nil {
-		h.logger.Error("password-reset: failed to persist token", zap.Error(err))
-		writeInternalError(w)
+	if err := h.tokens.Create(ctx, resetToken); err != nil {
+		h.logger.Error("password-reset: failed to persist token", zap.String("admin_id", adminID), zap.Error(err))
 		return
 	}
 
@@ -124,35 +150,20 @@ func (h *PasswordResetHandler) Request(w http.ResponseWriter, r *http.Request) {
 	// PasswordResetToken).
 	if h.devTokenLogging {
 		h.logger.Info("password-reset: token issued",
-			zap.String("admin_id", admin.ID), zap.String("token", rawToken))
+			zap.String("admin_id", adminID), zap.String("token", rawToken))
 	} else {
 		h.logger.Info("password-reset: token issued",
-			zap.String("admin_id", admin.ID))
+			zap.String("admin_id", adminID))
 	}
 
-	// Dispatched in a goroutine, deliberately not awaited: Request's
-	// response time must not depend on whether the admin's email lookup
-	// above hit or missed, otherwise the outbound HTTPS call to the email
-	// provider (hundreds of ms) versus the immediate 200 on a miss becomes
-	// a timing oracle for account enumeration - exactly what the identical
-	// 200 status/body above exists to prevent. r.Context() is cancelled the
-	// moment Request returns, so the goroutine gets a detached context via
-	// context.WithoutCancel, and takes admin.Email by value rather than *r
-	// since nothing on r is safe to touch after the handler returns.
-	go h.sendPasswordResetEmail(context.WithoutCancel(r.Context()), admin.ID, admin.Email, rawToken)
-
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write([]byte(`{"status":"ok"}`))
+	h.sendPasswordResetEmail(ctx, adminID, to, rawToken)
 }
 
 // sendPasswordResetEmail looks up the instance display name and sends the
 // password-reset email for rawToken via h.emailSvc. A lookup or send
 // failure (including ErrNoActiveProvider - no email provider connected
-// yet) is logged and otherwise ignored: Request's response must stay
-// identical whether or not delivery actually succeeded, same reasoning as
-// AdminsHandler.sendAdminInviteEmail. Runs in its own goroutine (see
-// Request) - ctx must already be detached from the originating request.
+// yet) is logged and otherwise ignored, for the same reason as
+// issueAndSendPasswordReset above, which is always its caller.
 func (h *PasswordResetHandler) sendPasswordResetEmail(ctx context.Context, adminID, to, rawToken string) {
 	settings, err := h.companySettings.Get(ctx)
 	if err != nil {
@@ -225,6 +236,22 @@ func (h *PasswordResetHandler) Confirm(w http.ResponseWriter, r *http.Request) {
 		h.logger.Error("password-reset: failed to mark token used", zap.Error(err))
 		writeInternalError(w)
 		return
+	}
+
+	// A password change must invalidate anything that could still let
+	// someone into this account under the old credential: any other reset
+	// link still pending for this admin (requested earlier, or by an
+	// attacker who fired Request speculatively before this legitimate
+	// confirm landed), and every session token already issued - otherwise
+	// an attacker who obtained a session before the victim reset their
+	// password stays logged in through the reset. Both are best-effort:
+	// logged on failure, but the response still reports success since the
+	// password itself was already changed.
+	if err := h.tokens.InvalidateOtherPending(r.Context(), resetToken.AdminID, resetToken.ID); err != nil {
+		h.logger.Error("password-reset: failed to invalidate other pending tokens", zap.String("admin_id", resetToken.AdminID), zap.Error(err))
+	}
+	if err := h.admins.RevokeSessions(r.Context(), resetToken.AdminID); err != nil {
+		h.logger.Error("password-reset: failed to revoke sessions", zap.String("admin_id", resetToken.AdminID), zap.Error(err))
 	}
 
 	w.Header().Set("Content-Type", "application/json")

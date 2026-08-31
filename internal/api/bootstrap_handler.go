@@ -68,6 +68,7 @@ type bootstrapCreateRequest struct {
 
 const invalidBootstrapRequestBody = `{"error":"name, email, and password are required"}`
 const alreadyBootstrappedBody = `{"error":"already bootstrapped"}`
+const invalidPhoneBody = `{"error":"phone is invalid"}`
 
 // weakPasswordBody is returned by every handler that sets a new password
 // (bootstrap, invite-accept, password-reset-confirm) when it fails
@@ -90,6 +91,10 @@ func (h *BootstrapHandler) Create(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := auth.ValidatePassword(req.Password); err != nil {
 		writeAdminError(w, http.StatusUnprocessableEntity, weakPasswordBody)
+		return
+	}
+	if err := ValidatePhone(req.Phone); err != nil {
+		writeAdminError(w, http.StatusUnprocessableEntity, invalidPhoneBody)
 		return
 	}
 

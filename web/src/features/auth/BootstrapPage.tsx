@@ -56,6 +56,8 @@ export function BootstrapPage() {
     } catch (err) {
       if (err instanceof ApiError && err.status === 409) {
         setAlreadyBootstrapped(true);
+      } else if (err instanceof ApiError && err.status === 422) {
+        setError(t("bootstrap.weakPassword"));
       } else if (err instanceof ApiError) {
         setError(err.message);
       } else {
