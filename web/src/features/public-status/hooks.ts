@@ -69,8 +69,16 @@ function latestServiceChange(services: PreviewService[]): string | null {
   }, null);
 }
 
-async function fetchPublicStatusPage(id: string, resolvedPage: number): Promise<PublicStatusPageData> {
-  const data = await apiFetch<PreviewResponse>(`/api/status-pages/${id}/public-preview?page=${resolvedPage}`);
+// fetchPublicStatusPage fetches the dev/preview endpoint (admin-session
+// gated, resolved by status page ID) when id is given, and the real
+// production endpoint (unauthenticated, resolved by the request's Host
+// header via router.HostRouter - AD-018) when it isn't. Both share the
+// same response shape (composeResponse on the Go side).
+async function fetchPublicStatusPage(id: string | undefined, resolvedPage: number): Promise<PublicStatusPageData> {
+  const path = id
+    ? `/api/status-pages/${id}/public-preview?page=${resolvedPage}`
+    : `/api/public-status?page=${resolvedPage}`;
+  const data = await apiFetch<PreviewResponse>(path, { skipUnauthorizedHandler: !id });
   const latestChange = latestServiceChange(data.services);
 
   return {
@@ -98,7 +106,9 @@ async function fetchPublicStatusPage(id: string, resolvedPage: number): Promise<
 // appended after page 1's items, never replacing/reordering them
 // (list-pagination T13). Extra pages reset whenever `id` changes so
 // switching status pages never leaks the previous page's loaded history.
-export function usePublicStatusPage(id: string) {
+// id is omitted entirely when rendered at the production root (AD-018) -
+// there is exactly one status page per hostname, resolved server-side.
+export function usePublicStatusPage(id?: string) {
   const [extraResolved, setExtraResolved] = useState<PublicIncidentEntry[]>([]);
   const [loadedPage, setLoadedPage] = useState(1);
 
@@ -108,7 +118,7 @@ export function usePublicStatusPage(id: string) {
   }, [id]);
 
   const query = useQuery({
-    queryKey: ["public-status-page", id],
+    queryKey: ["public-status-page", id ?? "production"],
     queryFn: () => fetchPublicStatusPage(id, 1),
     refetchInterval: 120_000,
     retry: false,

@@ -23,6 +23,7 @@ import (
 	"github.com/zeeplabs/zeep-vane/internal/retention"
 	"github.com/zeeplabs/zeep-vane/internal/router"
 	vanetls "github.com/zeeplabs/zeep-vane/internal/tls"
+	"github.com/zeeplabs/zeep-vane/web"
 )
 
 // pruneTick and pruneRetention control the retention Pruner started in
@@ -171,19 +172,27 @@ func NewServeCmd() *cobra.Command {
 // the real outcome of each issuance attempt back onto the matching
 // StatusPage row.
 //
-// Its handler is router.HostRouter wrapping a small mux of two routes -
-// the public status page handler at "/" and the public logo file handler
-// at "/uploads/" (SET-06, SET-12) - rather than the public status handler
+// Its handler is router.HostRouter wrapping a mux of three routes - the
+// public status JSON at "/api/public-status", the public logo file handler
+// at "/uploads/" (SET-06, SET-12), and the embedded SPA (web.StaticHandler)
+// as the "/" fallback (AD-018) - rather than the public status handler
 // alone: HostRouter forwards every path on a matched hostname to whatever
 // single handler it's given (internal/router/host_router.go), so without
 // this mux, a request for a status page's own logo would hit the status
-// JSON handler instead of the file (design.md Risks & Concerns). A
+// JSON handler instead of the file (design.md Risks & Concerns). The JSON
+// endpoint used to sit at "/" itself (pre-AD-018), which meant a visitor
+// opening a status page's own domain got a raw JSON blob instead of the
+// rendered page - the SPA's PublicStatusPage component only ever fetched
+// this data through a different, admin-authenticated dev/preview endpoint
+// (public_status_preview_handler.go), never through this production one. A
 // request's Host header resolves to a published StatusPage, whose ID is
 // threaded down so the public handler's services/incidents queries are
-// scoped to that status page (SP-15); the logo route needs no such
-// scoping - the logo file is a single, install-wide singleton (SET-06).
-// The admin API/SPA is served on the separate HTTP listener built in RunE
-// (router.New) - HostRouter here never touches it (design.md placeholder).
+// scoped to that status page (SP-15); the logo route and static SPA need
+// no such scoping - the logo file is a single, install-wide singleton
+// (SET-06), and the SPA's JS resolves its own data client-side via
+// same-origin fetch. The admin API/SPA is served on the separate HTTP
+// listener built in RunE (router.New) - HostRouter here never touches it
+// (design.md placeholder).
 func newHTTPSServer(pool *db.Pool, dsn string, logger *zap.Logger) *http.Server {
 	httpsPort := os.Getenv("HTTPS_PORT")
 	if httpsPort == "" {
@@ -203,7 +212,8 @@ func newHTTPSServer(pool *db.Pool, dsn string, logger *zap.Logger) *http.Server 
 
 	publicMux := http.NewServeMux()
 	publicMux.Handle("/uploads/", logoFileHandler)
-	publicMux.HandleFunc("/", publicHandler.Get)
+	publicMux.HandleFunc("/api/public-status", publicHandler.Get)
+	publicMux.Handle("/", web.StaticHandler())
 
 	// hsts=true - this listener really does terminate TLS, unlike the admin
 	// HTTP listener (M14).

@@ -1,8 +1,10 @@
 import { describe, it, expect } from "vitest";
 import { render, screen, waitFor, act } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
+import { http, HttpResponse } from "msw";
 import App from "./App";
 import { setBootstrapped } from "./test/msw/handlers";
+import { server } from "./test/msw/server";
 import { TestQueryProvider } from "./test/queryClient";
 
 function renderAppAt(path: string) {
@@ -59,5 +61,35 @@ describe("App - bootstrap redirect guard", () => {
     });
     expect(screen.getByText("Crie a conta do primeiro administrador")).toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "Entrar" })).not.toBeInTheDocument();
+  });
+});
+
+// AD-018: "/" is shared by two audiences on the real embedded SPA - an
+// operator on the admin domain, and a visitor on a published status
+// page's own custom domain (Host-routed to the same binary, same static
+// bundle). RootRoute tells them apart by probing GET /api/public-status,
+// which only the public HTTPS listener ever wires up in production.
+describe("App - RootRoute (AD-018 status-page-domain vs admin-domain)", () => {
+  it("/api/public-status 200 renderiza a status page pública, sem exigir sessão nem redirecionar para /login", async () => {
+    server.use(
+      http.get("/api/public-status", () => {
+        return HttpResponse.json({
+          company: { name: "Acme Public Domain Co", logo_url: null },
+          services: [],
+          incidents: { active: [], resolved: { items: [], total: 0, page: 1, page_size: 10 } },
+        });
+      }),
+    );
+    renderAppAt("/");
+
+    await waitFor(() => expect(screen.getByText("Acme Public Domain Co")).toBeInTheDocument());
+    expect(screen.queryByRole("heading", { name: "Entrar" })).not.toBeInTheDocument();
+  });
+
+  it("/api/public-status 404 (domínio admin) segue o fluxo normal de bootstrap/login", async () => {
+    setBootstrapped(true);
+    renderAppAt("/");
+
+    await waitFor(() => expect(screen.getByRole("heading", { name: "Entrar" })).toBeInTheDocument());
   });
 });

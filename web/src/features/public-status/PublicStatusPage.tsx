@@ -175,8 +175,12 @@ function LoadingSkeleton() {
   );
 }
 
+// PublicStatusPage renders both the admin-authenticated dev/preview route
+// (/status/:id) and the real production root (AD-018, no id - resolved by
+// the request's own hostname on the Go side). useParams() naturally
+// returns undefined for :id when this is mounted outside that route.
 export function PublicStatusPage() {
-  const { id = "" } = useParams();
+  const { id } = useParams();
   const { data, isLoading, isError, hasMoreResolved, loadMoreResolvedIncidents } = usePublicStatusPage(id);
   const [loadingMore, setLoadingMore] = useState(false);
 
