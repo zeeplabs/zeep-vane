@@ -5,25 +5,8 @@ import { useAuth } from "../auth/AuthProvider";
 import { Dialog } from "../components/ui/Dialog";
 import { Button } from "../components/ui/Button";
 import { useBrandLogoUrl } from "../lib/branding";
+import vaneLogo from "../assets/vane-logo.webp";
 import type { Role } from "../types/api";
-
-function BrandIcon() {
-  return (
-    <svg
-      width="20"
-      height="20"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.6"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <path d="M12 2v6M12 16v6M4.9 4.9l4.2 4.2M14.9 14.9l4.2 4.2M2 12h6M16 12h6M4.9 19.1l4.2-4.2M14.9 9.1l4.2-4.2" />
-    </svg>
-  );
-}
 
 function IntegrationsIcon() {
   return (
@@ -126,11 +109,11 @@ export function Sidebar() {
   return (
     <aside className="flex h-full w-[236px] shrink-0 flex-col border-r border-divider bg-bg px-3 py-4">
       <div className="flex items-center gap-2 px-2 pb-4 mb-4 text-accent">
-        {logoUrl ? (
-          <img src={logoUrl} alt={t("sidebar.brand")} className="w-26 flex-none object-contain" />
-        ) : (
-          <BrandIcon />
-        )}
+        <img
+          src={logoUrl ?? vaneLogo}
+          alt={t("sidebar.brand")}
+          className="w-26 flex-none object-contain"
+        />
       </div>
 
       <nav className="flex flex-col gap-0.5">

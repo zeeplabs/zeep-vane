@@ -229,7 +229,7 @@ func TestNewHTTPSServer_TwoPublishedStatusPages_ReturnDisjointServices(t *testin
 		}
 	}
 
-	httpsSrv := newHTTPSServer(pool, zap.NewNop())
+	httpsSrv := newHTTPSServer(pool, testDatabaseURL(t), zap.NewNop())
 	testServer := httptest.NewServer(httpsSrv.Handler)
 	defer testServer.Close()
 
@@ -269,7 +269,7 @@ func TestNewHTTPSServer_TwoPublishedStatusPages_ReturnDisjointIncidents(t *testi
 	titleA := createServeTestIncident(t, pool, serviceA, "incident-a")
 	titleB := createServeTestIncident(t, pool, serviceB, "incident-b")
 
-	httpsSrv := newHTTPSServer(pool, zap.NewNop())
+	httpsSrv := newHTTPSServer(pool, testDatabaseURL(t), zap.NewNop())
 	testServer := httptest.NewServer(httpsSrv.Handler)
 	defer testServer.Close()
 
@@ -297,7 +297,7 @@ func TestNewHTTPSServer_TwoPublishedStatusPages_ReturnDisjointIncidents(t *testi
 func TestNewHTTPSServer_UnregisteredHost_404(t *testing.T) {
 	pool := newServeTestPool(t)
 
-	httpsSrv := newHTTPSServer(pool, zap.NewNop())
+	httpsSrv := newHTTPSServer(pool, testDatabaseURL(t), zap.NewNop())
 	testServer := httptest.NewServer(httpsSrv.Handler)
 	defer testServer.Close()
 
@@ -343,7 +343,7 @@ func TestNewHTTPSServer_UploadsPath_ServesLogoFile_NotStatusJSON(t *testing.T) {
 	serviceID := createServeTestService(t, pool, "svc-uploads")
 	hostname := createServePublishedStatusPageFixture(t, pool, serviceID)
 
-	httpsSrv := newHTTPSServer(pool, zap.NewNop())
+	httpsSrv := newHTTPSServer(pool, testDatabaseURL(t), zap.NewNop())
 	testServer := httptest.NewServer(httpsSrv.Handler)
 	defer testServer.Close()
 
@@ -391,7 +391,7 @@ func TestNewHTTPSServer_RootPath_StillServesStatusJSON(t *testing.T) {
 		}
 	}
 
-	httpsSrv := newHTTPSServer(pool, zap.NewNop())
+	httpsSrv := newHTTPSServer(pool, testDatabaseURL(t), zap.NewNop())
 	testServer := httptest.NewServer(httpsSrv.Handler)
 	defer testServer.Close()
 
@@ -412,7 +412,7 @@ func TestNewHTTPSServer_SecurityHeaders_IncludesHSTS(t *testing.T) {
 	serviceID := createServeTestService(t, pool, "svc-headers")
 	hostname := createServePublishedStatusPageFixture(t, pool, serviceID)
 
-	httpsSrv := newHTTPSServer(pool, zap.NewNop())
+	httpsSrv := newHTTPSServer(pool, testDatabaseURL(t), zap.NewNop())
 	testServer := httptest.NewServer(httpsSrv.Handler)
 	defer testServer.Close()
 

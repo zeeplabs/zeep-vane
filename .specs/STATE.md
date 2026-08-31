@@ -101,6 +101,14 @@
 - **Date**: 2026-08-28
 - **Status**: active
 
+### AD-013
+- **Decision**: Cross-replica coordination (poller leader election, per-IP rate limiting, CertMagic certificate storage) is implemented via Postgres — session-scoped `pg_advisory_lock` on dedicated connections for mutual exclusion (`internal/pglock`, new), plain shared tables for state that doesn't need exclusion (`rate_limit_buckets`, `certmagic_storage`) — never via new infrastructure (Redis, etcd, NFS, object storage).
+- **Reason**: `ha-multi-replica` (2026-08-30) closed the three concrete gaps blocking `charts/zeep-vane/values.yaml`'s `replicaCount` default above 1: the poller had no leader election, `internal/ratelimit.IPLimiter` was an in-memory map by its own doc comment, and `certmagic.FileStorage` wrote to local disk requiring a `ReadWriteOnce` PVC that can't be shared across pods. Postgres is already the project's sole mandatory dependency (extends the reasoning already behind `AD-010` logo storage and `AD-011` pool sizing) — coordinating through it avoids introducing a second stateful dependency an operator would have to run and back up.
+- **Trade-off**: Every rate-limit check and CertMagic storage operation now does a Postgres round-trip instead of an in-memory/local-disk one; accepted because both are low-volume by nature (a handful of credential-sensitive routes; infrequent cert issuance/renewal for a self-hosted install). Session-advisory-lock holders keep one dedicated connection open outside `db.Pool`'s `MaxConns=4` cap for as long as they hold the lock — bounded (at most one per replica attempting poller leadership, plus one per concurrently-issuing hostname), not unbounded.
+- **Scope**: Any future feature needing cross-replica coordination or shared state in this project should default to a Postgres-backed mechanism (advisory lock or shared table) before considering new infrastructure.
+- **Date**: 2026-08-30
+- **Status**: active
+
 ## Handoff
 
 **Feature**: `self-hosted-docker-bootstrap` — **status: PASS ✅** (Verifier iteração 3/3, limite do skill, 2 rodadas de fix→re-verify). Relatório: `.specs/features/self-hosted-docker-bootstrap/validation.md`. 22/22 ACs (SHD-01 a SHD-22), sensor de discriminação 3/3 mortos.

@@ -6,6 +6,7 @@ import { Button } from "../../components/ui/Button";
 import { useAuth } from "../../auth/AuthProvider";
 import { ApiError } from "../../lib/apiClient";
 import { useBrandLogoUrl } from "../../lib/branding";
+import vaneLogo from "../../assets/vane-logo.webp";
 
 function EyeIcon({ crossed }: { crossed: boolean }) {
   return (
@@ -69,16 +70,7 @@ export function LoginPage() {
         />
 
         <div className="relative flex items-center gap-2">
-          {logoUrl ? (
-            <img src={logoUrl} alt="Company logo" className="w-[180px] object-contain" />
-          ) : (
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-              <path
-                d="M12 2l2.4 7.2L22 12l-7.6 2.8L12 22l-2.4-7.2L2 12l7.6-2.8L12 2z"
-                fill="var(--color-accent)"
-              />
-            </svg>
-          )}
+          <img src={logoUrl ?? vaneLogo} alt="Company logo" className="w-[180px] object-contain" />
         </div>
 
         <div className="relative flex flex-col gap-4">
@@ -102,16 +94,13 @@ export function LoginPage() {
           <div className="mb-8 flex flex-col gap-1 lg:hidden">
             <div className="flex items-center gap-2">
               {logoUrl ? (
-                <img src={logoUrl} alt="" className="h-5 w-5 object-contain" />
+                <>
+                  <img src={logoUrl} alt="" className="h-5 w-5 object-contain" />
+                  <span className="text-[15px] font-medium tracking-tight text-text">Vane</span>
+                </>
               ) : (
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                  <path
-                    d="M12 2l2.4 7.2L22 12l-7.6 2.8L12 22l-2.4-7.2L2 12l7.6-2.8L12 2z"
-                    fill="var(--color-accent)"
-                  />
-                </svg>
+                <img src={vaneLogo} alt="Vane" className="h-6 object-contain" />
               )}
-              <span className="text-[15px] font-medium tracking-tight text-text">Vane</span>
             </div>
           </div>
 

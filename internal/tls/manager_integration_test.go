@@ -9,6 +9,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/caddyserver/certmagic"
+
 	"github.com/zeeplabs/zeep-vane/internal/db"
 )
 
@@ -61,6 +63,51 @@ func setUpStatusPageFixture(t *testing.T) (hostname string, repo *db.StatusPageR
 	})
 
 	return hostname, repo, pool
+}
+
+// TestNewManager_UsesPostgresStorage proves NewManager wires its
+// certmagic.Storage parameter straight through to CertMagic (AD-013/HA-13):
+// a value Stored via the same PostgresStorage instance passed into
+// NewManager is readable back through certmagic.Default.Storage, and the
+// returned *certmagic.Config's OnDemand/HostPolicy gate is still wired
+// (SP-11/SP-13) exactly as before this feature's signature change from
+// storagePath string to certmagic.Storage.
+func TestNewManager_UsesPostgresStorage(t *testing.T) {
+	hostname, repo, pool := setUpStatusPageFixture(t)
+	dsn := testDatabaseURL(t)
+	storage := NewPostgresStorage(pool, dsn)
+
+	cfg := NewManager(repo, storage)
+	if cfg == nil {
+		t.Fatal("NewManager() returned nil *certmagic.Config")
+	}
+	if cfg.OnDemand == nil {
+		t.Fatal("NewManager() returned a Config with nil OnDemand - HostPolicy gate is not wired")
+	}
+
+	key := fmt.Sprintf("manager-test-%d/cert.crt", time.Now().UnixNano())
+	want := []byte("fake-cert-bytes")
+	if err := storage.Store(context.Background(), key, want); err != nil {
+		t.Fatalf("storage.Store() returned unexpected error: %v", err)
+	}
+	t.Cleanup(func() { _ = storage.Delete(context.Background(), key) })
+
+	got, err := certmagic.Default.Storage.Load(context.Background(), key)
+	if err != nil {
+		t.Fatalf("certmagic.Default.Storage.Load() returned unexpected error: %v", err)
+	}
+	if string(got) != string(want) {
+		t.Errorf("certmagic.Default.Storage.Load() = %q, want %q", got, want)
+	}
+
+	// HostPolicy is still wired and still gates on state - the fixture
+	// starts in "draft" (setUpStatusPageFixture's default), so the same
+	// SP-11/SP-13 rejection behavior from before this signature change
+	// must still hold: this proves NewManager's OnDemand.DecisionFunc is
+	// unaffected by swapping storagePath for a certmagic.Storage.
+	if err := cfg.OnDemand.DecisionFunc(context.Background(), hostname); err == nil {
+		t.Error("OnDemand.DecisionFunc() for a draft-state fixture returned nil error, want rejection")
+	}
 }
 
 // TestOnEvent_CertObtained_MarksStatusPagePublished simulates the

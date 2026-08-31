@@ -170,6 +170,30 @@ Seen once or not yet corroborated. Tracked, not trusted.
 - evidence: AIP-09 - spec.md:86 vs web/src/lib/apiClient.ts:82 (web)
 - last seen: 2026-08-28T20:06:59Z
 
+### L-027 - A Postgres-computed threshold derived from now()-vs-stored-timestamp arithmetic needs a test that seeds the exact boundary via SQL (zero refill rate or same-transaction now()), not a wall-clock-timed test call - real elapsed time always nudges the value past an exact-equality boundary before it's re-read.
+- signal: `surviving_mutant` · recurrence: 1 feature(s) · scope: `internal/ratelimit` · harmful: 0
+- features: ha-multi-replica
+- evidence: internal/ratelimit/postgres_bucket_store.go:69 (internal/ratelimit)
+- last seen: 2026-08-31T00:48:06Z
+
+### L-028 - A Release/Unlock method that both signals release AND closes its own connection can mask a key/salt mismatch, because connection teardown auto-releases session-scoped state regardless of whether the explicit release targeted the right key - always check the release call's own success signal (e.g. pg_advisory_unlock's boolean return) instead of relying on teardown as an implicit safety net.
+- signal: `surviving_mutant` · recurrence: 1 feature(s) · scope: `internal/pglock` · harmful: 0
+- features: ha-multi-replica
+- evidence: internal/pglock/pglock.go:106-125 (internal/pglock)
+- last seen: 2026-08-31T00:48:06Z
+
+### L-029 - When Design reinterprets a spec AC's mechanism (e.g. per-cycle lease renewal simplified to an independent heartbeat ticker) for a good documented reason, update the AC's own wording in spec.md in the same pass - a Tech Decisions table entry in design.md is not enough, the Verifier checks spec.md's literal text against the code.
+- signal: `spec_precision_gap` · recurrence: 1 feature(s) · scope: `spec-writing` · harmful: 0
+- features: ha-multi-replica
+- evidence: HA-03 (spec-writing)
+- last seen: 2026-08-31T00:48:06Z
+
+### L-030 - An AC framed around 'abort without partial writes' needs a test with real multi-item state and a real out-of-band failure trigger, not a single boolean flag assertion - a flag-only test can pass while the actual multi-step write path it claims to cover is never exercised under the failure condition.
+- signal: `ac_gap` · recurrence: 1 feature(s) · scope: `testing` · harmful: 0
+- features: ha-multi-replica
+- evidence: HA-05 (testing)
+- last seen: 2026-08-31T00:48:06Z
+
 ## Quarantined (failed when applied - ignore)
 
 A confirmed lesson that recurred alongside failure. Kept for the maintainer to review.

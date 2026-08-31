@@ -95,7 +95,7 @@ func buildAdminRouter(pool *db.Pool, cfg config.Config, logger *zap.Logger, poll
 	// guessing), so a single IP's budget is shared across all of them.
 	// Otherwise an attacker could just spread guesses across routes to get
 	// a multiple of the intended rate (H10).
-	credentialLimiter := ratelimit.NewIPLimiter(credentialRouteRateLimit, credentialRouteBurst, credentialRouteIdleTTL)
+	credentialLimiter := ratelimit.NewIPLimiter(pool, credentialRouteRateLimit, credentialRouteBurst, credentialRouteIdleTTL)
 
 	// Public - no authentication.
 	r.With(credentialLimiter.Middleware).Post("/api/auth/login", authHandler.Login)
