@@ -1,7 +1,7 @@
 # HA Multi-Replica Design
 
 **Spec**: `.specs/features/ha-multi-replica/spec.md`
-**Status**: Draft
+**Status**: Approved
 
 ---
 

@@ -111,30 +111,30 @@ The Helm chart (`charts/zeep-vane/`) defaults to `replicaCount: 1` because three
 
 | Requirement ID | Story | Phase | Status |
 | --- | --- | --- | --- |
-| HA-01 | P1: Poller single-replica | Design | Pending |
-| HA-02 | P1: Poller single-replica | Design | Pending |
-| HA-03 | P1: Poller single-replica | Design | Pending |
-| HA-04 | P1: Poller single-replica | Design | Pending |
-| HA-05 | P1: Poller single-replica | Design | Pending |
-| HA-06 | P1: Poller single-replica | Design | Pending |
-| HA-07 | P1: Poller single-replica | Design | Pending |
-| HA-08 | P1: Rate limiter cross-replica | Design | Pending |
-| HA-09 | P1: Rate limiter cross-replica | Design | Pending |
-| HA-10 | P1: Rate limiter cross-replica | Design | Pending |
-| HA-11 | P1: Rate limiter cross-replica | Design | Pending |
-| HA-12 | P1: Rate limiter cross-replica | Design | Pending |
-| HA-13 | P1: CertMagic Postgres storage | Design | Pending |
-| HA-14 | P1: CertMagic Postgres storage | Design | Pending |
-| HA-15 | P1: CertMagic Postgres storage | Design | Pending |
-| HA-16 | P1: CertMagic Postgres storage | Design | Pending |
-| HA-17 | P1: CertMagic Postgres storage | Design | Pending |
-| HA-18 | P1: CertMagic Postgres storage | Design | Pending |
+| HA-01 | P1: Poller single-replica | Verified | Verified |
+| HA-02 | P1: Poller single-replica | Verified | Verified |
+| HA-03 | P1: Poller single-replica | Verified | Verified |
+| HA-04 | P1: Poller single-replica | Verified | Verified |
+| HA-05 | P1: Poller single-replica | Verified | Verified |
+| HA-06 | P1: Poller single-replica | Verified | Verified |
+| HA-07 | P1: Poller single-replica | Verified | Verified |
+| HA-08 | P1: Rate limiter cross-replica | Verified | Verified |
+| HA-09 | P1: Rate limiter cross-replica | Verified | Verified |
+| HA-10 | P1: Rate limiter cross-replica | Verified | Verified |
+| HA-11 | P1: Rate limiter cross-replica | Verified | Verified |
+| HA-12 | P1: Rate limiter cross-replica | Verified | Verified |
+| HA-13 | P1: CertMagic Postgres storage | Verified | Verified |
+| HA-14 | P1: CertMagic Postgres storage | Verified | Verified |
+| HA-15 | P1: CertMagic Postgres storage | Verified | Verified |
+| HA-16 | P1: CertMagic Postgres storage | Verified | Verified |
+| HA-17 | P1: CertMagic Postgres storage | Verified | Verified |
+| HA-18 | P1: CertMagic Postgres storage | Verified | Verified |
 
 **ID format:** `HA-NN`
 
 **Status values:** Pending → In Design → In Tasks → Implementing → Verified
 
-**Coverage:** 18 total, 0 mapped to tasks, 18 unmapped ⚠️ (mapped during Design/Tasks phases)
+**Coverage:** 18 total, 18 mapped to tasks, 0 unmapped — all Verified per `.specs/features/ha-multi-replica/validation.md` (iteration 2, PASS ✅)
 
 ---
 
