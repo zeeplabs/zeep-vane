@@ -317,14 +317,16 @@ T10 → T11 → T12 → T13
 - Skill: NONE
 
 **Done when**:
-- [ ] `NewManager`'s signature matches design.md exactly
-- [ ] Every existing assertion in `manager_test.go`/`manager_integration_test.go` that depended on file-path/`FileStorage` behavior is rewritten against `PostgresStorage` with equivalent intent (no test silently deleted or weakened)
-- [ ] Full gate passes; test count is equal to or greater than before this task
+- [x] `NewManager`'s signature matches design.md exactly
+- [x] Every existing assertion in `manager_test.go`/`manager_integration_test.go` that depended on file-path/`FileStorage` behavior is rewritten against `PostgresStorage` with equivalent intent (no test silently deleted or weakened)
+- [x] Full gate passes; test count is equal to or greater than before this task
+
+**Deviation**: neither `manager_test.go` nor `manager_integration_test.go` actually contained any `FileStorage`/`storagePath`-specific assertion to rewrite (they only exercise `HostPolicy`/`OnEvent`, which never touched storage) - so instead of a no-op "rewrite", a new integration test (`TestNewManager_UsesPostgresStorage`) was added to `manager_integration_test.go`, giving `NewManager`'s new `certmagic.Storage` parameter real coverage it didn't have before (test count went from 5 to 6 across both files, i.e. equal-or-greater is satisfied by strict addition, not just non-regression). Separately, `NewManager`'s signature change (`storagePath string` -> `certmagic.Storage`) is a breaking change to `internal/cli/serve.go`'s only call site, and this task's own "Full gate passes" Done-when requires the whole repo (`go build ./...`) to compile - so this task's commit also carries T10's full scope (`serve.go`'s `newHTTPSServer` now takes `dsn` and builds `tls.NewPostgresStorage`, `defaultCertMagicStoragePath`/`CERTMAGIC_STORAGE_PATH` removed, `internal/cli/serve_test.go`'s 6 call sites updated to pass a dsn) rather than leaving the repo non-compiling between two commits, mirroring the exact "resolving-compilation-dependencies" precedent already used for T4. T10 below is marked done in the same commit for this reason - see its own entry for the itemized checklist this satisfies.
 
 **Tests**: integration
 **Gate**: Full
 
-**Commit**: `refactor: switch tls.NewManager to certmagic.Storage parameter`
+**Commit**: `refactor: switch tls.NewManager to certmagic.Storage parameter, wire PostgresStorage into serve.go (T9+T10 merged for compilation)`
 
 ---
 
@@ -341,15 +343,17 @@ T10 → T11 → T12 → T13
 - Skill: NONE
 
 **Done when**:
-- [ ] `grep -n CERTMAGIC_STORAGE_PATH internal/` returns nothing
-- [ ] `defaultCertMagicStoragePath` constant removed
-- [ ] Existing `serve_test.go` integration suite passes unchanged (or updated minimally if it referenced the removed path/env var)
-- [ ] Full gate passes
+- [x] `grep -n CERTMAGIC_STORAGE_PATH internal/` returns nothing
+- [x] `defaultCertMagicStoragePath` constant removed
+- [x] Existing `serve_test.go` integration suite passes unchanged (or updated minimally if it referenced the removed path/env var)
+- [x] Full gate passes
+
+**Deviation**: implemented and committed together with T9 - see T9's Deviation note above. `internal/cli/serve.go`'s `newHTTPSServer` now takes `(pool *db.Pool, dsn string, logger *zap.Logger)`, builds `vanetls.NewPostgresStorage(pool, dsn)`, and passes it to `vanetls.NewManager`; `RunE` passes `cfg.DatabaseURL` as `dsn`. `internal/cli/serve_test.go`'s 6 `newHTTPSServer(pool, zap.NewNop())` call sites were updated (minimally, not in this task's original `Where` list, but required by the signature change) to `newHTTPSServer(pool, testDatabaseURL(t), zap.NewNop())`.
 
 **Tests**: integration
 **Gate**: Full
 
-**Commit**: `feat: wire PostgresStorage into serve.go, drop CERTMAGIC_STORAGE_PATH`
+**Commit**: (merged into T9's commit - see above)
 
 ---
 

@@ -39,12 +39,6 @@ const shutdownTimeout = 10 * time.Second
 // browsers expect a status page's custom domain to answer.
 const defaultHTTPSPort = "443"
 
-// defaultCertMagicStoragePath is used when CERTMAGIC_STORAGE_PATH is not
-// set. In production this must point at a volume that survives container
-// restarts (design.md Risks & Concerns) - operators are expected to set
-// CERTMAGIC_STORAGE_PATH explicitly rather than rely on this default.
-const defaultCertMagicStoragePath = "./certmagic-data"
-
 // NewServeCmd builds the serve subcommand, wiring config, the Postgres
 // pool, the HTTP router, and the SLO poller together. Both the HTTP server
 // and the poller run until SIGINT/SIGTERM, then shut down cleanly - the
@@ -125,7 +119,7 @@ func NewServeCmd() *cobra.Command {
 				serverErrs <- nil
 			}()
 			if cfg.HTTPSEnabled {
-				httpsSrv = newHTTPSServer(pool, logger)
+				httpsSrv = newHTTPSServer(pool, cfg.DatabaseURL, logger)
 				go func() {
 					logger.Info("serve: https listening (on-demand tls)", zap.String("addr", httpsSrv.Addr))
 					if err := httpsSrv.ListenAndServeTLS("", ""); err != nil && !errors.Is(err, http.ErrServerClosed) {
@@ -167,12 +161,15 @@ func NewServeCmd() *cobra.Command {
 
 // newHTTPSServer builds the HTTPS listener that serves status pages on
 // their custom domains, with on-demand TLS via CertMagic (SP-11, SP-12,
-// SP-13). Its port and CertMagic's certificate storage path are both
-// configurable via env - HTTPS_PORT and CERTMAGIC_STORAGE_PATH - falling
-// back to 443 and ./certmagic-data respectively when unset. HostPolicy
-// (internal/tls) gates every certificate request against the StatusPage
-// table, and OnEvent records the real outcome of each issuance attempt back
-// onto the matching StatusPage row.
+// SP-13). Its port is configurable via HTTPS_PORT, falling back to 443
+// when unset. Certificate storage is always Postgres-backed
+// (tls.PostgresStorage, ha-multi-replica HA-13) - dsn is needed only for
+// PostgresStorage's Lock/Unlock, which require dedicated (non-pooled)
+// connections for session-scoped advisory locks; every other storage
+// method goes through pool. HostPolicy (internal/tls) gates every
+// certificate request against the StatusPage table, and OnEvent records
+// the real outcome of each issuance attempt back onto the matching
+// StatusPage row.
 //
 // Its handler is router.HostRouter wrapping a small mux of two routes -
 // the public status page handler at "/" and the public logo file handler
@@ -187,19 +184,15 @@ func NewServeCmd() *cobra.Command {
 // scoping - the logo file is a single, install-wide singleton (SET-06).
 // The admin API/SPA is served on the separate HTTP listener built in RunE
 // (router.New) - HostRouter here never touches it (design.md placeholder).
-func newHTTPSServer(pool *db.Pool, logger *zap.Logger) *http.Server {
+func newHTTPSServer(pool *db.Pool, dsn string, logger *zap.Logger) *http.Server {
 	httpsPort := os.Getenv("HTTPS_PORT")
 	if httpsPort == "" {
 		httpsPort = defaultHTTPSPort
 	}
 
-	storagePath := os.Getenv("CERTMAGIC_STORAGE_PATH")
-	if storagePath == "" {
-		storagePath = defaultCertMagicStoragePath
-	}
-
 	statusPages := db.NewStatusPageRepository(pool)
-	manager := vanetls.NewManager(statusPages, storagePath)
+	storage := vanetls.NewPostgresStorage(pool, dsn)
+	manager := vanetls.NewManager(statusPages, storage)
 
 	services := db.NewServiceRepository(pool)
 	intervals := db.NewStatusIntervalRepository(pool)

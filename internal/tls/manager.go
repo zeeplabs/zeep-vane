@@ -45,11 +45,14 @@ type StatusPageStore interface {
 // third party who controls no domain the operator registered (design.md
 // Risks & Concerns).
 //
-// storagePath is where CertMagic persists certificates and ACME account
-// state; it must point at a volume that survives container restarts, or
-// every restart re-issues every certificate from scratch.
-func NewManager(store StatusPageStore, storagePath string) *certmagic.Config {
-	certmagic.Default.Storage = &certmagic.FileStorage{Path: storagePath}
+// storage is where CertMagic persists certificates and ACME account state.
+// Per ha-multi-replica (AD-013), this is always a Postgres-backed
+// certmagic.Storage (PostgresStorage) rather than local disk: every
+// replica sharing one database sees the same certificate state
+// immediately, with no ReadWriteMany volume and no risk of duplicate/racing
+// ACME issuance across replicas.
+func NewManager(store StatusPageStore, storage certmagic.Storage) *certmagic.Config {
+	certmagic.Default.Storage = storage
 
 	cfg := certmagic.NewDefault()
 	cfg.OnDemand = &certmagic.OnDemandConfig{
