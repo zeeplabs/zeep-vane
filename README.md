@@ -121,6 +121,14 @@ helm install zeep-vane zeep-vane/zeep-vane \
 
 The chart deploys two Services: an internal `ClusterIP` for the admin API/SPA (put it behind your own ingress if you want it reachable from outside the cluster), and a `LoadBalancer` exposing Vane's own CertMagic-terminated `:443` listener directly — this is what customer-attached status-page domains should point their DNS at, since CertMagic issues certificates for hostnames not known at deploy time and a conventional ingress/cert-manager setup can't do that. CertMagic's certificate storage lives in Postgres (no PVC, no local disk) so any replica can serve TLS for any registered domain. Full chart source: [`charts/zeep-vane`](charts/zeep-vane).
 
+> **This `LoadBalancer` must be internet-facing.** Most cloud load-balancer controllers (notably the AWS Load Balancer Controller on EKS) provision an **internal-only** load balancer by default for a plain `type: LoadBalancer` Service — its DNS name only resolves inside the VPC, so a real visitor's (or Let's Encrypt's) connection times out even though a custom domain's DNS record looks correctly configured. On EKS, set `publicService.annotations` to force it internet-facing:
+> ```yaml
+> publicService:
+>   annotations:
+>     service.beta.kubernetes.io/aws-load-balancer-scheme: internet-facing
+> ```
+> Other providers/controllers have their own equivalent annotation — check yours before attaching a real domain.
+
 #### Upgrading an existing install
 
 ```bash
@@ -277,7 +285,7 @@ Core tables (see `internal/db/migrations/` for exact schema and `internal/db/*_r
 
 ## 🌐 Public status page routing
 
-A visitor's request is dispatched purely by `Host` header (`internal/router/host_router.go`): if the hostname matches a **published** `status_pages` row, the request is routed to `PublicStatusHandler`, scoped to that exact page's services and incidents — nothing else in the installation is reachable through that hostname. Any other hostname falls through to the base router.
+A visitor's request is dispatched purely by `Host` header (`internal/router/host_router.go`): if the hostname matches a **published** `status_pages` row, the request is routed to a small mux scoped to that exact page's services and incidents — nothing else in the installation is reachable through that hostname. `/` serves the embedded React SPA (the actual rendered page), `/api/public-status` serves the JSON it fetches, and `/uploads/` serves the company logo. Any other hostname falls through to the base router.
 
 There is also an **authenticated preview endpoint**, `GET /api/status-pages/{id}/public-preview`, used by the admin SPA so a company can see what a status page will look like before a domain is attached and DNS/TLS have propagated. Unlike the public path, the preview does **not** require `state == "published"` and works even with no domain attached at all (AD-008) — it is admin-only and was never meant to mirror production 1:1.
 

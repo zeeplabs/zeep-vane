@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -174,7 +175,7 @@ func createServeTestIncident(t *testing.T, pool *db.Pool, serviceID, namePrefix 
 func fetchPublicStatus(t *testing.T, baseURL, hostname string) servePublicStatusResponse {
 	t.Helper()
 
-	req, err := http.NewRequest(http.MethodGet, baseURL+"/", nil)
+	req, err := http.NewRequest(http.MethodGet, baseURL+"/api/public-status", nil)
 	if err != nil {
 		t.Fatalf("http.NewRequest() returned unexpected error: %v", err)
 	}
@@ -371,33 +372,39 @@ func TestNewHTTPSServer_UploadsPath_ServesLogoFile_NotStatusJSON(t *testing.T) {
 	}
 }
 
-// TestNewHTTPSServer_RootPath_StillServesStatusJSON confirms the dual
-// mount didn't regress the existing production path: "/" on the same
-// hostname still serves the public status JSON, unchanged.
-func TestNewHTTPSServer_RootPath_StillServesStatusJSON(t *testing.T) {
+// TestNewHTTPSServer_RootPath_ServesEmbeddedSPA confirms AD-018: "/" on a
+// published status page's hostname now serves the embedded SPA (the actual
+// rendered page a visitor should see), not the raw status JSON - that
+// moved to /api/public-status, covered separately by fetchPublicStatus in
+// the tests above.
+func TestNewHTTPSServer_RootPath_ServesEmbeddedSPA(t *testing.T) {
 	pool := newServeTestPool(t)
 
 	serviceID := createServeTestService(t, pool, "svc-root")
 	hostname := createServePublishedStatusPageFixture(t, pool, serviceID)
 
-	allServices, err := db.NewServiceRepository(pool).List(context.Background())
-	if err != nil {
-		t.Fatalf("List() returned unexpected error: %v", err)
-	}
-	var serviceName string
-	for _, s := range allServices {
-		if s.ID == serviceID {
-			serviceName = s.Name
-		}
-	}
-
 	httpsSrv := newHTTPSServer(pool, testDatabaseURL(t), zap.NewNop())
 	testServer := httptest.NewServer(httpsSrv.Handler)
 	defer testServer.Close()
 
-	body := fetchPublicStatus(t, testServer.URL, hostname)
-	if !containsServiceName(body.Services, serviceName) {
-		t.Errorf("root path response missing its own service %q after dual-mounting /uploads/", serviceName)
+	req, err := http.NewRequest(http.MethodGet, testServer.URL+"/", nil)
+	if err != nil {
+		t.Fatalf("http.NewRequest() returned unexpected error: %v", err)
+	}
+	req.Host = hostname
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("client.Do() returned unexpected error: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		t.Fatalf("status = %d, want %d, body = %s", resp.StatusCode, http.StatusOK, body)
+	}
+	if ct := resp.Header.Get("Content-Type"); !strings.Contains(ct, "text/html") {
+		t.Errorf("Content-Type = %q, want text/html (the embedded SPA's index.html)", ct)
 	}
 }
 
