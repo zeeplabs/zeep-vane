@@ -103,21 +103,39 @@ func (h *Handle) Healthy(ctx context.Context) bool {
 // Release unlocks the advisory lock and closes the handle's dedicated
 // connection. It is safe to call exactly once per successful acquire; a
 // second call is a no-op error (the connection is already closed).
+//
+// pg_advisory_unlock returns a boolean reporting whether the calling
+// session actually held (and therefore released) the lock under the
+// key/name being unlocked - Release checks it and returns an error when
+// it's false, rather than silently ignoring it. Without this check, a
+// hash-key mismatch between the Acquire and Release call sites (e.g. a
+// future refactor that changes how a name is hashed in one place but not
+// the other) would ship completely undetected: Postgres auto-releases
+// every session-scoped advisory lock when the connection closes,
+// regardless of whether the explicit unlock targeted the right key, and
+// Release always closes its own connection right after issuing the
+// unlock - so the close alone would mask a wrong-key unlock in every
+// caller that (like this package's own callers) tears the connection down
+// immediately afterward anyway.
 func (h *Handle) Release(ctx context.Context) error {
 	if h.conn.IsClosed() {
 		return nil
 	}
 
+	var released bool
 	var err error
 	if h.byName {
-		_, err = h.conn.Exec(ctx, "SELECT pg_advisory_unlock(hashtextextended($1, 0))", h.name)
+		err = h.conn.QueryRow(ctx, "SELECT pg_advisory_unlock(hashtextextended($1, 0))", h.name).Scan(&released)
 	} else {
-		_, err = h.conn.Exec(ctx, "SELECT pg_advisory_unlock($1)", h.key)
+		err = h.conn.QueryRow(ctx, "SELECT pg_advisory_unlock($1)", h.key).Scan(&released)
 	}
 
 	closeErr := h.conn.Close(context.Background())
 	if err != nil {
 		return fmt.Errorf("pglock: pg_advisory_unlock failed: %w", err)
+	}
+	if !released {
+		return fmt.Errorf("pglock: pg_advisory_unlock reported this session did not hold the lock it was asked to release (key/name mismatch or already released)")
 	}
 	if closeErr != nil {
 		return fmt.Errorf("pglock: failed to close dedicated connection: %w", closeErr)

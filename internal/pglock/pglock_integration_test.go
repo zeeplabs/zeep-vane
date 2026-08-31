@@ -143,6 +143,69 @@ func TestAcquire_HonorsContextCancellation(t *testing.T) {
 	}
 }
 
+// TestHandle_Release_NormalCase_NoError covers the ordinary, successful
+// path: releasing a lock this handle actually holds must not error.
+func TestHandle_Release_NormalCase_NoError(t *testing.T) {
+	dsn := testDatabaseURL(t)
+	ctx := context.Background()
+
+	h, ok, err := TryAcquire(ctx, dsn, pglockTestKey+2)
+	if err != nil {
+		t.Fatalf("TryAcquire() returned unexpected error: %v", err)
+	}
+	if !ok {
+		t.Fatal("TryAcquire() ok = false, want true")
+	}
+
+	if err := h.Release(context.Background()); err != nil {
+		t.Fatalf("Release() returned unexpected error: %v", err)
+	}
+}
+
+// TestHandle_Release_KeyMismatch_ReturnsError covers the sensor-found gap:
+// Release must check pg_advisory_unlock's own returned boolean and fail
+// when the key it's told to unlock isn't one this session actually holds,
+// rather than silently succeeding because the connection gets closed right
+// after anyway. This proves the boundary Release now checks, using the
+// exact mismatch shape the discrimination sensor injected (Acquire and
+// Release disagreeing about which key/hash is held).
+func TestHandle_Release_KeyMismatch_ReturnsError(t *testing.T) {
+	dsn := testDatabaseURL(t)
+	ctx := context.Background()
+
+	h, ok, err := TryAcquire(ctx, dsn, pglockTestKey+3)
+	if err != nil {
+		t.Fatalf("TryAcquire() returned unexpected error: %v", err)
+	}
+	if !ok {
+		t.Fatal("TryAcquire() ok = false, want true")
+	}
+
+	// Simulate the sensor's mutation directly on this handle: make Release
+	// target a key this session never acquired. pglockTestKey+4 is
+	// deliberately unheld by anyone, so pg_advisory_unlock for it must
+	// report false.
+	h.key = pglockTestKey + 4
+
+	err = h.Release(context.Background())
+	if err == nil {
+		t.Fatal("Release() with a mismatched key returned nil error, want an error - this session never held that key")
+	}
+
+	// The real lock (pglockTestKey+3) is still technically held by Postgres
+	// from this test's point of view, but the connection Release already
+	// closed releases it via session teardown regardless of the explicit
+	// unlock's outcome - confirm a fresh acquire of it succeeds.
+	h2, ok2, err := TryAcquire(ctx, dsn, pglockTestKey+3)
+	if err != nil {
+		t.Fatalf("TryAcquire() after mismatched Release returned unexpected error: %v", err)
+	}
+	if !ok2 {
+		t.Fatal("TryAcquire() after mismatched Release ok = false, want true - the session (and its lock) should be gone once the connection closed")
+	}
+	_ = h2.Release(context.Background())
+}
+
 // TestAcquire_SecondCallerBlocksUntilReleased proves the blocking variant's
 // core mutual-exclusion contract (HA-15): a second Acquire for the same
 // name only succeeds once the first caller releases.
