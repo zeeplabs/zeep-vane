@@ -157,6 +157,12 @@ config:
   # the external IP/hostname of `publicService` once the cloud LB assigns
   # one — set this after your first `helm install` and `helm upgrade`.
   publicDnsTarget: ""
+  # Scheme+host every admin-facing email link (password-reset, admin-invite)
+  # is built from, e.g. "https://admin.example.com" — see README's
+  # Configuration table. Strongly recommended before connecting an email
+  # provider; left empty, those emails link to a visibly broken placeholder
+  # host instead of trusting the request's Host header.
+  adminBaseUrl: ""
   httpsEnabled: true
   httpsPort: 8443
   vaneDevTokenLogging: false

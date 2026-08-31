@@ -88,6 +88,10 @@ spec:
             - name: PUBLIC_DNS_TARGET
               value: {{ .Values.config.publicDnsTarget | quote }}
             {{- end }}
+            {{- if .Values.config.adminBaseUrl }}
+            - name: VANE_ADMIN_BASE_URL
+              value: {{ .Values.config.adminBaseUrl | quote }}
+            {{- end }}
             - name: VANE_HTTPS_ENABLED
               value: {{ .Values.publicService.enabled | ternary .Values.config.httpsEnabled false | quote }}
             - name: HTTPS_PORT

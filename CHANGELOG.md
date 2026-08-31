@@ -26,6 +26,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - A 422 (weak password) response during account activation or password reset previously surfaced the backend's raw English error string; it now shows a translated message like every other error on those screens.
 - `AcceptInvitePage` now falls back to the Vane logo when no company logo is configured, matching every other auth screen, instead of a generic star icon.
+- `VANE_ADMIN_BASE_URL` (introduced by the host-header injection fix above) had no way to be set through the Helm chart; added `config.adminBaseUrl` to `values.yaml`.
 
 ## [0.1.0] — 2026-08-31
 
