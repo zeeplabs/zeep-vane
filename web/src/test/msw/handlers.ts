@@ -149,6 +149,24 @@ export function seedAdminInviteToken(rawToken: string, email: string, role: Role
   adminInviteTokensState[rawToken] = { email, role };
 }
 
+// passwordResetTokensState maps a raw password-reset token to the admin
+// email it was issued for, same mock-only pattern as
+// adminInviteTokensState - the real backend never exposes a raw token to
+// any client that didn't just mint it (only the emailed link carries one).
+let passwordResetTokensState: Record<string, string> = {};
+
+export function resetPasswordResetTokens(): void {
+  passwordResetTokensState = {};
+}
+
+// Test-only helper (password-reset-confirm-page): registers rawToken as
+// resetting the password for email via
+// POST /api/auth/password-reset/confirm, mirroring how the real backend
+// hashes a freshly-minted token at Request() time.
+export function seedPasswordResetToken(rawToken: string, email: string): void {
+  passwordResetTokensState[rawToken] = email;
+}
+
 // Test-only helper (INVITE-07): seeds a pending invite whose expires_at is
 // already in the past, so a test can assert List's expired:true tagging
 // without waiting an hour or faking the clock.
@@ -321,6 +339,41 @@ export const handlers = [
   http.post("/api/auth/logout", () => {
     sessionAdminId = null;
     return new HttpResponse(null, { status: 200 });
+  }),
+
+  // POST /api/auth/password-reset/request - mirrors
+  // PasswordResetHandler.Request: always 200 regardless of whether the
+  // email is registered (account-enumeration protection), matching the
+  // real backend's own behavior exactly - so a test can't tell success
+  // from "no such email" apart from a seeded seedPasswordResetToken.
+  http.post("/api/auth/password-reset/request", () => {
+    return HttpResponse.json({ status: "ok" });
+  }),
+
+  // POST /api/auth/password-reset/confirm - mirrors
+  // PasswordResetHandler.Confirm: 401 on an unknown/already-used/expired
+  // token (checked first, same order as the real handler), 422 on a
+  // new_password outside auth.ValidatePassword's 8-72 char range (same
+  // weakPasswordBody text bootstrap/accept-invite also return), otherwise
+  // consumes the token (a second confirm with the same token 401s,
+  // matching the real single-use invariant) and responds 200. Does not set
+  // a session cookie, unlike accept-invite.
+  http.post("/api/auth/password-reset/confirm", async ({ request }) => {
+    const body = (await request.json()) as { token?: string; new_password?: string };
+    const token = body.token ?? "";
+    const email = passwordResetTokensState[token];
+    if (!email) {
+      return HttpResponse.json({ error: "invalid or expired reset token" }, { status: 401 });
+    }
+    const newPassword = body.new_password ?? "";
+    if (newPassword.length < 8 || newPassword.length > 72) {
+      return HttpResponse.json(
+        { error: "password must be between 8 and 72 characters" },
+        { status: 422 },
+      );
+    }
+    delete passwordResetTokensState[token];
+    return HttpResponse.json({ status: "ok" });
   }),
 
   // GET /api/domains (PAG-08) - mirrors DomainsHandler.List: ordered by

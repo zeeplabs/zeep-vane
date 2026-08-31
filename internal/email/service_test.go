@@ -443,3 +443,101 @@ func TestSendAdminInvite_ProviderSendFails_ReturnsErrorUnmodified_ExactlyOneCall
 		t.Errorf("Provider.Send call count = %d, want exactly 1 (no retry)", sentProvider.sendCalls)
 	}
 }
+
+// The three tests below mirror the three SendAdminInvite tests above
+// exactly (no-active-provider, happy path, send failure) - SendPasswordReset
+// is implemented as a line-for-line copy of SendAdminInvite's control flow,
+// and PasswordResetHandler shipped with none of this coverage: the
+// active-provider lookup, decrypt, and render steps had no test asserting
+// they actually happen for this data type.
+
+func TestSendPasswordReset_NoActiveProvider_ReturnsErrNoActiveProvider_NeverCallsSend(t *testing.T) {
+	store := newFakeStore()
+	sentProvider := &fakeProvider{}
+	svc := newTestService(t, store, func(provider, apiKey string) (Provider, error) { return sentProvider, nil })
+
+	err := svc.SendPasswordReset(t.Context(), "owner@example.com", PasswordResetEmailData{
+		CompanyName: "Acme", ResetURL: "https://vane.example.com/reset-password/abc",
+	})
+	if !errors.Is(err, ErrNoActiveProvider) {
+		t.Fatalf("SendPasswordReset() error = %v, want ErrNoActiveProvider", err)
+	}
+	if sentProvider.sendCalls != 0 {
+		t.Errorf("Provider.Send call count = %d, want 0 (zero network calls with no active provider)", sentProvider.sendCalls)
+	}
+}
+
+func TestSendPasswordReset_ActiveProvider_RendersTemplateAndSendsWithDecryptedKeyAndStoredSender(t *testing.T) {
+	store := newFakeStore()
+	sentProvider := &fakeProvider{}
+	var factoryProvider, factoryAPIKey string
+	factory := func(provider, apiKey string) (Provider, error) {
+		factoryProvider = provider
+		factoryAPIKey = apiKey
+		return sentProvider, nil
+	}
+	svc := newTestService(t, store, factory)
+
+	if err := svc.Connect(t.Context(), "sendgrid", "decrypted-api-key", "noreply@acme.example.com", "Acme"); err != nil {
+		t.Fatalf("Connect() returned unexpected error: %v", err)
+	}
+	if err := svc.Activate(t.Context(), "sendgrid"); err != nil {
+		t.Fatalf("Activate() returned unexpected error: %v", err)
+	}
+
+	data := PasswordResetEmailData{
+		CompanyName: "Acme Inc.",
+		ResetURL:    "https://vane.example.com/reset-password/abc123",
+	}
+	if err := svc.SendPasswordReset(t.Context(), "owner@example.com", data); err != nil {
+		t.Fatalf("SendPasswordReset() returned unexpected error: %v", err)
+	}
+
+	if sentProvider.sendCalls != 1 {
+		t.Fatalf("Provider.Send call count = %d, want 1", sentProvider.sendCalls)
+	}
+	if factoryProvider != "sendgrid" {
+		t.Errorf("factory provider = %q, want %q", factoryProvider, "sendgrid")
+	}
+	if factoryAPIKey != "decrypted-api-key" {
+		t.Errorf("factory apiKey = %q, want decrypted value %q", factoryAPIKey, "decrypted-api-key")
+	}
+
+	msg := sentProvider.lastMessage
+	if msg.To != "owner@example.com" {
+		t.Errorf("Message.To = %q, want %q", msg.To, "owner@example.com")
+	}
+	if msg.FromEmail != "noreply@acme.example.com" || msg.FromName != "Acme" {
+		t.Errorf("Message.FromEmail/FromName = %q/%q, want stored %q/%q", msg.FromEmail, msg.FromName, "noreply@acme.example.com", "Acme")
+	}
+	if !strings.Contains(msg.HTMLBody, data.ResetURL) || !strings.Contains(msg.HTMLBody, data.CompanyName) {
+		t.Errorf("HTMLBody = %q, want it to contain ResetURL=%q, CompanyName=%q", msg.HTMLBody, data.ResetURL, data.CompanyName)
+	}
+	if !strings.Contains(msg.TextBody, data.ResetURL) || !strings.Contains(msg.TextBody, data.CompanyName) {
+		t.Errorf("TextBody = %q, want it to contain ResetURL=%q, CompanyName=%q", msg.TextBody, data.ResetURL, data.CompanyName)
+	}
+}
+
+func TestSendPasswordReset_ProviderSendFails_ReturnsErrorUnmodified_ExactlyOneCall(t *testing.T) {
+	store := newFakeStore()
+	sendFailure := errors.New("sendgrid: server error")
+	sentProvider := &fakeProvider{sendErr: sendFailure}
+	svc := newTestService(t, store, func(provider, apiKey string) (Provider, error) { return sentProvider, nil })
+
+	if err := svc.Connect(t.Context(), "sendgrid", "api-key", "owner@example.com", "Owner"); err != nil {
+		t.Fatalf("Connect() returned unexpected error: %v", err)
+	}
+	if err := svc.Activate(t.Context(), "sendgrid"); err != nil {
+		t.Fatalf("Activate() returned unexpected error: %v", err)
+	}
+
+	err := svc.SendPasswordReset(t.Context(), "owner@example.com", PasswordResetEmailData{
+		CompanyName: "Acme", ResetURL: "https://vane.example.com/reset-password/abc",
+	})
+	if !errors.Is(err, sendFailure) {
+		t.Fatalf("SendPasswordReset() error = %v, want the underlying send failure %v unmodified", err, sendFailure)
+	}
+	if sentProvider.sendCalls != 1 {
+		t.Errorf("Provider.Send call count = %d, want exactly 1 (no retry)", sentProvider.sendCalls)
+	}
+}

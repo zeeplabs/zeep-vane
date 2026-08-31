@@ -8,6 +8,7 @@ import { Sidebar } from "./layout/Sidebar";
 import { LoginPage } from "./features/auth/LoginPage";
 import { BootstrapPage } from "./features/auth/BootstrapPage";
 import { PasswordResetRequestPage } from "./features/auth/PasswordResetRequestPage";
+import { PasswordResetConfirmPage } from "./features/auth/PasswordResetConfirmPage";
 import { AcceptInvitePage } from "./features/auth/AcceptInvitePage";
 import { IntegrationsPage } from "./features/integrations/IntegrationsPage";
 import { ServicesPage } from "./features/services/ServicesPage";
@@ -96,6 +97,7 @@ export default function App() {
             precedent (spec.md accept-invite-page: an already-authenticated
             admin opening this link renders normally, no redirect). */}
         <Route path="/accept-invite/:token" element={<AcceptInvitePage />} />
+        <Route path="/reset-password/:token" element={<PasswordResetConfirmPage />} />
         <Route
           element={
             <RedirectToBootstrapIfNeeded>

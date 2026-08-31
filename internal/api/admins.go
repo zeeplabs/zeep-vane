@@ -44,24 +44,25 @@ type AdminsHandler struct {
 	audit           *audit.Log
 	logger          *zap.Logger
 	devTokenLogging bool
-	httpsEnabled    bool
+	adminBaseURL    string
 	sessionSecret   string
 	secureCookies   bool
 }
 
 // NewAdminsHandler builds an AdminsHandler. devTokenLogging gates whether
 // the raw invite token is logged when an invite is created (see the
-// PasswordResetHandler doc for why this defaults to off). httpsEnabled
-// (mirrors cfg.HTTPSEnabled) picks the scheme used to build the invite
-// AcceptURL sent by email. sessionSecret/secureCookies authenticate the
-// admin created by AcceptInvite, same pair AuthHandler/BootstrapHandler
-// already take.
-func NewAdminsHandler(pool *db.Pool, admins *db.AdminRepository, invites *db.AdminInviteRepository, emailSvc *email.Service, companySettings *db.CompanySettingsRepository, auditLog *audit.Log, logger *zap.Logger, devTokenLogging, httpsEnabled bool, sessionSecret string, secureCookies bool) *AdminsHandler {
+// PasswordResetHandler doc for why this defaults to off). adminBaseURL
+// (cfg.AdminBaseURL) is the scheme+host the invite AcceptURL sent by email
+// is built from - never the incoming request's Host header, which is
+// attacker-controlled (see adminBaseURL() in admin_base_url.go for why).
+// sessionSecret/secureCookies authenticate the admin created by
+// AcceptInvite, same pair AuthHandler/BootstrapHandler already take.
+func NewAdminsHandler(pool *db.Pool, admins *db.AdminRepository, invites *db.AdminInviteRepository, emailSvc *email.Service, companySettings *db.CompanySettingsRepository, auditLog *audit.Log, logger *zap.Logger, devTokenLogging bool, adminBaseURL string, sessionSecret string, secureCookies bool) *AdminsHandler {
 	return &AdminsHandler{
 		pool: pool, admins: admins, invites: invites,
 		emailSvc: emailSvc, companySettings: companySettings,
 		audit: auditLog, logger: logger,
-		devTokenLogging: devTokenLogging, httpsEnabled: httpsEnabled,
+		devTokenLogging: devTokenLogging, adminBaseURL: adminBaseURL,
 		sessionSecret: sessionSecret, secureCookies: secureCookies,
 	}
 }
@@ -78,14 +79,10 @@ func (h *AdminsHandler) sendAdminInviteEmail(r *http.Request, inviteID, to, role
 		return false
 	}
 
-	scheme := "http"
-	if h.httpsEnabled {
-		scheme = "https"
-	}
 	data := email.AdminInviteEmailData{
 		CompanyName: settings.Name,
 		Role:        role,
-		AcceptURL:   fmt.Sprintf("%s://%s/accept-invite/%s", scheme, r.Host, rawToken),
+		AcceptURL:   fmt.Sprintf("%s/accept-invite/%s", adminBaseURL(h.adminBaseURL), rawToken),
 	}
 
 	if err := h.emailSvc.SendAdminInvite(r.Context(), to, data); err != nil {

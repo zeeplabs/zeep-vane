@@ -202,3 +202,55 @@ func TestLoad_PublicDNSTargetUnset_DefaultsToEmptyString(t *testing.T) {
 		t.Errorf("PublicDNSTarget = %q, want empty string", cfg.PublicDNSTarget)
 	}
 }
+
+// TestLoad_AdminBaseURLSet_UsesGivenValue asserts VANE_ADMIN_BASE_URL, when
+// set, is reflected in Config.AdminBaseURL - the scheme+host
+// PasswordResetHandler/AdminsHandler build every emailed admin link from,
+// instead of trusting the incoming request's attacker-controlled Host
+// header (see admin_base_url.go in internal/api).
+func TestLoad_AdminBaseURLSet_UsesGivenValue(t *testing.T) {
+	setAllRequiredEnv(t)
+	t.Setenv("VANE_ADMIN_BASE_URL", "https://vane.example.com")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() returned unexpected error: %v", err)
+	}
+	if cfg.AdminBaseURL != "https://vane.example.com" {
+		t.Errorf("AdminBaseURL = %q, want %q", cfg.AdminBaseURL, "https://vane.example.com")
+	}
+}
+
+// TestLoad_AdminBaseURLSet_TrimsTrailingSlash asserts a trailing slash on
+// VANE_ADMIN_BASE_URL is stripped, so callers can always safely
+// concatenate a path starting with "/" without producing a double slash.
+func TestLoad_AdminBaseURLSet_TrimsTrailingSlash(t *testing.T) {
+	setAllRequiredEnv(t)
+	t.Setenv("VANE_ADMIN_BASE_URL", "https://vane.example.com/")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() returned unexpected error: %v", err)
+	}
+	if cfg.AdminBaseURL != "https://vane.example.com" {
+		t.Errorf("AdminBaseURL = %q, want trailing slash trimmed to %q", cfg.AdminBaseURL, "https://vane.example.com")
+	}
+}
+
+// TestLoad_AdminBaseURLUnset_DefaultsToEmptyString asserts that an unset
+// VANE_ADMIN_BASE_URL is not an error - handlers fall back to a visibly
+// broken placeholder link rather than the request's Host header (see
+// api.adminBaseURL()), so self-hosted operators who haven't configured
+// email delivery yet aren't blocked from starting the server at all.
+func TestLoad_AdminBaseURLUnset_DefaultsToEmptyString(t *testing.T) {
+	setAllRequiredEnv(t)
+	t.Setenv("VANE_ADMIN_BASE_URL", "")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() returned unexpected error: %v", err)
+	}
+	if cfg.AdminBaseURL != "" {
+		t.Errorf("AdminBaseURL = %q, want empty string", cfg.AdminBaseURL)
+	}
+}

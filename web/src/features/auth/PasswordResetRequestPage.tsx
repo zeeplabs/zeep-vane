@@ -1,20 +1,46 @@
 import { useState, type FormEvent } from "react";
 import { Link } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 import { Field } from "../../components/ui/Field";
 import { Button } from "../../components/ui/Button";
+import { apiFetch, ApiError } from "../../lib/apiClient";
 import { useBrandLogoUrl } from "../../lib/branding";
+import vaneLogo from "../../assets/vane-logo.webp";
 
 export function PasswordResetRequestPage() {
+  const { t } = useTranslation();
   const logoUrl = useBrandLogoUrl();
 
   const [email, setEmail] = useState("");
   const [submitted, setSubmitted] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
 
-  function handleSubmit(e: FormEvent) {
+  async function handleSubmit(e: FormEvent) {
     e.preventDefault();
-    // Confirmação sempre genérica, mesmo que o e-mail não exista — assim
-    // evitamos vazar quais e-mails têm conta cadastrada.
-    setSubmitted(true);
+    setError(null);
+    setSubmitting(true);
+    try {
+      // skipUnauthorizedHandler: public/unauthenticated endpoint, same
+      // reasoning as LoginPage/BootstrapPage's own calls. The backend
+      // always responds 200 regardless of whether the email is
+      // registered (account-enumeration protection), so a thrown
+      // ApiError here means something actually went wrong server-side.
+      await apiFetch("/api/auth/password-reset/request", {
+        method: "POST",
+        body: JSON.stringify({ email }),
+        skipUnauthorizedHandler: true,
+      });
+      setSubmitted(true);
+    } catch (err) {
+      if (err instanceof ApiError) {
+        setError(err.message);
+      } else {
+        setError(t("passwordReset.genericError"));
+      }
+    } finally {
+      setSubmitting(false);
+    }
   }
 
   return (
@@ -35,16 +61,7 @@ export function PasswordResetRequestPage() {
         />
 
         <div className="relative flex items-center gap-2">
-          {logoUrl ? (
-            <img src={logoUrl} alt="Company logo" className="w-[180px] object-contain" />
-          ) : (
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-              <path
-                d="M12 2l2.4 7.2L22 12l-7.6 2.8L12 22l-2.4-7.2L2 12l7.6-2.8L12 2z"
-                fill="var(--color-accent)"
-              />
-            </svg>
-          )}
+          <img src={logoUrl ?? vaneLogo} alt="Company logo" className="w-[180px] object-contain" />
         </div>
 
         <div className="relative flex flex-col gap-4">
@@ -67,46 +84,49 @@ export function PasswordResetRequestPage() {
         <div className="w-full max-w-[380px]">
           <div className="mb-8 flex flex-col gap-1 lg:hidden">
             <div className="flex items-center gap-2">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                <path
-                  d="M12 2l2.4 7.2L22 12l-7.6 2.8L12 22l-2.4-7.2L2 12l7.6-2.8L12 2z"
-                  fill="var(--color-accent)"
-                />
-              </svg>
-              <span className="text-[15px] font-medium tracking-tight text-text">Vane</span>
+              {logoUrl ? (
+                <>
+                  <img src={logoUrl} alt="" className="h-5 w-5 object-contain" />
+                  <span className="text-[15px] font-medium tracking-tight text-text">Vane</span>
+                </>
+              ) : (
+                <img src={vaneLogo} alt="Vane" className="h-6 object-contain" />
+              )}
             </div>
           </div>
 
           <div className="mb-7">
-            <h3 className="text-text">Recuperar senha</h3>
+            <h3 className="text-text">{t("passwordReset.title")}</h3>
             {!submitted ? (
-              <p className="mt-1 text-[13.5px] text-neutral-400">
-                Informe seu e-mail e enviaremos instruções para redefinir sua senha.
-              </p>
+              <p className="mt-1 text-[13.5px] text-neutral-400">{t("passwordReset.subtitle")}</p>
             ) : null}
           </div>
 
           {submitted ? (
-            <p className="text-sm text-neutral-300">
-              Se este e-mail estiver cadastrado, você receberá instruções para redefinir sua senha
-              em instantes.
-            </p>
+            <p className="text-sm text-neutral-300">{t("passwordReset.confirmationMessage")}</p>
           ) : (
             <form onSubmit={handleSubmit} className="flex flex-col gap-4">
               <Field
-                label="E-mail"
+                label={t("passwordReset.email")}
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 required
               />
-              <Button type="submit" variant="primary" className="w-full">
-                Enviar instruções
+
+              {error ? (
+                <p role="alert" className="text-xs text-critical">
+                  {error}
+                </p>
+              ) : null}
+
+              <Button type="submit" variant="primary" className="w-full" disabled={submitting}>
+                {t("passwordReset.submit")}
               </Button>
             </form>
           )}
           <Link to="/login" className="mt-4 inline-block text-[12.5px] text-accent hover:underline">
-            Voltar para o login
+            {t("passwordReset.backToLogin")}
           </Link>
         </div>
       </div>

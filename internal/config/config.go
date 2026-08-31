@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 
 	"github.com/joho/godotenv"
 )
@@ -20,6 +21,7 @@ type Config struct {
 	LogLevel            string
 	CORSAllowedOrigin   string
 	PublicDNSTarget     string
+	AdminBaseURL        string
 	DevTokenLogging     bool
 	HTTPSEnabled        bool
 	SecureCookies       bool
@@ -79,6 +81,20 @@ func Load() (Config, error) {
 
 	publicDNSTarget := os.Getenv("PUBLIC_DNS_TARGET")
 
+	// adminBaseURL, when set, is the scheme+host every admin-facing email
+	// link (password-reset, admin-invite) is built from. Deliberately never
+	// falls back to the incoming request's Host header: that header is
+	// fully attacker-controlled (there is no admin-host allowlist in
+	// internal/router/host_router.go, unlike the public status-page hosts
+	// it does validate), and both the password-reset request endpoint and
+	// the admin-invite endpoint hand that header straight to an email a
+	// real victim receives - a classic host-header-injection primitive for
+	// account takeover. Empty by default: an operator who hasn't set it
+	// gets a relative-looking link built from "http://" + this literal
+	// placeholder host instead of a working URL, which is safer than
+	// silently trusting whatever Host the request carried.
+	adminBaseURL := strings.TrimSuffix(os.Getenv("VANE_ADMIN_BASE_URL"), "/")
+
 	// devTokenLogging gates logging the raw password-reset/admin-invite
 	// token, which stands in for real email delivery (out of scope for the
 	// MVP - see internal/api/password_reset_handler.go and admins.go).
@@ -116,6 +132,7 @@ func Load() (Config, error) {
 		LogLevel:            logLevel,
 		CORSAllowedOrigin:   corsAllowedOrigin,
 		PublicDNSTarget:     publicDNSTarget,
+		AdminBaseURL:        adminBaseURL,
 		DevTokenLogging:     devTokenLogging,
 		HTTPSEnabled:        httpsEnabled,
 		SecureCookies:       secureCookies,

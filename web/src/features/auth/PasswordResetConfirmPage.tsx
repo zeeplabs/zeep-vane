@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { Field } from "../../components/ui/Field";
 import { Button } from "../../components/ui/Button";
@@ -7,56 +7,50 @@ import { apiFetch, ApiError } from "../../lib/apiClient";
 import { useBrandLogoUrl } from "../../lib/branding";
 import vaneLogo from "../../assets/vane-logo.webp";
 
-// BootstrapPage lets a fresh, admin-less instance create its first owner
-// from the browser instead of the manual SQL/bcrypt-script README flow it
-// replaces (SHD-15 through SHD-18, SHD-20). Reuses LoginPage's desktop/
-// mobile brand-block layout so the first-run screen looks like part of the
-// same product, not a bolted-on setup wizard.
-export function BootstrapPage() {
+// PasswordResetConfirmPage is the landing page for the link
+// PasswordResetHandler.sendPasswordResetEmail sends
+// (/reset-password/:token). Unlike AcceptInvitePage, POST
+// /api/auth/password-reset/confirm does not set a session cookie - it only
+// changes the password - so success routes to /login instead of a hard
+// reload to "/".
+export function PasswordResetConfirmPage() {
   const { t } = useTranslation();
+  const navigate = useNavigate();
   const logoUrl = useBrandLogoUrl();
+  const { token } = useParams<{ token: string }>();
 
-  const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
-  const [alreadyBootstrapped, setAlreadyBootstrapped] = useState(false);
+  const [submitted, setSubmitted] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     setError(null);
-    setAlreadyBootstrapped(false);
 
     if (password !== confirmPassword) {
-      setError(t("bootstrap.passwordMismatch"));
+      setError(t("passwordResetConfirm.passwordMismatch"));
       return;
     }
 
     setSubmitting(true);
     try {
-      // skipUnauthorizedHandler: this endpoint is public/unauthenticated
-      // (no session exists yet at all) - same reasoning as LoginPage's own
-      // login attempt.
-      await apiFetch("/api/bootstrap", {
+      // skipUnauthorizedHandler: public/unauthenticated endpoint - no
+      // session exists yet, same reasoning as AcceptInvitePage's own call.
+      await apiFetch("/api/auth/password-reset/confirm", {
         method: "POST",
-        body: JSON.stringify({ email, password }),
+        body: JSON.stringify({ token, new_password: password }),
         skipUnauthorizedHandler: true,
       });
-      // Hard reload, not a client-side navigate: the new owner's session
-      // cookie was just set server-side, and AuthProvider's boot checks
-      // (/api/auth/me, /api/bootstrap/status) only run once on mount - a
-      // full reload is what re-runs them with the now-current state
-      // (SHD-18, SHD-19), landing the new owner on an authenticated "/"
-      // instead of bouncing back to a stale needsBootstrap guard.
-      window.location.assign("/");
+      setSubmitted(true);
     } catch (err) {
-      if (err instanceof ApiError && err.status === 409) {
-        setAlreadyBootstrapped(true);
+      if (err instanceof ApiError && err.status === 401) {
+        setError(t("passwordResetConfirm.invalidOrExpired"));
       } else if (err instanceof ApiError) {
         setError(err.message);
       } else {
-        setError(t("bootstrap.genericError"));
+        setError(t("passwordResetConfirm.genericError"));
       }
     } finally {
       setSubmitting(false);
@@ -116,31 +110,28 @@ export function BootstrapPage() {
           </div>
 
           <div className="mb-7">
-            <h3 className="text-text">{t("bootstrap.title")}</h3>
-            <p className="mt-1 text-[13.5px] text-neutral-400">{t("bootstrap.subtitle")}</p>
+            <h3 className="text-text">{t("passwordResetConfirm.title")}</h3>
+            {!submitted ? (
+              <p className="mt-1 text-[13.5px] text-neutral-400">{t("passwordResetConfirm.subtitle")}</p>
+            ) : null}
           </div>
 
-          {alreadyBootstrapped ? (
-            <div className="flex flex-col gap-3">
-              <p role="alert" className="text-xs text-critical">
-                {t("bootstrap.alreadyBootstrapped")}
-              </p>
-              <Link to="/login" className="text-[13.5px] text-accent hover:underline">
-                {t("bootstrap.goToLogin")}
-              </Link>
-            </div>
+          {submitted ? (
+            <>
+              <p className="text-sm text-neutral-300">{t("passwordResetConfirm.successMessage")}</p>
+              <Button
+                type="button"
+                variant="primary"
+                className="mt-4 w-full"
+                onClick={() => navigate("/login")}
+              >
+                {t("passwordResetConfirm.goToLogin")}
+              </Button>
+            </>
           ) : (
             <form onSubmit={handleSubmit} className="flex flex-col gap-4">
               <Field
-                label={t("bootstrap.email")}
-                type="email"
-                autoComplete="username"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                required
-              />
-              <Field
-                label={t("bootstrap.password")}
+                label={t("passwordResetConfirm.password")}
                 type="password"
                 autoComplete="new-password"
                 value={password}
@@ -148,7 +139,7 @@ export function BootstrapPage() {
                 required
               />
               <Field
-                label={t("bootstrap.confirmPassword")}
+                label={t("passwordResetConfirm.confirmPassword")}
                 type="password"
                 autoComplete="new-password"
                 value={confirmPassword}
@@ -163,10 +154,15 @@ export function BootstrapPage() {
               ) : null}
 
               <Button type="submit" variant="primary" className="w-full" disabled={submitting}>
-                {t("bootstrap.submit")}
+                {t("passwordResetConfirm.submit")}
               </Button>
             </form>
           )}
+          {!submitted ? (
+            <Link to="/login" className="mt-4 inline-block text-[12.5px] text-accent hover:underline">
+              {t("passwordReset.backToLogin")}
+            </Link>
+          ) : null}
         </div>
       </div>
     </div>

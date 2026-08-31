@@ -28,6 +28,11 @@ import (
 
 const adminsTestMasterKey = "admins-test-master-key"
 
+// testAdminBaseURL stands in for cfg.AdminBaseURL in tests that build an
+// admin-facing email link (admin-invite, password-reset) - shared with
+// password_reset_handler_test.go, same package.
+const testAdminBaseURL = "https://vane.test"
+
 // fakeEmailProviderStore is an in-memory email.EmailProviderStore double, so
 // admins_test.go can exercise real email.Service.SendAdminInvite calls
 // without a real provider/DB row (same pattern as internal/email's own
@@ -78,16 +83,29 @@ func (f *fakeEmailProviderStore) SetActiveProvider(_ context.Context, provider s
 }
 
 // fakeEmailProvider is an email.Provider double recording Send calls.
+// notifySent, when non-nil, receives after each Send call - needed by
+// password_reset_handler_test.go, whose PasswordResetHandler.Request
+// dispatches the send in its own goroutine (so the request can respond
+// without waiting on the email provider - see the F2 fix note in
+// password_reset_handler.go): a test can't just read lastMessage/sendCalls
+// right after the HTTP call returns, since nothing guarantees the goroutine
+// has run yet, and doing so unsynchronized would be a data race on top of
+// that. Every AdminsHandler test sends synchronously and leaves notifySent
+// nil, so this is a no-op for them.
 type fakeEmailProvider struct {
 	sendErr     error
 	sendCalls   int
 	lastMessage email.Message
+	notifySent  chan struct{}
 }
 
 func (f *fakeEmailProvider) ValidateCredentials(context.Context) error { return nil }
 func (f *fakeEmailProvider) Send(_ context.Context, msg email.Message) error {
 	f.sendCalls++
 	f.lastMessage = msg
+	if f.notifySent != nil {
+		f.notifySent <- struct{}{}
+	}
 	return f.sendErr
 }
 
@@ -171,7 +189,7 @@ func newAdminsRouterWithEmail(t *testing.T, emailSvc *email.Service) (http.Handl
 	invites := db.NewAdminInviteRepository(pool)
 	auditLog := audit.NewLog(pool)
 	companySettings := db.NewCompanySettingsRepository(pool)
-	handler := NewAdminsHandler(pool, admins, invites, emailSvc, companySettings, auditLog, zap.NewNop(), false, false, middlewareTestSecret, true)
+	handler := NewAdminsHandler(pool, admins, invites, emailSvc, companySettings, auditLog, zap.NewNop(), false, testAdminBaseURL, middlewareTestSecret, true)
 
 	r := chi.NewRouter()
 	r.Group(func(protected chi.Router) {
