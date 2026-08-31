@@ -15,6 +15,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"go.uber.org/zap"
 
+	"github.com/zeeplabs/zeep-vane/internal/audit"
 	"github.com/zeeplabs/zeep-vane/internal/db"
 )
 
@@ -37,13 +38,14 @@ func newDomainsRouter(t *testing.T) (http.Handler, *db.Pool, *db.AdminRepository
 
 	repo := db.NewDomainRepository(pool)
 	admins := db.NewAdminRepository(pool)
-	handler := NewDomainsHandler(repo, zap.NewNop())
+	handler := NewDomainsHandler(repo, audit.NewLog(pool), zap.NewNop())
 
 	r := chi.NewRouter()
 	r.Group(func(protected chi.Router) {
 		protected.Use(RequireAuth(middlewareTestSecret, admins))
 		protected.Post("/api/domains", handler.Create)
 		protected.Get("/api/domains", handler.List)
+		protected.Delete("/api/domains/{id}", handler.Delete)
 	})
 
 	return r, pool, admins
@@ -263,6 +265,102 @@ func TestListDomains_NoAuth_401(t *testing.T) {
 	r, _, _ := newDomainsRouter(t)
 
 	rec := getListDomains(t, r, "")
+	if rec.Code != http.StatusUnauthorized {
+		t.Errorf("status = %d, want %d", rec.Code, http.StatusUnauthorized)
+	}
+}
+
+func deleteDomain(t *testing.T, r http.Handler, token, id string) *httptest.ResponseRecorder {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodDelete, "/api/domains/"+id, nil)
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+	return rec
+}
+
+func TestDeleteDomain_Existing_204(t *testing.T) {
+	r, pool, admins := newDomainsRouter(t)
+	token := issueTestSessionToken(t, admins)
+	hostname := uniqueHostname(t)
+
+	createRec := postCreateDomain(t, r, token, hostname)
+	if createRec.Code != http.StatusCreated {
+		t.Fatalf("setup create status = %d, want %d", createRec.Code, http.StatusCreated)
+	}
+	var created domainResponse
+	if err := json.Unmarshal(createRec.Body.Bytes(), &created); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+
+	rec := deleteDomain(t, r, token, created.ID)
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusNoContent, rec.Body.String())
+	}
+
+	var count int
+	row := pool.QueryRow(context.Background(), "SELECT COUNT(*) FROM domains WHERE id = $1", created.ID)
+	if err := row.Scan(&count); err != nil {
+		t.Fatalf("Scan() returned unexpected error: %v", err)
+	}
+	if count != 0 {
+		t.Errorf("domains row still exists after delete")
+	}
+}
+
+func TestDeleteDomain_NotFound_404(t *testing.T) {
+	r, _, admins := newDomainsRouter(t)
+	token := issueTestSessionToken(t, admins)
+
+	rec := deleteDomain(t, r, token, "00000000-0000-0000-0000-000000000000")
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("status = %d, want %d, body = %s", rec.Code, http.StatusNotFound, rec.Body.String())
+	}
+}
+
+// TestDeleteDomain_InUseByStatusPage_409 asserts the FK-violation path: a
+// domain still attached to a status page (domain_id) can't be deleted out
+// from under it (ErrDomainInUse), since that would silently break the
+// page's public URL.
+func TestDeleteDomain_InUseByStatusPage_409(t *testing.T) {
+	r, pool, admins := newDomainsRouter(t)
+	token := issueTestSessionToken(t, admins)
+	hostname := uniqueHostname(t)
+
+	createRec := postCreateDomain(t, r, token, hostname)
+	if createRec.Code != http.StatusCreated {
+		t.Fatalf("setup create domain status = %d, want %d", createRec.Code, http.StatusCreated)
+	}
+	var created domainResponse
+	if err := json.Unmarshal(createRec.Body.Bytes(), &created); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = pool.Exec(context.Background(), "DELETE FROM status_pages WHERE domain_id = $1", created.ID)
+		_, _ = pool.Exec(context.Background(), "DELETE FROM domains WHERE id = $1", created.ID)
+	})
+
+	var statusPageID string
+	row := pool.QueryRow(context.Background(),
+		"INSERT INTO status_pages (name, subdomain, domain_id) VALUES ($1, $2, $3) RETURNING id",
+		"In Use Status Page", "inuse", created.ID,
+	)
+	if err := row.Scan(&statusPageID); err != nil {
+		t.Fatalf("failed to insert status page fixture: %v", err)
+	}
+
+	rec := deleteDomain(t, r, token, created.ID)
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusConflict, rec.Body.String())
+	}
+}
+
+func TestDeleteDomain_NoAuth_401(t *testing.T) {
+	r, _, _ := newDomainsRouter(t)
+
+	rec := deleteDomain(t, r, "", "00000000-0000-0000-0000-000000000000")
 	if rec.Code != http.StatusUnauthorized {
 		t.Errorf("status = %d, want %d", rec.Code, http.StatusUnauthorized)
 	}

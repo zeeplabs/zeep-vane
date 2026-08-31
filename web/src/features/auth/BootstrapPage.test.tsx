@@ -21,6 +21,7 @@ function App() {
 }
 
 async function fillForm(email: string, password: string, confirmPassword: string) {
+  await userEvent.type(screen.getByLabelText("Nome"), "Ana Owner");
   await userEvent.type(screen.getByLabelText("E-mail"), email);
   await userEvent.type(screen.getByLabelText("Senha"), password);
   await userEvent.type(screen.getByLabelText("Confirmar senha"), confirmPassword);
@@ -80,9 +81,10 @@ describe("BootstrapPage", () => {
     expect(fetchSpy).not.toHaveBeenCalledWith("/api/bootstrap", expect.anything());
   });
 
-  it("campos email/senha/confirmação são obrigatórios, seguindo a convenção do LoginPage", () => {
+  it("campos nome/email/senha/confirmação são obrigatórios, seguindo a convenção do LoginPage", () => {
     render(<App />);
 
+    expect(screen.getByLabelText("Nome")).toBeRequired();
     expect(screen.getByLabelText("E-mail")).toBeRequired();
     expect(screen.getByLabelText("Senha")).toBeRequired();
     expect(screen.getByLabelText("Confirmar senha")).toBeRequired();

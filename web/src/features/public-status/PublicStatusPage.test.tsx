@@ -226,4 +226,35 @@ describe("PublicStatusPage", () => {
 
     expect(screen.queryByRole("button", { name: "Carregar mais" })).not.toBeInTheDocument();
   });
+
+  // SEO: this is the one page in the SPA the public internet actually
+  // lands on, so it overrides index.html's static admin-product
+  // title/description with this company's own status while mounted, and
+  // must restore both on unmount - a leftover title from the last status
+  // page a visitor viewed must never bleed into whatever they navigate to
+  // next in the same tab.
+  it("define document.title e a meta description com o nome da empresa, restaurando ambos ao desmontar", async () => {
+    const titleBefore = document.title;
+    const metaDescription = document.createElement("meta");
+    metaDescription.setAttribute("name", "description");
+    metaDescription.setAttribute("content", "default admin product description");
+    document.head.appendChild(metaDescription);
+
+    try {
+      const view = await renderAt("/status/sp-4");
+      await screen.findByText("Todos os sistemas operacionais");
+
+      expect(document.title).toBe("Sua Empresa Ltda. Status");
+      expect(metaDescription.getAttribute("content")).toBe(
+        "Sua Empresa Ltda. — Todos os sistemas operacionais.",
+      );
+
+      view.unmount();
+
+      expect(document.title).toBe(titleBefore);
+      expect(metaDescription.getAttribute("content")).toBe("default admin product description");
+    } finally {
+      metaDescription.remove();
+    }
+  });
 });

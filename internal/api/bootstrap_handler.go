@@ -60,12 +60,15 @@ func (h *BootstrapHandler) Status(w http.ResponseWriter, r *http.Request) {
 }
 
 type bootstrapCreateRequest struct {
+	Name     string `json:"name"`
 	Email    string `json:"email"`
+	Phone    string `json:"phone"`
 	Password string `json:"password"`
 }
 
-const invalidBootstrapRequestBody = `{"error":"email and password are required"}`
+const invalidBootstrapRequestBody = `{"error":"name, email, and password are required"}`
 const alreadyBootstrappedBody = `{"error":"already bootstrapped"}`
+const invalidPhoneBody = `{"error":"phone is invalid"}`
 
 // weakPasswordBody is returned by every handler that sets a new password
 // (bootstrap, invite-accept, password-reset-confirm) when it fails
@@ -82,12 +85,16 @@ const weakPasswordBody = `{"error":"password must be between 8 and 72 characters
 // (SHD-17, enforced by AdminRepository.BootstrapFirst's table lock).
 func (h *BootstrapHandler) Create(w http.ResponseWriter, r *http.Request) {
 	var req bootstrapCreateRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Email == "" || req.Password == "" {
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Name == "" || req.Email == "" || req.Password == "" {
 		writeAdminError(w, http.StatusUnprocessableEntity, invalidBootstrapRequestBody)
 		return
 	}
 	if err := auth.ValidatePassword(req.Password); err != nil {
 		writeAdminError(w, http.StatusUnprocessableEntity, weakPasswordBody)
+		return
+	}
+	if err := ValidatePhone(req.Phone); err != nil {
+		writeAdminError(w, http.StatusUnprocessableEntity, invalidPhoneBody)
 		return
 	}
 
@@ -98,7 +105,7 @@ func (h *BootstrapHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	admin := &db.Admin{Email: req.Email, PasswordHash: hash}
+	admin := &db.Admin{Email: req.Email, PasswordHash: hash, Name: req.Name, Phone: nilIfEmpty(req.Phone)}
 	created, err := h.admins.BootstrapFirst(r.Context(), admin)
 	if err != nil {
 		h.logger.Error("bootstrap: failed to create first admin", zap.Error(err))
@@ -120,5 +127,5 @@ func (h *BootstrapHandler) Create(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	_ = json.NewEncoder(w).Encode(meResponse{ID: admin.ID, Email: admin.Email, Role: db.RoleOwner})
+	_ = json.NewEncoder(w).Encode(meResponse{ID: admin.ID, Email: admin.Email, Name: admin.Name, Phone: admin.Phone, Role: db.RoleOwner})
 }

@@ -69,4 +69,11 @@ describe("Sidebar", () => {
     expect(screen.queryByRole("radiogroup")).not.toBeInTheDocument();
     vi.unstubAllEnvs();
   });
+
+  it("mostra nome e e-mail do admin logado acima do botão Sair", async () => {
+    await loginAs("owner@vane.app");
+    renderSidebar();
+    expect(await screen.findByText("Ana Owner")).toBeInTheDocument();
+    expect(screen.getByText("owner@vane.app")).toBeInTheDocument();
+  });
 });

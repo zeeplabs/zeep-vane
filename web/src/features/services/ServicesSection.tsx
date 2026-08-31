@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from "react";
-import { Table, type TableColumn } from "../../components/ui/Table";
+import { Card } from "../../components/ui/Card";
 import { Dialog } from "../../components/ui/Dialog";
 import { Button } from "../../components/ui/Button";
 import { Field } from "../../components/ui/Field";
@@ -22,11 +22,27 @@ const statusVariant: Record<ServiceStatus, TagVariant> = {
   operational: "success",
   degraded: "warning",
   outage: "critical",
-  not_configured: "neutral",
+  not_configured: "neutral-outline",
+};
+
+const statusDotColor: Record<ServiceStatus, string> = {
+  operational: "var(--color-success)",
+  degraded: "var(--color-warning)",
+  outage: "var(--color-critical)",
+  not_configured: "var(--color-neutral-600)",
 };
 
 function formatTimestamp(iso: string): string {
   return new Date(iso).toLocaleString("pt-BR");
+}
+
+function ClockIcon() {
+  return (
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <circle cx="12" cy="12" r="9" />
+      <path d="M12 7v5l3.5 2" />
+    </svg>
+  );
 }
 
 /** Tabela + dialog de vínculo de serviço a SLO. Compartilhada entre `IntegrationsPage` (handoff mostra as duas seções na mesma tela) e `ServicesPage` (rota própria, decisão registrada em design.md). */
@@ -75,27 +91,14 @@ export function ServicesSection() {
     }
   }
 
-  const columns: TableColumn<Service>[] = [
-    { key: "name", header: "Serviço", render: (s) => s.name },
-    { key: "slo", header: "SLO vinculado", render: (s) => s.slo_name ?? "—" },
-    {
-      key: "status",
-      header: "Status",
-      render: (s) => (
-        <Tag variant={statusVariant[s.current_status]}>{statusLabel[s.current_status]}</Tag>
-      ),
-    },
-    {
-      key: "last_change",
-      header: "Última mudança",
-      render: (s) => (s.current_status === "not_configured" ? "—" : formatTimestamp(s.last_status_change_at)),
-    },
-  ];
+  function serviceLastChange(s: Service): string {
+    return s.current_status === "not_configured" ? "—" : formatTimestamp(s.last_status_change_at);
+  }
 
   return (
-    <div className="flex flex-col gap-3">
+    <div className="flex flex-col gap-6">
       <div className="flex items-center justify-between">
-        <h4 className="text-text">Serviços monitorados</h4>
+        <h2 className="text-text">Serviços monitorados</h2>
         {canManage ? (
           <Button
             variant="primary"
@@ -112,17 +115,38 @@ export function ServicesSection() {
         ) : null}
       </div>
 
-      <div className="mt-2">
+      <div>
         {isLoading ? (
           <p className="text-neutral-400">Carregando…</p>
         ) : (
           <>
-            <Table
-              columns={columns}
-              rows={services ?? []}
-              rowKey={(s) => s.id}
-              emptyMessage="Nenhum serviço cadastrado."
-            />
+            <Card elevation="elev-sm" className="divide-y divide-divider overflow-hidden">
+              {(services ?? []).length === 0 ? (
+                <p className="px-4 py-6 text-center text-neutral-400">Nenhum serviço cadastrado.</p>
+              ) : (
+                (services ?? []).map((s) => (
+                  <div key={s.id} data-testid="service-row" className="flex items-center gap-3 px-4 py-3.5">
+                    <span
+                      className="h-2 w-2 flex-none rounded-full"
+                      style={{ backgroundColor: statusDotColor[s.current_status] }}
+                      aria-hidden="true"
+                    />
+                    <div className="flex-1">
+                      <div className="text-[15px] font-medium text-text">{s.name}</div>
+                      <div className="mt-0.5 flex items-center gap-1 text-xs text-neutral-400">
+                        <ClockIcon />
+                        {s.slo_name ?? "—"}
+                      </div>
+                    </div>
+                    <div className="text-right text-xs text-neutral-400">
+                      <div>Última mudança</div>
+                      <div className="mt-0.5 text-[13px] text-text">{serviceLastChange(s)}</div>
+                    </div>
+                    <Tag variant={statusVariant[s.current_status]}>{statusLabel[s.current_status]}</Tag>
+                  </div>
+                ))
+              )}
+            </Card>
             <Pager page={page} totalPages={totalPages} onChange={setPage} />
           </>
         )}
@@ -133,8 +157,18 @@ export function ServicesSection() {
         onOpenChange={setDialogOpen}
         title="Vincular serviço"
         description="Associe um serviço a um SLO existente no Datadog."
+        footer={
+          <>
+            <Button type="button" variant="secondary" onClick={() => setDialogOpen(false)}>
+              Cancelar
+            </Button>
+            <Button type="submit" form="link-service-form" variant="primary" disabled={createService.isPending}>
+              Salvar
+            </Button>
+          </>
+        }
       >
-        <form onSubmit={handleSubmit} className="flex flex-col gap-3">
+        <form id="link-service-form" onSubmit={handleSubmit} className="flex flex-col gap-3">
           <Field
             label="Nome do serviço"
             value={name}
@@ -180,14 +214,6 @@ export function ServicesSection() {
               {error}
             </p>
           ) : null}
-          <div className="flex gap-2">
-            <Button type="submit" variant="primary" disabled={createService.isPending}>
-              Salvar
-            </Button>
-            <Button type="button" variant="secondary" onClick={() => setDialogOpen(false)}>
-              Cancelar
-            </Button>
-          </div>
         </form>
       </Dialog>
     </div>

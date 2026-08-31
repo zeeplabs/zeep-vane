@@ -73,8 +73,8 @@ export function IconRoleSelector({ role, onSelect }: IconRoleSelectorProps) {
               aria-pressed={active}
               onClick={() => onSelect(r.value)}
               className={
-                "flex h-9 w-9 cursor-pointer items-center justify-center rounded-md transition-opacity " +
-                (active ? "text-accent bg-accent-900 opacity-100" : "text-text opacity-40")
+                "flex h-9 w-9 cursor-pointer items-center justify-center rounded-md border transition-opacity " +
+                (active ? "border-accent text-accent opacity-100" : "border-divider text-text opacity-40")
               }
             >
               <Icon />

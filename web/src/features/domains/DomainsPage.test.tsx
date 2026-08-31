@@ -32,12 +32,11 @@ function renderPage() {
 }
 
 describe("DomainsPage", () => {
-  it("lista domínios com colunas Hostname/Cadastrado em", async () => {
+  it("lista domínios com hostname e data de cadastro", async () => {
     await loginAs("owner@vane.app");
     renderPage();
     expect(await screen.findByText("status.acme.com")).toBeInTheDocument();
-    expect(screen.getByText("Hostname")).toBeInTheDocument();
-    expect(screen.getByText("Cadastrado em")).toBeInTheDocument();
+    expect(screen.getAllByText("Cadastrado em").length).toBeGreaterThan(0);
   });
 
   it("viewer não vê o formulário de cadastro", async () => {

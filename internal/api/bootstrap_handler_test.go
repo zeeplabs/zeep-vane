@@ -190,6 +190,7 @@ func TestBootstrapHandler_Status_AfterSuccessfulCreate_ReturnsTrue(t *testing.T)
 	t.Cleanup(restore)
 
 	createRec := postBootstrap(t, r, bootstrapCreateRequest{
+		Name:     "Test Owner",
 		Email:    bootstrapUniqueTestEmail(t),
 		Password: "correct-horse-battery-staple",
 	})
@@ -213,7 +214,7 @@ func TestBootstrapHandler_Create_Success_SetsSessionCookieAndReturnsIdentity(t *
 	t.Cleanup(restore)
 
 	email := bootstrapUniqueTestEmail(t)
-	rec := postBootstrap(t, r, bootstrapCreateRequest{Email: email, Password: "correct-horse-battery-staple"})
+	rec := postBootstrap(t, r, bootstrapCreateRequest{Name: "Test Owner", Email: email, Password: "correct-horse-battery-staple"})
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200 (body=%q)", rec.Code, rec.Body.String())
@@ -263,12 +264,12 @@ func TestBootstrapHandler_Create_AlreadyBootstrapped_Returns409NoSecondAdmin(t *
 	restore := clearAdminsForBootstrapTest(t, pool)
 	t.Cleanup(restore)
 
-	first := postBootstrap(t, r, bootstrapCreateRequest{Email: bootstrapUniqueTestEmail(t), Password: "correct-horse-battery-staple"})
+	first := postBootstrap(t, r, bootstrapCreateRequest{Name: "Test Owner", Email: bootstrapUniqueTestEmail(t), Password: "correct-horse-battery-staple"})
 	if first.Code != http.StatusOK {
 		t.Fatalf("first POST /api/bootstrap status = %d, want 200 (body=%q)", first.Code, first.Body.String())
 	}
 
-	second := postBootstrap(t, r, bootstrapCreateRequest{Email: bootstrapUniqueTestEmail(t), Password: "another-horse-battery-staple"})
+	second := postBootstrap(t, r, bootstrapCreateRequest{Name: "Test Owner", Email: bootstrapUniqueTestEmail(t), Password: "another-horse-battery-staple"})
 	if second.Code != http.StatusConflict {
 		t.Fatalf("second POST /api/bootstrap status = %d, want 409", second.Code)
 	}
@@ -291,7 +292,7 @@ func TestBootstrapHandler_Create_EmptyPassword_Returns422NoAdminCreated(t *testi
 	restore := clearAdminsForBootstrapTest(t, pool)
 	t.Cleanup(restore)
 
-	rec := postBootstrap(t, r, bootstrapCreateRequest{Email: bootstrapUniqueTestEmail(t), Password: ""})
+	rec := postBootstrap(t, r, bootstrapCreateRequest{Name: "Test Owner", Email: bootstrapUniqueTestEmail(t), Password: ""})
 
 	if rec.Code != http.StatusUnprocessableEntity {
 		t.Fatalf("status = %d, want 422", rec.Code)
@@ -316,7 +317,7 @@ func TestBootstrapHandler_Create_WeakPassword_Returns422NoAdminCreated(t *testin
 	restore := clearAdminsForBootstrapTest(t, pool)
 	t.Cleanup(restore)
 
-	rec := postBootstrap(t, r, bootstrapCreateRequest{Email: bootstrapUniqueTestEmail(t), Password: "1234567"})
+	rec := postBootstrap(t, r, bootstrapCreateRequest{Name: "Test Owner", Email: bootstrapUniqueTestEmail(t), Password: "1234567"})
 
 	if rec.Code != http.StatusUnprocessableEntity {
 		t.Fatalf("status = %d, want 422", rec.Code)

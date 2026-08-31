@@ -7,6 +7,11 @@ export interface DialogProps {
   title: string;
   description?: string;
   children?: ReactNode;
+  /** Botões de rodapé (ex.: Cancelar + ação). Renderizados alinhados à
+   * direita, separados do conteúdo por uma linha divisória - mesmo padrão
+   * do `Drawer`. Omitir quando o modal não tem ação de confirmação (ex.:
+   * modal bloqueante de sessão expirada, com um único CTA full-width). */
+  footer?: ReactNode;
   /** Impede fechar clicando fora (backdrop) ou apertando Esc. Necessário
    * pro modal de sessão expirada, que é bloqueante. */
   disableBackdropDismiss?: boolean;
@@ -18,6 +23,7 @@ export function Dialog({
   title,
   description,
   children,
+  footer,
   disableBackdropDismiss = false,
 }: DialogProps) {
   return (
@@ -42,7 +48,10 @@ export function Dialog({
               {description}
             </RadixDialog.Description>
           ) : null}
-          <div className="mt-4">{children}</div>
+          {children ? <div className="mt-4">{children}</div> : null}
+          {footer ? (
+            <div className="mt-4 flex justify-end gap-2 border-t border-divider pt-4">{footer}</div>
+          ) : null}
         </RadixDialog.Content>
       </RadixDialog.Portal>
     </RadixDialog.Root>

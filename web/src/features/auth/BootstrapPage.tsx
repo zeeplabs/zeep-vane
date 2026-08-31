@@ -2,9 +2,11 @@ import { useState, type FormEvent } from "react";
 import { Link } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { Field } from "../../components/ui/Field";
+import { PhoneField } from "../../components/ui/PhoneField";
 import { Button } from "../../components/ui/Button";
 import { apiFetch, ApiError } from "../../lib/apiClient";
 import { useBrandLogoUrl } from "../../lib/branding";
+import vaneLogo from "../../assets/vane-logo.webp";
 
 // BootstrapPage lets a fresh, admin-less instance create its first owner
 // from the browser instead of the manual SQL/bcrypt-script README flow it
@@ -15,7 +17,9 @@ export function BootstrapPage() {
   const { t } = useTranslation();
   const logoUrl = useBrandLogoUrl();
 
+  const [name, setName] = useState("");
   const [email, setEmail] = useState("");
+  const [phone, setPhone] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -39,7 +43,7 @@ export function BootstrapPage() {
       // login attempt.
       await apiFetch("/api/bootstrap", {
         method: "POST",
-        body: JSON.stringify({ email, password }),
+        body: JSON.stringify({ name, email, phone, password }),
         skipUnauthorizedHandler: true,
       });
       // Hard reload, not a client-side navigate: the new owner's session
@@ -52,6 +56,8 @@ export function BootstrapPage() {
     } catch (err) {
       if (err instanceof ApiError && err.status === 409) {
         setAlreadyBootstrapped(true);
+      } else if (err instanceof ApiError && err.status === 422) {
+        setError(t("bootstrap.weakPassword"));
       } else if (err instanceof ApiError) {
         setError(err.message);
       } else {
@@ -80,16 +86,7 @@ export function BootstrapPage() {
         />
 
         <div className="relative flex items-center gap-2">
-          {logoUrl ? (
-            <img src={logoUrl} alt="Company logo" className="w-[180px] object-contain" />
-          ) : (
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-              <path
-                d="M12 2l2.4 7.2L22 12l-7.6 2.8L12 22l-2.4-7.2L2 12l7.6-2.8L12 2z"
-                fill="var(--color-accent)"
-              />
-            </svg>
-          )}
+          <img src={logoUrl ?? vaneLogo} alt="Company logo" className="w-[180px] object-contain" />
         </div>
 
         <div className="relative flex flex-col gap-4">
@@ -113,16 +110,13 @@ export function BootstrapPage() {
           <div className="mb-8 flex flex-col gap-1 lg:hidden">
             <div className="flex items-center gap-2">
               {logoUrl ? (
-                <img src={logoUrl} alt="" className="h-5 w-5 object-contain" />
+                <>
+                  <img src={logoUrl} alt="" className="h-5 w-5 object-contain" />
+                  <span className="text-[15px] font-medium tracking-tight text-text">Vane</span>
+                </>
               ) : (
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                  <path
-                    d="M12 2l2.4 7.2L22 12l-7.6 2.8L12 22l-2.4-7.2L2 12l7.6-2.8L12 2z"
-                    fill="var(--color-accent)"
-                  />
-                </svg>
+                <img src={vaneLogo} alt="Vane" className="h-6 object-contain" />
               )}
-              <span className="text-[15px] font-medium tracking-tight text-text">Vane</span>
             </div>
           </div>
 
@@ -143,6 +137,13 @@ export function BootstrapPage() {
           ) : (
             <form onSubmit={handleSubmit} className="flex flex-col gap-4">
               <Field
+                label={t("bootstrap.name")}
+                autoComplete="name"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                required
+              />
+              <Field
                 label={t("bootstrap.email")}
                 type="email"
                 autoComplete="username"
@@ -150,6 +151,7 @@ export function BootstrapPage() {
                 onChange={(e) => setEmail(e.target.value)}
                 required
               />
+              <PhoneField label={t("bootstrap.phone")} onChange={setPhone} />
               <Field
                 label={t("bootstrap.password")}
                 type="password"

@@ -55,7 +55,7 @@ describe("AdminsPage", () => {
     renderPage();
     await screen.findByText("owner@vane.app");
 
-    const ownerRow = screen.getByText("owner@vane.app").closest("tr")!;
+    const ownerRow = screen.getByText("owner@vane.app").closest("[data-testid]") as HTMLElement;
     const operatorIcon = ownerRow.querySelector('button[aria-label="Operator"]') as HTMLElement;
     await userEvent.click(operatorIcon);
 
@@ -70,7 +70,7 @@ describe("AdminsPage", () => {
     renderPage();
     await screen.findByText("operator@vane.app");
 
-    const operatorRow = screen.getByText("operator@vane.app").closest("tr")!;
+    const operatorRow = screen.getByText("operator@vane.app").closest("[data-testid]") as HTMLElement;
     await userEvent.click(within(operatorRow).getByRole("button", { name: "Remover" }));
 
     expect(await screen.findByText("Remover admin")).toBeInTheDocument();
@@ -84,13 +84,13 @@ describe("AdminsPage", () => {
     renderPage();
     await screen.findByText("operator@vane.app");
 
-    const operatorRow = screen.getByText("operator@vane.app").closest("tr")!;
+    const operatorRow = screen.getByText("operator@vane.app").closest("[data-testid]") as HTMLElement;
     const viewerIcon = within(operatorRow).getByRole("button", { name: "Viewer" });
     await userEvent.click(viewerIcon);
     await userEvent.click(screen.getByRole("button", { name: "Confirmar" }));
 
     await waitFor(() => {
-      const updatedRow = screen.getByText("operator@vane.app").closest("tr")!;
+      const updatedRow = screen.getByText("operator@vane.app").closest("[data-testid]") as HTMLElement;
       expect(within(updatedRow).getByRole("button", { name: "Viewer" })).toHaveAttribute(
         "aria-pressed",
         "true"
@@ -103,7 +103,7 @@ describe("AdminsPage", () => {
     renderPage();
     await screen.findByText("operator@vane.app");
 
-    const operatorRow = screen.getByText("operator@vane.app").closest("tr")!;
+    const operatorRow = screen.getByText("operator@vane.app").closest("[data-testid]") as HTMLElement;
     await userEvent.click(within(operatorRow).getByRole("button", { name: "Remover" }));
     await screen.findByText("Remover admin");
     await userEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Remover" }));
@@ -118,12 +118,13 @@ describe("AdminsPage", () => {
     await screen.findByText("owner@vane.app");
 
     await userEvent.click(screen.getByRole("button", { name: "Convidar admin" }));
+    await userEvent.type(screen.getByLabelText("Nome"), "Novo Viewer");
     await userEvent.type(screen.getByLabelText("E-mail"), "novo-viewer@vane.app");
-    await userEvent.selectOptions(screen.getByLabelText("Papel"), "viewer");
+    await userEvent.click(screen.getByRole("tab", { name: "Viewer" }));
     await userEvent.click(screen.getByRole("button", { name: "Enviar convite" }));
 
     expect(await screen.findByText("novo-viewer@vane.app")).toBeInTheDocument();
-    const newRow = screen.getByText("novo-viewer@vane.app").closest("tr")!;
+    const newRow = screen.getByText("novo-viewer@vane.app").closest("[data-testid]") as HTMLElement;
     expect(within(newRow).getByText("Pendente")).toBeInTheDocument();
   });
 
@@ -132,7 +133,7 @@ describe("AdminsPage", () => {
     renderPage();
     await screen.findByText("novo-operador@vane.app");
 
-    const inviteRow = screen.getByText("novo-operador@vane.app").closest("tr")!;
+    const inviteRow = screen.getByText("novo-operador@vane.app").closest("[data-testid]") as HTMLElement;
     await userEvent.click(within(inviteRow).getByRole("button", { name: "Reenviar" }));
 
     expect(await screen.findByText("Convite reenviado para novo-operador@vane.app.")).toBeInTheDocument();
@@ -144,7 +145,7 @@ describe("AdminsPage", () => {
     renderPage();
     await screen.findByText("novo-operador@vane.app");
 
-    const inviteRow = screen.getByText("novo-operador@vane.app").closest("tr")!;
+    const inviteRow = screen.getByText("novo-operador@vane.app").closest("[data-testid]") as HTMLElement;
     await userEvent.click(within(inviteRow).getByRole("button", { name: "Cancelar" }));
 
     await waitFor(() => expect(screen.queryByText("novo-operador@vane.app")).not.toBeInTheDocument());
@@ -157,11 +158,11 @@ describe("AdminsPage", () => {
     renderPage();
     await screen.findByText("expirado@vane.app");
 
-    const expiredRow = screen.getByText("expirado@vane.app").closest("tr")!;
+    const expiredRow = screen.getByText("expirado@vane.app").closest("[data-testid]") as HTMLElement;
     expect(within(expiredRow).getByText("Expirado")).toBeInTheDocument();
     expect(within(expiredRow).getByText("Pendente")).toBeInTheDocument();
 
-    const freshRow = screen.getByText("novo-operador@vane.app").closest("tr")!;
+    const freshRow = screen.getByText("novo-operador@vane.app").closest("[data-testid]") as HTMLElement;
     expect(within(freshRow).queryByText("Expirado")).not.toBeInTheDocument();
   });
 });

@@ -4,6 +4,7 @@ import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Routes, Route } from "react-router-dom";
 import { PasswordResetRequestPage } from "./PasswordResetRequestPage";
 import { TestQueryProvider } from "../../test/queryClient";
+import "../../lib/i18n";
 
 function App() {
   return (

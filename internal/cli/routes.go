@@ -71,13 +71,13 @@ func buildAdminRouter(pool *db.Pool, cfg config.Config, logger *zap.Logger, poll
 
 	authHandler := api.NewAuthHandler(admins, logger, cfg.SessionSecret, cfg.SecureCookies)
 	bootstrapHandler := api.NewBootstrapHandler(pool, admins, logger, cfg.SessionSecret, cfg.SecureCookies)
-	passwordResetHandler := api.NewPasswordResetHandler(admins, db.NewPasswordResetRepository(pool), logger, cfg.DevTokenLogging)
-	adminsHandler := api.NewAdminsHandler(pool, admins, invites, emailService, companySettingsRepo, auditLog, logger, cfg.DevTokenLogging, cfg.HTTPSEnabled, cfg.SessionSecret, cfg.SecureCookies)
-	domainsHandler := api.NewDomainsHandler(db.NewDomainRepository(pool), logger)
+	passwordResetHandler := api.NewPasswordResetHandler(admins, db.NewPasswordResetRepository(pool), emailService, companySettingsRepo, logger, cfg.DevTokenLogging, cfg.AdminBaseURL)
+	adminsHandler := api.NewAdminsHandler(pool, admins, invites, emailService, companySettingsRepo, auditLog, logger, cfg.DevTokenLogging, cfg.AdminBaseURL, cfg.SessionSecret, cfg.SecureCookies)
+	domainsHandler := api.NewDomainsHandler(db.NewDomainRepository(pool), auditLog, logger)
 	servicesHandler := api.NewServicesHandler(db.NewServiceRepository(pool), logger)
 	integrationsHandler := api.NewIntegrationsHandler(db.NewIntegrationRepository(pool), validateDatadogCredentials, searchDatadogSLOs, pollerManager, cfg.MasterKey, logger)
 	incidentsHandler := api.NewIncidentsHandler(db.NewIncidentRepository(pool), logger)
-	statusPagesHandler := api.NewStatusPagesHandler(db.NewStatusPageRepository(pool), logger)
+	statusPagesHandler := api.NewStatusPagesHandler(db.NewStatusPageRepository(pool), auditLog, logger)
 	pollerStatusHandler := api.NewPollerStatusHandler(db.NewIntegrationRepository(pool), logger)
 	publicStatusHandler := api.NewPublicStatusHandler(db.NewServiceRepository(pool), db.NewStatusIntervalRepository(pool), db.NewIncidentRepository(pool), companySettingsRepo, logger)
 	publicStatusPreviewHandler := api.NewPublicStatusPreviewHandler(db.NewStatusPageRepository(pool), publicStatusHandler, logger)
@@ -152,6 +152,8 @@ func buildAdminRouter(pool *db.Pool, cfg config.Config, logger *zap.Logger, poll
 		protected.With(writeRoles).Post("/api/status-pages", statusPagesHandler.Create)
 		protected.With(writeRoles).Patch("/api/status-pages/{id}/domain", statusPagesHandler.AttachDomain)
 		protected.With(writeRoles).Patch("/api/status-pages/{id}/services", statusPagesHandler.SetServices)
+		protected.With(writeRoles).Delete("/api/status-pages/{id}", statusPagesHandler.Delete)
+		protected.With(writeRoles).Delete("/api/domains/{id}", domainsHandler.Delete)
 		protected.With(writeRoles).Get("/api/instance/dns-target", instanceConfigHandler.DNSTarget)
 
 		// mvp-core read routes and poller status (admin-dashboard ADM-13) -

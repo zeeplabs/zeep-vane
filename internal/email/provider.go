@@ -38,11 +38,11 @@ type Provider interface {
 // this package decoupled from which concrete connector packages exist.
 type ProviderFactory func(provider, apiKey string) (Provider, error)
 
-// Sender is what a caller outside this package (the future admin-invite
-// resend/cancel feature) depends on to send the admin-invite email,
-// regardless of which provider is active.
+// Sender is what a caller outside this package depends on to send vane's
+// transactional emails, regardless of which provider is active.
 type Sender interface {
 	SendAdminInvite(ctx context.Context, to string, data AdminInviteEmailData) error
+	SendPasswordReset(ctx context.Context, to string, data PasswordResetEmailData) error
 }
 
 // AdminInviteEmailData is the data the admin-invite template renders.
@@ -54,6 +54,14 @@ type AdminInviteEmailData struct {
 	Role string
 	// AcceptURL is the invite acceptance link, built by the caller.
 	AcceptURL string
+}
+
+// PasswordResetEmailData is the data the password-reset template renders.
+type PasswordResetEmailData struct {
+	// CompanyName is the instance's display name (company_settings.name).
+	CompanyName string
+	// ResetURL is the password-reset link, built by the caller.
+	ResetURL string
 }
 
 // Typed errors shared by both connectors, since the HTTP-behavior

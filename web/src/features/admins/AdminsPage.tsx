@@ -1,12 +1,14 @@
 import { useState, type FormEvent } from "react";
 import { toast } from "sonner";
-import { Table, type TableColumn } from "../../components/ui/Table";
+import { Card } from "../../components/ui/Card";
 import { Dialog } from "../../components/ui/Dialog";
 import { Button } from "../../components/ui/Button";
 import { Field } from "../../components/ui/Field";
+import { PhoneField } from "../../components/ui/PhoneField";
 import { Tag } from "../../components/ui/Tag";
 import { IconRoleSelector } from "../../components/ui/IconRoleSelector";
 import { Pager } from "../../components/ui/Pager";
+import { Seg } from "../../components/ui/Seg";
 import { Tooltip } from "../../components/ui/Tooltip";
 import { ApiError } from "../../lib/apiClient";
 import type { Role } from "../../types/api";
@@ -38,6 +40,21 @@ function TrashIcon() {
   );
 }
 
+function EnvelopeIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <rect x="3" y="5" width="18" height="14" rx="2" />
+      <path d="M3 7l9 6 9-6" />
+    </svg>
+  );
+}
+
+function initial(a: AdminRow): string {
+  return (a.name || a.email).charAt(0).toUpperCase();
+}
+
+const roleLabel: Record<Role, string> = { owner: "Owner", operator: "Operator", viewer: "Viewer" };
+
 export function AdminsPage() {
   const [page, setPage] = useState(1);
   const { data: adminsPage, isLoading } = useAdmins(page);
@@ -50,7 +67,9 @@ export function AdminsPage() {
   const cancelInvite = useCancelInvite();
 
   const [inviteOpen, setInviteOpen] = useState(false);
+  const [name, setName] = useState("");
   const [email, setEmail] = useState("");
+  const [phone, setPhone] = useState("");
   const [role, setRole] = useState<Role>("viewer");
   const [inviteError, setInviteError] = useState<string | null>(null);
 
@@ -69,8 +88,10 @@ export function AdminsPage() {
     e.preventDefault();
     setInviteError(null);
     try {
-      await inviteAdmin.mutateAsync({ email, role });
+      await inviteAdmin.mutateAsync({ name, email, phone: phone || undefined, role });
+      setName("");
       setEmail("");
+      setPhone("");
       setRole("viewer");
       setInviteOpen(false);
     } catch (err) {
@@ -102,42 +123,6 @@ export function AdminsPage() {
     }
   }
 
-  const activeColumns: TableColumn<AdminRow>[] = [
-    { key: "email", header: "E-mail", render: (a) => a.email },
-    {
-      key: "role",
-      header: "Papel",
-      render: (a) => (
-        <IconRoleSelector
-          role={a.role}
-          onSelect={(newRole) => {
-            if (newRole === a.role) return;
-            setRoleError(null);
-            setPendingRoleChange({ id: a.id, role: newRole });
-          }}
-        />
-      ),
-    },
-    {
-      key: "actions",
-      header: "",
-      render: (a) => (
-        <div className="flex justify-end">
-          <Tooltip label="Remover">
-            <Button
-              variant="ghost"
-              aria-label="Remover"
-              className="text-neutral-400 hover:text-critical"
-              onClick={() => setRemoveTarget(a)}
-            >
-              <TrashIcon />
-            </Button>
-          </Tooltip>
-        </div>
-      ),
-    },
-  ];
-
   async function handleResend(a: AdminRow) {
     try {
       const result = await resendInvite.mutateAsync(a.id);
@@ -160,40 +145,11 @@ export function AdminsPage() {
     }
   }
 
-  const pendingColumns: TableColumn<AdminRow>[] = [
-    { key: "email", header: "E-mail", render: (a) => a.email },
-    { key: "role", header: "Papel", render: (a) => a.role },
-    {
-      key: "status",
-      header: "",
-      render: (a) => (
-        <div className="flex justify-end gap-1">
-          <Tag variant="accent-outline">Pendente</Tag>
-          {a.expired ? <Tag variant="critical">Expirado</Tag> : null}
-        </div>
-      ),
-    },
-    {
-      key: "actions",
-      header: "",
-      render: (a) => (
-        <div className="flex justify-end gap-2">
-          <Button variant="ghost" onClick={() => handleResend(a)} disabled={resendInvite.isPending}>
-            Reenviar
-          </Button>
-          <Button variant="ghost" onClick={() => handleCancel(a)} disabled={cancelInvite.isPending}>
-            Cancelar
-          </Button>
-        </div>
-      ),
-    },
-  ];
-
   return (
     <div className="mx-auto flex w-full max-w-[1280px] flex-col gap-6">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-text">Equipe</h2>
+          <h2 className="text-text">Admins</h2>
           <p className="m-0 text-[13.5px] text-neutral-400">
             Gerencie quem tem acesso ao painel e com qual papel.
           </p>
@@ -204,66 +160,108 @@ export function AdminsPage() {
         </Button>
       </div>
 
-      <div className="flex flex-col gap-4">
+      <div className="flex flex-col gap-3">
         <h4 className="text-text">Ativos</h4>
-        <div className="mt-2">
-          {isLoading ? (
-            <p className="text-neutral-400">Carregando…</p>
-          ) : (
-            <Table
-              columns={activeColumns}
-              rows={active}
-              rowKey={(a) => a.id}
-              emptyMessage="Nenhum admin cadastrado."
-            />
-          )}
-        </div>
+        {isLoading ? (
+          <p className="text-neutral-400">Carregando…</p>
+        ) : (
+          <Card elevation="elev-sm" className="divide-y divide-divider overflow-hidden">
+            {active.length === 0 ? (
+              <p className="px-4 py-6 text-center text-neutral-400">Nenhum admin cadastrado.</p>
+            ) : (
+              active.map((a) => (
+                <div key={a.id} data-testid="admin-row" className="flex items-center gap-3 px-4 py-3.5">
+                  <div className="grid h-9 w-9 flex-none place-items-center rounded-full bg-neutral-800 text-sm font-medium text-neutral-300">
+                    {initial(a)}
+                  </div>
+                  <div className="flex-1 text-[15px] font-medium text-text">{a.email}</div>
+                  <IconRoleSelector
+                    role={a.role}
+                    onSelect={(newRole) => {
+                      if (newRole === a.role) return;
+                      setRoleError(null);
+                      setPendingRoleChange({ id: a.id, role: newRole });
+                    }}
+                  />
+                  <Tooltip label="Remover">
+                    <Button
+                      variant="ghost"
+                      aria-label="Remover"
+                      className="text-neutral-400 hover:text-critical"
+                      onClick={() => setRemoveTarget(a)}
+                    >
+                      <TrashIcon />
+                    </Button>
+                  </Tooltip>
+                </div>
+              ))
+            )}
+          </Card>
+        )}
+        <Pager page={page} totalPages={totalPages} onChange={setPage} />
       </div>
 
       {pending.length > 0 ? (
-        <div className="flex flex-col gap-4">
+        <div className="flex flex-col gap-3">
           <h4 className="text-text">Convites pendentes</h4>
-          <div className="mt-2">
-            <Table columns={pendingColumns} rows={pending} rowKey={(a) => a.id} />
-          </div>
+          <Card elevation="elev-sm" className="divide-y divide-divider overflow-hidden">
+            {pending.map((a) => (
+              <div key={a.id} data-testid="invite-row" className="flex items-center gap-3 px-4 py-3.5">
+                <div className="grid h-9 w-9 flex-none place-items-center rounded-full bg-neutral-800 text-neutral-300">
+                  <EnvelopeIcon />
+                </div>
+                <div className="flex-1">
+                  <div className="text-[15px] font-medium text-text">{a.email}</div>
+                  <div className="mt-0.5 text-xs text-neutral-400">{roleLabel[a.role]}</div>
+                </div>
+                <Tag variant="accent-outline">Pendente</Tag>
+                {a.expired ? <Tag variant="critical">Expirado</Tag> : null}
+                <Button variant="ghost" onClick={() => handleResend(a)} disabled={resendInvite.isPending}>
+                  Reenviar
+                </Button>
+                <Button variant="ghost" onClick={() => handleCancel(a)} disabled={cancelInvite.isPending}>
+                  Cancelar
+                </Button>
+              </div>
+            ))}
+          </Card>
+          <Pager page={page} totalPages={totalPages} onChange={setPage} />
         </div>
       ) : null}
 
-      <Pager page={page} totalPages={totalPages} onChange={setPage} />
-
-      <Dialog open={inviteOpen} onOpenChange={setInviteOpen} title="Convidar admin">
-        <form onSubmit={handleInvite} className="flex flex-col gap-3">
+      <Dialog
+        open={inviteOpen}
+        onOpenChange={setInviteOpen}
+        title="Convidar admin"
+        footer={
+          <>
+            <Button type="button" variant="secondary" onClick={() => setInviteOpen(false)}>
+              Cancelar
+            </Button>
+            <Button type="submit" form="invite-admin-form" variant="primary" disabled={inviteAdmin.isPending}>
+              Enviar convite
+            </Button>
+          </>
+        }
+      >
+        <form id="invite-admin-form" onSubmit={handleInvite} className="flex flex-col gap-3">
+          <Field label="Nome" value={name} onChange={(e) => setName(e.target.value)} required />
           <Field label="E-mail" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
+          <PhoneField label="Celular (opcional)" onChange={setPhone} />
           <div className="flex flex-col gap-1">
-            <label htmlFor="invite-role" className="text-sm font-medium text-text">
-              Papel
-            </label>
-            <select
-              id="invite-role"
+            <span className="text-sm font-medium text-text">Papel</span>
+            <Seg
+              aria-label="Papel"
+              options={roleOptions.map((r) => ({ value: r, label: roleLabel[r] }))}
               value={role}
-              onChange={(e) => setRole(e.target.value as Role)}
-              className="min-h-9 rounded-md border border-divider bg-surface px-3 text-sm text-text"
-            >
-              {roleOptions.map((r) => (
-                <option key={r} value={r}>
-                  {r}
-                </option>
-              ))}
-            </select>
+              onChange={(v) => setRole(v as Role)}
+            />
           </div>
           {inviteError ? (
             <p role="alert" className="text-xs text-critical">
               {inviteError}
             </p>
           ) : null}
-          <div className="flex gap-2">
-            <Button type="submit" variant="primary" disabled={inviteAdmin.isPending}>
-              Enviar convite
-            </Button>
-            <Button type="button" variant="secondary" onClick={() => setInviteOpen(false)}>
-              Cancelar
-            </Button>
-          </div>
         </form>
       </Dialog>
 
@@ -278,20 +276,22 @@ export function AdminsPage() {
             ? `Alterar o papel deste admin para ${pendingRoleChange.role}?`
             : undefined
         }
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setPendingRoleChange(null)}>
+              Cancelar
+            </Button>
+            <Button variant="primary" onClick={confirmRoleChange} disabled={updateRole.isPending}>
+              Confirmar
+            </Button>
+          </>
+        }
       >
         {roleError ? (
-          <p role="alert" className="mb-2 text-xs text-critical">
+          <p role="alert" className="text-xs text-critical">
             {roleError}
           </p>
         ) : null}
-        <div className="flex justify-end gap-2">
-          <Button variant="secondary" onClick={() => setPendingRoleChange(null)}>
-            Cancelar
-          </Button>
-          <Button variant="primary" onClick={confirmRoleChange} disabled={updateRole.isPending}>
-            Confirmar
-          </Button>
-        </div>
       </Dialog>
 
       <Dialog
@@ -305,20 +305,22 @@ export function AdminsPage() {
             ? `Remover o acesso de ${removeTarget.email}? Esta ação não pode ser desfeita.`
             : undefined
         }
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setRemoveTarget(null)}>
+              Cancelar
+            </Button>
+            <Button variant="primary" onClick={confirmRemove} disabled={deleteAdmin.isPending}>
+              Remover
+            </Button>
+          </>
+        }
       >
         {removeError ? (
-          <p role="alert" className="mb-2 text-xs text-critical">
+          <p role="alert" className="text-xs text-critical">
             {removeError}
           </p>
         ) : null}
-        <div className="flex justify-end gap-2">
-          <Button variant="secondary" onClick={() => setRemoveTarget(null)}>
-            Cancelar
-          </Button>
-          <Button variant="primary" onClick={confirmRemove} disabled={deleteAdmin.isPending}>
-            Remover
-          </Button>
-        </div>
       </Dialog>
     </div>
   );

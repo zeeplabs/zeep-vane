@@ -44,24 +44,25 @@ type AdminsHandler struct {
 	audit           *audit.Log
 	logger          *zap.Logger
 	devTokenLogging bool
-	httpsEnabled    bool
+	adminBaseURL    string
 	sessionSecret   string
 	secureCookies   bool
 }
 
 // NewAdminsHandler builds an AdminsHandler. devTokenLogging gates whether
 // the raw invite token is logged when an invite is created (see the
-// PasswordResetHandler doc for why this defaults to off). httpsEnabled
-// (mirrors cfg.HTTPSEnabled) picks the scheme used to build the invite
-// AcceptURL sent by email. sessionSecret/secureCookies authenticate the
-// admin created by AcceptInvite, same pair AuthHandler/BootstrapHandler
-// already take.
-func NewAdminsHandler(pool *db.Pool, admins *db.AdminRepository, invites *db.AdminInviteRepository, emailSvc *email.Service, companySettings *db.CompanySettingsRepository, auditLog *audit.Log, logger *zap.Logger, devTokenLogging, httpsEnabled bool, sessionSecret string, secureCookies bool) *AdminsHandler {
+// PasswordResetHandler doc for why this defaults to off). adminBaseURL
+// (cfg.AdminBaseURL) is the scheme+host the invite AcceptURL sent by email
+// is built from - never the incoming request's Host header, which is
+// attacker-controlled (see adminBaseURL() in admin_base_url.go for why).
+// sessionSecret/secureCookies authenticate the admin created by
+// AcceptInvite, same pair AuthHandler/BootstrapHandler already take.
+func NewAdminsHandler(pool *db.Pool, admins *db.AdminRepository, invites *db.AdminInviteRepository, emailSvc *email.Service, companySettings *db.CompanySettingsRepository, auditLog *audit.Log, logger *zap.Logger, devTokenLogging bool, adminBaseURL string, sessionSecret string, secureCookies bool) *AdminsHandler {
 	return &AdminsHandler{
 		pool: pool, admins: admins, invites: invites,
 		emailSvc: emailSvc, companySettings: companySettings,
 		audit: auditLog, logger: logger,
-		devTokenLogging: devTokenLogging, httpsEnabled: httpsEnabled,
+		devTokenLogging: devTokenLogging, adminBaseURL: adminBaseURL,
 		sessionSecret: sessionSecret, secureCookies: secureCookies,
 	}
 }
@@ -78,14 +79,10 @@ func (h *AdminsHandler) sendAdminInviteEmail(r *http.Request, inviteID, to, role
 		return false
 	}
 
-	scheme := "http"
-	if h.httpsEnabled {
-		scheme = "https"
-	}
 	data := email.AdminInviteEmailData{
 		CompanyName: settings.Name,
 		Role:        role,
-		AcceptURL:   fmt.Sprintf("%s://%s/accept-invite/%s", scheme, r.Host, rawToken),
+		AcceptURL:   fmt.Sprintf("%s/accept-invite/%s", adminBaseURL(h.adminBaseURL), rawToken),
 	}
 
 	if err := h.emailSvc.SendAdminInvite(r.Context(), to, data); err != nil {
@@ -118,11 +115,13 @@ func isValidAdminRole(role string) bool {
 }
 
 type inviteAdminRequest struct {
+	Name  string `json:"name"`
 	Email string `json:"email"`
+	Phone string `json:"phone"`
 	Role  string `json:"role"`
 }
 
-const invalidInviteAdminRequestBody = `{"error":"email is required and role must be one of owner, operator, viewer"}`
+const invalidInviteAdminRequestBody = `{"error":"name and email are required, and role must be one of owner, operator, viewer"}`
 const adminAlreadyActiveBody = `{"error":"an active admin already exists for this email"}`
 
 // Invite handles POST /api/admins (role: owner). It rejects an email that
@@ -149,8 +148,12 @@ func (h *AdminsHandler) Invite(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req inviteAdminRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Email == "" || !isValidAdminRole(req.Role) {
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Name == "" || req.Email == "" || !isValidAdminRole(req.Role) {
 		writeAdminError(w, http.StatusUnprocessableEntity, invalidInviteAdminRequestBody)
+		return
+	}
+	if err := ValidatePhone(req.Phone); err != nil {
+		writeAdminError(w, http.StatusUnprocessableEntity, invalidPhoneBody)
 		return
 	}
 
@@ -179,6 +182,8 @@ func (h *AdminsHandler) Invite(w http.ResponseWriter, r *http.Request) {
 	invite := &db.AdminInvite{
 		Email:       req.Email,
 		Role:        req.Role,
+		Name:        req.Name,
+		Phone:       nilIfEmpty(req.Phone),
 		TokenHash:   hashAdminInviteToken(rawToken),
 		InvitedByID: actor.ID,
 		ExpiresAt:   time.Now().Add(adminInviteTTL),
@@ -274,7 +279,7 @@ func (h *AdminsHandler) AcceptInvite(w http.ResponseWriter, r *http.Request) {
 	// (M12) - no longer a separate UpdateRole call that could leave the
 	// account stuck on the admins.role column's default (owner) if it
 	// never ran.
-	admin := &db.Admin{Email: invite.Email, PasswordHash: passwordHash}
+	admin := &db.Admin{Email: invite.Email, PasswordHash: passwordHash, Name: invite.Name, Phone: invite.Phone}
 	if err := h.admins.CreateWithRole(r.Context(), admin, invite.Role); err != nil {
 		h.logger.Error("admins: failed to activate invited admin", zap.Error(err))
 		writeInternalError(w)
@@ -388,6 +393,8 @@ const adminLockoutBody = `{"error":"this action would leave zero active owners"}
 type adminResponse struct {
 	ID        string     `json:"id"`
 	Email     string     `json:"email"`
+	Name      string     `json:"name,omitempty"`
+	Phone     *string    `json:"phone,omitempty"`
 	Role      string     `json:"role"`
 	Status    string     `json:"status"`
 	ExpiresAt *time.Time `json:"expires_at,omitempty"`
@@ -565,7 +572,7 @@ func (h *AdminsHandler) List(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	page := parsePage(r)
 
-	rows, err := h.pool.Query(ctx, "SELECT id, email, role FROM admins ORDER BY email")
+	rows, err := h.pool.Query(ctx, "SELECT id, email, name, phone, role FROM admins ORDER BY email")
 	if err != nil {
 		h.logger.Error("admins: failed to list admins", zap.Error(err))
 		writeInternalError(w)
@@ -576,7 +583,7 @@ func (h *AdminsHandler) List(w http.ResponseWriter, r *http.Request) {
 	list := []adminResponse{}
 	for rows.Next() {
 		var item adminResponse
-		if err := rows.Scan(&item.ID, &item.Email, &item.Role); err != nil {
+		if err := rows.Scan(&item.ID, &item.Email, &item.Name, &item.Phone, &item.Role); err != nil {
 			h.logger.Error("admins: failed to scan admin row", zap.Error(err))
 			writeInternalError(w)
 			return
@@ -600,6 +607,8 @@ func (h *AdminsHandler) List(w http.ResponseWriter, r *http.Request) {
 		list = append(list, adminResponse{
 			ID:        invite.ID,
 			Email:     invite.Email,
+			Name:      invite.Name,
+			Phone:     invite.Phone,
 			Role:      invite.Role,
 			Status:    "pending",
 			ExpiresAt: &invite.ExpiresAt,

@@ -7,8 +7,10 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/go-chi/chi/v5"
 	"go.uber.org/zap"
 
+	"github.com/zeeplabs/zeep-vane/internal/audit"
 	"github.com/zeeplabs/zeep-vane/internal/db"
 )
 
@@ -22,17 +24,19 @@ const domainsPageSize = 20
 type domainCreatorLister interface {
 	Create(ctx context.Context, domain *db.Domain) error
 	ListPaginated(ctx context.Context, page, pageSize int) ([]db.Domain, int, error)
+	Delete(ctx context.Context, id string) error
 }
 
 // DomainsHandler serves the domain admin routes.
 type DomainsHandler struct {
 	domains domainCreatorLister
+	audit   *audit.Log
 	logger  *zap.Logger
 }
 
 // NewDomainsHandler builds a DomainsHandler backed by domains.
-func NewDomainsHandler(domains domainCreatorLister, logger *zap.Logger) *DomainsHandler {
-	return &DomainsHandler{domains: domains, logger: logger}
+func NewDomainsHandler(domains domainCreatorLister, auditLog *audit.Log, logger *zap.Logger) *DomainsHandler {
+	return &DomainsHandler{domains: domains, audit: auditLog, logger: logger}
 }
 
 type createDomainRequest struct {
@@ -100,4 +104,39 @@ func (h *DomainsHandler) List(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	_ = json.NewEncoder(w).Encode(Page[domainResponse]{Items: resp, Total: total, Page: page, PageSize: domainsPageSize})
+}
+
+const domainInUseBody = `{"error":"domain is still attached to a status page"}`
+
+// Delete handles DELETE /api/domains/{id}, removing a registered root
+// domain. It returns 404 if no domain matches id, or 409 if the domain is
+// still attached to a status page (deleting it out from under a published
+// page would silently break its public URL - the operator must detach the
+// domain from the status page first).
+func (h *DomainsHandler) Delete(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+
+	if err := h.domains.Delete(r.Context(), id); err != nil {
+		if errors.Is(err, db.ErrNotFound) {
+			http.NotFound(w, r)
+			return
+		}
+		if errors.Is(err, db.ErrDomainInUse) {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusConflict)
+			_, _ = w.Write([]byte(domainInUseBody))
+			return
+		}
+		h.logger.Error("domains: failed to delete domain", zap.Error(err))
+		writeInternalError(w)
+		return
+	}
+
+	if actor, ok := AdminFromContext(r.Context()); ok {
+		if err := h.audit.Record(r.Context(), actor.ID, id, "domain_deleted"); err != nil {
+			h.logger.Error("domains: failed to record audit entry", zap.Error(err))
+		}
+	}
+
+	w.WriteHeader(http.StatusNoContent)
 }

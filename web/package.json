@@ -1,7 +1,7 @@
 {
   "name": "vane-web",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.2.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -12,6 +12,7 @@
   "dependencies": {
     "@radix-ui/react-dialog": "^1.1.6",
     "@tanstack/react-query": "^5.62.7",
+    "@zeeptech/toolkit": "^1.0.1",
     "i18next": "^23.16.8",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",

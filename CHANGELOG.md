@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] — 2026-08-31
+
+### Security
+
+- Fixed a host-header injection vulnerability in `POST /api/auth/password-reset/request` and admin-invite emails: the emailed link was built from the incoming request's `Host` header, which is attacker-controlled on this unauthenticated endpoint — an attacker could email a real victim a password-reset link pointing at a host of their choosing. Links are now built exclusively from the new `VANE_ADMIN_BASE_URL` config value; see `AD-014`.
+- Closed the account-enumeration timing oracle this fix could otherwise reopen: token generation, persistence, and email dispatch all run detached from the request/response cycle, so `Request`'s response time and status no longer differ between a known and an unknown email.
+- Password reset (`POST /api/auth/password-reset/confirm`) now invalidates every other pending reset token for the admin and revokes all of the admin's existing sessions, so a still-valid sibling reset link or a session obtained before the reset can no longer be used afterward.
+
+### Added
+
+- Admin accounts now have a required `name` and optional international `phone` number, collected at invite/bootstrap time (`AD-015`). The invite dialog's role picker is three buttons instead of a dropdown.
+- Domains and status pages can now be deleted from the admin dashboard, with a confirmation dialog and a 409 response when a domain is still attached to a status page.
+- The logged-in admin's name and email are shown in the sidebar above the sign-out button.
+- Integrations, Services, Domains & Status Pages, Poller Status, and Admins were redesigned from table layouts to card-based lists; every modal's footer is now consistently right-aligned with a border separating it from the modal's content.
+
+### Fixed
+
+- A 422 (weak password) response during account activation or password reset previously surfaced the backend's raw English error string; it now shows a translated message like every other error on those screens.
+- `AcceptInvitePage` now falls back to the Vane logo when no company logo is configured, matching every other auth screen, instead of a generic star icon.
+- `VANE_ADMIN_BASE_URL` (introduced by the host-header injection fix above) had no way to be set through the Helm chart; added `config.adminBaseUrl` to `values.yaml`.
+
 ## [0.1.0] — 2026-08-31
 
 ### Added

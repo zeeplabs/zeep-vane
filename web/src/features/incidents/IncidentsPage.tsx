@@ -317,14 +317,14 @@ export function IncidentsPage() {
         title="Criar incidente"
         description="Descreva o incidente e vincule os serviços afetados."
         footer={
-          <div className="flex gap-2">
-            <Button type="submit" form="create-incident-form" variant="primary" disabled={createIncident.isPending}>
-              Criar
-            </Button>
+          <>
             <Button type="button" variant="secondary" onClick={() => setDialogOpen(false)}>
               Cancelar
             </Button>
-          </div>
+            <Button type="submit" form="create-incident-form" variant="primary" disabled={createIncident.isPending}>
+              Criar
+            </Button>
+          </>
         }
       >
         <form id="create-incident-form" onSubmit={handleSubmit} className="flex flex-col gap-3">

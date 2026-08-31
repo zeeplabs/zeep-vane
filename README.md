@@ -53,6 +53,7 @@ docker compose up -d
 | --- | --- |
 | **Custom domains, automatic TLS** | Attach your own hostname to a status page; CertMagic issues an ACME certificate on first request — no nginx/Caddy/Traefik in front |
 | **Draft → Published pages** | A page can exist and be previewed (`/api/status-pages/{id}/public-preview`) before any domain is attached (AD-008) |
+| **Deletable domains & status pages** | Both can be deleted from the admin dashboard (with confirmation); deleting a domain still attached to a status page is rejected with a 409 instead |
 | **Incident timelines** | Incidents link to one or more services, surfaced on the public page for 90 days after resolution |
 | **Hourly uptime history** | Public page renders per-service hourly status bars computed from `status_intervals` |
 | **White-label branding** | Company name + logo shown on the public page (`company_settings` singleton) |
@@ -109,14 +110,32 @@ make build                 # frontend build + go build -o bin/vane
 ### Kubernetes (Helm)
 
 ```bash
-helm repo add zeeplabs https://zeeplabs.github.io/zeep-vane/helm
-helm install zeep-vane zeeplabs/zeep-vane \
+helm repo add zeep-vane https://zeeplabs.github.io/zeep-vane/helm
+helm install zeep-vane zeep-vane/zeep-vane \
   --set secrets.databaseUrl="postgres://user:pass@host:5432/vane?sslmode=require" \
   --set secrets.vaneMasterKey="$(openssl rand -hex 32)" \
   --set secrets.vaneSessionSecret="$(openssl rand -hex 32)"
 ```
 
+> **Repo name collision:** the local alias in `helm repo add <alias> <url>` is just a name you pick — it has nothing to do with the chart itself. If you already run other ZeepLabs open-source Helm charts (e.g. `zeep-orbit`) and added their repo under a shared alias like `zeeplabs`, adding this one under the *same* alias fails with `Error: repository name (…) already exists` — Helm won't silently repoint an existing alias at a different index URL. Use a distinct alias per chart (as above), or add `--force-update` to repoint an existing alias at this chart's index instead (only do this if you're sure nothing else on the machine still needs that alias pointed at its original URL).
+
 The chart deploys two Services: an internal `ClusterIP` for the admin API/SPA (put it behind your own ingress if you want it reachable from outside the cluster), and a `LoadBalancer` exposing Vane's own CertMagic-terminated `:443` listener directly — this is what customer-attached status-page domains should point their DNS at, since CertMagic issues certificates for hostnames not known at deploy time and a conventional ingress/cert-manager setup can't do that. CertMagic's certificate storage lives in Postgres (no PVC, no local disk) so any replica can serve TLS for any registered domain. Full chart source: [`charts/zeep-vane`](charts/zeep-vane).
+
+#### Upgrading an existing install
+
+```bash
+helm repo update zeep-vane                        # refresh the local index (new chart/app versions won't show up otherwise)
+helm search repo zeep-vane/zeep-vane --versions    # see what's available
+helm get values zeep-vane                          # review the values this release is currently running with first
+helm upgrade zeep-vane zeep-vane/zeep-vane \
+  --reuse-values \
+  --set image.tag="v0.2.0"                         # or --version <chart-version> to move to a newer chart release
+```
+
+- `--reuse-values` keeps every value you set at install time (secrets, `config.*`, `ingress.*`, etc.) — without it, `helm upgrade` resets everything to the chart's defaults, which on this chart means silently losing your `secrets.databaseUrl`/`vaneMasterKey`/`vaneSessionSecret`. Pass `--set`/`-f` on top of `--reuse-values` only for the specific value(s) you're changing (e.g. bumping `image.tag`, or a new `config.*` field a release just added).
+- `image.tag` (`values.yaml`) defaults to `latest`, so `kubectl rollout restart deployment/zeep-vane` alone won't necessarily pull a newer build if a node already cached that tag — pin an explicit tag (or `image.digest`) once you're past initial evaluation, so an upgrade is a deliberate version bump rather than "whatever `latest` resolves to on whichever node the pod lands on."
+- Check `CHANGELOG.md`/the GitHub release notes for the target version before upgrading across a minor version — a new required `secrets.*`/`config.*` value (like a new `AD-NNN` in [`.specs/STATE.md`](.specs/STATE.md) sometimes introduces) will fail `helm upgrade` with `execution error` rather than silently starting misconfigured, but it's still better to know beforehand.
+- `helm rollback zeep-vane <REVISION>` (see `helm history zeep-vane` for revision numbers) reverts to a previous release's values/chart version if an upgrade goes wrong — it does not undo any database migration the new version's binary already applied on startup, since Vane's migrations are forward-only and embedded in the binary, not managed by the chart.
 
 ---
 
@@ -278,9 +297,10 @@ Loaded by `internal/config.Load()` (`internal/config/config.go`). A `.env` file 
 | `LOG_LEVEL` | No | `info` | zap log level |
 | `CORS_ALLOWED_ORIGIN` | No | `http://localhost:5173` | Single allowed CORS origin — defaults to the Vite dev server |
 | `PUBLIC_DNS_TARGET` | No | *(empty)* | The DNS target (e.g. an IP or CNAME) this instance's admins should point their custom domain at. Left empty, the "attach domain" screen shows "not configured" instead of blocking — Vane cannot reliably discover its own public hostname |
+| `VANE_ADMIN_BASE_URL` | No | *(empty)* | Scheme+host every admin-facing email link (password-reset, admin-invite) is built from, e.g. `https://admin.example.com`. Never derived from the incoming request's `Host` header — that header is attacker-controlled, and the password-reset request endpoint in particular is unauthenticated, so trusting it would let anyone email a real admin a reset link pointing at a host of their choosing. Left unset, those emails link to a visibly broken placeholder host instead of silently trusting `Host` — **set this before connecting an email provider** |
 | `VANE_HTTPS_ENABLED` | No | `true` | Set to `false` to skip starting the public HTTPS listener entirely — e.g. no custom status-page domain to serve yet, or the environment can't bind `HTTPS_PORT` (unprivileged container, port already owned by a reverse proxy). With HTTPS enabled and its bind failing, `vane serve` still exits non-zero (unchanged) — this flag is how an operator avoids that failure mode altogether, rather than a way to survive it |
 | `HTTPS_PORT` | No | `443` | Port the public, TLS-terminated status page listener binds to |
-| `VANE_DEV_TOKEN_LOGGING` | No | `false` | Set to `true` to log the raw password-reset/admin-invite token, standing in for real email delivery (see [Known gaps](#-known-gaps--backlog)). The token is a bearer credential for account takeover — **leave this off in any deployment whose logs reach a shared sink** |
+| `VANE_DEV_TOKEN_LOGGING` | No | `false` | Set to `true` to additionally log the raw password-reset/admin-invite token — useful for local development with no email provider connected yet. The token is a bearer credential for account takeover — **leave this off in any deployment whose logs reach a shared sink** |
 | `VANE_SECURE_COOKIES` | No | `true` | Set to `false` if this instance is reached over plain HTTP by anything other than `http://localhost` — browsers only send a `Secure` cookie back over HTTPS (or the `localhost` exception), so with the default `true` the admin API returns `200` on login and a silent `401` on every request after, on any other HTTP-only host. Setting it `false` means the session token then travels unencrypted on whatever network reaches this instance — **only do this on a network you trust**, and prefer terminating TLS in front of Vane instead |
 
 ---
@@ -414,7 +434,6 @@ make build
 
 Tracked in `.specs/STATE.md`. Not yet solved, not yet requested to be solved:
 
-- **No email delivery.** The password-reset and admin-invite flows generate a real token but have no way to send it — there is no configured mail provider. By default the token is not logged anywhere (`VANE_DEV_TOKEN_LOGGING=false`), which means, out of the box, **neither flow can be completed** without wiring up a mail provider or setting `VANE_DEV_TOKEN_LOGGING=true` and retrieving the token from `docker logs`/your log sink — acceptable for a single self-hosted operator bootstrapping their own instance, not for anything beyond that.
 - Admin invite **resend/cancel** — frontend hooks exist, backend endpoints don't.
 - No auto-discovery of Datadog services/SLOs/monitors (would have to be added as a connector feature).
 - An intermittent `pg_advisory_lock`/connection-pressure test flake under sustained back-to-back full-suite runs (`internal/dbtest`'s dedicated lock connections don't always get reaped by Postgres fast enough between rapid consecutive invocations) — doesn't reproduce on a normal single CI run against a rested database; recommended fix is still to pin `go test -p 1` (or reduce dbtest's dedicated-connection footprint), not yet applied.

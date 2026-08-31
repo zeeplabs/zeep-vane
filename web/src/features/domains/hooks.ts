@@ -23,3 +23,13 @@ export function useCreateDomain() {
     },
   });
 }
+
+export function useDeleteDomain() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => apiFetch<void>(`/api/domains/${id}`, { method: "DELETE" }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["domains"] });
+    },
+  });
+}

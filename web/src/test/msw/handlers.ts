@@ -149,6 +149,24 @@ export function seedAdminInviteToken(rawToken: string, email: string, role: Role
   adminInviteTokensState[rawToken] = { email, role };
 }
 
+// passwordResetTokensState maps a raw password-reset token to the admin
+// email it was issued for, same mock-only pattern as
+// adminInviteTokensState - the real backend never exposes a raw token to
+// any client that didn't just mint it (only the emailed link carries one).
+let passwordResetTokensState: Record<string, string> = {};
+
+export function resetPasswordResetTokens(): void {
+  passwordResetTokensState = {};
+}
+
+// Test-only helper (password-reset-confirm-page): registers rawToken as
+// resetting the password for email via
+// POST /api/auth/password-reset/confirm, mirroring how the real backend
+// hashes a freshly-minted token at Request() time.
+export function seedPasswordResetToken(rawToken: string, email: string): void {
+  passwordResetTokensState[rawToken] = email;
+}
+
 // Test-only helper (INVITE-07): seeds a pending invite whose expires_at is
 // already in the past, so a test can assert List's expired:true tagging
 // without waiting an hour or faking the clock.
@@ -289,15 +307,15 @@ export const handlers = [
   // never depend on a subsequent /api/auth/me call succeeding within the
   // same test (that boot re-check only happens on a real page reload).
   http.post("/api/bootstrap", async ({ request }) => {
-    const body = (await request.json()) as { email?: string; password?: string };
-    if (!body.email || !body.password) {
-      return HttpResponse.json({ error: "email and password are required" }, { status: 422 });
+    const body = (await request.json()) as { name?: string; email?: string; phone?: string; password?: string };
+    if (!body.name || !body.email || !body.password) {
+      return HttpResponse.json({ error: "name, email, and password are required" }, { status: 422 });
     }
     if (bootstrapState) {
       return HttpResponse.json({ error: "already bootstrapped" }, { status: 409 });
     }
     bootstrapState = true;
-    return HttpResponse.json({ id: "admin-bootstrap-1", email: body.email, role: "owner" });
+    return HttpResponse.json({ id: "admin-bootstrap-1", email: body.email, name: body.name, phone: body.phone, role: "owner" });
   }),
 
   http.post("/api/auth/login", async ({ request }) => {
@@ -315,12 +333,47 @@ export const handlers = [
     if (!admin) {
       return HttpResponse.json({ error: "unauthorized" }, { status: 401 });
     }
-    return HttpResponse.json({ id: admin.id, email: admin.email, role: admin.role });
+    return HttpResponse.json({ id: admin.id, email: admin.email, name: admin.name, role: admin.role });
   }),
 
   http.post("/api/auth/logout", () => {
     sessionAdminId = null;
     return new HttpResponse(null, { status: 200 });
+  }),
+
+  // POST /api/auth/password-reset/request - mirrors
+  // PasswordResetHandler.Request: always 200 regardless of whether the
+  // email is registered (account-enumeration protection), matching the
+  // real backend's own behavior exactly - so a test can't tell success
+  // from "no such email" apart from a seeded seedPasswordResetToken.
+  http.post("/api/auth/password-reset/request", () => {
+    return HttpResponse.json({ status: "ok" });
+  }),
+
+  // POST /api/auth/password-reset/confirm - mirrors
+  // PasswordResetHandler.Confirm: 401 on an unknown/already-used/expired
+  // token (checked first, same order as the real handler), 422 on a
+  // new_password outside auth.ValidatePassword's 8-72 char range (same
+  // weakPasswordBody text bootstrap/accept-invite also return), otherwise
+  // consumes the token (a second confirm with the same token 401s,
+  // matching the real single-use invariant) and responds 200. Does not set
+  // a session cookie, unlike accept-invite.
+  http.post("/api/auth/password-reset/confirm", async ({ request }) => {
+    const body = (await request.json()) as { token?: string; new_password?: string };
+    const token = body.token ?? "";
+    const email = passwordResetTokensState[token];
+    if (!email) {
+      return HttpResponse.json({ error: "invalid or expired reset token" }, { status: 401 });
+    }
+    const newPassword = body.new_password ?? "";
+    if (newPassword.length < 8 || newPassword.length > 72) {
+      return HttpResponse.json(
+        { error: "password must be between 8 and 72 characters" },
+        { status: 422 },
+      );
+    }
+    delete passwordResetTokensState[token];
+    return HttpResponse.json({ status: "ok" });
   }),
 
   // GET /api/domains (PAG-08) - mirrors DomainsHandler.List: ordered by
@@ -348,6 +401,22 @@ export const handlers = [
     };
     domainsState.push(created);
     return HttpResponse.json(toDomainResponse(created), { status: 201 });
+  }),
+
+  // DELETE /api/domains/:id - mirrors DomainsHandler.Delete: 404 unknown
+  // domain, 409 if a status page still references it via domain_id, else
+  // 204.
+  http.delete("/api/domains/:id", ({ params }) => {
+    if (!sessionAdminId) return HttpResponse.json({ error: "unauthorized" }, { status: 401 });
+    const domain = domainsState.find((d) => d.id === params.id);
+    if (!domain) {
+      return HttpResponse.json({ error: "domain not found" }, { status: 404 });
+    }
+    if (statusPagesState.some((p) => p.domain_id === domain.id)) {
+      return HttpResponse.json({ error: "domain is still attached to a status page" }, { status: 409 });
+    }
+    domainsState = domainsState.filter((d) => d.id !== domain.id);
+    return new HttpResponse(null, { status: 204 });
   }),
 
   http.get("/api/status-pages", ({ request }) => {
@@ -441,6 +510,18 @@ export const handlers = [
     }
     page.service_ids = body.service_ids;
     return HttpResponse.json(toStatusPageResponse(page));
+  }),
+
+  // DELETE /api/status-pages/:id - mirrors StatusPagesHandler.Delete: 404
+  // unknown page, else 204.
+  http.delete("/api/status-pages/:id", ({ params }) => {
+    if (!sessionAdminId) return HttpResponse.json({ error: "unauthorized" }, { status: 401 });
+    const page = statusPagesState.find((p) => p.id === params.id);
+    if (!page) {
+      return HttpResponse.json({ error: "status page not found" }, { status: 404 });
+    }
+    statusPagesState = statusPagesState.filter((p) => p.id !== page.id);
+    return new HttpResponse(null, { status: 204 });
   }),
 
   // GET /api/instance/dns-target (SPD-10) - mirrors InstanceConfigHandler
@@ -711,10 +792,10 @@ export const handlers = [
   // provider in this mock environment to fail.
   http.post("/api/admins", async ({ request }) => {
     if (!sessionAdminId) return HttpResponse.json({ error: "unauthorized" }, { status: 401 });
-    const body = (await request.json()) as { email?: string; role?: string };
-    if (!body.email || !body.role || !validAdminRoles.includes(body.role as Role)) {
+    const body = (await request.json()) as { name?: string; email?: string; phone?: string; role?: string };
+    if (!body.name || !body.email || !body.role || !validAdminRoles.includes(body.role as Role)) {
       return HttpResponse.json(
-        { error: "email is required and role must be one of owner, operator, viewer" },
+        { error: "name and email are required, and role must be one of owner, operator, viewer" },
         { status: 422 },
       );
     }
@@ -726,6 +807,8 @@ export const handlers = [
     adminInvitesState.push({
       id: `invite-msw-${adminInviteIdCounter}`,
       email: body.email,
+      name: body.name,
+      phone: body.phone,
       role: body.role as Role,
       status: "pending",
       expires_at: new Date(Date.now() + 1000 * 60 * 60).toISOString(),
