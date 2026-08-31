@@ -109,14 +109,32 @@ make build                 # frontend build + go build -o bin/vane
 ### Kubernetes (Helm)
 
 ```bash
-helm repo add zeeplabs https://zeeplabs.github.io/zeep-vane/helm
-helm install zeep-vane zeeplabs/zeep-vane \
+helm repo add zeep-vane https://zeeplabs.github.io/zeep-vane/helm
+helm install zeep-vane zeep-vane/zeep-vane \
   --set secrets.databaseUrl="postgres://user:pass@host:5432/vane?sslmode=require" \
   --set secrets.vaneMasterKey="$(openssl rand -hex 32)" \
   --set secrets.vaneSessionSecret="$(openssl rand -hex 32)"
 ```
 
+> **Repo name collision:** the local alias in `helm repo add <alias> <url>` is just a name you pick — it has nothing to do with the chart itself. If you already run other ZeepLabs open-source Helm charts (e.g. `zeep-orbit`) and added their repo under a shared alias like `zeeplabs`, adding this one under the *same* alias fails with `Error: repository name (…) already exists` — Helm won't silently repoint an existing alias at a different index URL. Use a distinct alias per chart (as above), or add `--force-update` to repoint an existing alias at this chart's index instead (only do this if you're sure nothing else on the machine still needs that alias pointed at its original URL).
+
 The chart deploys two Services: an internal `ClusterIP` for the admin API/SPA (put it behind your own ingress if you want it reachable from outside the cluster), and a `LoadBalancer` exposing Vane's own CertMagic-terminated `:443` listener directly — this is what customer-attached status-page domains should point their DNS at, since CertMagic issues certificates for hostnames not known at deploy time and a conventional ingress/cert-manager setup can't do that. CertMagic's certificate storage lives in Postgres (no PVC, no local disk) so any replica can serve TLS for any registered domain. Full chart source: [`charts/zeep-vane`](charts/zeep-vane).
+
+#### Upgrading an existing install
+
+```bash
+helm repo update zeep-vane                        # refresh the local index (new chart/app versions won't show up otherwise)
+helm search repo zeep-vane/zeep-vane --versions    # see what's available
+helm get values zeep-vane                          # review the values this release is currently running with first
+helm upgrade zeep-vane zeep-vane/zeep-vane \
+  --reuse-values \
+  --set image.tag="v0.2.0"                         # or --version <chart-version> to move to a newer chart release
+```
+
+- `--reuse-values` keeps every value you set at install time (secrets, `config.*`, `ingress.*`, etc.) — without it, `helm upgrade` resets everything to the chart's defaults, which on this chart means silently losing your `secrets.databaseUrl`/`vaneMasterKey`/`vaneSessionSecret`. Pass `--set`/`-f` on top of `--reuse-values` only for the specific value(s) you're changing (e.g. bumping `image.tag`, or a new `config.*` field a release just added).
+- `image.tag` (`values.yaml`) defaults to `latest`, so `kubectl rollout restart deployment/zeep-vane` alone won't necessarily pull a newer build if a node already cached that tag — pin an explicit tag (or `image.digest`) once you're past initial evaluation, so an upgrade is a deliberate version bump rather than "whatever `latest` resolves to on whichever node the pod lands on."
+- Check `CHANGELOG.md`/the GitHub release notes for the target version before upgrading across a minor version — a new required `secrets.*`/`config.*` value (like a new `AD-NNN` in [`.specs/STATE.md`](.specs/STATE.md) sometimes introduces) will fail `helm upgrade` with `execution error` rather than silently starting misconfigured, but it's still better to know beforehand.
+- `helm rollback zeep-vane <REVISION>` (see `helm history zeep-vane` for revision numbers) reverts to a previous release's values/chart version if an upgrade goes wrong — it does not undo any database migration the new version's binary already applied on startup, since Vane's migrations are forward-only and embedded in the binary, not managed by the chart.
 
 ---
 
