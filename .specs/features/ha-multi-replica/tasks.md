@@ -264,13 +264,13 @@ T10 → T11 → T12 → T13
 - Skill: NONE
 
 **Done when**:
-- [ ] `Store`/`Load` round-trip identical bytes for a given key
-- [ ] `Load` on a missing key returns an error satisfying `errors.Is(err, fs.ErrNotExist)`
-- [ ] `Delete` on an exact key removes it; `Delete` on a "directory" prefix removes every key under `prefix/`
-- [ ] `Exists` is `true` for both an exact key and a prefix match, `false` otherwise
-- [ ] `List(ctx, path, recursive=true)` returns every key under `path/`; `recursive=false` returns only the immediate next segment, deduplicated
-- [ ] `Stat` returns correct `KeyInfo` (including `IsTerminal`) for both a file key and a directory-only prefix
-- [ ] Full gate passes
+- [x] `Store`/`Load` round-trip identical bytes for a given key
+- [x] `Load` on a missing key returns an error satisfying `errors.Is(err, fs.ErrNotExist)`
+- [x] `Delete` on an exact key removes it; `Delete` on a "directory" prefix removes every key under `prefix/`
+- [x] `Exists` is `true` for both an exact key and a prefix match, `false` otherwise
+- [x] `List(ctx, path, recursive=true)` returns every key under `path/`; `recursive=false` returns only the immediate next segment, deduplicated
+- [x] `Stat` returns correct `KeyInfo` (including `IsTerminal`) for both a file key and a directory-only prefix
+- [x] Full gate passes
 
 **Tests**: integration
 **Gate**: Full
