@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.1] — 2026-08-31
+
+### Fixed
+
+- A status page with a domain attached could never actually publish: `AttachDomain` left the page in the `draft` state, but on-demand TLS issuance refuses to even attempt a certificate for a `draft` page — an unconditional deadlock present since the original TLS design, only surfaced now by the first real-world DNS/certificate attempt. Attaching a domain now moves the page to a new `pending_tls` state, which issuance is allowed to act on (`AD-017`).
+
+### Added
+
+- A status page's detail screen now shows a persistent DNS/certificate panel, visible to owners/operators — the DNS record to configure and a "Verificar DNS/certificado" button that performs a real DNS lookup and TLS handshake against the page's public hostname on demand, similar to the custom-domain verification flow on platforms like Vercel or Render. DNS is matched by resolved IP overlap (robust to CNAME chains and plain A records) and the served certificate is validated against the system root pool, not just "a TLS handshake completed." The panel stays visible until the page is published.
+
 ## [0.2.0] — 2026-08-31
 
 ### Security

@@ -19,7 +19,19 @@ import (
 	"github.com/zeeplabs/zeep-vane/internal/db"
 )
 
-func newStatusPagesRouter(t *testing.T) (http.Handler, *db.Pool, *db.AdminRepository) {
+// fakeDomainVerifier lets VerifyDomain tests control the DNS/TLS check
+// outcome without depending on real network access - a real domainVerifier
+// dials the real internet (domain_verifier.go), which would make this
+// suite flaky/slow and require a real publicly-resolvable hostname.
+type fakeDomainVerifier struct {
+	result domainVerificationResult
+}
+
+func (f *fakeDomainVerifier) Verify(ctx context.Context, hostname, expectedTarget string) domainVerificationResult {
+	return f.result
+}
+
+func newStatusPagesRouter(t *testing.T, opts ...func(*StatusPagesHandler)) (http.Handler, *db.Pool, *db.AdminRepository) {
 	t.Helper()
 	dsn := testDatabaseURL(t)
 
@@ -38,7 +50,10 @@ func newStatusPagesRouter(t *testing.T) (http.Handler, *db.Pool, *db.AdminReposi
 
 	repo := db.NewStatusPageRepository(pool)
 	admins := db.NewAdminRepository(pool)
-	handler := NewStatusPagesHandler(repo, audit.NewLog(pool), zap.NewNop())
+	handler := NewStatusPagesHandler(repo, audit.NewLog(pool), "", zap.NewNop())
+	for _, opt := range opts {
+		opt(handler)
+	}
 
 	r := chi.NewRouter()
 	r.Group(func(protected chi.Router) {
@@ -47,6 +62,7 @@ func newStatusPagesRouter(t *testing.T) (http.Handler, *db.Pool, *db.AdminReposi
 		protected.Get("/api/status-pages", handler.List)
 		protected.Patch("/api/status-pages/{id}/domain", handler.AttachDomain)
 		protected.Patch("/api/status-pages/{id}/services", handler.SetServices)
+		protected.Post("/api/status-pages/{id}/verify-domain", handler.VerifyDomain)
 		protected.Delete("/api/status-pages/{id}", handler.Delete)
 	})
 
@@ -457,6 +473,13 @@ func TestAttachDomain_ValidRequest_200ReflectsNewDomainAndSubdomain(t *testing.T
 	if updated.Subdomain == nil || *updated.Subdomain != "status" {
 		t.Errorf("Subdomain = %v, want %q", updated.Subdomain, "status")
 	}
+	// Regression guard: AttachDomain used to leave state at "draft", which
+	// tls.HostPolicy permanently refuses to issue a certificate for -
+	// every status page with a domain was stuck forever. See migration
+	// 0020 and internal/tls/manager.go's draftState doc comment.
+	if updated.State != "pending_tls" {
+		t.Errorf("State = %q, want %q (a page must leave \"draft\" the moment a domain is attached, or tls.HostPolicy can never issue it a certificate)", updated.State, "pending_tls")
+	}
 }
 
 // TestAttachDomain_AlreadyAttached_409 asserts SPD-07.
@@ -539,6 +562,137 @@ func TestAttachDomain_NonexistentStatusPageID_404(t *testing.T) {
 		t.Errorf("status = %d, want %d, body = %s", rec.Code, http.StatusNotFound, rec.Body.String())
 	}
 }
+
+func postVerifyDomain(t *testing.T, r http.Handler, token, statusPageID string) *httptest.ResponseRecorder {
+	t.Helper()
+	httpReq := httptest.NewRequest(http.MethodPost, "/api/status-pages/"+statusPageID+"/verify-domain", nil)
+	if token != "" {
+		httpReq.Header.Set("Authorization", "Bearer "+token)
+	}
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, httpReq)
+	return rec
+}
+
+func TestVerifyDomain_NoDomainAttached_422(t *testing.T) {
+	r, pool, admins := newStatusPagesRouter(t)
+	token := issueTestSessionToken(t, admins)
+	pageID := createDomainlessStatusPageViaAPI(t, r, pool, token, "Verify No Domain Page")
+
+	rec := postVerifyDomain(t, r, token, pageID)
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Errorf("status = %d, want %d, body = %s", rec.Code, http.StatusUnprocessableEntity, rec.Body.String())
+	}
+}
+
+func TestVerifyDomain_NonexistentStatusPageID_404(t *testing.T) {
+	r, _, admins := newStatusPagesRouter(t)
+	token := issueTestSessionToken(t, admins)
+
+	rec := postVerifyDomain(t, r, token, "00000000-0000-0000-0000-000000000000")
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("status = %d, want %d, body = %s", rec.Code, http.StatusNotFound, rec.Body.String())
+	}
+}
+
+// TestVerifyDomain_ValidRequest_200ReturnsCheckResult injects a
+// fakeDomainVerifier (real DNS/TLS would make this test flaky/slow and
+// require a publicly resolvable hostname) and asserts the response
+// combines the fake check result with the status page's current DB state.
+func TestVerifyDomain_ValidRequest_200ReturnsCheckResult(t *testing.T) {
+	matchesTarget := true
+	r, pool, admins := newStatusPagesRouter(t, func(h *StatusPagesHandler) {
+		h.verifier = &fakeDomainVerifier{result: domainVerificationResult{
+			ResolvedIPs:      []string{"203.0.113.10"},
+			DNSResolved:      true,
+			DNSMatchesTarget: &matchesTarget,
+			TLSReachable:     true,
+			TLSCertValid:     false,
+			TLSError:         strPtr("x509: certificate is valid for other.example.com, not status.empresa.com"),
+		}}
+	})
+	token := issueTestSessionToken(t, admins)
+	domainID := createTestDomain(t, pool)
+	pageID := createDomainlessStatusPageViaAPI(t, r, pool, token, "Verify Valid Page")
+	attachRec := patchAttachDomain(t, r, token, pageID, attachDomainRequest{DomainID: domainID, Subdomain: "status"})
+	if attachRec.Code != http.StatusOK {
+		t.Fatalf("setup attach status = %d, want %d, body = %s", attachRec.Code, http.StatusOK, attachRec.Body.String())
+	}
+
+	rec := postVerifyDomain(t, r, token, pageID)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	var got verifyDomainResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+	if len(got.ResolvedIPs) != 1 || got.ResolvedIPs[0] != "203.0.113.10" {
+		t.Errorf("ResolvedIPs = %v, want [203.0.113.10]", got.ResolvedIPs)
+	}
+	if !got.DNSResolved {
+		t.Error("DNSResolved = false, want true")
+	}
+	if got.DNSMatchesTarget == nil || !*got.DNSMatchesTarget {
+		t.Errorf("DNSMatchesTarget = %v, want true", got.DNSMatchesTarget)
+	}
+	if !got.TLSReachable {
+		t.Error("TLSReachable = false, want true")
+	}
+	if got.TLSCertValid {
+		t.Error("TLSCertValid = true, want false")
+	}
+	if got.TLSError == nil {
+		t.Error("TLSError = nil, want a certificate mismatch message")
+	}
+	if got.State != "pending_tls" {
+		t.Errorf("State = %q, want %q", got.State, "pending_tls")
+	}
+}
+
+// TestVerifyDomain_SecondCallWithinCooldown_429 asserts the per-hostname
+// cooldown (verifyDomainCooldown) rejects a second attempt made
+// immediately after the first, protecting against a client hammering the
+// button and tripping Let's Encrypt's failed-validation rate limit.
+func TestVerifyDomain_SecondCallWithinCooldown_429(t *testing.T) {
+	r, pool, admins := newStatusPagesRouter(t, func(h *StatusPagesHandler) {
+		h.verifier = &fakeDomainVerifier{}
+	})
+	token := issueTestSessionToken(t, admins)
+	domainID := createTestDomain(t, pool)
+	pageID := createDomainlessStatusPageViaAPI(t, r, pool, token, "Verify Cooldown Page")
+	attachRec := patchAttachDomain(t, r, token, pageID, attachDomainRequest{DomainID: domainID, Subdomain: "status"})
+	if attachRec.Code != http.StatusOK {
+		t.Fatalf("setup attach status = %d, want %d, body = %s", attachRec.Code, http.StatusOK, attachRec.Body.String())
+	}
+
+	first := postVerifyDomain(t, r, token, pageID)
+	if first.Code != http.StatusOK {
+		t.Fatalf("first status = %d, want %d, body = %s", first.Code, http.StatusOK, first.Body.String())
+	}
+
+	second := postVerifyDomain(t, r, token, pageID)
+	if second.Code != http.StatusTooManyRequests {
+		t.Errorf("second status = %d, want %d, body = %s", second.Code, http.StatusTooManyRequests, second.Body.String())
+	}
+}
+
+// TestCheckVerifyCooldown_AfterWindowElapsed_Allows asserts the cooldown
+// is a sliding window, not a one-shot lockout: a page verified once must
+// become verifiable again after verifyDomainCooldown passes. Manipulates
+// lastVerifyAt directly instead of a real 15s sleep (or the HTTP layer)
+// so this test stays fast and exercises checkVerifyCooldown in isolation.
+func TestCheckVerifyCooldown_AfterWindowElapsed_Allows(t *testing.T) {
+	h := &StatusPagesHandler{lastVerifyAt: make(map[string]time.Time)}
+	h.lastVerifyAt["page-1"] = time.Now().Add(-verifyDomainCooldown - time.Second)
+
+	if !h.checkVerifyCooldown("page-1") {
+		t.Error("checkVerifyCooldown() = false after the cooldown window elapsed, want true")
+	}
+}
+
+func strPtr(s string) *string { return &s }
 
 func patchSetServices(t *testing.T, r http.Handler, token, statusPageID string, req setServicesRequest) *httptest.ResponseRecorder {
 	t.Helper()

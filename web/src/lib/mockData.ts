@@ -154,7 +154,7 @@ export const statusPages: StatusPage[] = [
     name: "Status Beta",
     subdomain: "status",
     domain_id: "dom-2",
-    state: "draft",
+    state: "pending_tls",
     tls_last_error: null,
     created_at: new Date(Date.now() - 1000 * 60 * 5).toISOString(),
     service_ids: ["svc-3"],

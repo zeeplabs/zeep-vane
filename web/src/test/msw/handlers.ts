@@ -491,7 +491,43 @@ export const handlers = [
     }
     page.domain_id = body.domain_id;
     page.subdomain = body.subdomain;
+    // Mirrors StatusPagesHandler.AttachDomain: moves the page off "draft"
+    // the moment a domain is attached (tls.HostPolicy permanently refuses
+    // ACME issuance for a "draft" hostname, so it can never leave draft on
+    // its own - AttachDomain must do it).
+    page.state = "pending_tls";
     return HttpResponse.json(toStatusPageResponse(page));
+  }),
+
+  // POST /api/status-pages/:id/verify-domain - mirrors
+  // StatusPagesHandler.VerifyDomain: 404 unknown page, 422 no domain
+  // attached, else a canned "everything looks good" result. Real DNS/TLS
+  // checking isn't meaningfully mockable, so this always reports success
+  // and publishes the page - good enough for exercising the UI in tests.
+  http.post("/api/status-pages/:id/verify-domain", ({ params }) => {
+    if (!sessionAdminId) return HttpResponse.json({ error: "unauthorized" }, { status: 401 });
+    const page = statusPagesState.find((p) => p.id === params.id);
+    if (!page) {
+      return HttpResponse.json({ error: "status page not found" }, { status: 404 });
+    }
+    if (!page.domain_id || !page.subdomain) {
+      return HttpResponse.json({ error: "this status page has no domain attached yet" }, { status: 422 });
+    }
+    const domain = domainsState.find((d) => d.id === page.domain_id);
+    page.state = "published";
+    page.tls_last_error = null;
+    return HttpResponse.json({
+      hostname: `${page.subdomain}.${domain?.hostname ?? "?"}`,
+      resolved_ips: ["203.0.113.10"],
+      dns_resolved: true,
+      dns_matches_target: dnsTargetState ? true : null,
+      tls_reachable: true,
+      tls_cert_valid: true,
+      tls_error: null,
+      state: page.state,
+      tls_last_error: page.tls_last_error,
+      checked_at: new Date().toISOString(),
+    });
   }),
 
   // PATCH /api/status-pages/:id/services (SPD-15) - mirrors

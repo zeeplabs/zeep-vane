@@ -51,7 +51,7 @@ export interface Domain {
   created_at: string;
 }
 
-export type StatusPageState = "draft" | "published" | "tls_failed";
+export type StatusPageState = "draft" | "pending_tls" | "published" | "tls_failed";
 
 export interface StatusPage {
   id: string;

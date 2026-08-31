@@ -117,6 +117,45 @@ export function useDeleteStatusPage() {
   });
 }
 
+export interface VerifyDomainResult {
+  hostname: string;
+  resolved_ips: string[];
+  dns_resolved: boolean;
+  // null when the operator never configured PUBLIC_DNS_TARGET - nothing
+  // to compare against. Computed server-side by IP-set overlap, not by
+  // comparing DNS record strings (a CNAME chain of any length, or a plain
+  // A record with no CNAME at all, both defeat a literal string compare).
+  dns_matches_target: boolean | null;
+  tls_reachable: boolean;
+  // true only if tls_reachable AND the served certificate chain verifies
+  // against the system root pool for this hostname - tls_reachable alone
+  // just means *something* answered TLS (a parked domain, a wrong cert,
+  // a self-signed cert all complete a handshake too).
+  tls_cert_valid: boolean;
+  tls_error: string | null;
+  state: StatusPageState;
+  tls_last_error: string | null;
+  checked_at: string;
+}
+
+// useVerifyDomain triggers POST /api/status-pages/{id}/verify-domain: a
+// real DNS lookup + TLS handshake against the page's public hostname
+// (mirrors the "recheck DNS/SSL" action platforms like Vercel/Render
+// offer for custom domains). Invalidates the status-pages query on
+// success since a successful handshake can transition state server-side
+// (pending_tls -> published/tls_failed) even without waiting for the next
+// 10s poll.
+export function useVerifyDomain() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) =>
+      apiFetch<VerifyDomainResult>(`/api/status-pages/${id}/verify-domain`, { method: "POST" }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["status-pages"] });
+    },
+  });
+}
+
 interface DNSTargetResponse {
   target: string | null;
 }

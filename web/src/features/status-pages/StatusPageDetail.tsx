@@ -9,7 +9,7 @@ import { ApiError } from "../../lib/apiClient";
 import { useDomains } from "../domains/hooks";
 import { useServices } from "../services/hooks";
 import type { Service } from "../../types/api";
-import { useSetStatusPageServices, useStatusPage } from "./hooks";
+import { useDNSTarget, useSetStatusPageServices, useStatusPage, useVerifyDomain, type VerifyDomainResult } from "./hooks";
 import { AttachDomainDrawer } from "./AttachDomainDrawer";
 
 // publicUrl only composes a URL once both domain_id/subdomain are set
@@ -105,8 +105,10 @@ export function StatusPageDetail() {
 
           {/* SPD-13: domínio anexado, mas o certificado ainda não foi emitido -
               substitui o antigo texto ambíguo "Emitindo certificado", que não
-              distinguia esse caso do de "sem domínio" acima. */}
-          {page.domain_id !== null && page.state === "draft" ? (
+              distinguia esse caso do de "sem domínio" acima. Cobre "draft"
+              (nunca deveria ocorrer mais com domínio anexado, ver AD-017) e
+              "pending_tls" (estado real pós-anexação). */}
+          {page.domain_id !== null && page.state !== "published" && page.state !== "tls_failed" ? (
             <Tag variant="accent" className="w-fit animate-pulse">
               Aguardando validação de DNS/certificado
             </Tag>
@@ -161,6 +163,20 @@ export function StatusPageDetail() {
           </a>
         </div>
       </Card>
+
+      {/* Painel fixo de configuração de DNS/certificado (mirrors o fluxo de
+          domínio customizado de plataformas como Vercel/Render) - permanece
+          visível enquanto a página tem domínio anexado e ainda não está
+          publicada, mesmo que o polling automático (useStatusPage) já
+          esteja tentando detectar a transição sozinho a cada 10s. Restrito
+          a canManage: o endpoint que ele lê (GET /api/instance/dns-target)
+          e o que ele aciona (POST .../verify-domain) são ambos
+          write-role-gated no backend - um viewer só veria um 403
+          confuso/enganoso ("DNS não configurado" quando na verdade só não
+          teve permissão de ler) em vez de nada. */}
+      {page.domain_id !== null && page.subdomain !== null && page.state !== "published" && canManage ? (
+        <DomainVerificationPanel statusPageId={page.id} fullHostname={`${page.subdomain}.${hostname ?? "?"}`} />
+      ) : null}
 
       <Card elevation="elev-sm" className="flex flex-col gap-3 p-4">
         <div className="flex items-center justify-between">
@@ -225,6 +241,115 @@ export function StatusPageDetail() {
       </Card>
 
       <AttachDomainDrawer statusPageId={page.id} open={attachOpen} onOpenChange={setAttachOpen} />
+    </div>
+  );
+}
+
+interface DomainVerificationPanelProps {
+  statusPageId: string;
+  fullHostname: string;
+}
+
+// DomainVerificationPanel is the persistent "o que configurar no DNS" +
+// "verificar novamente" panel shown on StatusPageDetail while a status
+// page has a domain attached but isn't published yet - it stays visible
+// the whole time (not just right after attaching, unlike
+// AttachDomainDrawer's one-time instructions), since DNS propagation can
+// take anywhere from seconds to hours and the admin needs somewhere to
+// come back to. "Verificar" performs a real DNS lookup + TLS handshake
+// server-side (POST .../verify-domain) rather than only waiting for the
+// existing 10s background poll, mirroring the "recheck" action platforms
+// like Vercel/Render offer for custom domains.
+function DomainVerificationPanel({ statusPageId, fullHostname }: DomainVerificationPanelProps) {
+  const { data: dnsTarget, isLoading: dnsTargetLoading } = useDNSTarget();
+  const verifyDomain = useVerifyDomain();
+  const result: VerifyDomainResult | undefined = verifyDomain.data;
+
+  return (
+    <Card elevation="elev-sm" className="flex flex-col gap-3 p-4">
+      <div className="flex items-center justify-between gap-3">
+        <span className="text-sm font-medium text-text">Configuração de DNS</span>
+        <Button
+          type="button"
+          variant="secondary"
+          disabled={verifyDomain.isPending}
+          onClick={() => verifyDomain.mutate(statusPageId)}
+        >
+          {verifyDomain.isPending ? "Verificando…" : "Verificar DNS/certificado"}
+        </Button>
+      </div>
+
+      <div className="flex flex-col gap-1 rounded-md border border-divider p-3">
+        {dnsTargetLoading ? (
+          <p className="text-xs text-neutral-400">Carregando…</p>
+        ) : dnsTarget ? (
+          <p className="text-xs text-neutral-400">
+            Aponte <strong className="text-text">{fullHostname}</strong> (CNAME) para{" "}
+            <strong className="text-text">{dnsTarget}</strong>. O certificado é emitido automaticamente assim
+            que o DNS propagar e alguém acessar a página (ou ao clicar em "Verificar" acima).
+          </p>
+        ) : (
+          <p className="text-xs text-neutral-400">
+            O operador ainda não configurou o destino do DNS (PUBLIC_DNS_TARGET). Aponte{" "}
+            <strong className="text-text">{fullHostname}</strong> (CNAME) para o hostname/IP público do
+            balanceador de carga da instalação.
+          </p>
+        )}
+      </div>
+
+      {verifyDomain.isError ? (
+        <p role="alert" className="text-xs text-critical">
+          {verifyDomain.error instanceof ApiError
+            ? verifyDomain.error.message
+            : "Não foi possível verificar o domínio agora."}
+        </p>
+      ) : null}
+
+      {result ? (
+        <div className="flex flex-col gap-1.5 border-t border-divider pt-3 text-xs">
+          <VerificationRow
+            ok={result.dns_resolved && result.dns_matches_target !== false}
+            label={
+              !result.dns_resolved
+                ? "DNS ainda não resolve para nenhum destino"
+                : result.dns_matches_target === false
+                  ? `DNS resolve para ${result.resolved_ips.join(", ")}, diferente do destino esperado`
+                  : result.dns_matches_target === true
+                    ? `DNS resolve corretamente (${result.resolved_ips.join(", ")})`
+                    : `DNS resolve (${result.resolved_ips.join(", ")})`
+            }
+          />
+          <VerificationRow
+            ok={result.tls_cert_valid}
+            label={
+              result.tls_cert_valid
+                ? "Certificado TLS emitido e válido"
+                : result.tls_reachable
+                  ? `Conexão HTTPS respondeu, mas o certificado não é válido para ${fullHostname}${
+                      result.tls_error ? `: ${result.tls_error}` : ""
+                    }`
+                  : `Conexão HTTPS ainda falha${result.tls_error ? `: ${result.tls_error}` : ""}`
+            }
+          />
+          <p className="text-neutral-400">Última verificação: {new Date(result.checked_at).toLocaleString()}</p>
+        </div>
+      ) : null}
+    </Card>
+  );
+}
+
+interface VerificationRowProps {
+  ok: boolean;
+  label: string;
+}
+
+function VerificationRow({ ok, label }: VerificationRowProps) {
+  return (
+    <div className="flex items-center gap-2">
+      <span className={ok ? "text-success" : "text-critical"} aria-hidden="true">
+        {ok ? "✓" : "✗"}
+      </span>
+      <span className={ok ? "text-neutral-300" : "text-neutral-400"}>{label}</span>
     </div>
   );
 }

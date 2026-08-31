@@ -17,8 +17,13 @@ import (
 var ErrHostnameNotFound = errors.New("tls: hostname not registered to any status page")
 
 // draftState is the StatusPage.State value a page has before an admin has
-// pointed it at a domain worth issuing a real certificate for. HostPolicy
-// never allows ACME issuance for a page still in this state.
+// attached a domain to it (db.StatusPageRepository.AttachDomain moves it
+// to "pending_tls" the moment domain_id/subdomain are set, precisely so
+// this stays true). HostPolicy never allows ACME issuance for a page
+// still in this state - StateByHostname's join against domains means a
+// draft page never actually reaches this check in practice (no domain
+// means no matching hostname), but the guard is kept as defense in depth
+// against that invariant ever breaking.
 const draftState = "draft"
 
 // StatusPageStore looks up and updates a status page's State by its full

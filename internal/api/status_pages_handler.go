@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -13,6 +14,17 @@ import (
 	"github.com/zeeplabs/zeep-vane/internal/audit"
 	"github.com/zeeplabs/zeep-vane/internal/db"
 )
+
+// verifyDomainCooldown is the minimum interval between two VerifyDomain
+// attempts for the same status page. Every attempt performs a real TLS
+// handshake that can trigger a fresh ACME issuance attempt on failure
+// (Let's Encrypt's failed-validation rate limit is per hostname, per
+// account, per hour) - this is a best-effort, in-memory, per-replica
+// guard against an admin mashing the "verificar" button, not a
+// distributed rate limiter (SPEC_DEVIATION: with more than one replica, a
+// client alternating requests across pods can still exceed this - low
+// severity, since the endpoint is RBAC-gated to owner/operator).
+const verifyDomainCooldown = 15 * time.Second
 
 // statusPagesPageSize is the fixed page size for /api/status-pages
 // (spec.md Assumptions: 20 for domains/services/status-pages/
@@ -28,6 +40,7 @@ type statusPageCreatorLister interface {
 	SetServices(ctx context.Context, id string, serviceIDs []string) error
 	GetByID(ctx context.Context, id string) (*db.StatusPage, error)
 	Delete(ctx context.Context, id string) error
+	PublicHostnameByID(ctx context.Context, id string) (string, error)
 }
 
 // StatusPagesHandler serves the status page admin routes.
@@ -35,11 +48,28 @@ type StatusPagesHandler struct {
 	statusPages statusPageCreatorLister
 	audit       *audit.Log
 	logger      *zap.Logger
+	verifier    domainVerifier
+	// dnsTarget is config.Config.PublicDNSTarget - VerifyDomain passes it
+	// to the verifier so DNSMatchesTarget can be computed by IP overlap,
+	// not string comparison (domain_verifier.go's doc comment on
+	// DNSMatchesTarget explains why string comparison against a raw CNAME
+	// record is wrong). Empty means the operator never configured it.
+	dnsTarget string
+
+	lastVerifyMu sync.Mutex
+	lastVerifyAt map[string]time.Time
 }
 
 // NewStatusPagesHandler builds a StatusPagesHandler backed by statusPages.
-func NewStatusPagesHandler(statusPages statusPageCreatorLister, auditLog *audit.Log, logger *zap.Logger) *StatusPagesHandler {
-	return &StatusPagesHandler{statusPages: statusPages, audit: auditLog, logger: logger}
+func NewStatusPagesHandler(statusPages statusPageCreatorLister, auditLog *audit.Log, dnsTarget string, logger *zap.Logger) *StatusPagesHandler {
+	return &StatusPagesHandler{
+		statusPages:  statusPages,
+		audit:        auditLog,
+		logger:       logger,
+		verifier:     newNetDomainVerifier(),
+		dnsTarget:    dnsTarget,
+		lastVerifyAt: make(map[string]time.Time),
+	}
 }
 
 type createStatusPageRequest struct {
@@ -245,6 +275,102 @@ func (h *StatusPagesHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.WriteHeader(http.StatusNoContent)
+}
+
+type verifyDomainResponse struct {
+	Hostname         string    `json:"hostname"`
+	ResolvedIPs      []string  `json:"resolved_ips"`
+	DNSResolved      bool      `json:"dns_resolved"`
+	DNSMatchesTarget *bool     `json:"dns_matches_target"`
+	TLSReachable     bool      `json:"tls_reachable"`
+	TLSCertValid     bool      `json:"tls_cert_valid"`
+	TLSError         *string   `json:"tls_error"`
+	State            string    `json:"state"`
+	TLSLastError     *string   `json:"tls_last_error"`
+	CheckedAt        time.Time `json:"checked_at"`
+}
+
+const noDomainAttachedBody = `{"error":"this status page has no domain attached yet"}`
+const verifyDomainRateLimitedBody = `{"error":"please wait a few seconds before checking again"}`
+
+// checkVerifyCooldown reports whether id was verified more recently than
+// verifyDomainCooldown allows, recording this attempt's timestamp as a
+// side effect when it isn't.
+func (h *StatusPagesHandler) checkVerifyCooldown(id string) bool {
+	h.lastVerifyMu.Lock()
+	defer h.lastVerifyMu.Unlock()
+
+	if last, ok := h.lastVerifyAt[id]; ok && time.Since(last) < verifyDomainCooldown {
+		return false
+	}
+	h.lastVerifyAt[id] = time.Now()
+	return true
+}
+
+// VerifyDomain handles POST /api/status-pages/{id}/verify-domain: an
+// on-demand "check DNS/SSL" action mirroring what Vercel/Render offer for
+// custom domains. It performs a real DNS lookup and TLS handshake against
+// the status page's public hostname - the only way to know for sure
+// whether DNS has propagated and a certificate has actually been issued
+// and is being served, since the StatusPage row can otherwise sit at
+// "pending_tls" indefinitely until a real visitor's browser (or this
+// endpoint) triggers the on-demand ACME issuance CertMagic performs
+// synchronously during a TLS handshake (tls.HostPolicy/OnEvent).
+func (h *StatusPagesHandler) VerifyDomain(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+
+	hostname, err := h.statusPages.PublicHostnameByID(r.Context(), id)
+	if err != nil {
+		switch {
+		case errors.Is(err, db.ErrNotFound):
+			http.NotFound(w, r)
+		case errors.Is(err, db.ErrNoDomainAttached):
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusUnprocessableEntity)
+			_, _ = w.Write([]byte(noDomainAttachedBody))
+		default:
+			h.logger.Error("status-pages: failed to look up hostname for domain verification", zap.Error(err))
+			writeInternalError(w)
+		}
+		return
+	}
+
+	if !h.checkVerifyCooldown(id) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusTooManyRequests)
+		_, _ = w.Write([]byte(verifyDomainRateLimitedBody))
+		return
+	}
+
+	result := h.verifier.Verify(r.Context(), hostname, h.dnsTarget)
+
+	statusPage, err := h.statusPages.GetByID(r.Context(), id)
+	if err != nil {
+		h.logger.Error("status-pages: failed to reload status page after domain verification", zap.Error(err))
+		writeInternalError(w)
+		return
+	}
+
+	if actor, ok := AdminFromContext(r.Context()); ok {
+		if err := h.audit.Record(r.Context(), actor.ID, id, "status_page_domain_verified"); err != nil {
+			h.logger.Error("status-pages: failed to record audit entry", zap.Error(err))
+		}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(verifyDomainResponse{
+		Hostname:         hostname,
+		ResolvedIPs:      result.ResolvedIPs,
+		DNSResolved:      result.DNSResolved,
+		DNSMatchesTarget: result.DNSMatchesTarget,
+		TLSReachable:     result.TLSReachable,
+		TLSCertValid:     result.TLSCertValid,
+		TLSError:         result.TLSError,
+		State:            statusPage.State,
+		TLSLastError:     statusPage.TLSLastError,
+		CheckedAt:        time.Now(),
+	})
 }
 
 // List handles GET /api/status-pages, returning one page of registered
