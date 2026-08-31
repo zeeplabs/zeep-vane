@@ -2,8 +2,11 @@ package ratelimit
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
+
+	"github.com/jackc/pgx/v5"
 
 	"github.com/zeeplabs/zeep-vane/internal/db"
 )
@@ -20,35 +23,71 @@ func newPostgresBucketStore(pool *db.Pool) *postgresBucketStore {
 	return &postgresBucketStore{pool: pool}
 }
 
-// allow atomically refills then consumes one token from ip's bucket in a
-// single UPSERT statement - refill-then-consume, clamped at [0, burst],
-// mirroring golang.org/x/time/rate.Limiter's own floor/ceiling behavior so
-// externally observable rate-limit behavior is unchanged from before this
-// feature (HA-09's byte-for-byte parity requirement). A brand-new IP starts
-// with a full bucket (burst tokens) minus the one consumed by this call,
-// exactly like rate.NewLimiter(r, burst).Allow()'s first call would.
+// allow refills then consumes one token from ip's bucket - refill-then-
+// consume, clamped at [0, burst], mirroring golang.org/x/time/rate.Limiter's
+// own floor/ceiling behavior so externally observable rate-limit behavior
+// is unchanged from before this feature (HA-09's byte-for-byte parity
+// requirement). A brand-new IP starts with a full bucket (burst tokens)
+// minus the one consumed by this call, exactly like
+// rate.NewLimiter(r, burst).Allow()'s first call would.
+//
+// The read (SELECT ... FOR UPDATE) and write happen inside one
+// transaction: a single INSERT ... ON CONFLICT DO UPDATE ... RETURNING
+// statement cannot correctly report whether *this* call consumed a token,
+// because Postgres's RETURNING clause always reflects the row's final
+// (post-update) state, not the pre-update value the "allowed" decision
+// must be based on - a first attempt at a single-statement UPSERT here
+// silently miscounted (RETURNING recomputed the formula against the
+// already-decremented new tokens value, undercounting one request per
+// bucket). The row lock this transaction takes also serializes concurrent
+// requests for the same IP across replicas, which the single-statement
+// version would not have needed but this version does.
 func (s *postgresBucketStore) allow(ctx context.Context, ip string, burst int, refillPerSec float64) (bool, error) {
-	const query = `
-INSERT INTO rate_limit_buckets (ip, tokens, last_refill)
-VALUES ($1, $2 - 1, now())
-ON CONFLICT (ip) DO UPDATE SET
-    tokens = GREATEST(
-        0,
-        LEAST($2::double precision, rate_limit_buckets.tokens
-                  + $3 * EXTRACT(EPOCH FROM (now() - rate_limit_buckets.last_refill)))
-        - CASE WHEN LEAST($2::double precision, rate_limit_buckets.tokens
-                             + $3 * EXTRACT(EPOCH FROM (now() - rate_limit_buckets.last_refill))) >= 1
-               THEN 1 ELSE 0 END
-    ),
-    last_refill = now()
-RETURNING
-    (xmax = 0) OR LEAST($2::double precision, rate_limit_buckets.tokens
-             + $3 * EXTRACT(EPOCH FROM (now() - rate_limit_buckets.last_refill))) >= 1 AS allowed`
-
-	var allowed bool
-	if err := s.pool.QueryRow(ctx, query, ip, float64(burst), refillPerSec).Scan(&allowed); err != nil {
-		return false, fmt.Errorf("ratelimit: allow query failed: %w", err)
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return false, fmt.Errorf("ratelimit: begin tx failed: %w", err)
 	}
+	defer func() { _ = tx.Rollback(ctx) }() // no-op once committed
+
+	var tokens float64
+	var lastRefill time.Time
+	err = tx.QueryRow(ctx, "SELECT tokens, last_refill FROM rate_limit_buckets WHERE ip = $1 FOR UPDATE", ip).Scan(&tokens, &lastRefill)
+
+	now := time.Now()
+	switch {
+	case errors.Is(err, pgx.ErrNoRows):
+		// Brand-new IP: starts with a full bucket, as if it had always
+		// been refilling up to now.
+		tokens = float64(burst)
+	case err != nil:
+		return false, fmt.Errorf("ratelimit: select failed: %w", err)
+	default:
+		elapsed := now.Sub(lastRefill).Seconds()
+		tokens += elapsed * refillPerSec
+		if tokens > float64(burst) {
+			tokens = float64(burst)
+		}
+	}
+
+	allowed := tokens >= 1
+	if allowed {
+		tokens--
+	}
+	if tokens < 0 {
+		tokens = 0
+	}
+
+	if _, err := tx.Exec(ctx, `
+INSERT INTO rate_limit_buckets (ip, tokens, last_refill)
+VALUES ($1, $2, $3)
+ON CONFLICT (ip) DO UPDATE SET tokens = $2, last_refill = $3`, ip, tokens, now); err != nil {
+		return false, fmt.Errorf("ratelimit: upsert failed: %w", err)
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return false, fmt.Errorf("ratelimit: commit failed: %w", err)
+	}
+
 	return allowed, nil
 }
 

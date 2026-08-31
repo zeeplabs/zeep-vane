@@ -237,10 +237,12 @@ T10 → T11 → T12 → T13
 - Skill: NONE
 
 **Done when**:
-- [ ] `routes.go` compiles with the updated call site; existing `routes_test.go` suite passes unchanged
-- [ ] Integration test (HA-08, HA-09): two `IPLimiter` instances, same DB, same IP - hammering one past its burst causes the other to also reject with 429 for that IP; a different IP on the second instance is unaffected
-- [ ] Integration test (HA-11): table growth is bounded - after triggering a cleanup cycle, idle rows older than `idleTTL` are gone
-- [ ] Full gate passes
+- [x] `routes.go` compiles with the updated call site; existing `routes_test.go` suite passes unchanged
+- [x] Integration test (HA-08, HA-09): two `IPLimiter` instances, same DB, same IP - hammering one past its burst causes the other to also reject with 429 for that IP; a different IP on the second instance is unaffected
+- [x] Integration test (HA-11): table growth is bounded - after triggering a cleanup cycle, idle rows older than `idleTTL` are gone
+- [x] Full gate passes
+
+**Deviation**: writing this task's integration test surfaced a real correctness bug in T5's single-statement UPSERT (`postgresBucketStore.allow`, `internal/ratelimit/postgres_bucket_store.go`) - its `RETURNING` clause recomputed the refill formula against the row's *post-update* value instead of the pre-update one Postgres's `RETURNING` cannot expose for a plain `UPDATE`/`ON CONFLICT DO UPDATE`, silently under-granting one request per bucket (a burst of 3 only allowed 2). Fixed by replacing the single-statement UPSERT with an explicit transaction (`SELECT ... FOR UPDATE` then `INSERT ... ON CONFLICT DO UPDATE`), which is both correct and still race-safe across replicas via the row lock. Documented inline in the function's own doc comment. No test was weakened to make this pass - the integration test's byte-for-byte burst assertions are what caught the bug.
 
 **Tests**: integration
 **Gate**: Full
