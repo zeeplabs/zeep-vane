@@ -33,20 +33,6 @@ jobs:
   go-integration:
     name: Go (integration tests)
     runs-on: ubuntu-latest
-    services:
-      postgres:
-        image: postgres:16-alpine
-        env:
-          POSTGRES_USER: vane
-          POSTGRES_PASSWORD: vane
-          POSTGRES_DB: vane
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U vane"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 10
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -64,17 +50,32 @@ jobs:
       - name: Build frontend
         working-directory: web
         run: npm ci && npm run build
+      # Run Postgres via `docker run` instead of GitHub Actions' `services:`
+      # block: `services:` only accepts docker-create flags (`options:`),
+      # not arguments to the postgres process itself, so max_connections
+      # can't be raised that way. AGENTS.md's own disposable-container gate
+      # already uses max_connections=300 for exactly this reason - the
+      # default 100 is exceeded by this suite's dedicated (non-pooled)
+      # internal/dbtest advisory-lock connections opened across many
+      # packages/tests, a documented pre-existing flake (README Known
+      # gaps) that -p 1 alone did not fix (the pressure is within a single
+      # large package, internal/api, not just across packages).
+      - name: Start disposable Postgres
+        run: |
+          docker run -d --name vane-ci-pg -p 5432:5432 \
+            -e POSTGRES_USER=vane -e POSTGRES_PASSWORD=vane -e POSTGRES_DB=vane \
+            postgres:16-alpine -c max_connections=300
+          for i in $(seq 1 30); do
+            docker exec vane-ci-pg pg_isready -U vane && break
+            sleep 1
+          done
       - name: Run integration tests
         env:
           TEST_DATABASE_URL: "postgres://vane:vane@localhost:5432/vane?sslmode=disable"
-        # -p 1 serializes package-level test execution: internal/dbtest's
-        # dedicated (non-pooled) advisory-lock connections, opened by every
-        # package that touches shared tables (admins/company_settings/
-        # integrations), can otherwise exceed this Postgres service's
-        # connection limit under the default per-CPU package parallelism
-        # (documented flake, README's Known gaps) - serializing removes the
-        # concurrent-connection pressure that causes it.
-        run: go test -p 1 -tags=integration ./...
+        run: go test -tags=integration ./...
+      - name: Stop disposable Postgres
+        if: always()
+        run: docker rm -f vane-ci-pg
 
   web:
     name: Web (typecheck, tests, build)
