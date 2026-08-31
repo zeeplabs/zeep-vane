@@ -292,10 +292,10 @@ T10 → T11 → T12 → T13
 - Skill: NONE
 
 **Done when**:
-- [ ] `Lock` for a name already locked by another `PostgresStorage` instance (same DB) blocks until `Unlock`
-- [ ] `Unlock` releases the handle and removes it from the internal map
-- [ ] Integration test (HA-17): killing/closing a lock-holder's underlying connection out-of-band releases the lock, allowing a second `Lock` call for the same name to proceed
-- [ ] Full gate passes
+- [x] `Lock` for a name already locked by another `PostgresStorage` instance (same DB) blocks until `Unlock`
+- [x] `Unlock` releases the handle and removes it from the internal map
+- [x] Integration test (HA-17): killing/closing a lock-holder's underlying connection out-of-band releases the lock, allowing a second `Lock` call for the same name to proceed
+- [x] Full gate passes
 
 **Tests**: integration
 **Gate**: Full

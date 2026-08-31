@@ -36,6 +36,10 @@ type PostgresStorage struct {
 	locks map[string]*pglock.Handle
 }
 
+// Compile-time assertion that PostgresStorage satisfies certmagic.Storage
+// (which embeds certmagic.Locker) in full.
+var _ certmagic.Storage = (*PostgresStorage)(nil)
+
 // NewPostgresStorage builds a PostgresStorage. dsn is used only by
 // Lock/Unlock (internal/pglock needs a dedicated, non-pooled connection per
 // held lock - advisory locks are session-scoped); every other method goes
@@ -179,4 +183,46 @@ func (s *PostgresStorage) Stat(ctx context.Context, key string) (certmagic.KeyIn
 	}
 
 	return certmagic.KeyInfo{}, fmt.Errorf("tls: %s: %w", key, fs.ErrNotExist)
+}
+
+// Lock acquires the distributed lock identified by name, blocking until it
+// is obtained or ctx is canceled (HA-15..HA-17). It is implemented via
+// internal/pglock.Acquire on a dedicated Postgres session, so a replica
+// that crashes while holding the lock has it automatically released once
+// its connection to Postgres dies - no permanent deadlock survives a crash
+// (HA-16). The resulting handle is tracked internally so a matching Unlock
+// call can find and release it.
+func (s *PostgresStorage) Lock(ctx context.Context, name string) error {
+	handle, err := pglock.Acquire(ctx, s.dsn, name)
+	if err != nil {
+		return fmt.Errorf("tls: failed to lock %s: %w", name, err)
+	}
+
+	s.mu.Lock()
+	s.locks[name] = handle
+	s.mu.Unlock()
+
+	return nil
+}
+
+// Unlock releases the lock previously acquired by Lock for the same name.
+// Per certmagic.Storage's contract, Unlock is only ever called after a
+// successful Lock for the same name - calling it without a tracked handle
+// is treated as caller error and reported as such.
+func (s *PostgresStorage) Unlock(ctx context.Context, name string) error {
+	s.mu.Lock()
+	handle, ok := s.locks[name]
+	if ok {
+		delete(s.locks, name)
+	}
+	s.mu.Unlock()
+
+	if !ok {
+		return fmt.Errorf("tls: unlock called for %s with no tracked lock held", name)
+	}
+
+	if err := handle.Release(ctx); err != nil {
+		return fmt.Errorf("tls: failed to unlock %s: %w", name, err)
+	}
+	return nil
 }

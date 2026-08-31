@@ -14,6 +14,28 @@ import (
 	"github.com/zeeplabs/zeep-vane/internal/db"
 )
 
+// newTestPostgresStorageWithDSN is like newTestPostgresStorage but also
+// returns the dsn, needed by tests that build a second, independent
+// PostgresStorage instance (simulating a second replica) sharing the same
+// database.
+func newTestPostgresStorageWithDSN(t *testing.T) (*PostgresStorage, string) {
+	t.Helper()
+	dsn := testDatabaseURL(t)
+
+	if err := db.MigrateUp(dsn, "../db/migrations"); err != nil {
+		t.Fatalf("MigrateUp() returned unexpected error: %v", err)
+	}
+
+	ctx := context.Background()
+	pool, err := db.NewPool(ctx, dsn)
+	if err != nil {
+		t.Fatalf("NewPool() returned unexpected error: %v", err)
+	}
+	t.Cleanup(pool.Close)
+
+	return NewPostgresStorage(pool, dsn), dsn
+}
+
 // newTestPostgresStorage returns a PostgresStorage backed by
 // TEST_DATABASE_URL, migrated and connected the same way every other
 // integration test in this repo is (see setUpStatusPageFixture in
@@ -281,5 +303,132 @@ func TestPostgresStorage_Stat_MissingKey_ReturnsErrNotExist(t *testing.T) {
 	_, err := s.Stat(ctx, testKey(t, "never-stored.crt"))
 	if !errors.Is(err, fs.ErrNotExist) {
 		t.Fatalf("Stat() error = %v, want errors.Is(err, fs.ErrNotExist)", err)
+	}
+}
+
+// TestPostgresStorage_Lock_BlocksSecondInstanceUntilUnlocked covers
+// HA-15: two PostgresStorage instances (simulating two replicas) sharing
+// one database - a second Lock for the same name must block until the
+// first Unlocks.
+func TestPostgresStorage_Lock_BlocksSecondInstanceUntilUnlocked(t *testing.T) {
+	s1, _ := newTestPostgresStorageWithDSN(t)
+	s2, _ := newTestPostgresStorageWithDSN(t)
+	name := fmt.Sprintf("lock-test-%d", time.Now().UnixNano())
+	ctx := context.Background()
+
+	if err := s1.Lock(ctx, name); err != nil {
+		t.Fatalf("s1.Lock() returned unexpected error: %v", err)
+	}
+
+	locked := make(chan struct{}, 1)
+	errs := make(chan error, 1)
+	go func() {
+		if err := s2.Lock(context.Background(), name); err != nil {
+			errs <- err
+			return
+		}
+		locked <- struct{}{}
+	}()
+
+	select {
+	case <-locked:
+		t.Fatal("s2.Lock() succeeded while s1 still holds the lock")
+	case err := <-errs:
+		t.Fatalf("s2.Lock() returned unexpected error: %v", err)
+	case <-time.After(300 * time.Millisecond):
+		// Expected: s2 is still blocked.
+	}
+
+	if err := s1.Unlock(ctx, name); err != nil {
+		t.Fatalf("s1.Unlock() returned unexpected error: %v", err)
+	}
+
+	select {
+	case <-locked:
+		if err := s2.Unlock(context.Background(), name); err != nil {
+			t.Errorf("s2.Unlock() returned unexpected error: %v", err)
+		}
+	case err := <-errs:
+		t.Fatalf("s2.Lock() returned unexpected error after s1 unlocked: %v", err)
+	case <-time.After(5 * time.Second):
+		t.Fatal("s2.Lock() did not succeed within 5s of s1 unlocking")
+	}
+}
+
+// TestPostgresStorage_Unlock_RemovesTrackedHandle proves Unlock both
+// releases the underlying advisory lock and forgets the handle, so a
+// second Lock call for the same name from the same instance succeeds
+// immediately afterward.
+func TestPostgresStorage_Unlock_RemovesTrackedHandle(t *testing.T) {
+	s, _ := newTestPostgresStorageWithDSN(t)
+	name := fmt.Sprintf("lock-test-reuse-%d", time.Now().UnixNano())
+	ctx := context.Background()
+
+	if err := s.Lock(ctx, name); err != nil {
+		t.Fatalf("first Lock() returned unexpected error: %v", err)
+	}
+	if err := s.Unlock(ctx, name); err != nil {
+		t.Fatalf("Unlock() returned unexpected error: %v", err)
+	}
+
+	done := make(chan error, 1)
+	go func() { done <- s.Lock(context.Background(), name) }()
+
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("second Lock() returned unexpected error: %v", err)
+		}
+		_ = s.Unlock(context.Background(), name)
+	case <-time.After(2 * time.Second):
+		t.Fatal("second Lock() for the same name did not succeed within 2s after Unlock()")
+	}
+}
+
+// TestPostgresStorage_Lock_CrashedHolderAutoReleases covers HA-17: if a
+// replica crashes while holding a CertMagic storage lock, Postgres's
+// session-scoped advisory lock semantics release it automatically once
+// that session's connection closes, so a second Lock call for the same
+// name can proceed - no permanent deadlock survives the crash. This is
+// exercised here by reaching into the tracked handle and closing its
+// session directly (via Release, which is the same "unlock + close
+// connection" pglock performs on a session end) rather than through s1's
+// own Unlock, standing in for the process dying without ever calling
+// Unlock - pglock.Handle's connection is unexported, so PostgresStorage
+// (like any Locker caller) has no way to force-kill it any more directly
+// than this from outside the pglock package; internal/pglock's own
+// integration tests separately cover the literal "connection killed
+// out-of-band" mechanism this relies on.
+func TestPostgresStorage_Lock_CrashedHolderAutoReleases(t *testing.T) {
+	s1, _ := newTestPostgresStorageWithDSN(t)
+	s2, _ := newTestPostgresStorageWithDSN(t)
+	name := fmt.Sprintf("lock-test-crash-%d", time.Now().UnixNano())
+	ctx := context.Background()
+
+	if err := s1.Lock(ctx, name); err != nil {
+		t.Fatalf("s1.Lock() returned unexpected error: %v", err)
+	}
+
+	s1.mu.Lock()
+	handle := s1.locks[name]
+	s1.mu.Unlock()
+	if handle == nil {
+		t.Fatal("no tracked handle found for name after Lock()")
+	}
+	if err := handle.Release(context.Background()); err != nil {
+		t.Fatalf("simulated crash: Release() returned unexpected error: %v", err)
+	}
+
+	done := make(chan error, 1)
+	go func() { done <- s2.Lock(context.Background(), name) }()
+
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("s2.Lock() after simulated crash returned unexpected error: %v", err)
+		}
+		_ = s2.Unlock(context.Background(), name)
+	case <-time.After(5 * time.Second):
+		t.Fatal("s2.Lock() did not succeed within 5s of s1's simulated crash")
 	}
 }
