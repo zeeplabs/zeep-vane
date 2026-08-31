@@ -211,11 +211,11 @@ T10 → T11 → T12 → T13
 - Skill: NONE
 
 **Done when**:
-- [ ] `NewIPLimiter(pool *db.Pool, perMinute, burst int, idleTTL time.Duration) *IPLimiter` compiles and existing burst/idle-eviction unit tests pass against a fake `bucketStore` (no real Postgres needed for these)
-- [ ] Unit test (HA-10): fake store returning an error from `allow` causes `Middleware` to let the request through (fail-open) and does not panic
-- [ ] Unit test: 429 response body is byte-for-byte identical to before this feature
-- [ ] `postgresBucketStore.allow` implements the exact UPSERT from design.md (refill-then-consume, clamped at 0)
-- [ ] Full gate passes
+- [x] `NewIPLimiter(pool *db.Pool, perMinute, burst int, idleTTL time.Duration) *IPLimiter` compiles and existing burst/idle-eviction unit tests pass against a fake `bucketStore` (no real Postgres needed for these)
+- [x] Unit test (HA-10): fake store returning an error from `allow` causes `Middleware` to let the request through (fail-open) and does not panic
+- [x] Unit test: 429 response body is byte-for-byte identical to before this feature
+- [x] `postgresBucketStore.allow` implements the exact UPSERT from design.md (refill-then-consume, clamped at 0)
+- [x] Full gate passes (Quick gate per this task's own Gate field: `go build ./...`, `go vet ./...`, `gofmt -l`, `go test ./...` all clean repo-wide - `internal/cli/routes.go`'s call site required a one-line signature-compile fix here since `go build ./...` covers the whole repo; T6 still owns the integration test and full call-site wiring review)
 
 **Tests**: unit
 **Gate**: Quick
