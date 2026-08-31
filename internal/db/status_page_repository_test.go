@@ -342,11 +342,15 @@ func newAttachDomainTestRepo(t *testing.T) (*StatusPageRepository, *Pool) {
 	return NewStatusPageRepository(pool), pool
 }
 
-// TestAttachDomain_DomainlessPage_SucceedsWithStateUnchanged asserts
+// TestAttachDomain_DomainlessPage_SucceedsAndMovesToPendingTLS asserts
 // SPD-06: attaching a domain to a domain-less page sets both fields and
-// leaves state as "draft" (the existing on-demand TLS mechanism takes
-// over from here, unmodified by this call).
-func TestAttachDomain_DomainlessPage_SucceedsWithStateUnchanged(t *testing.T) {
+// moves state to "pending_tls". This used to assert state stayed "draft"
+// ("the existing on-demand TLS mechanism takes over from here") - that
+// was the bug: tls.HostPolicy rejects ACME issuance for any hostname
+// whose state is still "draft", so a page that never left "draft" could
+// never reach the on-demand TLS mechanism this comment assumed would run.
+// See migration 0020 and internal/tls/manager.go's draftState doc.
+func TestAttachDomain_DomainlessPage_SucceedsAndMovesToPendingTLS(t *testing.T) {
 	repo, pool := newAttachDomainTestRepo(t)
 	domainID := createAttachTestDomain(t, pool)
 	pageID := createDomainlessStatusPage(t, repo, pool, "attach-success-page")
@@ -362,8 +366,50 @@ func TestAttachDomain_DomainlessPage_SucceedsWithStateUnchanged(t *testing.T) {
 	if updated.Subdomain == nil || *updated.Subdomain != "status" {
 		t.Errorf("Subdomain = %v, want %q", updated.Subdomain, "status")
 	}
-	if updated.State != "draft" {
-		t.Errorf("State = %q, want %q", updated.State, "draft")
+	if updated.State != "pending_tls" {
+		t.Errorf("State = %q, want %q", updated.State, "pending_tls")
+	}
+}
+
+func TestPublicHostnameByID_DomainAttached_ReturnsFullHostname(t *testing.T) {
+	repo, pool := newAttachDomainTestRepo(t)
+	domainID := createAttachTestDomain(t, pool)
+	pageID := createDomainlessStatusPage(t, repo, pool, "hostname-lookup-page")
+	if _, err := repo.AttachDomain(context.Background(), pageID, domainID, "status"); err != nil {
+		t.Fatalf("AttachDomain() returned unexpected error: %v", err)
+	}
+
+	var domainHostname string
+	if err := pool.QueryRow(context.Background(), "SELECT hostname FROM domains WHERE id = $1", domainID).Scan(&domainHostname); err != nil {
+		t.Fatalf("failed to read domain hostname fixture: %v", err)
+	}
+
+	got, err := repo.PublicHostnameByID(context.Background(), pageID)
+	if err != nil {
+		t.Fatalf("PublicHostnameByID() returned unexpected error: %v", err)
+	}
+	want := "status." + domainHostname
+	if got != want {
+		t.Errorf("PublicHostnameByID() = %q, want %q", got, want)
+	}
+}
+
+func TestPublicHostnameByID_NoDomainAttached_ErrNoDomainAttached(t *testing.T) {
+	repo, pool := newAttachDomainTestRepo(t)
+	pageID := createDomainlessStatusPage(t, repo, pool, "hostname-lookup-no-domain-page")
+
+	_, err := repo.PublicHostnameByID(context.Background(), pageID)
+	if !errors.Is(err, ErrNoDomainAttached) {
+		t.Fatalf("PublicHostnameByID() error = %v, want ErrNoDomainAttached", err)
+	}
+}
+
+func TestPublicHostnameByID_UnknownID_ErrNotFound(t *testing.T) {
+	repo, _ := newAttachDomainTestRepo(t)
+
+	_, err := repo.PublicHostnameByID(context.Background(), "00000000-0000-0000-0000-000000000000")
+	if !errors.Is(err, ErrNotFound) {
+		t.Fatalf("PublicHostnameByID() error = %v, want ErrNotFound", err)
 	}
 }
 

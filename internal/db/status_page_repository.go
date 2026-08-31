@@ -23,6 +23,21 @@ var ErrInvalidDomain = errors.New("db: domain_id does not reference an existing 
 // (domain_id, subdomain) pair is already used by another status page.
 var ErrDuplicateDomainSubdomain = errors.New("db: this domain/subdomain pair is already in use")
 
+// ErrNoDomainAttached is returned by PublicHostnameByID when the target
+// status page has no domain_id/subdomain set yet.
+var ErrNoDomainAttached = errors.New("db: status page has no domain attached")
+
+// pendingTLSState is the StatusPage.State value AttachDomain moves a page
+// to (was left at "draft" - a bug: tls.HostPolicy rejects ACME issuance
+// for any hostname whose state is still "draft", but only MarkPublished/
+// MarkTLSFailed - both reachable only via a HostPolicy-approved ACME
+// attempt - ever moved it off "draft". AttachDomain never changed state,
+// so every status page was permanently stuck: HostPolicy always found
+// "draft" and always refused, so ACME was never attempted, so the state
+// could never change. See migration 0020 for the one-time data fix on
+// existing rows already stuck this way.
+const pendingTLSState = "pending_tls"
+
 // StatusPage is a public status page published at Subdomain under Domain,
 // showing the linked services' current status. Subdomain and DomainID are
 // both nullable: a status page can be created with no domain attached
@@ -194,9 +209,9 @@ func (r *StatusPageRepository) AttachDomain(ctx context.Context, id, domainID, s
 	var sp StatusPage
 	sp.ID = id
 	row = tx.QueryRow(ctx,
-		"UPDATE status_pages SET domain_id = $1, subdomain = $2 WHERE id = $3 "+
+		"UPDATE status_pages SET domain_id = $1, subdomain = $2, state = $3 WHERE id = $4 "+
 			"RETURNING name, subdomain, domain_id, state, tls_last_error, created_at",
-		domainID, subdomain, id,
+		domainID, subdomain, pendingTLSState, id,
 	)
 	if err := row.Scan(&sp.Name, &sp.Subdomain, &sp.DomainID, &sp.State, &sp.TLSLastError, &sp.CreatedAt); err != nil {
 		var pgErr *pgconn.PgError
@@ -302,6 +317,33 @@ func (r *StatusPageRepository) Delete(ctx context.Context, id string) error {
 	}
 
 	return nil
+}
+
+// PublicHostnameByID returns the full public hostname (subdomain + root
+// domain, same shape hostnameMatch/StateByHostname join on) for the status
+// page identified by id - used by the admin-facing domain verification
+// endpoint to know what hostname to check DNS/TLS for. It returns
+// ErrNotFound if no status page matches id, or ErrNoDomainAttached if the
+// page exists but has no domain_id/subdomain set yet.
+func (r *StatusPageRepository) PublicHostnameByID(ctx context.Context, id string) (string, error) {
+	row := r.pool.QueryRow(ctx,
+		"SELECT sp.subdomain || '.' || d.hostname FROM status_pages sp "+
+			"LEFT JOIN domains d ON d.id = sp.domain_id WHERE sp.id = $1",
+		id,
+	)
+
+	var hostname *string
+	if err := row.Scan(&hostname); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return "", ErrNotFound
+		}
+		return "", fmt.Errorf("db: failed to get public hostname by id: %w", err)
+	}
+	if hostname == nil {
+		return "", ErrNoDomainAttached
+	}
+
+	return *hostname, nil
 }
 
 // countStatusPages is the zero-row fallback for ListPaginated's total
