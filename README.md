@@ -137,13 +137,15 @@ helm search repo zeep-vane/zeep-vane --versions    # see what's available
 helm get values zeep-vane                          # review the values this release is currently running with first
 helm upgrade zeep-vane zeep-vane/zeep-vane \
   --reuse-values \
-  --set image.tag="v0.2.0"                         # or --version <chart-version> to move to a newer chart release
+  --set image.tag="0.2.2"                          # or --version <chart-version> to move to a newer chart release
 ```
 
 - `--reuse-values` keeps every value you set at install time (secrets, `config.*`, `ingress.*`, etc.) — without it, `helm upgrade` resets everything to the chart's defaults, which on this chart means silently losing your `secrets.databaseUrl`/`vaneMasterKey`/`vaneSessionSecret`. Pass `--set`/`-f` on top of `--reuse-values` only for the specific value(s) you're changing (e.g. bumping `image.tag`, or a new `config.*` field a release just added).
-- `image.tag` (`values.yaml`) defaults to `latest`, so `kubectl rollout restart deployment/zeep-vane` alone won't necessarily pull a newer build if a node already cached that tag — pin an explicit tag (or `image.digest`) once you're past initial evaluation, so an upgrade is a deliberate version bump rather than "whatever `latest` resolves to on whichever node the pod lands on."
+- `image.tag` has **no leading `v`** on GHCR (`ghcr.io/zeeplabs/zeep-vane:0.2.2`, not `:v0.2.2`) — that `v` prefix only exists on the git tag and GitHub Release name. `helm upgrade --set image.tag="v0.2.2"` fails to pull (`ImagePullBackOff`), not a `helm` error, so it can look like the upgrade succeeded until you check pod status.
+- `image.tag` (`values.yaml`) defaults to `latest`, so `kubectl rollout restart deployment/zeep-vane` alone won't necessarily pull a newer build if a node already cached that tag — pin an explicit tag (or `image.digest`) once you're past initial evaluation, so an upgrade is a deliberate version bump rather than "whatever `latest` resolves to on whichever node the pod lands on." If you do stay on `latest`, `helm upgrade` alone won't change the pod template (same tag string in, same tag string out) and won't trigger a rollout at all — follow it with an explicit `kubectl rollout restart deployment/zeep-vane -n <namespace>` to force every replica to repull.
 - Check `CHANGELOG.md`/the GitHub release notes for the target version before upgrading across a minor version — a new required `secrets.*`/`config.*` value (like a new `AD-NNN` in [`.specs/STATE.md`](.specs/STATE.md) sometimes introduces) will fail `helm upgrade` with `execution error` rather than silently starting misconfigured, but it's still better to know beforehand.
 - `helm rollback zeep-vane <REVISION>` (see `helm history zeep-vane` for revision numbers) reverts to a previous release's values/chart version if an upgrade goes wrong — it does not undo any database migration the new version's binary already applied on startup, since Vane's migrations are forward-only and embedded in the binary, not managed by the chart.
+- **A status page stuck showing "Aguardando validação de DNS/certificado" despite DNS looking correct** is very often the internet-facing `LoadBalancer` gotcha above, not a Vane bug — use the "Verificar DNS/certificado" button on the status page's detail screen (v0.2.1+) to see the actual DNS/TLS check result: DNS resolving but the TLS check timing out points straight at an internal-only load balancer.
 
 ---
 
