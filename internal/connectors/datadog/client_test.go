@@ -28,7 +28,7 @@ const validHistoryResponseBody = `{
     },
     "series": {
       "denominator": {
-        "sum": 34142
+        "sum": 34142.0
       }
     },
     "thresholds": {
@@ -89,6 +89,56 @@ func TestFetchSLOStatus_ValidResponse_ReturnsNormalizedStatus(t *testing.T) {
 	wantBudget := status.SLI - status.Target
 	if status.ErrorBudgetRemaining != wantBudget {
 		t.Errorf("ErrorBudgetRemaining = %v, want %v", status.ErrorBudgetRemaining, wantBudget)
+	}
+}
+
+// TestFetchSLOStatus_FloatDenominatorSum_DecodesWithoutError is a
+// regression guard for a bug that reached production: Datadog serializes
+// series.denominator.sum as a JSON float (e.g. 45.0) even though it's
+// always a whole request count, but SLOStatus.RequestCount decoded
+// straight into int64 - every real Datadog response failed with
+// "cannot unmarshal number 45.0 into ... of type int64". Every existing
+// fixture in this file used a bare integer literal like "sum":5, which
+// decodes into int64 fine and never exercised this - only an explicit
+// float literal (with a decimal point) reproduces what Datadog's API
+// actually returns.
+func TestFetchSLOStatus_FloatDenominatorSum_DecodesWithoutError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"data":{"overall":{"sli_value":100,"state":"ok"},"series":{"denominator":{"sum":45.0}}}}`))
+	}))
+	defer server.Close()
+
+	client := newTestClient(t, server)
+	status, err := client.FetchSLOStatus(t.Context(), "any-slo-id", time.Unix(0, 0), time.Unix(1, 0))
+	if err != nil {
+		t.Fatalf("FetchSLOStatus() returned unexpected error: %v", err)
+	}
+	if status.RequestCount != 45 {
+		t.Errorf("RequestCount = %d, want 45", status.RequestCount)
+	}
+}
+
+// TestFetchSLOStatus_FloatDenominatorSum_RoundsPrecisionNoise asserts a
+// float with tiny precision noise around a whole number (plausible from
+// real floating-point arithmetic on Datadog's side) still rounds to the
+// right integer instead of truncating down by 1.
+func TestFetchSLOStatus_FloatDenominatorSum_RoundsPrecisionNoise(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"data":{"overall":{"sli_value":100,"state":"ok"},"series":{"denominator":{"sum":44.99999999999999}}}}`))
+	}))
+	defer server.Close()
+
+	client := newTestClient(t, server)
+	status, err := client.FetchSLOStatus(t.Context(), "any-slo-id", time.Unix(0, 0), time.Unix(1, 0))
+	if err != nil {
+		t.Fatalf("FetchSLOStatus() returned unexpected error: %v", err)
+	}
+	if status.RequestCount != 45 {
+		t.Errorf("RequestCount = %d, want 45 (rounded, not truncated)", status.RequestCount)
 	}
 }
 
