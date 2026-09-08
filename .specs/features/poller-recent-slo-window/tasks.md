@@ -166,7 +166,7 @@ T6
 
 ---
 
-### T4: Fix `poller_test.go`'s integration fakes for the new signature
+### T4: Fix `poller_test.go`'s integration fakes for the new signature ✅ Complete
 
 **What**: Update `sloKeyedFakeProvider.FetchSLOStatus` and every `fakeProvider`/`sloKeyedFakeProvider` literal in this file to the new `(ctx, sloID string, from, to time.Time)` signature, and add `RequestCount: 10` (or higher) to every `datadog.SLOStatus{...}` fixture whose test asserts a specific resulting `current_status` — so this feature's low-volume guard doesn't silently change what these pre-existing integration scenarios assert. Compile-check only for this feature (no DB-touching change, per `AGENTS.md` §3's integration-gate scoping) — do not spin up a Postgres container for this task.
 **Where**: `internal/poller/poller_test.go`
