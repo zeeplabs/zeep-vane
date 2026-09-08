@@ -86,7 +86,7 @@ func TestFetchSLOStatus_ValidResponse_ReturnsNormalizedStatus(t *testing.T) {
 	if status.RequestCount != 34142 {
 		t.Errorf("RequestCount = %v, want %v", status.RequestCount, 34142)
 	}
-	wantBudget := status.Target - status.SLI
+	wantBudget := status.SLI - status.Target
 	if status.ErrorBudgetRemaining != wantBudget {
 		t.Errorf("ErrorBudgetRemaining = %v, want %v", status.ErrorBudgetRemaining, wantBudget)
 	}
@@ -110,6 +110,41 @@ func TestFetchSLOStatus_MissingThresholds_ReturnsZeroTargetNoCrash(t *testing.T)
 	}
 	if status.Timeframe != "" {
 		t.Errorf("Timeframe = %q, want empty", status.Timeframe)
+	}
+}
+
+func TestFetchSLOStatus_MultipleThresholds_PicksSameOneEveryTime(t *testing.T) {
+	body := `{"data":{"overall":{"sli_value":99,"state":"ok"},"series":{"denominator":{"sum":100}},
+	  "thresholds":{"90d":{"target":99.9,"timeframe":"90d"},"30d":{"target":99.5,"timeframe":"30d"},"7d":{"target":99,"timeframe":"7d"}}}}`
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(body))
+	}))
+	defer server.Close()
+
+	client := newTestClient(t, server)
+
+	var gotTimeframes []string
+	for i := 0; i < 20; i++ {
+		status, err := client.FetchSLOStatus(t.Context(), "any-slo-id", time.Unix(0, 0), time.Unix(1, 0))
+		if err != nil {
+			t.Fatalf("FetchSLOStatus() returned unexpected error: %v", err)
+		}
+		gotTimeframes = append(gotTimeframes, status.Timeframe)
+	}
+
+	first := gotTimeframes[0]
+	for i, tf := range gotTimeframes {
+		if tf != first {
+			t.Fatalf("call %d picked timeframe %q, want the same %q every call (non-deterministic map iteration)", i, tf, first)
+		}
+	}
+	// "30d" sorts before "7d" and "90d" lexicographically - documents which
+	// one wins, not that it's the "right" one (arbitrary but stable, see
+	// client.go's comment above the sort).
+	if first != "30d" {
+		t.Errorf("picked timeframe = %q, want %q (lexicographically first key)", first, "30d")
 	}
 }
 

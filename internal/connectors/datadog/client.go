@@ -10,6 +10,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"sort"
 	"strings"
 	"time"
 )
@@ -185,12 +186,31 @@ func (c *Client) FetchSLOStatus(ctx context.Context, sloID string, from, to time
 		SLI:          parsed.Data.Overall.SLIValue,
 		RequestCount: parsed.Data.Series.Denominator.Sum,
 	}
-	for _, threshold := range parsed.Data.Thresholds {
-		status.Target = threshold.Target
-		status.Timeframe = threshold.Timeframe
-		break
+	// parsed.Data.Thresholds is keyed by timeframe (e.g. "7d", "30d") -
+	// iterating a Go map directly picked a random key on every call for any
+	// SLO configured with more than one threshold, making Target/Timeframe
+	// (and therefore ErrorBudgetRemaining) non-deterministic per poll.
+	// Sorting keys first makes the pick stable; which specific timeframe
+	// wins is otherwise arbitrary (single-threshold SLOs, the common case
+	// observed in this org, are unaffected either way).
+	if len(parsed.Data.Thresholds) > 0 {
+		timeframes := make([]string, 0, len(parsed.Data.Thresholds))
+		for timeframe := range parsed.Data.Thresholds {
+			timeframes = append(timeframes, timeframe)
+		}
+		sort.Strings(timeframes)
+		chosen := parsed.Data.Thresholds[timeframes[0]]
+		status.Target = chosen.Target
+		status.Timeframe = chosen.Timeframe
 	}
-	status.ErrorBudgetRemaining = status.Target - status.SLI
+	// Datadog's own error_budget_remaining is positive when healthy (0-100
+	// scale); Target - SLI (this approximation, chosen because the history
+	// endpoint doesn't return the exact figure without an explicit target
+	// param - AD-019) is negative when healthy instead. SLI - Target at
+	// least matches Datadog's sign convention for the inert DB-only column
+	// this feeds (status_intervals.error_budget_remaining - never read by
+	// any handler or frontend, see AD-019's Trade-off).
+	status.ErrorBudgetRemaining = status.SLI - status.Target
 
 	return status, nil
 }
