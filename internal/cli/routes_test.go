@@ -949,7 +949,17 @@ func TestAdminRouter_SecurityHeaders_SetOnAdminListener(t *testing.T) {
 // test-only chi mux): login had no rate limit at all before - an attacker
 // could brute-force a password with unbounded, unthrottled requests.
 func TestAdminRouter_LoginRateLimit_ExceedsBurst_429(t *testing.T) {
-	r, _, _ := newAdminRouterForTest(t)
+	r, pool, _ := newAdminRouterForTest(t)
+	const testIP = "203.0.113.9"
+	t.Cleanup(func() {
+		// rate_limit_buckets is a table shared across every test in this
+		// package (and, under `go test ./...`'s package parallelism,
+		// contended with internal/ratelimit's own tests against the same
+		// database) - clean up only this test's own IP, not the whole
+		// table, so a concurrently-running test's bucket isn't wiped out
+		// from under it.
+		_, _ = pool.Exec(context.Background(), "DELETE FROM rate_limit_buckets WHERE ip = $1", testIP)
+	})
 
 	body, err := json.Marshal(map[string]string{"email": "nobody@example.com", "password": "wrong-password"})
 	if err != nil {
@@ -959,7 +969,7 @@ func TestAdminRouter_LoginRateLimit_ExceedsBurst_429(t *testing.T) {
 	postLogin := func() *httptest.ResponseRecorder {
 		req := httptest.NewRequest(http.MethodPost, "/api/auth/login", bytes.NewReader(body))
 		req.Header.Set("Content-Type", "application/json")
-		req.RemoteAddr = "203.0.113.9:54321"
+		req.RemoteAddr = testIP + ":54321"
 		rec := httptest.NewRecorder()
 		r.ServeHTTP(rec, req)
 		return rec
@@ -987,7 +997,11 @@ func TestAdminRouter_LoginRateLimit_ExceedsBurst_429(t *testing.T) {
 // effective rate simply by spreading guesses across login/password-reset
 // (H10).
 func TestAdminRouter_LoginRateLimit_SharedAcrossCredentialRoutes_429(t *testing.T) {
-	r, _, _ := newAdminRouterForTest(t)
+	r, pool, _ := newAdminRouterForTest(t)
+	const testIP = "203.0.113.10"
+	t.Cleanup(func() {
+		_, _ = pool.Exec(context.Background(), "DELETE FROM rate_limit_buckets WHERE ip = $1", testIP)
+	})
 
 	loginBody, err := json.Marshal(map[string]string{"email": "nobody@example.com", "password": "wrong-password"})
 	if err != nil {
@@ -1001,7 +1015,7 @@ func TestAdminRouter_LoginRateLimit_SharedAcrossCredentialRoutes_429(t *testing.
 	post := func(path string, body []byte) *httptest.ResponseRecorder {
 		req := httptest.NewRequest(http.MethodPost, path, bytes.NewReader(body))
 		req.Header.Set("Content-Type", "application/json")
-		req.RemoteAddr = "203.0.113.10:54321"
+		req.RemoteAddr = testIP + ":54321"
 		rec := httptest.NewRecorder()
 		r.ServeHTTP(rec, req)
 		return rec

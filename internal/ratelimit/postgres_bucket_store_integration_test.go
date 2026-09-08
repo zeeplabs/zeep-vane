@@ -30,7 +30,9 @@ import (
 // boundary exactly.
 func TestPostgresBucketStore_Allow_ExactOneTokenBoundary(t *testing.T) {
 	pool := newRateLimitTestPool(t)
-	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), "DELETE FROM rate_limit_buckets") })
+	t.Cleanup(func() {
+		_, _ = pool.Exec(context.Background(), "DELETE FROM rate_limit_buckets WHERE ip IN ($1, $2)", "203.0.113.201", "203.0.113.202")
+	})
 
 	store := newPostgresBucketStore(pool)
 	ctx := context.Background()
@@ -88,10 +90,12 @@ func TestPostgresBucketStore_Allow_ExactOneTokenBoundary(t *testing.T) {
 // test fail.
 func TestPostgresBucketStore_Allow_ConcurrentFirstRequests_NeverExceedsBurst(t *testing.T) {
 	pool := newRateLimitTestPool(t)
-	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), "DELETE FROM rate_limit_buckets") })
+	const ip = "203.0.113.203"
+	t.Cleanup(func() {
+		_, _ = pool.Exec(context.Background(), "DELETE FROM rate_limit_buckets WHERE ip = $1", ip)
+	})
 
 	store := newPostgresBucketStore(pool)
-	const ip = "203.0.113.203"
 	const burst = 5
 	const concurrency = 20 // well above burst, so the race is actually exercised
 

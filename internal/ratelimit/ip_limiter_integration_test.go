@@ -53,7 +53,13 @@ func newRateLimitTestPool(t *testing.T) *db.Pool {
 // unaffected.
 func TestIPLimiter_TwoInstances_SameDatabase_ShareLimitPerIP(t *testing.T) {
 	pool := newRateLimitTestPool(t)
-	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), "DELETE FROM rate_limit_buckets") })
+	// rate_limit_buckets is shared with every other package's integration
+	// tests against the same database (e.g. internal/cli's rate-limit
+	// tests) under go test ./...'s package parallelism - clean up only
+	// this test's own IPs, not the whole table.
+	t.Cleanup(func() {
+		_, _ = pool.Exec(context.Background(), "DELETE FROM rate_limit_buckets WHERE ip IN ($1, $2)", "203.0.113.100", "203.0.113.101")
+	})
 
 	const burst = 3
 	limiterA := NewIPLimiter(pool, 60, burst, time.Minute)
@@ -103,7 +109,9 @@ func TestIPLimiter_TwoInstances_SameDatabase_ShareLimitPerIP(t *testing.T) {
 // cleanup cycle runs, buckets idle longer than idleTTL are gone.
 func TestIPLimiter_Cleanup_RemovesIdleRows(t *testing.T) {
 	pool := newRateLimitTestPool(t)
-	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), "DELETE FROM rate_limit_buckets") })
+	t.Cleanup(func() {
+		_, _ = pool.Exec(context.Background(), "DELETE FROM rate_limit_buckets WHERE ip IN ($1, $2)", "203.0.113.102", "203.0.113.103")
+	})
 
 	store := newPostgresBucketStore(pool)
 	ctx := context.Background()
