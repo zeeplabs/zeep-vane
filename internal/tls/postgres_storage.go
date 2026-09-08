@@ -26,8 +26,13 @@ import (
 // Keys mirror FileStorage's path-based layout (e.g.
 // "certificates/acme-v02.../example.com/example.com.crt"); "directory"
 // semantics (a key that is itself a prefix of other keys) are implemented
-// via LIKE 'prefix/%' queries against the certmagic_storage_key_prefix_idx
-// index the 0018 migration creates for this purpose.
+// via starts_with(key, 'prefix/') queries against the
+// certmagic_storage_key_prefix_idx index the 0018 migration creates for
+// this purpose. starts_with, not LIKE 'prefix/%' - a key containing a raw
+// "_" or "%" would otherwise be interpreted as a LIKE wildcard instead of a
+// literal character; certmagic keys are host/path-derived so this is
+// low-probability today, but starts_with removes the assumption entirely
+// and still uses the same b-tree index (text_pattern_ops-compatible).
 type PostgresStorage struct {
 	pool *db.Pool
 	dsn  string
@@ -85,7 +90,7 @@ func (s *PostgresStorage) Load(ctx context.Context, key string) ([]byte, error) 
 // every key prefixed by key+"/" is deleted too. Returns an error
 // satisfying errors.Is(err, fs.ErrNotExist) if nothing existed to delete.
 func (s *PostgresStorage) Delete(ctx context.Context, key string) error {
-	tag, err := s.pool.Exec(ctx, "DELETE FROM certmagic_storage WHERE key = $1 OR key LIKE $2", key, key+"/%")
+	tag, err := s.pool.Exec(ctx, "DELETE FROM certmagic_storage WHERE key = $1 OR starts_with(key, $2)", key, key+"/")
 	if err != nil {
 		return fmt.Errorf("tls: failed to delete %s: %w", key, err)
 	}
@@ -100,8 +105,8 @@ func (s *PostgresStorage) Delete(ctx context.Context, key string) error {
 func (s *PostgresStorage) Exists(ctx context.Context, key string) bool {
 	var exists bool
 	err := s.pool.QueryRow(ctx,
-		"SELECT EXISTS(SELECT 1 FROM certmagic_storage WHERE key = $1 OR key LIKE $2)",
-		key, key+"/%",
+		"SELECT EXISTS(SELECT 1 FROM certmagic_storage WHERE key = $1 OR starts_with(key, $2))",
+		key, key+"/",
 	).Scan(&exists)
 	if err != nil {
 		return false
@@ -117,7 +122,7 @@ func (s *PostgresStorage) Exists(ctx context.Context, key string) bool {
 func (s *PostgresStorage) List(ctx context.Context, path string, recursive bool) ([]string, error) {
 	prefix := path + "/"
 
-	rows, err := s.pool.Query(ctx, "SELECT key FROM certmagic_storage WHERE key LIKE $1", prefix+"%")
+	rows, err := s.pool.Query(ctx, "SELECT key FROM certmagic_storage WHERE starts_with(key, $1)", prefix)
 	if err != nil {
 		return nil, fmt.Errorf("tls: failed to list %s: %w", path, err)
 	}
