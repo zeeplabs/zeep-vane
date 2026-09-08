@@ -144,12 +144,17 @@ func (m *PollerManager) RunLeaderLoop(ctx context.Context) {
 
 		// Lock lost or shutting down: abort whatever is in-flight (HA-05)
 		// before releasing, so no partial poll cycle keeps running under a
-		// lock we no longer safely hold. leading flips false before Stop so
-		// a Restart racing in on the old leadership window (e.g. a
-		// concurrent ConnectDatadog request) can't slip a new poller in
-		// after this replica has already given up leadership.
+		// lock we no longer safely hold. leading flips false and the
+		// running poller is stopped under the same m.mu critical section
+		// as Restart's own leading check (not a plain m.Stop() call, which
+		// would take m.mu separately) - otherwise a Restart already past
+		// its leading.Load() check but not yet holding m.mu could still
+		// start a new poller after this replica has given up leadership,
+		// racing this exact stop.
+		m.mu.Lock()
 		m.leading.Store(false)
-		m.Stop()
+		m.stopLocked()
+		m.mu.Unlock()
 		_ = handle.Release(context.Background())
 
 		if ctx.Err() != nil {
@@ -210,18 +215,22 @@ func sleepOrDone(ctx context.Context, d time.Duration) bool {
 // IntegrationsHandler, which just connected/rotated a real integration)
 // can ignore it.
 func (m *PollerManager) Restart(ctx context.Context) (started bool, err error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
 	if !m.leading.Load() {
 		// Not this replica's turn to run a poller - RunLeaderLoop will call
 		// Restart itself from the currently stored integration the moment
 		// this replica (or whichever one is actually leading) acquires
 		// leadership, so a credential connected/rotated here still takes
 		// effect without a process restart, just not necessarily on this
-		// exact replica or instantly if it never leads.
+		// exact replica or instantly if it never leads. Checked under m.mu,
+		// same critical section RunLeaderLoop uses to flip leading false
+		// and stop the poller on leadership loss - otherwise a Restart
+		// that read leading=true just before losing it could still start a
+		// new poller after this replica no longer safely holds the lock.
 		return false, nil
 	}
-
-	m.mu.Lock()
-	defer m.mu.Unlock()
 
 	m.stopLocked()
 
