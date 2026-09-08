@@ -119,13 +119,13 @@ T5 → T6 → T7 → T8
 
 **Done when**:
 
-- [ ] `rangeSpecs["24h"/"7d"/"30d"/"90d"]` match `design.md`'s Data Models table exactly (window/bucketWidth/bucketCount)
-- [ ] Test: `bucketCount * bucketWidth == window` holds for every entry (the invariant `design.md` calls out) - written as a table-driven assertion, not eyeballed
-- [ ] Test: missing/empty `range` query param → `parseRange` returns the `24h` spec, `ok=true`
-- [ ] Test: each of the 4 valid values → `parseRange` returns the matching spec, `ok=true`
-- [ ] Test: an unrecognized value (e.g. `"5d"`, `""` after trim edge cases, `"90D"` wrong case) → `ok=false`
-- [ ] `writeInvalidRangeError` writes `422` + `{"error":"range must be one of 24h, 7d, 30d, 90d"}` + `Content-Type: application/json`, asserted via `httptest.NewRecorder()`
-- [ ] `gofmt -l internal/api/time_range*.go` empty
+- [x] `rangeSpecs["24h"/"7d"/"30d"/"90d"]` match `design.md`'s Data Models table exactly (window/bucketWidth/bucketCount)
+- [x] Test: `bucketCount * bucketWidth == window` holds for every entry (the invariant `design.md` calls out) - written as a table-driven assertion, not eyeballed
+- [x] Test: missing/empty `range` query param → `parseRange` returns the `24h` spec, `ok=true`
+- [x] Test: each of the 4 valid values → `parseRange` returns the matching spec, `ok=true`
+- [x] Test: an unrecognized value (e.g. `"5d"`, `""` after trim edge cases, `"90D"` wrong case) → `ok=false`
+- [x] `writeInvalidRangeError` writes `422` + `{"error":"range must be one of 24h, 7d, 30d, 90d"}` + `Content-Type: application/json`, asserted via `httptest.NewRecorder()`
+- [x] `gofmt -l internal/api/time_range*.go` empty
 
 **Tests**: unit
 **Gate**: quick (`go test ./internal/api/...`, no `-tags=integration` needed for this file)
