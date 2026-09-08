@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.4] — 2026-09-08
+
+### Fixed
+
+- **Critical, broke every poll immediately on the v0.2.3 rollout**: `series.denominator.sum` in Datadog's SLO history response is a JSON float (e.g. `45.0`) even though it's always a whole request count, but `SLOStatus.RequestCount` decoded straight into `int64` — every real poll failed with `json: cannot unmarshal number 45.0 into ... of type int64`, freezing every service's cached status at whatever it was before the deploy. No fixture in `client_test.go` used a float literal, so none of the pre-release Verifier passes caught it against real Datadog data. Now decodes as `float64` and rounds to `int64`.
+
 ## [0.2.3] — 2026-09-08
 
 ### Fixed

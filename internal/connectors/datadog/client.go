@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"net"
 	"net/http"
 	"net/url"
@@ -139,7 +140,16 @@ type sloHistoryResponse struct {
 		} `json:"overall"`
 		Series struct {
 			Denominator struct {
-				Sum int64 `json:"sum"`
+				// Sum is a whole request count, but Datadog serializes it as
+				// a JSON float (e.g. 45.0, not 45) - decoding straight into
+				// int64 fails with "cannot unmarshal number 45.0 into ...
+				// of type int64" on every real response. Confirmed live in
+				// production (2026-09-08): every poll against a real
+				// Datadog account failed this way, none of it caught by any
+				// test, because every test's fixture response JSON was
+				// hand-written with integer literals instead of the float
+				// shape Datadog's API actually returns.
+				Sum float64 `json:"sum"`
 			} `json:"denominator"`
 		} `json:"series"`
 		Thresholds map[string]struct {
@@ -172,9 +182,14 @@ func (c *Client) FetchSLOStatus(ctx context.Context, sloID string, from, to time
 	}
 
 	status := SLOStatus{
-		State:        parsed.Data.Overall.State,
-		SLI:          parsed.Data.Overall.SLIValue,
-		RequestCount: parsed.Data.Series.Denominator.Sum,
+		State: parsed.Data.Overall.State,
+		SLI:   parsed.Data.Overall.SLIValue,
+		// math.Round, not a bare int64() truncation: Denominator.Sum is a
+		// whole count Datadog happens to serialize as a float, so rounding
+		// guards against any float-precision noise (e.g. 44.99999999999999)
+		// still landing on the right integer instead of silently
+		// undercounting by 1.
+		RequestCount: int64(math.Round(parsed.Data.Series.Denominator.Sum)),
 	}
 	// parsed.Data.Thresholds is keyed by timeframe (e.g. "7d", "30d") -
 	// iterating a Go map directly picked a random key on every call for any
