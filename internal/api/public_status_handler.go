@@ -240,7 +240,7 @@ func (h *PublicStatusHandler) composeResponse(ctx context.Context, statusPageID 
 		// A service the poller has never successfully reached yet has no
 		// entry here; LastUpdatedAt then stays the zero value rather than a
 		// fabricated "now" (SP-08, SP-09, edge case in spec.md). Its
-		// history is likewise all no_data - history.BuildHourly handles a
+		// history is likewise all no_data - history.BuildBuckets handles a
 		// nil/empty interval slice with no special-case branch here.
 		serviceIntervals := intervalsByService[service.ID]
 
@@ -260,7 +260,7 @@ func (h *PublicStatusHandler) composeResponse(ctx context.Context, statusPageID 
 			asOf = openInterval.LastSeenAt
 		}
 
-		buckets := history.BuildHourly(serviceIntervals, now, asOf, h.historyLoc, historyWindowHours)
+		buckets := history.BuildBuckets(serviceIntervals, now, asOf, h.historyLoc, historyWindowHours, time.Hour)
 
 		var uptimePercent *float64
 		if pct, ok := history.UptimePercent(serviceIntervals, windowStart, asOf); ok {
@@ -279,9 +279,9 @@ func (h *PublicStatusHandler) composeResponse(ctx context.Context, statusPageID 
 	return resp, nil
 }
 
-// toPublicHourlyResponses converts history.BuildHourly's buckets into their
+// toPublicHourlyResponses converts history.BuildBuckets's buckets into their
 // public response shape.
-func toPublicHourlyResponses(buckets []history.HourlyBucket) []publicHourlyStatusResponse {
+func toPublicHourlyResponses(buckets []history.Bucket) []publicHourlyStatusResponse {
 	resp := make([]publicHourlyStatusResponse, len(buckets))
 	for i, bucket := range buckets {
 		resp[i] = publicHourlyStatusResponse{Start: bucket.Start, Status: bucket.Status}
