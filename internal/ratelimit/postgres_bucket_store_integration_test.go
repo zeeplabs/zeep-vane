@@ -4,6 +4,7 @@ package ratelimit
 
 import (
 	"context"
+	"sync"
 	"testing"
 
 	"github.com/zeeplabs/zeep-vane/internal/db"
@@ -71,6 +72,59 @@ func TestPostgresBucketStore_Allow_ExactOneTokenBoundary(t *testing.T) {
 			t.Errorf("tokens after a denied request = %v, want unchanged 0.999999 (a denied request must not consume a token)", remaining)
 		}
 	})
+}
+
+// TestPostgresBucketStore_Allow_ConcurrentFirstRequests_NeverExceedsBurst
+// covers the cold-start lost-update fix directly: before it, concurrent
+// first-ever requests for the same brand-new IP each hit ErrNoRows with
+// nothing to lock, independently computed a fresh full bucket, and each
+// blindly overwrote via the final upsert - no serialization between them,
+// so a burst of concurrent first requests could all be "allowed" past the
+// configured burst ceiling. This never showed up in
+// TestPostgresBucketStore_Allow_ExactOneTokenBoundary or
+// ip_limiter_integration_test.go's sequential calls - only genuine
+// concurrency against a never-before-seen IP exercises it. Reverting the
+// seed-INSERT-before-lock fix in postgresBucketStore.allow must make this
+// test fail.
+func TestPostgresBucketStore_Allow_ConcurrentFirstRequests_NeverExceedsBurst(t *testing.T) {
+	pool := newRateLimitTestPool(t)
+	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), "DELETE FROM rate_limit_buckets") })
+
+	store := newPostgresBucketStore(pool)
+	const ip = "203.0.113.203"
+	const burst = 5
+	const concurrency = 20 // well above burst, so the race is actually exercised
+
+	var wg sync.WaitGroup
+	var mu sync.Mutex
+	allowedCount := 0
+
+	for i := 0; i < concurrency; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			allowed, err := store.allow(context.Background(), ip, burst, 0)
+			if err != nil {
+				t.Errorf("allow() returned unexpected error: %v", err)
+				return
+			}
+			if allowed {
+				mu.Lock()
+				allowedCount++
+				mu.Unlock()
+			}
+		}()
+	}
+	wg.Wait()
+
+	if allowedCount != burst {
+		t.Errorf("allowedCount = %d out of %d concurrent first requests, want exactly %d (the burst ceiling) - a higher count means concurrent requests for a brand-new IP aren't serializing against each other", allowedCount, concurrency, burst)
+	}
+
+	remaining := readTokens(t, pool, ip)
+	if remaining != 0 {
+		t.Errorf("tokens remaining after %d concurrent requests against a burst of %d = %v, want 0", concurrency, burst, remaining)
+	}
 }
 
 // seedBucket inserts ip's bucket row directly via SQL with the given token
