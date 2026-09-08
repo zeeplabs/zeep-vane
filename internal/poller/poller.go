@@ -14,6 +14,49 @@ import (
 // service per cycle (SP-05).
 const maxFetchAttempts = 3
 
+// minRecentWindowRequests is the minimum request volume a poll window must
+// carry before its computed state is trusted. Below this, the window is too
+// sparse to distinguish a real problem from noise, so pollService carries
+// the previous status forward instead of recomputing (AD-019). Conservative
+// floor, not derived from real traffic data - flagged in spec.md's
+// Assumptions as unconfirmed and easy to tune later.
+const minRecentWindowRequests = 10
+
+// recentWindowWidth is how much SLO history pollService asks Datadog for on
+// each fetch, independent of p.interval (AD-019 addendum). A window sized to
+// the poll interval alone (originally 60s) was proven too narrow against
+// live Datadog data: at ~51 req/min steady traffic, the freshest 60s
+// reported as few as 8 requests because trace metrics for the last 1-2
+// minutes aren't fully aggregated yet, tripping minRecentWindowRequests and
+// carrying a stale status forward - the exact bug AD-019 was written to fix.
+// 5 minutes of width absorbs that per-minute variance.
+const recentWindowWidth = 5 * time.Minute
+
+// recentWindowLag offsets the window's end away from time.Now() so it never
+// includes the most recent minute of not-yet-aggregated Datadog data.
+// Live-measured: the freshest 60s under-reported request volume by ~6x
+// versus the steady rate, while data 60-120s old already matched it.
+const recentWindowLag = 60 * time.Second
+
+// breachHysteresisCycles is how many consecutive polling cycles a service
+// must report Datadog's "breached" state before pollService actually flips
+// its status to "outage" (AD-019 addendum: hysteresis). Without this, a
+// single 5-minute window reporting "breached" instantly paints the service
+// as down: Datadog computes state against the SLO's configured target
+// (typically 99.5% over 30 days) applied unscaled to a 5-minute bucket, so
+// on a high-traffic service a single unlucky burst of errors - well within
+// normal noise for a 30-day budget - is enough to trip "breached" on its
+// own. Live-measured against a real 30-day-healthy SLO: 2 of 6 consecutive
+// 5-minute windows reported "breached" despite thousands of requests each,
+// which without hysteresis would have flapped the public page (and, via
+// internal/history's worst-status-wins hourly bucketing, painted the entire
+// hour red) purely from normal variance. Requiring 2 consecutive breaches
+// before committing to "outage" absorbs single-window noise while still
+// reacting within 2 poll cycles (up to ~2*POLL_INTERVAL_SECONDS) to a real
+// outage. See .specs/STATE.md AD-019 addendum for the full analysis and the
+// longer-term fix this is a stopgap for.
+const breachHysteresisCycles = 2
+
 // serviceLister is the subset of *db.ServiceRepository the poller depends on
 // to discover which services to poll.
 type serviceLister interface {
@@ -55,6 +98,13 @@ type Poller struct {
 	provider        datadog.SLOProvider
 	interval        time.Duration
 	logger          *zap.Logger
+
+	// breachStreak tracks, per service ID, how many consecutive cycles in a
+	// row Datadog has reported "breached" for that service's most recent
+	// window (breachHysteresisCycles). Only ever read/written from
+	// pollOnce's sequential loop over services (Run drives one poll cycle
+	// at a time on a single goroutine), so it needs no locking of its own.
+	breachStreak map[string]int
 }
 
 // NewPoller builds a Poller that fetches SLO status via provider every
@@ -69,6 +119,7 @@ func NewPoller(services serviceLister, statuses serviceStatusUpdater, statusInte
 		provider:        provider,
 		interval:        interval,
 		logger:          logger,
+		breachStreak:    make(map[string]int),
 	}
 }
 
@@ -149,14 +200,38 @@ func (p *Poller) pollOnce(ctx context.Context) {
 // service's outcome for the cycle first (H5/H6), since a single service's
 // failure must not by itself mark the whole integration invalid.
 func (p *Poller) pollService(ctx context.Context, svc db.Service) error {
-	status, err := FetchWithRetry(ctx, p.provider, svc.SLOID, maxFetchAttempts)
+	to := time.Now().Add(-recentWindowLag)
+	from := to.Add(-recentWindowWidth)
+
+	status, err := FetchWithRetry(ctx, p.provider, svc.SLOID, from, to, maxFetchAttempts)
 	if err != nil {
 		p.logger.Error("poller: failed to fetch slo status",
 			zap.String("service_id", svc.ID), zap.String("slo_id", svc.SLOID), zap.Error(err))
 		return err
 	}
 
-	current := normalizeStatus(status.State)
+	var current string
+	switch {
+	case status.RequestCount < minRecentWindowRequests:
+		// Too little traffic in this window to trust a recompute - carry the
+		// previous status forward rather than let a handful of requests
+		// flip the public page (AD-019).
+		current = svc.CurrentStatus
+	case status.State == "breached":
+		// Hysteresis (AD-019 addendum, breachHysteresisCycles): a single
+		// breached window is not enough to commit to "outage" - see the
+		// constant's doc comment for why. Carry the previous status forward
+		// until the streak clears the threshold, then latch to "outage".
+		p.breachStreak[svc.ID]++
+		if p.breachStreak[svc.ID] >= breachHysteresisCycles {
+			current = "outage"
+		} else {
+			current = svc.CurrentStatus
+		}
+	default:
+		p.breachStreak[svc.ID] = 0
+		current = normalizeStatus(status.State)
+	}
 
 	if err := p.statusIntervals.OpenOrExtend(ctx, svc.ID, current, status.ErrorBudgetRemaining, time.Now()); err != nil {
 		p.logger.Error("poller: failed to open or extend status interval",
@@ -174,7 +249,13 @@ func (p *Poller) pollService(ctx context.Context, svc db.Service) error {
 }
 
 // normalizeStatus maps a Datadog SLO state to vane's Service.CurrentStatus
-// values (SP-06/SP-07).
+// values (SP-06/SP-07). Documents the full mapping for every state Datadog
+// can report, but pollService itself never reaches the "breached" case
+// below: it intercepts status.State == "breached" earlier to apply
+// breachHysteresisCycles, so this function only ever actually sees "ok"/
+// "warning"/anything else in production. Kept here (not deleted) so the
+// mapping stays complete and self-documenting, and so a future caller that
+// doesn't need hysteresis can still use it correctly.
 func normalizeStatus(state string) string {
 	switch state {
 	case "ok":

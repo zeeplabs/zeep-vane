@@ -61,6 +61,11 @@ func TestPollerManager_Restart_WithStoredIntegration_StartsAndTracksRunning(t *t
 
 	mgr := NewPollerManager(ctx, pool, pollerManagerTestConfig(), zap.NewNop(), testDatabaseURL(t))
 	t.Cleanup(mgr.Stop)
+	// Restart is a no-op for a non-leader replica (see the field's own doc
+	// comment); these tests exercise Restart's own lifecycle behavior
+	// directly rather than going through RunLeaderLoop, so they assume
+	// leadership already granted.
+	mgr.leading.Store(true)
 
 	started, err := mgr.Restart(context.Background())
 	if err != nil {
@@ -90,6 +95,7 @@ func TestPollerManager_Restart_NoIntegration_ReturnsFalseWithoutError(t *testing
 
 	mgr := NewPollerManager(ctx, pool, pollerManagerTestConfig(), zap.NewNop(), testDatabaseURL(t))
 	t.Cleanup(mgr.Stop)
+	mgr.leading.Store(true)
 
 	started, err := mgr.Restart(context.Background())
 	if err != nil {
@@ -97,6 +103,41 @@ func TestPollerManager_Restart_NoIntegration_ReturnsFalseWithoutError(t *testing
 	}
 	if started {
 		t.Fatal("Restart() started = true, want false - no integration is stored")
+	}
+}
+
+// TestPollerManager_Restart_NotLeading_IsNoOp covers the double-poller fix:
+// IntegrationsHandler.ConnectDatadog calls Restart on whichever replica the
+// admin API load balancer happened to route the request to, not necessarily
+// the one currently leading. Restart must not start a poller on a replica
+// that isn't leading - RunLeaderLoop is solely responsible for starting one
+// once this replica (or whichever one is actually leading) acquires the
+// lock.
+func TestPollerManager_Restart_NotLeading_IsNoOp(t *testing.T) {
+	pool := newServeTestPool(t)
+	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), "DELETE FROM integrations WHERE provider = 'datadog'") })
+	storeTestDatadogIntegration(t, pool)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	mgr := NewPollerManager(ctx, pool, pollerManagerTestConfig(), zap.NewNop(), testDatabaseURL(t))
+	t.Cleanup(mgr.Stop)
+	// Deliberately not setting mgr.leading - default zero value is false.
+
+	started, err := mgr.Restart(context.Background())
+	if err != nil {
+		t.Fatalf("Restart() returned unexpected error: %v", err)
+	}
+	if started {
+		t.Fatal("Restart() started = true on a non-leading replica, want false (no-op) even though an integration is stored")
+	}
+
+	mgr.mu.Lock()
+	running := mgr.cancel != nil || mgr.done != nil
+	mgr.mu.Unlock()
+	if running {
+		t.Error("PollerManager tracks a running poller after a non-leading Restart, want no poller started")
 	}
 }
 
@@ -112,6 +153,7 @@ func TestPollerManager_Stop_ExitsPromptlyAndClearsState(t *testing.T) {
 	defer cancel()
 
 	mgr := NewPollerManager(ctx, pool, pollerManagerTestConfig(), zap.NewNop(), testDatabaseURL(t))
+	mgr.leading.Store(true)
 
 	if started, err := mgr.Restart(context.Background()); err != nil || !started {
 		t.Fatalf("Restart() = (%v, %v), want (true, nil)", started, err)
@@ -152,6 +194,7 @@ func TestPollerManager_Restart_CalledTwice_TearsDownPreviousBeforeStartingNew(t 
 
 	mgr := NewPollerManager(ctx, pool, pollerManagerTestConfig(), zap.NewNop(), testDatabaseURL(t))
 	t.Cleanup(mgr.Stop)
+	mgr.leading.Store(true)
 
 	if started, err := mgr.Restart(context.Background()); err != nil || !started {
 		t.Fatalf("first Restart() = (%v, %v), want (true, nil)", started, err)

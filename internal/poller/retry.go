@@ -19,11 +19,11 @@ var backoffBase = 500 * time.Millisecond
 // times total on transient errors (timeout, 5xx) with exponential backoff
 // between attempts. ErrUnauthorized is never retried - a bad credential
 // cannot succeed by trying again, so it fails on the first attempt (SP-05).
-func FetchWithRetry(ctx context.Context, provider datadog.SLOProvider, sloID string, maxAttempts int) (datadog.SLOStatus, error) {
+func FetchWithRetry(ctx context.Context, provider datadog.SLOProvider, sloID string, from, to time.Time, maxAttempts int) (datadog.SLOStatus, error) {
 	var lastErr error
 
 	for attempt := 1; attempt <= maxAttempts; attempt++ {
-		status, err := provider.FetchSLOStatus(ctx, sloID)
+		status, err := provider.FetchSLOStatus(ctx, sloID, from, to)
 		if err == nil {
 			return status, nil
 		}

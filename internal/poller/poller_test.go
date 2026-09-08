@@ -91,7 +91,7 @@ func TestPoller_PollOnce_UpdatesStatusAndPersistsSnapshot(t *testing.T) {
 
 	provider := &fakeProvider{
 		errs:   []error{nil},
-		status: datadog.SLOStatus{State: "ok", ErrorBudgetRemaining: 91.2},
+		status: datadog.SLOStatus{State: "ok", ErrorBudgetRemaining: 91.2, RequestCount: 10},
 	}
 
 	p := NewPoller(services, services, statusIntervals, integrations, provider, time.Hour, zap.NewNop())
@@ -146,7 +146,7 @@ func TestPoller_PollOnce_ConnectionFailure_MarksIntegrationInvalidAndKeepsLastSt
 
 	// Seed a known-good status via one successful poll, so the failure that
 	// follows has a last-known-valid status to preserve.
-	okProvider := &fakeProvider{errs: []error{nil}, status: datadog.SLOStatus{State: "ok", ErrorBudgetRemaining: 99}}
+	okProvider := &fakeProvider{errs: []error{nil}, status: datadog.SLOStatus{State: "ok", ErrorBudgetRemaining: 99, RequestCount: 10}}
 	seedingPoller := NewPoller(services, services, statusIntervals, integrations, okProvider, time.Hour, zap.NewNop())
 	seedingPoller.pollOnce(ctx)
 
@@ -194,7 +194,7 @@ type sloKeyedFakeProvider struct {
 	errs     map[string]error
 }
 
-func (f *sloKeyedFakeProvider) FetchSLOStatus(ctx context.Context, sloID string) (datadog.SLOStatus, error) {
+func (f *sloKeyedFakeProvider) FetchSLOStatus(ctx context.Context, sloID string, from, to time.Time) (datadog.SLOStatus, error) {
 	if err, ok := f.errs[sloID]; ok {
 		return datadog.SLOStatus{}, err
 	}
@@ -299,7 +299,7 @@ func TestPoller_PollOnce_OneOfTwoServicesFails_IntegrationStaysActive(t *testing
 
 	backoffBase = time.Millisecond
 	provider := &sloKeyedFakeProvider{
-		statuses: map[string]datadog.SLOStatus{"slo-ok": {State: "ok", ErrorBudgetRemaining: 100}},
+		statuses: map[string]datadog.SLOStatus{"slo-ok": {State: "ok", ErrorBudgetRemaining: 100, RequestCount: 10}},
 		errs:     map[string]error{"slo-not-found": datadog.ErrTimeout},
 	}
 	p := NewPoller(services, services, statusIntervals, integrations, provider, time.Hour, zap.NewNop())
@@ -382,7 +382,7 @@ func TestPoller_Run_PollsImmediatelyBeforeFirstTick(t *testing.T) {
 	svc := createTestService(t, pool, services)
 	createTestIntegration(t, pool, dsn, integrations)
 
-	provider := &fakeProvider{errs: []error{nil}, status: datadog.SLOStatus{State: "ok", ErrorBudgetRemaining: 100}}
+	provider := &fakeProvider{errs: []error{nil}, status: datadog.SLOStatus{State: "ok", ErrorBudgetRemaining: 100, RequestCount: 10}}
 	// A long interval - if Run waited for the ticker's first tick instead
 	// of polling immediately, this test would time out waiting for a
 	// status that shouldn't take an hour to appear.

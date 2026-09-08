@@ -10,6 +10,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"sort"
 	"strings"
 	"time"
 )
@@ -17,10 +18,12 @@ import (
 const (
 	defaultBaseURL = "https://api.datadoghq.com"
 	sloSearchPath  = "/api/v1/slo/search"
+	sloHistoryPath = "/api/v1/slo/%s/history"
 	defaultTimeout = 10 * time.Second
 )
 
-// SLOStatus is vane's normalized view of a Datadog SLO's current status.
+// SLOStatus is vane's normalized view of a Datadog SLO's status over the
+// window requested from FetchSLOStatus.
 //
 // SPEC_DEVIATION: design.md assumed GET /api/v1/slo/{slo_id} ("get an SLO's
 // details") would return current status and error budget directly. Verified
@@ -28,30 +31,32 @@ const (
 // official generated client (github.com/DataDog/datadog-api-client-go,
 // api/datadogV1/model_slo_response_data.go) shows SLOResponseData carries
 // only the SLO's static definition (thresholds, query, tags, ...), no
-// status/error-budget field. The status fields below were instead confirmed
-// live against a real SLO in this session via the Datadog MCP
-// (GET /api/v1/slo/search?query=id:<slo_id>), whose response nests exactly
-// this shape under data.attributes.slos[].data.attributes.{status,thresholds}.
-// Reason: search-by-id is the endpoint that actually carries current
-// status; get-by-id does not.
+// status/error-budget field.
 type SLOStatus struct {
 	// State is one of "ok", "warning", "breached", "no_data" (Datadog's
-	// SLOState enum).
+	// SLOState enum), as computed by Datadog for the requested window.
 	State string
-	// ErrorBudgetRemaining is the percentage (0-100) of error budget left.
+	// ErrorBudgetRemaining is SLI - Target, an approximation (not Datadog's
+	// own exact error-budget figure, which the history endpoint doesn't
+	// return) - positive when healthy, negative when breached, matching
+	// Datadog's own sign convention - see AD-019 addendum 2.
 	ErrorBudgetRemaining float64
-	// SLI is the current service level indicator, 0-100.
+	// SLI is the service level indicator for the requested window, 0-100.
 	SLI float64
-	// Target is the configured threshold for the primary timeframe.
+	// Target is the SLO's configured threshold.
 	Target float64
-	// Timeframe is the primary timeframe the above values apply to (e.g. "30d").
+	// Timeframe is the SLO's configured timeframe the target applies to
+	// (e.g. "30d") - not the requested window.
 	Timeframe string
+	// RequestCount is the total request volume in the requested window,
+	// used by the poller's low-volume carry-forward guard.
+	RequestCount int64
 }
 
 // SLOProvider is the contract any APM connector (Datadog today, others
-// later) implements to expose current SLO status.
+// later) implements to expose SLO status for a given time window.
 type SLOProvider interface {
-	FetchSLOStatus(ctx context.Context, sloID string) (SLOStatus, error)
+	FetchSLOStatus(ctx context.Context, sloID string, from, to time.Time) (SLOStatus, error)
 }
 
 // SLOSummary is a minimal SLO identity, used to let an admin pick an SLO by
@@ -105,25 +110,14 @@ type sloSearchResponse struct {
 				Data struct {
 					ID         string `json:"id"`
 					Attributes struct {
-						// Name: [Provável], not live-verified like Status/
-						// Thresholds/ID above (see SLOStatus doc) - inferred
-						// from the official client's SLOResponseData shape
+						// Name: [Provável], not live-verified like ID above
+						// (see SLOStatus doc) - inferred from the official
+						// client's SLOResponseData shape
 						// (github.com/DataDog/datadog-api-client-go,
-						// model_slo_response_data.go: flat Name/Thresholds
-						// fields), which this search response's "attributes"
-						// object mirrors for Status/Thresholds. Re-verify
-						// against a real account before relying on this in
-						// production.
-						Name   string `json:"name"`
-						Status struct {
-							ErrorBudgetRemaining float64 `json:"error_budget_remaining"`
-							SLI                  float64 `json:"sli"`
-							State                string  `json:"state"`
-						} `json:"status"`
-						Thresholds []struct {
-							Target    float64 `json:"target"`
-							Timeframe string  `json:"timeframe"`
-						} `json:"thresholds"`
+						// model_slo_response_data.go: flat Name field).
+						// Re-verify against a real account before relying on
+						// this in production.
+						Name string `json:"name"`
 					} `json:"attributes"`
 				} `json:"data"`
 			} `json:"slos"`
@@ -131,12 +125,40 @@ type sloSearchResponse struct {
 	} `json:"data"`
 }
 
-// FetchSLOStatus fetches sloID's current status, searching by exact ID.
-// Returns ErrUnauthorized on 401/403 (never retried by callers), ErrTimeout
-// on a request timeout, and ErrServer on 5xx (both retried by callers, see
-// the Phase 4 poller retry wrapper).
-func (c *Client) FetchSLOStatus(ctx context.Context, sloID string) (SLOStatus, error) {
-	endpoint := fmt.Sprintf("%s%s?query=%s", c.baseURL, sloSearchPath, url.QueryEscape("id:"+sloID))
+// sloHistoryResponse mirrors the subset of GET /api/v1/slo/{id}/history
+// vane needs. Shape confirmed live (2026-09-08) against a real SLO via
+// Datadog MCP SDK discovery + execute_code - the official Go/TS client's
+// declared types cover sli_value/thresholds; state is an undeclared extra
+// field Datadog still returns inline, consistent with how sloSearchResponse
+// already decodes /slo/search.
+type sloHistoryResponse struct {
+	Data struct {
+		Overall struct {
+			SLIValue float64 `json:"sli_value"`
+			State    string  `json:"state"`
+		} `json:"overall"`
+		Series struct {
+			Denominator struct {
+				Sum int64 `json:"sum"`
+			} `json:"denominator"`
+		} `json:"series"`
+		Thresholds map[string]struct {
+			Target    float64 `json:"target"`
+			Timeframe string  `json:"timeframe"`
+		} `json:"thresholds"`
+	} `json:"data"`
+}
+
+// FetchSLOStatus fetches sloID's status for the [from, to) window, via
+// Datadog's SLO history endpoint (state computed against the SLO's own
+// configured target, no threshold comparison reimplemented here - see
+// AD-019). Returns ErrUnauthorized on 401/403 (never retried by callers),
+// ErrNotFound on 404 (no SLO with this ID), ErrTimeout on a request
+// timeout, and ErrServer on 5xx (both retried by callers, see the poller
+// retry wrapper).
+func (c *Client) FetchSLOStatus(ctx context.Context, sloID string, from, to time.Time) (SLOStatus, error) {
+	path := fmt.Sprintf(sloHistoryPath, url.PathEscape(sloID))
+	endpoint := fmt.Sprintf("%s%s?from_ts=%d&to_ts=%d", c.baseURL, path, from.Unix(), to.Unix())
 
 	resp, err := c.get(ctx, endpoint)
 	if err != nil {
@@ -144,26 +166,41 @@ func (c *Client) FetchSLOStatus(ctx context.Context, sloID string) (SLOStatus, e
 	}
 	defer resp.Body.Close()
 
-	var parsed sloSearchResponse
+	var parsed sloHistoryResponse
 	if err := json.NewDecoder(resp.Body).Decode(&parsed); err != nil {
 		return SLOStatus{}, fmt.Errorf("datadog: failed to decode response: %w", err)
 	}
 
-	slos := parsed.Data.Attributes.SLOs
-	if len(slos) == 0 {
-		return SLOStatus{}, ErrNotFound
-	}
-
-	attrs := slos[0].Data.Attributes
 	status := SLOStatus{
-		State:                attrs.Status.State,
-		ErrorBudgetRemaining: attrs.Status.ErrorBudgetRemaining,
-		SLI:                  attrs.Status.SLI,
+		State:        parsed.Data.Overall.State,
+		SLI:          parsed.Data.Overall.SLIValue,
+		RequestCount: parsed.Data.Series.Denominator.Sum,
 	}
-	if len(attrs.Thresholds) > 0 {
-		status.Target = attrs.Thresholds[0].Target
-		status.Timeframe = attrs.Thresholds[0].Timeframe
+	// parsed.Data.Thresholds is keyed by timeframe (e.g. "7d", "30d") -
+	// iterating a Go map directly picked a random key on every call for any
+	// SLO configured with more than one threshold, making Target/Timeframe
+	// (and therefore ErrorBudgetRemaining) non-deterministic per poll.
+	// Sorting keys first makes the pick stable; which specific timeframe
+	// wins is otherwise arbitrary (single-threshold SLOs, the common case
+	// observed in this org, are unaffected either way).
+	if len(parsed.Data.Thresholds) > 0 {
+		timeframes := make([]string, 0, len(parsed.Data.Thresholds))
+		for timeframe := range parsed.Data.Thresholds {
+			timeframes = append(timeframes, timeframe)
+		}
+		sort.Strings(timeframes)
+		chosen := parsed.Data.Thresholds[timeframes[0]]
+		status.Target = chosen.Target
+		status.Timeframe = chosen.Timeframe
 	}
+	// Datadog's own error_budget_remaining is positive when healthy (0-100
+	// scale); Target - SLI (this approximation, chosen because the history
+	// endpoint doesn't return the exact figure without an explicit target
+	// param - AD-019) is negative when healthy instead. SLI - Target at
+	// least matches Datadog's sign convention for the inert DB-only column
+	// this feeds (status_intervals.error_budget_remaining - never read by
+	// any handler or frontend, see AD-019's Trade-off).
+	status.ErrorBudgetRemaining = status.SLI - status.Target
 
 	return status, nil
 }
@@ -254,6 +291,9 @@ func (c *Client) get(ctx context.Context, endpoint string) (*http.Response, erro
 	case resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden:
 		resp.Body.Close()
 		return nil, ErrUnauthorized
+	case resp.StatusCode == http.StatusNotFound:
+		resp.Body.Close()
+		return nil, ErrNotFound
 	case resp.StatusCode >= http.StatusInternalServerError:
 		resp.Body.Close()
 		return nil, ErrServer

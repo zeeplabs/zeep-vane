@@ -9,7 +9,9 @@ services:
       VANE_MASTER_KEY: ${VANE_MASTER_KEY:?set VANE_MASTER_KEY in .env - see README's Docker Compose section, e.g. openssl rand -hex 32}
       VANE_SESSION_SECRET: ${VANE_SESSION_SECRET:?set VANE_SESSION_SECRET in .env - see README's Docker Compose section, e.g. openssl rand -hex 32}
       PORT: 8080
-      POLL_INTERVAL_SECONDS: 60
+      POLL_INTERVAL_SECONDS: 120
+      # Set before connecting an email provider - see .env.example.
+      VANE_ADMIN_BASE_URL: ${VANE_ADMIN_BASE_URL:-}
     depends_on:
       db:
         condition: service_healthy

@@ -150,7 +150,7 @@ secrets:
 
 # ── Application configuration (non-secret) ──────────────
 config:
-  pollIntervalSeconds: 60
+  pollIntervalSeconds: 120
   logLevel: "info"
   corsAllowedOrigin: "http://localhost:5173"
   # DNS target admins should point custom status-page domains at. Usually
@@ -161,7 +161,10 @@ config:
   # is built from, e.g. "https://admin.example.com" — see README's
   # Configuration table. Strongly recommended before connecting an email
   # provider; left empty, those emails link to a visibly broken placeholder
-  # host instead of trusting the request's Host header.
+  # host instead of trusting the request's Host header. If set, it MUST
+  # include both a http(s):// scheme and a host (e.g. not just "https://"
+  # or a bare hostname) — vane refuses to start otherwise, so double-check
+  # this value before a `helm upgrade` or the release fails to boot.
   adminBaseUrl: ""
   httpsEnabled: true
   httpsPort: 8443

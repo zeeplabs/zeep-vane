@@ -137,13 +137,15 @@ helm search repo zeep-vane/zeep-vane --versions    # see what's available
 helm get values zeep-vane                          # review the values this release is currently running with first
 helm upgrade zeep-vane zeep-vane/zeep-vane \
   --reuse-values \
-  --set image.tag="v0.2.0"                         # or --version <chart-version> to move to a newer chart release
+  --set image.tag="0.2.2"                          # or --version <chart-version> to move to a newer chart release
 ```
 
 - `--reuse-values` keeps every value you set at install time (secrets, `config.*`, `ingress.*`, etc.) — without it, `helm upgrade` resets everything to the chart's defaults, which on this chart means silently losing your `secrets.databaseUrl`/`vaneMasterKey`/`vaneSessionSecret`. Pass `--set`/`-f` on top of `--reuse-values` only for the specific value(s) you're changing (e.g. bumping `image.tag`, or a new `config.*` field a release just added).
-- `image.tag` (`values.yaml`) defaults to `latest`, so `kubectl rollout restart deployment/zeep-vane` alone won't necessarily pull a newer build if a node already cached that tag — pin an explicit tag (or `image.digest`) once you're past initial evaluation, so an upgrade is a deliberate version bump rather than "whatever `latest` resolves to on whichever node the pod lands on."
+- `image.tag` has **no leading `v`** on GHCR (`ghcr.io/zeeplabs/zeep-vane:0.2.2`, not `:v0.2.2`) — that `v` prefix only exists on the git tag and GitHub Release name. `helm upgrade --set image.tag="v0.2.2"` fails to pull (`ImagePullBackOff`), not a `helm` error, so it can look like the upgrade succeeded until you check pod status.
+- `image.tag` (`values.yaml`) defaults to `latest`, so `kubectl rollout restart deployment/zeep-vane` alone won't necessarily pull a newer build if a node already cached that tag — pin an explicit tag (or `image.digest`) once you're past initial evaluation, so an upgrade is a deliberate version bump rather than "whatever `latest` resolves to on whichever node the pod lands on." If you do stay on `latest`, `helm upgrade` alone won't change the pod template (same tag string in, same tag string out) and won't trigger a rollout at all — follow it with an explicit `kubectl rollout restart deployment/zeep-vane -n <namespace>` to force every replica to repull.
 - Check `CHANGELOG.md`/the GitHub release notes for the target version before upgrading across a minor version — a new required `secrets.*`/`config.*` value (like a new `AD-NNN` in [`.specs/STATE.md`](.specs/STATE.md) sometimes introduces) will fail `helm upgrade` with `execution error` rather than silently starting misconfigured, but it's still better to know beforehand.
 - `helm rollback zeep-vane <REVISION>` (see `helm history zeep-vane` for revision numbers) reverts to a previous release's values/chart version if an upgrade goes wrong — it does not undo any database migration the new version's binary already applied on startup, since Vane's migrations are forward-only and embedded in the binary, not managed by the chart.
+- **A status page stuck showing "Aguardando validação de DNS/certificado" despite DNS looking correct** is very often the internet-facing `LoadBalancer` gotcha above, not a Vane bug — use the "Verificar DNS/certificado" button on the status page's detail screen (v0.2.1+) to see the actual DNS/TLS check result: DNS resolving but the TLS check timing out points straight at an internal-only load balancer.
 
 ---
 
@@ -301,11 +303,11 @@ Loaded by `internal/config.Load()` (`internal/config/config.go`). A `.env` file 
 | `VANE_MASTER_KEY` | Yes | — | Symmetric key used to encrypt stored Datadog credentials at rest. Stretched into the actual AES-256 key via PBKDF2-HMAC-SHA256 (210,000 iterations, `internal/crypto`) rather than a single unsalted hash, so a weak-but-long key still costs real compute per guess |
 | `VANE_SESSION_SECRET` | Yes | — | Signing secret for session JWTs |
 | `PORT` | Yes | — | Port the admin HTTP API (and SPA) listens on |
-| `POLL_INTERVAL_SECONDS` | Yes | — | How often the poller queries Datadog for SLO status |
+| `POLL_INTERVAL_SECONDS` | Yes | — | How often the poller queries Datadog for SLO status. Controls poll cadence only — each fetch always requests a fixed 5-minute window of recent SLO history, lagged 60s behind "now" to avoid Datadog's not-yet-aggregated freshest minute (AD-019) |
 | `LOG_LEVEL` | No | `info` | zap log level |
 | `CORS_ALLOWED_ORIGIN` | No | `http://localhost:5173` | Single allowed CORS origin — defaults to the Vite dev server |
 | `PUBLIC_DNS_TARGET` | No | *(empty)* | The DNS target (e.g. an IP or CNAME) this instance's admins should point their custom domain at. Left empty, the "attach domain" screen shows "not configured" instead of blocking — Vane cannot reliably discover its own public hostname |
-| `VANE_ADMIN_BASE_URL` | No | *(empty)* | Scheme+host every admin-facing email link (password-reset, admin-invite) is built from, e.g. `https://admin.example.com`. Never derived from the incoming request's `Host` header — that header is attacker-controlled, and the password-reset request endpoint in particular is unauthenticated, so trusting it would let anyone email a real admin a reset link pointing at a host of their choosing. Left unset, those emails link to a visibly broken placeholder host instead of silently trusting `Host` — **set this before connecting an email provider** |
+| `VANE_ADMIN_BASE_URL` | No | *(empty)* | Scheme+host every admin-facing email link (password-reset, admin-invite) is built from, e.g. `https://admin.example.com`. Never derived from the incoming request's `Host` header — that header is attacker-controlled, and the password-reset request endpoint in particular is unauthenticated, so trusting it would let anyone email a real admin a reset link pointing at a host of their choosing. Left unset, those emails link to a visibly broken placeholder host instead of silently trusting `Host` — **set this before connecting an email provider**. If set, it must be a full URL with both a scheme and a host (`https://admin.example.com`, not `admin.example.com` or a bare `https://`) — **`vane serve` refuses to start otherwise**, so double-check this value before an upgrade |
 | `VANE_HTTPS_ENABLED` | No | `true` | Set to `false` to skip starting the public HTTPS listener entirely — e.g. no custom status-page domain to serve yet, or the environment can't bind `HTTPS_PORT` (unprivileged container, port already owned by a reverse proxy). With HTTPS enabled and its bind failing, `vane serve` still exits non-zero (unchanged) — this flag is how an operator avoids that failure mode altogether, rather than a way to survive it |
 | `HTTPS_PORT` | No | `443` | Port the public, TLS-terminated status page listener binds to |
 | `VANE_DEV_TOKEN_LOGGING` | No | `false` | Set to `true` to additionally log the raw password-reset/admin-invite token — useful for local development with no email provider connected yet. The token is a bearer credential for account takeover — **leave this off in any deployment whose logs reach a shared sink** |
@@ -334,7 +336,7 @@ DATABASE_URL=postgres://vane:vane@localhost:5432/vane?sslmode=disable
 VANE_MASTER_KEY=dev-master-key-change-me-0123456789
 VANE_SESSION_SECRET=dev-session-secret-change-me-0123456789
 PORT=8080
-POLL_INTERVAL_SECONDS=60
+POLL_INTERVAL_SECONDS=120
 ```
 
 `CORS_ALLOWED_ORIGIN` doesn't need to be set — its default (`http://localhost:5173`) already matches Vite's dev server.

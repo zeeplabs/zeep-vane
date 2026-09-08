@@ -4,6 +4,7 @@ package config
 
 import (
 	"fmt"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -93,7 +94,32 @@ func Load() (Config, error) {
 	// gets a relative-looking link built from "http://" + this literal
 	// placeholder host instead of a working URL, which is safer than
 	// silently trusting whatever Host the request carried.
-	adminBaseURL := strings.TrimSuffix(os.Getenv("VANE_ADMIN_BASE_URL"), "/")
+	adminBaseURLRaw := os.Getenv("VANE_ADMIN_BASE_URL")
+	adminBaseURL := strings.TrimSuffix(adminBaseURLRaw, "/")
+	if adminBaseURLRaw != "" {
+		// A value with no scheme or no host (an operator typo like
+		// "admin.example.com" instead of "https://admin.example.com", or a
+		// value that trims to "" like "/") isn't attacker-controlled - it's
+		// trusted config - but silently accepting it would email a real
+		// admin a password-reset/invite link that's either not a working
+		// URL at all or built on an empty base. Reject at boot instead of
+		// producing a broken or wrong link later. url.Parse alone isn't
+		// enough to catch this: it happily parses "admin.example.com" as a
+		// relative reference with an empty scheme and host, so scheme/host
+		// are checked explicitly rather than just checking err == nil.
+		// RawQuery/Fragment/User are also rejected: internal/api's handlers
+		// build links via bare fmt.Sprintf("%s/reset-password/%s", base,
+		// token) with no re-parsing, so a base carrying "?x=y", "#frag", or
+		// embedded "user:pass@" would produce a broken link or leak
+		// credentials into an emailed URL - reject the same way a
+		// scheme/host problem is rejected, rather than silently mangling
+		// the link.
+		parsed, err := url.Parse(adminBaseURL)
+		if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" ||
+			parsed.RawQuery != "" || parsed.Fragment != "" || parsed.User != nil {
+			return Config{}, fmt.Errorf("config: environment variable VANE_ADMIN_BASE_URL must be a valid http:// or https:// URL with a host and no query/fragment/userinfo, got %q", os.Getenv("VANE_ADMIN_BASE_URL"))
+		}
+	}
 
 	// devTokenLogging gates logging the raw password-reset/admin-invite
 	// token, which stands in for real email delivery (out of scope for the
