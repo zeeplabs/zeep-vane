@@ -249,7 +249,13 @@ func (p *Poller) pollService(ctx context.Context, svc db.Service) error {
 }
 
 // normalizeStatus maps a Datadog SLO state to vane's Service.CurrentStatus
-// values (SP-06/SP-07).
+// values (SP-06/SP-07). Documents the full mapping for every state Datadog
+// can report, but pollService itself never reaches the "breached" case
+// below: it intercepts status.State == "breached" earlier to apply
+// breachHysteresisCycles, so this function only ever actually sees "ok"/
+// "warning"/anything else in production. Kept here (not deleted) so the
+// mapping stays complete and self-documenting, and so a future caller that
+// doesn't need hysteresis can still use it correctly.
 func normalizeStatus(state string) string {
 	switch state {
 	case "ok":
