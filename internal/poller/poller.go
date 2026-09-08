@@ -14,6 +14,14 @@ import (
 // service per cycle (SP-05).
 const maxFetchAttempts = 3
 
+// minRecentWindowRequests is the minimum request volume a poll window must
+// carry before its computed state is trusted. Below this, the window is too
+// sparse to distinguish a real problem from noise, so pollService carries
+// the previous status forward instead of recomputing (AD-019). Conservative
+// floor, not derived from real traffic data - flagged in spec.md's
+// Assumptions as unconfirmed and easy to tune later.
+const minRecentWindowRequests = 10
+
 // serviceLister is the subset of *db.ServiceRepository the poller depends on
 // to discover which services to poll.
 type serviceLister interface {
@@ -149,14 +157,25 @@ func (p *Poller) pollOnce(ctx context.Context) {
 // service's outcome for the cycle first (H5/H6), since a single service's
 // failure must not by itself mark the whole integration invalid.
 func (p *Poller) pollService(ctx context.Context, svc db.Service) error {
-	status, err := FetchWithRetry(ctx, p.provider, svc.SLOID, maxFetchAttempts)
+	to := time.Now()
+	from := to.Add(-p.interval)
+
+	status, err := FetchWithRetry(ctx, p.provider, svc.SLOID, from, to, maxFetchAttempts)
 	if err != nil {
 		p.logger.Error("poller: failed to fetch slo status",
 			zap.String("service_id", svc.ID), zap.String("slo_id", svc.SLOID), zap.Error(err))
 		return err
 	}
 
-	current := normalizeStatus(status.State)
+	var current string
+	if status.RequestCount < minRecentWindowRequests {
+		// Too little traffic in this window to trust a recompute - carry the
+		// previous status forward rather than let a handful of requests
+		// flip the public page (AD-019).
+		current = svc.CurrentStatus
+	} else {
+		current = normalizeStatus(status.State)
+	}
 
 	if err := p.statusIntervals.OpenOrExtend(ctx, svc.ID, current, status.ErrorBudgetRemaining, time.Now()); err != nil {
 		p.logger.Error("poller: failed to open or extend status interval",

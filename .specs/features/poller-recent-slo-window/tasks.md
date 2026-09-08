@@ -132,7 +132,7 @@ T6
 
 ---
 
-### T3: Window computation + low-volume carry-forward guard in `pollService`
+### T3: Window computation + low-volume carry-forward guard in `pollService` ✅ Complete
 
 **What**: In `pollService`, compute `to := time.Now()`, `from := to.Add(-p.interval)`; call `FetchWithRetry(ctx, p.provider, svc.SLOID, from, to, maxFetchAttempts)`; add package constant `minRecentWindowRequests = 10`; branch on `status.RequestCount < minRecentWindowRequests` to carry forward `svc.CurrentStatus` instead of `normalizeStatus(status.State)`. Add a new non-integration-tagged unit test file with in-memory fakes for the `Poller`'s three small interfaces (`serviceLister`, `serviceStatusUpdater`, `statusIntervalWriter` — `integrationStatusUpdater` only if a test needs it) so this logic gets real unit coverage under the default `go test ./...` gate, without a real Postgres instance.
 **Where**: `internal/poller/poller.go`
