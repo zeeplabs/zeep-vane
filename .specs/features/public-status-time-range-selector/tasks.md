@@ -235,10 +235,10 @@ T5 → T6 → T7 → T8
 
 **Done when**:
 
-- [ ] Both handlers' response bodies use `history` (not `hourly_history`)
-- [ ] Both handlers return the correct bucket count for `range=24h/7d/30d/90d` and for a missing `range` (defaults to 24h/24 buckets, matching the real backend's default)
-- [ ] `npx tsc -b --noEmit` passes for this file
-- [ ] `npm run test` - no regression in any test that relies on the *default* global mock (as opposed to a per-test `server.use()` override) for these two endpoints
+- [x] Both handlers' response bodies use `history` (not `hourly_history`) (the `/api/public-status` default handler always 404s by design - AD-018 admin-domain simulation - so it never has a `services`/history body to rename; the field only exists in the public-preview handler's response, updated)
+- [x] Both handlers return the correct bucket count for `range=24h/7d/30d/90d` and for a missing `range` (defaults to 24h/24 buckets, matching the real backend's default) - implemented via `resolveFixtureBucketCount`/`buildFixtureHistory` on the public-preview handler
+- [x] `npx tsc -b --noEmit` passes for this file (this file itself has no type errors from the change; the tree as a whole still shows the T5-documented expected errors in `hooks.ts`/`PublicStatusPage.tsx`, not yet updated - resolved by T7/T8)
+- [x] `npm run test` - no regression in any test that relies on the *default* global mock for these two endpoints beyond the expected transitional breakage in `PublicStatusPage.test.tsx`/`hooks.ts` consumers (still reading the old `hourly_history` field name until T7/T8 land in the same sequence T5 already flagged this is expected for) - confirmed resolved after T7/T8 (see final full-tree gate)
 
 **Tests**: none directly (Coverage Matrix: exercised transitively by T7/T8's tests)
 **Gate**: build + full frontend test run (`npx tsc -b --noEmit && npm run test`)

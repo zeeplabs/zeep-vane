@@ -276,16 +276,39 @@ function toStatusPageResponse(statusPage: StatusPage) {
   };
 }
 
-// buildFixtureHourlyHistory fabricates a plausible 24-bucket hourly_history
-// for the public-preview MSW fixture only (never used by the real backend,
+// rangeBucketCounts mirrors internal/api/time_range.go's rangeSpecs map
+// (bucketCount per tier) - AGENTS.md §5 requires MSW mocks to mirror the
+// real backend's shape, including query-param-driven behavior, not just
+// its default response. "24h" is also the default tier for a missing/empty
+// `range` param, matching parseRange's own default.
+const rangeBucketCounts: Record<string, number> = {
+  "24h": 24,
+  "7d": 28,
+  "30d": 30,
+  "90d": 90,
+};
+
+// resolveFixtureBucketCount reads `?range=` off a request URL and returns
+// the matching tier's bucket count, defaulting to the 24h/24-bucket shape
+// when range is absent or unrecognized (mirroring parseRange's default;
+// this fixture layer doesn't need to reproduce the real backend's 422 on an
+// invalid value - the equivalent case is contract-tested against the real
+// Go handler in internal/api/public_status_handler_test.go, not here).
+function resolveFixtureBucketCount(requestUrl: string): number {
+  const range = new URL(requestUrl).searchParams.get("range") ?? "24h";
+  return rangeBucketCounts[range] ?? rangeBucketCounts["24h"];
+}
+
+// buildFixtureHistory fabricates a plausible bucketCount-length history for
+// the public-preview MSW fixture only (never used by the real backend,
 // which computes this from real status_snapshots -
-// internal/history.BuildHourly). Every bucket mirrors the service's
+// internal/history.BuildBuckets). Every bucket mirrors the service's
 // current status, giving PublicStatusPage.test.tsx real fixture data to
-// render 24 same-colored bars against.
-function buildFixtureHourlyHistory(status: Service["current_status"]) {
+// render bucketCount same-colored bars against.
+function buildFixtureHistory(status: Service["current_status"], bucketCount: number) {
   const now = Date.now();
-  return Array.from({ length: 24 }, (_, i) => ({
-    start: new Date(now - (23 - i) * 60 * 60 * 1000).toISOString(),
+  return Array.from({ length: bucketCount }, (_, i) => ({
+    start: new Date(now - (bucketCount - 1 - i) * 60 * 60 * 1000).toISOString(),
     status: status === "not_configured" ? "no_data" : status,
   }));
 }
@@ -990,13 +1013,14 @@ export const handlers = [
       )
       .map(toPreviewIncident);
 
+    const bucketCount = resolveFixtureBucketCount(request.url);
     return HttpResponse.json({
       company: { name: companySettingsState.name, logo_url: companySettingsState.logo_url },
       services: pageServices.map((s) => ({
         name: s.name,
         status: s.current_status,
         last_updated_at: s.last_status_change_at,
-        hourly_history: buildFixtureHourlyHistory(s.current_status),
+        history: buildFixtureHistory(s.current_status, bucketCount),
       })),
       incidents: { active, resolved: paginatedPage(request.url, resolved, 10) },
     });
