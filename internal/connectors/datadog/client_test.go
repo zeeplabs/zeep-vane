@@ -18,33 +18,27 @@ func newTestClient(t *testing.T, server *httptest.Server) *Client {
 	}
 }
 
-// validSearchResponseBody mirrors the shape confirmed live against a real
-// Datadog SLO in this session (see SLOStatus doc in client.go).
-const validSearchResponseBody = `{
+// validHistoryResponseBody mirrors the shape confirmed live against a real
+// Datadog SLO in this session (see sloHistoryResponse doc in client.go).
+const validHistoryResponseBody = `{
   "data": {
-    "attributes": {
-      "slos": [
-        {
-          "data": {
-            "attributes": {
-              "status": {
-                "error_budget_remaining": 80.812,
-                "sli": 99.90405942762656,
-                "state": "ok"
-              },
-              "thresholds": [
-                {"target": 99.5, "timeframe": "30d"}
-              ]
-            },
-            "id": "34709d4e377558da8630d86b309b732b"
-          }
-        }
-      ]
+    "overall": {
+      "sli_value": 99.90405942762656,
+      "state": "ok"
+    },
+    "series": {
+      "denominator": {
+        "sum": 34142
+      }
+    },
+    "thresholds": {
+      "30d": {"target": 99.5, "timeframe": "30d"}
     }
   }
 }`
 
 func TestFetchSLOStatus_ValidResponse_ReturnsNormalizedStatus(t *testing.T) {
+	var gotFromTs, gotToTs string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if got := r.Header.Get("DD-API-KEY"); got != "test-api-key" {
 			t.Errorf("DD-API-KEY header = %q, want %q", got, "test-api-key")
@@ -52,23 +46,33 @@ func TestFetchSLOStatus_ValidResponse_ReturnsNormalizedStatus(t *testing.T) {
 		if got := r.Header.Get("DD-APPLICATION-KEY"); got != "test-app-key" {
 			t.Errorf("DD-APPLICATION-KEY header = %q, want %q", got, "test-app-key")
 		}
+		if got := r.URL.Path; got != "/api/v1/slo/34709d4e377558da8630d86b309b732b/history" {
+			t.Errorf("path = %q, want the SLO history path", got)
+		}
+		gotFromTs = r.URL.Query().Get("from_ts")
+		gotToTs = r.URL.Query().Get("to_ts")
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte(validSearchResponseBody))
+		_, _ = w.Write([]byte(validHistoryResponseBody))
 	}))
 	defer server.Close()
 
 	client := newTestClient(t, server)
-	status, err := client.FetchSLOStatus(t.Context(), "34709d4e377558da8630d86b309b732b")
+	from := time.Unix(1000, 0)
+	to := time.Unix(2000, 0)
+	status, err := client.FetchSLOStatus(t.Context(), "34709d4e377558da8630d86b309b732b", from, to)
 	if err != nil {
 		t.Fatalf("FetchSLOStatus() returned unexpected error: %v", err)
 	}
 
+	if gotFromTs != "1000" {
+		t.Errorf("from_ts = %q, want %q", gotFromTs, "1000")
+	}
+	if gotToTs != "2000" {
+		t.Errorf("to_ts = %q, want %q", gotToTs, "2000")
+	}
 	if status.State != "ok" {
 		t.Errorf("State = %q, want %q", status.State, "ok")
-	}
-	if status.ErrorBudgetRemaining != 80.812 {
-		t.Errorf("ErrorBudgetRemaining = %v, want %v", status.ErrorBudgetRemaining, 80.812)
 	}
 	if status.SLI != 99.90405942762656 {
 		t.Errorf("SLI = %v, want %v", status.SLI, 99.90405942762656)
@@ -78,6 +82,55 @@ func TestFetchSLOStatus_ValidResponse_ReturnsNormalizedStatus(t *testing.T) {
 	}
 	if status.Timeframe != "30d" {
 		t.Errorf("Timeframe = %q, want %q", status.Timeframe, "30d")
+	}
+	if status.RequestCount != 34142 {
+		t.Errorf("RequestCount = %v, want %v", status.RequestCount, 34142)
+	}
+	wantBudget := status.Target - status.SLI
+	if status.ErrorBudgetRemaining != wantBudget {
+		t.Errorf("ErrorBudgetRemaining = %v, want %v", status.ErrorBudgetRemaining, wantBudget)
+	}
+}
+
+func TestFetchSLOStatus_MissingThresholds_ReturnsZeroTargetNoCrash(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"data":{"overall":{"sli_value":100,"state":"ok"},"series":{"denominator":{"sum":5}}}}`))
+	}))
+	defer server.Close()
+
+	client := newTestClient(t, server)
+	status, err := client.FetchSLOStatus(t.Context(), "any-slo-id", time.Unix(0, 0), time.Unix(1, 0))
+	if err != nil {
+		t.Fatalf("FetchSLOStatus() returned unexpected error: %v", err)
+	}
+	if status.Target != 0 {
+		t.Errorf("Target = %v, want 0", status.Target)
+	}
+	if status.Timeframe != "" {
+		t.Errorf("Timeframe = %q, want empty", status.Timeframe)
+	}
+}
+
+func TestFetchSLOStatus_MalformedState_PassedThroughAsIs(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"data":{"overall":{"sli_value":0,"state":"totally-unknown"},"series":{"denominator":{"sum":0}}}}`))
+	}))
+	defer server.Close()
+
+	client := newTestClient(t, server)
+	status, err := client.FetchSLOStatus(t.Context(), "any-slo-id", time.Unix(0, 0), time.Unix(1, 0))
+	if err != nil {
+		t.Fatalf("FetchSLOStatus() returned unexpected error: %v", err)
+	}
+	if status.State != "totally-unknown" {
+		t.Errorf("State = %q, want passthrough of %q", status.State, "totally-unknown")
+	}
+	if status.RequestCount != 0 {
+		t.Errorf("RequestCount = %v, want 0", status.RequestCount)
 	}
 }
 
@@ -89,9 +142,23 @@ func TestFetchSLOStatus_Unauthorized_ReturnsErrUnauthorized(t *testing.T) {
 	defer server.Close()
 
 	client := newTestClient(t, server)
-	_, err := client.FetchSLOStatus(t.Context(), "any-slo-id")
+	_, err := client.FetchSLOStatus(t.Context(), "any-slo-id", time.Unix(0, 0), time.Unix(1, 0))
 	if !errors.Is(err, ErrUnauthorized) {
 		t.Errorf("FetchSLOStatus() error = %v, want ErrUnauthorized", err)
+	}
+}
+
+func TestFetchSLOStatus_NotFound_ReturnsErrNotFound(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+		_, _ = w.Write([]byte(`{"errors":["Not Found"]}`))
+	}))
+	defer server.Close()
+
+	client := newTestClient(t, server)
+	_, err := client.FetchSLOStatus(t.Context(), "any-slo-id", time.Unix(0, 0), time.Unix(1, 0))
+	if !errors.Is(err, ErrNotFound) {
+		t.Errorf("FetchSLOStatus() error = %v, want ErrNotFound", err)
 	}
 }
 
@@ -99,7 +166,7 @@ func TestFetchSLOStatus_Timeout_ReturnsErrTimeout(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		time.Sleep(100 * time.Millisecond)
 		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte(validSearchResponseBody))
+		_, _ = w.Write([]byte(validHistoryResponseBody))
 	}))
 	defer server.Close()
 
@@ -110,7 +177,7 @@ func TestFetchSLOStatus_Timeout_ReturnsErrTimeout(t *testing.T) {
 		httpClient: &http.Client{Timeout: 10 * time.Millisecond},
 	}
 
-	_, err := client.FetchSLOStatus(t.Context(), "any-slo-id")
+	_, err := client.FetchSLOStatus(t.Context(), "any-slo-id", time.Unix(0, 0), time.Unix(1, 0))
 	if !errors.Is(err, ErrTimeout) {
 		t.Errorf("FetchSLOStatus() error = %v, want ErrTimeout", err)
 	}
@@ -124,7 +191,7 @@ func TestFetchSLOStatus_ServerError_ReturnsErrServer(t *testing.T) {
 	defer server.Close()
 
 	client := newTestClient(t, server)
-	_, err := client.FetchSLOStatus(t.Context(), "any-slo-id")
+	_, err := client.FetchSLOStatus(t.Context(), "any-slo-id", time.Unix(0, 0), time.Unix(1, 0))
 	if !errors.Is(err, ErrServer) {
 		t.Errorf("FetchSLOStatus() error = %v, want ErrServer", err)
 	}
