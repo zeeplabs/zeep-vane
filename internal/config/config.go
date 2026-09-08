@@ -4,6 +4,7 @@ package config
 
 import (
 	"fmt"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -93,15 +94,24 @@ func Load() (Config, error) {
 	// gets a relative-looking link built from "http://" + this literal
 	// placeholder host instead of a working URL, which is safer than
 	// silently trusting whatever Host the request carried.
-	adminBaseURL := strings.TrimSuffix(os.Getenv("VANE_ADMIN_BASE_URL"), "/")
-	if adminBaseURL != "" && !strings.HasPrefix(adminBaseURL, "http://") && !strings.HasPrefix(adminBaseURL, "https://") {
-		// A value with no scheme (an operator typo like "admin.example.com"
-		// instead of "https://admin.example.com") isn't attacker-controlled
-		// - it's trusted config - but silently accepting it would email a
-		// real admin a password-reset/invite link that most mail clients
-		// linkify to a plain "http://" URL. Reject at boot instead of
-		// producing a working-looking but wrong link later.
-		return Config{}, fmt.Errorf("config: environment variable VANE_ADMIN_BASE_URL must start with http:// or https://, got %q", os.Getenv("VANE_ADMIN_BASE_URL"))
+	adminBaseURLRaw := os.Getenv("VANE_ADMIN_BASE_URL")
+	adminBaseURL := strings.TrimSuffix(adminBaseURLRaw, "/")
+	if adminBaseURLRaw != "" {
+		// A value with no scheme or no host (an operator typo like
+		// "admin.example.com" instead of "https://admin.example.com", or a
+		// bare "https://") isn't attacker-controlled - it's trusted config -
+		// but silently accepting it would email a real admin a
+		// password-reset/invite link that's either not a working URL at all
+		// or that most mail clients linkify to a plain "http://" URL. Reject
+		// at boot instead of producing a broken or wrong link later.
+		// url.Parse alone isn't enough to catch this: it happily parses
+		// "admin.example.com" as a relative reference with an empty scheme
+		// and host, so scheme/host are checked explicitly rather than just
+		// checking err == nil.
+		parsed, err := url.Parse(adminBaseURL)
+		if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" {
+			return Config{}, fmt.Errorf("config: environment variable VANE_ADMIN_BASE_URL must be a valid http:// or https:// URL with a host, got %q", os.Getenv("VANE_ADMIN_BASE_URL"))
+		}
 	}
 
 	// devTokenLogging gates logging the raw password-reset/admin-invite

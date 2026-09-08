@@ -268,3 +268,31 @@ func TestLoad_AdminBaseURLMissingScheme_ReturnsError(t *testing.T) {
 		t.Fatal("Load() returned nil error, want an error for a schemeless VANE_ADMIN_BASE_URL")
 	}
 }
+
+// TestLoad_AdminBaseURLSchemeNoHost_ReturnsError asserts a bare
+// "https://" (valid scheme, empty host) is also rejected - a prefix check
+// alone would have accepted it and produced a broken "https:///reset?..."
+// link.
+func TestLoad_AdminBaseURLSchemeNoHost_ReturnsError(t *testing.T) {
+	setAllRequiredEnv(t)
+	t.Setenv("VANE_ADMIN_BASE_URL", "https://")
+
+	_, err := Load()
+	if err == nil {
+		t.Fatal("Load() returned nil error, want an error for a host-less VANE_ADMIN_BASE_URL")
+	}
+}
+
+// TestLoad_AdminBaseURLBareSlash_ReturnsError asserts "/" (trimmed to ""
+// by the trailing-slash strip) is rejected rather than silently treated as
+// "not configured" - it was explicitly set to something, just not a usable
+// URL.
+func TestLoad_AdminBaseURLBareSlash_ReturnsError(t *testing.T) {
+	setAllRequiredEnv(t)
+	t.Setenv("VANE_ADMIN_BASE_URL", "/")
+
+	_, err := Load()
+	if err == nil {
+		t.Fatal("Load() returned nil error, want an error for VANE_ADMIN_BASE_URL=\"/\"")
+	}
+}
