@@ -303,7 +303,7 @@ Loaded by `internal/config.Load()` (`internal/config/config.go`). A `.env` file 
 | `VANE_MASTER_KEY` | Yes | — | Symmetric key used to encrypt stored Datadog credentials at rest. Stretched into the actual AES-256 key via PBKDF2-HMAC-SHA256 (210,000 iterations, `internal/crypto`) rather than a single unsalted hash, so a weak-but-long key still costs real compute per guess |
 | `VANE_SESSION_SECRET` | Yes | — | Signing secret for session JWTs |
 | `PORT` | Yes | — | Port the admin HTTP API (and SPA) listens on |
-| `POLL_INTERVAL_SECONDS` | Yes | — | How often the poller queries Datadog for SLO status |
+| `POLL_INTERVAL_SECONDS` | Yes | — | How often the poller queries Datadog for SLO status. Controls poll cadence only — each fetch always requests a fixed 5-minute window of recent SLO history, lagged 60s behind "now" to avoid Datadog's not-yet-aggregated freshest minute (AD-019) |
 | `LOG_LEVEL` | No | `info` | zap log level |
 | `CORS_ALLOWED_ORIGIN` | No | `http://localhost:5173` | Single allowed CORS origin — defaults to the Vite dev server |
 | `PUBLIC_DNS_TARGET` | No | *(empty)* | The DNS target (e.g. an IP or CNAME) this instance's admins should point their custom domain at. Left empty, the "attach domain" screen shows "not configured" instead of blocking — Vane cannot reliably discover its own public hostname |
@@ -336,7 +336,7 @@ DATABASE_URL=postgres://vane:vane@localhost:5432/vane?sslmode=disable
 VANE_MASTER_KEY=dev-master-key-change-me-0123456789
 VANE_SESSION_SECRET=dev-session-secret-change-me-0123456789
 PORT=8080
-POLL_INTERVAL_SECONDS=60
+POLL_INTERVAL_SECONDS=120
 ```
 
 `CORS_ALLOWED_ORIGIN` doesn't need to be set — its default (`http://localhost:5173`) already matches Vite's dev server.

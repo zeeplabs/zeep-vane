@@ -150,7 +150,7 @@ secrets:
 
 # ── Application configuration (non-secret) ──────────────
 config:
-  pollIntervalSeconds: 60
+  pollIntervalSeconds: 120
   logLevel: "info"
   corsAllowedOrigin: "http://localhost:5173"
   # DNS target admins should point custom status-page domains at. Usually
