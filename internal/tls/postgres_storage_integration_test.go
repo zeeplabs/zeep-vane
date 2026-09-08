@@ -65,6 +65,65 @@ func testKey(t *testing.T, suffix string) string {
 	return fmt.Sprintf("certmagic-storage-test-%d/%s", time.Now().UnixNano(), suffix)
 }
 
+// TestPostgresStorage_PrefixMatch_LiteralUnderscoreNotTreatedAsWildcard
+// covers the LIKE-to-starts_with fix directly: a "directory" key containing
+// a literal "_" used to be matched with LIKE 'prefix/%', where "_" is a
+// single-character wildcard - a sibling key one character off (e.g.
+// "a_b/..." vs "axb/...") would incorrectly match and be swept up by
+// List/Exists/Delete. starts_with() treats "_" as a literal character.
+// Reverting the fix back to LIKE must make this test fail by deleting
+// wildcardVictim, which it must never touch.
+func TestPostgresStorage_PrefixMatch_LiteralUnderscoreNotTreatedAsWildcard(t *testing.T) {
+	s := newTestPostgresStorage(t)
+	ctx := context.Background()
+
+	root := fmt.Sprintf("certmagic-storage-test-%d", time.Now().UnixNano())
+	prefixKey := root + "/a_b"        // "directory" key with a literal underscore
+	realChild := root + "/a_b/x"      // genuinely under prefixKey
+	wildcardVictim := root + "/axb/y" // matches LIKE 'a_b/%' ("_" as wildcard) but not starts_with(key, "a_b/")
+
+	if err := s.Store(ctx, realChild, []byte("real")); err != nil {
+		t.Fatalf("Store(realChild) returned unexpected error: %v", err)
+	}
+	if err := s.Store(ctx, wildcardVictim, []byte("victim")); err != nil {
+		t.Fatalf("Store(wildcardVictim) returned unexpected error: %v", err)
+	}
+
+	if !s.Exists(ctx, prefixKey) {
+		t.Fatal("Exists(prefixKey) = false, want true - realChild is under it")
+	}
+
+	keys, err := s.List(ctx, prefixKey, true)
+	if err != nil {
+		t.Fatalf("List(prefixKey) returned unexpected error: %v", err)
+	}
+	for _, k := range keys {
+		if k == wildcardVictim {
+			t.Errorf("List(%q) included %q, which is not actually under this prefix (literal underscore misread as wildcard)", prefixKey, wildcardVictim)
+		}
+	}
+	if len(keys) != 1 || keys[0] != realChild {
+		t.Errorf("List(%q) = %v, want exactly [%q]", prefixKey, keys, realChild)
+	}
+
+	if err := s.Delete(ctx, prefixKey); err != nil {
+		t.Fatalf("Delete(prefixKey) returned unexpected error: %v", err)
+	}
+
+	if !s.Exists(ctx, wildcardVictim) {
+		t.Error("wildcardVictim no longer exists after Delete(prefixKey) - a literal underscore in the prefix was treated as a wildcard and deleted an unrelated key")
+	}
+	if s.Exists(ctx, realChild) {
+		t.Error("realChild still exists after Delete(prefixKey), want it deleted")
+	}
+
+	// Cleanup: wildcardVictim was deliberately never targeted by the
+	// prefix operations above, so it must be removed explicitly.
+	if err := s.Delete(ctx, wildcardVictim); err != nil {
+		t.Fatalf("cleanup Delete(wildcardVictim) returned unexpected error: %v", err)
+	}
+}
+
 func TestPostgresStorage_StoreLoad_RoundTripsIdenticalBytes(t *testing.T) {
 	s := newTestPostgresStorage(t)
 	ctx := context.Background()
