@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- The public status page could show a service stuck as "interrupção" for hours after it had actually recovered: the poller derived a service's status from Datadog's SLO `state`, which reflects error-budget compliance over the SLO's fixed configured timeframe (30 days for every SLO in use) rather than current health — an old error burst kept the 30-day budget negative long after the service was healthy again. The poller now fetches a short, recent window of SLO history from Datadog instead, with a minimum-request-volume guard that carries the previous status forward when there isn't enough recent traffic to trust a recompute, so a quiet service doesn't flap on noise (`AD-019`).
+
+### Changed
+
+- `POLL_INTERVAL_SECONDS`'s default example value changed from `60` to `120` to match the public status page's own 2-minute refresh cadence. It now controls poll frequency only — each fetch always requests a fixed 5-minute window of recent SLO history from Datadog, lagged 60 seconds behind "now" so it never reads data Datadog hasn't finished aggregating yet (part of `AD-019`).
+
 ## [0.2.2] — 2026-08-31
 
 ### Fixed

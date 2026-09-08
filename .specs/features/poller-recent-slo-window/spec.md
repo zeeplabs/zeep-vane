@@ -29,7 +29,7 @@ Explicitly excluded. Documented to prevent scope creep.
 
 | Assumption / decision | Chosen default | Rationale | Confirmed? |
 | --- | --- | --- | --- |
-| Window length | `POLL_INTERVAL_SECONDS` (the same interval the poller already ticks on) — window is `[now - POLL_INTERVAL_SECONDS, now)` | User's explicit choice: no new config, "now" tracks the actual poll cadence instead of an arbitrary fixed duration. | y |
+| Window length | **Superseded 2026-09-08, see `AD-019 addendum` in `.specs/STATE.md`.** Originally `POLL_INTERVAL_SECONDS` (window `[now - POLL_INTERVAL_SECONDS, now)`); live-tested post-implementation against real Datadog traffic and found too narrow — the freshest ~60s under-reports request volume because Datadog's trace-metric aggregation lags behind real time, reproducing the original stuck-status bug. Replaced with a fixed `recentWindowWidth = 5m` window ending `recentWindowLag = 60s` behind `now`, decoupled from `POLL_INTERVAL_SECONDS` (which now only controls poll cadence, default example 120s to match the public page's refresh). | User's explicit choice: no new config, "now" tracks the actual poll cadence instead of an arbitrary fixed duration. | y (original) → corrected, see addendum |
 | Low-volume guard | If total requests in the window (`denominator.sum` from `GET /api/v1/slo/{id}/history`) is below a minimum, do **not** recompute status this cycle — carry forward the service's current `CurrentStatus` unchanged. | User's explicit choice over "always recompute" and over "auto-expand window". Prevents a single request/error in a short window from producing a statistically meaningless status flip. | y |
 | Minimum volume threshold value | 10 requests in the window | Below 10 samples, a single error already swings the observed rate by ≥10 percentage points — too noisy to act on. No existing project precedent for this number; picked as a conservative floor, not derived from data. | n — flagged for user review; easy to tune post-launch since it is a single constant, not a stored/migrated value. |
 | 30d SLO state retirement | `current_status` stops using `/slo/search`'s `status.state`/`error_budget_remaining` (30d) entirely. No parallel 30d compliance field is kept. | User's explicit choice ("substitui totalmente"). `public-status-hourly-history` already gives trend visibility; a second stale-by-design signal isn't needed for the public page. | y |
@@ -52,7 +52,7 @@ Explicitly excluded. Documented to prevent scope creep.
 
 **Acceptance Criteria**:
 
-1. WHEN the poller runs a poll cycle for a service THEN the system SHALL request the service's SLO status for the window `[now - POLL_INTERVAL_SECONDS, now)` instead of the SLO's configured fixed timeframe (30d).
+1. WHEN the poller runs a poll cycle for a service THEN the system SHALL request the service's SLO status for a short recent window instead of the SLO's configured fixed timeframe (30d). **Corrected 2026-09-08** (`AD-019 addendum`): the window is a fixed 5 minutes wide, ending 60 seconds behind "now" — not `[now - POLL_INTERVAL_SECONDS, now)` as originally specified, which live-tested too narrow against real Datadog traffic.
 2. WHEN the requested window's total request volume is at least the minimum volume threshold (10) THEN the system SHALL derive `current_status` from Datadog's `state` for that window, mapped via the existing `normalizeStatus` table (`ok`→`operational`, `warning`→`degraded`, `breached`→`outage`, anything else→`degraded`).
 3. WHEN a service's window `state` maps to `operational` after a prior cycle had it as `degraded` or `outage` THEN the system SHALL update `current_status` to `operational` on that same poll cycle (no additional delay or cooldown beyond the poll interval itself).
 4. The system SHALL stop reading `status.state` / `error_budget_remaining` from `GET /api/v1/slo/search` for the purpose of computing `current_status`.
@@ -99,7 +99,7 @@ Explicitly excluded. Documented to prevent scope creep.
 - IF the SLO's underlying metric query has zero data points in the requested window (denominator.sum = 0) THEN system SHALL treat it identically to "below minimum volume threshold" (carry-forward) — 0 is `< 10`.
 - IF Datadog's history response omits `state` (unexpected/malformed response) THEN system SHALL treat it as an unrecognized state, mapped to `degraded` per the existing `normalizeStatus` default (never silently `operational` on indeterminate data — same invariant the current code already documents).
 - WHEN the SLO configured in Datadog is deleted or the `sloID` stops resolving THEN system SHALL return the existing `ErrNotFound` behavior (unchanged), triggering the existing failure-path handling (P2 above).
-- WHEN `POLL_INTERVAL_SECONDS` is reconfigured (operator changes it and restarts) THEN the next poll's window SHALL immediately use the new interval — no migration or stored window-length value to reconcile.
+- WHEN `POLL_INTERVAL_SECONDS` is reconfigured (operator changes it and restarts) THEN it SHALL change poll cadence only — the fetch window's width (5m) and lag (60s) are fixed package constants, independent of the interval (corrected 2026-09-08, `AD-019 addendum`).
 
 ---
 
