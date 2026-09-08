@@ -262,10 +262,10 @@ T5 → T6 → T7 → T8
 
 **Done when**:
 
-- [ ] Every existing `hooks.test.ts` test passes unmodified in behavior (default `range="24h"` preserves today's URLs/shape) - field references updated from `hourly_history` to `history` where a test's fixture body sets it
-- [ ] New test: calling `usePublicStatusPage(id, "90d")` fetches `...&range=90d` (asserted via an MSW handler that echoes back which range it received, or via `server.use()` inspecting `request.url`)
-- [ ] New test: changing the `range` argument between renders produces a distinct `queryKey` / triggers a distinct fetch (not served from the `24h` entry's cache) - the direct proof for the "rapid range switching never shows stale data" edge case in spec.md
-- [ ] `npx tsc -b --noEmit` passes
+- [x] Every existing `hooks.test.ts` test passes unmodified in behavior (default `range="24h"` preserves today's URLs/shape) - field references updated from `hourly_history` to `history` where a test's fixture body sets it (none of the existing 4 tests set that field, so no literal change was needed - confirmed still green)
+- [x] New test: calling `usePublicStatusPage(id, "90d")` fetches `...&range=90d` (asserted via an MSW handler that echoes back which range it received, or via `server.use()` inspecting `request.url`)
+- [x] New test: changing the `range` argument between renders produces a distinct `queryKey` / triggers a distinct fetch (not served from the `24h` entry's cache) - the direct proof for the "rapid range switching never shows stale data" edge case in spec.md
+- [x] `npx tsc -b --noEmit` passes (for this task's own files - `hooks.ts` compiles clean; the tree-wide gate still shows `PublicStatusPage.tsx` errors, resolved by T8)
 
 **Tests**: unit
 **Gate**: frontend (`npx tsc -b --noEmit && npm run test`)

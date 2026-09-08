@@ -110,4 +110,72 @@ describe("usePublicStatusPage", () => {
     expect(result.current.data!.incidents.resolved.slice(0, 10).map((i) => i.id)).toEqual(firstPageIds);
     expect(result.current.hasMoreResolved).toBe(false);
   });
+
+  // public-status-time-range-selector T7: usePublicStatusPage threads its
+  // `range` argument into the fetch URL and the React Query cache key.
+  it("usePublicStatusPage(id, '90d') busca ...&range=90d", async () => {
+    let receivedRange: string | null = null;
+    server.use(
+      http.get("/api/status-pages/:id/public-preview", ({ request }) => {
+        receivedRange = new URL(request.url).searchParams.get("range");
+        return HttpResponse.json({
+          company: { name: "Acme Status", logo_url: null },
+          services: [],
+          incidents: { active: [], resolved: { items: [], total: 0, page: 1, page_size: 10 } },
+        });
+      }),
+    );
+    await loginAsOwner();
+
+    const { result } = renderHook(() => usePublicStatusPage("sp-1", "90d"), { wrapper: TestQueryProvider });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+    expect(receivedRange).toBe("90d");
+  });
+
+  it("default (sem range) preserva o comportamento de hoje: busca com range=24h", async () => {
+    let receivedRange: string | null = null;
+    server.use(
+      http.get("/api/status-pages/:id/public-preview", ({ request }) => {
+        receivedRange = new URL(request.url).searchParams.get("range");
+        return HttpResponse.json({
+          company: { name: "Acme Status", logo_url: null },
+          services: [],
+          incidents: { active: [], resolved: { items: [], total: 0, page: 1, page_size: 10 } },
+        });
+      }),
+    );
+    await loginAsOwner();
+
+    const { result } = renderHook(() => usePublicStatusPage("sp-1"), { wrapper: TestQueryProvider });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+    expect(receivedRange).toBe("24h");
+  });
+
+  it("mudar range entre renders produz um queryKey/fetch distinto, não serve do cache do 24h", async () => {
+    const requestedRanges: string[] = [];
+    server.use(
+      http.get("/api/status-pages/:id/public-preview", ({ request }) => {
+        requestedRanges.push(new URL(request.url).searchParams.get("range") ?? "");
+        return HttpResponse.json({
+          company: { name: "Acme Status", logo_url: null },
+          services: [],
+          incidents: { active: [], resolved: { items: [], total: 0, page: 1, page_size: 10 } },
+        });
+      }),
+    );
+    await loginAsOwner();
+
+    const { result, rerender } = renderHook(({ range }: { range: "24h" | "90d" }) => usePublicStatusPage("sp-1", range), {
+      wrapper: TestQueryProvider,
+      initialProps: { range: "24h" },
+    });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+    rerender({ range: "90d" });
+    await waitFor(() => expect(requestedRanges).toContain("90d"));
+
+    expect(requestedRanges).toEqual(["24h", "90d"]);
+  });
 });
