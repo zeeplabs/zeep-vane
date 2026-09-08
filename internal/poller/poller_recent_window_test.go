@@ -48,6 +48,7 @@ func newTestPoller(provider datadog.SLOProvider, interval time.Duration, interva
 		provider:        provider,
 		interval:        interval,
 		logger:          zap.NewNop(),
+		breachStreak:    make(map[string]int),
 	}
 }
 
@@ -145,6 +146,71 @@ func TestPollService_LowVolumeCarryForward_StillInvokesWriters(t *testing.T) {
 	}
 	if len(statuses.calls) != 1 {
 		t.Fatalf("UpdateStatus calls = %d, want 1 (carry-forward still updates cached status)", len(statuses.calls))
+	}
+}
+
+func TestPollService_SingleBreachedWindow_CarriesForwardInsteadOfOutage(t *testing.T) {
+	provider := &fakeProvider{
+		errs:   []error{nil},
+		status: datadog.SLOStatus{State: "breached", RequestCount: 5000},
+	}
+	intervals := &fakeIntervalWriter{}
+	statuses := &fakeStatusUpdater{}
+	p := newTestPoller(provider, time.Hour, intervals, statuses)
+
+	if err := p.pollService(t.Context(), db.Service{ID: "svc-1", SLOID: "slo-1", CurrentStatus: "operational"}); err != nil {
+		t.Fatalf("pollService() returned unexpected error: %v", err)
+	}
+
+	if len(statuses.calls) != 1 || statuses.calls[0].status != "operational" {
+		t.Errorf("UpdateStatus calls = %+v, want a single breached window to carry forward %q, not flip to outage", statuses.calls, "operational")
+	}
+}
+
+func TestPollService_TwoConsecutiveBreachedWindows_FlipsToOutage(t *testing.T) {
+	provider := &fakeProvider{
+		errs:   []error{nil, nil},
+		status: datadog.SLOStatus{State: "breached", RequestCount: 5000},
+	}
+	intervals := &fakeIntervalWriter{}
+	statuses := &fakeStatusUpdater{}
+	p := newTestPoller(provider, time.Hour, intervals, statuses)
+	svc := db.Service{ID: "svc-1", SLOID: "slo-1", CurrentStatus: "operational"}
+
+	if err := p.pollService(t.Context(), svc); err != nil {
+		t.Fatalf("pollService() call 1 returned unexpected error: %v", err)
+	}
+	if err := p.pollService(t.Context(), svc); err != nil {
+		t.Fatalf("pollService() call 2 returned unexpected error: %v", err)
+	}
+
+	if len(statuses.calls) != 2 || statuses.calls[1].status != "outage" {
+		t.Errorf("UpdateStatus calls = %+v, want the 2nd consecutive breached cycle to flip to %q", statuses.calls, "outage")
+	}
+}
+
+func TestPollService_BreachStreak_ResetByAnIntermediateOKWindow(t *testing.T) {
+	provider := &fakeProvider{
+		errs: []error{nil, nil, nil},
+		statuses: []datadog.SLOStatus{
+			{State: "breached", RequestCount: 5000},
+			{State: "ok", RequestCount: 5000},
+			{State: "breached", RequestCount: 5000},
+		},
+	}
+	intervals := &fakeIntervalWriter{}
+	statuses := &fakeStatusUpdater{}
+	p := newTestPoller(provider, time.Hour, intervals, statuses)
+	svc := db.Service{ID: "svc-1", SLOID: "slo-1", CurrentStatus: "operational"}
+
+	for i := 0; i < 3; i++ {
+		if err := p.pollService(t.Context(), svc); err != nil {
+			t.Fatalf("pollService() call %d returned unexpected error: %v", i+1, err)
+		}
+	}
+
+	if len(statuses.calls) != 3 || statuses.calls[2].status != "operational" {
+		t.Errorf("UpdateStatus calls = %+v, want breach streak reset by the intermediate ok window, 3rd call still carrying forward %q", statuses.calls, "operational")
 	}
 }
 

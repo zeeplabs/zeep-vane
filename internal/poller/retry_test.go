@@ -14,11 +14,16 @@ import (
 // it received on each call, so tests can assert FetchWithRetry passes the
 // window through unchanged.
 type fakeProvider struct {
-	calls   int
-	errs    []error
-	status  datadog.SLOStatus
-	gotFrom []time.Time
-	gotTo   []time.Time
+	calls  int
+	errs   []error
+	status datadog.SLOStatus
+	// statuses, when non-empty, overrides status with one entry per logical
+	// call (indexed the same way as errs, clamped to the last entry) - used
+	// by tests that need FetchSLOStatus to return a different status on
+	// successive calls (e.g. breach-hysteresis streak tests).
+	statuses []datadog.SLOStatus
+	gotFrom  []time.Time
+	gotTo    []time.Time
 }
 
 func (f *fakeProvider) FetchSLOStatus(ctx context.Context, sloID string, from, to time.Time) (datadog.SLOStatus, error) {
@@ -32,6 +37,13 @@ func (f *fakeProvider) FetchSLOStatus(ctx context.Context, sloID string, from, t
 
 	if f.errs[idx] != nil {
 		return datadog.SLOStatus{}, f.errs[idx]
+	}
+	if len(f.statuses) > 0 {
+		sIdx := idx
+		if sIdx >= len(f.statuses) {
+			sIdx = len(f.statuses) - 1
+		}
+		return f.statuses[sIdx], nil
 	}
 	return f.status, nil
 }

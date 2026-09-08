@@ -38,6 +38,25 @@ const recentWindowWidth = 5 * time.Minute
 // versus the steady rate, while data 60-120s old already matched it.
 const recentWindowLag = 60 * time.Second
 
+// breachHysteresisCycles is how many consecutive polling cycles a service
+// must report Datadog's "breached" state before pollService actually flips
+// its status to "outage" (AD-019 addendum: hysteresis). Without this, a
+// single 5-minute window reporting "breached" instantly paints the service
+// as down: Datadog computes state against the SLO's configured target
+// (typically 99.5% over 30 days) applied unscaled to a 5-minute bucket, so
+// on a high-traffic service a single unlucky burst of errors - well within
+// normal noise for a 30-day budget - is enough to trip "breached" on its
+// own. Live-measured against a real 30-day-healthy SLO: 2 of 6 consecutive
+// 5-minute windows reported "breached" despite thousands of requests each,
+// which without hysteresis would have flapped the public page (and, via
+// internal/history's worst-status-wins hourly bucketing, painted the entire
+// hour red) purely from normal variance. Requiring 2 consecutive breaches
+// before committing to "outage" absorbs single-window noise while still
+// reacting within 2 poll cycles (up to ~2*POLL_INTERVAL_SECONDS) to a real
+// outage. See .specs/STATE.md AD-019 addendum for the full analysis and the
+// longer-term fix this is a stopgap for.
+const breachHysteresisCycles = 2
+
 // serviceLister is the subset of *db.ServiceRepository the poller depends on
 // to discover which services to poll.
 type serviceLister interface {
@@ -79,6 +98,13 @@ type Poller struct {
 	provider        datadog.SLOProvider
 	interval        time.Duration
 	logger          *zap.Logger
+
+	// breachStreak tracks, per service ID, how many consecutive cycles in a
+	// row Datadog has reported "breached" for that service's most recent
+	// window (breachHysteresisCycles). Only ever read/written from
+	// pollOnce's sequential loop over services (Run drives one poll cycle
+	// at a time on a single goroutine), so it needs no locking of its own.
+	breachStreak map[string]int
 }
 
 // NewPoller builds a Poller that fetches SLO status via provider every
@@ -93,6 +119,7 @@ func NewPoller(services serviceLister, statuses serviceStatusUpdater, statusInte
 		provider:        provider,
 		interval:        interval,
 		logger:          logger,
+		breachStreak:    make(map[string]int),
 	}
 }
 
@@ -184,12 +211,25 @@ func (p *Poller) pollService(ctx context.Context, svc db.Service) error {
 	}
 
 	var current string
-	if status.RequestCount < minRecentWindowRequests {
+	switch {
+	case status.RequestCount < minRecentWindowRequests:
 		// Too little traffic in this window to trust a recompute - carry the
 		// previous status forward rather than let a handful of requests
 		// flip the public page (AD-019).
 		current = svc.CurrentStatus
-	} else {
+	case status.State == "breached":
+		// Hysteresis (AD-019 addendum, breachHysteresisCycles): a single
+		// breached window is not enough to commit to "outage" - see the
+		// constant's doc comment for why. Carry the previous status forward
+		// until the streak clears the threshold, then latch to "outage".
+		p.breachStreak[svc.ID]++
+		if p.breachStreak[svc.ID] >= breachHysteresisCycles {
+			current = "outage"
+		} else {
+			current = svc.CurrentStatus
+		}
+	default:
+		p.breachStreak[svc.ID] = 0
 		current = normalizeStatus(status.State)
 	}
 
