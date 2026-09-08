@@ -254,3 +254,17 @@ func TestLoad_AdminBaseURLUnset_DefaultsToEmptyString(t *testing.T) {
 		t.Errorf("AdminBaseURL = %q, want empty string", cfg.AdminBaseURL)
 	}
 }
+
+// TestLoad_AdminBaseURLMissingScheme_ReturnsError asserts a VANE_ADMIN_BASE_URL
+// without a scheme (a plausible operator typo, e.g. "admin.example.com"
+// instead of "https://admin.example.com") is rejected at boot rather than
+// silently producing a plain "http://"-linkified reset/invite link later.
+func TestLoad_AdminBaseURLMissingScheme_ReturnsError(t *testing.T) {
+	setAllRequiredEnv(t)
+	t.Setenv("VANE_ADMIN_BASE_URL", "admin.example.com")
+
+	_, err := Load()
+	if err == nil {
+		t.Fatal("Load() returned nil error, want an error for a schemeless VANE_ADMIN_BASE_URL")
+	}
+}

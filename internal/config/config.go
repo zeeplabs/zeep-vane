@@ -94,6 +94,15 @@ func Load() (Config, error) {
 	// placeholder host instead of a working URL, which is safer than
 	// silently trusting whatever Host the request carried.
 	adminBaseURL := strings.TrimSuffix(os.Getenv("VANE_ADMIN_BASE_URL"), "/")
+	if adminBaseURL != "" && !strings.HasPrefix(adminBaseURL, "http://") && !strings.HasPrefix(adminBaseURL, "https://") {
+		// A value with no scheme (an operator typo like "admin.example.com"
+		// instead of "https://admin.example.com") isn't attacker-controlled
+		// - it's trusted config - but silently accepting it would email a
+		// real admin a password-reset/invite link that most mail clients
+		// linkify to a plain "http://" URL. Reject at boot instead of
+		// producing a working-looking but wrong link later.
+		return Config{}, fmt.Errorf("config: environment variable VANE_ADMIN_BASE_URL must start with http:// or https://, got %q", os.Getenv("VANE_ADMIN_BASE_URL"))
+	}
 
 	// devTokenLogging gates logging the raw password-reset/admin-invite
 	// token, which stands in for real email delivery (out of scope for the
