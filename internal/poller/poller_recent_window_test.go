@@ -51,14 +51,18 @@ func newTestPoller(provider datadog.SLOProvider, interval time.Duration, interva
 	}
 }
 
-func TestPollService_WindowPassedToProvider_MatchesIntervalBounds(t *testing.T) {
+func TestPollService_WindowPassedToProvider_FixedWidthLaggedBehindNow(t *testing.T) {
 	provider := &fakeProvider{
 		errs:   []error{nil},
 		status: datadog.SLOStatus{State: "ok", RequestCount: 10},
 	}
 	intervals := &fakeIntervalWriter{}
 	statuses := &fakeStatusUpdater{}
-	p := newTestPoller(provider, time.Hour, intervals, statuses)
+	// interval is deliberately not 5m/1m here: the window's width and lag
+	// come from recentWindowWidth/recentWindowLag, independent of
+	// p.interval (AD-019 addendum) - a mismatched interval must not change
+	// the window bounds.
+	p := newTestPoller(provider, 2*time.Minute, intervals, statuses)
 
 	before := time.Now()
 	if err := p.pollService(t.Context(), db.Service{ID: "svc-1", SLOID: "slo-1", CurrentStatus: "not_configured"}); err != nil {
@@ -70,12 +74,14 @@ func TestPollService_WindowPassedToProvider_MatchesIntervalBounds(t *testing.T) 
 		t.Fatalf("provider received %d calls, want 1", len(provider.gotFrom))
 	}
 	gotFrom, gotTo := provider.gotFrom[0], provider.gotTo[0]
-	if gotTo.Before(before) || gotTo.After(after) {
-		t.Errorf("to = %v, want within [%v, %v]", gotTo, before, after)
+
+	wantToMin, wantToMax := before.Add(-recentWindowLag), after.Add(-recentWindowLag)
+	if gotTo.Before(wantToMin) || gotTo.After(wantToMax) {
+		t.Errorf("to = %v, want within [%v, %v] (now - recentWindowLag)", gotTo, wantToMin, wantToMax)
 	}
-	wantFrom := gotTo.Add(-time.Hour)
+	wantFrom := gotTo.Add(-recentWindowWidth)
 	if !gotFrom.Equal(wantFrom) {
-		t.Errorf("from = %v, want %v (to - interval)", gotFrom, wantFrom)
+		t.Errorf("from = %v, want %v (to - recentWindowWidth)", gotFrom, wantFrom)
 	}
 }
 

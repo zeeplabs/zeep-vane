@@ -22,6 +22,22 @@ const maxFetchAttempts = 3
 // Assumptions as unconfirmed and easy to tune later.
 const minRecentWindowRequests = 10
 
+// recentWindowWidth is how much SLO history pollService asks Datadog for on
+// each fetch, independent of p.interval (AD-019 addendum). A window sized to
+// the poll interval alone (originally 60s) was proven too narrow against
+// live Datadog data: at ~51 req/min steady traffic, the freshest 60s
+// reported as few as 8 requests because trace metrics for the last 1-2
+// minutes aren't fully aggregated yet, tripping minRecentWindowRequests and
+// carrying a stale status forward - the exact bug AD-019 was written to fix.
+// 5 minutes of width absorbs that per-minute variance.
+const recentWindowWidth = 5 * time.Minute
+
+// recentWindowLag offsets the window's end away from time.Now() so it never
+// includes the most recent minute of not-yet-aggregated Datadog data.
+// Live-measured: the freshest 60s under-reported request volume by ~6x
+// versus the steady rate, while data 60-120s old already matched it.
+const recentWindowLag = 60 * time.Second
+
 // serviceLister is the subset of *db.ServiceRepository the poller depends on
 // to discover which services to poll.
 type serviceLister interface {
@@ -157,8 +173,8 @@ func (p *Poller) pollOnce(ctx context.Context) {
 // service's outcome for the cycle first (H5/H6), since a single service's
 // failure must not by itself mark the whole integration invalid.
 func (p *Poller) pollService(ctx context.Context, svc db.Service) error {
-	to := time.Now()
-	from := to.Add(-p.interval)
+	to := time.Now().Add(-recentWindowLag)
+	from := to.Add(-recentWindowWidth)
 
 	status, err := FetchWithRetry(ctx, p.provider, svc.SLOID, from, to, maxFetchAttempts)
 	if err != nil {
