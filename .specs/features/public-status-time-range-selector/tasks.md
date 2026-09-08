@@ -210,8 +210,8 @@ T5 → T6 → T7 → T8
 
 **Done when**:
 
-- [ ] `PublicHistoryBucket`/`RangeKey` exported; `PublicHourlyBucket` removed (no alias - nothing outside this file's own consumers uses the old name once T6-T8 land, and this task's own gate is build-only so a stale reference elsewhere fails loudly)
-- [ ] `npx tsc -b --noEmit` passes (expected: fails until T6-T8 also update their imports - if `tsc` is clean before those, the rename is either incomplete or something still references the old name; note the actual pass/fail expectation against the state after this task lands is "will show errors in files not yet updated," which is expected and resolved by T6-T8, not a gate failure specific to this task's own file)
+- [x] `PublicHistoryBucket`/`RangeKey` exported; `PublicHourlyBucket` removed (no alias - nothing outside this file's own consumers uses the old name once T6-T8 land, and this task's own gate is build-only so a stale reference elsewhere fails loudly)
+- [x] `npx tsc -b --noEmit` passes (expected: fails until T6-T8 also update their imports - if `tsc` is clean before those, the rename is either incomplete or something still references the old name; note the actual pass/fail expectation against the state after this task lands is "will show errors in files not yet updated," which is expected and resolved by T6-T8, not a gate failure specific to this task's own file)
 
 **Tests**: none (type-only layer, per Coverage Matrix)
 **Gate**: build (`npx tsc -b --noEmit` - errors elsewhere in the tree from this rename are expected until T6-T8 land; this task's own gate check is that `publicStatus.ts` itself defines the new types correctly, not that the whole tree compiles yet)
