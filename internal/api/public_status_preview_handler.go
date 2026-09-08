@@ -68,7 +68,13 @@ func (h *PublicStatusPreviewHandler) Get(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	resp, err := h.inner.composeResponse(r.Context(), statusPageID, parsePage(r))
+	rng, ok := parseRange(r)
+	if !ok {
+		writeInvalidRangeError(w)
+		return
+	}
+
+	resp, err := h.inner.composeResponse(r.Context(), statusPageID, parsePage(r), rng)
 	if err != nil {
 		h.logger.Error("public-status-preview: failed to compose response", zap.Error(err))
 		writeInternalError(w)

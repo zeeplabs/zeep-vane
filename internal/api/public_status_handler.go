@@ -14,10 +14,6 @@ import (
 	"github.com/zeeplabs/zeep-vane/internal/router"
 )
 
-// historyWindowHours is the fixed window (UPT-01: "24 horas", user-confirmed)
-// for the public status page's per-hour uptime bars.
-const historyWindowHours = 24
-
 // serviceLister is the subset of *db.ServiceRepository the public status
 // handler depends on. It is scoped to a single status page (SP-15): the
 // public page must show only the services linked to it, never every
@@ -93,19 +89,21 @@ func NewPublicStatusHandler(services serviceLister, intervals statusIntervalRead
 }
 
 type publicServiceResponse struct {
-	Name          string                       `json:"name"`
-	Status        string                       `json:"status"`
-	LastUpdatedAt time.Time                    `json:"last_updated_at"`
-	HourlyHistory []publicHourlyStatusResponse `json:"hourly_history"`
+	Name          string                        `json:"name"`
+	Status        string                        `json:"status"`
+	LastUpdatedAt time.Time                     `json:"last_updated_at"`
+	History       []publicHistoryBucketResponse `json:"history"`
 	// UptimePercent is nil ("undefined", render a dash) when the service
 	// has zero recorded intervals within the window (SHU-15) - never a
 	// fabricated 0 or 100.
 	UptimePercent *float64 `json:"uptime_percent"`
 }
 
-// publicHourlyStatusResponse is one hourly bar in a service's uptime
-// history row (UPT-01..06).
-type publicHourlyStatusResponse struct {
+// publicHistoryBucketResponse is one bucket in a service's uptime history
+// row (UPT-01..06). Its width varies with the selected range (TRS-01..04) -
+// it is no longer always an hour, hence the name (renamed from
+// publicHourlyStatusResponse).
+type publicHistoryBucketResponse struct {
 	Start  time.Time `json:"start"`
 	Status string    `json:"status"`
 }
@@ -160,8 +158,14 @@ func (h *PublicStatusHandler) Get(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	rng, ok := parseRange(r)
+	if !ok {
+		writeInvalidRangeError(w)
+		return
+	}
+
 	page := parsePage(r)
-	resp, err := h.composeResponse(r.Context(), statusPageID, page)
+	resp, err := h.composeResponse(r.Context(), statusPageID, page, rng)
 	if err != nil {
 		h.logger.Error("public-status: failed to compose response", zap.Error(err))
 		writeInternalError(w)
@@ -175,9 +179,10 @@ func (h *PublicStatusHandler) Get(w http.ResponseWriter, r *http.Request) {
 
 // composeResponse builds the public status response for statusPageID, with
 // resolvedPage selecting the page of resolved-incident history to include
-// (PAG-12) - shared by Get (resolved by Host header, production) and
+// (PAG-12) and rng selecting the history/uptime window and bucket width
+// (TRS-01..07) - shared by Get (resolved by Host header, production) and
 // PublicStatusPreviewHandler.Get (resolved by ID, dev/preview - I12).
-func (h *PublicStatusHandler) composeResponse(ctx context.Context, statusPageID string, resolvedPage int) (publicStatusResponse, error) {
+func (h *PublicStatusHandler) composeResponse(ctx context.Context, statusPageID string, resolvedPage int, rng rangeSpec) (publicStatusResponse, error) {
 	services, err := h.services.ListForStatusPage(ctx, statusPageID)
 	if err != nil {
 		return publicStatusResponse{}, fmt.Errorf("failed to list services: %w", err)
@@ -213,7 +218,7 @@ func (h *PublicStatusHandler) composeResponse(ctx context.Context, statusPageID 
 	}
 
 	now := time.Now()
-	windowStart := now.Add(-historyWindowHours * time.Hour)
+	windowStart := now.Add(-rng.window)
 	overlapping, err := h.intervals.ListOverlapping(ctx, serviceIDs, windowStart, now)
 	if err != nil {
 		return publicStatusResponse{}, fmt.Errorf("failed to list overlapping status intervals: %w", err)
@@ -260,7 +265,7 @@ func (h *PublicStatusHandler) composeResponse(ctx context.Context, statusPageID 
 			asOf = openInterval.LastSeenAt
 		}
 
-		buckets := history.BuildBuckets(serviceIntervals, now, asOf, h.historyLoc, historyWindowHours, time.Hour)
+		buckets := history.BuildBuckets(serviceIntervals, now, asOf, h.historyLoc, rng.bucketCount, rng.bucketWidth)
 
 		var uptimePercent *float64
 		if pct, ok := history.UptimePercent(serviceIntervals, windowStart, asOf); ok {
@@ -271,7 +276,7 @@ func (h *PublicStatusHandler) composeResponse(ctx context.Context, statusPageID 
 			Name:          service.Name,
 			Status:        service.CurrentStatus,
 			LastUpdatedAt: openIntervals[service.ID].LastSeenAt,
-			HourlyHistory: toPublicHourlyResponses(buckets),
+			History:       toPublicHistoryResponses(buckets),
 			UptimePercent: uptimePercent,
 		})
 	}
@@ -279,12 +284,12 @@ func (h *PublicStatusHandler) composeResponse(ctx context.Context, statusPageID 
 	return resp, nil
 }
 
-// toPublicHourlyResponses converts history.BuildBuckets's buckets into their
+// toPublicHistoryResponses converts history.BuildBuckets's buckets into their
 // public response shape.
-func toPublicHourlyResponses(buckets []history.Bucket) []publicHourlyStatusResponse {
-	resp := make([]publicHourlyStatusResponse, len(buckets))
+func toPublicHistoryResponses(buckets []history.Bucket) []publicHistoryBucketResponse {
+	resp := make([]publicHistoryBucketResponse, len(buckets))
 	for i, bucket := range buckets {
-		resp[i] = publicHourlyStatusResponse{Start: bucket.Start, Status: bucket.Status}
+		resp[i] = publicHistoryBucketResponse{Start: bucket.Start, Status: bucket.Status}
 	}
 	return resp
 }

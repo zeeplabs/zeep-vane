@@ -149,16 +149,16 @@ T5 → T6 → T7 → T8
 
 **Done when**:
 
-- [ ] Every existing integration test in `public_status_handler_test.go` still passes, updated for the `hourly_history`→`history` rename where they assert on the field name/JSON key
-- [ ] New test: request with no `range` param (or `range=24h`) behaves identically to today - 24 buckets, 1h wide (TRS-01)
-- [ ] New test: `range=7d` returns 28 buckets, 6h wide, correct `windowStart`
-- [ ] New test: `range=30d` returns 30 buckets, 24h wide
-- [ ] New test: `range=90d` returns 90 buckets, 24h wide, and (seed data covering it) confirms history beyond 24h/beyond the old 35-day retention is actually retrievable
-- [ ] New test: `uptime_percent` for a service with a real outage differs between the `24h` and `90d` ranges for the same underlying data (TRS-04 - proves it's not pinned to 24h)
-- [ ] New test: `range=` an invalid value (e.g. `5d`) → `422`, response body matches `writeInvalidRangeError`, and no DB query for services/intervals is issued (assert via a spy/counting fake, per `design.md`'s Error Handling Strategy - "no partial work")
-- [ ] New test on `public_status_preview_handler_test.go`: the same range parameter produces the same bucket shape on the preview endpoint as the production endpoint for identical seed data (TRS-05 preview parity)
-- [ ] New test: a service/window combination where part of the range predates any data → leading buckets are `no_data`, not an error (TRS-06 at the handler level, generalizing the existing 24h-only version of this test)
-- [ ] `gofmt -l internal/api/public_status*.go` empty
+- [x] Every existing integration test in `public_status_handler_test.go` still passes, updated for the `hourly_history`→`history` rename where they assert on the field name/JSON key
+- [x] New test: request with no `range` param (or `range=24h`) behaves identically to today - 24 buckets, 1h wide (TRS-01)
+- [x] New test: `range=7d` returns 28 buckets, 6h wide, correct `windowStart`
+- [x] New test: `range=30d` returns 30 buckets, 24h wide
+- [x] New test: `range=90d` returns 90 buckets, 24h wide, and (seed data covering it) confirms history beyond 24h/beyond the old 35-day retention is actually retrievable
+- [x] New test: `uptime_percent` for a service with a real outage differs between the `24h` and `90d` ranges for the same underlying data (TRS-04 - proves it's not pinned to 24h)
+- [x] New test: `range=` an invalid value (e.g. `5d`) → `422`, response body matches `writeInvalidRangeError`, and no DB query for services/intervals is issued (assert via a spy/counting fake, per `design.md`'s Error Handling Strategy - "no partial work")
+- [x] New test on `public_status_preview_handler_test.go`: the same range parameter produces the same bucket shape on the preview endpoint as the production endpoint for identical seed data (TRS-05 preview parity)
+- [x] New test: a service/window combination where part of the range predates any data → leading buckets are `no_data`, not an error (TRS-06 at the handler level, generalizing the existing 24h-only version of this test)
+- [x] `gofmt -l internal/api/public_status*.go` empty
 
 **Tests**: integration
 **Gate**: full (`TEST_DATABASE_URL=<dsn> go test -tags=integration ./internal/api/...` against disposable Postgres)
