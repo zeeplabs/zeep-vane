@@ -296,3 +296,54 @@ func TestLoad_AdminBaseURLBareSlash_ReturnsError(t *testing.T) {
 		t.Fatal("Load() returned nil error, want an error for VANE_ADMIN_BASE_URL=\"/\"")
 	}
 }
+
+// TestLoad_AdminBaseURLMalformedHost_ReturnsError asserts a value
+// url.Parse itself rejects (an invalid port here) is rejected too - the
+// prefix-check this replaced had no way to catch this at all, since
+// "http://host:abc" still starts with "http://".
+func TestLoad_AdminBaseURLMalformedHost_ReturnsError(t *testing.T) {
+	setAllRequiredEnv(t)
+	t.Setenv("VANE_ADMIN_BASE_URL", "http://host:abc")
+
+	_, err := Load()
+	if err == nil {
+		t.Fatal("Load() returned nil error, want an error for a malformed host/port in VANE_ADMIN_BASE_URL")
+	}
+}
+
+// TestLoad_AdminBaseURLWithQuery_ReturnsError, TestLoad_AdminBaseURLWithFragment_ReturnsError,
+// and TestLoad_AdminBaseURLWithUserinfo_ReturnsError assert a base URL
+// carrying a query string, fragment, or embedded credentials is rejected:
+// internal/api's handlers build links via bare string concatenation
+// (fmt.Sprintf("%s/reset-password/%s", base, token)), so any of these
+// would either produce a broken link or, for userinfo, leak credentials
+// into an emailed URL.
+func TestLoad_AdminBaseURLWithQuery_ReturnsError(t *testing.T) {
+	setAllRequiredEnv(t)
+	t.Setenv("VANE_ADMIN_BASE_URL", "https://admin.example.com?x=y")
+
+	_, err := Load()
+	if err == nil {
+		t.Fatal("Load() returned nil error, want an error for a VANE_ADMIN_BASE_URL carrying a query string")
+	}
+}
+
+func TestLoad_AdminBaseURLWithFragment_ReturnsError(t *testing.T) {
+	setAllRequiredEnv(t)
+	t.Setenv("VANE_ADMIN_BASE_URL", "https://admin.example.com#frag")
+
+	_, err := Load()
+	if err == nil {
+		t.Fatal("Load() returned nil error, want an error for a VANE_ADMIN_BASE_URL carrying a fragment")
+	}
+}
+
+func TestLoad_AdminBaseURLWithUserinfo_ReturnsError(t *testing.T) {
+	setAllRequiredEnv(t)
+	t.Setenv("VANE_ADMIN_BASE_URL", "https://user:pass@admin.example.com")
+
+	_, err := Load()
+	if err == nil {
+		t.Fatal("Load() returned nil error, want an error for a VANE_ADMIN_BASE_URL carrying embedded userinfo")
+	}
+}

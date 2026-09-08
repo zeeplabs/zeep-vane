@@ -99,18 +99,25 @@ func Load() (Config, error) {
 	if adminBaseURLRaw != "" {
 		// A value with no scheme or no host (an operator typo like
 		// "admin.example.com" instead of "https://admin.example.com", or a
-		// bare "https://") isn't attacker-controlled - it's trusted config -
-		// but silently accepting it would email a real admin a
-		// password-reset/invite link that's either not a working URL at all
-		// or that most mail clients linkify to a plain "http://" URL. Reject
-		// at boot instead of producing a broken or wrong link later.
-		// url.Parse alone isn't enough to catch this: it happily parses
-		// "admin.example.com" as a relative reference with an empty scheme
-		// and host, so scheme/host are checked explicitly rather than just
-		// checking err == nil.
+		// value that trims to "" like "/") isn't attacker-controlled - it's
+		// trusted config - but silently accepting it would email a real
+		// admin a password-reset/invite link that's either not a working
+		// URL at all or built on an empty base. Reject at boot instead of
+		// producing a broken or wrong link later. url.Parse alone isn't
+		// enough to catch this: it happily parses "admin.example.com" as a
+		// relative reference with an empty scheme and host, so scheme/host
+		// are checked explicitly rather than just checking err == nil.
+		// RawQuery/Fragment/User are also rejected: internal/api's handlers
+		// build links via bare fmt.Sprintf("%s/reset-password/%s", base,
+		// token) with no re-parsing, so a base carrying "?x=y", "#frag", or
+		// embedded "user:pass@" would produce a broken link or leak
+		// credentials into an emailed URL - reject the same way a
+		// scheme/host problem is rejected, rather than silently mangling
+		// the link.
 		parsed, err := url.Parse(adminBaseURL)
-		if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" {
-			return Config{}, fmt.Errorf("config: environment variable VANE_ADMIN_BASE_URL must be a valid http:// or https:// URL with a host, got %q", os.Getenv("VANE_ADMIN_BASE_URL"))
+		if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" ||
+			parsed.RawQuery != "" || parsed.Fragment != "" || parsed.User != nil {
+			return Config{}, fmt.Errorf("config: environment variable VANE_ADMIN_BASE_URL must be a valid http:// or https:// URL with a host and no query/fragment/userinfo, got %q", os.Getenv("VANE_ADMIN_BASE_URL"))
 		}
 	}
 
