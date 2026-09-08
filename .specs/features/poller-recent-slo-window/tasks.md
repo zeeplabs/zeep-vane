@@ -105,7 +105,7 @@ T6
 
 ---
 
-### T2: Thread the window through `FetchWithRetry`
+### T2: Thread the window through `FetchWithRetry` ✅ Complete
 
 **What**: Add `from, to time.Time` params to `FetchWithRetry`, passed straight through to `provider.FetchSLOStatus`. Retry/backoff/`isTransient` logic body unchanged.
 **Where**: `internal/poller/retry.go`
