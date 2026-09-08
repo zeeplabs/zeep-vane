@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"go.uber.org/zap"
@@ -60,6 +61,17 @@ type PollerManager struct {
 	// avoid waiting a full 10s per assertion.
 	leaderRetryInterval     time.Duration
 	leaderHeartbeatInterval time.Duration
+
+	// leading is true only between RunLeaderLoop successfully acquiring the
+	// poller leadership lock and losing it. Restart consults this so a call
+	// arriving through IntegrationsHandler.ConnectDatadog on a non-leader
+	// replica (the admin API is served by every replica, not just the
+	// leader) becomes a no-op instead of starting a second poller alongside
+	// the real leader's - the bug this field exists to close. A
+	// single-replica deployment sets this true immediately at boot
+	// (TryAcquire always succeeds uncontested), so behavior there is
+	// unchanged (HA-07).
+	leading atomic.Bool
 }
 
 // NewPollerManager builds a PollerManager. parentCtx is the server's own
@@ -121,6 +133,7 @@ func (m *PollerManager) RunLeaderLoop(ctx context.Context) {
 		}
 
 		m.logger.Info("poller leader election: acquired leadership")
+		m.leading.Store(true)
 		if started, err := m.Restart(ctx); err != nil {
 			m.logger.Error("poller leader election: failed to start poller after acquiring leadership", zap.Error(err))
 		} else if !started {
@@ -131,7 +144,11 @@ func (m *PollerManager) RunLeaderLoop(ctx context.Context) {
 
 		// Lock lost or shutting down: abort whatever is in-flight (HA-05)
 		// before releasing, so no partial poll cycle keeps running under a
-		// lock we no longer safely hold.
+		// lock we no longer safely hold. leading flips false before Stop so
+		// a Restart racing in on the old leadership window (e.g. a
+		// concurrent ConnectDatadog request) can't slip a new poller in
+		// after this replica has already given up leadership.
+		m.leading.Store(false)
 		m.Stop()
 		_ = handle.Release(context.Background())
 
@@ -153,7 +170,17 @@ func (m *PollerManager) heartbeatUntilLost(ctx context.Context, handle *pglock.H
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			if !handle.Healthy(ctx) {
+			// Bound each probe to leaderHeartbeatInterval instead of
+			// inheriting ctx's process-lifetime deadline: on a network
+			// partition or a Postgres restart, an unbounded SELECT 1 can
+			// block on TCP retransmit well past the interval this loop is
+			// supposed to detect session loss on, letting another replica
+			// acquire leadership while this one still believes it holds it
+			// (transient double leadership).
+			probeCtx, cancel := context.WithTimeout(ctx, m.leaderHeartbeatInterval)
+			healthy := handle.Healthy(probeCtx)
+			cancel()
+			if !healthy {
 				return
 			}
 		}
@@ -183,6 +210,16 @@ func sleepOrDone(ctx context.Context, d time.Duration) bool {
 // IntegrationsHandler, which just connected/rotated a real integration)
 // can ignore it.
 func (m *PollerManager) Restart(ctx context.Context) (started bool, err error) {
+	if !m.leading.Load() {
+		// Not this replica's turn to run a poller - RunLeaderLoop will call
+		// Restart itself from the currently stored integration the moment
+		// this replica (or whichever one is actually leading) acquires
+		// leadership, so a credential connected/rotated here still takes
+		// effect without a process restart, just not necessarily on this
+		// exact replica or instantly if it never leads.
+		return false, nil
+	}
+
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
