@@ -2,11 +2,8 @@ package ratelimit
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"time"
-
-	"github.com/jackc/pgx/v5"
 
 	"github.com/zeeplabs/zeep-vane/internal/db"
 )
@@ -49,20 +46,49 @@ func (s *postgresBucketStore) allow(ctx context.Context, ip string, burst int, r
 	}
 	defer func() { _ = tx.Rollback(ctx) }() // no-op once committed
 
-	var tokens float64
-	var lastRefill time.Time
-	err = tx.QueryRow(ctx, "SELECT tokens, last_refill FROM rate_limit_buckets WHERE ip = $1 FOR UPDATE", ip).Scan(&tokens, &lastRefill)
+	// lockTimeout bounds how long this call can sit blocked on the row lock
+	// below. Without it, a burst of concurrent requests hammering the same
+	// IP each pin a pool connection (MaxConns = 4, internal/db/pool.go)
+	// waiting on the same lock indefinitely - on a shared pool this starves
+	// every other query in the process, not just rate-limiting, for as long
+	// as the offending IP keeps sending requests. Bounding the wait doesn't
+	// change the fail-open policy below (HA-10, a deliberate decision -
+	// flagged, not silently changed here); it only limits how long any one
+	// caller can occupy a connection before that policy kicks in.
+	if _, err := tx.Exec(ctx, "SET LOCAL lock_timeout = '3s'"); err != nil {
+		return false, fmt.Errorf("ratelimit: set lock_timeout failed: %w", err)
+	}
 
 	now := time.Now()
-	switch {
-	case errors.Is(err, pgx.ErrNoRows):
-		// Brand-new IP: starts with a full bucket, as if it had always
-		// been refilling up to now.
-		tokens = float64(burst)
-	case err != nil:
+
+	// Ensure a row exists before locking it. Without this, concurrent
+	// first-ever requests for the same brand-new IP each hit ErrNoRows
+	// below with nothing to lock, independently compute a fresh full
+	// bucket, and each blindly overwrite via the final UPDATE - none of
+	// them actually serialize against each other, so a burst of concurrent
+	// first requests for a new IP could all be "allowed" past the
+	// configured burst ceiling. Seeding the row first (a no-op via ON
+	// CONFLICT if one already exists) guarantees the SELECT ... FOR UPDATE
+	// below always has a real row to lock, so even the very first requests
+	// for a new IP are properly serialized.
+	if _, err := tx.Exec(ctx, `
+INSERT INTO rate_limit_buckets (ip, tokens, last_refill)
+VALUES ($1, $2, $3)
+ON CONFLICT (ip) DO NOTHING`, ip, float64(burst), now); err != nil {
+		return false, fmt.Errorf("ratelimit: seed insert failed: %w", err)
+	}
+
+	var tokens float64
+	var lastRefill time.Time
+	if err := tx.QueryRow(ctx, "SELECT tokens, last_refill FROM rate_limit_buckets WHERE ip = $1 FOR UPDATE", ip).Scan(&tokens, &lastRefill); err != nil {
 		return false, fmt.Errorf("ratelimit: select failed: %w", err)
-	default:
-		elapsed := now.Sub(lastRefill).Seconds()
+	}
+
+	// elapsed is 0 when this call's own seed INSERT just created the row
+	// (lastRefill == now), so a brand-new IP correctly starts with a full
+	// bucket instead of an extra refill on top of it.
+	elapsed := now.Sub(lastRefill).Seconds()
+	if elapsed > 0 {
 		tokens += elapsed * refillPerSec
 		if tokens > float64(burst) {
 			tokens = float64(burst)
@@ -77,11 +103,8 @@ func (s *postgresBucketStore) allow(ctx context.Context, ip string, burst int, r
 		tokens = 0
 	}
 
-	if _, err := tx.Exec(ctx, `
-INSERT INTO rate_limit_buckets (ip, tokens, last_refill)
-VALUES ($1, $2, $3)
-ON CONFLICT (ip) DO UPDATE SET tokens = $2, last_refill = $3`, ip, tokens, now); err != nil {
-		return false, fmt.Errorf("ratelimit: upsert failed: %w", err)
+	if _, err := tx.Exec(ctx, "UPDATE rate_limit_buckets SET tokens = $2, last_refill = $3 WHERE ip = $1", ip, tokens, now); err != nil {
+		return false, fmt.Errorf("ratelimit: update failed: %w", err)
 	}
 
 	if err := tx.Commit(ctx); err != nil {
