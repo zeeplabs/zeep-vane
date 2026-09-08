@@ -217,7 +217,7 @@ T6
 
 ---
 
-### T6: Record AD-019 in `.specs/STATE.md`
+### T6: Record AD-019 in `.specs/STATE.md` ✅ Complete
 
 **What**: Append a new `AD-019` entry to `.specs/STATE.md`'s `## Decisions` section documenting this feature's decision (recent-window status supersedes the `mvp-core`-era implicit assumption of mirroring the SLO's fixed-timeframe `state` 1:1), per Design's closing note and the `memory.md` convention every prior feature in this file follows.
 **Where**: `.specs/STATE.md`
