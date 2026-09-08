@@ -36,9 +36,10 @@ type SLOStatus struct {
 	// State is one of "ok", "warning", "breached", "no_data" (Datadog's
 	// SLOState enum), as computed by Datadog for the requested window.
 	State string
-	// ErrorBudgetRemaining is Target - SLI, an approximation (not Datadog's
+	// ErrorBudgetRemaining is SLI - Target, an approximation (not Datadog's
 	// own exact error-budget figure, which the history endpoint doesn't
-	// return) - see AD-019.
+	// return) - positive when healthy, negative when breached, matching
+	// Datadog's own sign convention - see AD-019 addendum 2.
 	ErrorBudgetRemaining float64
 	// SLI is the service level indicator for the requested window, 0-100.
 	SLI float64
@@ -109,25 +110,14 @@ type sloSearchResponse struct {
 				Data struct {
 					ID         string `json:"id"`
 					Attributes struct {
-						// Name: [Provável], not live-verified like Status/
-						// Thresholds/ID above (see SLOStatus doc) - inferred
-						// from the official client's SLOResponseData shape
+						// Name: [Provável], not live-verified like ID above
+						// (see SLOStatus doc) - inferred from the official
+						// client's SLOResponseData shape
 						// (github.com/DataDog/datadog-api-client-go,
-						// model_slo_response_data.go: flat Name/Thresholds
-						// fields), which this search response's "attributes"
-						// object mirrors for Status/Thresholds. Re-verify
-						// against a real account before relying on this in
-						// production.
-						Name   string `json:"name"`
-						Status struct {
-							ErrorBudgetRemaining float64 `json:"error_budget_remaining"`
-							SLI                  float64 `json:"sli"`
-							State                string  `json:"state"`
-						} `json:"status"`
-						Thresholds []struct {
-							Target    float64 `json:"target"`
-							Timeframe string  `json:"timeframe"`
-						} `json:"thresholds"`
+						// model_slo_response_data.go: flat Name field).
+						// Re-verify against a real account before relying on
+						// this in production.
+						Name string `json:"name"`
 					} `json:"attributes"`
 				} `json:"data"`
 			} `json:"slos"`
