@@ -192,7 +192,7 @@ T6
 
 ---
 
-### T5: Fix `poller_abort_test.go`'s integration fake for the new signature
+### T5: Fix `poller_abort_test.go`'s integration fake for the new signature ✅ Complete
 
 **What**: Update `abortTestProvider.FetchSLOStatus` to the new `(ctx, sloID string, from, to time.Time)` signature. Compile-check only (same reasoning as T4).
 **Where**: `internal/poller/poller_abort_test.go`

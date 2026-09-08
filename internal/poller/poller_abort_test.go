@@ -75,9 +75,9 @@ type abortTestProvider struct {
 	unblock      chan struct{}
 }
 
-func (p *abortTestProvider) FetchSLOStatus(ctx context.Context, sloID string) (datadog.SLOStatus, error) {
+func (p *abortTestProvider) FetchSLOStatus(ctx context.Context, sloID string, from, to time.Time) (datadog.SLOStatus, error) {
 	if sloID != p.blockedSLOID {
-		return datadog.SLOStatus{State: "ok", ErrorBudgetRemaining: 100}, nil
+		return datadog.SLOStatus{State: "ok", ErrorBudgetRemaining: 100, RequestCount: 10}, nil
 	}
 
 	close(p.reached)
@@ -92,7 +92,7 @@ func (p *abortTestProvider) FetchSLOStatus(ctx context.Context, sloID string) (d
 	if err := ctx.Err(); err != nil {
 		return datadog.SLOStatus{}, err
 	}
-	return datadog.SLOStatus{State: "ok", ErrorBudgetRemaining: 100}, nil
+	return datadog.SLOStatus{State: "ok", ErrorBudgetRemaining: 100, RequestCount: 10}, nil
 }
 
 // TestPoller_PollOnce_AbortsMidCycle_NoWritesForServicesAfterLeadershipLoss
