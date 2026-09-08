@@ -182,11 +182,11 @@ T5 → T6 → T7 → T8
 
 **Done when**:
 
-- [ ] `pruneRetention == 95 * 24 * time.Hour`, asserted by the new `internal/cli` unit test (no build tag, runs without `TEST_DATABASE_URL`)
-- [ ] New `internal/retention/pruner_test.go` test: seed a closed interval with `ends_at` = now - 90 days, construct `NewPruner(..., 95*24*time.Hour, ...)`, run `prune()` once, assert the row still exists (TRS-08's exact spec scenario)
-- [ ] Existing `internal/retention` tests (all hardcoded to `35*24*time.Hour` as a test-local value, independent of the production constant - confirmed via `grep`) remain unchanged and passing - they test `Pruner`'s generic behavior, not the specific production retention value
-- [ ] Existing open-interval-never-pruned coverage (TRS-09) still passes unmodified - no code change to that path
-- [ ] `gofmt -l internal/cli/*.go internal/retention/*.go` empty
+- [x] `pruneRetention == 95 * 24 * time.Hour`, asserted by the new `internal/cli` unit test (no build tag, runs without `TEST_DATABASE_URL`)
+- [x] New `internal/retention/pruner_test.go` test: seed a closed interval with `ends_at` = now - 90 days, construct `NewPruner(..., 95*24*time.Hour, ...)`, run `prune()` once, assert the row still exists (TRS-08's exact spec scenario)
+- [x] Existing `internal/retention` tests (all hardcoded to `35*24*time.Hour` as a test-local value, independent of the production constant - confirmed via `grep`) remain unchanged and passing - they test `Pruner`'s generic behavior, not the specific production retention value
+- [x] Existing open-interval-never-pruned coverage (TRS-09) still passes unmodified - no code change to that path
+- [x] `gofmt -l internal/cli/*.go internal/retention/*.go` empty
 
 **Tests**: integration (for the pruner behavior test) + unit (for the constant-value test) - see Coverage Matrix, both required
 **Gate**: full (retention test needs `-tags=integration` + disposable Postgres; the constant-value test runs under the quick gate too)
