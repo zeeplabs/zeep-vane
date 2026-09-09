@@ -584,10 +584,10 @@ T25 only. Needs the full feature implemented (accurate to describe).
 **Requirement**: AI-01, AI-02, AI-03, AI-04
 
 **Done when**:
-- [ ] Types match the backend DTOs from T16 exactly (no `api_key` field ever modeled client-side)
-- [ ] Hook exposes connect/set-model/activate/list, each a React Query mutation/query following the codebase's existing pattern (`queryKey` conventions per `AGENTS.md` §5)
-- [ ] Unit tests (MSW-mocked) cover success and error-response handling for each operation
-- [ ] Gate passes: `npx tsc -b --noEmit && npm run test`
+- [x] Types match the backend DTOs from T16 exactly (no `api_key` field ever modeled client-side)
+- [x] Hook exposes connect/set-model/activate/list, each a React Query mutation/query following the codebase's existing pattern (`queryKey` conventions per `AGENTS.md` §5)
+- [x] Unit tests (MSW-mocked) cover success and error-response handling for each operation
+- [x] Gate passes: `npx tsc -b --noEmit && npm run test`
 
 **Tests**: unit
 **Gate**: frontend

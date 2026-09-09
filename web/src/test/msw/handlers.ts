@@ -26,6 +26,7 @@ import type {
   CompanySettings,
   Page,
 } from "../../types/api";
+import type { LLMProviderName } from "../../lib/llmProviders";
 
 // Simulates the vane_session cookie server-side: real cookie semantics
 // (Set-Cookie/credentials) are covered by the Go integration tests
@@ -99,6 +100,27 @@ export function resetEmailProviders(): void {
   emailActiveProvider = null;
 }
 resetEmailProviders();
+
+// In-memory LLM provider state (AI-01..06), mirroring emailProvidersState's
+// shape/reset convention exactly - no seed fixture, spec.md's default is
+// "no provider has ever been connected" (empty list, active_provider
+// null).
+interface LLMProviderRecord {
+  provider: LLMProviderName;
+  model: string;
+  status: "connected" | "invalid";
+  last_checked_at: string | null;
+  last_error: string | null;
+}
+
+let llmProvidersState: LLMProviderRecord[] = [];
+let llmActiveProvider: LLMProviderName | null = null;
+
+export function resetLLMProviders(): void {
+  llmProvidersState = [];
+  llmActiveProvider = null;
+}
+resetLLMProviders();
 
 // In-memory incidents + timeline state (I16), seeded the same way as
 // domains/status-pages/services above. incident_updates is real-backend
@@ -716,6 +738,93 @@ export const handlers = [
       return HttpResponse.json({ error: "email provider not connected" }, { status: 422 });
     }
     emailActiveProvider = provider;
+    return HttpResponse.json({ status: "active" });
+  }),
+
+  // GET /api/integrations/llm (AI-01..06) - mirrors LLMProvidersHandler.List:
+  // never a 404, empty list + null active_provider when nothing has ever
+  // been connected. Same shape/pagination convention as
+  // GET /api/integrations/email above (PAG-08, page_size 20).
+  http.get("/api/integrations/llm", ({ request }) => {
+    if (!sessionAdminId) return HttpResponse.json({ error: "unauthorized" }, { status: 401 });
+    const paged = paginatedPage(request.url, llmProvidersState, 20);
+    return HttpResponse.json({
+      active_provider: llmActiveProvider,
+      providers: paged.items,
+      total: paged.total,
+      page: paged.page,
+      page_size: paged.page_size,
+    });
+  }),
+
+  // POST /api/integrations/llm/:provider (AI-01/AI-02/AI-03) - mirrors
+  // LLMProvidersHandler.Connect: unknown provider 404, missing api_key or
+  // "invalid-key" 422 (never persisted), success upserts and never echoes
+  // api_key. An empty/omitted model defaults to "gpt-4o-mini", mirroring
+  // internal/llm/service.go's defaultModel.
+  http.post("/api/integrations/llm/:provider", async ({ request, params }) => {
+    if (!sessionAdminId) return HttpResponse.json({ error: "unauthorized" }, { status: 401 });
+    const provider = params.provider as string;
+    if (provider !== "openai") {
+      return HttpResponse.json({ error: "unknown llm provider" }, { status: 404 });
+    }
+    const body = (await request.json()) as { api_key?: string; model?: string };
+    if (!body.api_key || body.api_key === "invalid-key") {
+      return HttpResponse.json({ error: "invalid llm provider api key" }, { status: 422 });
+    }
+    const record: LLMProviderRecord = {
+      provider,
+      model: body.model || "gpt-4o-mini",
+      status: "connected",
+      last_checked_at: new Date().toISOString(),
+      last_error: null,
+    };
+    const existing = llmProvidersState.find((p) => p.provider === provider);
+    if (existing) {
+      Object.assign(existing, record);
+    } else {
+      llmProvidersState.push(record);
+    }
+    return HttpResponse.json({ status: "connected" }, { status: 201 });
+  }),
+
+  // POST /api/integrations/llm/:provider/model (AI-04) - mirrors
+  // LLMProvidersHandler.SetModel: unknown provider 404, not-connected or
+  // unknown model 422, success updates the stored model without touching
+  // the API key.
+  http.post("/api/integrations/llm/:provider/model", async ({ request, params }) => {
+    if (!sessionAdminId) return HttpResponse.json({ error: "unauthorized" }, { status: 401 });
+    const provider = params.provider as string;
+    if (provider !== "openai") {
+      return HttpResponse.json({ error: "unknown llm provider" }, { status: 404 });
+    }
+    const body = (await request.json()) as { model?: string };
+    const allowedModels = ["gpt-4o-mini", "gpt-4o", "gpt-4.1-mini", "gpt-4.1"];
+    if (!body.model || !allowedModels.includes(body.model)) {
+      return HttpResponse.json({ error: "unknown model for llm provider" }, { status: 422 });
+    }
+    const connected = llmProvidersState.find((p) => p.provider === provider && p.status === "connected");
+    if (!connected) {
+      return HttpResponse.json({ error: "llm provider not connected" }, { status: 422 });
+    }
+    connected.model = body.model;
+    return HttpResponse.json({ status: "updated" });
+  }),
+
+  // POST /api/integrations/llm/:provider/activate (AI-06) - mirrors
+  // LLMProvidersHandler.Activate: unknown provider 404, not-connected 422,
+  // success flips active_provider.
+  http.post("/api/integrations/llm/:provider/activate", ({ params }) => {
+    if (!sessionAdminId) return HttpResponse.json({ error: "unauthorized" }, { status: 401 });
+    const provider = params.provider as string;
+    if (provider !== "openai") {
+      return HttpResponse.json({ error: "unknown llm provider" }, { status: 404 });
+    }
+    const connected = llmProvidersState.find((p) => p.provider === provider && p.status === "connected");
+    if (!connected) {
+      return HttpResponse.json({ error: "llm provider not connected" }, { status: 422 });
+    }
+    llmActiveProvider = provider as LLMProviderName;
     return HttpResponse.json({ status: "active" });
   }),
 

@@ -10,6 +10,7 @@ import {
   resetCompanySettings,
   resetBootstrapState,
   resetEmailProviders,
+  resetLLMProviders,
   resetPasswordResetTokens,
 } from "./msw/handlers";
 
@@ -24,6 +25,7 @@ afterEach(() => {
   resetCompanySettings();
   resetBootstrapState();
   resetEmailProviders();
+  resetLLMProviders();
   resetPasswordResetTokens();
 });
 afterAll(() => server.close());
