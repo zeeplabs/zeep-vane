@@ -7,9 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.5] — 2026-09-08
+
 ### Added
 
 - The public status page's per-service history chart now has a page-wide time-range selector: 24h (1h bars, unchanged default), 7d (6h bars), 30d (1d bars), and 90d (1d bars) — switching ranges refetches without a page reload, applies to every service's chart at once, and recomputes the uptime % figure for the selected window instead of leaving it pinned to 24h. Works identically on the authenticated preview endpoint used by the admin dashboard (`AD-008` parity).
+
+### Fixed
+
+- An interval ending shortly before a chart's window start could bleed its status into the window's first bucket instead of being excluded — a pre-existing off-by-one in the bucket-index math (integer division truncating toward zero instead of flooring for a negative offset), previously a 1-hour leak band invisible in practice, now a 24-hour leak band on the new 30d/90d range tiers where it was actually reachable.
 
 ### Changed
 
