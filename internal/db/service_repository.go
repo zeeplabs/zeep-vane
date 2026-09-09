@@ -15,6 +15,14 @@ type Service struct {
 	SLOID              string
 	CurrentStatus      string
 	LastStatusChangeAt time.Time
+	// StatusAnalysis is the LLM-generated degraded-tooltip text (AI-14),
+	// non-nil only while the service is "degraded" - UpdateStatusAnalysis
+	// clears it to NULL synchronously on entering/leaving that state
+	// (AI-15/AI-17). Populated by ListForStatusPage, the only read path
+	// that needs it (public status page tooltip); List/ListPaginated leave
+	// it at its zero value since neither caller (poller, admin services
+	// list) reads it.
+	StatusAnalysis *string
 }
 
 // ServiceRepository accesses the services table.
@@ -129,7 +137,7 @@ func (r *ServiceRepository) List(ctx context.Context) ([]Service, error) {
 // in the installation.
 func (r *ServiceRepository) ListForStatusPage(ctx context.Context, statusPageID string) ([]Service, error) {
 	rows, err := r.pool.Query(ctx,
-		`SELECT s.id, s.name, s.slo_id, s.current_status, s.last_status_change_at
+		`SELECT s.id, s.name, s.slo_id, s.current_status, s.last_status_change_at, s.status_analysis
 		 FROM services s
 		 JOIN status_page_services sps ON sps.service_id = s.id
 		 WHERE sps.status_page_id = $1
@@ -144,7 +152,7 @@ func (r *ServiceRepository) ListForStatusPage(ctx context.Context, statusPageID 
 	var services []Service
 	for rows.Next() {
 		var service Service
-		if err := rows.Scan(&service.ID, &service.Name, &service.SLOID, &service.CurrentStatus, &service.LastStatusChangeAt); err != nil {
+		if err := rows.Scan(&service.ID, &service.Name, &service.SLOID, &service.CurrentStatus, &service.LastStatusChangeAt, &service.StatusAnalysis); err != nil {
 			return nil, fmt.Errorf("db: failed to scan service: %w", err)
 		}
 		services = append(services, service)

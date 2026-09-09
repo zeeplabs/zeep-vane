@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -1203,6 +1204,210 @@ func TestPublicStatusGet_InvalidRange_422NoDBQueryIssued(t *testing.T) {
 	}
 	if spy.calls != 0 {
 		t.Errorf("ListForStatusPage calls = %d, want 0 (invalid range must reject before any DB work)", spy.calls)
+	}
+}
+
+// TestPublicStatusGet_DegradedServiceWithAnalysis_IncludesStatusAnalysis
+// covers AI-16: a degraded service with a finished status_analysis exposes
+// it verbatim in the public response.
+func TestPublicStatusGet_DegradedServiceWithAnalysis_IncludesStatusAnalysis(t *testing.T) {
+	r, pool := newPublicStatusRouter(t)
+	serviceID, cleanup := createPublicStatusServiceFixture(t, pool, "degraded", time.Now())
+	t.Cleanup(cleanup)
+	statusPageID := createPublicStatusPageFixture(t, pool, serviceID)
+
+	analysis := "Elevated latency on the checkout path, error budget burning faster than usual."
+	if err := db.NewServiceRepository(pool).UpdateStatusAnalysis(context.Background(), serviceID, &analysis); err != nil {
+		t.Fatalf("setup UpdateStatusAnalysis() returned unexpected error: %v", err)
+	}
+
+	req := withStatusPageContext(httptest.NewRequest(http.MethodGet, "/", nil), statusPageID)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	var body publicStatusResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+	allServices, err := db.NewServiceRepository(pool).List(context.Background())
+	if err != nil {
+		t.Fatalf("List() returned unexpected error: %v", err)
+	}
+	found := findPublicService(body.Services, serviceID, allServices)
+	if found == nil {
+		t.Fatalf("service %s not present in public response", serviceID)
+	}
+	if found.StatusAnalysis == nil || *found.StatusAnalysis != analysis {
+		t.Errorf("StatusAnalysis = %v, want %q", found.StatusAnalysis, analysis)
+	}
+}
+
+// TestPublicStatusGet_DegradedServiceAnalysisPending_OmitsStatusAnalysis
+// covers AI-16's pending case: a degraded service whose analysis hasn't
+// finished generating yet (status_analysis still NULL) omits the field
+// entirely, not a null.
+func TestPublicStatusGet_DegradedServiceAnalysisPending_OmitsStatusAnalysis(t *testing.T) {
+	r, pool := newPublicStatusRouter(t)
+	serviceID, cleanup := createPublicStatusServiceFixture(t, pool, "degraded", time.Now())
+	t.Cleanup(cleanup)
+	statusPageID := createPublicStatusPageFixture(t, pool, serviceID)
+
+	req := withStatusPageContext(httptest.NewRequest(http.MethodGet, "/", nil), statusPageID)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	var body publicStatusResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+	allServices, err := db.NewServiceRepository(pool).List(context.Background())
+	if err != nil {
+		t.Fatalf("List() returned unexpected error: %v", err)
+	}
+	found := findPublicService(body.Services, serviceID, allServices)
+	if found == nil {
+		t.Fatalf("service %s not present in public response", serviceID)
+	}
+	if found.StatusAnalysis != nil {
+		t.Errorf("StatusAnalysis = %q, want nil while still pending", *found.StatusAnalysis)
+	}
+}
+
+// TestPublicStatusGet_NonDegradedServiceWithStaleAnalysis_OmitsStatusAnalysis
+// covers AI-15/AI-17's defense-in-depth re-check at the DTO boundary: even
+// if status_analysis somehow still carried a stale value for a
+// non-degraded service, the public response must never surface it.
+func TestPublicStatusGet_NonDegradedServiceWithStaleAnalysis_OmitsStatusAnalysis(t *testing.T) {
+	r, pool := newPublicStatusRouter(t)
+	serviceID, cleanup := createPublicStatusServiceFixture(t, pool, "operational", time.Now())
+	t.Cleanup(cleanup)
+	statusPageID := createPublicStatusPageFixture(t, pool, serviceID)
+
+	staleAnalysis := "stale degraded-tooltip text that should never have survived a transition"
+	if err := db.NewServiceRepository(pool).UpdateStatusAnalysis(context.Background(), serviceID, &staleAnalysis); err != nil {
+		t.Fatalf("setup UpdateStatusAnalysis() returned unexpected error: %v", err)
+	}
+
+	req := withStatusPageContext(httptest.NewRequest(http.MethodGet, "/", nil), statusPageID)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	var body publicStatusResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+	allServices, err := db.NewServiceRepository(pool).List(context.Background())
+	if err != nil {
+		t.Fatalf("List() returned unexpected error: %v", err)
+	}
+	found := findPublicService(body.Services, serviceID, allServices)
+	if found == nil {
+		t.Fatalf("service %s not present in public response", serviceID)
+	}
+	if found.StatusAnalysis != nil {
+		t.Errorf("StatusAnalysis = %q, want nil for an operational service even with a stale stored value", *found.StatusAnalysis)
+	}
+	if strings.Contains(rec.Body.String(), "stale degraded-tooltip") {
+		t.Errorf("response body leaks the stale status_analysis text: %s", rec.Body.String())
+	}
+}
+
+// TestPublicStatusGet_IncidentWithDescription_IncludesDescription covers
+// AI-18: an incident with a description set exposes it on the public
+// response.
+func TestPublicStatusGet_IncidentWithDescription_IncludesDescription(t *testing.T) {
+	r, pool := newPublicStatusRouter(t)
+	incidentID, serviceID := createPublicIncidentFixture(t, pool, "incident with description public test")
+	statusPageID := createPublicStatusPageFixture(t, pool, serviceID)
+
+	if err := db.NewIncidentRepository(pool).SetDescription(context.Background(), incidentID, "root cause: upstream provider outage"); err != nil {
+		t.Fatalf("setup SetDescription() returned unexpected error: %v", err)
+	}
+
+	req := withStatusPageContext(httptest.NewRequest(http.MethodGet, "/", nil), statusPageID)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	var body publicStatusResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+	found := findPublicIncident(body.Incidents.Active, incidentID)
+	if found == nil {
+		t.Fatalf("incident %s not present in active incidents", incidentID)
+	}
+	if found.Description == nil || *found.Description != "root cause: upstream provider outage" {
+		t.Errorf("Description = %v, want the set description", found.Description)
+	}
+}
+
+// TestPublicStatusGet_IncidentWithoutDescription_OmitsDescription covers a
+// manually created incident with no description: the field is omitted, not
+// a null.
+func TestPublicStatusGet_IncidentWithoutDescription_OmitsDescription(t *testing.T) {
+	r, pool := newPublicStatusRouter(t)
+	incidentID, serviceID := createPublicIncidentFixture(t, pool, "incident without description public test")
+	statusPageID := createPublicStatusPageFixture(t, pool, serviceID)
+
+	req := withStatusPageContext(httptest.NewRequest(http.MethodGet, "/", nil), statusPageID)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	var body publicStatusResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+	found := findPublicIncident(body.Incidents.Active, incidentID)
+	if found == nil {
+		t.Fatalf("incident %s not present in active incidents", incidentID)
+	}
+	if found.Description != nil {
+		t.Errorf("Description = %q, want nil for an incident with no description set", *found.Description)
+	}
+}
+
+// TestPublicStatusGet_NeverExposesPendingCloseComment is a negative test for
+// AI-19/AI-20's admin-only field: even with a pending closing-comment
+// proposal set, the public response body must never contain it or the
+// pending_close_comment key at all.
+func TestPublicStatusGet_NeverExposesPendingCloseComment(t *testing.T) {
+	r, pool := newPublicStatusRouter(t)
+	incidentID, serviceID := createPublicIncidentFixture(t, pool, "pending close comment public test")
+	statusPageID := createPublicStatusPageFixture(t, pool, serviceID)
+
+	if err := db.NewIncidentRepository(pool).SetPendingCloseComment(context.Background(), incidentID, "service recovered, this must never leak publicly"); err != nil {
+		t.Fatalf("setup SetPendingCloseComment() returned unexpected error: %v", err)
+	}
+
+	req := withStatusPageContext(httptest.NewRequest(http.MethodGet, "/", nil), statusPageID)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	if strings.Contains(rec.Body.String(), "pending_close_comment") || strings.Contains(rec.Body.String(), "this must never leak publicly") {
+		t.Errorf("response body leaks pending_close_comment: %s", rec.Body.String())
 	}
 }
 

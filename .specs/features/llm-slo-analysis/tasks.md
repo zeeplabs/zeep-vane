@@ -533,12 +533,12 @@ T25 only. Needs the full feature implemented (accurate to describe).
 - Skill: NONE
 
 **Done when**:
-- [ ] `publicServiceResponse.StatusAnalysis *string json:"status_analysis,omitempty"` populated only for `degraded` services with a non-nil `db.Service.StatusAnalysis`
-- [ ] `publicIncidentResponse.Description *string json:"description,omitempty"` populated whenever `db.Incident.Description` is non-nil
-- [ ] Both production and preview endpoints expose identically (AD-008 parity)
-- [ ] `pending_close_comment` is confirmed absent from both response shapes (admin-only, negative test)
-- [ ] Handler unit tests cover: degraded service with analysis present, degraded service with analysis still pending (field omitted), non-degraded service (field always omitted even if a stale value existed), incident with/without description
-- [ ] Gate passes: `go test ./internal/api/...`
+- [x] `publicServiceResponse.StatusAnalysis *string json:"status_analysis,omitempty"` populated only for `degraded` services with a non-nil `db.Service.StatusAnalysis`
+- [x] `publicIncidentResponse.Description *string json:"description,omitempty"` populated whenever `db.Incident.Description` is non-nil
+- [x] Both production and preview endpoints expose identically (AD-008 parity)
+- [x] `pending_close_comment` is confirmed absent from both response shapes (admin-only, negative test)
+- [x] Handler unit tests cover: degraded service with analysis present, degraded service with analysis still pending (field omitted), non-degraded service (field always omitted even if a stale value existed), incident with/without description
+- [x] Gate passes: `go test ./internal/api/...`
 
 **Tests**: unit
 **Gate**: quick

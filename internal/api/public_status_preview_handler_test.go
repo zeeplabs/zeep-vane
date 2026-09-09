@@ -375,6 +375,61 @@ func TestPublicStatusPreview_Range90d_SameBucketShapeAsProduction(t *testing.T) 
 	}
 }
 
+// TestPublicStatusPreview_DegradedServiceAnalysis_SameShapeAsProduction
+// covers AD-008 parity for T18's new field: a degraded service's
+// status_analysis must appear identically on the preview endpoint as on
+// production, since both share composeResponse.
+func TestPublicStatusPreview_DegradedServiceAnalysis_SameShapeAsProduction(t *testing.T) {
+	previewRouter, pool, admins := newPublicStatusPreviewRouter(t)
+	token := issueTestSessionToken(t, admins)
+
+	serviceID, cleanup := createPublicStatusServiceFixture(t, pool, "degraded", time.Now())
+	t.Cleanup(cleanup)
+	statusPageID := createPublicStatusPageFixture(t, pool, serviceID)
+
+	analysis := "preview-production parity test analysis text"
+	if err := db.NewServiceRepository(pool).UpdateStatusAnalysis(context.Background(), serviceID, &analysis); err != nil {
+		t.Fatalf("setup UpdateStatusAnalysis() returned unexpected error: %v", err)
+	}
+
+	previewRec := getPublicStatusPreview(t, previewRouter, token, statusPageID)
+	if previewRec.Code != http.StatusOK {
+		t.Fatalf("preview status = %d, want %d, body = %s", previewRec.Code, http.StatusOK, previewRec.Body.String())
+	}
+	var previewBody publicStatusResponse
+	if err := json.Unmarshal(previewRec.Body.Bytes(), &previewBody); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+
+	productionRouter, _ := newPublicStatusRouter(t)
+	prodReq := withStatusPageContext(httptest.NewRequest(http.MethodGet, "/", nil), statusPageID)
+	prodRec := httptest.NewRecorder()
+	productionRouter.ServeHTTP(prodRec, prodReq)
+	if prodRec.Code != http.StatusOK {
+		t.Fatalf("production status = %d, want %d, body = %s", prodRec.Code, http.StatusOK, prodRec.Body.String())
+	}
+	var prodBody publicStatusResponse
+	if err := json.Unmarshal(prodRec.Body.Bytes(), &prodBody); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+
+	allServices, err := db.NewServiceRepository(pool).List(context.Background())
+	if err != nil {
+		t.Fatalf("List() returned unexpected error: %v", err)
+	}
+	previewFound := findPublicService(previewBody.Services, serviceID, allServices)
+	prodFound := findPublicService(prodBody.Services, serviceID, allServices)
+	if previewFound == nil || prodFound == nil {
+		t.Fatalf("service %s missing from preview (%v) or production (%v) response", serviceID, previewFound == nil, prodFound == nil)
+	}
+	if previewFound.StatusAnalysis == nil || *previewFound.StatusAnalysis != analysis {
+		t.Errorf("preview StatusAnalysis = %v, want %q", previewFound.StatusAnalysis, analysis)
+	}
+	if prodFound.StatusAnalysis == nil || *prodFound.StatusAnalysis != analysis {
+		t.Errorf("production StatusAnalysis = %v, want %q", prodFound.StatusAnalysis, analysis)
+	}
+}
+
 // TestPublicStatusPreview_InvalidRange_422 covers TRS-07 on the preview
 // endpoint (parity with production's own invalid-range rejection).
 func TestPublicStatusPreview_InvalidRange_422(t *testing.T) {

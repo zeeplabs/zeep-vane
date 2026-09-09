@@ -97,6 +97,15 @@ type publicServiceResponse struct {
 	// has zero recorded intervals within the window (SHU-15) - never a
 	// fabricated 0 or 100.
 	UptimePercent *float64 `json:"uptime_percent"`
+	// StatusAnalysis is the LLM-generated degraded-tooltip text (AI-14,
+	// AI-16), present only when Status is "degraded" and an analysis has
+	// finished generating - omitted (not null) otherwise, including while
+	// a degraded service's analysis is still pending. Defense-in-depth
+	// re-check of the "degraded" condition at the DTO boundary even though
+	// SLOAnalyzer already clears db.Service.StatusAnalysis to NULL on any
+	// other transition (AI-15/AI-17) - a stale non-nil value on a
+	// non-degraded service must never leak here.
+	StatusAnalysis *string `json:"status_analysis,omitempty"`
 }
 
 // publicHistoryBucketResponse is one bucket in a service's uptime history
@@ -120,6 +129,11 @@ type publicIncidentResponse struct {
 	CreatedAt  time.Time                      `json:"created_at"`
 	ResolvedAt *time.Time                     `json:"resolved_at"`
 	Updates    []publicIncidentUpdateResponse `json:"updates"`
+	// Description is an optional longer body (AI-09/AI-11/AI-18), present
+	// whenever db.Incident.Description is non-nil. pending_close_comment
+	// is deliberately never exposed here - admin-only (T17's DTO is its
+	// only intended consumer).
+	Description *string `json:"description,omitempty"`
 }
 
 type publicIncidentsResponse struct {
@@ -272,12 +286,23 @@ func (h *PublicStatusHandler) composeResponse(ctx context.Context, statusPageID 
 			uptimePercent = &pct
 		}
 
+		// status_analysis is only ever surfaced for a currently-degraded
+		// service (AI-16) - defense-in-depth re-check here even though
+		// SLOAnalyzer already clears the stored column to NULL on any
+		// other transition (AI-15/AI-17), so a stale value can never leak
+		// through this DTO for a non-degraded service.
+		var statusAnalysis *string
+		if service.CurrentStatus == "degraded" {
+			statusAnalysis = service.StatusAnalysis
+		}
+
 		resp.Services = append(resp.Services, publicServiceResponse{
-			Name:          service.Name,
-			Status:        service.CurrentStatus,
-			LastUpdatedAt: openIntervals[service.ID].LastSeenAt,
-			History:       toPublicHistoryResponses(buckets),
-			UptimePercent: uptimePercent,
+			Name:           service.Name,
+			Status:         service.CurrentStatus,
+			LastUpdatedAt:  openIntervals[service.ID].LastSeenAt,
+			History:        toPublicHistoryResponses(buckets),
+			UptimePercent:  uptimePercent,
+			StatusAnalysis: statusAnalysis,
 		})
 	}
 
@@ -305,12 +330,13 @@ func toPublicIncidentResponses(incidents []db.IncidentPublic) []publicIncidentRe
 			updates[j] = publicIncidentUpdateResponse{Body: update.Body, CreatedAt: update.CreatedAt}
 		}
 		resp[i] = publicIncidentResponse{
-			ID:         incident.ID,
-			Title:      incident.Title,
-			Status:     incident.Status,
-			CreatedAt:  incident.CreatedAt,
-			ResolvedAt: incident.ResolvedAt,
-			Updates:    updates,
+			ID:          incident.ID,
+			Title:       incident.Title,
+			Status:      incident.Status,
+			CreatedAt:   incident.CreatedAt,
+			ResolvedAt:  incident.ResolvedAt,
+			Updates:     updates,
+			Description: incident.Description,
 		}
 	}
 	return resp
