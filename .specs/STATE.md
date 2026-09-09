@@ -16,6 +16,14 @@
 - **Trade-off**: Se o modelo de negócio mudar pra SaaS hospedado multi-cliente no futuro, exige retrofit de tenant em todas as tabelas.
 - **Scope**: Todo o schema de dados do projeto.
 - **Date**: 2026-08-06
+- **Status**: superseded by AD-022 (2026-09-09)
+
+### AD-022
+- **Decision**: Reverte AD-002. Vane passa a suportar dois modelos de distribuição sobre a mesma base de código: self-hosted (1 tenant único auto-provisionado no `/bootstrap`, sem billing, licença anual via servidor de licença Zeep) e SaaS (multi-tenant real, signup público, plano free + pagos, LLM gated por plano). Isolamento de dado via shared schema + `tenant_id` obrigatório em toda tabela de domínio, com RLS do Postgres como enforcement (fail-closed, não só filtro em código). Um `user` (email) é identidade global, podendo ter `tenant_membership` em N tenants — sem seletor de tenant quando só existe 1 (caso de todo self-hosted). Roteamento do admin dashboard é domínio único + seleção de tenant por conta (não subdomínio). Design completo em `.specs/features/multi-tenancy-core/design.md`.
+- **Reason**: Mudança de modelo de negócio (Vane também vira produto SaaS da Zeep, não só self-hosted open source) торna a premissa de isolamento-por-deploy do AD-002 insuficiente. RLS obrigatório em vez de só filtro em código porque o histórico de repositories deste projeto já tem múltiplos pontos onde esquecer 1 `WHERE` vazaria dado — inaceitável entre clientes pagantes.
+- **Trade-off**: Toda tabela de domínio existente precisa de `tenant_id` + policy RLS; todo repository precisa setar `app.tenant_id` por transação. Sem instalação self-hosted externa real em produção hoje (só ambiente de teste da Starbem), decisão explícita foi tratar essa mudança como schema breaking, sem migração retrocompatível — reavaliar no dia em que existir o primeiro cliente self-hosted externo real, quando migração passa a exigir compatibilidade com dado existente.
+- **Scope**: Todo o schema de dados do projeto; auth/sessão (extensão aditiva do AD-004); provisionamento (`/bootstrap`, convite de admin em `internal/api/admins.go`).
+- **Date**: 2026-09-09
 - **Status**: active
 
 ### AD-003
