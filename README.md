@@ -55,7 +55,7 @@ docker compose up -d
 | **Draft → Published pages** | A page can exist and be previewed (`/api/status-pages/{id}/public-preview`) before any domain is attached (AD-008) |
 | **Deletable domains & status pages** | Both can be deleted from the admin dashboard (with confirmation); deleting a domain still attached to a status page is rejected with a 409 instead |
 | **Incident timelines** | Incidents link to one or more services, surfaced on the public page for 90 days after resolution |
-| **Hourly uptime history** | Public page renders per-service hourly status bars computed from `status_intervals` |
+| **Selectable uptime history range** | Public page renders per-service status bars computed from `status_intervals`, switchable between 24h (1h bars), 7d (6h bars), 30d (1d bars), and 90d (1d bars) via a page-wide selector — no page reload |
 | **White-label branding** | Company name + logo shown on the public page (`company_settings` singleton) |
 | **Paginated admin lists** | Domains, services, status pages, admins, incidents, poller status, and public resolved-incidents all paginate (`Page[T]` envelope, AD-012) |
 

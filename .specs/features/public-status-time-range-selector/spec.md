@@ -94,21 +94,21 @@ Each requirement gets a unique ID for tracking across design, tasks, and validat
 
 | Requirement ID | Story | Phase | Status |
 | --- | --- | --- | --- |
-| TRS-01 | P1: Visitor switches between 24h/7d/30d/90d views | Design | Pending |
-| TRS-02 | P1: Visitor switches between 24h/7d/30d/90d views | Design | Pending |
-| TRS-03 | P1: Visitor switches between 24h/7d/30d/90d views | Design | Pending |
-| TRS-04 | P1: Visitor switches between 24h/7d/30d/90d views | Design | Pending |
-| TRS-05 | P1: Visitor switches between 24h/7d/30d/90d views | Design | Pending |
-| TRS-06 | P1: Visitor switches between 24h/7d/30d/90d views | Design | Pending |
-| TRS-07 | P1: Visitor switches between 24h/7d/30d/90d views | Design | Pending |
-| TRS-08 | P2: 90 days of real history actually exists to show | Design | Pending |
-| TRS-09 | P2: 90 days of real history actually exists to show | Design | Pending |
+| TRS-01 | P1: Visitor switches between 24h/7d/30d/90d views | Design | Verified |
+| TRS-02 | P1: Visitor switches between 24h/7d/30d/90d views | Design | Verified |
+| TRS-03 | P1: Visitor switches between 24h/7d/30d/90d views | Design | Verified |
+| TRS-04 | P1: Visitor switches between 24h/7d/30d/90d views | Design | Verified |
+| TRS-05 | P1: Visitor switches between 24h/7d/30d/90d views | Design | Verified |
+| TRS-06 | P1: Visitor switches between 24h/7d/30d/90d views | Design | Verified |
+| TRS-07 | P1: Visitor switches between 24h/7d/30d/90d views | Design | Verified |
+| TRS-08 | P2: 90 days of real history actually exists to show | Design | Verified |
+| TRS-09 | P2: 90 days of real history actually exists to show | Design | Verified |
 
 **ID format:** `TRS-NN` (Time-Range Selector)
 
 **Status values:** Pending → In Design → In Tasks → Implementing → Verified
 
-**Coverage:** 9 total, 0 mapped to tasks, 9 unmapped ⚠️ (expected pre-Design)
+**Coverage:** 9 total, 9 mapped to tasks, 0 unmapped — independent Verifier PASS (`.specs/features/public-status-time-range-selector/validation.md`), 9/9 ACs with value-exact evidence.
 
 ---
 
