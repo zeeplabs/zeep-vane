@@ -323,3 +323,97 @@ func TestBuildBuckets_NoOverlappingInterval_ResolvesToNoData_AtWideBucketWidth(t
 		}
 	}
 }
+
+// Regression test for the bucket-boundary truncation leak found by the
+// public-status-time-range-selector Verifier (validation.md Finding #1):
+// int(endOffset/bucketWidth) truncates toward zero, so an interval that
+// ended before the window's leftmost bucket start - but less than one
+// bucketWidth before it - produced a negative endOffset that truncated to
+// 0 instead of a negative index, incorrectly painting bucket 0 with a
+// status from outside the rendered window. The defect existed even at
+// bucketWidth=1h (a 1-hour leak band), but this feature's wider buckets
+// (24h on the 30d/90d tiers) grew that band to 24 hours, and
+// ListOverlapping's query lower bound puts the leaked interval inside the
+// fetched data set by construction - making it reachable, not just latent.
+func TestBuildBuckets_OutOfWindowIntervalNearBoundary_DoesNotLeakIntoBucketZero(t *testing.T) {
+	loc := mustLoadSaoPaulo(t)
+
+	t.Run("WideBucketWidth_EndsWithinOneBucketWidthBeforeWindow_ExcludedFromEveryBucket", func(t *testing.T) {
+		now := time.Date(2026, 8, 24, 9, 15, 0, 0, loc)
+
+		// bucketCount=3, bucketWidth=24h -> leftmostStart = 2026-08-22 00:00
+		// (same alignment as TestBuildBuckets_TwentyFourHourWidth_...).
+		// Interval ends 2026-08-21 20:00 - 4h before leftmostStart, well
+		// within one 24h bucketWidth of it.
+		intervals := []db.StatusInterval{
+			closedInterval("outage",
+				time.Date(2026, 8, 21, 10, 0, 0, 0, loc),
+				time.Date(2026, 8, 21, 20, 0, 0, 0, loc)),
+		}
+
+		buckets := BuildBuckets(intervals, now, now, loc, 3, 24*time.Hour)
+
+		if len(buckets) != 3 {
+			t.Fatalf("len(buckets) = %d, want 3", len(buckets))
+		}
+		for i, b := range buckets {
+			if b.Status != NoData {
+				t.Errorf("buckets[%d].Status = %q, want %q (out-of-window interval must not leak into bucket 0)", i, b.Status, NoData)
+			}
+		}
+	})
+
+	t.Run("WideBucketWidth_EndsExactlyAtLeftmostStart_ExcludedFromEveryBucket", func(t *testing.T) {
+		now := time.Date(2026, 8, 24, 9, 15, 0, 0, loc)
+
+		// Boundary pin: the interval ends exactly on leftmostStart
+		// (2026-08-22 00:00) - the bucket that starts there was not yet
+		// overlapped when the interval ended, so it must stay no_data.
+		intervals := []db.StatusInterval{
+			closedInterval("outage",
+				time.Date(2026, 8, 21, 10, 0, 0, 0, loc),
+				time.Date(2026, 8, 22, 0, 0, 0, 0, loc)),
+		}
+
+		buckets := BuildBuckets(intervals, now, now, loc, 3, 24*time.Hour)
+
+		if len(buckets) != 3 {
+			t.Fatalf("len(buckets) = %d, want 3", len(buckets))
+		}
+		for i, b := range buckets {
+			if b.Status != NoData {
+				t.Errorf("buckets[%d].Status = %q, want %q (interval ending exactly at leftmostStart must not overlap bucket 0)", i, b.Status, NoData)
+			}
+		}
+	})
+
+	t.Run("OneHourWidth_EndsShortlyAfterWindowStart_StillCorrectlyIncluded", func(t *testing.T) {
+		// Confirms the fix does not regress a legitimate near-boundary
+		// interval at the original bucketWidth=1h: this interval ends
+		// inside the window (just after leftmostStart, not before it) and
+		// must still be counted in bucket 0, same as before the fix.
+		now := time.Date(2026, 8, 24, 14, 37, 0, 0, loc)
+
+		// bucketCount=24, bucketWidth=1h -> leftmostStart = 2026-08-23 15:00
+		// (same alignment as TestBuildBuckets_OneHourWidth_...).
+		intervals := []db.StatusInterval{
+			closedInterval("outage",
+				time.Date(2026, 8, 23, 15, 10, 0, 0, loc),
+				time.Date(2026, 8, 23, 15, 30, 0, 0, loc)),
+		}
+
+		buckets := BuildBuckets(intervals, now, now, loc, 24, time.Hour)
+
+		if len(buckets) != 24 {
+			t.Fatalf("len(buckets) = %d, want 24", len(buckets))
+		}
+		if got := buckets[0].Status; got != "outage" {
+			t.Errorf("buckets[0].Status = %q, want %q (interval genuinely inside the window must still be counted)", got, "outage")
+		}
+		for i := 1; i < len(buckets); i++ {
+			if buckets[i].Status != NoData {
+				t.Errorf("buckets[%d].Status = %q, want %q", i, buckets[i].Status, NoData)
+			}
+		}
+	})
+}

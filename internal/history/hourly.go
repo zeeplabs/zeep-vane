@@ -89,10 +89,21 @@ func BuildBuckets(intervals []db.StatusInterval, now, asOf time.Time, loc *time.
 		}
 
 		endOffset := endLocal.Sub(leftmostStart)
+		// int(endOffset/bucketWidth) truncates toward zero, not toward
+		// negative infinity - for a negative endOffset (endLocal before
+		// leftmostStart) that truncation lands on 0 instead of a negative
+		// index, which would incorrectly let an interval that ended before
+		// the window even starts paint bucket 0. Flooring (rather than
+		// truncating) the division fixes that at any bucketWidth: a nonzero
+		// remainder on a negative offset means the true quotient is one
+		// less than the truncated one.
 		lastIndex := int(endOffset / bucketWidth)
-		if endOffset%bucketWidth == 0 {
+		rem := endOffset % bucketWidth
+		if rem == 0 {
 			// endLocal lands exactly on a bucket boundary: the bucket that
 			// starts there is not overlapped (the interval already ended).
+			lastIndex--
+		} else if rem < 0 {
 			lastIndex--
 		}
 		if lastIndex >= bucketCount {
