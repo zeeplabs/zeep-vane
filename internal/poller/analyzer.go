@@ -2,8 +2,10 @@ package poller
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"go.uber.org/zap"
@@ -20,6 +22,7 @@ import (
 type incidentStore interface {
 	Create(ctx context.Context, incident *db.Incident, serviceIDs []string) error
 	HasOpenIncidentForService(ctx context.Context, serviceID string) (incidentID string, found bool, err error)
+	AllLinkedServicesOperational(ctx context.Context, incidentID string) (bool, error)
 	SetDescription(ctx context.Context, incidentID, description string) error
 	SetPendingCloseComment(ctx context.Context, incidentID, comment string) error
 }
@@ -40,7 +43,7 @@ type llmGenerator interface {
 	GenerateClosingComment(ctx context.Context, in llm.AnalysisInput) (string, error)
 }
 
-// analysisTimeout is the recommended bound for every async LLM enrichment
+// AnalysisTimeout is the recommended bound for every async LLM enrichment
 // call HandleTransition dispatches - the value callers wiring SLOAnalyzer
 // into production (via NewSLOAnalyzer's timeout parameter) should pass.
 // internal/connectors/openai.Client's own HTTP timeout is already 20s
@@ -56,7 +59,21 @@ type llmGenerator interface {
 // delaying one incident's enrichment - never the poll cycle itself
 // (verified by T15's timing-bounded test, which proves a *hung* call,
 // unbounded by any timeout, still can't delay pollOnce's other services).
-const analysisTimeout = 30 * time.Second
+const AnalysisTimeout = 30 * time.Second
+
+// maxConcurrentEnrichments bounds how many async LLM enrichment goroutines
+// (degraded tooltip, outage description, closing comment - across every
+// service) may be in flight at once. Without this, a poll cycle in which
+// many services transition simultaneously (or a single flapping service
+// keeps re-triggering) would fan out an unbounded number of concurrent,
+// paid API calls with no ceiling and no operator-visible alarm.
+const maxConcurrentEnrichments = 4
+
+// enrichmentCooldown is the minimum time between two enrichment dispatches
+// for the same dedupe key (see dispatch* callers below) - protects against
+// a service flapping in and out of the same state repeatedly generating a
+// fresh (paid) LLM call every single cycle.
+const enrichmentCooldown = 2 * time.Minute
 
 // genericOutageDescription is the fallback incident description written
 // synchronously the moment an outage is detected (AI-12), before any LLM
@@ -94,13 +111,55 @@ type SLOAnalyzer struct {
 	llmSvc    llmGenerator
 	timeout   time.Duration
 	logger    *zap.Logger
+
+	sem chan struct{} // bounds concurrent enrichment goroutines (maxConcurrentEnrichments)
+
+	mu           sync.Mutex
+	lastDispatch map[string]time.Time // dedupe key -> last dispatch time (enrichmentCooldown)
 }
 
 // NewSLOAnalyzer builds an SLOAnalyzer. timeout bounds every async LLM
-// enrichment call HandleTransition dispatches (see analysisTimeout for the
+// enrichment call HandleTransition dispatches (see AnalysisTimeout for the
 // recommended value and its rationale).
 func NewSLOAnalyzer(incidents incidentStore, services statusAnalysisWriter, llmSvc llmGenerator, timeout time.Duration, logger *zap.Logger) *SLOAnalyzer {
-	return &SLOAnalyzer{incidents: incidents, services: services, llmSvc: llmSvc, timeout: timeout, logger: logger}
+	return &SLOAnalyzer{
+		incidents:    incidents,
+		services:     services,
+		llmSvc:       llmSvc,
+		timeout:      timeout,
+		logger:       logger,
+		sem:          make(chan struct{}, maxConcurrentEnrichments),
+		lastDispatch: map[string]time.Time{},
+	}
+}
+
+// tryAcquire reports whether an enrichment dispatch for key is allowed
+// right now: false if key was dispatched within enrichmentCooldown, or if
+// maxConcurrentEnrichments goroutines are already in flight across every
+// service. Both checks are non-blocking - the poll cycle calling into
+// HandleTransition must never wait on either gate; a dispatch that's
+// refused simply leaves the existing fallback text in place, exactly like
+// any other enrichment failure.
+func (a *SLOAnalyzer) tryAcquire(key string) bool {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	if last, ok := a.lastDispatch[key]; ok && time.Since(last) < enrichmentCooldown {
+		return false
+	}
+	select {
+	case a.sem <- struct{}{}:
+	default:
+		return false
+	}
+	a.lastDispatch[key] = time.Now()
+	return true
+}
+
+// release frees one slot acquired by tryAcquire - deferred by every
+// dispatched enrichment goroutine.
+func (a *SLOAnalyzer) release() {
+	<-a.sem
 }
 
 // HandleTransition reacts to svc's status changing from previousStatus to
@@ -181,7 +240,11 @@ func (a *SLOAnalyzer) handleOutageTransition(ctx context.Context, svc db.Service
 
 // handleRecoveryTransition dispatches a closing-comment proposal for svc's
 // recovery to "operational" (AI-19) when an incident is still open for
-// this service - there is nothing to write synchronously here, since the
+// this service and every other service linked to that incident (an
+// incident can cover more than one service via incident_services' N:N
+// shape) has also recovered - one recovered service must never propose
+// closing an incident whose other linked services are still degraded/
+// outage. There is nothing to write synchronously here, since the
 // proposed text only exists once the LLM call in the dispatched goroutine
 // completes.
 func (a *SLOAnalyzer) handleRecoveryTransition(ctx context.Context, svc db.Service, sloStatus datadog.SLOStatus) {
@@ -195,6 +258,16 @@ func (a *SLOAnalyzer) handleRecoveryTransition(ctx context.Context, svc db.Servi
 		return
 	}
 
+	allOperational, err := a.incidents.AllLinkedServicesOperational(ctx, incidentID)
+	if err != nil {
+		a.logger.Error("slo-analyzer: failed to check linked services status for incident",
+			zap.String("incident_id", incidentID), zap.Error(err))
+		return
+	}
+	if !allOperational {
+		return
+	}
+
 	a.dispatchClosingCommentEnrichment(ctx, svc, sloStatus, incidentID)
 }
 
@@ -203,10 +276,22 @@ func (a *SLOAnalyzer) handleRecoveryTransition(ctx context.Context, svc db.Servi
 // via UpdateStatusAnalysis (AI-14). On any failure or timeout it logs and
 // leaves status_analysis NULL - the fallback state HandleTransition's
 // synchronous clear already left it in (AI-16), never an error string.
+// Gated by tryAcquire (maxConcurrentEnrichments/enrichmentCooldown) - a
+// refused dispatch simply leaves that NULL fallback in place.
 func (a *SLOAnalyzer) dispatchDegradedEnrichment(ctx context.Context, svc db.Service, sloStatus datadog.SLOStatus) {
+	key := "degraded:" + svc.ID
+	if !a.tryAcquire(key) {
+		a.logger.Warn("slo-analyzer: skipping degraded enrichment (cooldown or concurrency limit)",
+			zap.String("service_id", svc.ID))
+		return
+	}
+
 	in := buildAnalysisInput(svc, sloStatus)
 
 	go func() {
+		defer a.release()
+		defer a.recoverEnrichmentPanic("degraded", svc.ID)
+
 		dctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), a.timeout)
 		defer cancel()
 
@@ -234,11 +319,22 @@ func (a *SLOAnalyzer) dispatchDegradedEnrichment(ctx context.Context, svc db.Ser
 // SetDescription (AI-10), replacing the generic fallback text
 // handleOutageTransition already persisted synchronously. On any failure
 // or timeout it logs and leaves the generic description in place - it is
-// never overwritten with an error string (AI-13 fallback behavior).
+// never overwritten with an error string (AI-13 fallback behavior). Gated
+// by tryAcquire, same as dispatchDegradedEnrichment.
 func (a *SLOAnalyzer) dispatchOutageEnrichment(ctx context.Context, svc db.Service, sloStatus datadog.SLOStatus, incidentID string) {
+	key := "outage:" + incidentID
+	if !a.tryAcquire(key) {
+		a.logger.Warn("slo-analyzer: skipping outage description enrichment (cooldown or concurrency limit)",
+			zap.String("incident_id", incidentID))
+		return
+	}
+
 	in := buildAnalysisInput(svc, sloStatus)
 
 	go func() {
+		defer a.release()
+		defer a.recoverEnrichmentPanic("outage", incidentID)
+
 		dctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), a.timeout)
 		defer cancel()
 
@@ -255,6 +351,11 @@ func (a *SLOAnalyzer) dispatchOutageEnrichment(ctx context.Context, svc db.Servi
 		}
 
 		if err := a.incidents.SetDescription(dctx, incidentID, description); err != nil {
+			if errors.Is(err, db.ErrIncidentAlreadyResolved) {
+				a.logger.Info("slo-analyzer: incident resolved before outage enrichment completed, discarding description",
+					zap.String("incident_id", incidentID))
+				return
+			}
 			a.logger.Error("slo-analyzer: failed to persist generated outage description",
 				zap.String("incident_id", incidentID), zap.Error(err))
 		}
@@ -267,11 +368,21 @@ func (a *SLOAnalyzer) dispatchOutageEnrichment(ctx context.Context, svc db.Servi
 // owner/operator confirmation. On any failure or timeout it logs and
 // leaves pending_close_comment NULL, so the incident stays open with no
 // proposal and the admin falls back to the existing manual close flow
-// (AI-23).
+// (AI-23). Gated by tryAcquire, same as dispatchDegradedEnrichment.
 func (a *SLOAnalyzer) dispatchClosingCommentEnrichment(ctx context.Context, svc db.Service, sloStatus datadog.SLOStatus, incidentID string) {
+	key := "close:" + incidentID
+	if !a.tryAcquire(key) {
+		a.logger.Warn("slo-analyzer: skipping closing comment enrichment (cooldown or concurrency limit)",
+			zap.String("incident_id", incidentID))
+		return
+	}
+
 	in := buildAnalysisInput(svc, sloStatus)
 
 	go func() {
+		defer a.release()
+		defer a.recoverEnrichmentPanic("closing-comment", incidentID)
+
 		dctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), a.timeout)
 		defer cancel()
 
@@ -288,8 +399,29 @@ func (a *SLOAnalyzer) dispatchClosingCommentEnrichment(ctx context.Context, svc 
 		}
 
 		if err := a.incidents.SetPendingCloseComment(dctx, incidentID, comment); err != nil {
+			if errors.Is(err, db.ErrIncidentAlreadyResolved) {
+				a.logger.Info("slo-analyzer: incident resolved before closing-comment enrichment completed, discarding proposal",
+					zap.String("incident_id", incidentID))
+				return
+			}
 			a.logger.Error("slo-analyzer: failed to persist generated closing comment",
 				zap.String("incident_id", incidentID), zap.Error(err))
 		}
 	}()
+}
+
+// recoverEnrichmentPanic recovers a panic inside any enrichment goroutine
+// and logs it instead of letting it crash the process. None of these
+// goroutines' work (an LLM completion, a repository write) should ever
+// panic, but this package has no other supervision for detached
+// goroutines, and a crash here would take down the public status page -
+// the one thing this product exists to keep available - over a failure in
+// a best-effort background enrichment. kind/key identify which dispatch
+// call this recover belongs to, for correlating with the corresponding
+// dispatch/generate log lines.
+func (a *SLOAnalyzer) recoverEnrichmentPanic(kind, key string) {
+	if r := recover(); r != nil {
+		a.logger.Error("slo-analyzer: recovered panic in enrichment goroutine",
+			zap.String("kind", kind), zap.String("key", key), zap.Any("panic", r))
+	}
 }

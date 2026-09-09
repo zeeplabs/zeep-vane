@@ -237,14 +237,7 @@ func (p *Poller) pollService(ctx context.Context, svc db.Service) error {
 		current = normalizeStatus(status.State)
 	}
 
-	// SLOAnalyzer is notified exactly once per service per cycle, only when
-	// a transition actually occurred (AI-06/AI-18) - a service whose status
-	// is unchanged this cycle must make zero calls into it, not rely on
-	// HandleTransition's own no-op guard to absorb a redundant call every
-	// cycle a service stays in the same state.
-	if current != svc.CurrentStatus {
-		p.analyzer.HandleTransition(ctx, svc, svc.CurrentStatus, current, status)
-	}
+	transitioned := current != svc.CurrentStatus
 
 	if err := p.statusIntervals.OpenOrExtend(ctx, svc.ID, current, status.ErrorBudgetRemaining, time.Now()); err != nil {
 		p.logger.Error("poller: failed to open or extend status interval",
@@ -256,6 +249,21 @@ func (p *Poller) pollService(ctx context.Context, svc db.Service) error {
 		p.logger.Error("poller: failed to update service status",
 			zap.String("service_id", svc.ID), zap.Error(err))
 		return err
+	}
+
+	// SLOAnalyzer is notified exactly once per service per cycle, only when
+	// a transition actually occurred (AI-06/AI-18) - a service whose status
+	// is unchanged this cycle must make zero calls into it, not rely on
+	// HandleTransition's own no-op guard to absorb a redundant call every
+	// cycle a service stays in the same state. Dispatched only after
+	// current_status has actually been persisted above: if OpenOrExtend or
+	// UpdateStatus had failed, svc.CurrentStatus in storage would still be
+	// the old value and next cycle's comparison would see the same
+	// transition again, re-dispatching an LLM call for every subsequent
+	// cycle until the write finally succeeds - persisting first makes the
+	// transition idempotent from HandleTransition's point of view.
+	if transitioned {
+		p.analyzer.HandleTransition(ctx, svc, svc.CurrentStatus, current, status)
 	}
 
 	return nil

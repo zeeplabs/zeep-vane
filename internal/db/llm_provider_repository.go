@@ -191,8 +191,11 @@ func (r *LLMProviderRepository) MarkInvalid(ctx context.Context, provider, lastE
 }
 
 // MarkChecked records that provider's stored credentials were confirmed
-// valid, setting status to 'connected', clearing any previous last_error,
-// and stamping last_checked_at.
+// valid by a successful Generate* call, setting status to 'connected',
+// clearing any previous last_error, and stamping last_checked_at. Callers
+// must only invoke this after an actual successful completion - see
+// MarkTransientFailure for a failed-but-not-unauthorized call, which must
+// not silently clear a previously recorded 'invalid' status.
 func (r *LLMProviderRepository) MarkChecked(ctx context.Context, provider string) error {
 	_, err := r.pool.Exec(ctx,
 		"UPDATE llm_providers SET status = 'connected', last_checked_at = now(), last_error = NULL WHERE provider = $1",
@@ -200,6 +203,27 @@ func (r *LLMProviderRepository) MarkChecked(ctx context.Context, provider string
 	)
 	if err != nil {
 		return fmt.Errorf("db: failed to mark llm provider checked: %w", err)
+	}
+
+	return nil
+}
+
+// MarkTransientFailure records that provider's stored credentials were
+// used in a Generate* call that failed for a reason other than
+// authorization (timeout, 5xx, network error, empty response) - it stamps
+// last_checked_at/last_error but deliberately leaves status untouched.
+// Unlike MarkChecked, a transient failure is not evidence the credentials
+// are valid: calling MarkChecked here would silently clear a previously
+// recorded 'invalid' status (set by MarkInvalid after a revoked key was
+// detected) the moment any unrelated 5xx or timeout occurred afterward,
+// making 'invalid' effectively unobservable.
+func (r *LLMProviderRepository) MarkTransientFailure(ctx context.Context, provider, lastError string) error {
+	_, err := r.pool.Exec(ctx,
+		"UPDATE llm_providers SET last_checked_at = now(), last_error = $2 WHERE provider = $1",
+		provider, lastError,
+	)
+	if err != nil {
+		return fmt.Errorf("db: failed to mark llm provider transient failure: %w", err)
 	}
 
 	return nil
@@ -286,4 +310,8 @@ func (a *llmProviderStoreAdapter) MarkInvalid(ctx context.Context, provider, las
 
 func (a *llmProviderStoreAdapter) MarkChecked(ctx context.Context, provider string) error {
 	return a.repo.MarkChecked(ctx, provider)
+}
+
+func (a *llmProviderStoreAdapter) MarkTransientFailure(ctx context.Context, provider, lastError string) error {
+	return a.repo.MarkTransientFailure(ctx, provider, lastError)
 }

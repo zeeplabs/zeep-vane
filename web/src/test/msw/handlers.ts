@@ -959,18 +959,34 @@ export const handlers = [
   }),
 
   // POST /api/incidents/:id/confirm-close (AI-20/AI-21) - mirrors
-  // IncidentsHandler.ConfirmClose: appends the pending_close_comment as the
+  // IncidentsHandler.ConfirmClose: the body's comment must match the
+  // incident's current pending_close_comment exactly (post-review fix:
+  // confirming stale text is no longer allowed). Appends it as the
   // incident's final update, transitions to resolved, and clears the
-  // proposal. 404 unknown incident, 422 when there is no pending proposal.
-  http.post("/api/incidents/:id/confirm-close", ({ params }) => {
+  // proposal. 404 unknown incident, 422 malformed body/no pending proposal,
+  // 409 comment mismatch.
+  http.post("/api/incidents/:id/confirm-close", async ({ params, request }) => {
     if (!sessionAdminId) return HttpResponse.json({ error: "unauthorized" }, { status: 401 });
     const incidentId = params.id as string;
     const incident = incidentsState.find((i) => i.id === incidentId);
     if (!incident) {
       return HttpResponse.json({ error: "incident not found" }, { status: 404 });
     }
+    const body = (await request.json().catch(() => null)) as { comment?: string } | null;
+    if (!body?.comment) {
+      return HttpResponse.json(
+        { error: "comment is required and must match the currently pending close proposal" },
+        { status: 422 },
+      );
+    }
     if (!incident.pending_close_comment) {
       return HttpResponse.json({ error: "incident has no pending close proposal" }, { status: 422 });
+    }
+    if (body.comment !== incident.pending_close_comment) {
+      return HttpResponse.json(
+        { error: "the pending close proposal changed since it was displayed - reload and try again" },
+        { status: 409 },
+      );
     }
     incidentUpdateIdCounter += 1;
     incidentUpdatesState.push({

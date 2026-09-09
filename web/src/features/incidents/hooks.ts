@@ -64,11 +64,19 @@ export function useTransitionIncident(incidentId: string) {
 // useConfirmCloseIncident accepts the LLM-drafted closing comment awaiting
 // confirmation (AI-20): it's appended as the incident's final update and
 // the incident transitions to resolved, all server-side in one
-// transaction - POST /api/incidents/{id}/confirm-close.
+// transaction - POST /api/incidents/{id}/confirm-close. The caller must
+// pass back the exact comment text it displayed to the operator - the
+// server rejects with 409 if it no longer matches the stored proposal
+// (e.g. a later poll cycle regenerated it), so an operator can never
+// confirm text they didn't actually see.
 export function useConfirmCloseIncident(incidentId: string) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: () => apiFetch<Incident>(`/api/incidents/${incidentId}/confirm-close`, { method: "POST" }),
+    mutationFn: (comment: string) =>
+      apiFetch<Incident>(`/api/incidents/${incidentId}/confirm-close`, {
+        method: "POST",
+        body: JSON.stringify({ comment }),
+      }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["incidents"] });
     },

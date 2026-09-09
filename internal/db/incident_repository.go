@@ -565,29 +565,62 @@ func (r *IncidentRepository) withTimelines(ctx context.Context, incidents []Inci
 // status (422, not 404) (AI-21, AI-22).
 var ErrNoPendingProposal = errors.New("db: no pending close proposal")
 
-// SetDescription updates incidentID's description column (AI-09, AI-11).
-// Returns ErrNotFound if incidentID doesn't exist.
+// ErrCloseProposalChanged is returned by ConfirmPendingClose when the
+// caller's expectedComment no longer matches the stored
+// pending_close_comment - the proposal was overwritten (a later poll cycle
+// regenerated it after the operator loaded the page but before they
+// clicked confirm) or already cleared, so confirming now would resolve the
+// incident with text the operator never actually reviewed. Distinct from
+// ErrNoPendingProposal so handlers can map it to its own HTTP status (409).
+var ErrCloseProposalChanged = errors.New("db: pending close proposal changed since it was read")
+
+// ErrIncidentAlreadyResolved is returned by SetDescription/
+// SetPendingCloseComment when incidentID exists but has already been
+// resolved (typically manually, by an admin, while an async LLM
+// enrichment call for it was still in flight) - the write is refused
+// rather than silently reopening or overwriting a closed incident's
+// content.
+var ErrIncidentAlreadyResolved = errors.New("db: incident is already resolved")
+
+// SetDescription updates incidentID's description column (AI-09, AI-11),
+// unless the incident has since been resolved - the async LLM enrichment
+// goroutine that calls this can complete up to a.timeout after the incident
+// was created, and an operator may have manually resolved it in that
+// window; overwriting a resolved incident's description would surprise
+// whoever already closed it out. A no-op in that case is logged, not
+// treated as an error. Returns ErrNotFound if incidentID doesn't exist.
 func (r *IncidentRepository) SetDescription(ctx context.Context, incidentID, description string) error {
 	if err := r.mustExist(ctx, incidentID); err != nil {
 		return err
 	}
 
-	if _, err := r.pool.Exec(ctx, "UPDATE incidents SET description = $2 WHERE id = $1", incidentID, description); err != nil {
+	tag, err := r.pool.Exec(ctx,
+		"UPDATE incidents SET description = $2 WHERE id = $1 AND status <> 'resolved'",
+		incidentID, description,
+	)
+	if err != nil {
 		return fmt.Errorf("db: failed to set incident description: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrIncidentAlreadyResolved
 	}
 
 	return nil
 }
 
-// HasOpenIncidentForService reports whether serviceID has any incident
-// linked to it whose status isn't "resolved" - used by SLOAnalyzer to skip
-// creating a duplicate outage incident (AI-12) and to detect a recovery
-// needing a closing-comment proposal (AI-19).
+// HasOpenIncidentForService reports whether serviceID has any
+// auto-detected incident linked to it whose status isn't "resolved" - used
+// by SLOAnalyzer to skip creating a duplicate outage incident (AI-12) and
+// to detect a recovery needing a closing-comment proposal (AI-19). Scoped
+// to auto_created = true: a manually-created incident (e.g. a maintenance
+// window an operator opened by hand) must never suppress a real outage
+// incident for the same service, and must never receive an LLM-drafted
+// closing-comment proposal it has no relation to.
 func (r *IncidentRepository) HasOpenIncidentForService(ctx context.Context, serviceID string) (incidentID string, found bool, err error) {
 	row := r.pool.QueryRow(ctx,
 		`SELECT i.id FROM incidents i
 		 JOIN incident_services isv ON isv.incident_id = i.id
-		 WHERE isv.service_id = $1 AND i.status <> 'resolved'
+		 WHERE isv.service_id = $1 AND i.status <> 'resolved' AND i.auto_created = true
 		 LIMIT 1`,
 		serviceID,
 	)
@@ -601,15 +634,49 @@ func (r *IncidentRepository) HasOpenIncidentForService(ctx context.Context, serv
 	return incidentID, true, nil
 }
 
+// AllLinkedServicesOperational reports whether every service linked to
+// incidentID currently has current_status = 'operational'. Used by
+// SLOAnalyzer before proposing a closing comment (AI-19): an incident can
+// be linked to more than one service (incident_services is N:N), so one
+// service recovering must not by itself propose closing an incident whose
+// other linked services are still degraded/outage.
+func (r *IncidentRepository) AllLinkedServicesOperational(ctx context.Context, incidentID string) (bool, error) {
+	row := r.pool.QueryRow(ctx,
+		`SELECT NOT EXISTS (
+			SELECT 1 FROM incident_services isv
+			JOIN services s ON s.id = isv.service_id
+			WHERE isv.incident_id = $1 AND s.current_status <> 'operational'
+		)`,
+		incidentID,
+	)
+
+	var allOperational bool
+	if err := row.Scan(&allOperational); err != nil {
+		return false, fmt.Errorf("db: failed to check linked services status for incident: %w", err)
+	}
+
+	return allOperational, nil
+}
+
 // SetPendingCloseComment stores comment as incidentID's awaiting-confirmation
-// closing comment (AI-19). Returns ErrNotFound if incidentID doesn't exist.
+// closing comment (AI-19), unless the incident has since been resolved (see
+// SetDescription's doc comment for the same race and rationale) - a
+// resolved incident must never grow a new closing-comment proposal.
+// Returns ErrNotFound if incidentID doesn't exist.
 func (r *IncidentRepository) SetPendingCloseComment(ctx context.Context, incidentID, comment string) error {
 	if err := r.mustExist(ctx, incidentID); err != nil {
 		return err
 	}
 
-	if _, err := r.pool.Exec(ctx, "UPDATE incidents SET pending_close_comment = $2 WHERE id = $1", incidentID, comment); err != nil {
+	tag, err := r.pool.Exec(ctx,
+		"UPDATE incidents SET pending_close_comment = $2 WHERE id = $1 AND status <> 'resolved'",
+		incidentID, comment,
+	)
+	if err != nil {
 		return fmt.Errorf("db: failed to set incident pending close comment: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrIncidentAlreadyResolved
 	}
 
 	return nil
@@ -618,10 +685,18 @@ func (r *IncidentRepository) SetPendingCloseComment(ctx context.Context, inciden
 // ConfirmPendingClose appends incidentID's pending_close_comment as a
 // normal incident_update, transitions the incident to "resolved", and
 // clears pending_close_comment - all inside one transaction, so a caller
-// never observes a partial apply (AI-20). Returns ErrNotFound if incidentID
-// doesn't exist, ErrNoPendingProposal if it exists but has no pending
-// comment set.
-func (r *IncidentRepository) ConfirmPendingClose(ctx context.Context, incidentID string) (*Incident, error) {
+// never observes a partial apply (AI-20). expectedComment must match the
+// stored pending_close_comment exactly - the caller (the handler) is
+// expected to pass back whatever text it last displayed to the operator,
+// so a proposal silently regenerated by a later poll cycle (or already
+// discarded/confirmed) between page load and the operator's click can
+// never be resolved with text nobody actually reviewed; a mismatch returns
+// ErrCloseProposalChanged instead of applying the newer text. The
+// SELECT ... FOR UPDATE below also serializes against a concurrent
+// SetPendingCloseComment write from the async enrichment goroutine.
+// Returns ErrNotFound if incidentID doesn't exist, ErrNoPendingProposal if
+// it exists but has no pending comment set.
+func (r *IncidentRepository) ConfirmPendingClose(ctx context.Context, incidentID, expectedComment string) (*Incident, error) {
 	if err := r.mustExist(ctx, incidentID); err != nil {
 		return nil, err
 	}
@@ -632,32 +707,36 @@ func (r *IncidentRepository) ConfirmPendingClose(ctx context.Context, incidentID
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
+	var current *string
+	if err := tx.QueryRow(ctx,
+		"SELECT pending_close_comment FROM incidents WHERE id = $1 FOR UPDATE",
+		incidentID,
+	).Scan(&current); err != nil {
+		return nil, fmt.Errorf("db: failed to lock incident for confirm-close: %w", err)
+	}
+	if current == nil {
+		return nil, ErrNoPendingProposal
+	}
+	if *current != expectedComment {
+		return nil, ErrCloseProposalChanged
+	}
+
 	incident := &Incident{ID: incidentID}
-	var comment *string
 	row := tx.QueryRow(ctx,
-		`WITH old AS (SELECT pending_close_comment FROM incidents WHERE id = $1)
-		 UPDATE incidents
+		`UPDATE incidents
 		 SET status = 'resolved', resolved_at = now(), pending_close_comment = NULL
-		 WHERE id = $1 AND pending_close_comment IS NOT NULL
-		 RETURNING title, status, created_at, resolved_at, description, auto_created,
-		           (SELECT pending_close_comment FROM old)`,
+		 WHERE id = $1
+		 RETURNING title, status, created_at, resolved_at, description, auto_created`,
 		incidentID,
 	)
 	if err := row.Scan(&incident.Title, &incident.Status, &incident.CreatedAt, &incident.ResolvedAt,
-		&incident.Description, &incident.AutoCreated, &comment); err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, ErrNoPendingProposal
-		}
+		&incident.Description, &incident.AutoCreated); err != nil {
 		return nil, fmt.Errorf("db: failed to confirm pending close: %w", err)
 	}
 
-	body := ""
-	if comment != nil {
-		body = *comment
-	}
 	if _, err := tx.Exec(ctx,
 		"INSERT INTO incident_updates (incident_id, body) VALUES ($1, $2)",
-		incidentID, body,
+		incidentID, expectedComment,
 	); err != nil {
 		return nil, fmt.Errorf("db: failed to record closing comment on timeline: %w", err)
 	}

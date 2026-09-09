@@ -486,9 +486,13 @@ func TestTransitionIncident_ReopenAfterResolved_AllowedAndRecordedOnTimeline(t *
 	}
 }
 
-func postConfirmClose(t *testing.T, r http.Handler, token, incidentID string) *httptest.ResponseRecorder {
+func postConfirmClose(t *testing.T, r http.Handler, token, incidentID, comment string) *httptest.ResponseRecorder {
 	t.Helper()
-	req := httptest.NewRequest(http.MethodPost, "/api/incidents/"+incidentID+"/confirm-close", nil)
+	body, err := json.Marshal(confirmCloseRequest{Comment: comment})
+	if err != nil {
+		t.Fatalf("json.Marshal() returned unexpected error: %v", err)
+	}
+	req := httptest.NewRequest(http.MethodPost, "/api/incidents/"+incidentID+"/confirm-close", bytes.NewReader(body))
 	if token != "" {
 		req.Header.Set("Authorization", "Bearer "+token)
 	}
@@ -514,7 +518,7 @@ func TestConfirmClose_UnknownIncident_404(t *testing.T) {
 	r, _, admins := newIncidentsRouter(t)
 	token := issueTestSessionToken(t, admins)
 
-	rec := postConfirmClose(t, r, token, "00000000-0000-0000-0000-000000000000")
+	rec := postConfirmClose(t, r, token, "00000000-0000-0000-0000-000000000000", "anything")
 
 	if rec.Code != http.StatusNotFound {
 		t.Errorf("status = %d, want %d, body = %s", rec.Code, http.StatusNotFound, rec.Body.String())
@@ -528,7 +532,7 @@ func TestConfirmClose_NoPendingProposal_422(t *testing.T) {
 	token := issueTestSessionToken(t, admins)
 	incident := createTestIncident(t, r, pool, token, "confirm-close no-pending test incident")
 
-	rec := postConfirmClose(t, r, token, incident.ID)
+	rec := postConfirmClose(t, r, token, incident.ID, "anything")
 
 	if rec.Code != http.StatusUnprocessableEntity {
 		t.Errorf("status = %d, want %d, body = %s", rec.Code, http.StatusUnprocessableEntity, rec.Body.String())
@@ -548,7 +552,7 @@ func TestConfirmClose_Success_200_ResolvedWithFinalUpdate(t *testing.T) {
 		t.Fatalf("setup SetPendingCloseComment() returned unexpected error: %v", err)
 	}
 
-	rec := postConfirmClose(t, r, token, incident.ID)
+	rec := postConfirmClose(t, r, token, incident.ID, "service recovered, closing out")
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
 	}
@@ -577,6 +581,27 @@ func TestConfirmClose_Success_200_ResolvedWithFinalUpdate(t *testing.T) {
 	}
 	if len(page.Items) != 1 || page.Items[0].Body != "service recovered, closing out" {
 		t.Errorf("timeline = %+v, want a single update carrying the pending comment", page.Items)
+	}
+}
+
+// TestConfirmClose_CommentMismatch_409 covers the post-review fix: a
+// caller confirming with text that no longer matches the stored proposal
+// (e.g. stale from before a page refresh) is rejected, never resolves the
+// incident.
+func TestConfirmClose_CommentMismatch_409(t *testing.T) {
+	r, pool, admins := newIncidentsRouter(t)
+	token := issueTestSessionToken(t, admins)
+	incident := createTestIncident(t, r, pool, token, "confirm-close mismatch test incident")
+
+	repo := db.NewIncidentRepository(pool)
+	if err := repo.SetPendingCloseComment(context.Background(), incident.ID, "current proposal"); err != nil {
+		t.Fatalf("setup SetPendingCloseComment() returned unexpected error: %v", err)
+	}
+
+	rec := postConfirmClose(t, r, token, incident.ID, "stale proposal")
+
+	if rec.Code != http.StatusConflict {
+		t.Errorf("status = %d, want %d, body = %s", rec.Code, http.StatusConflict, rec.Body.String())
 	}
 }
 

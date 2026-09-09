@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from "react";
 import { useParams } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 import { Card } from "../../components/ui/Card";
 import { Tag } from "../../components/ui/Tag";
 import { Button } from "../../components/ui/Button";
@@ -24,6 +25,7 @@ const transitionOptions: { value: IncidentStatus; label: string }[] = [
 
 export function IncidentDetail() {
   const { id = "" } = useParams();
+  const { t } = useTranslation();
   const { hasRole } = useAuth();
   const canManage = hasRole(["owner", "operator"]);
   // SPEC_DEVIATION: design.md/tasks.md didn't account for IncidentDetail.tsx
@@ -60,11 +62,12 @@ export function IncidentDetail() {
   }
 
   async function handleConfirmClose() {
+    if (!incident?.pending_close_comment) return;
     setProposalError(null);
     try {
-      await confirmClose.mutateAsync();
+      await confirmClose.mutateAsync(incident.pending_close_comment);
     } catch (err) {
-      setProposalError(err instanceof ApiError ? err.message : "Não foi possível confirmar o encerramento.");
+      setProposalError(err instanceof ApiError ? err.message : t("incidentDetail.genericConfirmCloseError"));
     }
   }
 
@@ -73,7 +76,7 @@ export function IncidentDetail() {
     try {
       await discardCloseProposal.mutateAsync();
     } catch (err) {
-      setProposalError(err instanceof ApiError ? err.message : "Não foi possível descartar a proposta.");
+      setProposalError(err instanceof ApiError ? err.message : t("incidentDetail.genericDiscardProposalError"));
     }
   }
 
@@ -100,7 +103,7 @@ export function IncidentDetail() {
           style={{ border: "1px solid color-mix(in oklch, var(--color-accent) 30%, var(--color-divider))" }}
         >
           <p className="m-0 text-xs uppercase tracking-wide text-neutral-400">
-            Comentário de encerramento sugerido pela IA
+            {t("incidentDetail.pendingCloseBannerLabel")}
           </p>
           <p className="m-0 text-sm text-text">{incident.pending_close_comment}</p>
           {proposalError ? (
@@ -115,14 +118,14 @@ export function IncidentDetail() {
                 onClick={handleConfirmClose}
                 disabled={confirmClose.isPending || discardCloseProposal.isPending}
               >
-                Confirmar encerramento
+                {t("incidentDetail.confirmCloseButton")}
               </Button>
               <Button
                 variant="secondary"
                 onClick={handleDiscardCloseProposal}
                 disabled={confirmClose.isPending || discardCloseProposal.isPending}
               >
-                Descartar
+                {t("incidentDetail.discardProposalButton")}
               </Button>
             </div>
           ) : null}

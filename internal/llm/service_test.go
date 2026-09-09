@@ -14,19 +14,21 @@ const testMasterKey = "test-master-key"
 
 // fakeStore is an in-memory LLMProviderStore double - no real DB.
 type fakeStore struct {
-	rows           map[string]*ProviderRecord
-	activeProvider string
-	upsertErr      error
-	getErr         error
-	listErr        error
-	getActiveErr   error
-	setActiveErr   error
-	updateModelErr error
-	markInvalidErr error
-	markCheckedErr error
+	rows                    map[string]*ProviderRecord
+	activeProvider          string
+	upsertErr               error
+	getErr                  error
+	listErr                 error
+	getActiveErr            error
+	setActiveErr            error
+	updateModelErr          error
+	markInvalidErr          error
+	markCheckedErr          error
+	markTransientFailureErr error
 
-	markInvalidCalls []string // provider
-	markCheckedCalls []string // provider
+	markInvalidCalls          []string // provider
+	markCheckedCalls          []string // provider
+	markTransientFailureCalls []string // provider
 }
 
 func newFakeStore() *fakeStore {
@@ -129,6 +131,17 @@ func (f *fakeStore) MarkChecked(_ context.Context, provider string) error {
 	return nil
 }
 
+func (f *fakeStore) MarkTransientFailure(_ context.Context, provider, lastError string) error {
+	if f.markTransientFailureErr != nil {
+		return f.markTransientFailureErr
+	}
+	f.markTransientFailureCalls = append(f.markTransientFailureCalls, provider)
+	if row, ok := f.rows[provider]; ok {
+		row.LastError = &lastError
+	}
+	return nil
+}
+
 // fakeProvider is a Provider double recording whether it was asked to
 // validate, and what to return.
 type fakeProvider struct {
@@ -192,6 +205,33 @@ func TestConnect_ExplicitModel_Persisted(t *testing.T) {
 	row := store.rows["openai"]
 	if row.Model != "gpt-4o" {
 		t.Errorf("Model = %q, want %q", row.Model, "gpt-4o")
+	}
+}
+
+// TestConnect_UnknownModel_ReturnsErrUnknownModel_NeverCallsFactory covers
+// the post-review fix: Connect must reject a model outside the allowlist
+// before ever calling the factory/ValidateCredentials, same as SetModel -
+// previously only SetModel validated the model, so a caller could persist
+// an off-allowlist model straight through Connect, silently breaking every
+// subsequent Generate* call.
+func TestConnect_UnknownModel_ReturnsErrUnknownModel_NeverCallsFactory(t *testing.T) {
+	store := newFakeStore()
+	factoryCalled := false
+	factory := func(provider, apiKey, model string) (Provider, error) {
+		factoryCalled = true
+		return &fakeProvider{}, nil
+	}
+	svc := newTestService(store, factory)
+
+	err := svc.Connect(t.Context(), "openai", "real-api-key", "gpt-3.5-turbo-instruct")
+	if !errors.Is(err, ErrUnknownModel) {
+		t.Fatalf("Connect() error = %v, want ErrUnknownModel", err)
+	}
+	if factoryCalled {
+		t.Error("Connect() called the factory despite an off-allowlist model")
+	}
+	if _, ok := store.rows["openai"]; ok {
+		t.Fatal("Connect() persisted a row despite an off-allowlist model")
 	}
 }
 

@@ -263,12 +263,7 @@ func newPollerFromStoredIntegration(ctx context.Context, pool *db.Pool, cfg conf
 
 	incidents := db.NewIncidentRepository(pool)
 	llmSvc := llm.NewService(db.NewLLMProviderStore(db.NewLLMProviderRepository(pool)), llmProviderFactory, cfg.MasterKey, logger)
-	// analysisTimeoutSeconds mirrors internal/poller.analysisTimeout's
-	// documented 30s default (unexported there, so restated here rather
-	// than threading a new config surface through for a value design.md
-	// doesn't call out as needing to be admin-configurable).
-	const analysisTimeoutSeconds = 30 * time.Second
-	analyzer := poller.NewSLOAnalyzer(incidents, services, llmSvc, analysisTimeoutSeconds, logger)
+	analyzer := poller.NewSLOAnalyzer(incidents, services, llmSvc, poller.AnalysisTimeout, logger)
 
 	return poller.NewPoller(services, services, intervals, integrations, client, interval, analyzer, logger), true, nil
 }

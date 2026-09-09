@@ -29,6 +29,14 @@ type fakeIncidentStore struct {
 	createErr        error
 	hasOpenErr       error
 
+	// notAllOperational, keyed by incident ID, opts an incident out of the
+	// default "all linked services operational" fake response - tests that
+	// need AllLinkedServicesOperational to return false set the entry
+	// before invoking HandleTransition. Absent/false means "all
+	// operational" (the default every existing recovery test relies on).
+	notAllOperational       map[string]bool
+	allLinkedOperationalErr error
+
 	setDescriptionCalls []string // incidentID
 	setDescriptionTexts []string // description, parallel to setDescriptionCalls
 	setDescriptionErr   error
@@ -59,6 +67,15 @@ func (f *fakeIncidentStore) HasOpenIncidentForService(ctx context.Context, servi
 	}
 	id, ok := f.openIncidents[serviceID]
 	return id, ok, nil
+}
+
+func (f *fakeIncidentStore) AllLinkedServicesOperational(ctx context.Context, incidentID string) (bool, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.allLinkedOperationalErr != nil {
+		return false, f.allLinkedOperationalErr
+	}
+	return !f.notAllOperational[incidentID], nil
 }
 
 func (f *fakeIncidentStore) SetDescription(ctx context.Context, incidentID, description string) error {
@@ -383,6 +400,27 @@ func TestSLOAnalyzer_HandleTransition_OperationalWithNoOpenIncident_DoesNothing(
 	}
 	if len(pendingCalls) != 0 {
 		t.Errorf("SetPendingCloseComment called %d times, want 0", len(pendingCalls))
+	}
+}
+
+// TestSLOAnalyzer_HandleTransition_RecoveryWithOtherLinkedServiceStillDown_SkipsClosingProposal
+// covers the post-review fix: an incident linked to more than one service
+// (incident_services is N:N) must not get a closing-comment proposal just
+// because one of its services recovered - every linked service must be
+// operational first.
+func TestSLOAnalyzer_HandleTransition_RecoveryWithOtherLinkedServiceStillDown_SkipsClosingProposal(t *testing.T) {
+	incidents := &fakeIncidentStore{
+		openIncidents:     map[string]string{"svc-1": "shared-incident"},
+		notAllOperational: map[string]bool{"shared-incident": true},
+	}
+	services := &fakeStatusAnalysisWriter{}
+	a := newTestAnalyzer(incidents, services, &fakeLLMGenerator{}, time.Second)
+
+	a.HandleTransition(context.Background(), db.Service{ID: "svc-1", Name: "API"}, "outage", "operational", datadog.SLOStatus{})
+
+	_, _, pendingCalls := incidents.snapshot()
+	if len(pendingCalls) != 0 {
+		t.Errorf("SetPendingCloseComment called %d times, want 0 (another linked service is still down)", len(pendingCalls))
 	}
 }
 

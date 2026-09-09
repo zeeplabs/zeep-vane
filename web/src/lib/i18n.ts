@@ -105,6 +105,13 @@ const resources = {
         genericActivateError: "Não foi possível ativar o provedor.",
         genericModelError: "Não foi possível atualizar o modelo.",
       },
+      incidentDetail: {
+        pendingCloseBannerLabel: "Comentário de encerramento sugerido pela IA",
+        confirmCloseButton: "Confirmar encerramento",
+        discardProposalButton: "Descartar",
+        genericConfirmCloseError: "Não foi possível confirmar o encerramento.",
+        genericDiscardProposalError: "Não foi possível descartar a proposta.",
+      },
     },
   },
   en: {
@@ -208,6 +215,13 @@ const resources = {
         genericConnectError: "Could not connect to the provider.",
         genericActivateError: "Could not activate the provider.",
         genericModelError: "Could not update the model.",
+      },
+      incidentDetail: {
+        pendingCloseBannerLabel: "AI-suggested closing comment",
+        confirmCloseButton: "Confirm closure",
+        discardProposalButton: "Discard",
+        genericConfirmCloseError: "Could not confirm the closure.",
+        genericDiscardProposalError: "Could not discard the proposal.",
       },
     },
   },

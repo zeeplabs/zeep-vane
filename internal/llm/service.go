@@ -51,6 +51,18 @@ var modelAllowlist = map[string][]string{
 // (AI-03).
 const defaultModel = "gpt-4o-mini"
 
+// isAllowedModel reports whether model is in provider's modelAllowlist -
+// shared by Connect and SetModel so a model can never be persisted through
+// one path that the other would reject.
+func isAllowedModel(provider, model string) bool {
+	for _, m := range modelAllowlist[provider] {
+		if m == model {
+			return true
+		}
+	}
+	return false
+}
+
 // ProviderRecord is one connected LLM provider's stored row, as returned
 // by LLMProviderStore. Owned by this package (not internal/db) so
 // Service compiles independent of the repository's concrete
@@ -80,9 +92,14 @@ type LLMProviderStore interface {
 	// previously-connected provider has gone invalid (spec.md's "revoked/
 	// expired API key" edge case).
 	MarkInvalid(ctx context.Context, provider, lastError string) error
-	// MarkChecked records that provider's stored credentials were used
-	// successfully (or failed only transiently) on a Generate* call.
+	// MarkChecked records that provider's stored credentials were
+	// confirmed valid by a successful Generate* call.
 	MarkChecked(ctx context.Context, provider string) error
+	// MarkTransientFailure records that a Generate* call failed for a
+	// reason other than authorization, without touching status - a
+	// transient failure (timeout, 5xx) is not evidence the credentials
+	// are valid, so it must never overwrite a prior MarkInvalid.
+	MarkTransientFailure(ctx context.Context, provider, lastError string) error
 }
 
 // ProviderStatus is one connected provider's observable state - never
@@ -124,14 +141,22 @@ func NewService(repo LLMProviderStore, factory ProviderFactory, masterKey string
 // calling the factory or any network endpoint (AI-02); on a validation
 // failure it returns ErrValidationFailed and persists nothing, leaving any
 // previously stored row for provider untouched (AI-02). An empty model
-// defaults to defaultModel (AI-03). On success it encrypts apiKey and
-// upserts the row (AI-01).
+// defaults to defaultModel (AI-03); a non-empty model outside the
+// provider's modelAllowlist returns ErrUnknownModel without calling the
+// factory - the same allowlist SetModel enforces, so a caller can never
+// persist a model Connect itself never checks (previously only SetModel
+// validated it; a provider connected with an off-allowlist model would
+// then fail every Generate* call with a plain HTTP error indistinguishable
+// from a transient failure, silently marking a broken provider
+// "connected"). On success it encrypts apiKey and upserts the row (AI-01).
 func (s *Service) Connect(ctx context.Context, provider, apiKey, model string) error {
 	if apiKey == "" {
 		return ErrInvalidInput
 	}
 	if model == "" {
 		model = defaultModel
+	} else if !isAllowedModel(provider, model) {
+		return ErrUnknownModel
 	}
 
 	p, err := s.factory(provider, apiKey, model)
@@ -172,15 +197,7 @@ func (s *Service) SetModel(ctx context.Context, provider, model string) error {
 		return ErrProviderNotConnected
 	}
 
-	allowed := modelAllowlist[provider]
-	valid := false
-	for _, m := range allowed {
-		if m == model {
-			valid = true
-			break
-		}
-	}
-	if !valid {
+	if !isAllowedModel(provider, model) {
 		return ErrUnknownModel
 	}
 
@@ -301,18 +318,29 @@ func (s *Service) generate(ctx context.Context, in AnalysisInput, build func(Ana
 	systemPrompt, userPrompt := build(in)
 
 	result, err := provider.Complete(ctx, systemPrompt, userPrompt)
+
+	// Bookkeeping runs on its own short-lived, un-cancelable context rather
+	// than ctx: when Complete fails because ctx's deadline was exceeded
+	// (the caller's bounded timeout, e.g. SLOAnalyzer's AnalysisTimeout),
+	// ctx is already expired at this point - writing the provider's
+	// checked/invalid/transient-failure state through it would fail
+	// immediately too, silently losing exactly the record that matters
+	// most (a timed-out call is the case an operator most needs surfaced).
+	bookkeepingCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+	defer cancel()
+
 	if err != nil {
 		if errors.Is(err, ErrUnauthorized) {
-			if markErr := s.repo.MarkInvalid(ctx, active, err.Error()); markErr != nil {
+			if markErr := s.repo.MarkInvalid(bookkeepingCtx, active, err.Error()); markErr != nil {
 				s.logger.Error("llm: failed to mark provider invalid", zap.String("provider", active), zap.Error(markErr))
 			}
-		} else if markErr := s.repo.MarkChecked(ctx, active); markErr != nil {
-			s.logger.Error("llm: failed to mark provider checked", zap.String("provider", active), zap.Error(markErr))
+		} else if markErr := s.repo.MarkTransientFailure(bookkeepingCtx, active, err.Error()); markErr != nil {
+			s.logger.Error("llm: failed to mark provider transient failure", zap.String("provider", active), zap.Error(markErr))
 		}
 		return "", err
 	}
 
-	if markErr := s.repo.MarkChecked(ctx, active); markErr != nil {
+	if markErr := s.repo.MarkChecked(bookkeepingCtx, active); markErr != nil {
 		s.logger.Error("llm: failed to mark provider checked", zap.String("provider", active), zap.Error(markErr))
 	}
 

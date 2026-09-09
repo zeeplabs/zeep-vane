@@ -315,3 +315,34 @@ func TestLLMProviderRepository_MarkChecked_ClearsInvalidState(t *testing.T) {
 		t.Errorf("LastError = %q, want nil (must clear the seeded failure)", *lp.LastError)
 	}
 }
+
+// TestLLMProviderRepository_MarkTransientFailure_LeavesInvalidStatusUntouched
+// covers the post-review fix: unlike MarkChecked, a transient failure
+// (timeout, 5xx) must not resurrect a provider a prior MarkInvalid flagged
+// - it is not evidence the credentials are valid again.
+func TestLLMProviderRepository_MarkTransientFailure_LeavesInvalidStatusUntouched(t *testing.T) {
+	repo, _ := newLLMProviderRepoForTest(t)
+	ctx := context.Background()
+
+	if err := repo.UpsertProvider(ctx, "openai", []byte("cipher"), "gpt-4o-mini"); err != nil {
+		t.Fatalf("UpsertProvider() returned unexpected error: %v", err)
+	}
+	if err := repo.MarkInvalid(ctx, "openai", "revoked key"); err != nil {
+		t.Fatalf("MarkInvalid() returned unexpected error: %v", err)
+	}
+
+	if err := repo.MarkTransientFailure(ctx, "openai", "upstream 503"); err != nil {
+		t.Fatalf("MarkTransientFailure() returned unexpected error: %v", err)
+	}
+
+	lp, err := repo.Get(ctx, "openai")
+	if err != nil {
+		t.Fatalf("Get() returned unexpected error: %v", err)
+	}
+	if lp.Status != "invalid" {
+		t.Errorf("Status = %q, want unchanged %q", lp.Status, "invalid")
+	}
+	if lp.LastError == nil || *lp.LastError != "upstream 503" {
+		t.Errorf("LastError = %v, want %q", lp.LastError, "upstream 503")
+	}
+}

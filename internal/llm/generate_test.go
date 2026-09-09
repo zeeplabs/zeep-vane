@@ -215,6 +215,43 @@ func TestGenerateDegradedAnalysis_UnauthorizedError_MarksProviderInvalid(t *test
 	}
 }
 
+// TestGenerateDegradedAnalysis_TransientError_MarksTransientFailure_NeverChecked
+// covers the post-review fix: a non-authorization failure (timeout, 5xx)
+// must never call MarkChecked, since that would silently clear a
+// previously recorded 'invalid' status the moment any unrelated transient
+// error occurred - it is not evidence the credentials are valid again.
+func TestGenerateDegradedAnalysis_TransientError_MarksTransientFailure_NeverChecked(t *testing.T) {
+	store := newFakeStore()
+	provider := &completingProvider{completeErr: errors.New("service unavailable")}
+	factory := func(providerName, apiKey, model string) (Provider, error) {
+		return provider, nil
+	}
+	svc := newTestService(store, factory)
+
+	if err := svc.Connect(t.Context(), "openai", "real-api-key", "gpt-4o-mini"); err != nil {
+		t.Fatalf("Connect() returned unexpected error: %v", err)
+	}
+	if err := svc.Activate(t.Context(), "openai"); err != nil {
+		t.Fatalf("Activate() returned unexpected error: %v", err)
+	}
+	// Simulate a key already flagged invalid by a prior call.
+	store.rows["openai"].Status = "invalid"
+
+	if _, err := svc.GenerateDegradedAnalysis(t.Context(), testAnalysisInput()); err == nil {
+		t.Fatal("GenerateDegradedAnalysis() error = nil, want the transient error")
+	}
+
+	if len(store.markCheckedCalls) != 0 {
+		t.Errorf("markCheckedCalls = %v, want none (transient failure must never mark checked)", store.markCheckedCalls)
+	}
+	if len(store.markTransientFailureCalls) != 1 || store.markTransientFailureCalls[0] != "openai" {
+		t.Errorf("markTransientFailureCalls = %v, want [openai]", store.markTransientFailureCalls)
+	}
+	if store.rows["openai"].Status != "invalid" {
+		t.Errorf("provider status = %q, want unchanged %q (transient failure must not resurrect it)", store.rows["openai"].Status, "invalid")
+	}
+}
+
 // TestGenerateDegradedAnalysis_Success_MarksProviderChecked confirms a
 // successful Generate* call also stamps last_checked_at (via MarkChecked),
 // clearing any prior invalid status.
