@@ -45,6 +45,19 @@ func newTestPool(t *testing.T) (*db.Pool, string) {
 	return pool, dsn
 }
 
+// newTestSLOAnalyzer builds an SLOAnalyzer backed by real repositories
+// (so a first-poll transition like "not_configured" -> "operational"
+// exercises the real HasOpenIncidentForService/UpdateStatusAnalysis
+// queries, same as production) and a no-op fake LLM generator - sufficient
+// for tests in this file that don't themselves exercise SLOAnalyzer's
+// behavior (that's analyzer_test.go's job and this file's own
+// TestPoller_PollOnce_HungLLMEnrichment... test below), but still need
+// pollService's now-required analyzer field to be non-nil.
+func newTestSLOAnalyzer(pool *db.Pool, services *db.ServiceRepository) *SLOAnalyzer {
+	incidents := db.NewIncidentRepository(pool)
+	return NewSLOAnalyzer(incidents, services, &fakeLLMGenerator{}, time.Second, zap.NewNop())
+}
+
 func createTestService(t *testing.T, pool *db.Pool, services *db.ServiceRepository) db.Service {
 	t.Helper()
 	ctx := context.Background()
@@ -94,7 +107,7 @@ func TestPoller_PollOnce_UpdatesStatusAndPersistsSnapshot(t *testing.T) {
 		status: datadog.SLOStatus{State: "ok", ErrorBudgetRemaining: 91.2, RequestCount: 10},
 	}
 
-	p := NewPoller(services, services, statusIntervals, integrations, provider, time.Hour, zap.NewNop())
+	p := NewPoller(services, services, statusIntervals, integrations, provider, time.Hour, newTestSLOAnalyzer(pool, services), zap.NewNop())
 	p.pollOnce(ctx)
 
 	all, err := services.List(ctx)
@@ -147,12 +160,12 @@ func TestPoller_PollOnce_ConnectionFailure_MarksIntegrationInvalidAndKeepsLastSt
 	// Seed a known-good status via one successful poll, so the failure that
 	// follows has a last-known-valid status to preserve.
 	okProvider := &fakeProvider{errs: []error{nil}, status: datadog.SLOStatus{State: "ok", ErrorBudgetRemaining: 99, RequestCount: 10}}
-	seedingPoller := NewPoller(services, services, statusIntervals, integrations, okProvider, time.Hour, zap.NewNop())
+	seedingPoller := NewPoller(services, services, statusIntervals, integrations, okProvider, time.Hour, newTestSLOAnalyzer(pool, services), zap.NewNop())
 	seedingPoller.pollOnce(ctx)
 
 	backoffBase = time.Millisecond
 	failingProvider := &fakeProvider{errs: []error{datadog.ErrTimeout, datadog.ErrTimeout, datadog.ErrTimeout}}
-	p := NewPoller(services, services, statusIntervals, integrations, failingProvider, time.Hour, zap.NewNop())
+	p := NewPoller(services, services, statusIntervals, integrations, failingProvider, time.Hour, newTestSLOAnalyzer(pool, services), zap.NewNop())
 	p.pollOnce(ctx)
 
 	integration, err := integrations.GetDatadog(ctx)
@@ -232,7 +245,7 @@ func TestPoller_PollOnce_Success_MarksIntegrationChecked(t *testing.T) {
 	createTestIntegration(t, pool, dsn, integrations)
 
 	provider := &fakeProvider{errs: []error{nil}, status: datadog.SLOStatus{State: "ok", ErrorBudgetRemaining: 100}}
-	p := NewPoller(services, services, statusIntervals, integrations, provider, time.Hour, zap.NewNop())
+	p := NewPoller(services, services, statusIntervals, integrations, provider, time.Hour, newTestSLOAnalyzer(pool, services), zap.NewNop())
 	p.pollOnce(ctx)
 
 	integration, err := integrations.GetDatadog(ctx)
@@ -266,7 +279,7 @@ func TestPoller_PollOnce_RecoversFromInvalid_AfterSubsequentSuccess(t *testing.T
 	}
 
 	provider := &fakeProvider{errs: []error{nil}, status: datadog.SLOStatus{State: "ok", ErrorBudgetRemaining: 100}}
-	p := NewPoller(services, services, statusIntervals, integrations, provider, time.Hour, zap.NewNop())
+	p := NewPoller(services, services, statusIntervals, integrations, provider, time.Hour, newTestSLOAnalyzer(pool, services), zap.NewNop())
 	p.pollOnce(ctx)
 
 	integration, err := integrations.GetDatadog(ctx)
@@ -302,7 +315,7 @@ func TestPoller_PollOnce_OneOfTwoServicesFails_IntegrationStaysActive(t *testing
 		statuses: map[string]datadog.SLOStatus{"slo-ok": {State: "ok", ErrorBudgetRemaining: 100, RequestCount: 10}},
 		errs:     map[string]error{"slo-not-found": datadog.ErrTimeout},
 	}
-	p := NewPoller(services, services, statusIntervals, integrations, provider, time.Hour, zap.NewNop())
+	p := NewPoller(services, services, statusIntervals, integrations, provider, time.Hour, newTestSLOAnalyzer(pool, services), zap.NewNop())
 	p.pollOnce(ctx)
 
 	integration, err := integrations.GetDatadog(ctx)
@@ -350,7 +363,7 @@ func TestPoller_Run_StopsOnContextCancel(t *testing.T) {
 	integrations := db.NewIntegrationRepository(pool)
 	provider := &fakeProvider{errs: []error{nil}, status: datadog.SLOStatus{State: "ok"}}
 
-	p := NewPoller(services, services, statusIntervals, integrations, provider, time.Hour, zap.NewNop())
+	p := NewPoller(services, services, statusIntervals, integrations, provider, time.Hour, newTestSLOAnalyzer(pool, services), zap.NewNop())
 
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
@@ -386,7 +399,7 @@ func TestPoller_Run_PollsImmediatelyBeforeFirstTick(t *testing.T) {
 	// A long interval - if Run waited for the ticker's first tick instead
 	// of polling immediately, this test would time out waiting for a
 	// status that shouldn't take an hour to appear.
-	p := NewPoller(services, services, statusIntervals, integrations, provider, time.Hour, zap.NewNop())
+	p := NewPoller(services, services, statusIntervals, integrations, provider, time.Hour, newTestSLOAnalyzer(pool, services), zap.NewNop())
 
 	runCtx, cancel := context.WithCancel(ctx)
 	done := make(chan struct{})
@@ -413,4 +426,79 @@ func TestPoller_Run_PollsImmediatelyBeforeFirstTick(t *testing.T) {
 		time.Sleep(20 * time.Millisecond)
 	}
 	t.Fatal("service CurrentStatus never reached operational within 2s of Run() starting - want an immediate poll, not a wait for the 1h ticker's first tick")
+}
+
+// TestPoller_PollOnce_HungLLMEnrichment_DoesNotDelayRemainingServices is
+// the design.md Risks-section-mandated regression guard: SLOAnalyzer's
+// async LLM enrichment must never be able to delay pollOnce's synchronous
+// loop over the remaining services in the same cycle, no matter how long
+// the underlying provider call hangs. One service (degradingSvc)
+// transitions into "degraded" this cycle, which dispatches an async
+// enrichment goroutine against a fake LLM generator that blocks until its
+// context is canceled (fakeLLMGenerator{block: true}, from
+// analyzer_test.go) - simulating a provider call that never completes on
+// its own. A second service (okSvc) transitions to "operational", which
+// makes no LLM call at all. pollOnce must still finish processing both
+// well within a bound far tighter than the analyzer's own timeout.
+func TestPoller_PollOnce_HungLLMEnrichment_DoesNotDelayRemainingServices(t *testing.T) {
+	pool, dsn := newTestPool(t)
+	ctx := context.Background()
+
+	services := db.NewServiceRepository(pool)
+	statusIntervals := db.NewStatusIntervalRepository(pool)
+	integrations := db.NewIntegrationRepository(pool)
+	incidents := db.NewIncidentRepository(pool)
+	createTestIntegration(t, pool, dsn, integrations)
+
+	degradingSvc := createTestServiceWithSLO(t, pool, services, fmt.Sprintf("hung-llm-degraded-%d", time.Now().UnixNano()))
+	okSvc := createTestServiceWithSLO(t, pool, services, fmt.Sprintf("hung-llm-ok-%d", time.Now().UnixNano()))
+
+	provider := &sloKeyedFakeProvider{
+		statuses: map[string]datadog.SLOStatus{
+			degradingSvc.SLOID: {State: "warning", ErrorBudgetRemaining: 5, RequestCount: 10},
+			okSvc.SLOID:        {State: "ok", ErrorBudgetRemaining: 100, RequestCount: 10},
+		},
+	}
+
+	// A long analyzer timeout (well beyond this test's own assertion bound
+	// below) - if the hang somehow did propagate into pollOnce, this test
+	// would time out waiting for pollOnce to return, not just fail an
+	// assertion.
+	analyzer := NewSLOAnalyzer(incidents, services, &fakeLLMGenerator{block: true}, 10*time.Second, zap.NewNop())
+	p := NewPoller(services, services, statusIntervals, integrations, provider, time.Hour, analyzer, zap.NewNop())
+
+	start := time.Now()
+	p.pollOnce(ctx)
+	elapsed := time.Since(start)
+
+	const bound = 2 * time.Second
+	if elapsed > bound {
+		t.Fatalf("pollOnce() took %v, want under %v (a hung LLM enrichment call must not delay the poll cycle)", elapsed, bound)
+	}
+
+	all, err := services.List(ctx)
+	if err != nil {
+		t.Fatalf("List() returned unexpected error: %v", err)
+	}
+	var foundDegrading, foundOK *db.Service
+	for i := range all {
+		switch all[i].ID {
+		case degradingSvc.ID:
+			foundDegrading = &all[i]
+		case okSvc.ID:
+			foundOK = &all[i]
+		}
+	}
+	if foundDegrading == nil {
+		t.Fatalf("service %s not found after pollOnce", degradingSvc.ID)
+	}
+	if foundDegrading.CurrentStatus != "degraded" {
+		t.Errorf("degrading service CurrentStatus = %q, want %q (must still complete despite the hung enrichment it triggered)", foundDegrading.CurrentStatus, "degraded")
+	}
+	if foundOK == nil {
+		t.Fatalf("service %s not found after pollOnce", okSvc.ID)
+	}
+	if foundOK.CurrentStatus != "operational" {
+		t.Errorf("ok service CurrentStatus = %q, want %q (must not be delayed by the other service's hung enrichment)", foundOK.CurrentStatus, "operational")
+	}
 }

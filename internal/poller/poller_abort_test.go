@@ -157,7 +157,7 @@ func TestPoller_PollOnce_AbortsMidCycle_NoWritesForServicesAfterLeadershipLoss(t
 		unblock:      make(chan struct{}),
 	}
 
-	p := NewPoller(services, services, statusIntervals, integrations, provider, time.Hour, zap.NewNop())
+	p := NewPoller(services, services, statusIntervals, integrations, provider, time.Hour, newTestSLOAnalyzer(pool, services), zap.NewNop())
 
 	runCtx, cancelRun := context.WithCancel(ctx)
 	t.Cleanup(cancelRun)

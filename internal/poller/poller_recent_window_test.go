@@ -42,11 +42,13 @@ func (f *fakeStatusUpdater) UpdateStatus(ctx context.Context, serviceID, status 
 }
 
 func newTestPoller(provider datadog.SLOProvider, interval time.Duration, intervals *fakeIntervalWriter, statuses *fakeStatusUpdater) *Poller {
+	analyzer := NewSLOAnalyzer(&fakeIncidentStore{openIncidents: map[string]string{}}, &fakeStatusAnalysisWriter{}, &fakeLLMGenerator{}, time.Second, zap.NewNop())
 	return &Poller{
 		statuses:        statuses,
 		statusIntervals: intervals,
 		provider:        provider,
 		interval:        interval,
+		analyzer:        analyzer,
 		logger:          zap.NewNop(),
 		breachStreak:    make(map[string]int),
 	}

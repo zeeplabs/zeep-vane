@@ -453,10 +453,10 @@ T25 only. Needs the full feature implemented (accurate to describe).
 - Skill: NONE
 
 **Done when**:
-- [ ] `pollService` calls `HandleTransition` exactly once per service per cycle, only when a transition actually occurred (never on an unchanged status - AI-06/AI-18)
-- [ ] A service whose status doesn't change makes zero calls into `SLOAnalyzer` (existing behavior for every other service in `poller_test.go`'s fixtures stays green - regression guard)
-- [ ] New timing test: with `N` services in a cycle, one configured with a fake LLM provider that blocks indefinitely, `pollOnce` completes within a bound well under the fake's block duration (proves the hang doesn't propagate into the synchronous loop) - this is the Risks-section-flagged test from design.md, not optional
-- [ ] Gate passes: `go test ./internal/poller/...` (full existing + new suite green, no regression in poll-cycle behavior)
+- [x] `pollService` calls `HandleTransition` exactly once per service per cycle, only when a transition actually occurred (never on an unchanged status - AI-06/AI-18)
+- [x] A service whose status doesn't change makes zero calls into `SLOAnalyzer` (existing behavior for every other service in `poller_test.go`'s fixtures stays green - regression guard)
+- [x] New timing test: with `N` services in a cycle, one configured with a fake LLM provider that blocks indefinitely, `pollOnce` completes within a bound well under the fake's block duration (proves the hang doesn't propagate into the synchronous loop) - this is the Risks-section-flagged test from design.md, not optional
+- [x] Gate passes: `go test ./internal/poller/...` (full existing + new suite green, no regression in poll-cycle behavior)
 
 **Tests**: unit
 **Gate**: quick

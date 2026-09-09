@@ -18,6 +18,7 @@ import (
 	"github.com/zeeplabs/zeep-vane/internal/connectors/datadog"
 	"github.com/zeeplabs/zeep-vane/internal/crypto"
 	"github.com/zeeplabs/zeep-vane/internal/db"
+	"github.com/zeeplabs/zeep-vane/internal/llm"
 	"github.com/zeeplabs/zeep-vane/internal/logging"
 	"github.com/zeeplabs/zeep-vane/internal/poller"
 	"github.com/zeeplabs/zeep-vane/internal/retention"
@@ -260,5 +261,14 @@ func newPollerFromStoredIntegration(ctx context.Context, pool *db.Pool, cfg conf
 	intervals := db.NewStatusIntervalRepository(pool)
 	interval := time.Duration(cfg.PollIntervalSeconds) * time.Second
 
-	return poller.NewPoller(services, services, intervals, integrations, client, interval, logger), true, nil
+	incidents := db.NewIncidentRepository(pool)
+	llmSvc := llm.NewService(db.NewLLMProviderStore(db.NewLLMProviderRepository(pool)), llmProviderFactory, cfg.MasterKey, logger)
+	// analysisTimeoutSeconds mirrors internal/poller.analysisTimeout's
+	// documented 30s default (unexported there, so restated here rather
+	// than threading a new config surface through for a value design.md
+	// doesn't call out as needing to be admin-configurable).
+	const analysisTimeoutSeconds = 30 * time.Second
+	analyzer := poller.NewSLOAnalyzer(incidents, services, llmSvc, analysisTimeoutSeconds, logger)
+
+	return poller.NewPoller(services, services, intervals, integrations, client, interval, analyzer, logger), true, nil
 }

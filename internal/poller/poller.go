@@ -97,6 +97,7 @@ type Poller struct {
 	integrations    integrationStatusUpdater
 	provider        datadog.SLOProvider
 	interval        time.Duration
+	analyzer        *SLOAnalyzer
 	logger          *zap.Logger
 
 	// breachStreak tracks, per service ID, how many consecutive cycles in a
@@ -109,8 +110,10 @@ type Poller struct {
 
 // NewPoller builds a Poller that fetches SLO status via provider every
 // interval, persisting results through statuses/statusIntervals and
-// recording connection failures through integrations.
-func NewPoller(services serviceLister, statuses serviceStatusUpdater, statusIntervals statusIntervalWriter, integrations integrationStatusUpdater, provider datadog.SLOProvider, interval time.Duration, logger *zap.Logger) *Poller {
+// recording connection failures through integrations. analyzer is notified
+// of every status transition (pollService, AI-08 through AI-24 - the
+// integration point for the whole SLO-analysis feature).
+func NewPoller(services serviceLister, statuses serviceStatusUpdater, statusIntervals statusIntervalWriter, integrations integrationStatusUpdater, provider datadog.SLOProvider, interval time.Duration, analyzer *SLOAnalyzer, logger *zap.Logger) *Poller {
 	return &Poller{
 		services:        services,
 		statuses:        statuses,
@@ -118,6 +121,7 @@ func NewPoller(services serviceLister, statuses serviceStatusUpdater, statusInte
 		integrations:    integrations,
 		provider:        provider,
 		interval:        interval,
+		analyzer:        analyzer,
 		logger:          logger,
 		breachStreak:    make(map[string]int),
 	}
@@ -231,6 +235,15 @@ func (p *Poller) pollService(ctx context.Context, svc db.Service) error {
 	default:
 		p.breachStreak[svc.ID] = 0
 		current = normalizeStatus(status.State)
+	}
+
+	// SLOAnalyzer is notified exactly once per service per cycle, only when
+	// a transition actually occurred (AI-06/AI-18) - a service whose status
+	// is unchanged this cycle must make zero calls into it, not rely on
+	// HandleTransition's own no-op guard to absorb a redundant call every
+	// cycle a service stays in the same state.
+	if current != svc.CurrentStatus {
+		p.analyzer.HandleTransition(ctx, svc, svc.CurrentStatus, current, status)
 	}
 
 	if err := p.statusIntervals.OpenOrExtend(ctx, svc.ID, current, status.ErrorBudgetRemaining, time.Now()); err != nil {
