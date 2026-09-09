@@ -58,16 +58,44 @@ func newTestSLOAnalyzer(pool *db.Pool, services *db.ServiceRepository) *SLOAnaly
 	return NewSLOAnalyzer(incidents, services, &fakeLLMGenerator{}, time.Second, zap.NewNop())
 }
 
+// seedTestTenant creates a throwaway tenant so fixtures (services, ...) can
+// satisfy the tenant_id NOT NULL constraint 0024 added, and creates svc
+// inside a transaction with app.tenant_id set to it (the DEFAULT
+// current_setting expression on services.tenant_id only resolves outside
+// that transaction's session setting - see internal/db/pool.go's
+// BeginTenantTx).
+func seedTestTenant(t *testing.T, pool *db.Pool) string {
+	t.Helper()
+	ctx := context.Background()
+
+	var tenantID string
+	if err := pool.QueryRow(ctx, "INSERT INTO tenants (name) VALUES ($1) RETURNING id", "poller-test-tenant").Scan(&tenantID); err != nil {
+		t.Fatalf("seeding test tenant returned unexpected error: %v", err)
+	}
+	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), "DELETE FROM tenants WHERE id = $1", tenantID) })
+
+	return tenantID
+}
+
 func createTestService(t *testing.T, pool *db.Pool, services *db.ServiceRepository) db.Service {
 	t.Helper()
 	ctx := context.Background()
+	tenantID := seedTestTenant(t, pool)
 
 	svc := &db.Service{
 		Name:  fmt.Sprintf("poller-test-%d", time.Now().UnixNano()),
 		SLOID: "slo-poll-1",
 	}
-	if err := services.Create(ctx, svc); err != nil {
+	tx, err := pool.BeginTenantTx(ctx, "", tenantID)
+	if err != nil {
+		t.Fatalf("BeginTenantTx() returned unexpected error: %v", err)
+	}
+	if err := services.Create(db.WithTenantTx(ctx, tx), svc); err != nil {
+		_ = tx.Rollback(ctx)
 		t.Fatalf("Create() returned unexpected error: %v", err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		t.Fatalf("commit returned unexpected error: %v", err)
 	}
 	t.Cleanup(func() { _, _ = pool.Exec(ctx, "DELETE FROM services WHERE id = $1", svc.ID) })
 
@@ -217,13 +245,22 @@ func (f *sloKeyedFakeProvider) FetchSLOStatus(ctx context.Context, sloID string,
 func createTestServiceWithSLO(t *testing.T, pool *db.Pool, services *db.ServiceRepository, sloID string) db.Service {
 	t.Helper()
 	ctx := context.Background()
+	tenantID := seedTestTenant(t, pool)
 
 	svc := &db.Service{
 		Name:  fmt.Sprintf("poller-test-%d", time.Now().UnixNano()),
 		SLOID: sloID,
 	}
-	if err := services.Create(ctx, svc); err != nil {
+	tx, err := pool.BeginTenantTx(ctx, "", tenantID)
+	if err != nil {
+		t.Fatalf("BeginTenantTx() returned unexpected error: %v", err)
+	}
+	if err := services.Create(db.WithTenantTx(ctx, tx), svc); err != nil {
+		_ = tx.Rollback(ctx)
 		t.Fatalf("Create() returned unexpected error: %v", err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		t.Fatalf("commit returned unexpected error: %v", err)
 	}
 	t.Cleanup(func() { _, _ = pool.Exec(ctx, "DELETE FROM services WHERE id = $1", svc.ID) })
 

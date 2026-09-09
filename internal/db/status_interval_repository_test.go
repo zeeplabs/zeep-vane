@@ -27,12 +27,14 @@ func newStatusIntervalRepositoryTestPool(t *testing.T) *Pool {
 
 func createStatusIntervalRepositoryTestService(t *testing.T, pool *Pool, name string) string {
 	t.Helper()
-	ctx := context.Background()
+	tenantID := seedPlainTenant(t, pool)
 	var serviceID string
-	row := pool.QueryRow(ctx, "INSERT INTO services (name, slo_id) VALUES ($1, $2) RETURNING id", name, "slo-status-interval-test")
-	if err := row.Scan(&serviceID); err != nil {
-		t.Fatalf("insert service returned unexpected error: %v", err)
-	}
+	withTenantTx(t, pool, tenantID, func(ctx context.Context) {
+		row := pool.QueryRow(ctx, "INSERT INTO services (name, slo_id) VALUES ($1, $2) RETURNING id", name, "slo-status-interval-test")
+		if err := row.Scan(&serviceID); err != nil {
+			t.Fatalf("insert service returned unexpected error: %v", err)
+		}
+	})
 	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), "DELETE FROM services WHERE id = $1", serviceID) })
 	return serviceID
 }

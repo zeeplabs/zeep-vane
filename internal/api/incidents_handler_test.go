@@ -59,9 +59,12 @@ func createIncidentTestService(t *testing.T, pool *db.Pool) string {
 	t.Helper()
 	services := db.NewServiceRepository(pool)
 	service := &db.Service{Name: uniqueServiceName(t), SLOID: "slo-incidents-test"}
-	if err := services.Create(context.Background(), service); err != nil {
-		t.Fatalf("setup Create() service returned unexpected error: %v", err)
-	}
+	tenantID := seedTestTenant(t, pool)
+	withTenantTx(t, pool, tenantID, func(ctx context.Context) {
+		if err := services.Create(ctx, service); err != nil {
+			t.Fatalf("setup Create() service returned unexpected error: %v", err)
+		}
+	})
 	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), "DELETE FROM services WHERE id = $1", service.ID) })
 	return service.ID
 }

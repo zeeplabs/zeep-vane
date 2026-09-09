@@ -26,11 +26,13 @@ func TestServicesMigration_AppliesClean_AndDefaultsToNotConfigured(t *testing.T)
 		_, _ = pool.Exec(ctx, "DELETE FROM services WHERE name = $1", name)
 	})
 
-	_, err = pool.Exec(ctx,
-		"INSERT INTO services (name, slo_id) VALUES ($1, $2)", name, "slo-123")
-	if err != nil {
-		t.Fatalf("insert returned unexpected error: %v", err)
-	}
+	tenantID := seedPlainTenant(t, pool)
+	withTenantTx(t, pool, tenantID, func(txCtx context.Context) {
+		if _, err := pool.Exec(txCtx,
+			"INSERT INTO services (name, slo_id) VALUES ($1, $2)", name, "slo-123"); err != nil {
+			t.Fatalf("insert returned unexpected error: %v", err)
+		}
+	})
 
 	var currentStatus string
 	row := pool.QueryRow(ctx, "SELECT current_status FROM services WHERE name = $1", name)

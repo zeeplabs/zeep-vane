@@ -60,9 +60,12 @@ func createPublicStatusServiceFixture(t *testing.T, pool *db.Pool, status string
 
 	services := db.NewServiceRepository(pool)
 	service := &db.Service{Name: name, SLOID: "slo-public-test"}
-	if err := services.Create(ctx, service); err != nil {
-		t.Fatalf("setup Create() returned unexpected error: %v", err)
-	}
+	tenantID := seedTestTenant(t, pool)
+	withTenantTx(t, pool, tenantID, func(txCtx context.Context) {
+		if err := services.Create(txCtx, service); err != nil {
+			t.Fatalf("setup Create() returned unexpected error: %v", err)
+		}
+	})
 	if err := services.UpdateStatus(ctx, service.ID, status); err != nil {
 		t.Fatalf("setup UpdateStatus() returned unexpected error: %v", err)
 	}
@@ -266,9 +269,12 @@ func TestPublicStatusGet_ServiceWithNoSnapshotsEver_AllHourlyBucketsNoData(t *te
 
 	services := db.NewServiceRepository(pool)
 	service := &db.Service{Name: uniqueServiceName(t), SLOID: "slo-no-snapshot-test"}
-	if err := services.Create(ctx, service); err != nil {
-		t.Fatalf("setup Create() returned unexpected error: %v", err)
-	}
+	tenantID := seedTestTenant(t, pool)
+	withTenantTx(t, pool, tenantID, func(txCtx context.Context) {
+		if err := services.Create(txCtx, service); err != nil {
+			t.Fatalf("setup Create() returned unexpected error: %v", err)
+		}
+	})
 	if err := services.UpdateStatus(ctx, service.ID, "operational"); err != nil {
 		t.Fatalf("setup UpdateStatus() returned unexpected error: %v", err)
 	}
@@ -546,9 +552,12 @@ func TestPublicStatusGet_NotConfiguredService_HiddenValidServiceShown(t *testing
 	services := db.NewServiceRepository(pool)
 	notConfiguredName := uniqueServiceName(t)
 	notConfigured := &db.Service{Name: notConfiguredName, SLOID: "slo-not-configured-test"}
-	if err := services.Create(ctx, notConfigured); err != nil {
-		t.Fatalf("setup Create() returned unexpected error: %v", err)
-	}
+	tenantID := seedTestTenant(t, pool)
+	withTenantTx(t, pool, tenantID, func(txCtx context.Context) {
+		if err := services.Create(txCtx, notConfigured); err != nil {
+			t.Fatalf("setup Create() returned unexpected error: %v", err)
+		}
+	})
 	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), "DELETE FROM services WHERE id = $1", notConfigured.ID) })
 	if notConfigured.CurrentStatus != "not_configured" {
 		t.Fatalf("setup: fresh service CurrentStatus = %q, want %q", notConfigured.CurrentStatus, "not_configured")

@@ -198,9 +198,12 @@ func TestIncidentRepository_ListPaginated_PopulatesServiceIDs(t *testing.T) {
 	repo, pool := newIncidentRepoTestPool(t)
 	services := NewServiceRepository(pool)
 	service := &Service{Name: fmt.Sprintf("incident-list-svc-%d", time.Now().UnixNano()), SLOID: "slo-fixture-id"}
-	if err := services.Create(context.Background(), service); err != nil {
-		t.Fatalf("setup service Create() returned unexpected error: %v", err)
-	}
+	tenantID := seedPlainTenant(t, pool)
+	withTenantTx(t, pool, tenantID, func(ctx context.Context) {
+		if err := services.Create(ctx, service); err != nil {
+			t.Fatalf("setup service Create() returned unexpected error: %v", err)
+		}
+	})
 	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), "DELETE FROM services WHERE id = $1", service.ID) })
 
 	incident := &Incident{Title: fmt.Sprintf("list-service-ids-%d", time.Now().UnixNano())}

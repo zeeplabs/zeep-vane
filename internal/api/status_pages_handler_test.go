@@ -92,11 +92,14 @@ func createTestService(t *testing.T, pool *db.Pool) string {
 	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), "DELETE FROM services WHERE name = $1", name) })
 
 	var serviceID string
-	row := pool.QueryRow(context.Background(),
-		"INSERT INTO services (name, slo_id) VALUES ($1, $2) RETURNING id", name, "slo-fixture")
-	if err := row.Scan(&serviceID); err != nil {
-		t.Fatalf("failed to insert service fixture: %v", err)
-	}
+	tenantID := seedTestTenant(t, pool)
+	withTenantTx(t, pool, tenantID, func(ctx context.Context) {
+		row := pool.QueryRow(ctx,
+			"INSERT INTO services (name, slo_id) VALUES ($1, $2) RETURNING id", name, "slo-fixture")
+		if err := row.Scan(&serviceID); err != nil {
+			t.Fatalf("failed to insert service fixture: %v", err)
+		}
+	})
 	return serviceID
 }
 

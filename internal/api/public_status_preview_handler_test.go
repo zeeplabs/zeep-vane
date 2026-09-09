@@ -142,9 +142,12 @@ func TestPublicStatusPreview_ZeroSnapshotService_AllHourlyBucketsNoData(t *testi
 
 	services := db.NewServiceRepository(pool)
 	service := &db.Service{Name: uniqueServiceName(t), SLOID: "slo-preview-no-snapshot-test"}
-	if err := services.Create(ctx, service); err != nil {
-		t.Fatalf("setup Create() returned unexpected error: %v", err)
-	}
+	tenantID := seedTestTenant(t, pool)
+	withTenantTx(t, pool, tenantID, func(txCtx context.Context) {
+		if err := services.Create(txCtx, service); err != nil {
+			t.Fatalf("setup Create() returned unexpected error: %v", err)
+		}
+	})
 	if err := services.UpdateStatus(ctx, service.ID, "operational"); err != nil {
 		t.Fatalf("setup UpdateStatus() returned unexpected error: %v", err)
 	}

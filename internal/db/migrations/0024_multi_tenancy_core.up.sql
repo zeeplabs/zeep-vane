@@ -106,6 +106,21 @@ CREATE POLICY tenant_isolation ON tenant_invites
 -- the DEFAULT resolves to NULL and the NOT NULL constraint rejects the
 -- insert rather than silently landing on the wrong tenant.
 ALTER TABLE services ADD COLUMN tenant_id UUID REFERENCES tenants(id);
+
+-- Backfill safety net: this migration assumes a fresh/empty services table
+-- (AD-022 - no real self-hosted customer data exists to migrate), but a
+-- shared test database replaying this migration (down then up - e.g.
+-- golang-migrate's Steps(-1) in other *_migration_test.go files, or a
+-- disposable test container reused across a whole `go test` run) can have
+-- leftover services rows from earlier, unrelated tests. Assign any such
+-- orphaned row to a dedicated placeholder tenant rather than leaving it
+-- NULL, so SET NOT NULL below never fails on rows this migration has no
+-- real tenant identity for in the first place.
+INSERT INTO tenants (id, name)
+VALUES ('00000000-0000-0000-0000-000000000000', 'unassigned-legacy-data')
+ON CONFLICT (id) DO NOTHING;
+UPDATE services SET tenant_id = '00000000-0000-0000-0000-000000000000' WHERE tenant_id IS NULL;
+
 ALTER TABLE services ALTER COLUMN tenant_id SET DEFAULT NULLIF(current_setting('app.tenant_id', true), '')::uuid;
 ALTER TABLE services ALTER COLUMN tenant_id SET NOT NULL;
 ALTER TABLE services ENABLE ROW LEVEL SECURITY;

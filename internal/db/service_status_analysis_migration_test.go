@@ -34,16 +34,19 @@ func TestServiceStatusAnalysisMigration_AppliesClean_DefaultsNull(t *testing.T) 
 
 	serviceName := fmt.Sprintf("status-analysis-migration-test-%d", time.Now().UnixNano())
 	var serviceID string
-	row := pool.QueryRow(ctx,
-		"INSERT INTO services (name, slo_id) VALUES ($1, $2) RETURNING id",
-		serviceName, "slo-status-analysis-test")
-	if err := row.Scan(&serviceID); err != nil {
-		t.Fatalf("insert service returned unexpected error: %v", err)
-	}
+	tenantID := seedPlainTenant(t, pool)
+	withTenantTx(t, pool, tenantID, func(txCtx context.Context) {
+		row := pool.QueryRow(txCtx,
+			"INSERT INTO services (name, slo_id) VALUES ($1, $2) RETURNING id",
+			serviceName, "slo-status-analysis-test")
+		if err := row.Scan(&serviceID); err != nil {
+			t.Fatalf("insert service returned unexpected error: %v", err)
+		}
+	})
 	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), "DELETE FROM services WHERE id = $1", serviceID) })
 
 	var statusAnalysis *string
-	row = pool.QueryRow(ctx, "SELECT status_analysis FROM services WHERE id = $1", serviceID)
+	row := pool.QueryRow(ctx, "SELECT status_analysis FROM services WHERE id = $1", serviceID)
 	if err := row.Scan(&statusAnalysis); err != nil {
 		t.Fatalf("select returned unexpected error: %v", err)
 	}

@@ -44,13 +44,38 @@ func newTestPool(t *testing.T) *db.Pool {
 	return pool
 }
 
+// seedTestTenant creates a throwaway tenant so service fixtures can satisfy
+// the tenant_id NOT NULL constraint 0024 added.
+func seedTestTenant(t *testing.T, pool *db.Pool) string {
+	t.Helper()
+	ctx := context.Background()
+
+	var tenantID string
+	if err := pool.QueryRow(ctx, "INSERT INTO tenants (name) VALUES ($1) RETURNING id", "pruner-test-tenant").Scan(&tenantID); err != nil {
+		t.Fatalf("seeding test tenant returned unexpected error: %v", err)
+	}
+	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), "DELETE FROM tenants WHERE id = $1", tenantID) })
+
+	return tenantID
+}
+
 func createTestService(t *testing.T, pool *db.Pool, name string) string {
 	t.Helper()
 	ctx := context.Background()
+	tenantID := seedTestTenant(t, pool)
+
 	var serviceID string
-	row := pool.QueryRow(ctx, "INSERT INTO services (name, slo_id) VALUES ($1, $2) RETURNING id", name, "slo-pruner-test")
+	tx, err := pool.BeginTenantTx(ctx, "", tenantID)
+	if err != nil {
+		t.Fatalf("BeginTenantTx() returned unexpected error: %v", err)
+	}
+	row := pool.QueryRow(db.WithTenantTx(ctx, tx), "INSERT INTO services (name, slo_id) VALUES ($1, $2) RETURNING id", name, "slo-pruner-test")
 	if err := row.Scan(&serviceID); err != nil {
+		_ = tx.Rollback(ctx)
 		t.Fatalf("insert service returned unexpected error: %v", err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		t.Fatalf("commit returned unexpected error: %v", err)
 	}
 	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), "DELETE FROM services WHERE id = $1", serviceID) })
 	return serviceID

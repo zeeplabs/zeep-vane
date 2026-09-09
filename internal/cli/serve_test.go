@@ -60,8 +60,21 @@ func createServeTestService(t *testing.T, pool *db.Pool, namePrefix string) stri
 
 	services := db.NewServiceRepository(pool)
 	service := &db.Service{Name: fmt.Sprintf("%s-%d", namePrefix, time.Now().UnixNano()), SLOID: "slo-serve-test"}
-	if err := services.Create(ctx, service); err != nil {
+	var tenantID string
+	if err := pool.QueryRow(ctx, "INSERT INTO tenants (name) VALUES ($1) RETURNING id", "serve-test-tenant").Scan(&tenantID); err != nil {
+		t.Fatalf("seeding test tenant returned unexpected error: %v", err)
+	}
+	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), "DELETE FROM tenants WHERE id = $1", tenantID) })
+	tx, err := pool.BeginTenantTx(ctx, "", tenantID)
+	if err != nil {
+		t.Fatalf("BeginTenantTx() returned unexpected error: %v", err)
+	}
+	if err := services.Create(db.WithTenantTx(ctx, tx), service); err != nil {
+		_ = tx.Rollback(ctx)
 		t.Fatalf("setup service Create() returned unexpected error: %v", err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		t.Fatalf("commit returned unexpected error: %v", err)
 	}
 	if err := services.UpdateStatus(ctx, service.ID, "operational"); err != nil {
 		t.Fatalf("setup UpdateStatus() returned unexpected error: %v", err)

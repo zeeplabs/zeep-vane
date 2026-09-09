@@ -48,12 +48,15 @@ func TestIncidentsMigration_AppliesClean_AndEnforcesForeignKeys(t *testing.T) {
 	serviceName := fmt.Sprintf("incidents-migration-test-service-%d", time.Now().UnixNano())
 	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), "DELETE FROM services WHERE name = $1", serviceName) })
 	var serviceID string
-	row = pool.QueryRow(ctx,
-		"INSERT INTO services (name, slo_id) VALUES ($1, $2) RETURNING id",
-		serviceName, "slo-fk-test")
-	if err := row.Scan(&serviceID); err != nil {
-		t.Fatalf("failed to insert service fixture: %v", err)
-	}
+	tenantID := seedPlainTenant(t, pool)
+	withTenantTx(t, pool, tenantID, func(txCtx context.Context) {
+		row = pool.QueryRow(txCtx,
+			"INSERT INTO services (name, slo_id) VALUES ($1, $2) RETURNING id",
+			serviceName, "slo-fk-test")
+		if err := row.Scan(&serviceID); err != nil {
+			t.Fatalf("failed to insert service fixture: %v", err)
+		}
+	})
 
 	_, err = pool.Exec(ctx,
 		"INSERT INTO incident_services (incident_id, service_id) VALUES ($1, $2)",

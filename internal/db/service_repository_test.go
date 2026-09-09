@@ -29,12 +29,15 @@ func newServiceRepoTestPool(t *testing.T) (*ServiceRepository, *Pool) {
 // registers their cleanup.
 func seedServiceFixtures(t *testing.T, repo *ServiceRepository, pool *Pool, prefix string, n int) []*Service {
 	t.Helper()
+	tenantID := seedPlainTenant(t, pool)
 	services := make([]*Service, n)
 	for i := 0; i < n; i++ {
 		s := &Service{Name: fmt.Sprintf("%s-%d", prefix, i), SLOID: fmt.Sprintf("slo-%s-%d", prefix, i)}
-		if err := repo.Create(context.Background(), s); err != nil {
-			t.Fatalf("setup Create() returned unexpected error: %v", err)
-		}
+		withTenantTx(t, pool, tenantID, func(ctx context.Context) {
+			if err := repo.Create(ctx, s); err != nil {
+				t.Fatalf("setup Create() returned unexpected error: %v", err)
+			}
+		})
 		t.Cleanup(func() {
 			_, _ = pool.Exec(context.Background(), "DELETE FROM services WHERE id = $1", s.ID)
 		})

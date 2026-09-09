@@ -34,11 +34,14 @@ func TestStatusIntervalsMigration_AppliesClean_AndHasExpectedIndexes(t *testing.
 	})
 
 	var serviceID string
-	row := pool.QueryRow(ctx,
-		"INSERT INTO services (name, slo_id) VALUES ($1, $2) RETURNING id", serviceName, "slo-789")
-	if err := row.Scan(&serviceID); err != nil {
-		t.Fatalf("insert service returned unexpected error: %v", err)
-	}
+	tenantID := seedPlainTenant(t, pool)
+	withTenantTx(t, pool, tenantID, func(txCtx context.Context) {
+		row := pool.QueryRow(txCtx,
+			"INSERT INTO services (name, slo_id) VALUES ($1, $2) RETURNING id", serviceName, "slo-789")
+		if err := row.Scan(&serviceID); err != nil {
+			t.Fatalf("insert service returned unexpected error: %v", err)
+		}
+	})
 
 	now := time.Now().UTC()
 	_, err = pool.Exec(ctx,
@@ -50,7 +53,7 @@ func TestStatusIntervalsMigration_AppliesClean_AndHasExpectedIndexes(t *testing.
 	}
 
 	var oneOpenIdx int
-	row = pool.QueryRow(ctx,
+	row := pool.QueryRow(ctx,
 		`SELECT count(*) FROM pg_indexes
 		 WHERE tablename = 'status_intervals'
 		 AND indexdef LIKE '%(service_id)%' AND indexdef LIKE '%ends_at IS NULL%'`)

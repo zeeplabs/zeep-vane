@@ -161,16 +161,18 @@ T16 → T19
 - Skill: NONE
 
 **Done when**:
-- [ ] Test seeds 2 tenants + 1 row per tenant in `services`
-- [ ] Test asserts zero rows returned with no `app.tenant_id` set
-- [ ] Test asserts tenant A's session never returns tenant B's row, including via a raw query that omits `WHERE tenant_id`
-- [ ] Gate check passes: `TEST_DATABASE_URL=... go test -tags=integration ./internal/db/...`
-- [ ] Test count: 3+ new test cases pass
+- [x] Test seeds 2 tenants + 1 row per tenant in `services`
+- [x] Test asserts zero rows returned with no `app.tenant_id` set
+- [x] Test asserts tenant A's session never returns tenant B's row, including via a raw query that omits `WHERE tenant_id`
+- [x] Gate check passes: `TEST_DATABASE_URL=... go test -tags=integration ./internal/db/...`
+- [x] Test count: 3+ new test cases pass (4: `TestRLS_NoTenantContext_ReturnsZeroRows`, `TestRLS_TenantA_NeverSeesTenantB_EvenWithUnfilteredQuery`, `TestRLS_TenantB_NeverSeesTenantA_Symmetric`, `TestRLS_NoTenantContext_InsertRejected`)
 
 **Tests**: integration
 **Gate**: full
 
 **Commit**: `test(db): add RLS fail-closed and cross-tenant isolation coverage`
+
+**Note:** the disposable Postgres container AGENTS.md §3 prescribes (`POSTGRES_USER=vane`) makes that role a superuser, which unconditionally bypasses RLS regardless of `FORCE ROW LEVEL SECURITY` - so the suite creates and runs its assertions as a dedicated non-superuser role (`vane_rls_test`, via `SET ROLE`) instead of the connection's own role; without this every assertion would pass for the wrong reason. **Collateral fix (necessary, not scope creep):** adding `tenant_id NOT NULL` to `services` broke every pre-existing integration test across `internal/db`, `internal/api`, `internal/poller`, `internal/retention`, and `internal/cli` that inserted a service without a tenant context - fixed by seeding a throwaway tenant and wrapping the insert in a committed transaction with `app.tenant_id` set (`internal/db/tenant_fixture_test.go`, `internal/api/tenant_fixture_test.go`, and equivalent local helpers in `internal/poller`, `internal/retention`, `internal/cli`). Two tests remain red and are deferred to after T6/T7 land: `TestCreateService_ValidRequest_201SavesSLOLink` and `TestListServices_ReturnsAllWithCurrentStatus` (`internal/api/services_handler_test.go`) create services through the real HTTP handler, which needs T3's middleware plus a session that actually carries an active tenant (T6 bootstrap + T7 session) to work - neither exists until later in this same batch. 0024's `up.sql` also gained a backfill safety net (assigns any pre-existing NULL-`tenant_id` service row to a placeholder tenant before `SET NOT NULL`) after discovering a pre-existing, unrelated test-cleanup bug (`incident_ai_fields_repository_test.go`/`incident_repository_test.go` deleted `incidents` before the `incident_services` rows referencing them, so the FK-blocked delete silently no-op'd and left orphaned `services` rows across the whole `go test` run) that made migration-replay tests (`*_migration_test.go`'s `Steps(-1)` pattern) flaky once `services.tenant_id` became `NOT NULL`.
 
 ---
 
