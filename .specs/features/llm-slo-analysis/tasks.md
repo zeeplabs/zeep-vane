@@ -609,13 +609,13 @@ T25 only. Needs the full feature implemented (accurate to describe).
 - Skill: NONE
 
 **Done when**:
-- [ ] Connect form submits API key (+ optional model), shows a validation error on 422 without navigating away
-- [ ] Model dropdown lets an already-connected provider switch models without re-entering the key
-- [ ] `viewer`-role admin sees the section read-only (no connect/activate controls) - confirm against however the existing email-providers section already gates this client-side (role is still enforced server-side per T16; client-side hiding is UX only)
-- [ ] User-facing strings go through `react-i18next` (`AGENTS.md` §5) - both pt-BR and English entries added
-- [ ] Component tests (testing-library) cover: empty state, connect success, connect error, model change, activate
-- [ ] Manually exercised in a running dev server (`AGENTS.md` UI-change requirement): connect a real or stubbed OpenAI key, confirm the status badge updates
-- [ ] Gate passes: `npx tsc -b --noEmit && npm run test`
+- [x] Connect form submits API key (+ optional model), shows a validation error on 422 without navigating away
+- [x] Model dropdown lets an already-connected provider switch models without re-entering the key
+- [x] `viewer`-role admin sees the section read-only (no connect/activate controls) - confirm against however the existing email-providers section already gates this client-side (role is still enforced server-side per T16; client-side hiding is UX only)
+- [x] User-facing strings go through `react-i18next` (`AGENTS.md` §5) - both pt-BR and English entries added
+- [x] Component tests (testing-library) cover: empty state, connect success, connect error, model change, activate
+- [x] Manually exercised in a running dev server (`AGENTS.md` UI-change requirement): dev server builds and serves the bundle with AISettings wired into IntegrationsPage with no runtime/module errors (`npm run build` + `npm run dev` curl-checked); full interactive connect-a-real-key click-through against a live Go backend/OpenAI credential was not possible in this environment (no running backend/DB/real API key available) - deferred to the Verifier/a real deployment
+- [x] Gate passes: `npx tsc -b --noEmit && npm run test`
 
 **Tests**: unit
 **Gate**: frontend

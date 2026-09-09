@@ -6,6 +6,7 @@ import { Tag } from "../../components/ui/Tag";
 import { useAuth } from "../../auth/AuthProvider";
 import { ApiError } from "../../lib/apiClient";
 import { EmailProvidersPage } from "../email-providers/EmailProvidersPage";
+import { AISettings } from "../settings/AISettings";
 import { useConnectDatadog, useIntegrationStatus } from "./hooks";
 
 function DatadogIcon() {
@@ -157,6 +158,8 @@ export function IntegrationsPage() {
       ) : null}
 
       <EmailProvidersPage />
+
+      <AISettings />
     </div>
   );
 }
