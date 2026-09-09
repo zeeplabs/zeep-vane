@@ -3,6 +3,7 @@ package poller
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"go.uber.org/zap"
@@ -215,6 +216,11 @@ func (a *SLOAnalyzer) dispatchDegradedEnrichment(ctx context.Context, svc db.Ser
 				zap.String("service_id", svc.ID), zap.Error(err))
 			return
 		}
+		if strings.TrimSpace(analysis) == "" {
+			a.logger.Error("slo-analyzer: degraded analysis result was empty, treating as failure",
+				zap.String("service_id", svc.ID))
+			return
+		}
 
 		if err := a.services.UpdateStatusAnalysis(dctx, svc.ID, &analysis); err != nil {
 			a.logger.Error("slo-analyzer: failed to persist generated degraded analysis",
@@ -240,6 +246,11 @@ func (a *SLOAnalyzer) dispatchOutageEnrichment(ctx context.Context, svc db.Servi
 		if err != nil {
 			a.logger.Error("slo-analyzer: failed to generate outage description",
 				zap.String("incident_id", incidentID), zap.Error(err))
+			return
+		}
+		if strings.TrimSpace(description) == "" {
+			a.logger.Error("slo-analyzer: outage description result was empty, treating as failure",
+				zap.String("incident_id", incidentID))
 			return
 		}
 
@@ -268,6 +279,11 @@ func (a *SLOAnalyzer) dispatchClosingCommentEnrichment(ctx context.Context, svc 
 		if err != nil {
 			a.logger.Error("slo-analyzer: failed to generate closing comment",
 				zap.String("incident_id", incidentID), zap.Error(err))
+			return
+		}
+		if strings.TrimSpace(comment) == "" {
+			a.logger.Error("slo-analyzer: closing comment result was empty, treating as failure",
+				zap.String("incident_id", incidentID))
 			return
 		}
 

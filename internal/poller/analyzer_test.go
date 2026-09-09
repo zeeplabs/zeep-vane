@@ -441,6 +441,62 @@ func TestSLOAnalyzer_DegradedEnrichment_Failure_LeavesStatusAnalysisNull(t *test
 	}
 }
 
+// TestSLOAnalyzer_DegradedEnrichment_EmptyResult_LeavesStatusAnalysisNull
+// covers spec.md's edge case: "IF the LLM returns an empty or clearly
+// malformed response THEN the system SHALL treat it the same as a failed
+// call... never publish empty or garbled text."
+// internal/connectors/openai.Client.Complete can legally return ("", nil).
+func TestSLOAnalyzer_DegradedEnrichment_EmptyResult_LeavesStatusAnalysisNull(t *testing.T) {
+	incidents := &fakeIncidentStore{openIncidents: map[string]string{}}
+	services := &fakeStatusAnalysisWriter{done: make(chan struct{}, 2)}
+	llmSvc := &fakeLLMGenerator{degradedResult: "   "}
+	a := newTestAnalyzer(incidents, services, llmSvc, time.Second)
+
+	a.HandleTransition(context.Background(), db.Service{ID: "svc-1", Name: "API"}, "operational", "degraded", datadog.SLOStatus{})
+
+	// Only the synchronous clear fires - the goroutine must discard the
+	// whitespace-only result instead of writing it.
+	waitOrTimeout(t, services.done)
+	time.Sleep(20 * time.Millisecond) // let a would-be second call (if the empty guard were missing) settle
+
+	calls := services.snapshot()
+	if len(calls) != 1 {
+		t.Fatalf("UpdateStatusAnalysis called %d times, want 1 (only the synchronous clear; an empty analysis result must not be written)", len(calls))
+	}
+}
+
+func TestSLOAnalyzer_OutageEnrichment_EmptyResult_LeavesGenericDescriptionInPlace(t *testing.T) {
+	incidents := &fakeIncidentStore{openIncidents: map[string]string{}}
+	services := &fakeStatusAnalysisWriter{}
+	llmSvc := &fakeLLMGenerator{outageResult: ""}
+	a := newTestAnalyzer(incidents, services, llmSvc, time.Second)
+
+	a.HandleTransition(context.Background(), db.Service{ID: "svc-1", Name: "API"}, "operational", "outage", datadog.SLOStatus{})
+
+	time.Sleep(50 * time.Millisecond) // let the goroutine finish
+
+	_, setDescriptionCalls, _ := incidents.snapshot()
+	if len(setDescriptionCalls) != 0 {
+		t.Errorf("SetDescription called %d times, want 0 (empty result must not overwrite the generic description)", len(setDescriptionCalls))
+	}
+}
+
+func TestSLOAnalyzer_ClosingCommentEnrichment_EmptyResult_LeavesIncidentOpenWithNoProposal(t *testing.T) {
+	incidents := &fakeIncidentStore{openIncidents: map[string]string{"svc-1": "existing-incident"}}
+	services := &fakeStatusAnalysisWriter{}
+	llmSvc := &fakeLLMGenerator{closingResult: "  \n "}
+	a := newTestAnalyzer(incidents, services, llmSvc, time.Second)
+
+	a.HandleTransition(context.Background(), db.Service{ID: "svc-1", Name: "API"}, "outage", "operational", datadog.SLOStatus{})
+
+	time.Sleep(50 * time.Millisecond) // let the goroutine finish
+
+	_, _, pendingCalls := incidents.snapshot()
+	if len(pendingCalls) != 0 {
+		t.Errorf("SetPendingCloseComment called %d times, want 0 (empty result must leave no proposal)", len(pendingCalls))
+	}
+}
+
 func TestSLOAnalyzer_OutageEnrichment_Success_OverwritesGenericDescription(t *testing.T) {
 	incidents := &fakeIncidentStore{openIncidents: map[string]string{}, setDescriptionDone: make(chan struct{}, 1)}
 	services := &fakeStatusAnalysisWriter{}
