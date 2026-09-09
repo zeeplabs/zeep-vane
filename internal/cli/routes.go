@@ -13,10 +13,12 @@ import (
 	"github.com/zeeplabs/zeep-vane/internal/audit"
 	"github.com/zeeplabs/zeep-vane/internal/config"
 	"github.com/zeeplabs/zeep-vane/internal/connectors/datadog"
+	"github.com/zeeplabs/zeep-vane/internal/connectors/openai"
 	"github.com/zeeplabs/zeep-vane/internal/connectors/resend"
 	"github.com/zeeplabs/zeep-vane/internal/connectors/sendgrid"
 	"github.com/zeeplabs/zeep-vane/internal/db"
 	"github.com/zeeplabs/zeep-vane/internal/email"
+	"github.com/zeeplabs/zeep-vane/internal/llm"
 	"github.com/zeeplabs/zeep-vane/internal/ratelimit"
 	"github.com/zeeplabs/zeep-vane/internal/router"
 	"github.com/zeeplabs/zeep-vane/web"
@@ -216,5 +218,21 @@ func emailProviderFactory(provider, apiKey string) (email.Provider, error) {
 		return resend.NewClient(apiKey), nil
 	default:
 		return nil, fmt.Errorf("cli: unknown email provider %q", provider)
+	}
+}
+
+// llmProviderFactory builds the concrete connector for provider,
+// authenticated with apiKey and configured to use model. It is
+// llm.Service's only dependency on a concrete connector package -
+// internal/llm itself never imports internal/connectors/openai directly
+// (same "breaking the potential import cycle" decision as
+// emailProviderFactory above). Not yet called by anything - wired to
+// llm.Service in a later task.
+func llmProviderFactory(provider, apiKey, model string) (llm.Provider, error) {
+	switch provider {
+	case "openai":
+		return openai.NewClient(apiKey, model), nil
+	default:
+		return nil, fmt.Errorf("cli: unknown llm provider %q", provider)
 	}
 }

@@ -296,8 +296,8 @@ T25 only. Needs the full feature implemented (accurate to describe).
 - Skill: NONE
 
 **Done when**:
-- [ ] Factory function returns a working `*openai.Client` for `"openai"`, a clear error for any other provider name
-- [ ] `go build ./...` succeeds with the new function wired (not yet called by anything until T16 wires the handler/service - acceptable per design's phase ordering, confirmed compiling standalone)
+- [x] Factory function returns a working `*openai.Client` for `"openai"`, a clear error for any other provider name
+- [x] `go build ./...` succeeds with the new function wired (not yet called by anything until T16 wires the handler/service - acceptable per design's phase ordering, confirmed compiling standalone)
 
 **Tests**: none (thin wiring function, matrix: entity/config layer - covered indirectly once T16's handler tests exercise it)
 **Gate**: quick
