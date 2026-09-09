@@ -245,15 +245,19 @@ T16 → T19
 - Skill: NONE
 
 **Done when**:
-- [ ] `Create`/`ListForUser`/`ListForTenant`/`Delete`/`UpdateRole` all implemented and RLS-scoped where applicable
-- [ ] `Delete` on the last `owner` of a tenant returns a distinct error, no row removed
-- [ ] Gate check passes: `TEST_DATABASE_URL=... go test -tags=integration ./internal/db/...`
-- [ ] Test count: 6+ tests pass including the last-owner guard
+- [x] `Create`/`ListForUser`/`ListForTenant`/`Delete`/`UpdateRole` all implemented and RLS-scoped where applicable
+- [x] `Delete` on the last `owner` of a tenant returns a distinct error, no row removed
+- [x] Gate check passes: `TEST_DATABASE_URL=... go test -tags=integration ./internal/db/...`
+- [x] Test count: 8 tests pass including the last-owner guard
 
 **Tests**: integration
 **Gate**: full
 
 **Commit**: `feat(db): add TenantMembershipRepository with last-owner guard`
+
+**Implementation notes:** `tenant_memberships`' RLS policy (0024) accepts either `app.user_id` or `app.tenant_id` matching - the `user_id` branch is what makes `ListForUser` callable before any tenant is chosen (login resolving which tenant(s) exist for a user is exactly the chicken-and-egg case that branch exists for). `Delete`'s last-owner guard mirrors `AdminRepository.CountActiveOwners`'s existing `SELECT ... FOR UPDATE` subquery pattern, scoped by `tenant_id`, so a concurrent `Delete`/`UpdateRole` touching the same tenant's owners blocks rather than racing. `user_id` still FKs to `admins(id)` per T1's deviation note (no `users` table in this batch).
+
+**Phase 2 completion gate (end of Phase 2 - T3, T4, T5):** ran Quick (`go build ./... && go vet ./... && gofmt -l` + `go test ./...`) and Frontend (`npx tsc -b --noEmit && npm run test`, both clean, 277 tests) in full; Full ran per-package (`./internal/db/...`, `./internal/api/...`, `./internal/poller/...`, `./internal/retention/...`, `./internal/cli/...` with a disposable Postgres container) rather than one repo-wide `go test -tags=integration ./...` invocation - `internal/api`'s 2 known-deferred `services_handler_test.go` cases (T2/T3 notes) are the only red result, unchanged from before this phase. `internal/poller`/`internal/retention` showed transient, non-deterministic timing-sensitive failures on one run of a long-lived shared test container (real-time tickers + a shared DB under load) that did not reproduce on a fresh container or in isolation - pre-existing test-suite characteristic, not caused by this batch's changes (neither failing assertion touches `tenant_id`).
 
 ---
 
