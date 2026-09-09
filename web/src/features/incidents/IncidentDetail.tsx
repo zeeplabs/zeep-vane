@@ -6,8 +6,11 @@ import { Button } from "../../components/ui/Button";
 import { Field } from "../../components/ui/Field";
 import { useAuth } from "../../auth/AuthProvider";
 import type { IncidentStatus } from "../../types/api";
+import { ApiError } from "../../lib/apiClient";
 import {
   useAddIncidentUpdate,
+  useConfirmCloseIncident,
+  useDiscardCloseProposal,
   useIncidents,
   useIncidentUpdates,
   useTransitionIncident,
@@ -41,8 +44,11 @@ export function IncidentDetail() {
   const updates = updatesPage?.items;
   const addUpdate = useAddIncidentUpdate(id);
   const transition = useTransitionIncident(id);
+  const confirmClose = useConfirmCloseIncident(id);
+  const discardCloseProposal = useDiscardCloseProposal(id);
 
   const [body, setBody] = useState("");
+  const [proposalError, setProposalError] = useState<string | null>(null);
 
   const incident = incidents?.find((i) => i.id === id);
 
@@ -53,6 +59,24 @@ export function IncidentDetail() {
     setBody("");
   }
 
+  async function handleConfirmClose() {
+    setProposalError(null);
+    try {
+      await confirmClose.mutateAsync();
+    } catch (err) {
+      setProposalError(err instanceof ApiError ? err.message : "Não foi possível confirmar o encerramento.");
+    }
+  }
+
+  async function handleDiscardCloseProposal() {
+    setProposalError(null);
+    try {
+      await discardCloseProposal.mutateAsync();
+    } catch (err) {
+      setProposalError(err instanceof ApiError ? err.message : "Não foi possível descartar a proposta.");
+    }
+  }
+
   if (!incident) return <p className="text-neutral-400">Incidente não encontrado.</p>;
 
   return (
@@ -61,8 +85,49 @@ export function IncidentDetail() {
         <Tag variant={incident.status === "resolved" ? "neutral" : "accent"}>
           {incident.status === "resolved" ? "Resolvido" : incident.status}
         </Tag>
+        {incident.auto_created ? <Tag variant="neutral-outline">Automático</Tag> : null}
         <h3 className="text-text">{incident.title}</h3>
       </div>
+
+      {/* Pending-close-comment banner (AI-19..AI-22): shown whenever the LLM
+          has proposed a closing comment awaiting confirmation, regardless
+          of role - only the confirm/discard buttons are gated on canManage
+          (server still enforces 403 on either action regardless, T17). */}
+      {incident.pending_close_comment ? (
+        <Card
+          elevation="elev-sm"
+          className="flex flex-col gap-2 p-4"
+          style={{ border: "1px solid color-mix(in oklch, var(--color-accent) 30%, var(--color-divider))" }}
+        >
+          <p className="m-0 text-xs uppercase tracking-wide text-neutral-400">
+            Comentário de encerramento sugerido pela IA
+          </p>
+          <p className="m-0 text-sm text-text">{incident.pending_close_comment}</p>
+          {proposalError ? (
+            <p role="alert" className="text-xs text-critical">
+              {proposalError}
+            </p>
+          ) : null}
+          {canManage ? (
+            <div className="flex gap-2">
+              <Button
+                variant="primary"
+                onClick={handleConfirmClose}
+                disabled={confirmClose.isPending || discardCloseProposal.isPending}
+              >
+                Confirmar encerramento
+              </Button>
+              <Button
+                variant="secondary"
+                onClick={handleDiscardCloseProposal}
+                disabled={confirmClose.isPending || discardCloseProposal.isPending}
+              >
+                Descartar
+              </Button>
+            </div>
+          ) : null}
+        </Card>
+      ) : null}
 
       {canManage ? (
         <div className="flex flex-wrap gap-2">

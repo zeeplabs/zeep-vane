@@ -160,6 +160,9 @@ function IncidentCard({ incident, tone }: { incident: PublicIncidentEntry; tone:
       >
         <div className="flex flex-col gap-1.5">
           <p className="text-[15px] font-medium text-text">{incident.title}</p>
+          {incident.description ? (
+            <p className="text-[13px] text-neutral-300">{incident.description}</p>
+          ) : null}
           {tone === "active" ? (
             <div className="flex flex-wrap gap-1.5">
               {incident.service_names.map((name) => (

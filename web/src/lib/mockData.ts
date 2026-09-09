@@ -200,20 +200,32 @@ export function advanceStatusPagePolling(page: StatusPage): StatusPage {
 
 export const incidents: Incident[] = [
   {
+    // Auto-created (AI-12) with a pending closing-comment proposal
+    // (AI-19/AI-20/AI-21/AI-22) still awaiting confirm/discard - exercises
+    // both the auto_created badge and the pending-close-comment banner in
+    // the admin dashboard, plus description rendering on the public page.
     id: "inc-1",
     title: "Latência elevada no Checkout",
     status: "monitoring",
     created_at: new Date(Date.now() - 1000 * 60 * 60 * 2).toISOString(),
     resolved_at: null,
     service_ids: ["svc-2"],
+    description: "Aumento sustentado de latência p95 no Checkout, acima do SLO configurado.",
+    pending_close_comment: "Latência normalizada após rollback do deploy; monitorando estabilização.",
+    auto_created: true,
   },
   {
+    // Manually created, no description/proposal - exercises the
+    // title-only/no-banner fallback paths.
     id: "inc-2",
     title: "Indisponibilidade parcial da API",
     status: "resolved",
     created_at: new Date(Date.now() - 1000 * 60 * 60 * 24 * 3).toISOString(),
     resolved_at: new Date(Date.now() - 1000 * 60 * 60 * 24 * 3 + 1000 * 60 * 45).toISOString(),
     service_ids: ["svc-1"],
+    description: null,
+    pending_close_comment: null,
+    auto_created: false,
   },
 ];
 

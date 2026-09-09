@@ -160,6 +160,18 @@ describe("PublicStatusPage", () => {
     expect(screen.getByText(/Resolvido \d{2} \w{3}, \d{2}:\d{2}/)).toBeInTheDocument();
   });
 
+  // AI-09/AI-11/AI-18: inc-1's fixture (mockData.ts) has a description,
+  // inc-2 doesn't - exercises both the present and title-only-fallback
+  // cases on the public incident card.
+  it("incidente ativo com description mostra o texto; incidente resolvido sem description mostra só o título", async () => {
+    await renderAt("/status/sp-1");
+
+    expect(
+      await screen.findByText("Aumento sustentado de latência p95 no Checkout, acima do SLO configurado."),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Indisponibilidade parcial da API")).toBeInTheDocument();
+  });
+
   it("status page inexistente ou não publicada mostra página não encontrada", async () => {
     await renderAt("/status/sp-2");
 

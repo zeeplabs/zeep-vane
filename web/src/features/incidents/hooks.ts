@@ -60,3 +60,33 @@ export function useTransitionIncident(incidentId: string) {
     },
   });
 }
+
+// useConfirmCloseIncident accepts the LLM-drafted closing comment awaiting
+// confirmation (AI-20): it's appended as the incident's final update and
+// the incident transitions to resolved, all server-side in one
+// transaction - POST /api/incidents/{id}/confirm-close.
+export function useConfirmCloseIncident(incidentId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: () => apiFetch<Incident>(`/api/incidents/${incidentId}/confirm-close`, { method: "POST" }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["incidents"] });
+    },
+  });
+}
+
+// useDiscardCloseProposal clears the pending closing-comment proposal,
+// leaving the incident otherwise unchanged (AI-22) - POST
+// /api/incidents/{id}/discard-close-proposal.
+export function useDiscardCloseProposal(incidentId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: () =>
+      apiFetch<{ status: "discarded" }>(`/api/incidents/${incidentId}/discard-close-proposal`, {
+        method: "POST",
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["incidents"] });
+    },
+  });
+}

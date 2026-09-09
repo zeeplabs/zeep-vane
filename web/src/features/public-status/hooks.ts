@@ -26,6 +26,7 @@ interface PreviewIncident {
   created_at: string;
   resolved_at: string | null;
   updates: PreviewIncidentUpdate[];
+  description?: string;
 }
 
 interface PreviewService {
@@ -63,6 +64,7 @@ function toPublicIncidentEntry(incident: PreviewIncident): PublicIncidentEntry {
     resolved_at: incident.resolved_at,
     service_names: [],
     updates: incident.updates,
+    description: incident.description,
   };
 }
 

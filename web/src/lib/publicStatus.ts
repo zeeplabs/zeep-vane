@@ -54,6 +54,11 @@ export interface PublicIncidentEntry {
   resolved_at: string | null;
   service_names: string[];
   updates: PublicIncidentUpdateEntry[];
+  // description is an optional longer body (AI-09/AI-11/AI-18) - absent for
+  // a manually-created incident, or an auto-created one still on its
+  // generic title-only text. pending_close_comment is deliberately never
+  // exposed here - admin-only.
+  description?: string;
 }
 
 export interface PublicStatusPageData {

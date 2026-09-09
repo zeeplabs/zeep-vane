@@ -73,6 +73,12 @@ export interface Incident {
   created_at: string;
   resolved_at: string | null;
   service_ids: string[];
+  // description, pending_close_comment, and auto_created are admin-only
+  // fields (internal/api/incidents_handler.go's incidentResponse, AI-09,
+  // AI-19/AI-20, AI-12) - never present on the public incident response.
+  description: string | null;
+  pending_close_comment: string | null;
+  auto_created: boolean;
 }
 
 export interface IncidentUpdate {

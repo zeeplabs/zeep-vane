@@ -116,6 +116,7 @@ function ActiveIncidentCard({
           <Tag variant="accent">
             {activeStatusLabel[incident.status as Exclude<IncidentStatus, "resolved">]}
           </Tag>
+          {incident.auto_created ? <Tag variant="neutral-outline">Automático</Tag> : null}
           <span className="text-[15px] font-medium text-text">{incident.title}</span>
         </div>
         <span className="text-xs text-neutral-400">{formatActiveTimestamp(incident.created_at)}</span>
@@ -292,6 +293,7 @@ export function IncidentsPage() {
               <div className="flex items-start justify-between">
                 <div className="flex items-center gap-2">
                   <Tag variant="neutral">Resolvido</Tag>
+                  {incident.auto_created ? <Tag variant="neutral-outline">Automático</Tag> : null}
                   <span className="text-[15px] font-medium text-text">{incident.title}</span>
                 </div>
                 <span className="text-xs text-neutral-400">

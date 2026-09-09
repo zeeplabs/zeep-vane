@@ -72,4 +72,24 @@ describe("IncidentsPage", () => {
     await waitFor(() => expect(screen.queryByLabelText("Título")).not.toBeInTheDocument());
     expect(await screen.findByText("Falha de teste E2E")).toBeInTheDocument();
   });
+
+  // AI-12: inc-1's fixture (mockData.ts) is auto_created:true, inc-2 isn't -
+  // exercises both the badge-present and badge-absent cases.
+  it("incidente auto-criado mostra badge Automático, manual não mostra", async () => {
+    await loginAs("owner@vane.app");
+    renderPage();
+
+    const activeCard = (await screen.findByText("Latência elevada no Checkout")).closest(
+      ".flex.flex-col"
+    ) as HTMLElement;
+    expect(activeCard).not.toBeNull();
+    expect(activeCard.textContent).toContain("Automático");
+
+    await userEvent.click(screen.getByRole("tab", { name: "Resolvidos" }));
+    const resolvedCard = (await screen.findByText("Indisponibilidade parcial da API")).closest(
+      ".flex.flex-col"
+    ) as HTMLElement;
+    expect(resolvedCard).not.toBeNull();
+    expect(resolvedCard.textContent).not.toContain("Automático");
+  });
 });

@@ -879,6 +879,9 @@ export const handlers = [
       created_at: new Date().toISOString(),
       resolved_at: null,
       service_ids: body.service_ids,
+      description: null,
+      pending_close_comment: null,
+      auto_created: false,
     };
     incidentsState.push(created);
     return HttpResponse.json(created, { status: 201 });
@@ -945,6 +948,51 @@ export const handlers = [
       created_at: new Date().toISOString(),
     });
     return HttpResponse.json(incident);
+  }),
+
+  // POST /api/incidents/:id/confirm-close (AI-20/AI-21) - mirrors
+  // IncidentsHandler.ConfirmClose: appends the pending_close_comment as the
+  // incident's final update, transitions to resolved, and clears the
+  // proposal. 404 unknown incident, 422 when there is no pending proposal.
+  http.post("/api/incidents/:id/confirm-close", ({ params }) => {
+    if (!sessionAdminId) return HttpResponse.json({ error: "unauthorized" }, { status: 401 });
+    const incidentId = params.id as string;
+    const incident = incidentsState.find((i) => i.id === incidentId);
+    if (!incident) {
+      return HttpResponse.json({ error: "incident not found" }, { status: 404 });
+    }
+    if (!incident.pending_close_comment) {
+      return HttpResponse.json({ error: "incident has no pending close proposal" }, { status: 422 });
+    }
+    incidentUpdateIdCounter += 1;
+    incidentUpdatesState.push({
+      id: `upd-msw-${incidentUpdateIdCounter}`,
+      incident_id: incidentId,
+      body: incident.pending_close_comment,
+      created_at: new Date().toISOString(),
+    });
+    incident.status = "resolved";
+    incident.resolved_at = new Date().toISOString();
+    incident.pending_close_comment = null;
+    return HttpResponse.json(incident);
+  }),
+
+  // POST /api/incidents/:id/discard-close-proposal (AI-22) - mirrors
+  // IncidentsHandler.DiscardCloseProposal: clears the pending proposal,
+  // leaving the incident otherwise unchanged. 404 unknown incident, 422
+  // when there is no pending proposal.
+  http.post("/api/incidents/:id/discard-close-proposal", ({ params }) => {
+    if (!sessionAdminId) return HttpResponse.json({ error: "unauthorized" }, { status: 401 });
+    const incidentId = params.id as string;
+    const incident = incidentsState.find((i) => i.id === incidentId);
+    if (!incident) {
+      return HttpResponse.json({ error: "incident not found" }, { status: 404 });
+    }
+    if (!incident.pending_close_comment) {
+      return HttpResponse.json({ error: "incident has no pending close proposal" }, { status: 422 });
+    }
+    incident.pending_close_comment = null;
+    return HttpResponse.json({ status: "discarded" });
   }),
 
   // GET /api/admins (I18/I19/INVITE-07) - mirrors AdminsHandler.List: active
@@ -1100,6 +1148,9 @@ export const handlers = [
       inc.service_ids.some((sid) => page.service_ids.includes(sid)),
     );
 
+    // description mirrors the real public response (AI-09/AI-11/AI-18) -
+    // pending_close_comment is deliberately never included here, matching
+    // publicIncidentResponse's own admin-only exclusion.
     const toPreviewIncident = (incident: (typeof seedIncidents)[number]) => ({
       id: incident.id,
       title: incident.title,
@@ -1109,6 +1160,7 @@ export const handlers = [
       updates: seedIncidentUpdates
         .filter((u) => u.incident_id === incident.id)
         .map((u) => ({ body: u.body, created_at: u.created_at })),
+      description: incident.description ?? undefined,
     });
 
     const retentionCutoffMs = Date.now() - 1000 * 60 * 60 * 24 * 90;

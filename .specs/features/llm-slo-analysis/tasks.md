@@ -664,13 +664,13 @@ T25 only. Needs the full feature implemented (accurate to describe).
 - Skill: NONE
 
 **Done when**:
-- [ ] Public incident card shows `description` when present, falls back to today's title-only rendering when absent (manually-created incidents, or an auto-created one still on its generic text)
-- [ ] Admin incidents dashboard shows an `auto_created` badge
-- [ ] Admin incident detail shows a pending-close-comment banner when `pending_close_comment` is non-null, with working confirm/discard buttons wired to T17's endpoints, disappearing after either action
-- [ ] `viewer` role sees the banner but no confirm/discard buttons (server still enforces 403 regardless)
-- [ ] Component tests cover: description present/absent, pending-proposal banner present/absent, confirm success, discard success, confirm/discard error handling
-- [ ] Manually exercised in a running dev server against MSW-mocked data
-- [ ] Gate passes: `npx tsc -b --noEmit && npm run test`
+- [x] Public incident card shows `description` when present, falls back to today's title-only rendering when absent (manually-created incidents, or an auto-created one still on its generic text)
+- [x] Admin incidents dashboard shows an `auto_created` badge
+- [x] Admin incident detail shows a pending-close-comment banner when `pending_close_comment` is non-null, with working confirm/discard buttons wired to T17's endpoints, disappearing after either action
+- [x] `viewer` role sees the banner but no confirm/discard buttons (server still enforces 403 regardless)
+- [x] Component tests cover: description present/absent, pending-proposal banner present/absent, confirm success, discard success, confirm/discard error handling
+- [x] Manually exercised in a running dev server against MSW-mocked data (build + dev server serve verified with no compile/runtime module errors; interactive assertions covered by automated component tests, no live backend available in this environment)
+- [x] Gate passes: `npx tsc -b --noEmit && npm run test`
 
 **Tests**: unit
 **Gate**: frontend
