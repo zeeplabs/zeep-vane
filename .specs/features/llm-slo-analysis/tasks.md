@@ -220,10 +220,10 @@ T25 only. Needs the full feature implemented (accurate to describe).
 - Skill: NONE
 
 **Done when**:
-- [ ] `AnalysisInput` struct matches design.md exactly (`ServiceName`, `SLOState`, `SLI`, `Target`, `Timeframe`, `ErrorBudgetRemaining`)
-- [ ] Three prompt builders each produce a system prompt instructing a short (1-2 sentence) factual, non-alarmist output, and a user prompt embedding the `AnalysisInput` fields
-- [ ] Unit tests confirm each builder includes the service name and SLO state in its output prompt (regression against silently dropping a field)
-- [ ] Gate passes: `go test ./internal/llm/...`
+- [x] `AnalysisInput` struct matches design.md exactly (`ServiceName`, `SLOState`, `SLI`, `Target`, `Timeframe`, `ErrorBudgetRemaining`)
+- [x] Three prompt builders each produce a system prompt instructing a short (1-2 sentence) factual, non-alarmist output, and a user prompt embedding the `AnalysisInput` fields
+- [x] Unit tests confirm each builder includes the service name and SLO state in its output prompt (regression against silently dropping a field)
+- [x] Gate passes: `go test ./internal/llm/...`
 
 **Tests**: unit
 **Gate**: quick
