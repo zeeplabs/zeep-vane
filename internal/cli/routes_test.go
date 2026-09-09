@@ -355,6 +355,18 @@ func writeRouteCases() []routeCase {
 			path:   "/api/instance/dns-target",
 			body:   func() []byte { return nil },
 		},
+		{
+			name:   "POST /api/incidents/{id}/confirm-close",
+			method: http.MethodPost,
+			path:   "/api/incidents/" + routesTestNonexistentID + "/confirm-close",
+			body:   func() []byte { return nil },
+		},
+		{
+			name:   "POST /api/incidents/{id}/discard-close-proposal",
+			method: http.MethodPost,
+			path:   "/api/incidents/" + routesTestNonexistentID + "/discard-close-proposal",
+			body:   func() []byte { return nil },
+		},
 	}
 }
 
