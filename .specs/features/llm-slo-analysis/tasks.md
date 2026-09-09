@@ -560,9 +560,9 @@ T25 only. Needs the full feature implemented (accurate to describe).
 - Skill: NONE
 
 **Done when**:
-- [ ] `go build ./...`, `go vet ./...`, `gofmt -l` (repo-wide) all clean
-- [ ] `go test ./...` green
-- [ ] Disposable-Postgres integration gate green (`AGENTS.md` §3 exact commands), container torn down after
+- [x] `go build ./...`, `go vet ./...`, `gofmt -l` (repo-wide) all clean
+- [x] `go test ./...` green
+- [x] Disposable-Postgres integration gate green (`AGENTS.md` §3 exact commands), container torn down after
 
 **Tests**: none (gate-only task)
 **Gate**: full
