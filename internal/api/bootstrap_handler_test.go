@@ -39,9 +39,11 @@ func newBootstrapRouter(t *testing.T) (http.Handler, *db.AdminRepository, *db.Po
 	t.Cleanup(pool.Close)
 
 	repo := db.NewAdminRepository(pool)
+	tenants := db.NewTenantRepository(pool)
+	memberships := db.NewTenantMembershipRepository(pool)
 	// secureCookies=true: default behavior, no test in this file exercises
 	// the VANE_SECURE_COOKIES=false path (covered in auth_handler_test.go).
-	handler := NewBootstrapHandler(pool, repo, zap.NewNop(), testBootstrapSessionSecret, true)
+	handler := NewBootstrapHandler(pool, repo, tenants, memberships, zap.NewNop(), testBootstrapSessionSecret, true)
 
 	r := chi.NewRouter()
 	r.Get("/api/bootstrap/status", handler.Status)
@@ -259,17 +261,74 @@ func TestBootstrapHandler_Create_Success_SetsSessionCookieAndReturnsIdentity(t *
 	}
 }
 
+// TestBootstrapHandler_Create_Success_CreatesTenantAndOwnerMembership
+// proves TENANT-05/06/07: bootstrapping a fresh instance creates exactly 1
+// tenant and links the new admin to it as owner, atomically with each
+// other.
+func TestBootstrapHandler_Create_Success_CreatesTenantAndOwnerMembership(t *testing.T) {
+	r, _, pool := newBootstrapRouter(t)
+	restore := clearAdminsForBootstrapTest(t, pool)
+	t.Cleanup(restore)
+
+	email := bootstrapUniqueTestEmail(t)
+	tenantName := fmt.Sprintf("Test Owner Tenant %d", time.Now().UnixNano())
+	rec := postBootstrap(t, r, bootstrapCreateRequest{Name: tenantName, Email: email, Password: "correct-horse-battery-staple"})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (body=%q)", rec.Code, rec.Body.String())
+	}
+
+	var body meResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("response body is not valid JSON: %v", err)
+	}
+	adminID := body.ID
+	t.Cleanup(func() {
+		_, _ = pool.Exec(context.Background(), "DELETE FROM tenant_memberships WHERE user_id = $1", adminID)
+		_, _ = pool.Exec(context.Background(), "DELETE FROM tenants WHERE name = $1", tenantName)
+	})
+
+	ctx := context.Background()
+	var tenantCount int
+	if err := pool.QueryRow(ctx, "SELECT COUNT(*) FROM tenants WHERE name = $1", tenantName).Scan(&tenantCount); err != nil {
+		t.Fatalf("counting tenants returned unexpected error: %v", err)
+	}
+	if tenantCount != 1 {
+		t.Fatalf("tenants row count for the new admin = %d, want 1", tenantCount)
+	}
+
+	var membershipRole string
+	row := pool.QueryRow(ctx,
+		"SELECT tm.role FROM tenant_memberships tm JOIN tenants t ON t.id = tm.tenant_id WHERE tm.user_id = $1 AND t.name = $2",
+		adminID, tenantName,
+	)
+	if err := row.Scan(&membershipRole); err != nil {
+		t.Fatalf("expected exactly one owner membership linking the new admin to their tenant: %v", err)
+	}
+	if membershipRole != db.RoleOwner {
+		t.Errorf("membership role = %q, want %q", membershipRole, db.RoleOwner)
+	}
+}
+
 func TestBootstrapHandler_Create_AlreadyBootstrapped_Returns409NoSecondAdmin(t *testing.T) {
 	r, _, pool := newBootstrapRouter(t)
 	restore := clearAdminsForBootstrapTest(t, pool)
 	t.Cleanup(restore)
 
-	first := postBootstrap(t, r, bootstrapCreateRequest{Name: "Test Owner", Email: bootstrapUniqueTestEmail(t), Password: "correct-horse-battery-staple"})
+	firstName := fmt.Sprintf("First Owner Tenant %d", time.Now().UnixNano())
+	first := postBootstrap(t, r, bootstrapCreateRequest{Name: firstName, Email: bootstrapUniqueTestEmail(t), Password: "correct-horse-battery-staple"})
 	if first.Code != http.StatusOK {
 		t.Fatalf("first POST /api/bootstrap status = %d, want 200 (body=%q)", first.Code, first.Body.String())
 	}
+	var firstBody meResponse
+	if err := json.Unmarshal(first.Body.Bytes(), &firstBody); err != nil {
+		t.Fatalf("first response body is not valid JSON: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = pool.Exec(context.Background(), "DELETE FROM tenant_memberships WHERE user_id = $1", firstBody.ID)
+		_, _ = pool.Exec(context.Background(), "DELETE FROM tenants WHERE name = $1", firstName)
+	})
 
-	second := postBootstrap(t, r, bootstrapCreateRequest{Name: "Test Owner", Email: bootstrapUniqueTestEmail(t), Password: "another-horse-battery-staple"})
+	second := postBootstrap(t, r, bootstrapCreateRequest{Name: "Second Owner Tenant", Email: bootstrapUniqueTestEmail(t), Password: "another-horse-battery-staple"})
 	if second.Code != http.StatusConflict {
 		t.Fatalf("second POST /api/bootstrap status = %d, want 409", second.Code)
 	}
@@ -284,6 +343,17 @@ func TestBootstrapHandler_Create_AlreadyBootstrapped_Returns409NoSecondAdmin(t *
 	}
 	if count != 1 {
 		t.Errorf("admins row count after refused second bootstrap = %d, want 1", count)
+	}
+
+	// TENANT-05/07: a refused second bootstrap must never create a second
+	// tenant either - not even the first tenant's row duplicated, and
+	// definitely not one for the rejected request's name.
+	var tenantCount int
+	if err := pool.QueryRow(ctx, "SELECT COUNT(*) FROM tenants WHERE name IN ($1, $2)", firstName, "Second Owner Tenant").Scan(&tenantCount); err != nil {
+		t.Fatalf("counting tenants returned unexpected error: %v", err)
+	}
+	if tenantCount != 1 {
+		t.Errorf("tenants row count after refused second bootstrap = %d, want 1 (only the first)", tenantCount)
 	}
 }
 

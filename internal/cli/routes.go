@@ -52,6 +52,8 @@ func buildAdminRouter(pool *db.Pool, cfg config.Config, logger *zap.Logger, poll
 	auditLog := audit.NewLog(pool)
 
 	companySettingsRepo := db.NewCompanySettingsRepository(pool)
+	tenantsRepo := db.NewTenantRepository(pool)
+	tenantMembershipsRepo := db.NewTenantMembershipRepository(pool)
 
 	// emailService is built with a ProviderFactory closure rather than a
 	// direct import of internal/connectors/sendgrid|resend from
@@ -75,7 +77,7 @@ func buildAdminRouter(pool *db.Pool, cfg config.Config, logger *zap.Logger, poll
 	llmProvidersHandler := api.NewLLMProvidersHandler(llmService, logger)
 
 	authHandler := api.NewAuthHandler(admins, logger, cfg.SessionSecret, cfg.SecureCookies)
-	bootstrapHandler := api.NewBootstrapHandler(pool, admins, logger, cfg.SessionSecret, cfg.SecureCookies)
+	bootstrapHandler := api.NewBootstrapHandler(pool, admins, tenantsRepo, tenantMembershipsRepo, logger, cfg.SessionSecret, cfg.SecureCookies)
 	passwordResetHandler := api.NewPasswordResetHandler(admins, db.NewPasswordResetRepository(pool), emailService, companySettingsRepo, logger, cfg.DevTokenLogging, cfg.AdminBaseURL)
 	adminsHandler := api.NewAdminsHandler(pool, admins, invites, emailService, companySettingsRepo, auditLog, logger, cfg.DevTokenLogging, cfg.AdminBaseURL, cfg.SessionSecret, cfg.SecureCookies)
 	domainsHandler := api.NewDomainsHandler(db.NewDomainRepository(pool), auditLog, logger)

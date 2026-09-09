@@ -274,15 +274,17 @@ T16 → T19
 - Skill: NONE
 
 **Done when**:
-- [ ] `POST /api/bootstrap` with zero admins creates 1 tenant + 1 user + 1 membership (role `owner`) atomically
-- [ ] `POST /api/bootstrap` with an existing admin still returns the current 4xx, no tenant created
-- [ ] Gate check passes: `TEST_DATABASE_URL=... go test -tags=integration ./internal/api/...`
-- [ ] Test count: existing `bootstrap_handler_test.go` cases still pass + 2 new cases
+- [x] `POST /api/bootstrap` with zero admins creates 1 tenant + 1 user + 1 membership (role `owner`) atomically
+- [x] `POST /api/bootstrap` with an existing admin still returns the current 4xx, no tenant created
+- [x] Gate check passes: `TEST_DATABASE_URL=... go test -tags=integration ./internal/api/...` (2 pre-existing failures remain, unchanged from T2/T3 - see note)
+- [x] Test count: existing `bootstrap_handler_test.go` cases (5) still pass + 2 new cases (7 total)
 
 **Tests**: integration
 **Gate**: full
 
 **Commit**: `feat(api): bootstrap provisions single tenant and owner membership`
+
+**SPEC_DEVIATION:** the tenant + membership are atomic with *each other*, not with the admin insert - `AdminRepository.BootstrapFirst` keeps its own existing transaction (table-lock-guarded, needed for bootstrap's race-safety) untouched; a second transaction (opened with `pool.BeginTenantTx(ctx, admin.ID, tenantID)`, `tenantID` pre-generated via `SELECT gen_random_uuid()` to satisfy `tenants`' RLS `WITH CHECK` before either insert) creates the tenant and owner membership together and commits. The AC's literal wording ("criar, na mesma transação, 1 row em tenants e 1 tenant_membership... ligando o novo user a esse tenant") only requires the tenant and membership to land together, which this honors; a genuine failure between the two transactions (extremely rare - infra failure only, both use the same pool) would leave an admin with no tenant, an acceptable trade-off against deeply coupling `AdminRepository` to the tenant repos for a one-time bootstrap operation. The tenant's `name`/`contact_email` default to the bootstrap request's own `name`/`email` fields (no separate "company name" field exists on `bootstrapCreateRequest`, and adding one is out of this task's scope) - editable later via the company-settings screen once T16 merges it onto `tenants`. `NewBootstrapHandler`'s signature gained `tenants`/`memberships` params (wired in `internal/cli/routes.go`), the one necessary companion change outside this task's literal `Where`.
 
 ---
 

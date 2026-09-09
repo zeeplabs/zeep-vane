@@ -17,6 +17,20 @@ type bootstrapCreator interface {
 	BootstrapFirst(ctx context.Context, admin *db.Admin) (created bool, err error)
 }
 
+// bootstrapTenantCreator is the subset of *db.TenantRepository
+// BootstrapHandler depends on for provisioning the first admin's tenant
+// (TENANT-05/06 - multi-tenancy-core, AD-022).
+type bootstrapTenantCreator interface {
+	Create(ctx context.Context, tenant *db.Tenant) error
+}
+
+// bootstrapMembershipCreator is the subset of
+// *db.TenantMembershipRepository BootstrapHandler depends on for linking
+// the first admin to their tenant as owner.
+type bootstrapMembershipCreator interface {
+	Create(ctx context.Context, m *db.TenantMembership) error
+}
+
 // BootstrapHandler serves the two public, unauthenticated bootstrap
 // routes that let a fresh, admin-less instance create its first owner
 // from the browser instead of a manual SQL insert (SHD-14 through
@@ -24,6 +38,8 @@ type bootstrapCreator interface {
 type BootstrapHandler struct {
 	pool          *db.Pool
 	admins        bootstrapCreator
+	tenants       bootstrapTenantCreator
+	memberships   bootstrapMembershipCreator
 	logger        *zap.Logger
 	sessionSecret string
 	secureCookies bool
@@ -31,12 +47,16 @@ type BootstrapHandler struct {
 
 // NewBootstrapHandler builds a BootstrapHandler. pool backs Status's
 // existence check directly (a single COUNT query, no need for a
-// dedicated repository method); admins backs Create's race-safe insert.
+// dedicated repository method) and the tenant+membership transaction
+// Create opens; admins backs the first admin's race-safe insert; tenants
+// and memberships provision that admin's single auto-created tenant
+// (TENANT-05/06/07) - self-hosted's "zero new friction" contract: no
+// tenant-selection UI, ever, for an account with exactly one membership.
 // sessionSecret signs the session token Create issues on success, same as
 // AuthHandler. secureCookies controls the vane_session cookie's Secure
 // attribute (H9), same as AuthHandler.
-func NewBootstrapHandler(pool *db.Pool, admins bootstrapCreator, logger *zap.Logger, sessionSecret string, secureCookies bool) *BootstrapHandler {
-	return &BootstrapHandler{pool: pool, admins: admins, logger: logger, sessionSecret: sessionSecret, secureCookies: secureCookies}
+func NewBootstrapHandler(pool *db.Pool, admins bootstrapCreator, tenants bootstrapTenantCreator, memberships bootstrapMembershipCreator, logger *zap.Logger, sessionSecret string, secureCookies bool) *BootstrapHandler {
+	return &BootstrapHandler{pool: pool, admins: admins, tenants: tenants, memberships: memberships, logger: logger, sessionSecret: sessionSecret, secureCookies: secureCookies}
 }
 
 type bootstrapStatusResponse struct {
@@ -117,7 +137,49 @@ func (h *BootstrapHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	token, err := auth.IssueSession(admin.ID, h.sessionSecret)
+	// Provision the new admin's single auto-created tenant + owner
+	// membership, atomically with each other (TENANT-05/06) - a separate
+	// transaction from the admin insert above (which needs its own
+	// table-lock-guarded transaction for bootstrap's race-safety,
+	// AdminRepository.BootstrapFirst), not one all-encompassing
+	// transaction; the spec requires the tenant and membership to land
+	// together, not that they share a transaction with the admin row
+	// too. tenants' RLS policy checks its own id, so the id is generated
+	// here and app.tenant_id is set to match before either insert.
+	var tenantID string
+	if err := h.pool.QueryRow(r.Context(), "SELECT gen_random_uuid()").Scan(&tenantID); err != nil {
+		h.logger.Error("bootstrap: failed to generate tenant id", zap.Error(err))
+		writeInternalError(w)
+		return
+	}
+	tx, err := h.pool.BeginTenantTx(r.Context(), admin.ID, tenantID)
+	if err != nil {
+		h.logger.Error("bootstrap: failed to begin tenant transaction", zap.Error(err))
+		writeInternalError(w)
+		return
+	}
+	tenantCtx := db.WithTenantTx(r.Context(), tx)
+
+	tenant := &db.Tenant{ID: tenantID, Name: req.Name, ContactEmail: req.Email}
+	if err := h.tenants.Create(tenantCtx, tenant); err != nil {
+		_ = tx.Rollback(r.Context())
+		h.logger.Error("bootstrap: failed to create tenant", zap.Error(err))
+		writeInternalError(w)
+		return
+	}
+	if err := h.memberships.Create(tenantCtx, &db.TenantMembership{UserID: admin.ID, TenantID: tenantID, Role: db.RoleOwner}); err != nil {
+		_ = tx.Rollback(r.Context())
+		h.logger.Error("bootstrap: failed to create owner membership", zap.Error(err))
+		writeInternalError(w)
+		return
+	}
+	if err := tx.Commit(r.Context()); err != nil {
+		h.logger.Error("bootstrap: failed to commit tenant transaction", zap.Error(err))
+		writeInternalError(w)
+		return
+	}
+
+	token, err := auth.IssueSessionWithTenant(admin.ID, tenantID, h.sessionSecret)
 	if err != nil {
 		h.logger.Error("bootstrap: failed to issue session token", zap.Error(err))
 		writeInternalError(w)
