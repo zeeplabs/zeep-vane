@@ -30,6 +30,7 @@ type fakeIncidentStore struct {
 	hasOpenErr       error
 
 	setDescriptionCalls []string // incidentID
+	setDescriptionTexts []string // description, parallel to setDescriptionCalls
 	setDescriptionErr   error
 	setDescriptionDone  chan struct{} // signaled once per SetDescription call, if non-nil
 
@@ -65,6 +66,7 @@ func (f *fakeIncidentStore) SetDescription(ctx context.Context, incidentID, desc
 	err := f.setDescriptionErr
 	if err == nil {
 		f.setDescriptionCalls = append(f.setDescriptionCalls, incidentID)
+		f.setDescriptionTexts = append(f.setDescriptionTexts, description)
 	}
 	done := f.setDescriptionDone
 	f.mu.Unlock()
@@ -92,6 +94,14 @@ func (f *fakeIncidentStore) snapshot() (createCalls int, setDescriptionCalls, se
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return len(f.createCalls), append([]string(nil), f.setDescriptionCalls...), append([]string(nil), f.setPendingCommentCalls...)
+}
+
+// snapshotDescriptionTexts returns the description text passed to each
+// SetDescription call, parallel to setDescriptionCalls.
+func (f *fakeIncidentStore) snapshotDescriptionTexts() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]string(nil), f.setDescriptionTexts...)
 }
 
 // fakeStatusAnalysisWriter is a no-DB fake of statusAnalysisWriter.
@@ -509,6 +519,10 @@ func TestSLOAnalyzer_OutageEnrichment_Success_OverwritesGenericDescription(t *te
 	_, setDescriptionCalls, _ := incidents.snapshot()
 	if len(setDescriptionCalls) != 1 {
 		t.Fatalf("SetDescription called %d times, want 1", len(setDescriptionCalls))
+	}
+	texts := incidents.snapshotDescriptionTexts()
+	if len(texts) != 1 || texts[0] != "The payments service is returning 5xx errors for most requests." {
+		t.Errorf("SetDescription text = %v, want [%q] (the generated description, not just a call)", texts, "The payments service is returning 5xx errors for most requests.")
 	}
 }
 
