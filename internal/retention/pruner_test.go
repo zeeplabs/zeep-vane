@@ -137,6 +137,18 @@ func TestPruner_Run_TickKeepsClosedIntervalWithin95DayRetention(t *testing.T) {
 	); err != nil {
 		t.Fatalf("insert 90-day-old closed interval failed: %v", err)
 	}
+	// This row survives the prune by design (that's what the test proves),
+	// so it must be deleted explicitly here - left alone it outlives the
+	// test as a permanent old-closed-interval row, which any other
+	// package's global (non-service-scoped) DeleteClosedBefore assertion
+	// running concurrently against the same test database would also
+	// sweep up, inflating its deleted-row count. Registered after
+	// createTestService's own cleanup so it runs first (t.Cleanup is
+	// LIFO), avoiding the FK violation that would otherwise silently
+	// block that cleanup's "DELETE FROM services".
+	t.Cleanup(func() {
+		_, _ = pool.Exec(context.Background(), "DELETE FROM status_intervals WHERE service_id = $1", serviceID)
+	})
 
 	intervals := db.NewStatusIntervalRepository(pool)
 	pruner := NewPruner(intervals, 20*time.Millisecond, 95*24*time.Hour, zap.NewNop())
