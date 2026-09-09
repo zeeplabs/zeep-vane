@@ -19,6 +19,19 @@ type Incident struct {
 	CreatedAt  time.Time
 	ResolvedAt *time.Time
 	ServiceIDs []string // populated by List/Create; nil for callers that don't need it (Transition, ListPublic*)
+
+	// Description is an optional longer body (AI-09/AI-11), settable at
+	// creation (manual incidents) or asynchronously by SLOAnalyzer
+	// (auto-created ones) via SetDescription.
+	Description *string
+	// PendingCloseComment is non-nil exactly when an LLM-drafted closing
+	// comment is awaiting owner/operator confirmation (AI-19/AI-20). Never
+	// scanned into IncidentPublic - admin-only, read via ListPaginated/
+	// ConfirmPendingClose only.
+	PendingCloseComment *string
+	// AutoCreated distinguishes an SLOAnalyzer-created incident (AI-12) from
+	// an admin-authored one, for the admin dashboard's badge.
+	AutoCreated bool
 }
 
 // IncidentUpdate is a single timeline entry attached to an Incident.
@@ -42,10 +55,13 @@ func NewIncidentRepository(pool *Pool) *IncidentRepository {
 
 // Create inserts incident and links it to every service in serviceIDs,
 // filling in incident's generated ID, Status (the DB default,
-// "investigating"), and CreatedAt (SP-16). The insert and the service links
-// are wrapped in a single transaction, mirroring StatusPageRepository.Create:
-// an incident is never left without its intended service links because a
-// later insert failed partway through.
+// "investigating"), and CreatedAt (SP-16). incident.Description and
+// incident.AutoCreated are persisted as given - both optional, defaulting
+// to NULL/false respectively when the caller leaves them unset (a manual
+// incident from the admin dashboard) (AI-09, AI-12). The insert and the
+// service links are wrapped in a single transaction, mirroring
+// StatusPageRepository.Create: an incident is never left without its
+// intended service links because a later insert failed partway through.
 func (r *IncidentRepository) Create(ctx context.Context, incident *Incident, serviceIDs []string) error {
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
@@ -54,8 +70,8 @@ func (r *IncidentRepository) Create(ctx context.Context, incident *Incident, ser
 	defer func() { _ = tx.Rollback(ctx) }()
 
 	row := tx.QueryRow(ctx,
-		"INSERT INTO incidents (title) VALUES ($1) RETURNING id, status, created_at",
-		incident.Title,
+		"INSERT INTO incidents (title, description, auto_created) VALUES ($1, $2, $3) RETURNING id, status, created_at",
+		incident.Title, incident.Description, incident.AutoCreated,
 	)
 	if err := row.Scan(&incident.ID, &incident.Status, &incident.CreatedAt); err != nil {
 		return fmt.Errorf("db: failed to create incident: %w", err)
@@ -98,16 +114,20 @@ func (r *IncidentRepository) AddUpdate(ctx context.Context, incidentID, body str
 
 // ListPaginated returns one page of incidents, most recently created first,
 // each with its linked service_ids (I16 - the admin incidents list badges
-// each incident with the services it affects). total is the total number of
-// incidents in the table, computed via COUNT(*) OVER() in the same query;
-// when the requested page is beyond the last page (or the table is empty)
-// the primary query returns zero rows and can't carry a window-function
-// total, so a fallback plain COUNT(*) runs only in that case (PAG-04, PAG-06).
+// each incident with the services it affects). Also scans description,
+// auto_created, and pending_close_comment (AI-09, AI-12, AI-19/AI-20) -
+// this is the admin-facing Incident shape, not IncidentPublic, so exposing
+// pending_close_comment here is safe (T17's admin DTO is the intended
+// consumer). total is the total number of incidents in the table, computed
+// via COUNT(*) OVER() in the same query; when the requested page is beyond
+// the last page (or the table is empty) the primary query returns zero
+// rows and can't carry a window-function total, so a fallback plain
+// COUNT(*) runs only in that case (PAG-04, PAG-06).
 func (r *IncidentRepository) ListPaginated(ctx context.Context, page, pageSize int) ([]Incident, int, error) {
 	offset := (page - 1) * pageSize
 
 	rows, err := r.pool.Query(ctx,
-		`SELECT id, title, status, created_at, resolved_at, COUNT(*) OVER() AS total
+		`SELECT id, title, status, created_at, resolved_at, description, auto_created, pending_close_comment, COUNT(*) OVER() AS total
 		 FROM incidents
 		 ORDER BY created_at DESC
 		 LIMIT $1 OFFSET $2`,
@@ -122,7 +142,8 @@ func (r *IncidentRepository) ListPaginated(ctx context.Context, page, pageSize i
 	total := 0
 	for rows.Next() {
 		var incident Incident
-		if err := rows.Scan(&incident.ID, &incident.Title, &incident.Status, &incident.CreatedAt, &incident.ResolvedAt, &total); err != nil {
+		if err := rows.Scan(&incident.ID, &incident.Title, &incident.Status, &incident.CreatedAt, &incident.ResolvedAt,
+			&incident.Description, &incident.AutoCreated, &incident.PendingCloseComment, &total); err != nil {
 			return nil, 0, fmt.Errorf("db: failed to scan incident: %w", err)
 		}
 		incidents = append(incidents, incident)
@@ -357,7 +378,7 @@ type IncidentPublic struct {
 // page/pageSize signature as ListPublicForStatusPage below.
 func (r *IncidentRepository) ListPublic(ctx context.Context, retentionDays int) (active, resolved []IncidentPublic, err error) {
 	rows, err := r.pool.Query(ctx,
-		`SELECT id, title, status, created_at, resolved_at FROM incidents
+		`SELECT id, title, status, created_at, resolved_at, description, auto_created FROM incidents
 		 WHERE status <> 'resolved' OR resolved_at > now() - make_interval(days => $1)
 		 ORDER BY created_at DESC`,
 		retentionDays,
@@ -384,7 +405,7 @@ func (r *IncidentRepository) ListPublic(ctx context.Context, retentionDays int) 
 // (design.md: at most one active incident per service).
 func (r *IncidentRepository) ListPublicForStatusPage(ctx context.Context, statusPageID string, retentionDays, page, pageSize int) (active, resolved []IncidentPublic, resolvedTotal int, err error) {
 	activeRows, err := r.pool.Query(ctx,
-		`SELECT DISTINCT i.id, i.title, i.status, i.created_at, i.resolved_at
+		`SELECT DISTINCT i.id, i.title, i.status, i.created_at, i.resolved_at, i.description, i.auto_created
 		 FROM incidents i
 		 JOIN incident_services isv ON isv.incident_id = i.id
 		 JOIN status_page_services sps ON sps.service_id = isv.service_id
@@ -403,7 +424,7 @@ func (r *IncidentRepository) ListPublicForStatusPage(ctx context.Context, status
 
 	offset := (page - 1) * pageSize
 	resolvedRows, err := r.pool.Query(ctx,
-		`SELECT DISTINCT i.id, i.title, i.status, i.created_at, i.resolved_at, COUNT(*) OVER() AS total
+		`SELECT DISTINCT i.id, i.title, i.status, i.created_at, i.resolved_at, i.description, i.auto_created, COUNT(*) OVER() AS total
 		 FROM incidents i
 		 JOIN incident_services isv ON isv.incident_id = i.id
 		 JOIN status_page_services sps ON sps.service_id = isv.service_id
@@ -460,13 +481,16 @@ func (r *IncidentRepository) countResolvedPublicForStatusPage(ctx context.Contex
 	return total, nil
 }
 
-// scanIncidentRows scans the (id, title, status, created_at, resolved_at)
-// shape shared by ListPublic and ListPublicForStatusPage.
+// scanIncidentRows scans the (id, title, status, created_at, resolved_at,
+// description, auto_created) shape shared by ListPublic and
+// ListPublicForStatusPage. Deliberately never scans pending_close_comment -
+// this shape feeds IncidentPublic, and that field is admin-only (AI-19).
 func scanIncidentRows(rows pgx.Rows) ([]Incident, error) {
 	var incidents []Incident
 	for rows.Next() {
 		var incident Incident
-		if err := rows.Scan(&incident.ID, &incident.Title, &incident.Status, &incident.CreatedAt, &incident.ResolvedAt); err != nil {
+		if err := rows.Scan(&incident.ID, &incident.Title, &incident.Status, &incident.CreatedAt, &incident.ResolvedAt,
+			&incident.Description, &incident.AutoCreated); err != nil {
 			return nil, fmt.Errorf("db: failed to scan public incident: %w", err)
 		}
 		incidents = append(incidents, incident)
@@ -479,13 +503,14 @@ func scanIncidentRows(rows pgx.Rows) ([]Incident, error) {
 
 // scanIncidentRowsWithTotal scans the same shape as scanIncidentRows plus a
 // trailing COUNT(*) OVER() column, for ListPublicForStatusPage's paginated
-// resolved query.
+// resolved query. Same pending_close_comment exclusion as scanIncidentRows.
 func scanIncidentRowsWithTotal(rows pgx.Rows) ([]Incident, int, error) {
 	var incidents []Incident
 	total := 0
 	for rows.Next() {
 		var incident Incident
-		if err := rows.Scan(&incident.ID, &incident.Title, &incident.Status, &incident.CreatedAt, &incident.ResolvedAt, &total); err != nil {
+		if err := rows.Scan(&incident.ID, &incident.Title, &incident.Status, &incident.CreatedAt, &incident.ResolvedAt,
+			&incident.Description, &incident.AutoCreated, &total); err != nil {
 			return nil, 0, fmt.Errorf("db: failed to scan public incident: %w", err)
 		}
 		incidents = append(incidents, incident)
@@ -532,6 +557,139 @@ func (r *IncidentRepository) withTimelines(ctx context.Context, incidents []Inci
 		result = append(result, IncidentPublic{Incident: incident, Updates: updates})
 	}
 	return result, nil
+}
+
+// ErrNoPendingProposal is returned by ConfirmPendingClose/
+// DiscardCloseProposal when incidentID has no pending_close_comment set -
+// distinct from ErrNotFound so handlers can map it to a different HTTP
+// status (422, not 404) (AI-21, AI-22).
+var ErrNoPendingProposal = errors.New("db: no pending close proposal")
+
+// SetDescription updates incidentID's description column (AI-09, AI-11).
+// Returns ErrNotFound if incidentID doesn't exist.
+func (r *IncidentRepository) SetDescription(ctx context.Context, incidentID, description string) error {
+	if err := r.mustExist(ctx, incidentID); err != nil {
+		return err
+	}
+
+	if _, err := r.pool.Exec(ctx, "UPDATE incidents SET description = $2 WHERE id = $1", incidentID, description); err != nil {
+		return fmt.Errorf("db: failed to set incident description: %w", err)
+	}
+
+	return nil
+}
+
+// HasOpenIncidentForService reports whether serviceID has any incident
+// linked to it whose status isn't "resolved" - used by SLOAnalyzer to skip
+// creating a duplicate outage incident (AI-12) and to detect a recovery
+// needing a closing-comment proposal (AI-19).
+func (r *IncidentRepository) HasOpenIncidentForService(ctx context.Context, serviceID string) (incidentID string, found bool, err error) {
+	row := r.pool.QueryRow(ctx,
+		`SELECT i.id FROM incidents i
+		 JOIN incident_services isv ON isv.incident_id = i.id
+		 WHERE isv.service_id = $1 AND i.status <> 'resolved'
+		 LIMIT 1`,
+		serviceID,
+	)
+	if err := row.Scan(&incidentID); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return "", false, nil
+		}
+		return "", false, fmt.Errorf("db: failed to check open incident for service: %w", err)
+	}
+
+	return incidentID, true, nil
+}
+
+// SetPendingCloseComment stores comment as incidentID's awaiting-confirmation
+// closing comment (AI-19). Returns ErrNotFound if incidentID doesn't exist.
+func (r *IncidentRepository) SetPendingCloseComment(ctx context.Context, incidentID, comment string) error {
+	if err := r.mustExist(ctx, incidentID); err != nil {
+		return err
+	}
+
+	if _, err := r.pool.Exec(ctx, "UPDATE incidents SET pending_close_comment = $2 WHERE id = $1", incidentID, comment); err != nil {
+		return fmt.Errorf("db: failed to set incident pending close comment: %w", err)
+	}
+
+	return nil
+}
+
+// ConfirmPendingClose appends incidentID's pending_close_comment as a
+// normal incident_update, transitions the incident to "resolved", and
+// clears pending_close_comment - all inside one transaction, so a caller
+// never observes a partial apply (AI-20). Returns ErrNotFound if incidentID
+// doesn't exist, ErrNoPendingProposal if it exists but has no pending
+// comment set.
+func (r *IncidentRepository) ConfirmPendingClose(ctx context.Context, incidentID string) (*Incident, error) {
+	if err := r.mustExist(ctx, incidentID); err != nil {
+		return nil, err
+	}
+
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("db: failed to begin confirm-close transaction: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	incident := &Incident{ID: incidentID}
+	var comment *string
+	row := tx.QueryRow(ctx,
+		`WITH old AS (SELECT pending_close_comment FROM incidents WHERE id = $1)
+		 UPDATE incidents
+		 SET status = 'resolved', resolved_at = now(), pending_close_comment = NULL
+		 WHERE id = $1 AND pending_close_comment IS NOT NULL
+		 RETURNING title, status, created_at, resolved_at, description, auto_created,
+		           (SELECT pending_close_comment FROM old)`,
+		incidentID,
+	)
+	if err := row.Scan(&incident.Title, &incident.Status, &incident.CreatedAt, &incident.ResolvedAt,
+		&incident.Description, &incident.AutoCreated, &comment); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrNoPendingProposal
+		}
+		return nil, fmt.Errorf("db: failed to confirm pending close: %w", err)
+	}
+
+	body := ""
+	if comment != nil {
+		body = *comment
+	}
+	if _, err := tx.Exec(ctx,
+		"INSERT INTO incident_updates (incident_id, body) VALUES ($1, $2)",
+		incidentID, body,
+	); err != nil {
+		return nil, fmt.Errorf("db: failed to record closing comment on timeline: %w", err)
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return nil, fmt.Errorf("db: failed to commit confirm-close transaction: %w", err)
+	}
+
+	return incident, nil
+}
+
+// DiscardCloseProposal clears incidentID's pending_close_comment, leaving
+// the incident otherwise unchanged (AI-22). Returns ErrNotFound if
+// incidentID doesn't exist, ErrNoPendingProposal if it exists but already
+// has no pending comment set.
+func (r *IncidentRepository) DiscardCloseProposal(ctx context.Context, incidentID string) error {
+	if err := r.mustExist(ctx, incidentID); err != nil {
+		return err
+	}
+
+	ct, err := r.pool.Exec(ctx,
+		"UPDATE incidents SET pending_close_comment = NULL WHERE id = $1 AND pending_close_comment IS NOT NULL",
+		incidentID,
+	)
+	if err != nil {
+		return fmt.Errorf("db: failed to discard incident close proposal: %w", err)
+	}
+	if ct.RowsAffected() == 0 {
+		return ErrNoPendingProposal
+	}
+
+	return nil
 }
 
 // mustExist confirms incidentID exists, returning ErrNotFound if it doesn't.

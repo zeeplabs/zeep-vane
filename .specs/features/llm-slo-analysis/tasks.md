@@ -344,15 +344,15 @@ T25 only. Needs the full feature implemented (accurate to describe).
 - Skill: NONE
 
 **Done when**:
-- [ ] `SetDescription(ctx, incidentID, description string) error` updates the column, returns `ErrNotFound` if missing
-- [ ] `HasOpenIncidentForService(ctx, serviceID string) (incidentID string, found bool, err error)` queries `incidents` joined to `incident_services` for `status <> 'resolved'`
-- [ ] `SetPendingCloseComment(ctx, incidentID, comment string) error`
-- [ ] `ConfirmPendingClose(ctx, incidentID string) (*Incident, error)` - single transaction: reads `pending_close_comment` (0 rows / NULL → a distinct `ErrNoPendingProposal`), appends it as an `incident_update`, transitions to `resolved`, clears the column; all-or-nothing
-- [ ] `DiscardCloseProposal(ctx, incidentID string) error` - clears the column only, `ErrNotFound` if missing, `ErrNoPendingProposal` if already NULL
-- [ ] `Create` accepts an optional `Description string`/`AutoCreated bool` on the `Incident` passed in, persists both
-- [ ] Every existing read path (`ListPaginated`, `ListPublic`, `ListPublicForStatusPage`, `scanIncidentRows`, `scanIncidentRowsWithTotal`) is updated to also scan `description`, `auto_created` (never `pending_close_comment` into the public-facing `IncidentPublic` shape - that stays admin-only, read via a separate accessor if needed by T17's handler)
-- [ ] Integration tests: `SetDescription` round-trip; `HasOpenIncidentForService` true/false cases; `ConfirmPendingClose` happy path (incident resolved, update appended, column cleared) and no-pending-proposal case; `DiscardCloseProposal` happy path and no-pending case; a repeat `Create` call for a service with an existing open incident is NOT itself deduped by the repository (that's `SLOAnalyzer`'s job via `HasOpenIncidentForService` - confirm the repository layer stays a dumb persistence layer, not business logic)
-- [ ] Gate passes: `TEST_DATABASE_URL=... go test -tags=integration ./internal/db/...`
+- [x] `SetDescription(ctx, incidentID, description string) error` updates the column, returns `ErrNotFound` if missing
+- [x] `HasOpenIncidentForService(ctx, serviceID string) (incidentID string, found bool, err error)` queries `incidents` joined to `incident_services` for `status <> 'resolved'`
+- [x] `SetPendingCloseComment(ctx, incidentID, comment string) error`
+- [x] `ConfirmPendingClose(ctx, incidentID string) (*Incident, error)` - single transaction: reads `pending_close_comment` (0 rows / NULL → a distinct `ErrNoPendingProposal`), appends it as an `incident_update`, transitions to `resolved`, clears the column; all-or-nothing
+- [x] `DiscardCloseProposal(ctx, incidentID string) error` - clears the column only, `ErrNotFound` if missing, `ErrNoPendingProposal` if already NULL
+- [x] `Create` accepts an optional `Description string`/`AutoCreated bool` on the `Incident` passed in, persists both
+- [x] Every existing read path (`ListPaginated`, `ListPublic`, `ListPublicForStatusPage`, `scanIncidentRows`, `scanIncidentRowsWithTotal`) is updated to also scan `description`, `auto_created` (never `pending_close_comment` into the public-facing `IncidentPublic` shape - that stays admin-only, read via a separate accessor if needed by T17's handler)
+- [x] Integration tests: `SetDescription` round-trip; `HasOpenIncidentForService` true/false cases; `ConfirmPendingClose` happy path (incident resolved, update appended, column cleared) and no-pending-proposal case; `DiscardCloseProposal` happy path and no-pending case; a repeat `Create` call for a service with an existing open incident is NOT itself deduped by the repository (that's `SLOAnalyzer`'s job via `HasOpenIncidentForService` - confirm the repository layer stays a dumb persistence layer, not business logic)
+- [x] Gate passes: `TEST_DATABASE_URL=... go test -tags=integration ./internal/db/...`
 
 **Tests**: integration
 **Gate**: full
