@@ -59,10 +59,11 @@ func newLoginRouter(t *testing.T) (http.Handler, *db.AdminRepository, *db.Pool) 
 	dbtest.LockAdminsTable(t, context.Background(), dsn)
 
 	repo := db.NewAdminRepository(pool)
+	memberships := db.NewTenantMembershipRepository(pool)
 	// secureCookies=true: this file's cookie assertions expect the default,
 	// Secure-only behavior. The off case is covered separately by
 	// TestLogin_SecureCookiesDisabled_CookieNotSecure.
-	handler := NewAuthHandler(repo, zap.NewNop(), testSessionSecret, true)
+	handler := NewAuthHandler(repo, memberships, pool, zap.NewNop(), testSessionSecret, true)
 
 	r := chi.NewRouter()
 	r.Post("/api/auth/login", handler.Login)
@@ -75,6 +76,11 @@ func uniqueTestEmail(t *testing.T) string {
 	return fmt.Sprintf("auth-handler-test-%d@example.com", time.Now().UnixNano())
 }
 
+// createTestAdmin creates an admin with exactly one tenant_membership
+// (role owner) - Login now refuses an admin with zero memberships
+// (TENANT-19 session half), so every test exercising a *successful* login
+// needs one. Tests specifically about the zero/multi-membership cases seed
+// those directly instead of using this helper.
 func createTestAdmin(t *testing.T, repo *db.AdminRepository, pool *db.Pool, email, plainPassword string) {
 	t.Helper()
 	ctx := context.Background()
@@ -89,6 +95,36 @@ func createTestAdmin(t *testing.T, repo *db.AdminRepository, pool *db.Pool, emai
 	if err := repo.Create(ctx, admin); err != nil {
 		t.Fatalf("Create() returned unexpected error: %v", err)
 	}
+
+	seedSoleTenantMembership(t, pool, admin.ID, email)
+}
+
+// seedSoleTenantMembership creates a tenant named after namePrefix and an
+// owner membership linking userID to it, registering cleanup for both.
+func seedSoleTenantMembership(t *testing.T, pool *db.Pool, userID, namePrefix string) (tenantID string) {
+	t.Helper()
+	ctx := context.Background()
+
+	if err := pool.QueryRow(ctx, "INSERT INTO tenants (name) VALUES ($1) RETURNING id", "auth-test-tenant-"+namePrefix).Scan(&tenantID); err != nil {
+		t.Fatalf("seeding tenant returned unexpected error: %v", err)
+	}
+	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), "DELETE FROM tenants WHERE id = $1", tenantID) })
+
+	tx, err := pool.BeginTenantTx(ctx, "", tenantID)
+	if err != nil {
+		t.Fatalf("BeginTenantTx() returned unexpected error: %v", err)
+	}
+	if _, err := pool.Exec(db.WithTenantTx(ctx, tx),
+		"INSERT INTO tenant_memberships (user_id, tenant_id, role) VALUES ($1, $2, $3)", userID, tenantID, db.RoleOwner,
+	); err != nil {
+		_ = tx.Rollback(ctx)
+		t.Fatalf("seeding tenant membership returned unexpected error: %v", err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		t.Fatalf("commit returned unexpected error: %v", err)
+	}
+
+	return tenantID
 }
 
 func postLogin(t *testing.T, r http.Handler, email, password string) *httptest.ResponseRecorder {
@@ -117,14 +153,17 @@ func TestLogin_CorrectCredentials_200(t *testing.T) {
 		t.Errorf("status = %d, want %d", rec.Code, http.StatusOK)
 	}
 
-	var body struct {
-		Token string `json:"token"`
-	}
+	var body loginResponse
 	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
 		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
 	}
 	if body.Token == "" {
 		t.Error("response body has no token, want a non-empty session token")
+	}
+	// TENANT-19 (session half): exactly one membership sets that tenant
+	// active in the response.
+	if body.TenantID == "" {
+		t.Error("response body has no tenant_id, want the sole tenant_membership's tenant active")
 	}
 }
 
@@ -198,7 +237,8 @@ func TestLogin_SecureCookiesDisabled_CookieNotSecure(t *testing.T) {
 	dbtest.LockAdminsTable(t, context.Background(), dsn)
 
 	repo := db.NewAdminRepository(pool)
-	handler := NewAuthHandler(repo, zap.NewNop(), testSessionSecret, false)
+	memberships := db.NewTenantMembershipRepository(pool)
+	handler := NewAuthHandler(repo, memberships, pool, zap.NewNop(), testSessionSecret, false)
 	r := chi.NewRouter()
 	r.Post("/api/auth/login", handler.Login)
 
@@ -267,10 +307,11 @@ func newMeRouter(t *testing.T) (http.Handler, *db.AdminRepository, *db.Pool) {
 	dbtest.LockAdminsTable(t, context.Background(), dsn)
 
 	repo := db.NewAdminRepository(pool)
-	handler := NewAuthHandler(repo, zap.NewNop(), testSessionSecret, true)
+	memberships := db.NewTenantMembershipRepository(pool)
+	handler := NewAuthHandler(repo, memberships, pool, zap.NewNop(), testSessionSecret, true)
 
 	r := chi.NewRouter()
-	r.With(RequireAuth(testSessionSecret, repo)).Get("/api/auth/me", handler.Me)
+	r.With(RequireAuth(testSessionSecret, repo), TenantContext(pool, zap.NewNop())).Get("/api/auth/me", handler.Me)
 
 	return r, repo, pool
 }
@@ -352,11 +393,13 @@ func newLogoutRouter(t *testing.T) (http.Handler, *db.AdminRepository, *db.Pool)
 	dbtest.LockAdminsTable(t, context.Background(), dsn)
 
 	repo := db.NewAdminRepository(pool)
-	handler := NewAuthHandler(repo, zap.NewNop(), testSessionSecret, true)
+	memberships := db.NewTenantMembershipRepository(pool)
+	handler := NewAuthHandler(repo, memberships, pool, zap.NewNop(), testSessionSecret, true)
 
 	r := chi.NewRouter()
 	protected := chi.NewRouter()
 	protected.Use(RequireAuth(testSessionSecret, repo))
+	protected.Use(TenantContext(pool, zap.NewNop()))
 	protected.Get("/api/auth/me", handler.Me)
 	protected.Post("/api/auth/logout", handler.Logout)
 	r.Mount("/", protected)
@@ -429,5 +472,124 @@ func TestLogin_NonexistentEmail_IdenticalToWrongPassword(t *testing.T) {
 	}
 	if nonexistentResp.Body.String() != wrongPasswordResp.Body.String() {
 		t.Errorf("nonexistent email body = %q, wrong-password body = %q, want identical", nonexistentResp.Body.String(), wrongPasswordResp.Body.String())
+	}
+}
+
+// TestLogin_ZeroMemberships_403NoSessionIssued proves the spec.md edge
+// case: a user removed from every tenant (or one that somehow never got a
+// membership) must never see an empty dashboard - login itself refuses,
+// with no session cookie/token issued at all.
+func TestLogin_ZeroMemberships_403NoSessionIssued(t *testing.T) {
+	r, repo, pool := newLoginRouter(t)
+	email := uniqueTestEmail(t)
+
+	ctx := context.Background()
+	t.Cleanup(func() { _, _ = pool.Exec(ctx, "DELETE FROM admins WHERE email = $1", email) })
+	hash, err := auth.HashPassword("correct-horse-battery-staple")
+	if err != nil {
+		t.Fatalf("HashPassword() returned unexpected error: %v", err)
+	}
+	admin := &db.Admin{Email: email, PasswordHash: hash}
+	if err := repo.Create(ctx, admin); err != nil {
+		t.Fatalf("Create() returned unexpected error: %v", err)
+	}
+	// Deliberately no tenant_membership seeded for this admin.
+
+	rec := postLogin(t, r, email, "correct-horse-battery-staple")
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want %d (body=%q)", rec.Code, http.StatusForbidden, rec.Body.String())
+	}
+	if rec.Body.String() != noTenantAccessBody {
+		t.Errorf("body = %q, want %q", rec.Body.String(), noTenantAccessBody)
+	}
+	if len(rec.Result().Cookies()) != 0 {
+		t.Errorf("cookies set on a refused login = %v, want none", rec.Result().Cookies())
+	}
+}
+
+// TestLogin_MultipleMemberships_SucceedsWithNoActiveTenant proves TENANT-19
+// (session half): a user with more than one tenant_membership still logs
+// in successfully, but with no active tenant set - pending the (P2,
+// out-of-batch) tenant-selection screen.
+func TestLogin_MultipleMemberships_SucceedsWithNoActiveTenant(t *testing.T) {
+	r, repo, pool := newLoginRouter(t)
+	email := uniqueTestEmail(t)
+	createTestAdmin(t, repo, pool, email, "correct-horse-battery-staple")
+
+	admin, err := repo.GetByEmail(context.Background(), email)
+	if err != nil {
+		t.Fatalf("GetByEmail() returned unexpected error: %v", err)
+	}
+	// createTestAdmin already seeded one membership - add a second tenant
+	// so this admin has exactly two.
+	seedSoleTenantMembership(t, pool, admin.ID, email+"-second")
+
+	rec := postLogin(t, r, email, "correct-horse-battery-staple")
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d (body=%q)", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	var body loginResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+	if body.Token == "" {
+		t.Error("response body has no token, want login to still succeed")
+	}
+	if body.TenantID != "" {
+		t.Errorf("response tenant_id = %q, want empty (no active tenant with >1 membership)", body.TenantID)
+	}
+}
+
+// TestMe_MultipleMemberships_ListsAllWithNoActiveTenant proves T7's
+// /api/auth/me contract for the multi-membership case: every membership is
+// listed, and active_tenant_id is absent even though the session is
+// otherwise valid.
+func TestMe_MultipleMemberships_ListsAllWithNoActiveTenant(t *testing.T) {
+	r, repo, pool := newMeRouter(t)
+	email := uniqueTestEmail(t)
+	createTestAdmin(t, repo, pool, email, "correct-horse-battery-staple")
+
+	admin, err := repo.GetByEmail(context.Background(), email)
+	if err != nil {
+		t.Fatalf("GetByEmail() returned unexpected error: %v", err)
+	}
+	secondTenantID := seedSoleTenantMembership(t, pool, admin.ID, email+"-second")
+
+	// IssueSession (no tenant claim) mirrors what Login would have issued
+	// for this admin (>1 membership, active tenant left unset).
+	token, err := auth.IssueSession(admin.ID, testSessionSecret)
+	if err != nil {
+		t.Fatalf("IssueSession() returned unexpected error: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/auth/me", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d (body=%q)", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	var body meResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+	if body.ActiveTenantID != "" {
+		t.Errorf("ActiveTenantID = %q, want empty (no tenant selected)", body.ActiveTenantID)
+	}
+	if len(body.Memberships) != 2 {
+		t.Fatalf("len(Memberships) = %d, want 2", len(body.Memberships))
+	}
+	seen := map[string]bool{}
+	for _, m := range body.Memberships {
+		seen[m.TenantID] = true
+		if m.Role != db.RoleOwner {
+			t.Errorf("membership role = %q, want %q", m.Role, db.RoleOwner)
+		}
+	}
+	if !seen[secondTenantID] {
+		t.Errorf("Memberships = %+v, want the second seeded tenant %q among them", body.Memberships, secondTenantID)
 	}
 }

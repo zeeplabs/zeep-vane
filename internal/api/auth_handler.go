@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"net/http"
 
 	"go.uber.org/zap"
@@ -20,21 +19,34 @@ type adminGetter interface {
 	GetByEmail(ctx context.Context, email string) (*db.Admin, error)
 }
 
+// authMembershipLister is the subset of *db.TenantMembershipRepository
+// AuthHandler depends on - resolving the active tenant at login, and
+// listing every membership for /api/auth/me (multi-tenancy-core, AD-022).
+type authMembershipLister interface {
+	ListForUser(ctx context.Context, userID string) ([]db.TenantMembership, error)
+}
+
 // AuthHandler serves the auth-related admin routes.
 type AuthHandler struct {
 	admins        adminGetter
+	memberships   authMembershipLister
+	pool          *db.Pool
 	logger        *zap.Logger
 	sessionSecret string
 	secureCookies bool
 }
 
-// NewAuthHandler builds an AuthHandler backed by admins. sessionSecret signs
-// issued session tokens (see internal/auth.IssueSession). secureCookies
-// controls the vane_session cookie's Secure attribute (H9) - false only for
-// an operator who has explicitly accepted plaintext-network session risk via
+// NewAuthHandler builds an AuthHandler backed by admins and memberships.
+// pool backs Login's own tenant-membership lookup (a public route, ahead of
+// the tenant-context middleware - it manages its own short-lived
+// transaction with app.user_id set to resolve which tenant(s) the
+// authenticating user belongs to). sessionSecret signs issued session
+// tokens (see internal/auth.IssueSession). secureCookies controls the
+// vane_session cookie's Secure attribute (H9) - false only for an operator
+// who has explicitly accepted plaintext-network session risk via
 // VANE_SECURE_COOKIES=false.
-func NewAuthHandler(admins adminGetter, logger *zap.Logger, sessionSecret string, secureCookies bool) *AuthHandler {
-	return &AuthHandler{admins: admins, logger: logger, sessionSecret: sessionSecret, secureCookies: secureCookies}
+func NewAuthHandler(admins adminGetter, memberships authMembershipLister, pool *db.Pool, logger *zap.Logger, sessionSecret string, secureCookies bool) *AuthHandler {
+	return &AuthHandler{admins: admins, memberships: memberships, pool: pool, logger: logger, sessionSecret: sessionSecret, secureCookies: secureCookies}
 }
 
 type loginRequest struct {
@@ -47,9 +59,27 @@ type loginRequest struct {
 // (SP-22, anti user-enumeration).
 const genericLoginErrorBody = `{"error":"invalid email or password"}`
 
+// noTenantAccessBody is returned when an otherwise-valid login belongs to a
+// user with zero tenant_memberships (e.g. removed from every tenant) -
+// spec.md's edge case: never a dashboard with nothing in it, a clear
+// rejection instead (TENANT-19 session half).
+const noTenantAccessBody = `{"error":"account has no tenant access"}`
+
+type loginResponse struct {
+	Token string `json:"token"`
+	// TenantID is the session's active tenant - set only when the user has
+	// exactly one tenant_membership (self-hosted's every-day case); empty
+	// when they have more than one, pending tenant selection (P2, not
+	// built in this batch) via /api/auth/me's Memberships list.
+	TenantID string `json:"tenant_id,omitempty"`
+}
+
 // Login validates email+password and reports success or a generic
 // authentication failure. It never reveals whether the submitted email is
-// registered.
+// registered. On success it also resolves the admin's tenant_memberships:
+// exactly one sets that tenant active in the issued session; zero refuses
+// the login entirely (no session issued); more than one still succeeds,
+// active tenant left unset.
 func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 	var req loginRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -73,7 +103,39 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	token, err := auth.IssueSession(admin.ID, h.sessionSecret)
+	// Login is public, ahead of the tenant-context middleware - it manages
+	// its own transaction here, setting only app.user_id (no active tenant
+	// is known yet; that's exactly what this query determines).
+	tx, err := h.pool.BeginTenantTx(r.Context(), admin.ID, "")
+	if err != nil {
+		h.logger.Error("auth: failed to begin tenant transaction", zap.Error(err))
+		writeInternalError(w)
+		return
+	}
+	memberships, err := h.memberships.ListForUser(db.WithTenantTx(r.Context(), tx), admin.ID)
+	if err != nil {
+		_ = tx.Rollback(r.Context())
+		h.logger.Error("auth: failed to list tenant memberships", zap.Error(err))
+		writeInternalError(w)
+		return
+	}
+	if err := tx.Commit(r.Context()); err != nil {
+		h.logger.Error("auth: failed to commit tenant transaction", zap.Error(err))
+		writeInternalError(w)
+		return
+	}
+
+	if len(memberships) == 0 {
+		writeAdminError(w, http.StatusForbidden, noTenantAccessBody)
+		return
+	}
+
+	activeTenantID := ""
+	if len(memberships) == 1 {
+		activeTenantID = memberships[0].TenantID
+	}
+
+	token, err := auth.IssueSessionWithTenant(admin.ID, activeTenantID, h.sessionSecret)
 	if err != nil {
 		h.logger.Error("auth: failed to issue session token", zap.Error(err))
 		writeInternalError(w)
@@ -84,7 +146,7 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write([]byte(fmt.Sprintf(`{"token":%q}`, token)))
+	_ = json.NewEncoder(w).Encode(loginResponse{Token: token, TenantID: activeTenantID})
 }
 
 // sessionCookieName is the name of the session cookie set on login and
@@ -108,17 +170,35 @@ func sessionCookie(value string, maxAge int, secure bool) *http.Cookie {
 	}
 }
 
+// meMembership is one entry in meResponse.Memberships - a tenant the
+// authenticated user belongs to, and their role in it.
+type meMembership struct {
+	TenantID string `json:"tenant_id"`
+	Role     string `json:"role"`
+}
+
 type meResponse struct {
 	ID    string  `json:"id"`
 	Email string  `json:"email"`
 	Name  string  `json:"name"`
 	Phone *string `json:"phone,omitempty"`
 	Role  string  `json:"role"`
+	// ActiveTenantID is the session's active tenant, "" if none selected
+	// yet (more than one membership, pending tenant selection - P2, not
+	// built in this batch).
+	ActiveTenantID string `json:"active_tenant_id,omitempty"`
+	// Memberships lists every tenant the user belongs to - always
+	// non-empty for an authenticated session (Login refuses zero
+	// memberships outright), used by the tenant-selection screen (P2) to
+	// decide whether one exists to show.
+	Memberships []meMembership `json:"memberships"`
 }
 
 // Me returns the authenticated admin's identity, as loaded into context by
-// RequireAuth. It never re-queries the database - RequireAuth already did
-// that lookup for authorization purposes.
+// RequireAuth, plus their active tenant and full membership list. The
+// identity itself never re-queries the database - RequireAuth already did
+// that lookup for authorization purposes - but the membership list does,
+// scoped by the request's own transaction (tenant-context middleware, T3).
 func (h *AuthHandler) Me(w http.ResponseWriter, r *http.Request) {
 	admin, ok := AdminFromContext(r.Context())
 	if !ok {
@@ -126,9 +206,25 @@ func (h *AuthHandler) Me(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	memberships, err := h.memberships.ListForUser(r.Context(), admin.ID)
+	if err != nil {
+		h.logger.Error("auth: failed to list tenant memberships for me", zap.Error(err))
+		writeInternalError(w)
+		return
+	}
+	activeTenantID, _ := ActiveTenantIDFromContext(r.Context())
+
+	out := make([]meMembership, len(memberships))
+	for i, m := range memberships {
+		out[i] = meMembership{TenantID: m.TenantID, Role: m.Role}
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	_ = json.NewEncoder(w).Encode(meResponse{ID: admin.ID, Email: admin.Email, Name: admin.Name, Phone: admin.Phone, Role: admin.Role})
+	_ = json.NewEncoder(w).Encode(meResponse{
+		ID: admin.ID, Email: admin.Email, Name: admin.Name, Phone: admin.Phone, Role: admin.Role,
+		ActiveTenantID: activeTenantID, Memberships: out,
+	})
 }
 
 // Logout expires the vane_session cookie set at login. It requires no

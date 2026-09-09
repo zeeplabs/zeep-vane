@@ -15,7 +15,9 @@ import (
 	"github.com/go-chi/chi/v5"
 	"go.uber.org/zap"
 
+	"github.com/zeeplabs/zeep-vane/internal/auth"
 	"github.com/zeeplabs/zeep-vane/internal/db"
+	"github.com/zeeplabs/zeep-vane/internal/dbtest"
 )
 
 func newServicesRouter(t *testing.T) (http.Handler, *db.Pool, *db.AdminRepository) {
@@ -42,6 +44,10 @@ func newServicesRouter(t *testing.T) (http.Handler, *db.Pool, *db.AdminRepositor
 	r := chi.NewRouter()
 	r.Group(func(protected chi.Router) {
 		protected.Use(RequireAuth(middlewareTestSecret, admins))
+		// TenantContext must run (services now carries tenant_id + RLS,
+		// 0024) for Create/List to see anything at all - matches
+		// production wiring in routes.go.
+		protected.Use(TenantContext(pool, zap.NewNop()))
 		protected.Post("/api/services", handler.Create)
 		protected.Get("/api/services", handler.List)
 	})
@@ -52,6 +58,50 @@ func newServicesRouter(t *testing.T) (http.Handler, *db.Pool, *db.AdminRepositor
 func uniqueServiceName(t *testing.T) string {
 	t.Helper()
 	return fmt.Sprintf("services-handler-test-%d", time.Now().UnixNano())
+}
+
+// issueTestSessionTokenWithTenant is issueTestSessionToken plus a tenant +
+// owner membership for the new admin, and issues the token with that
+// tenant active - the shape TenantContext needs to let Create/List
+// actually see rows (0024's RLS policy on services). Kept local to this
+// file rather than folded into the shared issueTestSessionToken (used by
+// ~10 other handler test files whose tables aren't tenant-scoped in this
+// batch).
+func issueTestSessionTokenWithTenant(t *testing.T, admins *db.AdminRepository, pool *db.Pool) string {
+	t.Helper()
+	ctx := context.Background()
+	dbtest.LockAdminsTable(t, ctx, testDatabaseURL(t))
+	admin := &db.Admin{Email: uniqueTestEmail(t), PasswordHash: "hash"}
+	if err := admins.Create(ctx, admin); err != nil {
+		t.Fatalf("admins.Create() returned unexpected error: %v", err)
+	}
+	t.Cleanup(func() { _ = admins.Delete(context.Background(), admin.ID) })
+
+	var tenantID string
+	if err := pool.QueryRow(ctx, "INSERT INTO tenants (name) VALUES ($1) RETURNING id", "services-handler-test-tenant").Scan(&tenantID); err != nil {
+		t.Fatalf("seeding tenant returned unexpected error: %v", err)
+	}
+	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), "DELETE FROM tenants WHERE id = $1", tenantID) })
+
+	tx, err := pool.BeginTenantTx(ctx, "", tenantID)
+	if err != nil {
+		t.Fatalf("BeginTenantTx() returned unexpected error: %v", err)
+	}
+	if _, err := pool.Exec(db.WithTenantTx(ctx, tx),
+		"INSERT INTO tenant_memberships (user_id, tenant_id, role) VALUES ($1, $2, $3)", admin.ID, tenantID, db.RoleOwner,
+	); err != nil {
+		_ = tx.Rollback(ctx)
+		t.Fatalf("seeding tenant membership returned unexpected error: %v", err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		t.Fatalf("commit returned unexpected error: %v", err)
+	}
+
+	token, err := auth.IssueSessionWithTenant(admin.ID, tenantID, middlewareTestSecret)
+	if err != nil {
+		t.Fatalf("auth.IssueSessionWithTenant() returned unexpected error: %v", err)
+	}
+	return token
 }
 
 func postCreateService(t *testing.T, r http.Handler, token, name, sloID string) *httptest.ResponseRecorder {
@@ -122,7 +172,7 @@ func findServiceAcrossPages(t *testing.T, r http.Handler, token, name string) *s
 
 func TestCreateService_ValidRequest_201SavesSLOLink(t *testing.T) {
 	r, pool, admins := newServicesRouter(t)
-	token := issueTestSessionToken(t, admins)
+	token := issueTestSessionTokenWithTenant(t, admins, pool)
 	name := uniqueServiceName(t)
 	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), "DELETE FROM services WHERE name = $1", name) })
 
@@ -152,7 +202,7 @@ func TestCreateService_ValidRequest_201SavesSLOLink(t *testing.T) {
 
 func TestListServices_ReturnsAllWithCurrentStatus(t *testing.T) {
 	r, pool, admins := newServicesRouter(t)
-	token := issueTestSessionToken(t, admins)
+	token := issueTestSessionTokenWithTenant(t, admins, pool)
 	name := uniqueServiceName(t)
 	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), "DELETE FROM services WHERE name = $1", name) })
 

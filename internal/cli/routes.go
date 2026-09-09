@@ -76,7 +76,7 @@ func buildAdminRouter(pool *db.Pool, cfg config.Config, logger *zap.Logger, poll
 	llmService := llm.NewService(db.NewLLMProviderStore(db.NewLLMProviderRepository(pool)), llmProviderFactory, cfg.MasterKey, logger)
 	llmProvidersHandler := api.NewLLMProvidersHandler(llmService, logger)
 
-	authHandler := api.NewAuthHandler(admins, logger, cfg.SessionSecret, cfg.SecureCookies)
+	authHandler := api.NewAuthHandler(admins, tenantMembershipsRepo, pool, logger, cfg.SessionSecret, cfg.SecureCookies)
 	bootstrapHandler := api.NewBootstrapHandler(pool, admins, tenantsRepo, tenantMembershipsRepo, logger, cfg.SessionSecret, cfg.SecureCookies)
 	passwordResetHandler := api.NewPasswordResetHandler(admins, db.NewPasswordResetRepository(pool), emailService, companySettingsRepo, logger, cfg.DevTokenLogging, cfg.AdminBaseURL)
 	adminsHandler := api.NewAdminsHandler(pool, admins, invites, emailService, companySettingsRepo, auditLog, logger, cfg.DevTokenLogging, cfg.AdminBaseURL, cfg.SessionSecret, cfg.SecureCookies)

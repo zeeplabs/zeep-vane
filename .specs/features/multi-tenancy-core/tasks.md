@@ -301,16 +301,20 @@ T16 → T19
 - Skill: NONE
 
 **Done when**:
-- [ ] Login with exactly 1 membership sets that tenant active and returns it in the login response
-- [ ] Login with 0 memberships is rejected with a clear error, no session issued
-- [ ] Login with >1 memberships succeeds but active tenant is unset; `GET /api/auth/me` lists all memberships
-- [ ] Gate check passes: `TEST_DATABASE_URL=... go test -tags=integration ./internal/api/...`
-- [ ] Test count: existing `auth_handler_test.go` cases still pass + 3 new cases
+- [x] Login with exactly 1 membership sets that tenant active and returns it in the login response
+- [x] Login with 0 memberships is rejected with a clear error, no session issued
+- [x] Login with >1 memberships succeeds but active tenant is unset; `GET /api/auth/me` lists all memberships
+- [x] Gate check passes: `TEST_DATABASE_URL=... go test -tags=integration ./internal/api/...` (fully green - see note)
+- [x] Test count: existing `auth_handler_test.go` cases (8) still pass + 3 new cases (11 total)
 
 **Tests**: integration
 **Gate**: full
 
 **Commit**: `feat(api): thread active tenant through session and auth/me`
+
+**Implementation notes:** `Login` is public (ahead of the tenant-context middleware), so it manages its own short-lived transaction (`pool.BeginTenantTx(ctx, admin.ID, "")`) to call `ListForUser` with only `app.user_id` set - resolving which tenant(s) exist is exactly what determines the active tenant, so no tenant can be set yet. `meResponse` gained `ActiveTenantID`/`Memberships` fields; `bootstrap_handler.go`'s response (T6) was updated too since it shares the same type and the just-created owner genuinely has one membership - leaving it stale would have been a regression in accuracy, not scope creep. `createTestAdmin` (shared by most of this file's tests) now seeds one tenant_membership by default, since a bare admin can no longer log in at all.
+
+**This also resolved the two `internal/api/services_handler_test.go` failures deferred since T2/T3** (`TestCreateService_ValidRequest_201SavesSLOLink`, `TestListServices_ReturnsAllWithCurrentStatus`) - they needed exactly the tenant-bearing session infrastructure T6/T7 provide. Fixed by wiring `TenantContext` into `newServicesRouter` and adding a local `issueTestSessionTokenWithTenant` helper (kept local rather than changing the shared `issueTestSessionToken`, used by ~10 other handler test files whose tables aren't tenant-scoped in this batch). `./internal/api/...` is now fully green, no deferred failures remaining.
 
 ---
 

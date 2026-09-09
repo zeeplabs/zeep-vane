@@ -189,5 +189,8 @@ func (h *BootstrapHandler) Create(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	_ = json.NewEncoder(w).Encode(meResponse{ID: admin.ID, Email: admin.Email, Name: admin.Name, Phone: admin.Phone, Role: db.RoleOwner})
+	_ = json.NewEncoder(w).Encode(meResponse{
+		ID: admin.ID, Email: admin.Email, Name: admin.Name, Phone: admin.Phone, Role: db.RoleOwner,
+		ActiveTenantID: tenantID, Memberships: []meMembership{{TenantID: tenantID, Role: db.RoleOwner}},
+	})
 }
