@@ -399,13 +399,13 @@ T25 only. Needs the full feature implemented (accurate to describe).
 - Skill: NONE
 
 **Done when**:
-- [ ] `outage` transition with no existing open incident: creates an incident (generic description, `auto_created = true`) synchronously
-- [ ] `outage` transition with an already-open incident for that service: creates nothing (AI-12)
-- [ ] `degraded` transition (into): clears `status_analysis` to `NULL` synchronously (fresh state before any async write - AI-15/AI-16)
-- [ ] Transition away from `degraded` (to anything): clears `status_analysis` to `NULL` synchronously (AI-17)
-- [ ] `operational` transition with an open incident for that service: identified as needing a closing-comment proposal (method returns/signals this; actual LLM call is T14's job)
-- [ ] Unit tests (fake repositories, no real LLM/network) cover all five bullets above plus the "no transition" no-op case (`previousStatus == newStatus` never calls anything)
-- [ ] Gate passes: `go test ./internal/poller/...`
+- [x] `outage` transition with no existing open incident: creates an incident (generic description, `auto_created = true`) synchronously
+- [x] `outage` transition with an already-open incident for that service: creates nothing (AI-12)
+- [x] `degraded` transition (into): clears `status_analysis` to `NULL` synchronously (fresh state before any async write - AI-15/AI-16)
+- [x] Transition away from `degraded` (to anything): clears `status_analysis` to `NULL` synchronously (AI-17)
+- [x] `operational` transition with an open incident for that service: identified as needing a closing-comment proposal (method returns/signals this; actual LLM call is T14's job)
+- [x] Unit tests (fake repositories, no real LLM/network) cover all five bullets above plus the "no transition" no-op case (`previousStatus == newStatus` never calls anything)
+- [x] Gate passes: `go test ./internal/poller/...`
 
 **Tests**: unit
 **Gate**: quick
