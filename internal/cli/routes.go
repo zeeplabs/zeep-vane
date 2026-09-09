@@ -127,6 +127,10 @@ func buildAdminRouter(pool *db.Pool, cfg config.Config, logger *zap.Logger, poll
 
 	r.Group(func(protected chi.Router) {
 		protected.Use(requireAuth)
+		// TenantContext must run after requireAuth (it reads the admin and
+		// active-tenant claim requireAuth stores in context) and ahead of
+		// every tenant-scoped route below it (multi-tenancy-core, AD-022).
+		protected.Use(api.TenantContext(pool, logger))
 
 		protected.With(anyRole).Get("/api/auth/me", authHandler.Me)
 		protected.With(anyRole).Post("/api/auth/logout", authHandler.Logout)

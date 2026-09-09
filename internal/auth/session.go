@@ -19,21 +19,37 @@ const SessionTTL = 24 * time.Hour
 // verification, or is expired.
 var ErrInvalidToken = errors.New("auth: invalid or expired token")
 
-// sessionClaims is the JWT payload for an admin session.
+// sessionClaims is the JWT payload for an admin session. TenantID is the
+// session's active tenant (multi-tenancy-core, AD-022) - empty for a
+// session with no tenant selected yet (e.g. an account with more than one
+// tenant_membership, pending the tenant-selection screen), never decoded
+// client-side (AD-004): the tenant-context middleware reads it server-side
+// only, to set app.tenant_id for RLS.
 type sessionClaims struct {
 	jwt.RegisteredClaims
+	TenantID string `json:"tid,omitempty"`
 }
 
-// IssueSession signs a session token for adminID using secret, valid for
-// SessionTTL.
+// IssueSession signs a session token for adminID with no active tenant,
+// using secret, valid for SessionTTL. Equivalent to
+// IssueSessionWithTenant(adminID, "", secret) - kept as the original,
+// tenant-agnostic entry point so existing callers that predate
+// multi-tenancy-core don't need to change.
 func IssueSession(adminID, secret string) (string, error) {
-	return issueSessionWithTTL(adminID, secret, SessionTTL)
+	return IssueSessionWithTenant(adminID, "", secret)
 }
 
-// issueSessionWithTTL is IssueSession with an explicit TTL, so tests can
-// produce an already-expired token without waiting or mutating package
-// state.
-func issueSessionWithTTL(adminID, secret string, ttl time.Duration) (string, error) {
+// IssueSessionWithTenant signs a session token for adminID with tenantID as
+// its active tenant (tenantID may be "" - no tenant selected yet), using
+// secret, valid for SessionTTL.
+func IssueSessionWithTenant(adminID, tenantID, secret string) (string, error) {
+	return issueSessionWithTTL(adminID, tenantID, secret, SessionTTL)
+}
+
+// issueSessionWithTTL is IssueSessionWithTenant with an explicit TTL, so
+// tests can produce an already-expired token without waiting or mutating
+// package state.
+func issueSessionWithTTL(adminID, tenantID, secret string, ttl time.Duration) (string, error) {
 	now := time.Now()
 	claims := sessionClaims{
 		RegisteredClaims: jwt.RegisteredClaims{
@@ -41,6 +57,7 @@ func issueSessionWithTTL(adminID, secret string, ttl time.Duration) (string, err
 			IssuedAt:  jwt.NewNumericDate(now),
 			ExpiresAt: jwt.NewNumericDate(now.Add(ttl)),
 		},
+		TenantID: tenantID,
 	}
 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
@@ -66,10 +83,12 @@ func VerifySession(tokenString, secret string) (string, error) {
 // SessionClaims is the subset of a verified session token's payload callers
 // beyond the admin ID itself may need. IssuedAt backs the admin-dashboard
 // feature's session revocation check (RequireAuth rejects a token issued
-// before the admin's sessions were revoked).
+// before the admin's sessions were revoked). TenantID is the session's
+// active tenant, "" if none selected yet.
 type SessionClaims struct {
 	AdminID  string
 	IssuedAt time.Time
+	TenantID string
 }
 
 // VerifySessionClaims validates tokenString against secret like
@@ -92,5 +111,5 @@ func VerifySessionClaims(tokenString, secret string) (SessionClaims, error) {
 		return SessionClaims{}, ErrInvalidToken
 	}
 
-	return SessionClaims{AdminID: claims.Subject, IssuedAt: claims.IssuedAt.Time}, nil
+	return SessionClaims{AdminID: claims.Subject, IssuedAt: claims.IssuedAt.Time, TenantID: claims.TenantID}, nil
 }

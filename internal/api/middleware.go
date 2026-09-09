@@ -21,6 +21,20 @@ const adminIDContextKey contextKey = "adminID"
 // handlers can read Role without a second database round trip.
 const adminContextKey contextKey = "admin"
 
+// activeTenantIDContextKey is the request-context key under which
+// RequireAuth stores the session token's active tenant claim (""  if the
+// session has none selected yet - multi-tenancy-core, AD-022). The
+// tenant-context middleware reads this to set app.tenant_id for RLS.
+const activeTenantIDContextKey contextKey = "activeTenantID"
+
+// ActiveTenantIDFromContext returns the active tenant ID stored by
+// RequireAuth (possibly "" - no tenant selected yet), and whether a session
+// was present at all.
+func ActiveTenantIDFromContext(ctx context.Context) (string, bool) {
+	tenantID, ok := ctx.Value(activeTenantIDContextKey).(string)
+	return tenantID, ok
+}
+
 // AdminIDFromContext returns the authenticated admin ID stored by
 // RequireAuth, and whether one was present.
 func AdminIDFromContext(ctx context.Context) (string, bool) {
@@ -90,6 +104,7 @@ func RequireAuth(secret string, admins adminLoader) func(http.Handler) http.Hand
 
 			ctx := context.WithValue(r.Context(), adminIDContextKey, admin.ID)
 			ctx = context.WithValue(ctx, adminContextKey, admin)
+			ctx = context.WithValue(ctx, activeTenantIDContextKey, claims.TenantID)
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}

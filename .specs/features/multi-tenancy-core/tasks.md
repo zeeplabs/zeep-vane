@@ -189,15 +189,17 @@ T16 → T19
 - Skill: NONE
 
 **Done when**:
-- [ ] Middleware sets `app.tenant_id` from the session cookie's tenant claim before handler execution
-- [ ] Request with no active tenant in session never reaches a domain query with `app.tenant_id` unset in a way that could read cross-tenant (defaults to a value that resolves to zero rows)
-- [ ] Wired into `internal/cli/routes.go` ahead of every tenant-scoped route group
-- [ ] Gate check passes: `TEST_DATABASE_URL=... go test -tags=integration ./internal/api/...`
+- [x] Middleware sets `app.tenant_id` from the session cookie's tenant claim before handler execution
+- [x] Request with no active tenant in session never reaches a domain query with `app.tenant_id` unset in a way that could read cross-tenant (defaults to a value that resolves to zero rows)
+- [x] Wired into `internal/cli/routes.go` ahead of every tenant-scoped route group
+- [x] Gate check passes: `TEST_DATABASE_URL=... go test -tags=integration ./internal/api/...` (2 pre-existing failures remain, tracked separately - see note)
 
 **Tests**: integration
 **Gate**: full
 
 **Commit**: `feat(api): add tenant-context middleware setting app.tenant_id per request`
+
+**Implementation notes:** the "session cookie's tenant claim" is read via context, not by re-parsing the cookie a second time in this middleware - `RequireAuth` (already parses the JWT) now also stores the verified claim's `TenantID` in context (`ActiveTenantIDFromContext`), and `TenantContext` reads that plus the `*db.Admin` `RequireAuth` already loaded, then calls `pool.BeginTenantTx(ctx, admin.ID, tenantID)` (added in T1/T2) to open the request's transaction and set `app.user_id`/`app.tenant_id`. This required two small additive changes outside this task's literal `Where`: `internal/auth/session.go` gained a `TenantID` claim and `IssueSessionWithTenant` (existing `IssueSession` unchanged, now a thin wrapper with `tenantID=""`), and `internal/api/middleware.go`'s `RequireAuth` now also stores that claim in context - both necessary for this middleware to read anything real, and both zero-blast-radius (no existing caller's behavior changes). Wired into `internal/cli/routes.go`'s single `protected` route group (every route needing auth already funnels through it) right after `requireAuth`. Commits the transaction on any status < 500, rolls back on 5xx or panic. The 2 known-red `internal/api/services_handler_test.go` cases (flagged in T2's note) are unaffected by this task - they still need T6/T7's bootstrap+session work to actually mint a token with a real tenant claim.
 
 ---
 

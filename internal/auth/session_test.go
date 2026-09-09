@@ -25,7 +25,7 @@ func TestVerifySession_ValidToken_ReturnsAdminID(t *testing.T) {
 }
 
 func TestVerifySession_ExpiredToken_ErrInvalidToken(t *testing.T) {
-	token, err := issueSessionWithTTL("admin-123", testSecret, -1*time.Hour)
+	token, err := issueSessionWithTTL("admin-123", "", testSecret, -1*time.Hour)
 	if err != nil {
 		t.Fatalf("issueSessionWithTTL() returned unexpected error: %v", err)
 	}
