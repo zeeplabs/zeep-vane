@@ -269,6 +269,32 @@ func writeRouteCases() []routeCase {
 			body:   func() []byte { return nil },
 		},
 		{
+			name:   "POST /api/integrations/llm/{provider}",
+			method: http.MethodPost,
+			path:   "/api/integrations/llm/openai",
+			body: func() []byte {
+				b, _ := json.Marshal(map[string]string{
+					"api_key": "cli-routes-test-llm-api-key",
+				})
+				return b
+			},
+		},
+		{
+			name:   "POST /api/integrations/llm/{provider}/model",
+			method: http.MethodPost,
+			path:   "/api/integrations/llm/openai/model",
+			body: func() []byte {
+				b, _ := json.Marshal(map[string]string{"model": "gpt-4o"})
+				return b
+			},
+		},
+		{
+			name:   "POST /api/integrations/llm/{provider}/activate",
+			method: http.MethodPost,
+			path:   "/api/integrations/llm/openai/activate",
+			body:   func() []byte { return nil },
+		},
+		{
 			name:   "POST /api/incidents",
 			method: http.MethodPost,
 			path:   "/api/incidents",
@@ -516,6 +542,23 @@ func TestAdminRouter_Viewer_EmailProvidersList_200(t *testing.T) {
 	token := issueRoutesTestToken(t, admins, db.RoleViewer)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/integrations/email", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Errorf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+}
+
+// TestAdminRouter_Viewer_LLMProvidersList_200 asserts AI-06: viewer must be
+// able to read GET /api/integrations/llm (anyRole), the same read/write role
+// split as the email integration routes above.
+func TestAdminRouter_Viewer_LLMProvidersList_200(t *testing.T) {
+	r, _, admins := newAdminRouterForTest(t)
+	token := issueRoutesTestToken(t, admins, db.RoleViewer)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/integrations/llm", nil)
 	req.Header.Set("Authorization", "Bearer "+token)
 	rec := httptest.NewRecorder()
 	r.ServeHTTP(rec, req)

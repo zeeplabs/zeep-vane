@@ -478,13 +478,13 @@ T25 only. Needs the full feature implemented (accurate to describe).
 - Skill: NONE
 
 **Done when**:
-- [ ] `Connect` returns 404 for an unknown provider, 422 for invalid input/failed validation, 201 + `{"status":"connected"}` on success, never echoes the API key
-- [ ] `SetModel` returns 422 for a model outside the allowlist, 200 on success
-- [ ] `Activate` returns 422 for an unconnected provider, 200 on success
-- [ ] `List` returns the paginated envelope, empty list + null active when nothing connected
-- [ ] `writeRoles`-gated endpoints reject a `viewer` with 403 (AI-06)
-- [ ] Handler unit tests (httptest) mirror `email_providers_handler_test.go`'s depth for every route above
-- [ ] Gate passes: `go test ./internal/api/...`
+- [x] `Connect` returns 404 for an unknown provider, 422 for invalid input/failed validation, 201 + `{"status":"connected"}` on success, never echoes the API key
+- [x] `SetModel` returns 422 for a model outside the allowlist, 200 on success
+- [x] `Activate` returns 422 for an unconnected provider, 200 on success
+- [x] `List` returns the paginated envelope, empty list + null active when nothing connected
+- [x] `writeRoles`-gated endpoints reject a `viewer` with 403 (AI-06)
+- [x] Handler unit tests (httptest) mirror `email_providers_handler_test.go`'s depth for every route above
+- [x] Gate passes: `go test ./internal/api/...`
 
 **Tests**: unit
 **Gate**: quick

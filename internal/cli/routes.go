@@ -71,6 +71,9 @@ func buildAdminRouter(pool *db.Pool, cfg config.Config, logger *zap.Logger, poll
 	}
 	emailProvidersHandler := api.NewEmailProvidersHandler(emailService, logger)
 
+	llmService := llm.NewService(db.NewLLMProviderStore(db.NewLLMProviderRepository(pool)), llmProviderFactory, cfg.MasterKey, logger)
+	llmProvidersHandler := api.NewLLMProvidersHandler(llmService, logger)
+
 	authHandler := api.NewAuthHandler(admins, logger, cfg.SessionSecret, cfg.SecureCookies)
 	bootstrapHandler := api.NewBootstrapHandler(pool, admins, logger, cfg.SessionSecret, cfg.SecureCookies)
 	passwordResetHandler := api.NewPasswordResetHandler(admins, db.NewPasswordResetRepository(pool), emailService, companySettingsRepo, logger, cfg.DevTokenLogging, cfg.AdminBaseURL)
@@ -148,6 +151,9 @@ func buildAdminRouter(pool *db.Pool, cfg config.Config, logger *zap.Logger, poll
 		protected.With(writeRoles).Post("/api/integrations/datadog", integrationsHandler.ConnectDatadog)
 		protected.With(writeRoles).Post("/api/integrations/email/{provider}", emailProvidersHandler.Connect)
 		protected.With(writeRoles).Post("/api/integrations/email/{provider}/activate", emailProvidersHandler.Activate)
+		protected.With(writeRoles).Post("/api/integrations/llm/{provider}", llmProvidersHandler.Connect)
+		protected.With(writeRoles).Post("/api/integrations/llm/{provider}/model", llmProvidersHandler.SetModel)
+		protected.With(writeRoles).Post("/api/integrations/llm/{provider}/activate", llmProvidersHandler.Activate)
 		protected.With(writeRoles).Post("/api/incidents", incidentsHandler.Create)
 		protected.With(writeRoles).Post("/api/incidents/{id}/updates", incidentsHandler.AddUpdate)
 		protected.With(writeRoles).Patch("/api/incidents/{id}", incidentsHandler.Transition)
@@ -169,6 +175,7 @@ func buildAdminRouter(pool *db.Pool, cfg config.Config, logger *zap.Logger, poll
 		protected.With(anyRole).Get("/api/status-pages/{id}/public-preview", publicStatusPreviewHandler.Get)
 		protected.With(anyRole).Get("/api/integrations/datadog/status", integrationsHandler.Status)
 		protected.With(anyRole).Get("/api/integrations/email", emailProvidersHandler.List)
+		protected.With(anyRole).Get("/api/integrations/llm", llmProvidersHandler.List)
 
 		// SLO search decrypts the stored Datadog key pair server-side and
 		// calls out to Datadog on the admin's behalf - part of the
@@ -226,8 +233,7 @@ func emailProviderFactory(provider, apiKey string) (email.Provider, error) {
 // llm.Service's only dependency on a concrete connector package -
 // internal/llm itself never imports internal/connectors/openai directly
 // (same "breaking the potential import cycle" decision as
-// emailProviderFactory above). Not yet called by anything - wired to
-// llm.Service in a later task.
+// emailProviderFactory above). Wired to llm.Service in buildAdminRouter.
 func llmProviderFactory(provider, apiKey, model string) (llm.Provider, error) {
 	switch provider {
 	case "openai":
