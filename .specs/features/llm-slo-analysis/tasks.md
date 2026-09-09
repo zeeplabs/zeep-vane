@@ -506,12 +506,12 @@ T25 only. Needs the full feature implemented (accurate to describe).
 - Skill: NONE
 
 **Done when**:
-- [ ] `ConfirmClose`: 404 unknown incident, 422 no pending proposal, 200 + incident now `resolved` with the proposal appended as its final update on success
-- [ ] `DiscardCloseProposal`: 404 unknown incident, 422 no pending proposal, 200 + incident unchanged otherwise on success
-- [ ] `viewer` role gets 403 on both (AI-24)
-- [ ] Admin incident response DTO includes `description`, `pending_close_comment`, `auto_created`
-- [ ] Handler unit tests cover every bullet above
-- [ ] Gate passes: `go test ./internal/api/...`
+- [x] `ConfirmClose`: 404 unknown incident, 422 no pending proposal, 200 + incident now `resolved` with the proposal appended as its final update on success
+- [x] `DiscardCloseProposal`: 404 unknown incident, 422 no pending proposal, 200 + incident unchanged otherwise on success
+- [x] `viewer` role gets 403 on both (AI-24)
+- [x] Admin incident response DTO includes `description`, `pending_close_comment`, `auto_created`
+- [x] Handler unit tests cover every bullet above
+- [x] Gate passes: `go test ./internal/api/...`
 
 **Tests**: unit
 **Gate**: quick

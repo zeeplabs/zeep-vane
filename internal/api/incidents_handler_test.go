@@ -46,6 +46,8 @@ func newIncidentsRouter(t *testing.T) (http.Handler, *db.Pool, *db.AdminReposito
 		protected.Post("/api/incidents/{id}/updates", handler.AddUpdate)
 		protected.Get("/api/incidents/{id}/updates", handler.ListUpdates)
 		protected.Patch("/api/incidents/{id}", handler.Transition)
+		protected.Post("/api/incidents/{id}/confirm-close", handler.ConfirmClose)
+		protected.Post("/api/incidents/{id}/discard-close-proposal", handler.DiscardCloseProposal)
 	})
 
 	return r, pool, admins
@@ -481,6 +483,223 @@ func TestTransitionIncident_ReopenAfterResolved_AllowedAndRecordedOnTimeline(t *
 	}
 	if reopenedAt.IsZero() {
 		t.Error("reopening timeline entry has zero timestamp, want a real one")
+	}
+}
+
+func postConfirmClose(t *testing.T, r http.Handler, token, incidentID string) *httptest.ResponseRecorder {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodPost, "/api/incidents/"+incidentID+"/confirm-close", nil)
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+	return rec
+}
+
+func postDiscardCloseProposal(t *testing.T, r http.Handler, token, incidentID string) *httptest.ResponseRecorder {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodPost, "/api/incidents/"+incidentID+"/discard-close-proposal", nil)
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+	return rec
+}
+
+// TestConfirmClose_UnknownIncident_404 covers AI-21: confirming a
+// nonexistent incident responds 404.
+func TestConfirmClose_UnknownIncident_404(t *testing.T) {
+	r, _, admins := newIncidentsRouter(t)
+	token := issueTestSessionToken(t, admins)
+
+	rec := postConfirmClose(t, r, token, "00000000-0000-0000-0000-000000000000")
+
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("status = %d, want %d, body = %s", rec.Code, http.StatusNotFound, rec.Body.String())
+	}
+}
+
+// TestConfirmClose_NoPendingProposal_422 covers AI-21: an incident that
+// exists but has no pending_close_comment set responds 422.
+func TestConfirmClose_NoPendingProposal_422(t *testing.T) {
+	r, pool, admins := newIncidentsRouter(t)
+	token := issueTestSessionToken(t, admins)
+	incident := createTestIncident(t, r, pool, token, "confirm-close no-pending test incident")
+
+	rec := postConfirmClose(t, r, token, incident.ID)
+
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Errorf("status = %d, want %d, body = %s", rec.Code, http.StatusUnprocessableEntity, rec.Body.String())
+	}
+}
+
+// TestConfirmClose_Success_200_ResolvedWithFinalUpdate covers AI-20: on
+// success, the incident transitions to resolved and the pending comment is
+// appended as the final timeline update.
+func TestConfirmClose_Success_200_ResolvedWithFinalUpdate(t *testing.T) {
+	r, pool, admins := newIncidentsRouter(t)
+	token := issueTestSessionToken(t, admins)
+	incident := createTestIncident(t, r, pool, token, "confirm-close success test incident")
+
+	repo := db.NewIncidentRepository(pool)
+	if err := repo.SetPendingCloseComment(context.Background(), incident.ID, "service recovered, closing out"); err != nil {
+		t.Fatalf("setup SetPendingCloseComment() returned unexpected error: %v", err)
+	}
+
+	rec := postConfirmClose(t, r, token, incident.ID)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	var resolved incidentResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &resolved); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+	if resolved.Status != "resolved" {
+		t.Errorf("Status = %q, want %q", resolved.Status, "resolved")
+	}
+	if resolved.ResolvedAt == nil {
+		t.Error("ResolvedAt = nil, want a timestamp set on resolution")
+	}
+	if resolved.PendingCloseComment != nil {
+		t.Errorf("PendingCloseComment = %v, want nil after confirm", resolved.PendingCloseComment)
+	}
+
+	updatesRec := getIncidentUpdates(t, r, token, incident.ID)
+	if updatesRec.Code != http.StatusOK {
+		t.Fatalf("get updates status = %d, want %d, body = %s", updatesRec.Code, http.StatusOK, updatesRec.Body.String())
+	}
+	var page Page[incidentUpdateResponse]
+	if err := json.Unmarshal(updatesRec.Body.Bytes(), &page); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+	if len(page.Items) != 1 || page.Items[0].Body != "service recovered, closing out" {
+		t.Errorf("timeline = %+v, want a single update carrying the pending comment", page.Items)
+	}
+}
+
+// TestDiscardCloseProposal_UnknownIncident_404 covers a nonexistent incident
+// responding 404.
+func TestDiscardCloseProposal_UnknownIncident_404(t *testing.T) {
+	r, _, admins := newIncidentsRouter(t)
+	token := issueTestSessionToken(t, admins)
+
+	rec := postDiscardCloseProposal(t, r, token, "00000000-0000-0000-0000-000000000000")
+
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("status = %d, want %d, body = %s", rec.Code, http.StatusNotFound, rec.Body.String())
+	}
+}
+
+// TestDiscardCloseProposal_NoPendingProposal_422 covers an incident with no
+// pending_close_comment responding 422.
+func TestDiscardCloseProposal_NoPendingProposal_422(t *testing.T) {
+	r, pool, admins := newIncidentsRouter(t)
+	token := issueTestSessionToken(t, admins)
+	incident := createTestIncident(t, r, pool, token, "discard-close no-pending test incident")
+
+	rec := postDiscardCloseProposal(t, r, token, incident.ID)
+
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Errorf("status = %d, want %d, body = %s", rec.Code, http.StatusUnprocessableEntity, rec.Body.String())
+	}
+}
+
+// TestDiscardCloseProposal_Success_200_IncidentUnchanged covers AI-22: on
+// success, pending_close_comment is cleared and the incident is otherwise
+// unchanged (status stays whatever it was, no timeline entry added).
+func TestDiscardCloseProposal_Success_200_IncidentUnchanged(t *testing.T) {
+	r, pool, admins := newIncidentsRouter(t)
+	token := issueTestSessionToken(t, admins)
+	incident := createTestIncident(t, r, pool, token, "discard-close success test incident")
+
+	repo := db.NewIncidentRepository(pool)
+	if err := repo.SetPendingCloseComment(context.Background(), incident.ID, "draft closing comment"); err != nil {
+		t.Fatalf("setup SetPendingCloseComment() returned unexpected error: %v", err)
+	}
+
+	rec := postDiscardCloseProposal(t, r, token, incident.ID)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	var pendingComment *string
+	row := pool.QueryRow(context.Background(), "SELECT pending_close_comment FROM incidents WHERE id = $1", incident.ID)
+	if err := row.Scan(&pendingComment); err != nil {
+		t.Fatalf("Scan() returned unexpected error: %v", err)
+	}
+	if pendingComment != nil {
+		t.Errorf("pending_close_comment = %q, want NULL after discard", *pendingComment)
+	}
+
+	var status string
+	row = pool.QueryRow(context.Background(), "SELECT status FROM incidents WHERE id = $1", incident.ID)
+	if err := row.Scan(&status); err != nil {
+		t.Fatalf("Scan() returned unexpected error: %v", err)
+	}
+	if status != "investigating" {
+		t.Errorf("status = %q, want unchanged %q", status, "investigating")
+	}
+
+	updatesRec := getIncidentUpdates(t, r, token, incident.ID)
+	if updatesRec.Code != http.StatusOK {
+		t.Fatalf("get updates status = %d, want %d, body = %s", updatesRec.Code, http.StatusOK, updatesRec.Body.String())
+	}
+	var page Page[incidentUpdateResponse]
+	if err := json.Unmarshal(updatesRec.Body.Bytes(), &page); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+	if len(page.Items) != 0 {
+		t.Errorf("timeline = %+v, want no updates added by discard", page.Items)
+	}
+}
+
+// TestIncidentResponse_ExposesDescriptionAutoCreatedAndPendingCloseComment
+// covers the admin DTO extension: description, pending_close_comment, and
+// auto_created are all present on incidentResponse (never on the public
+// shape - that's T18's job).
+func TestIncidentResponse_ExposesDescriptionAutoCreatedAndPendingCloseComment(t *testing.T) {
+	r, pool, admins := newIncidentsRouter(t)
+	token := issueTestSessionToken(t, admins)
+	incident := createTestIncident(t, r, pool, token, "dto fields test incident")
+
+	repo := db.NewIncidentRepository(pool)
+	if err := repo.SetDescription(context.Background(), incident.ID, "root cause: db connection pool exhaustion"); err != nil {
+		t.Fatalf("setup SetDescription() returned unexpected error: %v", err)
+	}
+	if err := repo.SetPendingCloseComment(context.Background(), incident.ID, "recovered, closing"); err != nil {
+		t.Fatalf("setup SetPendingCloseComment() returned unexpected error: %v", err)
+	}
+
+	rec := getIncidents(t, r, token)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	var page Page[incidentResponse]
+	if err := json.Unmarshal(rec.Body.Bytes(), &page); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+
+	var found *incidentResponse
+	for i := range page.Items {
+		if page.Items[i].ID == incident.ID {
+			found = &page.Items[i]
+			break
+		}
+	}
+	if found == nil {
+		t.Fatalf("incident %s not found in list response", incident.ID)
+	}
+	if found.Description == nil || *found.Description != "root cause: db connection pool exhaustion" {
+		t.Errorf("Description = %v, want the set description", found.Description)
+	}
+	if found.PendingCloseComment == nil || *found.PendingCloseComment != "recovered, closing" {
+		t.Errorf("PendingCloseComment = %v, want the set pending comment", found.PendingCloseComment)
+	}
+	if found.AutoCreated {
+		t.Error("AutoCreated = true, want false for a manually created incident")
 	}
 }
 

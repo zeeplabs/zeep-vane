@@ -26,6 +26,8 @@ type incidentCreator interface {
 	AddUpdate(ctx context.Context, incidentID, body string) (*db.IncidentUpdate, error)
 	ListUpdatesPaginated(ctx context.Context, incidentID string, page, pageSize int) ([]db.IncidentUpdate, int, error)
 	Transition(ctx context.Context, incidentID, status string) (*db.Incident, error)
+	ConfirmPendingClose(ctx context.Context, incidentID string) (*db.Incident, error)
+	DiscardCloseProposal(ctx context.Context, incidentID string) error
 }
 
 // IncidentsHandler serves the incident admin routes.
@@ -51,6 +53,13 @@ type incidentResponse struct {
 	CreatedAt  time.Time  `json:"created_at"`
 	ResolvedAt *time.Time `json:"resolved_at"`
 	ServiceIDs []string   `json:"service_ids"`
+	// Description, PendingCloseComment, and AutoCreated are admin-only
+	// fields never present on the public incident response
+	// (publicIncidentResponse in public_status_handler.go) - AI-09,
+	// AI-19/AI-20, AI-12.
+	Description         *string `json:"description"`
+	PendingCloseComment *string `json:"pending_close_comment"`
+	AutoCreated         bool    `json:"auto_created"`
 }
 
 const invalidIncidentRequestBody = `{"error":"title and at least one service_id are required"}`
@@ -234,10 +243,72 @@ func (h *IncidentsHandler) Transition(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(toIncidentResponse(incident))
 }
 
+const noPendingCloseProposalBody = `{"error":"incident has no pending close proposal"}`
+
+// ConfirmClose handles POST /api/incidents/{id}/confirm-close, accepting the
+// LLM-drafted closing comment awaiting confirmation: it is appended as the
+// incident's final update and the incident transitions to resolved, all in
+// one transaction (AI-20). Returns 404 if the incident doesn't exist, 422 if
+// it has no pending close proposal (AI-21).
+func (h *IncidentsHandler) ConfirmClose(w http.ResponseWriter, r *http.Request) {
+	incidentID := chi.URLParam(r, "id")
+
+	incident, err := h.incidents.ConfirmPendingClose(r.Context(), incidentID)
+	if err != nil {
+		if errors.Is(err, db.ErrNotFound) {
+			writeIncidentNotFound(w)
+			return
+		}
+		if errors.Is(err, db.ErrNoPendingProposal) {
+			writeNoPendingCloseProposal(w)
+			return
+		}
+		h.logger.Error("incidents: failed to confirm pending close", zap.Error(err))
+		writeInternalError(w)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(toIncidentResponse(incident))
+}
+
+// DiscardCloseProposal handles POST /api/incidents/{id}/discard-close-proposal,
+// clearing the pending closing-comment proposal and leaving the incident
+// otherwise unchanged (AI-22). Returns 404 if the incident doesn't exist,
+// 422 if it has no pending close proposal.
+func (h *IncidentsHandler) DiscardCloseProposal(w http.ResponseWriter, r *http.Request) {
+	incidentID := chi.URLParam(r, "id")
+
+	if err := h.incidents.DiscardCloseProposal(r.Context(), incidentID); err != nil {
+		if errors.Is(err, db.ErrNotFound) {
+			writeIncidentNotFound(w)
+			return
+		}
+		if errors.Is(err, db.ErrNoPendingProposal) {
+			writeNoPendingCloseProposal(w)
+			return
+		}
+		h.logger.Error("incidents: failed to discard pending close proposal", zap.Error(err))
+		writeInternalError(w)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write([]byte(`{"status":"discarded"}`))
+}
+
 func writeIncidentNotFound(w http.ResponseWriter) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusNotFound)
 	_, _ = w.Write([]byte(incidentNotFoundBody))
+}
+
+func writeNoPendingCloseProposal(w http.ResponseWriter) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusUnprocessableEntity)
+	_, _ = w.Write([]byte(noPendingCloseProposalBody))
 }
 
 func toIncidentResponse(incident *db.Incident) incidentResponse {
@@ -246,11 +317,14 @@ func toIncidentResponse(incident *db.Incident) incidentResponse {
 		serviceIDs = []string{}
 	}
 	return incidentResponse{
-		ID:         incident.ID,
-		Title:      incident.Title,
-		Status:     incident.Status,
-		CreatedAt:  incident.CreatedAt,
-		ResolvedAt: incident.ResolvedAt,
-		ServiceIDs: serviceIDs,
+		ID:                  incident.ID,
+		Title:               incident.Title,
+		Status:              incident.Status,
+		CreatedAt:           incident.CreatedAt,
+		ResolvedAt:          incident.ResolvedAt,
+		ServiceIDs:          serviceIDs,
+		Description:         incident.Description,
+		PendingCloseComment: incident.PendingCloseComment,
+		AutoCreated:         incident.AutoCreated,
 	}
 }

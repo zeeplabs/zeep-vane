@@ -157,6 +157,8 @@ func buildAdminRouter(pool *db.Pool, cfg config.Config, logger *zap.Logger, poll
 		protected.With(writeRoles).Post("/api/incidents", incidentsHandler.Create)
 		protected.With(writeRoles).Post("/api/incidents/{id}/updates", incidentsHandler.AddUpdate)
 		protected.With(writeRoles).Patch("/api/incidents/{id}", incidentsHandler.Transition)
+		protected.With(writeRoles).Post("/api/incidents/{id}/confirm-close", incidentsHandler.ConfirmClose)
+		protected.With(writeRoles).Post("/api/incidents/{id}/discard-close-proposal", incidentsHandler.DiscardCloseProposal)
 		protected.With(writeRoles).Post("/api/status-pages", statusPagesHandler.Create)
 		protected.With(writeRoles).Patch("/api/status-pages/{id}/domain", statusPagesHandler.AttachDomain)
 		protected.With(writeRoles).Patch("/api/status-pages/{id}/services", statusPagesHandler.SetServices)
