@@ -427,11 +427,11 @@ T25 only. Needs the full feature implemented (accurate to describe).
 - Skill: NONE
 
 **Done when**:
-- [ ] Successful `Generate*` call writes its result via the matching repository method after `HandleTransition` has already returned
-- [ ] Failed/timed-out `Generate*` call writes nothing, logs the error, does not panic or leak the goroutine past `analysisTimeout`
-- [ ] `HandleTransition` itself returns before the goroutine's result is known (asserted via a fake `Provider` that blocks on a channel the test controls)
-- [ ] Unit tests (fake `llm.Service`/`Provider` with controllable delay/error/success): successful enrichment updates the row; failed enrichment leaves the fallback/NULL state; `HandleTransition`'s own call returns well before the fake unblocks
-- [ ] Gate passes: `go test ./internal/poller/...`
+- [x] Successful `Generate*` call writes its result via the matching repository method after `HandleTransition` has already returned
+- [x] Failed/timed-out `Generate*` call writes nothing, logs the error, does not panic or leak the goroutine past `analysisTimeout`
+- [x] `HandleTransition` itself returns before the goroutine's result is known (asserted via a fake `Provider` that blocks on a channel the test controls)
+- [x] Unit tests (fake `llm.Service`/`Provider` with controllable delay/error/success): successful enrichment updates the row; failed enrichment leaves the fallback/NULL state; `HandleTransition`'s own call returns well before the fake unblocks
+- [x] Gate passes: `go test ./internal/poller/...`
 
 **Tests**: unit
 **Gate**: quick

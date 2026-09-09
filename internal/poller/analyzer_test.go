@@ -3,6 +3,7 @@ package poller
 import (
 	"context"
 	"errors"
+	"sync"
 	"testing"
 	"time"
 
@@ -15,20 +16,31 @@ import (
 
 // fakeIncidentStore is a no-network, no-DB fake of incidentStore that
 // records every call so tests can assert exactly which methods fired.
+// Mutex-protected and channel-notified because dispatchOutageEnrichment/
+// dispatchClosingCommentEnrichment call SetDescription/
+// SetPendingCloseComment from a goroutine (T14) - tests must synchronize
+// on that write rather than racing it or sleep-polling for it.
 type fakeIncidentStore struct {
+	mu            sync.Mutex
 	openIncidents map[string]string // serviceID -> incidentID, present means "open"
 
-	createCalls            []*db.Incident
-	createServiceIDs       [][]string
-	createErr              error
-	hasOpenErr             error
-	setDescriptionCalls    []string // incidentID
-	setDescriptionErr      error
+	createCalls      []*db.Incident
+	createServiceIDs [][]string
+	createErr        error
+	hasOpenErr       error
+
+	setDescriptionCalls []string // incidentID
+	setDescriptionErr   error
+	setDescriptionDone  chan struct{} // signaled once per SetDescription call, if non-nil
+
 	setPendingCommentCalls []string // incidentID
 	setPendingCommentErr   error
+	setPendingCommentDone  chan struct{} // signaled once per SetPendingCloseComment call, if non-nil
 }
 
 func (f *fakeIncidentStore) Create(ctx context.Context, incident *db.Incident, serviceIDs []string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	if f.createErr != nil {
 		return f.createErr
 	}
@@ -39,6 +51,8 @@ func (f *fakeIncidentStore) Create(ctx context.Context, incident *db.Incident, s
 }
 
 func (f *fakeIncidentStore) HasOpenIncidentForService(ctx context.Context, serviceID string) (string, bool, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	if f.hasOpenErr != nil {
 		return "", false, f.hasOpenErr
 	}
@@ -47,87 +61,154 @@ func (f *fakeIncidentStore) HasOpenIncidentForService(ctx context.Context, servi
 }
 
 func (f *fakeIncidentStore) SetDescription(ctx context.Context, incidentID, description string) error {
-	if f.setDescriptionErr != nil {
-		return f.setDescriptionErr
+	f.mu.Lock()
+	err := f.setDescriptionErr
+	if err == nil {
+		f.setDescriptionCalls = append(f.setDescriptionCalls, incidentID)
 	}
-	f.setDescriptionCalls = append(f.setDescriptionCalls, incidentID)
-	return nil
+	done := f.setDescriptionDone
+	f.mu.Unlock()
+	if done != nil {
+		done <- struct{}{}
+	}
+	return err
 }
 
 func (f *fakeIncidentStore) SetPendingCloseComment(ctx context.Context, incidentID, comment string) error {
-	if f.setPendingCommentErr != nil {
-		return f.setPendingCommentErr
+	f.mu.Lock()
+	err := f.setPendingCommentErr
+	if err == nil {
+		f.setPendingCommentCalls = append(f.setPendingCommentCalls, incidentID)
 	}
-	f.setPendingCommentCalls = append(f.setPendingCommentCalls, incidentID)
-	return nil
+	done := f.setPendingCommentDone
+	f.mu.Unlock()
+	if done != nil {
+		done <- struct{}{}
+	}
+	return err
+}
+
+func (f *fakeIncidentStore) snapshot() (createCalls int, setDescriptionCalls, setPendingCommentCalls []string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return len(f.createCalls), append([]string(nil), f.setDescriptionCalls...), append([]string(nil), f.setPendingCommentCalls...)
 }
 
 // fakeStatusAnalysisWriter is a no-DB fake of statusAnalysisWriter.
+// Mutex-protected and channel-notified for the same reason as
+// fakeIncidentStore - dispatchDegradedEnrichment calls
+// UpdateStatusAnalysis from a goroutine.
 type fakeStatusAnalysisWriter struct {
+	mu    sync.Mutex
 	calls []*string // nil entry means UpdateStatusAnalysis(ctx, id, nil)
 	err   error
+	done  chan struct{} // signaled once per call, if non-nil
 }
 
 func (f *fakeStatusAnalysisWriter) UpdateStatusAnalysis(ctx context.Context, serviceID string, analysis *string) error {
-	if f.err != nil {
-		return f.err
+	f.mu.Lock()
+	err := f.err
+	if err == nil {
+		f.calls = append(f.calls, analysis)
 	}
-	f.calls = append(f.calls, analysis)
-	return nil
+	done := f.done
+	f.mu.Unlock()
+	if done != nil {
+		done <- struct{}{}
+	}
+	return err
 }
 
-// fakeLLMGenerator is a no-network fake of llmGenerator. T13's tests never
-// expect it to be called (no async dispatch exists yet) - it exists so
-// NewSLOAnalyzer can be constructed.
+func (f *fakeStatusAnalysisWriter) snapshot() []*string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]*string(nil), f.calls...)
+}
+
+// fakeLLMGenerator is a no-network fake of llmGenerator with a
+// per-method controllable result/error/delay, so T14's tests can exercise
+// success, failure, and "still running past the caller's return" without
+// any real network call.
 type fakeLLMGenerator struct {
-	degradedCalls int
-	outageCalls   int
-	closingCalls  int
+	degradedResult, outageResult, closingResult string
+	degradedErr, outageErr, closingErr          error
+	degradedDelay, outageDelay, closingDelay    time.Duration
+	// block, when non-nil, makes every Generate* method wait on ctx.Done()
+	// instead of returning - used by the timing test to simulate a
+	// provider call that never completes on its own.
+	block bool
 }
 
 func (f *fakeLLMGenerator) GenerateDegradedAnalysis(ctx context.Context, in llm.AnalysisInput) (string, error) {
-	f.degradedCalls++
-	return "", nil
+	return f.run(ctx, f.degradedDelay, f.degradedResult, f.degradedErr)
 }
 
 func (f *fakeLLMGenerator) GenerateOutageDescription(ctx context.Context, in llm.AnalysisInput) (string, error) {
-	f.outageCalls++
-	return "", nil
+	return f.run(ctx, f.outageDelay, f.outageResult, f.outageErr)
 }
 
 func (f *fakeLLMGenerator) GenerateClosingComment(ctx context.Context, in llm.AnalysisInput) (string, error) {
-	f.closingCalls++
-	return "", nil
+	return f.run(ctx, f.closingDelay, f.closingResult, f.closingErr)
 }
 
-func newTestAnalyzer(incidents *fakeIncidentStore, services *fakeStatusAnalysisWriter, llmSvc *fakeLLMGenerator) *SLOAnalyzer {
-	return NewSLOAnalyzer(incidents, services, llmSvc, time.Second, zap.NewNop())
+func (f *fakeLLMGenerator) run(ctx context.Context, delay time.Duration, result string, err error) (string, error) {
+	if f.block {
+		<-ctx.Done()
+		return "", ctx.Err()
+	}
+	if delay > 0 {
+		select {
+		case <-time.After(delay):
+		case <-ctx.Done():
+			return "", ctx.Err()
+		}
+	}
+	return result, err
+}
+
+func newTestAnalyzer(incidents *fakeIncidentStore, services *fakeStatusAnalysisWriter, llmSvc *fakeLLMGenerator, timeout time.Duration) *SLOAnalyzer {
+	return NewSLOAnalyzer(incidents, services, llmSvc, timeout, zap.NewNop())
+}
+
+// waitOrTimeout waits up to 2s for ch to receive, failing the test on
+// timeout - the standard "wait for the async goroutine to finish" pattern
+// used throughout this file instead of a fixed sleep.
+func waitOrTimeout(t *testing.T, ch <-chan struct{}) {
+	t.Helper()
+	select {
+	case <-ch:
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for async goroutine to finish")
+	}
 }
 
 func TestSLOAnalyzer_HandleTransition_NoOp_SameStatus_CallsNothing(t *testing.T) {
 	incidents := &fakeIncidentStore{openIncidents: map[string]string{}}
 	services := &fakeStatusAnalysisWriter{}
-	a := newTestAnalyzer(incidents, services, &fakeLLMGenerator{})
+	a := newTestAnalyzer(incidents, services, &fakeLLMGenerator{}, time.Second)
 
 	a.HandleTransition(context.Background(), db.Service{ID: "svc-1", Name: "API"}, "operational", "operational", datadog.SLOStatus{})
 
-	if len(incidents.createCalls) != 0 {
-		t.Errorf("Create called %d times, want 0", len(incidents.createCalls))
+	createCalls, _, _ := incidents.snapshot()
+	if createCalls != 0 {
+		t.Errorf("Create called %d times, want 0", createCalls)
 	}
-	if len(services.calls) != 0 {
-		t.Errorf("UpdateStatusAnalysis called %d times, want 0", len(services.calls))
+	if len(services.snapshot()) != 0 {
+		t.Errorf("UpdateStatusAnalysis called %d times, want 0", len(services.snapshot()))
 	}
 }
 
 func TestSLOAnalyzer_HandleTransition_OutageNoExistingIncident_CreatesAutoIncident(t *testing.T) {
-	incidents := &fakeIncidentStore{openIncidents: map[string]string{}}
+	incidents := &fakeIncidentStore{openIncidents: map[string]string{}, setDescriptionDone: make(chan struct{}, 1)}
 	services := &fakeStatusAnalysisWriter{}
-	a := newTestAnalyzer(incidents, services, &fakeLLMGenerator{})
+	llmSvc := &fakeLLMGenerator{outageResult: "A real outage description."}
+	a := newTestAnalyzer(incidents, services, llmSvc, time.Second)
 
 	a.HandleTransition(context.Background(), db.Service{ID: "svc-1", Name: "API"}, "operational", "outage", datadog.SLOStatus{})
 
-	if len(incidents.createCalls) != 1 {
-		t.Fatalf("Create called %d times, want 1", len(incidents.createCalls))
+	createCalls, _, _ := incidents.snapshot()
+	if createCalls != 1 {
+		t.Fatalf("Create called %d times, want 1", createCalls)
 	}
 	created := incidents.createCalls[0]
 	if !created.AutoCreated {
@@ -139,116 +220,252 @@ func TestSLOAnalyzer_HandleTransition_OutageNoExistingIncident_CreatesAutoIncide
 	if len(incidents.createServiceIDs[0]) != 1 || incidents.createServiceIDs[0][0] != "svc-1" {
 		t.Errorf("serviceIDs = %v, want [svc-1]", incidents.createServiceIDs[0])
 	}
+
+	waitOrTimeout(t, incidents.setDescriptionDone)
+	_, setDescriptionCalls, _ := incidents.snapshot()
+	if len(setDescriptionCalls) != 1 || setDescriptionCalls[0] != "new-incident-id" {
+		t.Errorf("SetDescription calls = %v, want [new-incident-id] (async enrichment must overwrite the generic description)", setDescriptionCalls)
+	}
 }
 
 func TestSLOAnalyzer_HandleTransition_OutageAlreadyOpenIncident_CreatesNothing(t *testing.T) {
 	incidents := &fakeIncidentStore{openIncidents: map[string]string{"svc-1": "existing-incident"}}
 	services := &fakeStatusAnalysisWriter{}
-	a := newTestAnalyzer(incidents, services, &fakeLLMGenerator{})
+	a := newTestAnalyzer(incidents, services, &fakeLLMGenerator{}, time.Second)
 
 	a.HandleTransition(context.Background(), db.Service{ID: "svc-1", Name: "API"}, "operational", "outage", datadog.SLOStatus{})
 
-	if len(incidents.createCalls) != 0 {
-		t.Errorf("Create called %d times, want 0 (an incident is already open)", len(incidents.createCalls))
+	createCalls, _, _ := incidents.snapshot()
+	if createCalls != 0 {
+		t.Errorf("Create called %d times, want 0 (an incident is already open)", createCalls)
 	}
 }
 
-func TestSLOAnalyzer_HandleTransition_IntoDegraded_ClearsStatusAnalysis(t *testing.T) {
+func TestSLOAnalyzer_HandleTransition_IntoDegraded_ClearsStatusAnalysisSynchronously(t *testing.T) {
 	incidents := &fakeIncidentStore{openIncidents: map[string]string{}}
 	services := &fakeStatusAnalysisWriter{}
-	a := newTestAnalyzer(incidents, services, &fakeLLMGenerator{})
+	llmSvc := &fakeLLMGenerator{degradedDelay: 50 * time.Millisecond, degradedResult: "tooltip text"}
+	a := newTestAnalyzer(incidents, services, llmSvc, time.Second)
 
 	a.HandleTransition(context.Background(), db.Service{ID: "svc-1", Name: "API"}, "operational", "degraded", datadog.SLOStatus{})
 
-	if len(services.calls) != 1 {
-		t.Fatalf("UpdateStatusAnalysis called %d times, want 1", len(services.calls))
+	// The synchronous clear must be visible immediately, before the async
+	// enrichment (delayed 50ms above) has had a chance to run.
+	calls := services.snapshot()
+	if len(calls) != 1 {
+		t.Fatalf("UpdateStatusAnalysis called %d times synchronously, want 1", len(calls))
 	}
-	if services.calls[0] != nil {
-		t.Errorf("UpdateStatusAnalysis called with %q, want nil", *services.calls[0])
+	if calls[0] != nil {
+		t.Errorf("UpdateStatusAnalysis called with %q, want nil (synchronous clear)", *calls[0])
 	}
 }
 
 func TestSLOAnalyzer_HandleTransition_AwayFromDegraded_ClearsStatusAnalysis(t *testing.T) {
 	incidents := &fakeIncidentStore{openIncidents: map[string]string{}}
 	services := &fakeStatusAnalysisWriter{}
-	a := newTestAnalyzer(incidents, services, &fakeLLMGenerator{})
+	a := newTestAnalyzer(incidents, services, &fakeLLMGenerator{}, time.Second)
 
 	a.HandleTransition(context.Background(), db.Service{ID: "svc-1", Name: "API"}, "degraded", "operational", datadog.SLOStatus{})
 
-	if len(services.calls) != 1 {
-		t.Fatalf("UpdateStatusAnalysis called %d times, want 1", len(services.calls))
+	calls := services.snapshot()
+	if len(calls) != 1 {
+		t.Fatalf("UpdateStatusAnalysis called %d times, want 1", len(calls))
 	}
-	if services.calls[0] != nil {
-		t.Errorf("UpdateStatusAnalysis called with %q, want nil", *services.calls[0])
+	if calls[0] != nil {
+		t.Errorf("UpdateStatusAnalysis called with %q, want nil", *calls[0])
 	}
 }
 
-func TestSLOAnalyzer_HandleTransition_DegradedToOutage_ClearsStatusAnalysisAndDoesNotCreateIncidentTwice(t *testing.T) {
+func TestSLOAnalyzer_HandleTransition_DegradedToOutage_ClearsStatusAnalysisAndCreatesIncidentOnce(t *testing.T) {
 	incidents := &fakeIncidentStore{openIncidents: map[string]string{}}
 	services := &fakeStatusAnalysisWriter{}
-	a := newTestAnalyzer(incidents, services, &fakeLLMGenerator{})
+	a := newTestAnalyzer(incidents, services, &fakeLLMGenerator{}, time.Second)
 
 	a.HandleTransition(context.Background(), db.Service{ID: "svc-1", Name: "API"}, "degraded", "outage", datadog.SLOStatus{})
 
-	if len(services.calls) != 1 {
-		t.Errorf("UpdateStatusAnalysis called %d times, want 1 (leaving degraded)", len(services.calls))
+	if len(services.snapshot()) != 1 {
+		t.Errorf("UpdateStatusAnalysis called %d times, want 1 (leaving degraded)", len(services.snapshot()))
 	}
-	if len(incidents.createCalls) != 1 {
-		t.Errorf("Create called %d times, want 1 (entering outage)", len(incidents.createCalls))
+	createCalls, _, _ := incidents.snapshot()
+	if createCalls != 1 {
+		t.Errorf("Create called %d times, want 1 (entering outage)", createCalls)
 	}
 }
 
-func TestSLOAnalyzer_HandleTransition_OperationalWithOpenIncident_IdentifiesRecoveryWithoutSynchronousWrite(t *testing.T) {
-	incidents := &fakeIncidentStore{openIncidents: map[string]string{"svc-1": "existing-incident"}}
+func TestSLOAnalyzer_HandleTransition_OperationalWithOpenIncident_DispatchesClosingCommentAsync(t *testing.T) {
+	incidents := &fakeIncidentStore{
+		openIncidents:         map[string]string{"svc-1": "existing-incident"},
+		setPendingCommentDone: make(chan struct{}, 1),
+	}
 	services := &fakeStatusAnalysisWriter{}
-	a := newTestAnalyzer(incidents, services, &fakeLLMGenerator{})
+	llmSvc := &fakeLLMGenerator{closingResult: "Service has recovered."}
+	a := newTestAnalyzer(incidents, services, llmSvc, time.Second)
 
 	a.HandleTransition(context.Background(), db.Service{ID: "svc-1", Name: "API"}, "outage", "operational", datadog.SLOStatus{})
 
-	// T13 identifies the case (HasOpenIncidentForService was consulted,
-	// proven indirectly by SetPendingCloseComment never being called with
-	// stale/empty data) but performs no synchronous write - there is
-	// nothing to write without an LLM call, which is T14's job.
-	if len(incidents.setPendingCommentCalls) != 0 {
-		t.Errorf("SetPendingCloseComment called %d times, want 0 (no async dispatch yet in T13)", len(incidents.setPendingCommentCalls))
+	createCalls, _, _ := incidents.snapshot()
+	if createCalls != 0 {
+		t.Errorf("Create called %d times, want 0 (operational transition never creates an incident)", createCalls)
 	}
-	if len(incidents.createCalls) != 0 {
-		t.Errorf("Create called %d times, want 0 (operational transition never creates an incident)", len(incidents.createCalls))
+
+	waitOrTimeout(t, incidents.setPendingCommentDone)
+	_, _, pendingCalls := incidents.snapshot()
+	if len(pendingCalls) != 1 || pendingCalls[0] != "existing-incident" {
+		t.Errorf("SetPendingCloseComment calls = %v, want [existing-incident]", pendingCalls)
 	}
 }
 
 func TestSLOAnalyzer_HandleTransition_OperationalWithNoOpenIncident_DoesNothing(t *testing.T) {
 	incidents := &fakeIncidentStore{openIncidents: map[string]string{}}
 	services := &fakeStatusAnalysisWriter{}
-	a := newTestAnalyzer(incidents, services, &fakeLLMGenerator{})
+	a := newTestAnalyzer(incidents, services, &fakeLLMGenerator{}, time.Second)
 
 	a.HandleTransition(context.Background(), db.Service{ID: "svc-1", Name: "API"}, "degraded", "operational", datadog.SLOStatus{})
 
-	if len(incidents.createCalls) != 0 {
-		t.Errorf("Create called %d times, want 0", len(incidents.createCalls))
+	createCalls, _, pendingCalls := incidents.snapshot()
+	if createCalls != 0 {
+		t.Errorf("Create called %d times, want 0", createCalls)
 	}
-	if len(incidents.setPendingCommentCalls) != 0 {
-		t.Errorf("SetPendingCloseComment called %d times, want 0", len(incidents.setPendingCommentCalls))
+	if len(pendingCalls) != 0 {
+		t.Errorf("SetPendingCloseComment called %d times, want 0", len(pendingCalls))
 	}
 }
 
 func TestSLOAnalyzer_HandleTransition_HasOpenIncidentError_LogsAndDoesNotPanic(t *testing.T) {
 	incidents := &fakeIncidentStore{hasOpenErr: errors.New("db unreachable")}
 	services := &fakeStatusAnalysisWriter{}
-	a := newTestAnalyzer(incidents, services, &fakeLLMGenerator{})
+	a := newTestAnalyzer(incidents, services, &fakeLLMGenerator{}, time.Second)
 
 	a.HandleTransition(context.Background(), db.Service{ID: "svc-1", Name: "API"}, "operational", "outage", datadog.SLOStatus{})
 
-	if len(incidents.createCalls) != 0 {
-		t.Errorf("Create called %d times, want 0 (HasOpenIncidentForService failed)", len(incidents.createCalls))
+	createCalls, _, _ := incidents.snapshot()
+	if createCalls != 0 {
+		t.Errorf("Create called %d times, want 0 (HasOpenIncidentForService failed)", createCalls)
 	}
 }
 
 func TestSLOAnalyzer_HandleTransition_CreateError_LogsAndDoesNotPanic(t *testing.T) {
 	incidents := &fakeIncidentStore{openIncidents: map[string]string{}, createErr: errors.New("insert failed")}
 	services := &fakeStatusAnalysisWriter{}
-	a := newTestAnalyzer(incidents, services, &fakeLLMGenerator{})
+	a := newTestAnalyzer(incidents, services, &fakeLLMGenerator{}, time.Second)
 
 	// Must not panic.
 	a.HandleTransition(context.Background(), db.Service{ID: "svc-1", Name: "API"}, "operational", "outage", datadog.SLOStatus{})
+}
+
+// --- T14: async enrichment dispatch ---
+
+func TestSLOAnalyzer_DegradedEnrichment_Success_UpdatesStatusAnalysis(t *testing.T) {
+	incidents := &fakeIncidentStore{openIncidents: map[string]string{}}
+	services := &fakeStatusAnalysisWriter{done: make(chan struct{}, 2)}
+	llmSvc := &fakeLLMGenerator{degradedResult: "SLO is approaching its error budget limit."}
+	a := newTestAnalyzer(incidents, services, llmSvc, time.Second)
+
+	a.HandleTransition(context.Background(), db.Service{ID: "svc-1", Name: "API"}, "operational", "degraded", datadog.SLOStatus{})
+
+	// Two calls: the synchronous clear, then the async write.
+	waitOrTimeout(t, services.done)
+	waitOrTimeout(t, services.done)
+
+	calls := services.snapshot()
+	if len(calls) != 2 {
+		t.Fatalf("UpdateStatusAnalysis called %d times, want 2 (sync clear + async write)", len(calls))
+	}
+	if calls[1] == nil || *calls[1] != "SLO is approaching its error budget limit." {
+		t.Errorf("second UpdateStatusAnalysis call = %v, want the generated analysis text", calls[1])
+	}
+}
+
+func TestSLOAnalyzer_DegradedEnrichment_Failure_LeavesStatusAnalysisNull(t *testing.T) {
+	incidents := &fakeIncidentStore{openIncidents: map[string]string{}}
+	services := &fakeStatusAnalysisWriter{done: make(chan struct{}, 2)}
+	llmSvc := &fakeLLMGenerator{degradedErr: errors.New("provider unreachable")}
+	a := newTestAnalyzer(incidents, services, llmSvc, time.Second)
+
+	a.HandleTransition(context.Background(), db.Service{ID: "svc-1", Name: "API"}, "operational", "degraded", datadog.SLOStatus{})
+
+	// Only the synchronous clear fires - GenerateDegradedAnalysis fails, so
+	// the goroutine returns before calling UpdateStatusAnalysis a second
+	// time.
+	waitOrTimeout(t, services.done)
+	time.Sleep(20 * time.Millisecond) // let the goroutine's early return (if any second call were coming) settle
+
+	calls := services.snapshot()
+	if len(calls) != 1 {
+		t.Fatalf("UpdateStatusAnalysis called %d times, want 1 (only the synchronous clear; the failed enrichment writes nothing)", len(calls))
+	}
+}
+
+func TestSLOAnalyzer_OutageEnrichment_Success_OverwritesGenericDescription(t *testing.T) {
+	incidents := &fakeIncidentStore{openIncidents: map[string]string{}, setDescriptionDone: make(chan struct{}, 1)}
+	services := &fakeStatusAnalysisWriter{}
+	llmSvc := &fakeLLMGenerator{outageResult: "The payments service is returning 5xx errors for most requests."}
+	a := newTestAnalyzer(incidents, services, llmSvc, time.Second)
+
+	a.HandleTransition(context.Background(), db.Service{ID: "svc-1", Name: "API"}, "operational", "outage", datadog.SLOStatus{})
+
+	waitOrTimeout(t, incidents.setDescriptionDone)
+	_, setDescriptionCalls, _ := incidents.snapshot()
+	if len(setDescriptionCalls) != 1 {
+		t.Fatalf("SetDescription called %d times, want 1", len(setDescriptionCalls))
+	}
+}
+
+func TestSLOAnalyzer_OutageEnrichment_Failure_LeavesGenericDescriptionInPlace(t *testing.T) {
+	incidents := &fakeIncidentStore{openIncidents: map[string]string{}}
+	services := &fakeStatusAnalysisWriter{}
+	llmSvc := &fakeLLMGenerator{outageErr: errors.New("provider unreachable")}
+	a := newTestAnalyzer(incidents, services, llmSvc, time.Second)
+
+	a.HandleTransition(context.Background(), db.Service{ID: "svc-1", Name: "API"}, "operational", "outage", datadog.SLOStatus{})
+
+	time.Sleep(50 * time.Millisecond) // let the failed goroutine finish
+
+	_, setDescriptionCalls, _ := incidents.snapshot()
+	if len(setDescriptionCalls) != 0 {
+		t.Errorf("SetDescription called %d times, want 0 (failed enrichment must not overwrite the generic description)", len(setDescriptionCalls))
+	}
+	created := incidents.createCalls[0]
+	if created.Description == nil || *created.Description == "" {
+		t.Error("original generic Description was cleared, want it left in place")
+	}
+}
+
+func TestSLOAnalyzer_ClosingCommentEnrichment_Failure_LeavesIncidentOpenWithNoProposal(t *testing.T) {
+	incidents := &fakeIncidentStore{openIncidents: map[string]string{"svc-1": "existing-incident"}}
+	services := &fakeStatusAnalysisWriter{}
+	llmSvc := &fakeLLMGenerator{closingErr: errors.New("provider unreachable")}
+	a := newTestAnalyzer(incidents, services, llmSvc, time.Second)
+
+	a.HandleTransition(context.Background(), db.Service{ID: "svc-1", Name: "API"}, "outage", "operational", datadog.SLOStatus{})
+
+	time.Sleep(50 * time.Millisecond) // let the failed goroutine finish
+
+	_, _, pendingCalls := incidents.snapshot()
+	if len(pendingCalls) != 0 {
+		t.Errorf("SetPendingCloseComment called %d times, want 0 (failed enrichment must leave no proposal)", len(pendingCalls))
+	}
+}
+
+// TestSLOAnalyzer_HandleTransition_ReturnsWellBeforeBlockedLLMCallUnblocks is
+// the T14-mandated proof that a hung provider call cannot delay
+// HandleTransition's own return - the actual "must not delay pollOnce's
+// remaining services" guarantee is proven end-to-end by T15's poller-level
+// timing test; this is the analyzer-level half of that guarantee.
+func TestSLOAnalyzer_HandleTransition_ReturnsWellBeforeBlockedLLMCallUnblocks(t *testing.T) {
+	incidents := &fakeIncidentStore{openIncidents: map[string]string{}}
+	services := &fakeStatusAnalysisWriter{done: make(chan struct{}, 1)}
+	llmSvc := &fakeLLMGenerator{block: true}
+	// A long a.timeout - the goroutine is bounded by it eventually, but
+	// this test only cares that HandleTransition itself returns almost
+	// immediately, long before that bound is reached.
+	a := newTestAnalyzer(incidents, services, llmSvc, 5*time.Second)
+
+	start := time.Now()
+	a.HandleTransition(context.Background(), db.Service{ID: "svc-1", Name: "API"}, "operational", "degraded", datadog.SLOStatus{})
+	elapsed := time.Since(start)
+
+	if elapsed > 200*time.Millisecond {
+		t.Errorf("HandleTransition() took %v, want well under the 5s timeout (blocked LLM call must not delay the caller)", elapsed)
+	}
 }
