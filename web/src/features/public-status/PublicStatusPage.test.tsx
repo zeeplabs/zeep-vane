@@ -367,4 +367,94 @@ describe("PublicStatusPage", () => {
       expect(screen.getByTestId("uptime-Serviço Uptime")).toHaveTextContent("95.10% uptime"),
     );
   });
+
+  // AI-16: a degraded service with a finished status_analysis shows it as a
+  // native tooltip (title/tabIndex, mirroring hourlyTooltip's pattern) on
+  // the status badge.
+  it("serviço degradado com status_analysis mostra tooltip no badge de status", async () => {
+    server.use(
+      http.get("/api/status-pages/:id/public-preview", () =>
+        HttpResponse.json({
+          company: { name: "Acme Status", logo_url: null },
+          services: [
+            {
+              name: "Checkout",
+              status: "degraded",
+              last_updated_at: new Date().toISOString(),
+              history: [],
+              uptime_percent: 98.5,
+              status_analysis: "Aumento de latência p95 acima do SLO, causa provável: pico de tráfego.",
+            },
+          ],
+          incidents: { active: [], resolved: { items: [], total: 0, page: 1, page_size: 10 } },
+        }),
+      ),
+    );
+    await renderAt("/status/degraded-with-analysis");
+
+    const badge = await screen.findByText("Degradado");
+    expect(badge).toHaveAttribute(
+      "title",
+      "Aumento de latência p95 acima do SLO, causa provável: pico de tráfego.",
+    );
+    expect(badge).toHaveAttribute("tabIndex", "0");
+  });
+
+  // AI-16/AI-18: absent status_analysis (still pending, or never generated)
+  // shows the plain label with no tooltip attribute and no error text -
+  // never a fabricated/placeholder tooltip.
+  it("serviço degradado sem status_analysis mostra label simples sem tooltip", async () => {
+    server.use(
+      http.get("/api/status-pages/:id/public-preview", () =>
+        HttpResponse.json({
+          company: { name: "Acme Status", logo_url: null },
+          services: [
+            {
+              name: "Checkout",
+              status: "degraded",
+              last_updated_at: new Date().toISOString(),
+              history: [],
+              uptime_percent: 98.5,
+            },
+          ],
+          incidents: { active: [], resolved: { items: [], total: 0, page: 1, page_size: 10 } },
+        }),
+      ),
+    );
+    await renderAt("/status/degraded-without-analysis");
+
+    const badge = await screen.findByText("Degradado");
+    expect(badge).not.toHaveAttribute("title");
+    expect(badge).not.toHaveAttribute("tabIndex");
+    expect(screen.queryByText(/erro/i)).not.toBeInTheDocument();
+  });
+
+  // Regression guard: a non-degraded service must never render a tooltip
+  // on its status badge, even when status_analysis is (incorrectly, or
+  // stale) present in the response.
+  it("serviço operacional nunca mostra tooltip no badge, mesmo com status_analysis presente", async () => {
+    server.use(
+      http.get("/api/status-pages/:id/public-preview", () =>
+        HttpResponse.json({
+          company: { name: "Acme Status", logo_url: null },
+          services: [
+            {
+              name: "API pública",
+              status: "operational",
+              last_updated_at: new Date().toISOString(),
+              history: [],
+              uptime_percent: 99.99,
+              status_analysis: "não deveria aparecer",
+            },
+          ],
+          incidents: { active: [], resolved: { items: [], total: 0, page: 1, page_size: 10 } },
+        }),
+      ),
+    );
+    await renderAt("/status/operational-stale-analysis");
+
+    const badge = await screen.findByText("Operacional");
+    expect(badge).not.toHaveAttribute("title");
+    expect(badge).not.toHaveAttribute("tabIndex");
+  });
 });

@@ -34,6 +34,7 @@ interface PreviewService {
   last_updated_at: string;
   history: PublicHistoryBucket[];
   uptime_percent: number | null;
+  status_analysis?: string;
 }
 
 interface PreviewResolvedPage {
@@ -103,6 +104,7 @@ async function fetchPublicStatusPage(
       last_updated_at: service.last_updated_at,
       history: service.history,
       uptime_percent: service.uptime_percent,
+      status_analysis: service.status_analysis,
     })),
     incidents: {
       active: data.incidents.active.map(toPublicIncidentEntry),

@@ -33,6 +33,12 @@ export interface PublicServiceEntry {
   // doc comment) - never a fabricated 0 or 100. Recomputed for whichever
   // range is currently selected (TRS-04), not pinned to 24h.
   uptime_percent: number | null;
+  // status_analysis is the LLM-generated degraded-tooltip text (AI-14,
+  // AI-16), present only when status is "degraded" and an analysis has
+  // finished generating - absent (not null, matches the backend's
+  // `omitempty`) otherwise, including while a degraded service's analysis
+  // is still pending.
+  status_analysis?: string;
 }
 
 export interface PublicIncidentUpdateEntry {

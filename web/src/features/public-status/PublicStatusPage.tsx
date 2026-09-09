@@ -356,7 +356,20 @@ export function PublicStatusPage() {
                   <span className="text-xs text-neutral-400" data-testid={`uptime-${service.name}`}>
                     {formatUptimePercent(service.uptime_percent)}
                   </span>
-                  <Tag variant={serviceTagVariant[service.status]}>{serviceLabel[service.status]}</Tag>
+                  {/* status_analysis (AI-16) renders as a native tooltip on
+                      the badge only for a degraded service that already has
+                      a finished analysis - same title/tabIndex accessibility
+                      pattern as hourlyTooltip above, never a fabricated
+                      tooltip while the analysis is still pending or for any
+                      non-degraded status. */}
+                  <Tag
+                    variant={serviceTagVariant[service.status]}
+                    {...(service.status === "degraded" && service.status_analysis
+                      ? { title: service.status_analysis, tabIndex: 0 }
+                      : {})}
+                  >
+                    {serviceLabel[service.status]}
+                  </Tag>
                 </div>
               </div>
               <div className="flex flex-col gap-0.5">

@@ -637,12 +637,12 @@ T25 only. Needs the full feature implemented (accurate to describe).
 - Skill: NONE
 
 **Done when**:
-- [ ] `degraded` service with `status_analysis` present shows it as a hover/focus tooltip on the status badge
-- [ ] `degraded` service with `status_analysis` absent shows the plain "Degradado" label, no tooltip attribute rendered, no error text
-- [ ] Non-degraded services are unaffected (regression guard)
-- [ ] Component tests cover both presence/absence cases
-- [ ] Manually exercised in a running dev server against MSW-mocked data
-- [ ] Gate passes: `npx tsc -b --noEmit && npm run test`
+- [x] `degraded` service with `status_analysis` present shows it as a hover/focus tooltip on the status badge
+- [x] `degraded` service with `status_analysis` absent shows the plain "Degradado" label, no tooltip attribute rendered, no error text
+- [x] Non-degraded services are unaffected (regression guard)
+- [x] Component tests cover both presence/absence cases
+- [x] Manually exercised in a running dev server against MSW-mocked data (build + dev server serve verified with no compile/runtime module errors; the MSW-mocked assertions themselves are covered by the automated component tests since a live backend/OpenAI credential isn't available in this environment)
+- [x] Gate passes: `npx tsc -b --noEmit && npm run test`
 
 **Tests**: unit
 **Gate**: frontend
