@@ -216,17 +216,19 @@ T16 → T19
 - Skill: NONE
 
 **Done when**:
-- [ ] `Create(ctx, tenant)` inserts a new tenant row, returns generated `id`
-- [ ] `Get(ctx, tenantID)` returns the tenant scoped by RLS
-- [ ] `Update(ctx, tenantID, fields)` persists partial updates (name/contact_email/logo/legal_name/tax_id/tax_id_type) without clobbering unset fields
-- [ ] `tax_id`/`tax_id_type` validation (11 digits for CPF, 14 for CNPJ) rejects invalid input before persisting
-- [ ] Gate check passes: `TEST_DATABASE_URL=... go test -tags=integration ./internal/db/...`
-- [ ] Test count: 6+ tests pass (create, get, update, each validation branch)
+- [x] `Create(ctx, tenant)` inserts a new tenant row, returns generated `id`
+- [x] `Get(ctx, tenantID)` returns the tenant scoped by RLS
+- [x] `Update(ctx, tenantID, fields)` persists partial updates (name/contact_email/logo/legal_name/tax_id/tax_id_type) without clobbering unset fields
+- [x] `tax_id`/`tax_id_type` validation (11 digits for CPF, 14 for CNPJ) rejects invalid input before persisting
+- [x] Gate check passes: `TEST_DATABASE_URL=... go test -tags=integration ./internal/db/...`
+- [x] Test count: 7 tests pass (create, get, update-partial, update-cpf, update-cnpj, reject-invalid-cpf, reject-invalid-cnpj)
 
 **Tests**: integration
 **Gate**: full
 
 **Commit**: `feat(db): add TenantRepository replacing CompanySettingsRepository`
+
+**SPEC_DEVIATION:** does not actually replace/delete `CompanySettingsRepository` in this batch - `company_settings_handler.go`/`logo_file_handler.go`/`instance_config_handler.go` still read/write the old table, and migrating them is explicitly T16 (Phase 7, out of T1-T8). `TenantRepository` exists additively alongside it for now (same reasoning as T1's deviation note: full replacement now would require rewriting 3 handlers and their tests that aren't part of this batch). `Create` has two modes: self-contained (generates the tenant's id, opens+commits its own transaction with `app.tenant_id` set to it - satisfies `tenants`' own RLS `WITH CHECK`, which checks `id` itself) when `ctx` carries no tenant transaction yet, or a plain insert on an existing one when the caller (e.g. T6's bootstrap) already opened a tenant transaction for a pre-generated id shared with a membership insert in the same transaction. A "Get with no tenant context returns ErrNotFound" case was dropped rather than written unfalsifiably - see the note in `tenant_repository_test.go` (this package's tests run as the disposable container's superuser bootstrap role, which bypasses RLS regardless of `FORCE ROW LEVEL SECURITY`; `rls_test.go` already proves fail-closed under a role RLS actually restricts).
 
 ---
 
