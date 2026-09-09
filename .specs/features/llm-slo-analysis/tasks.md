@@ -270,11 +270,11 @@ T25 only. Needs the full feature implemented (accurate to describe).
 - Skill: NONE (research already done in design.md's Components section - OpenAI's documented request/response shape for `/v1/chat/completions` and `/v1/models`)
 
 **Done when**:
-- [ ] `NewClient(apiKey, model string) *Client` builds a client with a bounded `http.Client` timeout (matches `resend`'s `defaultTimeout = 10 * time.Second`, doubled per design.md's LLM-call-is-slower reasoning if warranted - confirm against real OpenAI latency expectations, document the chosen value in a doc comment)
-- [ ] `Complete` sends the correct request shape (`model`, `messages: [{role:"system",...},{role:"user",...}]`, `max_tokens`), parses the first choice's message content, returns it
-- [ ] `ValidateCredentials` performs the `GET /v1/models` call and returns `nil` on 2xx, the classified error otherwise
-- [ ] Test coverage matches `resend_test.go`'s depth: happy path, 401/403 → `ErrUnauthorized`, 5xx → `ErrServer`, context deadline → `ErrTimeout`, malformed JSON response → a wrapped error (not a panic)
-- [ ] Gate passes: `go test ./internal/connectors/openai/...`
+- [x] `NewClient(apiKey, model string) *Client` builds a client with a bounded `http.Client` timeout (matches `resend`'s `defaultTimeout = 10 * time.Second`, doubled per design.md's LLM-call-is-slower reasoning if warranted - confirm against real OpenAI latency expectations, document the chosen value in a doc comment)
+- [x] `Complete` sends the correct request shape (`model`, `messages: [{role:"system",...},{role:"user",...}]`, `max_tokens`), parses the first choice's message content, returns it
+- [x] `ValidateCredentials` performs the `GET /v1/models` call and returns `nil` on 2xx, the classified error otherwise
+- [x] Test coverage matches `resend_test.go`'s depth: happy path, 401/403 → `ErrUnauthorized`, 5xx → `ErrServer`, context deadline → `ErrTimeout`, malformed JSON response → a wrapped error (not a panic)
+- [x] Gate passes: `go test ./internal/connectors/openai/...`
 
 **Tests**: unit
 **Gate**: quick
