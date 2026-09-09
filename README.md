@@ -68,6 +68,15 @@ docker compose up -d
 | **Encrypted credentials** | Datadog API key + application key stored encrypted at rest (`internal/crypto`) |
 | **Per-service SLO mapping** | Each exposed service maps to one Datadog SLO |
 
+### AI-powered incident analysis
+
+| Feature | Description |
+| --- | --- |
+| **LLM-generated degraded tooltip** | A service that transitions to `degraded` gets a short LLM-written analysis, shown as a tooltip on its public status badge — never blocks the poll cycle, generated in a detached goroutine after the transition is already recorded |
+| **Auto-created outage incidents** | A service that transitions to `outage` with no already-open incident gets one auto-created, with an LLM-written description filled in asynchronously (falls back to a generic description on any LLM error/timeout) |
+| **LLM-drafted closing comments** | When an auto-created incident's underlying outage resolves, the LLM drafts a closing comment as a pending proposal an admin must explicitly confirm or discard — never auto-published |
+| **OpenAI provider integration** | Connect an OpenAI API key from the admin Integrations page (model selectable from a fixed allowlist); API key encrypted at rest, same pattern as the Datadog/email-provider integrations |
+
 ### Platform
 
 | Feature | Description |

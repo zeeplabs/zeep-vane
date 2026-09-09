@@ -719,10 +719,10 @@ Audit finding fixed in this task's commit: `POST /api/integrations/llm/:provider
 - Skill: NONE
 
 **Done when**:
-- [ ] New `AD-NNN` entry in `.specs/STATE.md` `## Decisions` describing the `llm_providers` schema pattern, the adapter interface, and the detached-goroutine timeout pattern, with real commit hashes once available
-- [ ] `README.md` feature table has a new row; Configuration table updated only if a real new env var exists
-- [ ] `CHANGELOG.md` `[Unreleased]` has `### Added` entries for the feature
-- [ ] `spec.md`'s Requirement Traceability table's `Status` column updated (`Pending` → `In Tasks`/`Implementing` as appropriate at this point in Execute - final `Verified` stamp is the Verifier's job, not this task's)
+- [x] New `AD-NNN` entry in `.specs/STATE.md` `## Decisions` describing the `llm_providers` schema pattern, the adapter interface, and the detached-goroutine timeout pattern, with real commit hashes once available (`AD-021`, commits `8b8a65b`/`5136a04`/`f31124f`)
+- [x] `README.md` feature table has a new row; Configuration table updated only if a real new env var exists (confirmed `analysisTimeout` stays a hardcoded constant - no new env var, Configuration table untouched)
+- [x] `CHANGELOG.md` `[Unreleased]` has `### Added` entries for the feature
+- [x] `spec.md`'s Requirement Traceability table's `Status` column updated (`Pending` → `In Tasks`/`Implementing` as appropriate at this point in Execute - final `Verified` stamp is the Verifier's job, not this task's)
 
 **Tests**: none (docs-only task)
 **Gate**: quick (confirm nothing broke - `go build ./...` after any accidental code touch, though none is expected)
