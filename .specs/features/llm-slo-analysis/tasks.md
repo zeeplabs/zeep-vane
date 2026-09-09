@@ -120,9 +120,9 @@ T25 only. Needs the full feature implemented (accurate to describe).
 - Skill: NONE
 
 **Done when**:
-- [ ] `incidents.description`, `incidents.pending_close_comment`, `incidents.auto_created` exist with correct types/defaults
-- [ ] `down` migration cleanly drops all three columns
-- [ ] Migration test confirms columns/defaults after `MigrateUp`, and confirms an existing manually-created incident row (no `description` supplied) has `description IS NULL`, `auto_created = false`
+- [x] `incidents.description`, `incidents.pending_close_comment`, `incidents.auto_created` exist with correct types/defaults
+- [x] `down` migration cleanly drops all three columns
+- [x] Migration test confirms columns/defaults after `MigrateUp`, and confirms an existing manually-created incident row (no `description` supplied) has `description IS NULL`, `auto_created = false`
 
 **Tests**: integration
 **Gate**: full
