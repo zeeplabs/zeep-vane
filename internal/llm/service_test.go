@@ -22,6 +22,11 @@ type fakeStore struct {
 	getActiveErr   error
 	setActiveErr   error
 	updateModelErr error
+	markInvalidErr error
+	markCheckedErr error
+
+	markInvalidCalls []string // provider
+	markCheckedCalls []string // provider
 }
 
 func newFakeStore() *fakeStore {
@@ -100,15 +105,41 @@ func (f *fakeStore) UpdateModel(_ context.Context, provider, model string) error
 	return nil
 }
 
+func (f *fakeStore) MarkInvalid(_ context.Context, provider, lastError string) error {
+	if f.markInvalidErr != nil {
+		return f.markInvalidErr
+	}
+	f.markInvalidCalls = append(f.markInvalidCalls, provider)
+	if row, ok := f.rows[provider]; ok {
+		row.Status = "invalid"
+		row.LastError = &lastError
+	}
+	return nil
+}
+
+func (f *fakeStore) MarkChecked(_ context.Context, provider string) error {
+	if f.markCheckedErr != nil {
+		return f.markCheckedErr
+	}
+	f.markCheckedCalls = append(f.markCheckedCalls, provider)
+	if row, ok := f.rows[provider]; ok {
+		row.Status = "connected"
+		row.LastError = nil
+	}
+	return nil
+}
+
 // fakeProvider is a Provider double recording whether it was asked to
 // validate, and what to return.
 type fakeProvider struct {
 	validateErr error
+	completeErr error
+	completeOut string
 }
 
 func (f *fakeProvider) ValidateCredentials(context.Context) error { return f.validateErr }
 func (f *fakeProvider) Complete(context.Context, string, string) (string, error) {
-	return "", nil
+	return f.completeOut, f.completeErr
 }
 
 func newTestService(store LLMProviderStore, factory ProviderFactory) *Service {

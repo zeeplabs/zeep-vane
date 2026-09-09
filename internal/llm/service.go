@@ -75,6 +75,14 @@ type LLMProviderStore interface {
 	GetActiveProvider(ctx context.Context) (string, error)
 	SetActiveProvider(ctx context.Context, provider string) error
 	UpdateModel(ctx context.Context, provider, model string) error
+	// MarkInvalid records that provider's stored credentials failed a
+	// Generate* call with an authorization error, so an operator can see a
+	// previously-connected provider has gone invalid (spec.md's "revoked/
+	// expired API key" edge case).
+	MarkInvalid(ctx context.Context, provider, lastError string) error
+	// MarkChecked records that provider's stored credentials were used
+	// successfully (or failed only transiently) on a Generate* call.
+	MarkChecked(ctx context.Context, provider string) error
 }
 
 // ProviderStatus is one connected provider's observable state - never
@@ -292,5 +300,21 @@ func (s *Service) generate(ctx context.Context, in AnalysisInput, build func(Ana
 
 	systemPrompt, userPrompt := build(in)
 
-	return provider.Complete(ctx, systemPrompt, userPrompt)
+	result, err := provider.Complete(ctx, systemPrompt, userPrompt)
+	if err != nil {
+		if errors.Is(err, ErrUnauthorized) {
+			if markErr := s.repo.MarkInvalid(ctx, active, err.Error()); markErr != nil {
+				s.logger.Error("llm: failed to mark provider invalid", zap.String("provider", active), zap.Error(markErr))
+			}
+		} else if markErr := s.repo.MarkChecked(ctx, active); markErr != nil {
+			s.logger.Error("llm: failed to mark provider checked", zap.String("provider", active), zap.Error(markErr))
+		}
+		return "", err
+	}
+
+	if markErr := s.repo.MarkChecked(ctx, active); markErr != nil {
+		s.logger.Error("llm: failed to mark provider checked", zap.String("provider", active), zap.Error(markErr))
+	}
+
+	return result, nil
 }

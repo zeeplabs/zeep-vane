@@ -179,3 +179,68 @@ func TestGenerateDegradedAnalysis_ProviderError_Propagated(t *testing.T) {
 		t.Errorf("GenerateDegradedAnalysis() error = %v, want propagated %q", err, "boom")
 	}
 }
+
+// TestGenerateDegradedAnalysis_UnauthorizedError_MarksProviderInvalid covers
+// the edge case where a previously-connected provider's credentials are
+// revoked/expired: Complete returning ErrUnauthorized must mark the
+// provider row invalid so an operator has a visible signal, rather than
+// failing silently forever.
+func TestGenerateDegradedAnalysis_UnauthorizedError_MarksProviderInvalid(t *testing.T) {
+	store := newFakeStore()
+	provider := &completingProvider{completeErr: ErrUnauthorized}
+	factory := func(providerName, apiKey, model string) (Provider, error) {
+		return provider, nil
+	}
+	svc := newTestService(store, factory)
+
+	if err := svc.Connect(t.Context(), "openai", "real-api-key", "gpt-4o-mini"); err != nil {
+		t.Fatalf("Connect() returned unexpected error: %v", err)
+	}
+	if err := svc.Activate(t.Context(), "openai"); err != nil {
+		t.Fatalf("Activate() returned unexpected error: %v", err)
+	}
+
+	_, err := svc.GenerateDegradedAnalysis(t.Context(), testAnalysisInput())
+	if !errors.Is(err, ErrUnauthorized) {
+		t.Fatalf("GenerateDegradedAnalysis() error = %v, want ErrUnauthorized", err)
+	}
+	if len(store.markInvalidCalls) != 1 || store.markInvalidCalls[0] != "openai" {
+		t.Errorf("markInvalidCalls = %v, want [openai]", store.markInvalidCalls)
+	}
+	if len(store.markCheckedCalls) != 0 {
+		t.Errorf("markCheckedCalls = %v, want none (unauthorized must not also mark checked)", store.markCheckedCalls)
+	}
+	if store.rows["openai"].Status != "invalid" {
+		t.Errorf("provider status = %q, want %q", store.rows["openai"].Status, "invalid")
+	}
+}
+
+// TestGenerateDegradedAnalysis_Success_MarksProviderChecked confirms a
+// successful Generate* call also stamps last_checked_at (via MarkChecked),
+// clearing any prior invalid status.
+func TestGenerateDegradedAnalysis_Success_MarksProviderChecked(t *testing.T) {
+	store := newFakeStore()
+	provider := &completingProvider{output: "tooltip text"}
+	factory := func(providerName, apiKey, model string) (Provider, error) {
+		return provider, nil
+	}
+	svc := newTestService(store, factory)
+
+	if err := svc.Connect(t.Context(), "openai", "real-api-key", "gpt-4o-mini"); err != nil {
+		t.Fatalf("Connect() returned unexpected error: %v", err)
+	}
+	if err := svc.Activate(t.Context(), "openai"); err != nil {
+		t.Fatalf("Activate() returned unexpected error: %v", err)
+	}
+
+	if _, err := svc.GenerateDegradedAnalysis(t.Context(), testAnalysisInput()); err != nil {
+		t.Fatalf("GenerateDegradedAnalysis() returned unexpected error: %v", err)
+	}
+
+	if len(store.markCheckedCalls) != 1 || store.markCheckedCalls[0] != "openai" {
+		t.Errorf("markCheckedCalls = %v, want [openai]", store.markCheckedCalls)
+	}
+	if len(store.markInvalidCalls) != 0 {
+		t.Errorf("markInvalidCalls = %v, want none", store.markInvalidCalls)
+	}
+}

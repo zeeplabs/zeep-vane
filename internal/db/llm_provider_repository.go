@@ -279,3 +279,11 @@ func (a *llmProviderStoreAdapter) SetActiveProvider(ctx context.Context, provide
 func (a *llmProviderStoreAdapter) UpdateModel(ctx context.Context, provider, model string) error {
 	return a.repo.UpdateModel(ctx, provider, model)
 }
+
+func (a *llmProviderStoreAdapter) MarkInvalid(ctx context.Context, provider, lastError string) error {
+	return a.repo.MarkInvalid(ctx, provider, lastError)
+}
+
+func (a *llmProviderStoreAdapter) MarkChecked(ctx context.Context, provider string) error {
+	return a.repo.MarkChecked(ctx, provider)
+}
