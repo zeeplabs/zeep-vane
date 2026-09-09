@@ -168,10 +168,10 @@ T25 only. Needs the full feature implemented (accurate to describe).
 - Skill: NONE
 
 **Done when**:
-- [ ] `Provider` interface has `Complete(ctx, systemPrompt, userPrompt string) (string, error)` and `ValidateCredentials(ctx) error`
-- [ ] `ProviderFactory func(provider, apiKey, model string) (Provider, error)` defined
-- [ ] `ErrUnauthorized`/`ErrTimeout`/`ErrServer` defined as package-level `errors.New` values
-- [ ] `go build ./internal/llm/...` succeeds (no implementation yet, interface-only file)
+- [x] `Provider` interface has `Complete(ctx, systemPrompt, userPrompt string) (string, error)` and `ValidateCredentials(ctx) error`
+- [x] `ProviderFactory func(provider, apiKey, model string) (Provider, error)` defined
+- [x] `ErrUnauthorized`/`ErrTimeout`/`ErrServer` defined as package-level `errors.New` values
+- [x] `go build ./internal/llm/...` succeeds (no implementation yet, interface-only file)
 
 **Tests**: none (interface/entity layer - matrix says none, build gate only)
 **Gate**: quick
