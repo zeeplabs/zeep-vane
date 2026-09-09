@@ -198,6 +198,51 @@ func TestSLOAnalyzer_HandleTransition_NoOp_SameStatus_CallsNothing(t *testing.T)
 	}
 }
 
+// TestSLOAnalyzer_HandleTransition_NoOp_SameStatus_Degraded_CallsNothing and
+// its outage counterpart below are the defense-in-depth regression tests for
+// AI-13/AI-18: unlike the operational->operational no-op case above (inert
+// only because no incident exists to duplicate), these fixtures are set up
+// so that, if the previousStatus == newStatus guard were ever removed,
+// HandleTransition would fall through into dispatchDegradedEnrichment /
+// handleOutageTransition and register a call the assertions below would
+// catch (verified by temporarily removing the guard: both tests fail
+// without it and pass with it restored).
+func TestSLOAnalyzer_HandleTransition_NoOp_SameStatus_Degraded_CallsNothing(t *testing.T) {
+	incidents := &fakeIncidentStore{openIncidents: map[string]string{}}
+	services := &fakeStatusAnalysisWriter{}
+	a := newTestAnalyzer(incidents, services, &fakeLLMGenerator{}, time.Second)
+
+	a.HandleTransition(context.Background(), db.Service{ID: "svc-1", Name: "API"}, "degraded", "degraded", datadog.SLOStatus{})
+
+	if len(services.snapshot()) != 0 {
+		t.Errorf("UpdateStatusAnalysis called %d times, want 0 (no-op guard must prevent re-clearing/re-dispatching for an unchanged degraded status)", len(services.snapshot()))
+	}
+	createCalls, _, _ := incidents.snapshot()
+	if createCalls != 0 {
+		t.Errorf("Create called %d times, want 0", createCalls)
+	}
+}
+
+// TestSLOAnalyzer_HandleTransition_NoOp_SameStatus_Outage_CallsNothing seeds
+// no open incident (openIncidents empty) - without the no-op guard,
+// outage->outage would fall through to handleOutageTransition, find no
+// existing incident, and call Create, which the assertion below would catch.
+func TestSLOAnalyzer_HandleTransition_NoOp_SameStatus_Outage_CallsNothing(t *testing.T) {
+	incidents := &fakeIncidentStore{openIncidents: map[string]string{}}
+	services := &fakeStatusAnalysisWriter{}
+	a := newTestAnalyzer(incidents, services, &fakeLLMGenerator{}, time.Second)
+
+	a.HandleTransition(context.Background(), db.Service{ID: "svc-1", Name: "API"}, "outage", "outage", datadog.SLOStatus{})
+
+	createCalls, setDescriptionCalls, _ := incidents.snapshot()
+	if createCalls != 0 {
+		t.Errorf("Create called %d times, want 0 (no-op guard must prevent creating a duplicate incident for an unchanged outage status)", createCalls)
+	}
+	if len(setDescriptionCalls) != 0 {
+		t.Errorf("SetDescription called %d times, want 0", len(setDescriptionCalls))
+	}
+}
+
 func TestSLOAnalyzer_HandleTransition_OutageNoExistingIncident_CreatesAutoIncident(t *testing.T) {
 	incidents := &fakeIncidentStore{openIncidents: map[string]string{}, setDescriptionDone: make(chan struct{}, 1)}
 	services := &fakeStatusAnalysisWriter{}
