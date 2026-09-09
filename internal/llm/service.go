@@ -231,3 +231,66 @@ func (s *Service) List(ctx context.Context, page, pageSize int) (ListResult, err
 
 	return ListResult{ActiveProvider: active, Providers: statuses, Total: total, Page: page, PageSize: pageSize}, nil
 }
+
+// GenerateDegradedAnalysis builds the degraded-tooltip prompt from in and
+// returns the active provider's completion for it, untouched. Returns
+// ErrNoActiveProvider immediately if no provider is active, without
+// attempting any network call (mirrors email.Service.SendAdminInvite's
+// active-provider-resolution short-circuit).
+func (s *Service) GenerateDegradedAnalysis(ctx context.Context, in AnalysisInput) (string, error) {
+	return s.generate(ctx, in, buildDegradedTooltipPrompt)
+}
+
+// GenerateOutageDescription builds the outage-description prompt from in
+// and returns the active provider's completion for it, untouched. Same
+// ErrNoActiveProvider short-circuit as GenerateDegradedAnalysis.
+func (s *Service) GenerateOutageDescription(ctx context.Context, in AnalysisInput) (string, error) {
+	return s.generate(ctx, in, buildOutageDescriptionPrompt)
+}
+
+// GenerateClosingComment builds the closing-comment prompt from in and
+// returns the active provider's completion for it, untouched. Same
+// ErrNoActiveProvider short-circuit as GenerateDegradedAnalysis.
+func (s *Service) GenerateClosingComment(ctx context.Context, in AnalysisInput) (string, error) {
+	return s.generate(ctx, in, buildClosingCommentPrompt)
+}
+
+// generate resolves the active provider, builds its client via the
+// factory, and returns build's prompt run through Provider.Complete
+// unmodified - empty/malformed-response handling is the caller's
+// (SLOAnalyzer's) responsibility, not duplicated here.
+func (s *Service) generate(ctx context.Context, in AnalysisInput, build func(AnalysisInput) (string, string)) (string, error) {
+	active, err := s.repo.GetActiveProvider(ctx)
+	if err != nil {
+		return "", fmt.Errorf("llm: failed to get active provider: %w", err)
+	}
+	if active == "" {
+		return "", ErrNoActiveProvider
+	}
+
+	ep, err := s.repo.Get(ctx, active)
+	if err != nil {
+		if errors.Is(err, ErrProviderRecordNotFound) {
+			// The active_provider FK guarantees this row exists in
+			// practice; treat it the same as "no active provider" rather
+			// than a distinct error, since from the caller's point of
+			// view generating is equally impossible either way.
+			return "", ErrNoActiveProvider
+		}
+		return "", fmt.Errorf("llm: failed to get active provider row: %w", err)
+	}
+
+	apiKey, err := crypto.Decrypt(s.masterKey, ep.EncryptedAPIKey)
+	if err != nil {
+		return "", fmt.Errorf("llm: failed to decrypt active provider api key: %w", err)
+	}
+
+	provider, err := s.factory(active, string(apiKey), ep.Model)
+	if err != nil {
+		return "", fmt.Errorf("llm: failed to build active provider client: %w", err)
+	}
+
+	systemPrompt, userPrompt := build(in)
+
+	return provider.Complete(ctx, systemPrompt, userPrompt)
+}

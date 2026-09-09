@@ -245,10 +245,10 @@ T25 only. Needs the full feature implemented (accurate to describe).
 - Skill: NONE
 
 **Done when**:
-- [ ] All three methods return `ErrNoActiveProvider` immediately when no provider is active, without attempting any network call
-- [ ] All three methods correctly decrypt the stored key and pass the stored model to the factory
-- [ ] Unit tests (fake `Provider`/factory): each method returns the fake's output on success, propagates the fake's error on failure, and confirms `ErrNoActiveProvider` short-circuits before touching the factory
-- [ ] Gate passes: `go test ./internal/llm/...`
+- [x] All three methods return `ErrNoActiveProvider` immediately when no provider is active, without attempting any network call
+- [x] All three methods correctly decrypt the stored key and pass the stored model to the factory
+- [x] Unit tests (fake `Provider`/factory): each method returns the fake's output on success, propagates the fake's error on failure, and confirms `ErrNoActiveProvider` short-circuits before touching the factory
+- [x] Gate passes: `go test ./internal/llm/...`
 
 **Tests**: unit
 **Gate**: quick
