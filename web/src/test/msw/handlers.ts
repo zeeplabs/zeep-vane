@@ -789,9 +789,14 @@ export const handlers = [
   }),
 
   // POST /api/integrations/llm/:provider/model (AI-04) - mirrors
-  // LLMProvidersHandler.SetModel: unknown provider 404, not-connected or
-  // unknown model 422, success updates the stored model without touching
-  // the API key.
+  // LLMProvidersHandler.SetModel: unknown provider 404, empty model 422
+  // ("unknown model") before anything else (the handler's own req.Model=="")
+  // check, before Service.SetModel ever runs), otherwise not-connected 422
+  // takes precedence over an out-of-allowlist model 422 - Service.SetModel
+  // resolves the provider row (Get) and checks its status before ever
+  // looking at the allowlist. Order matters here (AGENTS.md §5 MSW-shape-
+  // parity): a disconnected provider with a bogus model must 422 as
+  // "not connected", not "unknown model".
   http.post("/api/integrations/llm/:provider/model", async ({ request, params }) => {
     if (!sessionAdminId) return HttpResponse.json({ error: "unauthorized" }, { status: 401 });
     const provider = params.provider as string;
@@ -799,13 +804,16 @@ export const handlers = [
       return HttpResponse.json({ error: "unknown llm provider" }, { status: 404 });
     }
     const body = (await request.json()) as { model?: string };
-    const allowedModels = ["gpt-4o-mini", "gpt-4o", "gpt-4.1-mini", "gpt-4.1"];
-    if (!body.model || !allowedModels.includes(body.model)) {
+    if (!body.model) {
       return HttpResponse.json({ error: "unknown model for llm provider" }, { status: 422 });
     }
     const connected = llmProvidersState.find((p) => p.provider === provider && p.status === "connected");
     if (!connected) {
       return HttpResponse.json({ error: "llm provider not connected" }, { status: 422 });
+    }
+    const allowedModels = ["gpt-4o-mini", "gpt-4o", "gpt-4.1-mini", "gpt-4.1"];
+    if (!allowedModels.includes(body.model)) {
+      return HttpResponse.json({ error: "unknown model for llm provider" }, { status: 422 });
     }
     connected.model = body.model;
     return HttpResponse.json({ status: "updated" });

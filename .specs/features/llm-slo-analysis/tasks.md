@@ -692,10 +692,12 @@ T25 only. Needs the full feature implemented (accurate to describe).
 - Skill: NONE
 
 **Done when**:
-- [ ] Every new endpoint has a handler returning the exact real backend shape (including the `Page<T>` envelope where applicable)
-- [ ] Existing public-status/incidents fixtures gain the new fields with realistic values for at least one degraded/one auto-created-with-pending-proposal fixture, so T22/T23's tests have real data to assert against
-- [ ] `npm run test` (full suite, not just this feature's new tests) stays green - confirms no existing test's fixture shape broke
-- [ ] Gate passes: `npx tsc -b --noEmit && npm run test`
+- [x] Every new endpoint has a handler returning the exact real backend shape (including the `Page<T>` envelope where applicable) - already landed incrementally in T20 (`/api/integrations/llm/*`) and T23 (confirm-close/discard-close-proposal), since each task's own tests needed a working mock to run against; this task's remaining work was a dedicated field-by-field parity audit against the real Go handlers, which found and fixed one real discrepancy (see below)
+- [x] Existing public-status/incidents fixtures gain the new fields with realistic values for at least one degraded/one auto-created-with-pending-proposal fixture, so T22/T23's tests have real data to assert against - svc-2 (degraded, status_analysis) and inc-1 (auto_created, pending_close_comment, description) already carry this from T22/T23
+- [x] `npm run test` (full suite, not just this feature's new tests) stays green - confirms no existing test's fixture shape broke
+- [x] Gate passes: `npx tsc -b --noEmit && npm run test`
+
+Audit finding fixed in this task's commit: `POST /api/integrations/llm/:provider/model`'s mock checked the model allowlist before the provider's connected status, but the real `internal/llm/service.go`'s `Service.SetModel` resolves/checks the provider row first - a disconnected provider with a bogus model must 422 as "not connected", never "unknown model". Fixed the ordering and added a regression test.
 
 **Tests**: none (test-infrastructure task; its correctness is proven by T20-T23's tests passing against it, not by tests of the mocks themselves)
 **Gate**: frontend

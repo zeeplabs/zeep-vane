@@ -75,9 +75,27 @@ describe("LLM provider hooks", () => {
 
   it("useSetLLMProviderModel propaga ApiError 422 para um modelo fora do allowlist", async () => {
     await loginAsOwner();
+    const { result } = renderHook(
+      () => ({ connect: useConnectLLMProvider("openai"), setModel: useSetLLMProviderModel("openai") }),
+      { wrapper: TestQueryProvider }
+    );
+    await result.current.connect.mutateAsync({ api_key: "sk-real-key" });
+
+    await expect(result.current.setModel.mutateAsync("gpt-3.5-turbo")).rejects.toBeInstanceOf(ApiError);
+  });
+
+  // MSW-shape-parity regression (AGENTS.md §5): the real backend's
+  // Service.SetModel resolves and checks the provider row's connected
+  // status before ever looking at the model allowlist (internal/llm/
+  // service.go), so a disconnected provider must 422 as "not connected",
+  // never "unknown model", even with a bogus model.
+  it("useSetLLMProviderModel propaga o erro de 'não conectado', não 'modelo desconhecido', quando o provider nunca foi conectado", async () => {
+    await loginAsOwner();
     const { result } = renderHook(() => useSetLLMProviderModel("openai"), { wrapper: TestQueryProvider });
 
-    await expect(result.current.mutateAsync("gpt-3.5-turbo")).rejects.toBeInstanceOf(ApiError);
+    await expect(result.current.mutateAsync("gpt-3.5-turbo")).rejects.toMatchObject({
+      message: expect.stringContaining("not connected"),
+    });
   });
 
   it("useActivateLLMProvider ativa um provider conectado e invalida a lista", async () => {
