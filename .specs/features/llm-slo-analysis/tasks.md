@@ -193,12 +193,12 @@ T25 only. Needs the full feature implemented (accurate to describe).
 - Skill: NONE
 
 **Done when**:
-- [ ] `Connect` validates via `Provider.ValidateCredentials` before persisting (AI-01), defaults `model` to `gpt-4o-mini` when empty (AI-03), returns `ErrInvalidInput`/`ErrValidationFailed` without persisting on failure (AI-02)
-- [ ] `SetModel` rejects a model outside the allowlist without touching the stored row, persists a valid model change (AI-04)
-- [ ] `Activate` returns `ErrProviderNotConnected` for an unconnected provider
-- [ ] `List` never includes any provider's encrypted or decrypted API key in its return value
-- [ ] Unit tests: valid connect persists encrypted key + default model; invalid key rejected + nothing persisted; explicit model accepted; `SetModel` rejects unknown model; `SetModel` accepts known model; `Activate` on unconnected provider fails; `List` never leaks key material
-- [ ] Gate passes: `go test ./internal/llm/...`
+- [x] `Connect` validates via `Provider.ValidateCredentials` before persisting (AI-01), defaults `model` to `gpt-4o-mini` when empty (AI-03), returns `ErrInvalidInput`/`ErrValidationFailed` without persisting on failure (AI-02)
+- [x] `SetModel` rejects a model outside the allowlist without touching the stored row, persists a valid model change (AI-04)
+- [x] `Activate` returns `ErrProviderNotConnected` for an unconnected provider
+- [x] `List` never includes any provider's encrypted or decrypted API key in its return value
+- [x] Unit tests: valid connect persists encrypted key + default model; invalid key rejected + nothing persisted; explicit model accepted; `SetModel` rejects unknown model; `SetModel` accepts known model; `Activate` on unconnected provider fails; `List` never leaks key material
+- [x] Gate passes: `go test ./internal/llm/...`
 
 **Tests**: unit
 **Gate**: quick
