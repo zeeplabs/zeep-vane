@@ -319,10 +319,10 @@ T25 only. Needs the full feature implemented (accurate to describe).
 **Requirement**: AI-01, AI-03, AI-04, AI-06
 
 **Done when**:
-- [ ] Every method matches `EmailProviderRepository`'s error-wrapping/`ErrNotFound` conventions
-- [ ] `UpdateModel` updates only `model`, leaves everything else (including `status`) untouched
-- [ ] Integration tests (disposable Postgres): upsert-then-get round-trips correctly including `model`; `GetActiveProvider` on an empty `llm_settings` row returns `""`/no error; `SetActiveProvider` then `GetActiveProvider` round-trips; `UpdateModel` changes only the model column
-- [ ] Gate passes: `TEST_DATABASE_URL=... go test -tags=integration ./internal/db/...`
+- [x] Every method matches `EmailProviderRepository`'s error-wrapping/`ErrNotFound` conventions
+- [x] `UpdateModel` updates only `model`, leaves everything else (including `status`) untouched
+- [x] Integration tests (disposable Postgres): upsert-then-get round-trips correctly including `model`; `GetActiveProvider` on an empty `llm_settings` row returns `""`/no error; `SetActiveProvider` then `GetActiveProvider` round-trips; `UpdateModel` changes only the model column
+- [x] Gate passes: `TEST_DATABASE_URL=... go test -tags=integration ./internal/db/...`
 
 **Tests**: integration
 **Gate**: full
