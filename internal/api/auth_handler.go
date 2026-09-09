@@ -234,6 +234,70 @@ func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 }
 
+type switchTenantRequest struct {
+	TenantID string `json:"tenant_id"`
+}
+
+const invalidSwitchTenantRequestBody = `{"error":"tenant_id is required"}`
+
+// noMembershipForTenantBody is returned when the caller has no
+// tenant_membership for the requested tenant_id (TENANT-21) - deliberately
+// distinct from noTenantAccessBody (login's "zero memberships anywhere"
+// case), since this one means "you have access somewhere, just not here".
+const noMembershipForTenantBody = `{"error":"no access to that tenant"}`
+
+// SwitchTenant updates the session's active tenant to req.TenantID,
+// provided the authenticated admin has a tenant_membership for it - no new
+// login required (TENANT-20). It rejects with 403 and leaves the current
+// session's cookie untouched if the admin has no membership there
+// (TENANT-21), including for a syntactically valid but nonexistent
+// tenant_id - ListForUser simply won't return a match for one, the same
+// fail-closed shape as everywhere else in this feature.
+func (h *AuthHandler) SwitchTenant(w http.ResponseWriter, r *http.Request) {
+	admin, ok := AdminFromContext(r.Context())
+	if !ok {
+		writeUnauthorized(w)
+		return
+	}
+
+	var req switchTenantRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.TenantID == "" {
+		writeAdminError(w, http.StatusUnprocessableEntity, invalidSwitchTenantRequestBody)
+		return
+	}
+
+	memberships, err := h.memberships.ListForUser(r.Context(), admin.ID)
+	if err != nil {
+		h.logger.Error("auth: failed to list tenant memberships for switch-tenant", zap.Error(err))
+		writeInternalError(w)
+		return
+	}
+
+	hasMembership := false
+	for _, m := range memberships {
+		if m.TenantID == req.TenantID {
+			hasMembership = true
+			break
+		}
+	}
+	if !hasMembership {
+		writeAdminError(w, http.StatusForbidden, noMembershipForTenantBody)
+		return
+	}
+
+	token, err := auth.IssueSessionWithTenant(admin.ID, req.TenantID, h.sessionSecret)
+	if err != nil {
+		h.logger.Error("auth: failed to issue session token for switch-tenant", zap.Error(err))
+		writeInternalError(w)
+		return
+	}
+	http.SetCookie(w, sessionCookie(token, int(auth.SessionTTL.Seconds()), h.secureCookies))
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(loginResponse{Token: token, TenantID: req.TenantID})
+}
+
 func writeLoginError(w http.ResponseWriter) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusUnauthorized)

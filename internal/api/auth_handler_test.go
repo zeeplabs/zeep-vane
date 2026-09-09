@@ -311,9 +311,29 @@ func newMeRouter(t *testing.T) (http.Handler, *db.AdminRepository, *db.Pool) {
 	handler := NewAuthHandler(repo, memberships, pool, zap.NewNop(), testSessionSecret, true)
 
 	r := chi.NewRouter()
-	r.With(RequireAuth(testSessionSecret, repo), TenantContext(pool, zap.NewNop())).Get("/api/auth/me", handler.Me)
+	r.Group(func(protected chi.Router) {
+		protected.Use(RequireAuth(testSessionSecret, repo), TenantContext(pool, zap.NewNop()))
+		protected.Get("/api/auth/me", handler.Me)
+		protected.Post("/api/auth/switch-tenant", handler.SwitchTenant)
+	})
 
 	return r, repo, pool
+}
+
+func postSwitchTenant(t *testing.T, r http.Handler, token, tenantID string) *httptest.ResponseRecorder {
+	t.Helper()
+	body, err := json.Marshal(switchTenantRequest{TenantID: tenantID})
+	if err != nil {
+		t.Fatalf("json.Marshal() returned unexpected error: %v", err)
+	}
+	req := httptest.NewRequest(http.MethodPost, "/api/auth/switch-tenant", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+	return rec
 }
 
 func TestMe_ValidSession_200WithIdentity(t *testing.T) {
@@ -591,5 +611,128 @@ func TestMe_MultipleMemberships_ListsAllWithNoActiveTenant(t *testing.T) {
 	}
 	if !seen[secondTenantID] {
 		t.Errorf("Memberships = %+v, want the second seeded tenant %q among them", body.Memberships, secondTenantID)
+	}
+}
+
+// TestSwitchTenant_ValidMembership_UpdatesCookieNoReloginRequired proves
+// TENANT-20: switching to a tenant the caller has a membership in updates
+// the session cookie to make that tenant active, without a new login.
+func TestSwitchTenant_ValidMembership_UpdatesCookieNoReloginRequired(t *testing.T) {
+	r, repo, pool := newMeRouter(t)
+	email := uniqueTestEmail(t)
+	createTestAdmin(t, repo, pool, email, "correct-horse-battery-staple")
+
+	admin, err := repo.GetByEmail(context.Background(), email)
+	if err != nil {
+		t.Fatalf("GetByEmail() returned unexpected error: %v", err)
+	}
+	secondTenantID := seedSoleTenantMembership(t, pool, admin.ID, email+"-second")
+
+	token, err := auth.IssueSession(admin.ID, testSessionSecret)
+	if err != nil {
+		t.Fatalf("IssueSession() returned unexpected error: %v", err)
+	}
+
+	rec := postSwitchTenant(t, r, token, secondTenantID)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d (body=%q)", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	var body loginResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+	if body.TenantID != secondTenantID {
+		t.Errorf("response tenant_id = %q, want %q", body.TenantID, secondTenantID)
+	}
+	if body.Token == "" {
+		t.Error("response has no token, want a new session token")
+	}
+
+	var newCookie *http.Cookie
+	for _, c := range rec.Result().Cookies() {
+		if c.Name == sessionCookieName {
+			newCookie = c
+			break
+		}
+	}
+	if newCookie == nil {
+		t.Fatal("no vane_session cookie in switch-tenant response, want one set")
+	}
+
+	// The new cookie must authenticate a follow-up request scoped to the
+	// newly active tenant - no re-login needed.
+	meReq := httptest.NewRequest(http.MethodGet, "/api/auth/me", nil)
+	meReq.AddCookie(newCookie)
+	meRec := httptest.NewRecorder()
+	r.ServeHTTP(meRec, meReq)
+	if meRec.Code != http.StatusOK {
+		t.Fatalf("follow-up /api/auth/me with the new cookie status = %d, want %d", meRec.Code, http.StatusOK)
+	}
+	var meBody meResponse
+	if err := json.Unmarshal(meRec.Body.Bytes(), &meBody); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+	if meBody.ActiveTenantID != secondTenantID {
+		t.Errorf("follow-up /api/auth/me ActiveTenantID = %q, want %q", meBody.ActiveTenantID, secondTenantID)
+	}
+}
+
+// TestSwitchTenant_NoMembership_403SessionUnchanged proves TENANT-21: a
+// tenant_id the caller has no membership for is refused with 403, and the
+// current session's cookie is left alone (no cookie set at all in the
+// response).
+func TestSwitchTenant_NoMembership_403SessionUnchanged(t *testing.T) {
+	r, repo, pool := newMeRouter(t)
+	email := uniqueTestEmail(t)
+	createTestAdmin(t, repo, pool, email, "correct-horse-battery-staple")
+
+	admin, err := repo.GetByEmail(context.Background(), email)
+	if err != nil {
+		t.Fatalf("GetByEmail() returned unexpected error: %v", err)
+	}
+
+	// A tenant admin has no membership in at all - another admin's sole
+	// tenant, seeded independently.
+	otherEmail := uniqueTestEmail(t)
+	createTestAdmin(t, repo, pool, otherEmail, "another-horse-battery-staple")
+	otherAdmin, err := repo.GetByEmail(context.Background(), otherEmail)
+	if err != nil {
+		t.Fatalf("GetByEmail() returned unexpected error: %v", err)
+	}
+	memberships := db.NewTenantMembershipRepository(pool)
+	othersOnly, err := memberships.ListForUser(context.Background(), otherAdmin.ID)
+	if err != nil || len(othersOnly) != 1 {
+		t.Fatalf("expected exactly one membership for the other admin, got %v (err=%v)", othersOnly, err)
+	}
+	foreignTenantID := othersOnly[0].TenantID
+
+	token, err := auth.IssueSession(admin.ID, testSessionSecret)
+	if err != nil {
+		t.Fatalf("IssueSession() returned unexpected error: %v", err)
+	}
+
+	rec := postSwitchTenant(t, r, token, foreignTenantID)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want %d (body=%q)", rec.Code, http.StatusForbidden, rec.Body.String())
+	}
+	if rec.Body.String() != noMembershipForTenantBody {
+		t.Errorf("body = %q, want %q", rec.Body.String(), noMembershipForTenantBody)
+	}
+	if len(rec.Result().Cookies()) != 0 {
+		t.Errorf("cookies set on a refused switch-tenant = %v, want none (session unchanged)", rec.Result().Cookies())
+	}
+}
+
+// TestSwitchTenant_NoSession_401 proves the endpoint requires
+// authentication like every other protected route.
+func TestSwitchTenant_NoSession_401(t *testing.T) {
+	r, _, _ := newMeRouter(t)
+
+	rec := postSwitchTenant(t, r, "", "00000000-0000-0000-0000-000000000000")
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Errorf("status = %d, want %d", rec.Code, http.StatusUnauthorized)
 	}
 }

@@ -331,15 +331,21 @@ T16 → T19
 - Skill: NONE
 
 **Done when**:
-- [ ] Valid `tenant_id` (caller has membership) updates the session cookie, no re-login required
-- [ ] `tenant_id` without membership returns 403, session unchanged
-- [ ] Gate check passes: `TEST_DATABASE_URL=... go test -tags=integration ./internal/api/...`
-- [ ] Test count: 3+ new tests pass
+- [x] Valid `tenant_id` (caller has membership) updates the session cookie, no re-login required
+- [x] `tenant_id` without membership returns 403, session unchanged
+- [x] Gate check passes: `TEST_DATABASE_URL=... go test -tags=integration ./internal/api/...` (fully green)
+- [x] Test count: 3 new tests pass
 
 **Tests**: integration
 **Gate**: full
 
 **Commit**: `feat(api): add switch-tenant endpoint`
+
+**Implementation notes:** reuses `loginResponse`/`sessionCookie` - a successful switch is just a freshly issued session token (`auth.IssueSessionWithTenant`) with the new tenant, same mechanism as login, so "no re-login required" means no password re-entry, not a literally different code path. Membership check reuses `ListForUser` (already scoped by `app.user_id`, always set by `TenantContext` regardless of the currently active tenant) rather than a dedicated single-row lookup - the list is short (one row per tenant the user belongs to) and this avoids a third repository method for what `T5` already provides.
+
+**Batch complete (T1-T8, Phases 1-3).** Final gate: `go build ./... && go vet ./... && gofmt -l` clean; `go test ./...` (Quick, all packages) clean; `go test -tags=integration ./internal/db/... ./internal/api/... ./internal/poller/... ./internal/retention/... ./internal/cli/...` (Full, disposable Postgres) all green, no deferred failures remaining; `npx tsc -b --noEmit && npm run test` (Frontend, `web/`) clean, 277 tests. See T1's and T2's SPEC_DEVIATION notes for what is explicitly deferred beyond this batch (RLS/`tenant_id` not yet added to `incidents`/`status_pages`/`domains`/`llm_providers`/`email_providers`/`admin_audit_log`; `admins`/`admin_invites`/`company_settings` not yet renamed/merged - all Phase 4+ work).
+
+**Discovered, pre-existing test-suite risk (not introduced by this batch, flagged for awareness):** running the Full gate across multiple packages with Go's default test parallelism (`go test -tags=integration ./internal/db/... ./internal/api/... ...` without `-p 1`) can flake, because several `*_migration_test.go` files use a "revert one migration, re-apply" pattern (`migrate.Steps(-1)` then `MigrateUp`) that briefly `DROP TABLE`s against the *shared* `TEST_DATABASE_URL` database while other packages' tests concurrently read/write those same tables. This pattern already existed before this batch (`email_providers`, `llm_providers`, `service_status_analysis`, `status_intervals` migrations all have such a test); this batch's new tests simply touch `tenants` from many more packages than any single table was touched from before, widening the race window. Confirmed by reproducing the flake with default parallelism and confirming a clean run with `-p 1` (serialized packages) - every gate command in this task file's Gate Check Commands section was run with `-p 1` (or one package at a time) for exactly this reason. Recommend the orchestrator add `-p 1` to this project's documented Full gate command, or isolate migration-replay tests from tables other packages touch, in a follow-up task - out of scope to fix within T1-T8.
 
 ---
 

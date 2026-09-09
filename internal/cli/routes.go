@@ -136,6 +136,7 @@ func buildAdminRouter(pool *db.Pool, cfg config.Config, logger *zap.Logger, poll
 
 		protected.With(anyRole).Get("/api/auth/me", authHandler.Me)
 		protected.With(anyRole).Post("/api/auth/logout", authHandler.Logout)
+		protected.With(anyRole).Post("/api/auth/switch-tenant", authHandler.SwitchTenant)
 
 		// Admin management (admin-dashboard ADM-09) - owner only.
 		protected.With(ownerOnly).Post("/api/admins", adminsHandler.Invite)
