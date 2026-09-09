@@ -194,6 +194,18 @@ Seen once or not yet corroborated. Tracked, not trusted.
 - evidence: HA-05 (testing)
 - last seen: 2026-08-31T00:48:06Z
 
+### L-031 - When implementation deliberately diverges from an illustrative HTTP status or literal in the spec, amend the spec's AC text in the same commit instead of only arguing it in design.md
+- signal: `spec_precision_gap` · recurrence: 1 feature(s) · scope: `internal/api` · harmful: 0
+- features: public-status-time-range-selector
+- evidence: spec.md TRS-07 vs internal/api/time_range.go:57 (validation.md per-AC table) (internal/api)
+- last seen: 2026-09-09T00:13:41Z
+
+### L-032 - When a function's hardcoded unit becomes a parameter, re-test every pre-existing behavior at a non-default parameter value, not only at the value that reproduces the old behavior
+- signal: `ac_gap` · recurrence: 1 feature(s) · scope: `internal/history` · harmful: 0
+- features: public-status-time-range-selector
+- evidence: spec.md Edge Cases (asOf clamp at every range tier) vs internal/history/hourly_test.go:160 (internal/history)
+- last seen: 2026-09-09T00:13:47Z
+
 ## Quarantined (failed when applied - ignore)
 
 A confirmed lesson that recurred alongside failure. Kept for the maintainer to review.

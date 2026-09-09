@@ -28,9 +28,10 @@ import (
 
 // pruneTick and pruneRetention control the retention Pruner started in
 // RunE (SHU-16..20) - own independent 1h ticker, deleting closed status
-// intervals older than 35 days.
+// intervals older than 95 days (TRS-08/TRS-09: retention must cover the
+// public status page's 90d range tier).
 const pruneTick = 1 * time.Hour
-const pruneRetention = 35 * 24 * time.Hour
+const pruneRetention = 95 * 24 * time.Hour
 
 // shutdownTimeout bounds how long the HTTP server gets to finish in-flight
 // requests once a shutdown signal arrives.

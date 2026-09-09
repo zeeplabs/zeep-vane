@@ -120,6 +120,58 @@ func TestPruner_Run_TickDeletesClosedIntervalsOlderThan35Days(t *testing.T) {
 	}
 }
 
+// TestPruner_Run_TickKeepsClosedIntervalWithin95DayRetention confirms that at
+// the production 95-day retention value, a closed interval whose ends_at is
+// only 90 days old survives a prune cycle (TRS-08: retention must cover the
+// public status page's 90d range tier).
+func TestPruner_Run_TickKeepsClosedIntervalWithin95DayRetention(t *testing.T) {
+	pool := newTestPool(t)
+	ctx := context.Background()
+	serviceID := createTestService(t, pool, "pruner-tick-keeps-90d")
+
+	now := time.Now().UTC()
+	endsAt := now.Add(-90 * 24 * time.Hour)
+	if _, err := pool.Exec(ctx,
+		"INSERT INTO status_intervals (service_id, status, error_budget_remaining, starts_at, last_seen_at, ends_at) VALUES ($1, $2, $3, $4, $4, $5)",
+		serviceID, "operational", 90.0, endsAt.Add(-time.Hour), endsAt,
+	); err != nil {
+		t.Fatalf("insert 90-day-old closed interval failed: %v", err)
+	}
+	// This row survives the prune by design (that's what the test proves),
+	// so it must be deleted explicitly here - left alone it outlives the
+	// test as a permanent old-closed-interval row, which any other
+	// package's global (non-service-scoped) DeleteClosedBefore assertion
+	// running concurrently against the same test database would also
+	// sweep up, inflating its deleted-row count. Registered after
+	// createTestService's own cleanup so it runs first (t.Cleanup is
+	// LIFO), avoiding the FK violation that would otherwise silently
+	// block that cleanup's "DELETE FROM services".
+	t.Cleanup(func() {
+		_, _ = pool.Exec(context.Background(), "DELETE FROM status_intervals WHERE service_id = $1", serviceID)
+	})
+
+	intervals := db.NewStatusIntervalRepository(pool)
+	pruner := NewPruner(intervals, 20*time.Millisecond, 95*24*time.Hour, zap.NewNop())
+
+	runCtx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+	done := make(chan struct{})
+	go func() {
+		pruner.Run(runCtx)
+		close(done)
+	}()
+	<-done
+	cancel()
+
+	var remaining int
+	row := pool.QueryRow(ctx, "SELECT count(*) FROM status_intervals WHERE service_id = $1", serviceID)
+	if err := row.Scan(&remaining); err != nil {
+		t.Fatalf("Scan() returned unexpected error: %v", err)
+	}
+	if remaining != 1 {
+		t.Fatalf("remaining intervals = %d, want 1 (90-day-old closed row must survive 95-day retention)", remaining)
+	}
+}
+
 // TestPruner_Run_ReturnsPromptlyOnContextCancel confirms the ticker loop
 // exits cleanly when its context is canceled mid-tick-wait, matching
 // Poller.Run's shutdown contract.

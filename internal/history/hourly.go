@@ -1,7 +1,6 @@
-// Package history builds hourly status-bucket summaries for the public
-// status page from raw status_intervals rows. It is deliberately
-// dependency-free (no DB, no HTTP) so the bucketing rule is unit-testable
-// on its own.
+// Package history builds status-bucket summaries for the public status page
+// from raw status_intervals rows. It is deliberately dependency-free (no
+// DB, no HTTP) so the bucketing rule is unit-testable on its own.
 package history
 
 import (
@@ -10,52 +9,64 @@ import (
 	"github.com/zeeplabs/zeep-vane/internal/db"
 )
 
-// NoData is the status of an hourly bucket with no interval overlapping it.
+// NoData is the status of a bucket with no interval overlapping it.
 const NoData = "no_data"
 
 // statusPriority ranks statuses from worst to best for bucket resolution:
-// an hour that touched a worse status anywhere in its span reports that
-// worse status, even if a better one was observed later in the same hour.
+// a bucket that touched a worse status anywhere in its span reports that
+// worse status, even if a better one was observed later in the same bucket.
 var statusPriority = map[string]int{
 	"outage":      3,
 	"degraded":    2,
 	"operational": 1,
 }
 
-// HourlyBucket is one hour's resolved status in a service's uptime history.
-type HourlyBucket struct {
+// Bucket is one bucket's resolved status in a service's uptime history.
+type Bucket struct {
 	Start  time.Time
 	Status string
 }
 
-// BuildHourly returns exactly windowHours hourly buckets covering
-// [now-windowHours+1h, now], one per local hour in loc, oldest first, with
-// the current (possibly partial) local hour as the last bucket.
+// BuildBuckets returns exactly bucketCount buckets, each bucketWidth wide,
+// covering [now-bucketCount*bucketWidth+bucketWidth, now], one per local
+// bucketWidth-wide span in loc, oldest first, with the current (possibly
+// partial) span as the last bucket.
 //
 // Each bucket's status is the highest-priority status (outage > degraded >
 // operational) among every interval in intervals that overlaps that
-// bucket's [start, start+1h) span - an interval spanning multiple buckets
-// contributes its status to every bucket it overlaps, not only the one
-// containing its StartsAt. An open interval (EndsAt nil) is treated as
+// bucket's [start, start+bucketWidth) span - an interval spanning multiple
+// buckets contributes its status to every bucket it overlaps, not only the
+// one containing its StartsAt. An open interval (EndsAt nil) is treated as
 // still overlapping up through asOf - not now (H7). now anchors which
-// windowHours buckets are shown (always the real, current window - a dead
-// poller must not hide recent hours from the chart); asOf is the last time
-// the poller actually confirmed this status. When the poller is healthy,
-// asOf is effectively now and nothing changes. When it has stalled, asOf
-// stays in the past, so every bucket after it correctly resolves to NoData
-// instead of an open interval's status being fabricated forward to now. A
-// bucket with no overlapping interval is NoData. intervals need not be
-// pre-sorted or pre-filtered to the window - only intervals overlapping a
-// bucket affect it, everything else is ignored.
-func BuildHourly(intervals []db.StatusInterval, now, asOf time.Time, loc *time.Location, windowHours int) []HourlyBucket {
+// bucketCount buckets are shown (always the real, current window - a dead
+// poller must not hide recent buckets from the chart); asOf is the last
+// time the poller actually confirmed this status. When the poller is
+// healthy, asOf is effectively now and nothing changes. When it has
+// stalled, asOf stays in the past, so every bucket after it correctly
+// resolves to NoData instead of an open interval's status being fabricated
+// forward to now. A bucket with no overlapping interval is NoData.
+// intervals need not be pre-sorted or pre-filtered to the window - only
+// intervals overlapping a bucket affect it, everything else is ignored.
+//
+// The current bucket's start is aligned to local-time boundaries of
+// bucketWidth rather than being offset from now: dayStart is local
+// midnight, and currentStart is dayStart plus the largest whole multiple of
+// bucketWidth not exceeding now's offset from dayStart. For bucketWidth=1h
+// this always lands on the start of the current clock-hour (identical to
+// the old hardcoded-hour behavior); for bucketWidth=6h it aligns to
+// 00:00/06:00/12:00/18:00; for bucketWidth=24h it always lands on local
+// midnight.
+func BuildBuckets(intervals []db.StatusInterval, now, asOf time.Time, loc *time.Location, bucketCount int, bucketWidth time.Duration) []Bucket {
 	nowLocal := now.In(loc)
-	currentStart := time.Date(nowLocal.Year(), nowLocal.Month(), nowLocal.Day(), nowLocal.Hour(), 0, 0, 0, loc)
-	leftmostStart := currentStart.Add(-time.Duration(windowHours-1) * time.Hour)
+	dayStart := time.Date(nowLocal.Year(), nowLocal.Month(), nowLocal.Day(), 0, 0, 0, 0, loc)
+	elapsed := nowLocal.Sub(dayStart)
+	currentStart := dayStart.Add((elapsed / bucketWidth) * bucketWidth)
+	leftmostStart := currentStart.Add(-time.Duration(bucketCount-1) * bucketWidth)
 
-	buckets := make([]HourlyBucket, windowHours)
+	buckets := make([]Bucket, bucketCount)
 	for i := range buckets {
-		buckets[i] = HourlyBucket{
-			Start:  leftmostStart.Add(time.Duration(i) * time.Hour),
+		buckets[i] = Bucket{
+			Start:  leftmostStart.Add(time.Duration(i) * bucketWidth),
 			Status: NoData,
 		}
 	}
@@ -72,24 +83,35 @@ func BuildHourly(intervals []db.StatusInterval, now, asOf time.Time, loc *time.L
 			continue
 		}
 
-		firstIndex := int(startLocal.Sub(leftmostStart) / time.Hour)
+		firstIndex := int(startLocal.Sub(leftmostStart) / bucketWidth)
 		if firstIndex < 0 {
 			firstIndex = 0
 		}
 
 		endOffset := endLocal.Sub(leftmostStart)
-		lastIndex := int(endOffset / time.Hour)
-		if endOffset%time.Hour == 0 {
+		// int(endOffset/bucketWidth) truncates toward zero, not toward
+		// negative infinity - for a negative endOffset (endLocal before
+		// leftmostStart) that truncation lands on 0 instead of a negative
+		// index, which would incorrectly let an interval that ended before
+		// the window even starts paint bucket 0. Flooring (rather than
+		// truncating) the division fixes that at any bucketWidth: a nonzero
+		// remainder on a negative offset means the true quotient is one
+		// less than the truncated one.
+		lastIndex := int(endOffset / bucketWidth)
+		rem := endOffset % bucketWidth
+		if rem == 0 {
 			// endLocal lands exactly on a bucket boundary: the bucket that
 			// starts there is not overlapped (the interval already ended).
 			lastIndex--
+		} else if rem < 0 {
+			lastIndex--
 		}
-		if lastIndex >= windowHours {
-			lastIndex = windowHours - 1
+		if lastIndex >= bucketCount {
+			lastIndex = bucketCount - 1
 		}
 
 		for i := firstIndex; i <= lastIndex; i++ {
-			if i < 0 || i >= windowHours {
+			if i < 0 || i >= bucketCount {
 				continue
 			}
 			if statusPriority[interval.Status] > statusPriority[buckets[i].Status] {

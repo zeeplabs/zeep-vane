@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { http, HttpResponse } from "msw";
 import { MemoryRouter, Routes, Route } from "react-router-dom";
@@ -39,9 +39,9 @@ function bucket(startIso: string, status: PublicHourlyStatus) {
 }
 
 // mockPublicPreview overrides the public-preview MSW handler with a single
-// service carrying an explicit hourly_history, so tests can assert exact
+// service carrying an explicit history, so tests can assert exact
 // colors/tooltips instead of the generic fixture in test/msw/handlers.ts.
-function mockPublicPreview(serviceName: string, hourlyHistory: ReturnType<typeof bucket>[]) {
+function mockPublicPreview(serviceName: string, history: ReturnType<typeof bucket>[], uptimePercent: number | null = 99.9) {
   server.use(
     http.get("/api/status-pages/:id/public-preview", () =>
       HttpResponse.json({
@@ -51,12 +51,48 @@ function mockPublicPreview(serviceName: string, hourlyHistory: ReturnType<typeof
             name: serviceName,
             status: "operational",
             last_updated_at: new Date().toISOString(),
-            hourly_history: hourlyHistory,
+            history,
+            uptime_percent: uptimePercent,
           },
         ],
         incidents: { active: [], resolved: { items: [], total: 0, page: 1, page_size: 10 } },
       }),
     ),
+  );
+}
+
+// mockPublicPreviewMultiService overrides the public-preview MSW handler
+// with several services, each getting the same bucket count/status for
+// every range tier requested (test double for TRS-03's page-wide
+// assertion: a range change must update every service's chart, not just
+// one). uptimeByRange lets a test also vary uptime_percent per range
+// (TRS-04's frontend-side proof).
+function mockPublicPreviewMultiService(
+  serviceNames: string[],
+  bucketCountByRange: Record<string, number>,
+  uptimeByRange?: Record<string, number>,
+) {
+  server.use(
+    http.get("/api/status-pages/:id/public-preview", ({ request }) => {
+      const range = new URL(request.url).searchParams.get("range") ?? "24h";
+      const bucketCount = bucketCountByRange[range] ?? bucketCountByRange["24h"];
+      const now = Date.now();
+      const history = Array.from({ length: bucketCount }, (_, i) => ({
+        start: new Date(now - (bucketCount - 1 - i) * 3_600_000).toISOString(),
+        status: "operational" as PublicHourlyStatus,
+      }));
+      return HttpResponse.json({
+        company: { name: "Acme Status", logo_url: null },
+        services: serviceNames.map((name) => ({
+          name,
+          status: "operational",
+          last_updated_at: new Date().toISOString(),
+          history,
+          uptime_percent: uptimeByRange?.[range] ?? 100,
+        })),
+        incidents: { active: [], resolved: { items: [], total: 0, page: 1, page_size: 10 } },
+      });
+    }),
   );
 }
 
@@ -256,5 +292,79 @@ describe("PublicStatusPage", () => {
     } finally {
       metaDescription.remove();
     }
+  });
+
+  // public-status-time-range-selector T8 / TRS-01: the page loads with 24h
+  // selected by default and the existing 24-bar chart, unchanged from today.
+  it("carrega com 24h selecionado por padrão e o gráfico de 24 barras existente", async () => {
+    await renderAt("/status/sp-4");
+
+    expect(await screen.findByText("Fila de processamento")).toBeInTheDocument();
+    expect(hourlyBars("Fila de processamento")).toHaveLength(24);
+
+    const rangeTab24h = screen.getByRole("tab", { name: "24h" });
+    expect(rangeTab24h).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByText("24h atrás")).toBeInTheDocument();
+  });
+
+  // TRS-02/TRS-03: clicking each of the 3 other Seg options triggers a new
+  // fetch (asserted via the range value the MSW handler actually received)
+  // and updates the leftmost "X atrás" label to match.
+  it.each([
+    ["7d", "7 dias atrás", 28],
+    ["30d", "30 dias atrás", 30],
+    ["90d", "90 dias atrás", 90],
+  ] as const)("clicar em %s dispara nova busca e atualiza o rótulo para '%s'", async (rangeValue, expectedLabel, expectedBars) => {
+    mockPublicPreviewMultiService(["Serviço Range"], { "24h": 24, "7d": 28, "30d": 30, "90d": 90 });
+    await renderAt("/status/range-selector-test");
+
+    expect(await screen.findByText("24h atrás")).toBeInTheDocument();
+    expect(hourlyBars("Serviço Range")).toHaveLength(24);
+
+    await userEvent.click(screen.getByRole("tab", { name: rangeValue }));
+
+    await waitFor(() => expect(hourlyBars("Serviço Range")).toHaveLength(expectedBars));
+    expect(await screen.findByText(expectedLabel)).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: rangeValue })).toHaveAttribute("aria-selected", "true");
+  });
+
+  // TRS-03: a range change updates every service's chart page-wide, not
+  // just one - asserted with 2 services in the fixture.
+  it("mudar o período atualiza o gráfico de todos os serviços, não só um", async () => {
+    mockPublicPreviewMultiService(
+      ["Serviço A", "Serviço B"],
+      { "24h": 24, "7d": 28, "30d": 30, "90d": 90 },
+    );
+    await renderAt("/status/range-page-wide-test");
+
+    await screen.findByText("Serviço A");
+    expect(hourlyBars("Serviço A")).toHaveLength(24);
+    expect(hourlyBars("Serviço B")).toHaveLength(24);
+
+    await userEvent.click(screen.getByRole("tab", { name: "90d" }));
+
+    await waitFor(() => expect(hourlyBars("Serviço A")).toHaveLength(90));
+    expect(hourlyBars("Serviço B")).toHaveLength(90);
+  });
+
+  // TRS-04: the displayed uptime_percent changes when range changes,
+  // proving the figure rendered reflects data.services[].uptime_percent per
+  // fetch, not a stale cached figure.
+  it("uptime_percent exibido muda quando o período muda", async () => {
+    mockPublicPreviewMultiService(
+      ["Serviço Uptime"],
+      { "24h": 24, "90d": 90 },
+      { "24h": 99.9, "90d": 95.1 },
+    );
+    await renderAt("/status/range-uptime-test");
+
+    await screen.findByText("Serviço Uptime");
+    expect(await screen.findByTestId("uptime-Serviço Uptime")).toHaveTextContent("99.90% uptime");
+
+    await userEvent.click(screen.getByRole("tab", { name: "90d" }));
+
+    await waitFor(() =>
+      expect(screen.getByTestId("uptime-Serviço Uptime")).toHaveTextContent("95.10% uptime"),
+    );
   });
 });

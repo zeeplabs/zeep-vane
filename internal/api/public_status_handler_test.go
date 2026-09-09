@@ -184,8 +184,8 @@ func TestPublicStatusGet_NoAuthHeader_200WithServiceStatus(t *testing.T) {
 	}
 	// UPT-01: the HourlyHistory field is a new addition, but every existing
 	// field above must remain unaffected by it.
-	if len(found.HourlyHistory) != 24 {
-		t.Errorf("len(HourlyHistory) = %d, want %d", len(found.HourlyHistory), 24)
+	if len(found.History) != 24 {
+		t.Errorf("len(HourlyHistory) = %d, want %d", len(found.History), 24)
 	}
 }
 
@@ -236,12 +236,12 @@ func TestPublicStatusGet_HourlyHistory_KnownHourStatusAppearsAsSingleBucket(t *t
 	if found == nil {
 		t.Fatalf("service %s not present in public response", serviceID)
 	}
-	if len(found.HourlyHistory) != 24 {
-		t.Fatalf("len(HourlyHistory) = %d, want %d", len(found.HourlyHistory), 24)
+	if len(found.History) != 24 {
+		t.Fatalf("len(HourlyHistory) = %d, want %d", len(found.History), 24)
 	}
 
 	var outageBuckets int
-	for _, bucket := range found.HourlyHistory {
+	for _, bucket := range found.History {
 		if bucket.Status != "outage" {
 			continue
 		}
@@ -295,12 +295,12 @@ func TestPublicStatusGet_ServiceWithNoSnapshotsEver_AllHourlyBucketsNoData(t *te
 	if found == nil {
 		t.Fatalf("service %s not present in public response", service.ID)
 	}
-	if len(found.HourlyHistory) != 24 {
-		t.Fatalf("len(HourlyHistory) = %d, want %d", len(found.HourlyHistory), 24)
+	if len(found.History) != 24 {
+		t.Fatalf("len(HourlyHistory) = %d, want %d", len(found.History), 24)
 	}
-	for i, bucket := range found.HourlyHistory {
+	for i, bucket := range found.History {
 		if bucket.Status != "no_data" {
-			t.Errorf("HourlyHistory[%d].Status = %q, want %q", i, bucket.Status, "no_data")
+			t.Errorf("History[%d].Status = %q, want %q", i, bucket.Status, "no_data")
 		}
 	}
 	// SHU-15: zero recorded intervals ever means uptime % is undefined
@@ -471,7 +471,7 @@ func TestPublicStatusGet_StalledPoller_CurrentHourNotFabricatedOperational(t *te
 		t.Fatalf("service %s not present in public response", serviceID)
 	}
 
-	lastBucket := found.HourlyHistory[len(found.HourlyHistory)-1]
+	lastBucket := found.History[len(found.History)-1]
 	if lastBucket.Status != "no_data" {
 		t.Errorf("current hour bucket = %q, want %q (poller stalled 10h ago - must not fabricate a status this recent)", lastBucket.Status, "no_data")
 	}
@@ -893,5 +893,368 @@ func TestPublicStatusGet_ResolvedIncidents_Page2ReturnsRemainder(t *testing.T) {
 	}
 	if body.Incidents.Resolved.Page != 2 {
 		t.Errorf("Resolved.Page = %d, want 2", body.Incidents.Resolved.Page)
+	}
+}
+
+// seedPublicStatusRangeFixture creates a service with a long-open,
+// continuously-confirmed "operational" interval plus a real, known outage
+// inside the 24h window - used by the range-tier tests below so both
+// "no outage in this narrow slice" and "outage visible in this wider slice"
+// assertions can be made off the same seed data (TRS-01..04).
+func seedPublicStatusRangeFixture(t *testing.T, pool *db.Pool) (serviceID, statusPageID string) {
+	t.Helper()
+
+	openedAt := time.Now().Add(-95 * 24 * time.Hour)
+	serviceID, cleanup := createPublicStatusServiceFixture(t, pool, "operational", openedAt)
+	t.Cleanup(cleanup)
+	statusPageID = createPublicStatusPageFixture(t, pool, serviceID)
+
+	// A real outage inside the last 24h - present in every tier's window
+	// (24h through 90d) so uptime_percent should reflect it in all of them,
+	// but its share of the denominator (and therefore the computed
+	// percentage) differs by tier (TRS-04).
+	outageStart := time.Now().Add(-6 * time.Hour)
+	insertStatusInterval(t, pool, serviceID, "outage", outageStart, outageStart.Add(3*time.Hour))
+
+	// Keep the open interval's last_seen_at fresh so the H7 asOf clamp
+	// doesn't clip the window before every tier's own windowStart.
+	if err := db.NewStatusIntervalRepository(pool).OpenOrExtend(context.Background(), serviceID, "operational", 0.5, time.Now()); err != nil {
+		t.Fatalf("setup post-outage OpenOrExtend() returned unexpected error: %v", err)
+	}
+
+	return serviceID, statusPageID
+}
+
+// TestPublicStatusGet_NoRangeParam_Behaves24hDefault covers TRS-01: a
+// request with no range param at all behaves identically to range=24h -
+// 24 buckets, 1h wide.
+func TestPublicStatusGet_NoRangeParam_Behaves24hDefault(t *testing.T) {
+	r, pool := newPublicStatusRouter(t)
+	serviceID, statusPageID := seedPublicStatusRangeFixture(t, pool)
+
+	req := withStatusPageContext(httptest.NewRequest(http.MethodGet, "/", nil), statusPageID)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	var body publicStatusResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+
+	allServices, err := db.NewServiceRepository(pool).List(context.Background())
+	if err != nil {
+		t.Fatalf("List() returned unexpected error: %v", err)
+	}
+	found := findPublicService(body.Services, serviceID, allServices)
+	if found == nil {
+		t.Fatalf("service %s not present in public response", serviceID)
+	}
+	if len(found.History) != 24 {
+		t.Errorf("len(History) = %d, want 24 (no range param defaults to 24h)", len(found.History))
+	}
+}
+
+// TestPublicStatusGet_Range24h_Behaves24hDefault covers TRS-01: an explicit
+// range=24h behaves identically to no range param at all.
+func TestPublicStatusGet_Range24h_Behaves24hDefault(t *testing.T) {
+	r, pool := newPublicStatusRouter(t)
+	serviceID, statusPageID := seedPublicStatusRangeFixture(t, pool)
+
+	req := withStatusPageContext(httptest.NewRequest(http.MethodGet, "/?range=24h", nil), statusPageID)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	var body publicStatusResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+
+	allServices, err := db.NewServiceRepository(pool).List(context.Background())
+	if err != nil {
+		t.Fatalf("List() returned unexpected error: %v", err)
+	}
+	found := findPublicService(body.Services, serviceID, allServices)
+	if found == nil {
+		t.Fatalf("service %s not present in public response", serviceID)
+	}
+	if len(found.History) != 24 {
+		t.Errorf("len(History) = %d, want 24", len(found.History))
+	}
+}
+
+// TestPublicStatusGet_Range7d_Returns28BucketsSixHoursWide covers TRS-02/03.
+func TestPublicStatusGet_Range7d_Returns28BucketsSixHoursWide(t *testing.T) {
+	r, pool := newPublicStatusRouter(t)
+	serviceID, statusPageID := seedPublicStatusRangeFixture(t, pool)
+
+	req := withStatusPageContext(httptest.NewRequest(http.MethodGet, "/?range=7d", nil), statusPageID)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	var body publicStatusResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+
+	allServices, err := db.NewServiceRepository(pool).List(context.Background())
+	if err != nil {
+		t.Fatalf("List() returned unexpected error: %v", err)
+	}
+	found := findPublicService(body.Services, serviceID, allServices)
+	if found == nil {
+		t.Fatalf("service %s not present in public response", serviceID)
+	}
+	if len(found.History) != 28 {
+		t.Fatalf("len(History) = %d, want 28", len(found.History))
+	}
+	if got := found.History[1].Start.Sub(found.History[0].Start); got != 6*time.Hour {
+		t.Errorf("bucket width = %v, want 6h", got)
+	}
+}
+
+// TestPublicStatusGet_Range30d_Returns30BucketsOneDayWide covers TRS-02/03.
+func TestPublicStatusGet_Range30d_Returns30BucketsOneDayWide(t *testing.T) {
+	r, pool := newPublicStatusRouter(t)
+	serviceID, statusPageID := seedPublicStatusRangeFixture(t, pool)
+
+	req := withStatusPageContext(httptest.NewRequest(http.MethodGet, "/?range=30d", nil), statusPageID)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	var body publicStatusResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+
+	allServices, err := db.NewServiceRepository(pool).List(context.Background())
+	if err != nil {
+		t.Fatalf("List() returned unexpected error: %v", err)
+	}
+	found := findPublicService(body.Services, serviceID, allServices)
+	if found == nil {
+		t.Fatalf("service %s not present in public response", serviceID)
+	}
+	if len(found.History) != 30 {
+		t.Fatalf("len(History) = %d, want 30", len(found.History))
+	}
+	if got := found.History[1].Start.Sub(found.History[0].Start); got != 24*time.Hour {
+		t.Errorf("bucket width = %v, want 24h", got)
+	}
+}
+
+// TestPublicStatusGet_Range90d_Returns90BucketsOneDayWideBeyondOldRetention
+// covers TRS-02/03/04 and confirms history beyond the old 35-day retention
+// window is actually retrievable now that the retention constant has (per
+// T4) been raised - the fixture's own outage sits inside all tiers, but its
+// long-open "operational" interval predates the old 35-day retention
+// entirely, proving the 90d window isn't silently truncated at the old
+// boundary.
+func TestPublicStatusGet_Range90d_Returns90BucketsOneDayWideBeyondOldRetention(t *testing.T) {
+	r, pool := newPublicStatusRouter(t)
+	serviceID, statusPageID := seedPublicStatusRangeFixture(t, pool)
+
+	req := withStatusPageContext(httptest.NewRequest(http.MethodGet, "/?range=90d", nil), statusPageID)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	var body publicStatusResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+
+	allServices, err := db.NewServiceRepository(pool).List(context.Background())
+	if err != nil {
+		t.Fatalf("List() returned unexpected error: %v", err)
+	}
+	found := findPublicService(body.Services, serviceID, allServices)
+	if found == nil {
+		t.Fatalf("service %s not present in public response", serviceID)
+	}
+	if len(found.History) != 90 {
+		t.Fatalf("len(History) = %d, want 90", len(found.History))
+	}
+	if got := found.History[1].Start.Sub(found.History[0].Start); got != 24*time.Hour {
+		t.Errorf("bucket width = %v, want 24h", got)
+	}
+	if found.UptimePercent == nil {
+		t.Fatalf("UptimePercent = nil, want a defined value (interval predating the old 35-day retention is retrievable)")
+	}
+}
+
+// TestPublicStatusGet_UptimePercent_DiffersBetween24hAnd90dRanges covers
+// TRS-04: the same underlying data must produce a different uptime_percent
+// depending on the selected range, proving the figure isn't pinned to 24h.
+func TestPublicStatusGet_UptimePercent_DiffersBetween24hAnd90dRanges(t *testing.T) {
+	r, pool := newPublicStatusRouter(t)
+	serviceID, statusPageID := seedPublicStatusRangeFixture(t, pool)
+	allServices, err := db.NewServiceRepository(pool).List(context.Background())
+	if err != nil {
+		t.Fatalf("List() returned unexpected error: %v", err)
+	}
+
+	req24h := withStatusPageContext(httptest.NewRequest(http.MethodGet, "/?range=24h", nil), statusPageID)
+	rec24h := httptest.NewRecorder()
+	r.ServeHTTP(rec24h, req24h)
+	if rec24h.Code != http.StatusOK {
+		t.Fatalf("24h status = %d, want %d, body = %s", rec24h.Code, http.StatusOK, rec24h.Body.String())
+	}
+	var body24h publicStatusResponse
+	if err := json.Unmarshal(rec24h.Body.Bytes(), &body24h); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+	found24h := findPublicService(body24h.Services, serviceID, allServices)
+	if found24h == nil || found24h.UptimePercent == nil {
+		t.Fatalf("24h uptime_percent missing")
+	}
+
+	req90d := withStatusPageContext(httptest.NewRequest(http.MethodGet, "/?range=90d", nil), statusPageID)
+	rec90d := httptest.NewRecorder()
+	r.ServeHTTP(rec90d, req90d)
+	if rec90d.Code != http.StatusOK {
+		t.Fatalf("90d status = %d, want %d, body = %s", rec90d.Code, http.StatusOK, rec90d.Body.String())
+	}
+	var body90d publicStatusResponse
+	if err := json.Unmarshal(rec90d.Body.Bytes(), &body90d); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+	found90d := findPublicService(body90d.Services, serviceID, allServices)
+	if found90d == nil || found90d.UptimePercent == nil {
+		t.Fatalf("90d uptime_percent missing")
+	}
+
+	if *found24h.UptimePercent == *found90d.UptimePercent {
+		t.Errorf("uptime_percent identical between 24h (%v) and 90d (%v) ranges for the same 3h outage, want different (90d's larger denominator dilutes the same outage far less)", *found24h.UptimePercent, *found90d.UptimePercent)
+	}
+}
+
+// countingServiceLister wraps a real serviceLister and counts calls to
+// ListForStatusPage - used to assert an invalid range never triggers any
+// DB work (design.md's Error Handling Strategy: "no partial work").
+type countingServiceLister struct {
+	inner serviceLister
+	calls int
+}
+
+func (c *countingServiceLister) ListForStatusPage(ctx context.Context, statusPageID string) ([]db.Service, error) {
+	c.calls++
+	return c.inner.ListForStatusPage(ctx, statusPageID)
+}
+
+// TestPublicStatusGet_InvalidRange_422NoDBQueryIssued covers TRS-07: an
+// invalid range value is rejected with 422 before composeResponse (and
+// therefore before any services/intervals DB query) ever runs.
+func TestPublicStatusGet_InvalidRange_422NoDBQueryIssued(t *testing.T) {
+	dsn := testDatabaseURL(t)
+	if err := db.MigrateUp(dsn, "../db/migrations"); err != nil {
+		t.Fatalf("MigrateUp() returned unexpected error: %v", err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	pool, err := db.NewPool(ctx, dsn)
+	if err != nil {
+		t.Fatalf("NewPool() returned unexpected error: %v", err)
+	}
+	t.Cleanup(pool.Close)
+
+	spy := &countingServiceLister{inner: db.NewServiceRepository(pool)}
+	intervals := db.NewStatusIntervalRepository(pool)
+	incidents := db.NewIncidentRepository(pool)
+	companySettings := db.NewCompanySettingsRepository(pool)
+	handler := NewPublicStatusHandler(spy, intervals, incidents, companySettings, zap.NewNop())
+
+	r := chi.NewRouter()
+	r.Get("/", handler.Get)
+
+	statusPageID := createPublicStatusPageFixture(t, pool)
+
+	req := withStatusPageContext(httptest.NewRequest(http.MethodGet, "/?range=5d", nil), statusPageID)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusUnprocessableEntity, rec.Body.String())
+	}
+	var body map[string]string
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+	if want := "range must be one of 24h, 7d, 30d, 90d"; body["error"] != want {
+		t.Errorf("error = %q, want %q", body["error"], want)
+	}
+	if spy.calls != 0 {
+		t.Errorf("ListForStatusPage calls = %d, want 0 (invalid range must reject before any DB work)", spy.calls)
+	}
+}
+
+// TestPublicStatusGet_Range90d_PartialCoverageLeadingBucketsNoData covers
+// TRS-06 at the handler level for a wide range: a service whose real data
+// only covers the most recent slice of a 90d window must still render
+// leading buckets as no_data, not error.
+func TestPublicStatusGet_Range90d_PartialCoverageLeadingBucketsNoData(t *testing.T) {
+	r, pool := newPublicStatusRouter(t)
+
+	// Only 2 days of real data - the remaining ~88 days of the 90d window
+	// predate this service's very first interval.
+	openedAt := time.Now().Add(-2 * 24 * time.Hour)
+	serviceID, cleanup := createPublicStatusServiceFixture(t, pool, "operational", openedAt)
+	t.Cleanup(cleanup)
+	statusPageID := createPublicStatusPageFixture(t, pool, serviceID)
+
+	// Keep the interval's last_seen_at fresh so the H7 asOf clamp doesn't
+	// clip the trailing (most recent) bucket to no_data too - this test is
+	// only exercising the leading, out-of-coverage buckets.
+	if err := db.NewStatusIntervalRepository(pool).OpenOrExtend(context.Background(), serviceID, "operational", 0.5, time.Now()); err != nil {
+		t.Fatalf("setup OpenOrExtend() returned unexpected error: %v", err)
+	}
+
+	req := withStatusPageContext(httptest.NewRequest(http.MethodGet, "/?range=90d", nil), statusPageID)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	var body publicStatusResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+
+	allServices, err := db.NewServiceRepository(pool).List(context.Background())
+	if err != nil {
+		t.Fatalf("List() returned unexpected error: %v", err)
+	}
+	found := findPublicService(body.Services, serviceID, allServices)
+	if found == nil {
+		t.Fatalf("service %s not present in public response", serviceID)
+	}
+	if len(found.History) != 90 {
+		t.Fatalf("len(History) = %d, want 90", len(found.History))
+	}
+	if found.History[0].Status != "no_data" {
+		t.Errorf("leading bucket Status = %q, want %q (predates the service's first interval)", found.History[0].Status, "no_data")
+	}
+	if found.History[len(found.History)-1].Status == "no_data" {
+		t.Errorf("trailing (most recent) bucket Status = %q, want real data, not no_data", found.History[len(found.History)-1].Status)
 	}
 }

@@ -1,7 +1,13 @@
 import { useCallback, useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { apiFetch } from "../../lib/apiClient";
-import type { PublicHourlyBucket, PublicIncidentEntry, PublicStatusPageData, PublicServiceStatus } from "../../lib/publicStatus";
+import type {
+  PublicHistoryBucket,
+  PublicIncidentEntry,
+  PublicStatusPageData,
+  PublicServiceStatus,
+  RangeKey,
+} from "../../lib/publicStatus";
 
 interface PreviewCompany {
   name: string;
@@ -26,7 +32,8 @@ interface PreviewService {
   name: string;
   status: PublicServiceStatus;
   last_updated_at: string;
-  hourly_history: PublicHourlyBucket[];
+  history: PublicHistoryBucket[];
+  uptime_percent: number | null;
 }
 
 interface PreviewResolvedPage {
@@ -74,10 +81,14 @@ function latestServiceChange(services: PreviewService[]): string | null {
 // production endpoint (unauthenticated, resolved by the request's Host
 // header via router.HostRouter - AD-018) when it isn't. Both share the
 // same response shape (composeResponse on the Go side).
-async function fetchPublicStatusPage(id: string | undefined, resolvedPage: number): Promise<PublicStatusPageData> {
+async function fetchPublicStatusPage(
+  id: string | undefined,
+  resolvedPage: number,
+  range: RangeKey,
+): Promise<PublicStatusPageData> {
   const path = id
-    ? `/api/status-pages/${id}/public-preview?page=${resolvedPage}`
-    : `/api/public-status?page=${resolvedPage}`;
+    ? `/api/status-pages/${id}/public-preview?page=${resolvedPage}&range=${range}`
+    : `/api/public-status?page=${resolvedPage}&range=${range}`;
   const data = await apiFetch<PreviewResponse>(path, { skipUnauthorizedHandler: !id });
   const latestChange = latestServiceChange(data.services);
 
@@ -90,7 +101,8 @@ async function fetchPublicStatusPage(id: string | undefined, resolvedPage: numbe
       name: service.name,
       status: service.status,
       last_updated_at: service.last_updated_at,
-      hourly_history: service.hourly_history,
+      history: service.history,
+      uptime_percent: service.uptime_percent,
     })),
     incidents: {
       active: data.incidents.active.map(toPublicIncidentEntry),
@@ -108,7 +120,7 @@ async function fetchPublicStatusPage(id: string | undefined, resolvedPage: numbe
 // switching status pages never leaks the previous page's loaded history.
 // id is omitted entirely when rendered at the production root (AD-018) -
 // there is exactly one status page per hostname, resolved server-side.
-export function usePublicStatusPage(id?: string) {
+export function usePublicStatusPage(id?: string, range: RangeKey = "24h") {
   const [extraResolved, setExtraResolved] = useState<PublicIncidentEntry[]>([]);
   const [loadedPage, setLoadedPage] = useState(1);
 
@@ -118,18 +130,18 @@ export function usePublicStatusPage(id?: string) {
   }, [id]);
 
   const query = useQuery({
-    queryKey: ["public-status-page", id ?? "production"],
-    queryFn: () => fetchPublicStatusPage(id, 1),
+    queryKey: ["public-status-page", id ?? "production", range],
+    queryFn: () => fetchPublicStatusPage(id, 1, range),
     refetchInterval: 120_000,
     retry: false,
   });
 
   const loadMoreResolvedIncidents = useCallback(async () => {
     const nextPage = loadedPage + 1;
-    const next = await fetchPublicStatusPage(id, nextPage);
+    const next = await fetchPublicStatusPage(id, nextPage, range);
     setExtraResolved((prev) => [...prev, ...next.incidents.resolved]);
     setLoadedPage(nextPage);
-  }, [id, loadedPage]);
+  }, [id, loadedPage, range]);
 
   const data: PublicStatusPageData | undefined = query.data && {
     ...query.data,

@@ -11,16 +11,28 @@ export type PublicServiceStatus = "operational" | "degraded" | "outage";
 // from any real observed status.
 export type PublicHourlyStatus = PublicServiceStatus | "no_data";
 
-export interface PublicHourlyBucket {
+export interface PublicHistoryBucket {
   start: string;
   status: PublicHourlyStatus;
 }
+
+// RangeKey is the set of selectable time-range tiers for the public status
+// page's history/uptime window (public-status-time-range-selector,
+// TRS-07) - mirrors the Go backend's rangeSpecs map keys exactly
+// (internal/api/time_range.go).
+export type RangeKey = "24h" | "7d" | "30d" | "90d";
 
 export interface PublicServiceEntry {
   name: string;
   status: PublicServiceStatus;
   last_updated_at: string | null;
-  hourly_history: PublicHourlyBucket[];
+  history: PublicHistoryBucket[];
+  // uptime_percent is null ("undefined", render a dash) when the service
+  // has zero recorded intervals within the selected range's window
+  // (backend: internal/api/public_status_handler.go's publicServiceResponse
+  // doc comment) - never a fabricated 0 or 100. Recomputed for whichever
+  // range is currently selected (TRS-04), not pinned to 24h.
+  uptime_percent: number | null;
 }
 
 export interface PublicIncidentUpdateEntry {

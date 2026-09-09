@@ -53,7 +53,19 @@ func newPublicStatusPreviewRouter(t *testing.T) (http.Handler, *db.Pool, *db.Adm
 
 func getPublicStatusPreview(t *testing.T, r http.Handler, token, statusPageID string) *httptest.ResponseRecorder {
 	t.Helper()
-	req := httptest.NewRequest(http.MethodGet, "/api/status-pages/"+statusPageID+"/public-preview", nil)
+	return getPublicStatusPreviewWithQuery(t, r, token, statusPageID, "")
+}
+
+// getPublicStatusPreviewWithQuery is getPublicStatusPreview plus an
+// arbitrary raw query string (e.g. "range=90d") appended to the request
+// URL - used by the range-parity tests below.
+func getPublicStatusPreviewWithQuery(t *testing.T, r http.Handler, token, statusPageID, rawQuery string) *httptest.ResponseRecorder {
+	t.Helper()
+	url := "/api/status-pages/" + statusPageID + "/public-preview"
+	if rawQuery != "" {
+		url += "?" + rawQuery
+	}
+	req := httptest.NewRequest(http.MethodGet, url, nil)
 	if token != "" {
 		req.Header.Set("Authorization", "Bearer "+token)
 	}
@@ -107,8 +119,8 @@ func TestPublicStatusPreview_AuthenticatedByID_200SameShapeAsProduction(t *testi
 	}
 	// UPT-08: the preview endpoint must return the identical hourly-history
 	// shape as production - same field, same bucket count.
-	if len(found.HourlyHistory) != 24 {
-		t.Errorf("len(HourlyHistory) = %d, want %d", len(found.HourlyHistory), 24)
+	if len(found.History) != 24 {
+		t.Errorf("len(HourlyHistory) = %d, want %d", len(found.History), 24)
 	}
 	// SHU-15 (surfaced via UPT-08's same-shape contract): a service with a
 	// long-open interval predating the window computes a defined uptime %,
@@ -157,12 +169,12 @@ func TestPublicStatusPreview_ZeroSnapshotService_AllHourlyBucketsNoData(t *testi
 	if found == nil {
 		t.Fatalf("service %s not present in preview response", service.ID)
 	}
-	if len(found.HourlyHistory) != 24 {
-		t.Fatalf("len(HourlyHistory) = %d, want %d", len(found.HourlyHistory), 24)
+	if len(found.History) != 24 {
+		t.Fatalf("len(HourlyHistory) = %d, want %d", len(found.History), 24)
 	}
-	for i, bucket := range found.HourlyHistory {
+	for i, bucket := range found.History {
 		if bucket.Status != "no_data" {
-			t.Errorf("HourlyHistory[%d].Status = %q, want %q", i, bucket.Status, "no_data")
+			t.Errorf("History[%d].Status = %q, want %q", i, bucket.Status, "no_data")
 		}
 	}
 }
@@ -297,5 +309,81 @@ func TestPublicStatusPreview_UnknownID_404(t *testing.T) {
 	rec := getPublicStatusPreview(t, r, token, "00000000-0000-0000-0000-000000000000")
 	if rec.Code != http.StatusNotFound {
 		t.Errorf("status = %d, want %d", rec.Code, http.StatusNotFound)
+	}
+}
+
+// TestPublicStatusPreview_Range90d_SameBucketShapeAsProduction covers TRS-05
+// (preview parity): the same range parameter must produce the same bucket
+// count/width on the preview endpoint as the production endpoint, for
+// identical seed data - both share composeResponse (AD-008), so this also
+// guards against a future change that wires parseRange into only one of the
+// two handlers.
+func TestPublicStatusPreview_Range90d_SameBucketShapeAsProduction(t *testing.T) {
+	previewRouter, pool, admins := newPublicStatusPreviewRouter(t)
+	token := issueTestSessionToken(t, admins)
+
+	openedAt := time.Now().Add(-95 * 24 * time.Hour)
+	serviceID, cleanup := createPublicStatusServiceFixture(t, pool, "operational", openedAt)
+	t.Cleanup(cleanup)
+	statusPageID := createPublicStatusPageFixture(t, pool, serviceID)
+	if err := db.NewStatusIntervalRepository(pool).OpenOrExtend(context.Background(), serviceID, "operational", 0.5, time.Now()); err != nil {
+		t.Fatalf("setup OpenOrExtend() returned unexpected error: %v", err)
+	}
+
+	previewRec := getPublicStatusPreviewWithQuery(t, previewRouter, token, statusPageID, "range=90d")
+	if previewRec.Code != http.StatusOK {
+		t.Fatalf("preview status = %d, want %d, body = %s", previewRec.Code, http.StatusOK, previewRec.Body.String())
+	}
+	var previewBody publicStatusResponse
+	if err := json.Unmarshal(previewRec.Body.Bytes(), &previewBody); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+
+	productionRouter, _ := newPublicStatusRouter(t)
+	prodReq := withStatusPageContext(httptest.NewRequest(http.MethodGet, "/?range=90d", nil), statusPageID)
+	prodRec := httptest.NewRecorder()
+	productionRouter.ServeHTTP(prodRec, prodReq)
+	if prodRec.Code != http.StatusOK {
+		t.Fatalf("production status = %d, want %d, body = %s", prodRec.Code, http.StatusOK, prodRec.Body.String())
+	}
+	var prodBody publicStatusResponse
+	if err := json.Unmarshal(prodRec.Body.Bytes(), &prodBody); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+
+	allServices, err := db.NewServiceRepository(pool).List(context.Background())
+	if err != nil {
+		t.Fatalf("List() returned unexpected error: %v", err)
+	}
+	previewFound := findPublicService(previewBody.Services, serviceID, allServices)
+	prodFound := findPublicService(prodBody.Services, serviceID, allServices)
+	if previewFound == nil || prodFound == nil {
+		t.Fatalf("service %s missing from preview (%v) or production (%v) response", serviceID, previewFound == nil, prodFound == nil)
+	}
+	if len(previewFound.History) != len(prodFound.History) {
+		t.Fatalf("preview len(History) = %d, production len(History) = %d, want equal", len(previewFound.History), len(prodFound.History))
+	}
+	if len(previewFound.History) != 90 {
+		t.Errorf("len(History) = %d, want 90", len(previewFound.History))
+	}
+	if len(previewFound.History) >= 2 {
+		previewWidth := previewFound.History[1].Start.Sub(previewFound.History[0].Start)
+		prodWidth := prodFound.History[1].Start.Sub(prodFound.History[0].Start)
+		if previewWidth != prodWidth {
+			t.Errorf("preview bucket width = %v, production bucket width = %v, want equal", previewWidth, prodWidth)
+		}
+	}
+}
+
+// TestPublicStatusPreview_InvalidRange_422 covers TRS-07 on the preview
+// endpoint (parity with production's own invalid-range rejection).
+func TestPublicStatusPreview_InvalidRange_422(t *testing.T) {
+	r, pool, admins := newPublicStatusPreviewRouter(t)
+	token := issueTestSessionToken(t, admins)
+	statusPageID := createPublicStatusPageFixture(t, pool)
+
+	rec := getPublicStatusPreviewWithQuery(t, r, token, statusPageID, "range=5d")
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Errorf("status = %d, want %d, body = %s", rec.Code, http.StatusUnprocessableEntity, rec.Body.String())
 	}
 }
