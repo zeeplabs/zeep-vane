@@ -3,7 +3,7 @@
   "promote_threshold": 2,
   "window_days": 45,
   "quarantine_threshold": 2,
-  "next_id": 33,
+  "next_id": 37,
   "lessons": [
     {
       "id": "L-001",
@@ -580,6 +580,78 @@
       ],
       "created": "2026-09-09T00:13:47Z",
       "last_seen": "2026-09-09T00:13:47Z"
+    },
+    {
+      "id": "L-033",
+      "key": "surviving_mutant::when testing a same status no op guard use a transition pair that actually dispatches side effects if unguarded e g degraded degraded not one that is independently inert operational operational the latter lets the guard s removal go undetected",
+      "text": "When testing a same-status no-op guard, use a transition pair that actually dispatches side effects if unguarded (e.g. degraded->degraded), not one that is independently inert (operational->operational) - the latter lets the guard's removal go undetected.",
+      "signal": "surviving_mutant",
+      "scope": "internal/poller",
+      "status": "candidate",
+      "features": [
+        "llm-slo-analysis"
+      ],
+      "recurrence": 1,
+      "harmful": 0,
+      "evidence": [
+        "internal/poller/analyzer.go:119-121 (internal/poller)"
+      ],
+      "created": "2026-09-09T17:53:19Z",
+      "last_seen": "2026-09-09T17:53:19Z"
+    },
+    {
+      "id": "L-034",
+      "key": "ac_gap::when a task adds new write routes to an existing role gated router also add them to the router level table driven role test e g writeroutecases in the same commit a handler s own unit test router often skips role middleware entirely leaving the ac s authorization requirement with zero real coverage",
+      "text": "When a task adds new write routes to an existing role-gated router, also add them to the router-level table-driven role test (e.g. writeRouteCases()) in the same commit - a handler's own unit-test router often skips role middleware entirely, leaving the AC's authorization requirement with zero real coverage.",
+      "signal": "ac_gap",
+      "scope": "internal/cli",
+      "status": "candidate",
+      "features": [
+        "llm-slo-analysis"
+      ],
+      "recurrence": 1,
+      "harmful": 0,
+      "evidence": [
+        "AI-24 (internal/cli)"
+      ],
+      "created": "2026-09-09T17:53:19Z",
+      "last_seen": "2026-09-09T17:53:19Z"
+    },
+    {
+      "id": "L-035",
+      "key": "spec_deviation::when a spec explicitly calls out empty malformed response handling as a required fallback path implement and test that check where the result is consumed the async write site not just where errors are already handled an empty string success is not an error and will silently bypass err nil branches",
+      "text": "When a spec explicitly calls out empty/malformed response handling as a required fallback path, implement and test that check where the result is consumed (the async write site), not just where errors are already handled - an empty-string success is not an error and will silently bypass err != nil branches.",
+      "signal": "spec_deviation",
+      "scope": "internal/poller",
+      "status": "candidate",
+      "features": [
+        "llm-slo-analysis"
+      ],
+      "recurrence": 1,
+      "harmful": 0,
+      "evidence": [
+        "spec.md Edge Cases: empty/malformed LLM response (internal/poller)"
+      ],
+      "created": "2026-09-09T17:53:19Z",
+      "last_seen": "2026-09-09T17:53:19Z"
+    },
+    {
+      "id": "L-036",
+      "key": "spec_deviation::when a repository method exists to satisfy a task s own done when checklist e g markinvalid grep for real callers outside its own tests before marking the task done a method can be fully unit tested in isolation while never being wired into the failure path the spec actually requires it for",
+      "text": "When a repository method exists to satisfy a task's own done-when checklist (e.g. MarkInvalid), grep for real callers outside its own tests before marking the task done - a method can be fully unit-tested in isolation while never being wired into the failure path the spec actually requires it for.",
+      "signal": "spec_deviation",
+      "scope": "internal/llm",
+      "status": "candidate",
+      "features": [
+        "llm-slo-analysis"
+      ],
+      "recurrence": 1,
+      "harmful": 0,
+      "evidence": [
+        "spec.md Edge Cases: revoked/expired API key marked invalid (internal/llm)"
+      ],
+      "created": "2026-09-09T17:58:22Z",
+      "last_seen": "2026-09-09T17:58:22Z"
     }
   ]
 }

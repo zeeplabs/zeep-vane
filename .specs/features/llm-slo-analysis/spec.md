@@ -154,38 +154,38 @@ Every ambiguity is resolved or recorded here - nothing is left silently unclear.
 
 | Requirement ID | Story | Phase | Status |
 | --- | --- | --- | --- |
-| AI-01 | P1: Configure an LLM provider | Design | Implementing |
-| AI-02 | P1: Configure an LLM provider | Design | Implementing |
-| AI-03 | P1: Configure an LLM provider | Design | Implementing |
-| AI-04 | P1: Configure an LLM provider | Design | Implementing |
-| AI-05 | P1: Configure an LLM provider | Design | Implementing |
-| AI-06 | P1: Configure an LLM provider | Design | Implementing |
-| AI-07 | P1: Configure an LLM provider | Design | Implementing |
-| AI-08 | P1: Outage transition auto-creates a formal incident | Design | Implementing |
-| AI-09 | P1: Outage transition auto-creates a formal incident | Design | Implementing |
-| AI-10 | P1: Outage transition auto-creates a formal incident | Design | Implementing |
-| AI-11 | P1: Outage transition auto-creates a formal incident | Design | Implementing |
-| AI-12 | P1: Outage transition auto-creates a formal incident | Design | Implementing |
-| AI-13 | P1: Outage transition auto-creates a formal incident | Design | Implementing |
-| AI-14 | P1: Degraded transition surfaces an LLM tooltip | Design | Implementing |
-| AI-15 | P1: Degraded transition surfaces an LLM tooltip | Design | Implementing |
-| AI-16 | P1: Degraded transition surfaces an LLM tooltip | Design | Implementing |
-| AI-17 | P1: Degraded transition surfaces an LLM tooltip | Design | Implementing |
-| AI-18 | P1: Degraded transition surfaces an LLM tooltip | Design | Implementing |
-| AI-19 | P1: Recovery proposes an incident closing comment | Design | Implementing |
-| AI-20 | P1: Recovery proposes an incident closing comment | Design | Implementing |
-| AI-21 | P1: Recovery proposes an incident closing comment | Design | Implementing |
-| AI-22 | P1: Recovery proposes an incident closing comment | Design | Implementing |
-| AI-23 | P1: Recovery proposes an incident closing comment | Design | Implementing |
-| AI-24 | P1: Recovery proposes an incident closing comment | Design | Implementing |
-| AI-25 | P2: Adapter groundwork for a second provider | Design | Implementing |
-| AI-26 | P2: Adapter groundwork for a second provider | Design | Implementing |
+| AI-01 | P1: Configure an LLM provider | Design | Verified |
+| AI-02 | P1: Configure an LLM provider | Design | Verified |
+| AI-03 | P1: Configure an LLM provider | Design | Verified |
+| AI-04 | P1: Configure an LLM provider | Design | Verified |
+| AI-05 | P1: Configure an LLM provider | Design | Verified |
+| AI-06 | P1: Configure an LLM provider | Design | Verified |
+| AI-07 | P1: Configure an LLM provider | Design | Verified |
+| AI-08 | P1: Outage transition auto-creates a formal incident | Design | Verified |
+| AI-09 | P1: Outage transition auto-creates a formal incident | Design | Verified |
+| AI-10 | P1: Outage transition auto-creates a formal incident | Design | Verified |
+| AI-11 | P1: Outage transition auto-creates a formal incident | Design | Verified |
+| AI-12 | P1: Outage transition auto-creates a formal incident | Design | Verified |
+| AI-13 | P1: Outage transition auto-creates a formal incident | Design | Verified |
+| AI-14 | P1: Degraded transition surfaces an LLM tooltip | Design | Verified |
+| AI-15 | P1: Degraded transition surfaces an LLM tooltip | Design | Verified |
+| AI-16 | P1: Degraded transition surfaces an LLM tooltip | Design | Verified |
+| AI-17 | P1: Degraded transition surfaces an LLM tooltip | Design | Verified |
+| AI-18 | P1: Degraded transition surfaces an LLM tooltip | Design | Verified |
+| AI-19 | P1: Recovery proposes an incident closing comment | Design | Verified |
+| AI-20 | P1: Recovery proposes an incident closing comment | Design | Verified |
+| AI-21 | P1: Recovery proposes an incident closing comment | Design | Verified |
+| AI-22 | P1: Recovery proposes an incident closing comment | Design | Verified |
+| AI-23 | P1: Recovery proposes an incident closing comment | Design | Verified |
+| AI-24 | P1: Recovery proposes an incident closing comment | Design | Verified |
+| AI-25 | P2: Adapter groundwork for a second provider | Design | Verified |
+| AI-26 | P2: Adapter groundwork for a second provider | Design | Verified |
 
 **ID format:** `AI-[NUMBER]`
 
 **Status values:** Pending → In Design → In Tasks → Implementing → Verified
 
-**Coverage:** 26 total, 26 mapped to tasks (T1-T25), 0 unmapped — all `Implementing` as of T25 (Batch 4/4); final AC-by-AC `Verified` stamp is the independent Verifier's job, not this task's.
+**Coverage:** 26 total, 26 mapped to tasks (T1-T25), 0 unmapped — all `Verified` as of the independent Verifier's PASS (iteration 2/3, `.specs/features/llm-slo-analysis/validation.md`).
 
 ---
 

@@ -206,6 +206,30 @@ Seen once or not yet corroborated. Tracked, not trusted.
 - evidence: spec.md Edge Cases (asOf clamp at every range tier) vs internal/history/hourly_test.go:160 (internal/history)
 - last seen: 2026-09-09T00:13:47Z
 
+### L-033 - When testing a same-status no-op guard, use a transition pair that actually dispatches side effects if unguarded (e.g. degraded->degraded), not one that is independently inert (operational->operational) - the latter lets the guard's removal go undetected.
+- signal: `surviving_mutant` · recurrence: 1 feature(s) · scope: `internal/poller` · harmful: 0
+- features: llm-slo-analysis
+- evidence: internal/poller/analyzer.go:119-121 (internal/poller)
+- last seen: 2026-09-09T17:53:19Z
+
+### L-034 - When a task adds new write routes to an existing role-gated router, also add them to the router-level table-driven role test (e.g. writeRouteCases()) in the same commit - a handler's own unit-test router often skips role middleware entirely, leaving the AC's authorization requirement with zero real coverage.
+- signal: `ac_gap` · recurrence: 1 feature(s) · scope: `internal/cli` · harmful: 0
+- features: llm-slo-analysis
+- evidence: AI-24 (internal/cli)
+- last seen: 2026-09-09T17:53:19Z
+
+### L-035 - When a spec explicitly calls out empty/malformed response handling as a required fallback path, implement and test that check where the result is consumed (the async write site), not just where errors are already handled - an empty-string success is not an error and will silently bypass err != nil branches.
+- signal: `spec_deviation` · recurrence: 1 feature(s) · scope: `internal/poller` · harmful: 0
+- features: llm-slo-analysis
+- evidence: spec.md Edge Cases: empty/malformed LLM response (internal/poller)
+- last seen: 2026-09-09T17:53:19Z
+
+### L-036 - When a repository method exists to satisfy a task's own done-when checklist (e.g. MarkInvalid), grep for real callers outside its own tests before marking the task done - a method can be fully unit-tested in isolation while never being wired into the failure path the spec actually requires it for.
+- signal: `spec_deviation` · recurrence: 1 feature(s) · scope: `internal/llm` · harmful: 0
+- features: llm-slo-analysis
+- evidence: spec.md Edge Cases: revoked/expired API key marked invalid (internal/llm)
+- last seen: 2026-09-09T17:58:22Z
+
 ## Quarantined (failed when applied - ignore)
 
 A confirmed lesson that recurred alongside failure. Kept for the maintainer to review.
