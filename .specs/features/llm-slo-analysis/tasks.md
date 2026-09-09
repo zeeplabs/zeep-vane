@@ -144,9 +144,9 @@ T25 only. Needs the full feature implemented (accurate to describe).
 - Skill: NONE
 
 **Done when**:
-- [ ] `services.status_analysis` exists, nullable, no default
-- [ ] `down` migration cleanly drops the column
-- [ ] Migration test confirms the column exists and defaults to `NULL` on an existing service row
+- [x] `services.status_analysis` exists, nullable, no default
+- [x] `down` migration cleanly drops the column
+- [x] Migration test confirms the column exists and defaults to `NULL` on an existing service row
 
 **Tests**: integration
 **Gate**: full
