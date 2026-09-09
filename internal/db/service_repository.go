@@ -174,3 +174,21 @@ func (r *ServiceRepository) UpdateStatus(ctx context.Context, serviceID, status 
 
 	return nil
 }
+
+// UpdateStatusAnalysis sets serviceID's status_analysis column to analysis -
+// a nullable-set update: passing nil clears the column (AI-15/AI-17,
+// SLOAnalyzer clears it synchronously on entering/leaving "degraded"),
+// passing a non-nil value sets it (AI-14, the async LLM-generated tooltip
+// text). Mirrors UpdateStatus's single-column-update shape; unlike
+// UpdateStatus, it does not touch last_status_change_at.
+func (r *ServiceRepository) UpdateStatusAnalysis(ctx context.Context, serviceID string, analysis *string) error {
+	_, err := r.pool.Exec(ctx,
+		"UPDATE services SET status_analysis = $2 WHERE id = $1",
+		serviceID, analysis,
+	)
+	if err != nil {
+		return fmt.Errorf("db: failed to update service status analysis: %w", err)
+	}
+
+	return nil
+}

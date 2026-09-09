@@ -374,10 +374,10 @@ T25 only. Needs the full feature implemented (accurate to describe).
 - Skill: NONE
 
 **Done when**:
-- [ ] `UpdateStatusAnalysis(ctx, serviceID, nil)` sets the column to `NULL`
-- [ ] `UpdateStatusAnalysis(ctx, serviceID, &text)` sets the column to `text`
-- [ ] Integration tests cover both directions plus a not-found service ID
-- [ ] Gate passes: `TEST_DATABASE_URL=... go test -tags=integration ./internal/db/...`
+- [x] `UpdateStatusAnalysis(ctx, serviceID, nil)` sets the column to `NULL`
+- [x] `UpdateStatusAnalysis(ctx, serviceID, &text)` sets the column to `text`
+- [x] Integration tests cover both directions plus a not-found service ID
+- [x] Gate passes: `TEST_DATABASE_URL=... go test -tags=integration ./internal/db/...`
 
 **Tests**: integration
 **Gate**: full
