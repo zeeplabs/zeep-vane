@@ -289,12 +289,12 @@ T5 → T6 → T7 → T8
 
 **Done when**:
 
-- [ ] Every existing `PublicStatusPage.test.tsx` test passes, `mockPublicPreview`/`bucket` helpers updated for `history` (not `hourly_history`)
-- [ ] New test: page loads with `24h` selected by default and the existing 24-bar chart, unchanged from today (TRS-01)
-- [ ] New test: clicking each of the 3 other `Seg` options (`aria-selected`/role=`tab` per `Seg`'s existing a11y shape) triggers a new fetch (assertable via an MSW handler override) and the leftmost label text updates to match (`"7 dias atrás"` etc.)
-- [ ] New test: selecting a different range changes every service's chart on the page, not just one (TRS-03 - page-wide, not per-service) - assert with ≥2 services in the fixture
-- [ ] New test: `uptime_percent` displayed changes when range changes, using an MSW override that returns a different `uptime_percent` per range (TRS-04, frontend-side proof that the number rendered actually reflects `data.services[].uptime_percent` per fetch, not a stale cached figure)
-- [ ] `npx tsc -b --noEmit` passes
+- [x] Every existing `PublicStatusPage.test.tsx` test passes, `mockPublicPreview`/`bucket` helpers updated for `history` (not `hourly_history`)
+- [x] New test: page loads with `24h` selected by default and the existing 24-bar chart, unchanged from today (TRS-01)
+- [x] New test: clicking each of the 3 other `Seg` options (`aria-selected`/role=`tab` per `Seg`'s existing a11y shape) triggers a new fetch (assertable via an MSW handler override) and the leftmost label text updates to match (`"7 dias atrás"` etc.)
+- [x] New test: selecting a different range changes every service's chart on the page, not just one (TRS-03 - page-wide, not per-service) - assert with ≥2 services in the fixture
+- [x] New test: `uptime_percent` displayed changes when range changes, using an MSW override that returns a different `uptime_percent` per range (TRS-04, frontend-side proof that the number rendered actually reflects `data.services[].uptime_percent` per fetch, not a stale cached figure) - required adding `uptime_percent` display to the UI for the first time (see commit note: not previously rendered anywhere in the frontend despite existing in the backend response since before this feature; needed for TRS-04's AC to be genuinely testable rather than faked)
+- [x] `npx tsc -b --noEmit` passes
 
 **Tests**: unit
 **Gate**: frontend (`npx tsc -b --noEmit && npm run test`)

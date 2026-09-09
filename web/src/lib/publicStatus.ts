@@ -27,6 +27,12 @@ export interface PublicServiceEntry {
   status: PublicServiceStatus;
   last_updated_at: string | null;
   history: PublicHistoryBucket[];
+  // uptime_percent is null ("undefined", render a dash) when the service
+  // has zero recorded intervals within the selected range's window
+  // (backend: internal/api/public_status_handler.go's publicServiceResponse
+  // doc comment) - never a fabricated 0 or 100. Recomputed for whichever
+  // range is currently selected (TRS-04), not pinned to 24h.
+  uptime_percent: number | null;
 }
 
 export interface PublicIncidentUpdateEntry {

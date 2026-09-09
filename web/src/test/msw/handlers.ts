@@ -1021,6 +1021,11 @@ export const handlers = [
         status: s.current_status,
         last_updated_at: s.last_status_change_at,
         history: buildFixtureHistory(s.current_status, bucketCount),
+        // uptime_percent mirrors the real backend's nullable field (TRS-04)
+        // - not_configured services never reach here (filtered out above),
+        // so a plausible non-null fixture value is fine for every other
+        // status.
+        uptime_percent: s.current_status === "outage" ? 92.5 : 99.9,
       })),
       incidents: { active, resolved: paginatedPage(request.url, resolved, 10) },
     });

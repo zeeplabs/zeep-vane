@@ -4,7 +4,15 @@ import { Card } from "../../components/ui/Card";
 import { Button } from "../../components/ui/Button";
 import { Tag } from "../../components/ui/Tag";
 import type { TagVariant } from "../../components/ui/Tag";
-import type { PublicHourlyBucket, PublicHourlyStatus, PublicIncidentEntry, PublicServiceStatus } from "../../lib/publicStatus";
+import { Seg } from "../../components/ui/Seg";
+import type { SegOption } from "../../components/ui/Seg";
+import type {
+  PublicHistoryBucket,
+  PublicHourlyStatus,
+  PublicIncidentEntry,
+  PublicServiceStatus,
+  RangeKey,
+} from "../../lib/publicStatus";
 import { resolveAssetUrl } from "../../lib/apiClient";
 import { usePublicStatusPage } from "./hooks";
 import { formatRelativeTime, formatDateTime, formatDuration } from "./format";
@@ -56,7 +64,7 @@ const HOURLY_TOOLTIP_FORMATTER = new Intl.DateTimeFormat("pt-BR", {
 // label (UPT-05), always in America/Sao_Paulo regardless of the visitor's
 // own browser/OS timezone - the offset is computed client-side, but the
 // timezone itself is fixed, not detected.
-function hourlyTooltip(bucket: PublicHourlyBucket): string {
+function hourlyTooltip(bucket: PublicHistoryBucket): string {
   const start = new Date(bucket.start);
   const parts = HOURLY_TOOLTIP_FORMATTER.formatToParts(start);
   const get = (type: string) => parts.find((p) => p.type === type)?.value ?? "";
@@ -66,6 +74,27 @@ function hourlyTooltip(bucket: PublicHourlyBucket): string {
   const endHour = (startHour + 1) % 24;
   return `${day}/${month}, ${startHour}h–${endHour}h · ${hourlyLabel[bucket.status]}`;
 }
+
+// RANGE_OPTIONS feeds the Seg range selector (public-status-time-range-
+// selector T8) - values match RangeKey/rangeSpecs exactly (24h/7d/30d/90d).
+const RANGE_OPTIONS: SegOption[] = [
+  { value: "24h", label: "24h" },
+  { value: "7d", label: "7d" },
+  { value: "30d", label: "30d" },
+  { value: "90d", label: "90d" },
+];
+
+// rangeAgoLabel is the leftmost label under each service's history chart,
+// keyed by the selected range - follows this file's existing hardcoded
+// PT-BR Record<K,string> pattern (see hourlyLabel/incidentLabel above; this
+// feature doesn't route strings through react-i18next anywhere else in
+// this file, so a new i18n key here would be an inconsistent one-off).
+const rangeAgoLabel: Record<RangeKey, string> = {
+  "24h": "24h atrás",
+  "7d": "7 dias atrás",
+  "30d": "30 dias atrás",
+  "90d": "90 dias atrás",
+};
 
 const incidentTagVariant: Record<PublicIncidentEntry["status"], TagVariant> = {
   investigating: "critical",
@@ -80,6 +109,16 @@ const incidentLabel: Record<PublicIncidentEntry["status"], string> = {
   monitoring: "Monitorando",
   resolved: "Resolvido",
 };
+
+// formatUptimePercent renders the backend's nullable uptime_percent
+// (TRS-04: recomputed for whichever range is currently selected, never
+// pinned to 24h) - "—" when the service has zero recorded intervals within
+// the selected window, matching the backend's own "render a dash" contract
+// (internal/api/public_status_handler.go's publicServiceResponse doc).
+function formatUptimePercent(uptimePercent: number | null): string {
+  if (uptimePercent === null) return "—";
+  return `${uptimePercent.toFixed(2)}% uptime`;
+}
 
 function worstServiceStatus(statuses: PublicServiceStatus[]): PublicServiceStatus {
   if (statuses.includes("outage")) return "outage";
@@ -181,7 +220,8 @@ function LoadingSkeleton() {
 // returns undefined for :id when this is mounted outside that route.
 export function PublicStatusPage() {
   const { id } = useParams();
-  const { data, isLoading, isError, hasMoreResolved, loadMoreResolvedIncidents } = usePublicStatusPage(id);
+  const [range, setRange] = useState<RangeKey>("24h");
+  const { data, isLoading, isError, hasMoreResolved, loadMoreResolvedIncidents } = usePublicStatusPage(id, range);
   const [loadingMore, setLoadingMore] = useState(false);
 
   // This is the one page in the SPA the public internet actually lands on
@@ -286,7 +326,15 @@ export function PublicStatusPage() {
       ) : null}
 
       <section className="flex flex-col gap-3">
-        <h2 className="text-xs uppercase tracking-wide text-neutral-400">Serviços</h2>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <h2 className="text-xs uppercase tracking-wide text-neutral-400">Serviços</h2>
+          <Seg
+            options={RANGE_OPTIONS}
+            value={range}
+            onChange={(value) => setRange(value as RangeKey)}
+            aria-label="Selecionar período"
+          />
+        </div>
         <Card elevation="elev-sm" className="overflow-hidden p-0">
           {data.services.map((service, index) => (
             <div
@@ -304,11 +352,16 @@ export function PublicStatusPage() {
                     <span className="text-xs text-neutral-500">(sem dados)</span>
                   ) : null}
                 </div>
-                <Tag variant={serviceTagVariant[service.status]}>{serviceLabel[service.status]}</Tag>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-neutral-400" data-testid={`uptime-${service.name}`}>
+                    {formatUptimePercent(service.uptime_percent)}
+                  </span>
+                  <Tag variant={serviceTagVariant[service.status]}>{serviceLabel[service.status]}</Tag>
+                </div>
               </div>
               <div className="flex flex-col gap-0.5">
                 <div className="flex gap-px">
-                  {service.hourly_history.map((bucket, i) => (
+                  {service.history.map((bucket, i) => (
                     <div
                       key={i}
                       title={hourlyTooltip(bucket)}
@@ -320,7 +373,7 @@ export function PublicStatusPage() {
                   ))}
                 </div>
                 <div className="flex justify-between text-[10px] text-neutral-500">
-                  <span>24h atrás</span>
+                  <span>{rangeAgoLabel[range]}</span>
                   <span>agora</span>
                 </div>
               </div>
