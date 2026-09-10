@@ -325,16 +325,15 @@ func (r *TenantRepository) Active(ctx context.Context) (*Tenant, error) {
 // query gated behind a particular session's own app.tenant_id (there is no
 // single active tenant when the caller's job is to iterate all of them).
 //
-// Known limitation, not silently papered over: tenants' RLS policy (0024)
-// is keyed on tenants.id = app.tenant_id, so under a real non-superuser
-// application role (not this project's dev/self-hosted docker-compose
-// default, which connects as a Postgres superuser and so bypasses RLS
-// entirely - see internal/db/rls_test.go's note) this query returns zero
-// rows. This is the same bootstrap gap AD-023 closed for the anonymous
-// public-status-page read path (0025_public_status_page_read); closing it
-// here too - a permissive read policy for tenant enumeration when
-// app.tenant_id is unset - is a real RLS-policy decision (AGENTS.md §7)
-// left for a dedicated follow-up rather than folded into this task.
+// tenants' RLS policy (0024) is keyed on tenants.id = app.tenant_id, so
+// under a real non-superuser application role this query on its own
+// returns zero rows - reading the table needs the tenant the read is
+// trying to discover. Callers that must enumerate tenants therefore go
+// through SystemTenantLister (system_tenant_lister.go), which runs this
+// query inside a transaction carrying app.is_system, the flag the
+// system_iteration_read policy from 0027 checks (AD-024). Called with a
+// plain context this stays fail-closed exactly like every other
+// tenant-scoped query.
 func (r *TenantRepository) List(ctx context.Context) ([]Tenant, error) {
 	rows, err := r.pool.Query(ctx,
 		`SELECT id, name, slug, plan, status, contact_email, logo_content_type,
