@@ -522,6 +522,42 @@ func TestVerifyDomain_DNSFailure_ErrorWithLastError(t *testing.T) {
 	}
 }
 
+// TestVerifyDomain_DNSMismatch_ErrorWithLastError covers DOMVER-08's other
+// failure branch: DNS resolves but doesn't match the configured target
+// (DNSMatchesTarget = false, not just "DNS doesn't resolve at all").
+func TestVerifyDomain_DNSMismatch_ErrorWithLastError(t *testing.T) {
+	mismatch := false
+	r, pool, admins := newDomainsRouter(t, func(h *DomainsHandler) {
+		h.verifier = &fakeDomainVerifier{result: domainVerificationResult{
+			DNSResolved: true, DNSMatchesTarget: &mismatch, TLSReachable: true, TLSCertValid: true,
+		}}
+	})
+	token := issueTestSessionToken(t, admins)
+	domain := createVerifiableTestDomain(t, r, pool, token)
+
+	rec := postDomainVerify(t, r, token, domain.ID)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	var updated domainResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &updated); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+	if updated.Status != "error" {
+		t.Errorf("Status = %q, want %q (DNS resolved but doesn't match the configured target)", updated.Status, "error")
+	}
+	if updated.LastError == nil || *updated.LastError == "" {
+		t.Error("LastError is nil/empty, want a populated mismatch description")
+	}
+	// TLS succeeded independently of the DNS mismatch - ssl_status must
+	// still reflect that, proving status and ssl_status are derived
+	// independently rather than one failure blanking both.
+	if updated.SSLStatus != "active" {
+		t.Errorf("SSLStatus = %q, want %q (TLS check succeeded independently of the DNS mismatch)", updated.SSLStatus, "active")
+	}
+}
+
 // TestVerifyDomain_UnknownDomain_404 covers DOMVER-05.
 func TestVerifyDomain_UnknownDomain_404(t *testing.T) {
 	r, _, admins := newDomainsRouter(t, func(h *DomainsHandler) {
