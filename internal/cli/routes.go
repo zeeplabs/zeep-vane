@@ -75,7 +75,7 @@ func buildAdminRouter(pool *db.Pool, cfg config.Config, logger *zap.Logger, poll
 	llmService := llm.NewService(db.NewLLMProviderStore(db.NewLLMProviderRepository(pool)), llmProviderFactory, cfg.MasterKey, logger)
 	llmProvidersHandler := api.NewLLMProvidersHandler(llmService, logger)
 
-	authHandler := api.NewAuthHandler(users, tenantMembershipsRepo, pool, logger, cfg.SessionSecret, cfg.SecureCookies)
+	authHandler := api.NewAuthHandler(users, tenantMembershipsRepo, db.NewTwoFactorRepository(pool), pool, logger, cfg.SessionSecret, cfg.SecureCookies, cfg.MasterKey)
 	bootstrapHandler := api.NewBootstrapHandler(pool, users, tenantsRepo, tenantMembershipsRepo, logger, cfg.SessionSecret, cfg.SecureCookies)
 	signupHandler := api.NewSignupHandler(pool, users, tenantsRepo, tenantMembershipsRepo, db.NewEmailVerificationRepository(pool), emailService, logger, cfg.DevTokenLogging, cfg.AdminBaseURL)
 	passwordResetHandler := api.NewPasswordResetHandler(users, db.NewPasswordResetRepository(pool), emailService, tenantsRepo, logger, cfg.DevTokenLogging, cfg.AdminBaseURL)
@@ -157,6 +157,11 @@ func buildAdminRouter(pool *db.Pool, cfg config.Config, logger *zap.Logger, poll
 		// guess is exactly the credential-guessing attempt that limiter
 		// exists to slow down.
 		protected.With(credentialLimiter.Middleware).Post("/api/auth/change-password", authHandler.ChangePassword)
+		// 2FA enrollment/confirm (auth-2fa-totp TOTP-01/02/03/04) - self
+		// only, same posture as change-password above: no explicit role
+		// middleware, since UserFromContext always scopes the operation to
+		// the caller's own account.
+		protected.Post("/api/auth/2fa/enroll", authHandler.Enroll)
 
 		// Admin management (admin-dashboard ADM-09) - owner only.
 		protected.With(ownerOnly).Post("/api/admins", adminsHandler.Invite)

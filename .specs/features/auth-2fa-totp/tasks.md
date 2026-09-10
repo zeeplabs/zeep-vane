@@ -228,11 +228,11 @@ T7 → T11
 - Skill: NONE
 
 **Done when**:
-- [ ] `200` with `otpauth://` URI + raw secret on first enroll
-- [ ] `409` when `enabled_at` is already set, no row mutated
-- [ ] Route registered in `internal/cli/routes.go`, wired behind `RequireAuth` only (`anyRole`, self)
-- [ ] Gate check passes on disposable Postgres: `TEST_DATABASE_URL=... go test -tags=integration ./internal/api/...`
-- [ ] Test count: ≥3 new tests
+- [x] `200` with `otpauth://` URI + raw secret on first enroll
+- [x] `409` when `enabled_at` is already set, no row mutated
+- [x] Route registered in `internal/cli/routes.go`, wired behind `RequireAuth` only (`anyRole`, self)
+- [x] Gate check passes on disposable Postgres: `TEST_DATABASE_URL=... go test -tags=integration ./internal/api/...`
+- [x] Test count: ≥3 new tests
 
 **Tests**: integration
 **Gate**: full

@@ -52,7 +52,7 @@ func newLoginRouter(t *testing.T) (http.Handler, *db.UserRepository, *db.Pool) {
 	// secureCookies=true: this file's cookie assertions expect the default,
 	// Secure-only behavior. The off case is covered separately by
 	// TestLogin_SecureCookiesDisabled_CookieNotSecure.
-	handler := NewAuthHandler(repo, memberships, pool, zap.NewNop(), testSessionSecret, true)
+	handler := NewAuthHandler(repo, memberships, db.NewTwoFactorRepository(pool), pool, zap.NewNop(), testSessionSecret, true, testMasterKey)
 
 	r := chi.NewRouter()
 	r.Post("/api/auth/login", handler.Login)
@@ -231,7 +231,7 @@ func TestLogin_SecureCookiesDisabled_CookieNotSecure(t *testing.T) {
 
 	repo := db.NewUserRepository(pool)
 	memberships := db.NewTenantMembershipRepository(pool)
-	handler := NewAuthHandler(repo, memberships, pool, zap.NewNop(), testSessionSecret, false)
+	handler := NewAuthHandler(repo, memberships, db.NewTwoFactorRepository(pool), pool, zap.NewNop(), testSessionSecret, false, testMasterKey)
 	r := chi.NewRouter()
 	r.Post("/api/auth/login", handler.Login)
 
@@ -290,7 +290,7 @@ func newMeRouter(t *testing.T) (http.Handler, *db.UserRepository, *db.Pool) {
 
 	repo := db.NewUserRepository(pool)
 	memberships := db.NewTenantMembershipRepository(pool)
-	handler := NewAuthHandler(repo, memberships, pool, zap.NewNop(), testSessionSecret, true)
+	handler := NewAuthHandler(repo, memberships, db.NewTwoFactorRepository(pool), pool, zap.NewNop(), testSessionSecret, true, testMasterKey)
 
 	r := chi.NewRouter()
 	r.Group(func(protected chi.Router) {
@@ -387,7 +387,7 @@ func newLogoutRouter(t *testing.T) (http.Handler, *db.UserRepository, *db.Pool) 
 
 	repo := db.NewUserRepository(pool)
 	memberships := db.NewTenantMembershipRepository(pool)
-	handler := NewAuthHandler(repo, memberships, pool, zap.NewNop(), testSessionSecret, true)
+	handler := NewAuthHandler(repo, memberships, db.NewTwoFactorRepository(pool), pool, zap.NewNop(), testSessionSecret, true, testMasterKey)
 
 	r := chi.NewRouter()
 	protected := chi.NewRouter()

@@ -10,6 +10,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/zeeplabs/zeep-vane/internal/auth"
+	"github.com/zeeplabs/zeep-vane/internal/crypto"
 	"github.com/zeeplabs/zeep-vane/internal/db"
 )
 
@@ -28,27 +29,44 @@ type authMembershipLister interface {
 	ListForUser(ctx context.Context, userID string) ([]db.TenantMembership, error)
 }
 
+// twoFactorStore is the subset of *db.TwoFactorRepository AuthHandler
+// depends on for TOTP secret and recovery-code lifecycle (auth-2fa-totp).
+type twoFactorStore interface {
+	CreatePendingSecret(ctx context.Context, userID string, encryptedSecret []byte) error
+	GetSecret(ctx context.Context, userID string) (*db.TwoFactorSecret, error)
+}
+
+// twoFactorIssuer is the otpauth:// issuer name shown in an authenticator
+// app's entry for an enrolled account. Not configurable - this codebase has
+// no instance-name/branding config field to source it from (auth-2fa-totp
+// design.md scope).
+const twoFactorIssuer = "Vane"
+
 // AuthHandler serves the auth-related admin routes.
 type AuthHandler struct {
 	users         userGetter
 	memberships   authMembershipLister
+	twoFactor     twoFactorStore
 	pool          *db.Pool
 	logger        *zap.Logger
 	sessionSecret string
 	secureCookies bool
+	masterKey     string
 }
 
-// NewAuthHandler builds an AuthHandler backed by users and memberships.
-// pool backs Login's own tenant-membership lookup (a public route, ahead of
-// the tenant-context middleware - it manages its own short-lived
-// transaction with app.user_id set to resolve which tenant(s) the
-// authenticating user belongs to). sessionSecret signs issued session
+// NewAuthHandler builds an AuthHandler backed by users, memberships, and
+// twoFactor. pool backs Login's own tenant-membership lookup (a public
+// route, ahead of the tenant-context middleware - it manages its own
+// short-lived transaction with app.user_id set to resolve which tenant(s)
+// the authenticating user belongs to). sessionSecret signs issued session
 // tokens (see internal/auth.IssueSession). secureCookies controls the
 // vane_session cookie's Secure attribute (H9) - false only for an operator
 // who has explicitly accepted plaintext-network session risk via
-// VANE_SECURE_COOKIES=false.
-func NewAuthHandler(users userGetter, memberships authMembershipLister, pool *db.Pool, logger *zap.Logger, sessionSecret string, secureCookies bool) *AuthHandler {
-	return &AuthHandler{users: users, memberships: memberships, pool: pool, logger: logger, sessionSecret: sessionSecret, secureCookies: secureCookies}
+// VANE_SECURE_COOKIES=false. masterKey encrypts/decrypts TOTP secrets at
+// rest (internal/crypto.Encrypt, same primitive email_provider_repository.go
+// uses for provider API keys).
+func NewAuthHandler(users userGetter, memberships authMembershipLister, twoFactor twoFactorStore, pool *db.Pool, logger *zap.Logger, sessionSecret string, secureCookies bool, masterKey string) *AuthHandler {
+	return &AuthHandler{users: users, memberships: memberships, twoFactor: twoFactor, pool: pool, logger: logger, sessionSecret: sessionSecret, secureCookies: secureCookies, masterKey: masterKey}
 }
 
 type loginRequest struct {
@@ -353,6 +371,62 @@ func (h *AuthHandler) ChangePassword(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write([]byte(`{"status":"ok"}`))
+}
+
+const alreadyEnrolledBody = `{"error":"two-factor authentication is already enabled"}`
+
+type enrollResponse struct {
+	Secret     string `json:"secret"`
+	OtpauthURI string `json:"otpauth_uri"`
+}
+
+// Enroll handles POST /api/auth/2fa/enroll, generating a new TOTP secret for
+// the authenticated user and storing it encrypted with enabled_at NULL
+// (auth-2fa-totp TOTP-01). It responds 409 if the user already has 2FA
+// enabled (TOTP-04) - an enrollment cannot silently replace an active one;
+// the user must call Disable2FA first. Calling it again before confirming
+// simply overwrites the still-pending secret (spec.md Edge Cases).
+func (h *AuthHandler) Enroll(w http.ResponseWriter, r *http.Request) {
+	user, ok := UserFromContext(r.Context())
+	if !ok {
+		writeUnauthorized(w)
+		return
+	}
+
+	existing, err := h.twoFactor.GetSecret(r.Context(), user.ID)
+	if err != nil && !errors.Is(err, db.ErrNotFound) {
+		h.logger.Error("auth: failed to look up existing 2FA secret", zap.Error(err))
+		writeInternalError(w)
+		return
+	}
+	if existing != nil && existing.EnabledAt != nil {
+		writeAdminError(w, http.StatusConflict, alreadyEnrolledBody)
+		return
+	}
+
+	secret, otpauthURI, err := auth.GenerateTOTPSecret(user.Email, twoFactorIssuer)
+	if err != nil {
+		h.logger.Error("auth: failed to generate TOTP secret", zap.Error(err))
+		writeInternalError(w)
+		return
+	}
+
+	encryptedSecret, err := crypto.Encrypt(h.masterKey, []byte(secret))
+	if err != nil {
+		h.logger.Error("auth: failed to encrypt TOTP secret", zap.Error(err))
+		writeInternalError(w)
+		return
+	}
+
+	if err := h.twoFactor.CreatePendingSecret(r.Context(), user.ID, encryptedSecret); err != nil {
+		h.logger.Error("auth: failed to store pending 2FA secret", zap.Error(err))
+		writeInternalError(w)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(enrollResponse{Secret: secret, OtpauthURI: otpauthURI})
 }
 
 // Logout expires the vane_session cookie set at login. It requires no
