@@ -392,18 +392,18 @@ T16 → T19
 - Skill: NONE
 
 **Done when**:
-- [ ] Login attempt with `email_verified_at IS NULL` is rejected with a message indicating verification is required
-- [ ] Valid, unexpired verify token marks `email_verified_at` and subsequent login succeeds
-- [ ] Expired/invalid verify token is rejected, `email_verified_at` unchanged
-- [ ] Gate check passes: `TEST_DATABASE_URL=... go test -tags=integration ./internal/api/...`
-- [ ] Test count: 4+ new tests pass
+- [x] Login attempt with `email_verified_at IS NULL` is rejected with a message indicating verification is required
+- [x] Valid, unexpired verify token marks `email_verified_at` and subsequent login succeeds
+- [x] Expired/invalid verify token is rejected, `email_verified_at` unchanged
+- [x] Gate check passes: `TEST_DATABASE_URL=... go test -tags=integration ./internal/api/...`
+- [x] Test count: 4 new tests pass (`TestSignupVerify_ValidToken_...`, `TestSignupVerify_ExpiredToken_401...`, `TestSignupVerify_InvalidToken_401`, `TestLogin_UnverifiedEmail_403...`)
 
 **Tests**: integration
 **Gate**: full
 
 **Commit**: `feat(api): add email verification gate on login`
 
----
+**Implementation notes:** `UserRepository.MarkEmailVerified` and `EmailVerificationRepository.ClaimForUse` (already defined in T9's commit, unused until now) are wired in here. The login gate lives in `internal/api/auth_handler.go` (`Login`), one file outside this task's literal `Where` - unavoidable, since `signup_handler.go` doesn't own the login path. Checked only after `auth.VerifyPassword` succeeds, so it never becomes a second account-enumeration oracle alongside `genericLoginErrorBody`. Collateral fix: `createTestAdmin` and `TestLogin_ZeroMemberships_403NoSessionIssued`'s inline user (`internal/api/auth_handler_test.go`) built users with no `EmailVerifiedAt`, which the new gate now rejects before those tests ever reach the behavior they're actually testing (session issuance / zero-membership) - both now set `EmailVerifiedAt` explicitly.
 
 ### T11: Resend verification email
 

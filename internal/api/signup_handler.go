@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/go-chi/chi/v5"
 	"go.uber.org/zap"
 
 	"github.com/zeeplabs/zeep-vane/internal/auth"
@@ -26,6 +27,7 @@ const signupVerificationTTL = 1 * time.Hour
 type signupUserStore interface {
 	GetByEmail(ctx context.Context, email string) (*db.User, error)
 	Create(ctx context.Context, user *db.User) error
+	MarkEmailVerified(ctx context.Context, id string) error
 }
 
 // signupTenantCreator is the subset of *db.TenantRepository SignupHandler
@@ -45,6 +47,7 @@ type signupMembershipCreator interface {
 // SignupHandler depends on.
 type signupVerificationStore interface {
 	Create(ctx context.Context, token *db.EmailVerificationToken) error
+	ClaimForUse(ctx context.Context, tokenHash string) (*db.EmailVerificationToken, error)
 }
 
 // SignupHandler serves the public SaaS signup routes (multi-tenancy-core,
@@ -263,4 +266,39 @@ func (h *SignupHandler) issueAndSendVerification(r *http.Request, userID, to, te
 	}
 
 	return true
+}
+
+const verifyTokenErrorBody = `{"error":"invalid or expired verification token"}`
+
+// Verify handles GET /api/signup/verify/{token} (public). A missing,
+// expired, or already-used token is rejected with 401 without altering any
+// state (T10); a valid token marks the token's user email_verified_at,
+// after which login succeeds normally.
+func (h *SignupHandler) Verify(w http.ResponseWriter, r *http.Request) {
+	token := chi.URLParam(r, "token")
+	if token == "" {
+		writeAdminError(w, http.StatusUnauthorized, verifyTokenErrorBody)
+		return
+	}
+
+	claimed, err := h.verifications.ClaimForUse(r.Context(), hashAdminInviteToken(token))
+	switch {
+	case errors.Is(err, db.ErrNotFound):
+		writeAdminError(w, http.StatusUnauthorized, verifyTokenErrorBody)
+		return
+	case err != nil:
+		h.logger.Error("signup: failed to claim verification token", zap.Error(err))
+		writeInternalError(w)
+		return
+	}
+
+	if err := h.users.MarkEmailVerified(r.Context(), claimed.UserID); err != nil {
+		h.logger.Error("signup: failed to mark email verified", zap.String("user_id", claimed.UserID), zap.Error(err))
+		writeInternalError(w)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write([]byte(`{"status":"verified"}`))
 }

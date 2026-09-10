@@ -80,7 +80,11 @@ func createTestAdmin(t *testing.T, repo *db.UserRepository, pool *db.Pool, email
 		t.Fatalf("HashPassword() returned unexpected error: %v", err)
 	}
 
-	admin := &db.User{Email: email, PasswordHash: hash}
+	// email_verified_at must be set: Login now refuses any user whose email
+	// isn't verified (T10, SaaS signup gate) - this helper is used by tests
+	// exercising a *successful* login, not the verification gate itself.
+	verifiedAt := time.Now()
+	admin := &db.User{Email: email, PasswordHash: hash, EmailVerifiedAt: &verifiedAt}
 	if err := repo.Create(ctx, admin); err != nil {
 		t.Fatalf("Create() returned unexpected error: %v", err)
 	}
@@ -476,7 +480,11 @@ func TestLogin_ZeroMemberships_403NoSessionIssued(t *testing.T) {
 	if err != nil {
 		t.Fatalf("HashPassword() returned unexpected error: %v", err)
 	}
-	admin := &db.User{Email: email, PasswordHash: hash}
+	// email_verified_at must be set so this test actually exercises the
+	// zero-membership gate rather than tripping the (separate) T10
+	// verification gate first.
+	verifiedAt := time.Now()
+	admin := &db.User{Email: email, PasswordHash: hash, EmailVerifiedAt: &verifiedAt}
 	if err := repo.Create(ctx, admin); err != nil {
 		t.Fatalf("Create() returned unexpected error: %v", err)
 	}

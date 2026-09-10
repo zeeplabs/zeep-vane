@@ -59,6 +59,13 @@ type loginRequest struct {
 // (SP-22, anti user-enumeration).
 const genericLoginErrorBody = `{"error":"invalid email or password"}`
 
+// emailNotVerifiedBody is returned when an otherwise-valid login (correct
+// email + password) belongs to a user whose email_verified_at is still
+// null - the SaaS signup flow's verification gate (T10, spec.md AC2). It is
+// checked only after the password itself is confirmed correct, so it never
+// becomes a second account-enumeration oracle on top of genericLoginErrorBody.
+const emailNotVerifiedBody = `{"error":"email not verified, check your inbox for the verification link"}`
+
 // noTenantAccessBody is returned when an otherwise-valid login belongs to a
 // user with zero tenant_memberships (e.g. removed from every tenant) -
 // spec.md's edge case: never a dashboard with nothing in it, a clear
@@ -100,6 +107,11 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 
 	if !auth.VerifyPassword(user.PasswordHash, req.Password) {
 		writeLoginError(w)
+		return
+	}
+
+	if user.EmailVerifiedAt == nil {
+		writeAdminError(w, http.StatusForbidden, emailNotVerifiedBody)
 		return
 	}
 

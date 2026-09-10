@@ -34,9 +34,12 @@ func newSignupRouterWithEmail(t *testing.T, emailSvc *email.Service) (http.Handl
 	verifications := db.NewEmailVerificationRepository(pool)
 
 	signupHandler := NewSignupHandler(pool, users, tenants, memberships, verifications, emailSvc, zap.NewNop(), false, testAdminBaseURL)
+	authHandler := NewAuthHandler(users, memberships, pool, zap.NewNop(), testSessionSecret, true)
 
 	r := chi.NewRouter()
 	r.Post("/api/signup", signupHandler.Signup)
+	r.Get("/api/signup/verify/{token}", signupHandler.Verify)
+	r.Post("/api/auth/login", authHandler.Login)
 
 	return r, pool, users
 }
@@ -88,6 +91,31 @@ func postSignup(t *testing.T, r http.Handler, email, password, tenantName string
 	rec := httptest.NewRecorder()
 	r.ServeHTTP(rec, req)
 	return rec
+}
+
+func getVerify(t *testing.T, r http.Handler, token string) *httptest.ResponseRecorder {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodGet, "/api/signup/verify/"+token, nil)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+	return rec
+}
+
+// extractVerifyToken pulls the raw verification token out of a VerifyURL
+// embedded in a sent email's TextBody ("...://.../verify-email/<token>").
+func extractVerifyToken(t *testing.T, textBody string) string {
+	t.Helper()
+	const marker = "/verify-email/"
+	idx := strings.Index(textBody, marker)
+	if idx < 0 {
+		t.Fatalf("email TextBody = %q, want it to contain %q", textBody, marker)
+	}
+	rest := textBody[idx+len(marker):]
+	end := strings.IndexAny(rest, " \n\r\t")
+	if end < 0 {
+		end = len(rest)
+	}
+	return rest[:end]
 }
 
 // --- T9: POST /api/signup ---
@@ -241,5 +269,107 @@ func TestSignup_WeakPassword_422_NoUserCreated(t *testing.T) {
 	}
 	if _, err := users.GetByEmail(context.Background(), email); err == nil {
 		t.Error("GetByEmail() found a user, want none created for a weak-password-rejected signup")
+	}
+}
+
+// --- T10: email verification gates login ---
+
+func TestSignupVerify_ValidToken_200_MarksVerifiedAllowsLogin(t *testing.T) {
+	r, pool, users, provider := newSignupRouter(t)
+	email := uniqueTestEmail(t)
+	cleanupSignupTestData(t, pool, email)
+
+	signupRec := postSignup(t, r, email, "correct-horse-battery-staple", "Acme Inc")
+	if signupRec.Code != http.StatusCreated {
+		t.Fatalf("signup status = %d, want %d", signupRec.Code, http.StatusCreated)
+	}
+	rawToken := extractVerifyToken(t, provider.lastMessage.TextBody)
+
+	verifyRec := getVerify(t, r, rawToken)
+	if verifyRec.Code != http.StatusOK {
+		t.Fatalf("verify status = %d, want %d, body = %s", verifyRec.Code, http.StatusOK, verifyRec.Body.String())
+	}
+
+	created, err := users.GetByEmail(context.Background(), email)
+	if err != nil {
+		t.Fatalf("GetByEmail() returned unexpected error: %v", err)
+	}
+	if created.EmailVerifiedAt == nil {
+		t.Fatal("EmailVerifiedAt = nil after verify, want a timestamp")
+	}
+
+	loginRec := postLogin(t, r, email, "correct-horse-battery-staple")
+	if loginRec.Code != http.StatusOK {
+		t.Errorf("login after verification status = %d, want %d, body = %s", loginRec.Code, http.StatusOK, loginRec.Body.String())
+	}
+}
+
+func TestSignupVerify_ExpiredToken_401_NoChange(t *testing.T) {
+	r, pool, users, _ := newSignupRouter(t)
+	email := uniqueTestEmail(t)
+	cleanupSignupTestData(t, pool, email)
+
+	user := &db.User{Email: email, PasswordHash: "hash"}
+	if err := users.Create(context.Background(), user); err != nil {
+		t.Fatalf("users.Create() returned unexpected error: %v", err)
+	}
+
+	verifications := db.NewEmailVerificationRepository(pool)
+	rawToken := "expired-raw-token-" + email
+	token := &db.EmailVerificationToken{
+		UserID:    user.ID,
+		TokenHash: hashAdminInviteToken(rawToken),
+		ExpiresAt: time.Now().Add(-1 * time.Hour),
+	}
+	if err := verifications.Create(context.Background(), token); err != nil {
+		t.Fatalf("verifications.Create() returned unexpected error: %v", err)
+	}
+
+	rec := getVerify(t, r, rawToken)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusUnauthorized, rec.Body.String())
+	}
+	if rec.Body.String() != verifyTokenErrorBody {
+		t.Errorf("body = %q, want %q", rec.Body.String(), verifyTokenErrorBody)
+	}
+
+	got, err := users.GetByEmail(context.Background(), email)
+	if err != nil {
+		t.Fatalf("GetByEmail() returned unexpected error: %v", err)
+	}
+	if got.EmailVerifiedAt != nil {
+		t.Errorf("EmailVerifiedAt = %v after rejected expired token, want nil (no state change)", got.EmailVerifiedAt)
+	}
+}
+
+func TestSignupVerify_InvalidToken_401(t *testing.T) {
+	r, _, _, _ := newSignupRouter(t)
+
+	rec := getVerify(t, r, "not-a-real-token")
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Errorf("status = %d, want %d, body = %s", rec.Code, http.StatusUnauthorized, rec.Body.String())
+	}
+	if rec.Body.String() != verifyTokenErrorBody {
+		t.Errorf("body = %q, want %q", rec.Body.String(), verifyTokenErrorBody)
+	}
+}
+
+func TestLogin_UnverifiedEmail_403_ClearMessage(t *testing.T) {
+	r, pool, _, _ := newSignupRouter(t)
+	email := uniqueTestEmail(t)
+	cleanupSignupTestData(t, pool, email)
+
+	signupRec := postSignup(t, r, email, "correct-horse-battery-staple", "Acme Inc")
+	if signupRec.Code != http.StatusCreated {
+		t.Fatalf("signup status = %d, want %d", signupRec.Code, http.StatusCreated)
+	}
+
+	loginRec := postLogin(t, r, email, "correct-horse-battery-staple")
+	if loginRec.Code != http.StatusForbidden {
+		t.Fatalf("login status = %d, want %d, body = %s", loginRec.Code, http.StatusForbidden, loginRec.Body.String())
+	}
+	if loginRec.Body.String() != emailNotVerifiedBody {
+		t.Errorf("body = %q, want %q", loginRec.Body.String(), emailNotVerifiedBody)
 	}
 }

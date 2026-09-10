@@ -150,6 +150,24 @@ func (r *UserRepository) RevokeSessions(ctx context.Context, id string) error {
 	return nil
 }
 
+// MarkEmailVerified sets email_verified_at to now for the user with the
+// given ID, returning ErrNotFound if no such user exists. Used by the SaaS
+// signup verification flow (T10) once a valid verification token has been
+// claimed.
+func (r *UserRepository) MarkEmailVerified(ctx context.Context, id string) error {
+	tag, err := r.pool.Exec(ctx,
+		"UPDATE users SET email_verified_at = now() WHERE id = $1", id,
+	)
+	if err != nil {
+		return fmt.Errorf("db: failed to mark user email verified: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+
+	return nil
+}
+
 // Delete removes the user with the given ID, returning ErrNotFound if no
 // such user exists. Their tenant_memberships cascade with them.
 func (r *UserRepository) Delete(ctx context.Context, id string) error {

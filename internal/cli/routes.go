@@ -110,9 +110,10 @@ func buildAdminRouter(pool *db.Pool, cfg config.Config, logger *zap.Logger, poll
 	r.With(credentialLimiter.Middleware).Post("/api/auth/password-reset/confirm", passwordResetHandler.Confirm)
 	r.With(credentialLimiter.Middleware).Post("/api/admins/invite/{token}/accept", adminsHandler.AcceptInvite)
 
-	// Public SaaS signup (T9) - rate limiting wired in T12; verification
-	// (T10) and resend (T11) routes follow in their own tasks.
+	// Public SaaS signup (T9) - rate limiting wired in T12; resend (T11)
+	// route follows in its own task.
 	r.Post("/api/signup", signupHandler.Signup)
+	r.Get("/api/signup/verify/{token}", signupHandler.Verify)
 
 	// First-run bootstrap (SHD-14/SHD-15) - public and unauthenticated by
 	// necessity: no authenticated caller can exist before the very first
