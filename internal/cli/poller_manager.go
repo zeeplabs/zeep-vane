@@ -2,6 +2,9 @@ package cli
 
 import (
 	"context"
+	"net/url"
+	"os"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -19,8 +22,43 @@ import (
 // test-only keys (727100001-727100003) - see internal/pglock's own doc
 // comment for the full namespace rationale - so a production poller lock
 // can never collide with (and deadlock against) a test-only one sharing
-// the same database.
-const pollerLeaderLockKey int64 = 727200001
+// the same database. Exported as db.PollerLeaderLockKey so
+// PollerLeadershipRepository (poller-status-real-state, POLLST-01) can
+// query pg_locks for the same key without an import cycle; kept as a local
+// alias here so this file's existing references don't all need rewriting.
+const pollerLeaderLockKey = db.PollerLeaderLockKey
+
+// replicaApplicationName identifies this replica in
+// pg_stat_activity.application_name (poller-status-real-state POLLST-01/03),
+// sourced from HOSTNAME - which Kubernetes sets to the pod name - falling
+// back to a fixed placeholder outside Kubernetes so the admin UI never
+// renders a blank replica name.
+func replicaApplicationName() string {
+	if h := os.Getenv("HOSTNAME"); h != "" {
+		return h
+	}
+	return "unknown"
+}
+
+// dsnWithApplicationName appends application_name=name to dsn, so the
+// connection this DSN opens is identifiable in
+// pg_stat_activity.application_name. Falls back to raw query-string
+// concatenation when dsn doesn't parse as a URL (e.g. a keyword/value DSN) -
+// Postgres accepts application_name as either a URL query parameter or a
+// keyword/value pair, so appending it as "key=value" text works either way.
+func dsnWithApplicationName(dsn, name string) string {
+	if u, err := url.Parse(dsn); err == nil && u.Scheme != "" {
+		q := u.Query()
+		q.Set("application_name", name)
+		u.RawQuery = q.Encode()
+		return u.String()
+	}
+	sep := " "
+	if strings.HasSuffix(strings.TrimSpace(dsn), "=") || dsn == "" {
+		sep = ""
+	}
+	return dsn + sep + "application_name='" + name + "'"
+}
 
 // defaultLeaderRetryInterval controls how often a non-leader replica
 // retries acquiring the poller leadership lock.
@@ -116,7 +154,7 @@ func (m *PollerManager) RunLeaderLoop(ctx context.Context) {
 			return
 		}
 
-		handle, ok, err := pglock.TryAcquire(ctx, m.dsn, pollerLeaderLockKey)
+		handle, ok, err := pglock.TryAcquire(ctx, dsnWithApplicationName(m.dsn, replicaApplicationName()), pollerLeaderLockKey)
 		if err != nil {
 			m.logger.Warn("poller leader election: failed to attempt lock acquisition, retrying", zap.Error(err))
 			if !sleepOrDone(ctx, m.leaderRetryInterval) {

@@ -4,6 +4,7 @@ package cli
 
 import (
 	"context"
+	"net/url"
 	"testing"
 	"time"
 
@@ -303,6 +304,71 @@ func TestPollerManager_RunLeaderLoop_SingleReplica_AcquiresAndPolls(t *testing.T
 
 	if !waitUntil(3*time.Second, func() bool { return isLeading(mgr) }) {
 		t.Fatal("single-replica RunLeaderLoop did not start polling within 3s, want immediate acquisition")
+	}
+}
+
+// TestPollerManager_RunLeaderLoop_SetsApplicationNameFromHostname covers
+// poller-status-real-state's POLLST-01: the connection RunLeaderLoop uses to
+// hold the leadership lock carries this replica's identity in
+// pg_stat_activity.application_name, sourced from HOSTNAME, so
+// PollerLeadershipRepository.CurrentLeader can report it.
+func TestPollerManager_RunLeaderLoop_SetsApplicationNameFromHostname(t *testing.T) {
+	pool := newServeTestPool(t)
+	dsn := testDatabaseURL(t)
+	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), "DELETE FROM integrations WHERE provider = 'datadog'") })
+	storeTestDatadogIntegration(t, pool)
+	t.Setenv("HOSTNAME", "test-replica-hostname-xyz")
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	mgr := leaderTestPollerManager(t, ctx, pool, dsn)
+	go mgr.RunLeaderLoop(ctx)
+	t.Cleanup(mgr.Stop)
+
+	if !waitUntil(3*time.Second, func() bool { return isLeading(mgr) }) {
+		t.Fatal("RunLeaderLoop did not acquire leadership within 3s")
+	}
+
+	leadership := db.NewPollerLeadershipRepository(pool)
+	leader, err := leadership.CurrentLeader(context.Background())
+	if err != nil {
+		t.Fatalf("CurrentLeader() returned unexpected error: %v", err)
+	}
+	if leader == nil {
+		t.Fatal("CurrentLeader() = nil, want the leading replica")
+	}
+	if leader.ApplicationName != "test-replica-hostname-xyz" {
+		t.Errorf("ApplicationName = %q, want %q", leader.ApplicationName, "test-replica-hostname-xyz")
+	}
+}
+
+// TestReplicaApplicationName_HostnameUnset_FallsBackToPlaceholder covers the
+// edge case: outside Kubernetes (HOSTNAME unset), application_name falls
+// back to a fixed placeholder rather than an empty string.
+func TestReplicaApplicationName_HostnameUnset_FallsBackToPlaceholder(t *testing.T) {
+	t.Setenv("HOSTNAME", "")
+
+	if got := replicaApplicationName(); got != "unknown" {
+		t.Errorf("replicaApplicationName() = %q, want %q", got, "unknown")
+	}
+}
+
+// TestDSNWithApplicationName_URLDSN_AppendsAsQueryParam covers the common
+// case: a URL-style DSN gets application_name set as a query parameter,
+// preserving existing parameters.
+func TestDSNWithApplicationName_URLDSN_AppendsAsQueryParam(t *testing.T) {
+	got := dsnWithApplicationName("postgres://user:pass@host:5432/db?sslmode=disable", "my-replica")
+
+	u, err := url.Parse(got)
+	if err != nil {
+		t.Fatalf("url.Parse(%q) returned unexpected error: %v", got, err)
+	}
+	if u.Query().Get("application_name") != "my-replica" {
+		t.Errorf("application_name = %q, want %q (got DSN %q)", u.Query().Get("application_name"), "my-replica", got)
+	}
+	if u.Query().Get("sslmode") != "disable" {
+		t.Errorf("sslmode = %q, want %q preserved (got DSN %q)", u.Query().Get("sslmode"), "disable", got)
 	}
 }
 
