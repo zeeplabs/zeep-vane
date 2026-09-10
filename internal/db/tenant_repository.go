@@ -320,6 +320,51 @@ func (r *TenantRepository) Active(ctx context.Context) (*Tenant, error) {
 	return &tenant, nil
 }
 
+// List returns every active tenant, oldest first - the poller's own
+// enumeration for tenant-by-tenant iteration (T15, TENANT-04), never a
+// query gated behind a particular session's own app.tenant_id (there is no
+// single active tenant when the caller's job is to iterate all of them).
+//
+// Known limitation, not silently papered over: tenants' RLS policy (0024)
+// is keyed on tenants.id = app.tenant_id, so under a real non-superuser
+// application role (not this project's dev/self-hosted docker-compose
+// default, which connects as a Postgres superuser and so bypasses RLS
+// entirely - see internal/db/rls_test.go's note) this query returns zero
+// rows. This is the same bootstrap gap AD-023 closed for the anonymous
+// public-status-page read path (0025_public_status_page_read); closing it
+// here too - a permissive read policy for tenant enumeration when
+// app.tenant_id is unset - is a real RLS-policy decision (AGENTS.md §7)
+// left for a dedicated follow-up rather than folded into this task.
+func (r *TenantRepository) List(ctx context.Context) ([]Tenant, error) {
+	rows, err := r.pool.Query(ctx,
+		`SELECT id, name, slug, plan, status, contact_email, logo_content_type,
+		        legal_name, tax_id, tax_id_type, billing_address, locale,
+		        primary_color, secondary_color, created_at
+		 FROM tenants WHERE status = 'active' ORDER BY created_at ASC`)
+	if err != nil {
+		return nil, fmt.Errorf("db: failed to list tenants: %w", err)
+	}
+	defer rows.Close()
+
+	var tenants []Tenant
+	for rows.Next() {
+		var tenant Tenant
+		if err := rows.Scan(
+			&tenant.ID, &tenant.Name, &tenant.Slug, &tenant.Plan, &tenant.Status, &tenant.ContactEmail,
+			&tenant.LogoContentType, &tenant.LegalName, &tenant.TaxID, &tenant.TaxIDType, &tenant.BillingAddress,
+			&tenant.Locale, &tenant.PrimaryColor, &tenant.SecondaryColor, &tenant.CreatedAt,
+		); err != nil {
+			return nil, fmt.Errorf("db: failed to scan tenant: %w", err)
+		}
+		tenants = append(tenants, tenant)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("db: failed to list tenants: %w", err)
+	}
+
+	return tenants, nil
+}
+
 // ActiveLogo returns the active tenant's stored logo bytes and content
 // type. found is false when no logo has ever been uploaded (logo_data is
 // NULL) or no tenant resolves at all - the caller must respond 404 rather

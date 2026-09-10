@@ -535,15 +535,21 @@ T16 → T19
 - Skill: NONE
 
 **Done when**:
-- [ ] Poller resolves the list of tenants and processes one at a time, each with its own `app.tenant_id` set
-- [ ] A tenant with zero configured integrations is skipped without error
-- [ ] Gate check passes: `go test ./internal/poller/...`
-- [ ] Test count: existing poller test suite still passes + 2 new tenant-iteration cases
+- [x] Poller resolves the list of tenants and processes one at a time, each with its own `app.tenant_id` set
+- [x] A tenant with zero configured integrations is skipped without error
+- [x] Gate check passes: `go test ./internal/poller/...`
+- [x] Test count: existing poller test suite (26) still passes + 5 new tenant-iteration cases (`TestPollCycle_TenantIterationEnabled_ProcessesEachTenantInItsOwnContext`, `TestPollCycle_TenantWithZeroServices_SkippedWithoutError`, `TestPollCycle_TenantListError_NoTenantProcessed`, `TestPollCycle_OneTenantBeginTxFails_OtherTenantsStillProcessed`, `TestPollCycle_TenantIterationDisabled_FallsBackToAmbientPollOnce`)
 
 **Tests**: unit
 **Gate**: quick
 
 **Commit**: `feat(poller): iterate tenants explicitly instead of single-install scan`
+
+**Implementation notes:** `Poller` gained optional `tenants`/`tenantTx` fields, set via a new `EnableTenantIteration(tenants tenantLister, tenantTx TenantTxFunc)` method - `NewPoller`'s existing signature and every current caller (production `internal/cli/serve.go`, both integration test files) are untouched and behave exactly as before, since `Run`'s new `pollCycle` falls back to the original single-context `pollOnce` whenever tenant iteration isn't enabled. `TenantTxFunc` is a function type (`func(ctx, tenantID) (tenantCtx, commit, rollback, err)`), not a direct dependency on `*db.Pool`/`pgx.Tx` - this is what makes `pollCycle` unit-testable with a fake that never touches a database, at the cost of not being pre-wired to `db.Pool.BeginTenantTx` anywhere yet. Added `TenantRepository.List` (`internal/db/tenant_repository.go`) as the concrete `tenantLister` this would use - it filters `WHERE status = 'active'` but, like `TenantRepository.Active`'s existing fallback, returns zero rows under a real non-superuser RLS role, since `tenants`' policy is keyed on `id = app.tenant_id` and no permissive read-when-unset policy exists for it yet (the same bootstrap gap AD-023 closed for `status_pages`/`domains`, not yet closed for `tenants` itself - flagged as a known follow-up, not silently patched here). **Deferred, not done:** wiring `EnableTenantIteration` into `internal/cli/serve.go`'s `newPollerFromStoredIntegration` is out of this task's `Where` (`internal/poller/poller.go` only) and was intentionally left alone - the Datadog `integrations` table itself is not tenant-scoped in this feature's own schema list (spec.md AC1 never lists it), so wiring real per-tenant polling into production would be incomplete without that separate fix. This mirrors the "capability now, wiring later" precedent already set by T4/T5.
+
+---
+
+**Phase 6 completion gate (end of Phase 6 - T15; batch T9-T15 complete):** Build tier run in full - Quick (`go build ./... && go vet ./... && gofmt -l` + `go test ./...`) clean; Full (`TEST_DATABASE_URL=... go test -tags=integration -p 1 ./internal/db/... ./internal/api/... ./internal/cli/... ./internal/poller/...` against a disposable Postgres, restarted fresh mid-batch after a known pre-existing flake from a reused container - see T2/T8's notes on the same class of issue - reproduced identically before any change in this batch and confirmed clean on a fresh container) all green; Frontend (`npx tsc -b --noEmit && npm run test`, from `web/`) clean, 277 tests. No deferred failures.
 
 ---
 

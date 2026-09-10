@@ -63,6 +63,25 @@ type serviceLister interface {
 	List(ctx context.Context) ([]db.Service, error)
 }
 
+// tenantLister is the subset of *db.TenantRepository the poller depends on
+// to discover which tenants to iterate (T15, TENANT-04) - never a
+// BYPASSRLS role, one tenant's app.tenant_id set at a time via TenantTxFunc.
+type tenantLister interface {
+	List(ctx context.Context) ([]db.Tenant, error)
+}
+
+// TenantTxFunc opens a transaction scoped to tenantID's RLS session
+// (app.tenant_id) and returns a context carrying it - every repository
+// call issued against the returned context runs on that same transaction,
+// so RLS's session settings apply (see db.WithTenantTx) - plus functions to
+// commit or roll it back. The poller depends on this function type rather
+// than *db.Pool directly (TENANT-04: iterate tenants one at a time via a
+// real transaction per tenant, never a role that bypasses RLS), which also
+// lets this package's own unit tests fake tenant iteration without a
+// database connection. Not wired into production (internal/cli/serve.go)
+// in this batch - see T15's task notes for why.
+type TenantTxFunc func(ctx context.Context, tenantID string) (tenantCtx context.Context, commit func(context.Context) error, rollback func(context.Context), err error)
+
 // serviceStatusUpdater is the subset of *db.ServiceRepository the poller
 // depends on to persist a service's newly observed status.
 type serviceStatusUpdater interface {
@@ -99,6 +118,13 @@ type Poller struct {
 	interval        time.Duration
 	analyzer        *SLOAnalyzer
 	logger          *zap.Logger
+
+	// tenants/tenantTx enable per-tenant iteration (T15, TENANT-04) when
+	// both are set via EnableTenantIteration; nil (the default for every
+	// existing NewPoller caller) preserves the original single
+	// ambient-context poll cycle unchanged.
+	tenants  tenantLister
+	tenantTx TenantTxFunc
 
 	// breachStreak tracks, per service ID, how many consecutive cycles in a
 	// row Datadog has reported "breached" for that service's most recent
@@ -141,7 +167,7 @@ func (p *Poller) Run(ctx context.Context) {
 	case <-ctx.Done():
 		return
 	default:
-		p.pollOnce(ctx)
+		p.pollCycle(ctx)
 	}
 
 	ticker := time.NewTicker(p.interval)
@@ -152,7 +178,54 @@ func (p *Poller) Run(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			p.pollOnce(ctx)
+			p.pollCycle(ctx)
+		}
+	}
+}
+
+// EnableTenantIteration wires per-tenant iteration into this Poller
+// (T15, TENANT-04): once both are set, every subsequent pollCycle
+// enumerates tenants.List and processes each one's services inside its own
+// tenant-scoped transaction (tenantTx), never a single ambient/shared
+// session. Not wired into production (internal/cli/serve.go) in this
+// batch - see T15's task notes.
+func (p *Poller) EnableTenantIteration(tenants tenantLister, tenantTx TenantTxFunc) {
+	p.tenants = tenants
+	p.tenantTx = tenantTx
+}
+
+// pollCycle runs one polling cycle. When tenant iteration is enabled
+// (EnableTenantIteration), it enumerates every tenant tenants.List returns
+// and runs pollOnce once per tenant, each inside that tenant's own
+// app.tenant_id-scoped transaction (TENANT-04) - a tenant with zero
+// services configured is skipped without error, since pollOnce's own loop
+// over an empty service list is already a no-op. Otherwise it falls back
+// to the single ambient-context behavior pollOnce always had, unchanged
+// for every existing caller of NewPoller.
+func (p *Poller) pollCycle(ctx context.Context) {
+	if p.tenants == nil || p.tenantTx == nil {
+		p.pollOnce(ctx)
+		return
+	}
+
+	tenants, err := p.tenants.List(ctx)
+	if err != nil {
+		p.logger.Error("poller: failed to list tenants", zap.Error(err))
+		return
+	}
+
+	for _, tenant := range tenants {
+		tenantCtx, commit, rollback, err := p.tenantTx(ctx, tenant.ID)
+		if err != nil {
+			p.logger.Error("poller: failed to begin tenant transaction", zap.String("tenant_id", tenant.ID), zap.Error(err))
+			continue
+		}
+
+		p.pollOnce(tenantCtx)
+
+		if err := commit(tenantCtx); err != nil {
+			p.logger.Error("poller: failed to commit tenant transaction", zap.String("tenant_id", tenant.ID), zap.Error(err))
+			rollback(tenantCtx)
 		}
 	}
 }
