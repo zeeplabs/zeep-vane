@@ -78,8 +78,8 @@ type tenantLister interface {
 // than *db.Pool directly (TENANT-04: iterate tenants one at a time via a
 // real transaction per tenant, never a role that bypasses RLS), which also
 // lets this package's own unit tests fake tenant iteration without a
-// database connection. Not wired into production (internal/cli/serve.go)
-// in this batch - see T15's task notes for why.
+// database connection. Production wires it to Pool.BeginTenantTx via
+// cli.poolTenantTx (internal/cli/serve.go).
 type TenantTxFunc func(ctx context.Context, tenantID string) (tenantCtx context.Context, commit func(context.Context) error, rollback func(context.Context), err error)
 
 // serviceStatusUpdater is the subset of *db.ServiceRepository the poller
@@ -187,11 +187,21 @@ func (p *Poller) Run(ctx context.Context) {
 // (T15, TENANT-04): once both are set, every subsequent pollCycle
 // enumerates tenants.List and processes each one's services inside its own
 // tenant-scoped transaction (tenantTx), never a single ambient/shared
-// session. Not wired into production (internal/cli/serve.go) in this
-// batch - see T15's task notes.
+// session. Production calls this from newPollerFromStoredIntegration
+// (internal/cli/serve.go) with db.SystemTenantLister and cli.poolTenantTx.
 func (p *Poller) EnableTenantIteration(tenants tenantLister, tenantTx TenantTxFunc) {
 	p.tenants = tenants
 	p.tenantTx = tenantTx
+}
+
+// TenantIterationEnabled reports whether EnableTenantIteration has wired
+// both a tenant lister and a tenant transaction opener, i.e. whether
+// pollCycle iterates tenants instead of falling back to the single
+// ambient-context poll. Exported so the production construction path
+// (internal/cli) can be asserted on from its own package's tests rather
+// than only being verifiable by reading the code.
+func (p *Poller) TenantIterationEnabled() bool {
+	return p.tenants != nil && p.tenantTx != nil
 }
 
 // pollCycle runs one polling cycle. When tenant iteration is enabled

@@ -267,5 +267,35 @@ func newPollerFromStoredIntegration(ctx context.Context, pool *db.Pool, cfg conf
 	llmSvc := llm.NewService(db.NewLLMProviderStore(db.NewLLMProviderRepository(pool)), llmProviderFactory, cfg.MasterKey, logger)
 	analyzer := poller.NewSLOAnalyzer(incidents, services, llmSvc, poller.AnalysisTimeout, logger)
 
-	return poller.NewPoller(services, services, intervals, integrations, client, interval, analyzer, logger), true, nil
+	p = poller.NewPoller(services, services, intervals, integrations, client, interval, analyzer, logger)
+
+	// TENANT-04: every production poll cycle iterates tenants explicitly,
+	// one app.tenant_id-scoped transaction at a time, instead of the old
+	// single-install ambient scan that would have polled whichever rows a
+	// context-less session happened to see. The tenant list itself comes
+	// from db.SystemTenantLister, the only caller allowed to read tenants
+	// without a tenant of its own (AD-024) - never a BYPASSRLS role.
+	p.EnableTenantIteration(db.NewSystemTenantLister(pool), poolTenantTx(pool))
+
+	return p, true, nil
+}
+
+// poolTenantTx adapts Pool.BeginTenantTx - the same helper the HTTP
+// tenant-context middleware uses - to the poller's TenantTxFunc. The
+// poller acts as no particular user, so app.user_id is left unset ("");
+// app.tenant_id is the tenant being polled. Nothing here touches
+// app.is_system: that flag belongs to the enumeration step alone (AD-024),
+// and the per-tenant work below runs under ordinary tenant scoping like
+// every other request.
+func poolTenantTx(pool *db.Pool) poller.TenantTxFunc {
+	return func(ctx context.Context, tenantID string) (context.Context, func(context.Context) error, func(context.Context), error) {
+		tx, err := pool.BeginTenantTx(ctx, "", tenantID)
+		if err != nil {
+			return nil, nil, nil, err
+		}
+		return db.WithTenantTx(ctx, tx),
+			tx.Commit,
+			func(rollbackCtx context.Context) { _ = tx.Rollback(rollbackCtx) },
+			nil
+	}
 }
