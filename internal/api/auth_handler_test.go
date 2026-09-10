@@ -1303,3 +1303,166 @@ func TestVerifyTwoFactor_TwoFactorDisabledSinceChallengeIssued_401(t *testing.T)
 		t.Error("vane_session cookie set despite 2FA having been disabled since the challenge was issued, want none")
 	}
 }
+
+// enableTwoFactorWithRecoveryCodesForUser is enableTwoFactorForUser, also
+// generating and storing a batch of recovery codes the same way Confirm2FA
+// does, returning their plaintext values for a T10 test to consume.
+func enableTwoFactorWithRecoveryCodesForUser(t *testing.T, twoFactor *db.TwoFactorRepository, userID, email string) (secret string, recoveryCodes []string) {
+	t.Helper()
+	secret = enableTwoFactorForUser(t, twoFactor, userID, email)
+
+	plainCodes := make([]string, recoveryCodeCount)
+	hashes := make([]string, recoveryCodeCount)
+	for i := range plainCodes {
+		code, err := generateRecoveryCode()
+		if err != nil {
+			t.Fatalf("generateRecoveryCode() returned unexpected error: %v", err)
+		}
+		hash, err := auth.HashPassword(code)
+		if err != nil {
+			t.Fatalf("HashPassword() returned unexpected error: %v", err)
+		}
+		plainCodes[i] = code
+		hashes[i] = hash
+	}
+	if err := twoFactor.CreateRecoveryCodes(context.Background(), userID, hashes); err != nil {
+		t.Fatalf("CreateRecoveryCodes() returned unexpected error: %v", err)
+	}
+	return secret, plainCodes
+}
+
+func postVerifyTwoFactorRecoveryCode(t *testing.T, r http.Handler, challengeToken, recoveryCode string) *httptest.ResponseRecorder {
+	t.Helper()
+	body, err := json.Marshal(verifyTwoFactorRequest{ChallengeToken: challengeToken, RecoveryCode: recoveryCode})
+	if err != nil {
+		t.Fatalf("json.Marshal() returned unexpected error: %v", err)
+	}
+	req := httptest.NewRequest(http.MethodPost, "/api/auth/login/verify-2fa", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+	return rec
+}
+
+// TestVerifyTwoFactor_ValidRecoveryCode_200IssuesSessionAndConsumesIt proves
+// TOTP-10: a valid, unused recovery code logs the user in and marks it used.
+func TestVerifyTwoFactor_ValidRecoveryCode_200IssuesSessionAndConsumesIt(t *testing.T) {
+	r, repo, twoFactor, _, pool := newLoginRouterWith2FA(t)
+	email := uniqueTestEmail(t)
+	tenantID := createTestAdmin(t, repo, pool, email, "correct-horse-battery-staple")
+	admin, err := repo.GetByEmail(context.Background(), email)
+	if err != nil {
+		t.Fatalf("GetByEmail() returned unexpected error: %v", err)
+	}
+	_, recoveryCodes := enableTwoFactorWithRecoveryCodesForUser(t, twoFactor, admin.ID, email)
+
+	loginRec := postLogin(t, r, email, "correct-horse-battery-staple")
+	var challenge loginChallengeResponse
+	if err := json.Unmarshal(loginRec.Body.Bytes(), &challenge); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+
+	rec := postVerifyTwoFactorRecoveryCode(t, r, challenge.ChallengeToken, recoveryCodes[0])
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	if vaneSessionCookie(rec) == nil {
+		t.Error("no vane_session cookie set after a valid recovery-code verify-2fa, want one")
+	}
+	var body loginResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+	if body.TenantID != tenantID {
+		t.Errorf("response tenant_id = %q, want %q", body.TenantID, tenantID)
+	}
+
+	// The code is now spent: ConsumeRecoveryCode must no longer find it, per
+	// TOTP-11 ("permanently spent - not even in a later, unrelated login
+	// attempt").
+	stillMatches, err := twoFactor.ConsumeRecoveryCode(context.Background(), admin.ID, recoveryCodes[0])
+	if err != nil {
+		t.Fatalf("ConsumeRecoveryCode() returned unexpected error: %v", err)
+	}
+	if stillMatches {
+		t.Error("ConsumeRecoveryCode() matched an already-used recovery code, want it permanently spent")
+	}
+}
+
+// TestVerifyTwoFactor_UsedRecoveryCode_401Immediately proves TOTP-11: the
+// same recovery code retried immediately (on a fresh challenge) is rejected.
+func TestVerifyTwoFactor_UsedRecoveryCode_401Immediately(t *testing.T) {
+	r, repo, twoFactor, _, pool := newLoginRouterWith2FA(t)
+	email := uniqueTestEmail(t)
+	createTestAdmin(t, repo, pool, email, "correct-horse-battery-staple")
+	admin, err := repo.GetByEmail(context.Background(), email)
+	if err != nil {
+		t.Fatalf("GetByEmail() returned unexpected error: %v", err)
+	}
+	_, recoveryCodes := enableTwoFactorWithRecoveryCodesForUser(t, twoFactor, admin.ID, email)
+
+	firstChallengeRec := postLogin(t, r, email, "correct-horse-battery-staple")
+	var firstChallenge loginChallengeResponse
+	if err := json.Unmarshal(firstChallengeRec.Body.Bytes(), &firstChallenge); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+	first := postVerifyTwoFactorRecoveryCode(t, r, firstChallenge.ChallengeToken, recoveryCodes[0])
+	if first.Code != http.StatusOK {
+		t.Fatalf("first use status = %d, want %d, body = %s", first.Code, http.StatusOK, first.Body.String())
+	}
+
+	// A fresh challenge (a real retry would log in again first) with the
+	// same, now-spent code must be rejected.
+	secondChallengeRec := postLogin(t, r, email, "correct-horse-battery-staple")
+	var secondChallenge loginChallengeResponse
+	if err := json.Unmarshal(secondChallengeRec.Body.Bytes(), &secondChallenge); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+	second := postVerifyTwoFactorRecoveryCode(t, r, secondChallenge.ChallengeToken, recoveryCodes[0])
+
+	if second.Code != http.StatusUnauthorized {
+		t.Errorf("reused recovery code status = %d, want %d, body = %s", second.Code, http.StatusUnauthorized, second.Body.String())
+	}
+	if vaneSessionCookie(second) != nil {
+		t.Error("vane_session cookie set for a reused recovery code, want none")
+	}
+}
+
+// TestVerifyTwoFactor_DifferentUnusedRecoveryCode_StillWorks proves the rest
+// of TOTP-10/11's independent test: consuming one code from the batch does
+// not affect the others.
+func TestVerifyTwoFactor_DifferentUnusedRecoveryCode_StillWorks(t *testing.T) {
+	r, repo, twoFactor, _, pool := newLoginRouterWith2FA(t)
+	email := uniqueTestEmail(t)
+	createTestAdmin(t, repo, pool, email, "correct-horse-battery-staple")
+	admin, err := repo.GetByEmail(context.Background(), email)
+	if err != nil {
+		t.Fatalf("GetByEmail() returned unexpected error: %v", err)
+	}
+	_, recoveryCodes := enableTwoFactorWithRecoveryCodesForUser(t, twoFactor, admin.ID, email)
+
+	firstChallengeRec := postLogin(t, r, email, "correct-horse-battery-staple")
+	var firstChallenge loginChallengeResponse
+	if err := json.Unmarshal(firstChallengeRec.Body.Bytes(), &firstChallenge); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+	first := postVerifyTwoFactorRecoveryCode(t, r, firstChallenge.ChallengeToken, recoveryCodes[0])
+	if first.Code != http.StatusOK {
+		t.Fatalf("first code status = %d, want %d, body = %s", first.Code, http.StatusOK, first.Body.String())
+	}
+
+	secondChallengeRec := postLogin(t, r, email, "correct-horse-battery-staple")
+	var secondChallenge loginChallengeResponse
+	if err := json.Unmarshal(secondChallengeRec.Body.Bytes(), &secondChallenge); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+	second := postVerifyTwoFactorRecoveryCode(t, r, secondChallenge.ChallengeToken, recoveryCodes[1])
+
+	if second.Code != http.StatusOK {
+		t.Fatalf("second, different unused code status = %d, want %d, body = %s", second.Code, http.StatusOK, second.Body.String())
+	}
+	if vaneSessionCookie(second) == nil {
+		t.Error("no vane_session cookie set for a different, still-unused recovery code, want one")
+	}
+}

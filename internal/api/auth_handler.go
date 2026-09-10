@@ -41,6 +41,7 @@ type twoFactorStore interface {
 	GetSecret(ctx context.Context, userID string) (*db.TwoFactorSecret, error)
 	ConfirmSecret(ctx context.Context, userID string) error
 	CreateRecoveryCodes(ctx context.Context, userID string, hashes []string) error
+	ConsumeRecoveryCode(ctx context.Context, userID, code string) (bool, error)
 }
 
 // twoFactorChallengeStore is the subset of *db.TwoFactorChallengeRepository
@@ -199,6 +200,11 @@ func (h *AuthHandler) issueTwoFactorChallenge(w http.ResponseWriter, r *http.Req
 type verifyTwoFactorRequest struct {
 	ChallengeToken string `json:"challenge_token"`
 	Code           string `json:"code"`
+	// RecoveryCode, when non-empty, is checked instead of Code - the
+	// device-loss fallback path (spec.md P2). Consuming it via
+	// ConsumeRecoveryCode is itself the proof of a valid second factor, so a
+	// request with a non-empty RecoveryCode never checks Code at all.
+	RecoveryCode string `json:"recovery_code"`
 }
 
 // invalidTwoFactorChallengeBody is returned for every verify-2fa failure
@@ -265,16 +271,33 @@ func (h *AuthHandler) VerifyTwoFactor(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	decryptedSecret, err := crypto.Decrypt(h.masterKey, secret.EncryptedSecret)
-	if err != nil {
-		h.logger.Error("auth: failed to decrypt 2FA secret for verify-2fa", zap.Error(err))
-		writeInternalError(w)
-		return
-	}
+	if req.RecoveryCode != "" {
+		// The recovery-code path (TOTP-10/11): ConsumeRecoveryCode's atomic
+		// claim (UPDATE ... WHERE used_at IS NULL RETURNING) is itself the
+		// proof of a valid, not-yet-spent second factor - a used code is
+		// permanently rejected, even on a later unrelated login attempt.
+		consumed, err := h.twoFactor.ConsumeRecoveryCode(r.Context(), claimUserID, req.RecoveryCode)
+		if err != nil {
+			h.logger.Error("auth: failed to consume 2FA recovery code", zap.Error(err))
+			writeInternalError(w)
+			return
+		}
+		if !consumed {
+			writeInvalidTwoFactorChallenge(w)
+			return
+		}
+	} else {
+		decryptedSecret, err := crypto.Decrypt(h.masterKey, secret.EncryptedSecret)
+		if err != nil {
+			h.logger.Error("auth: failed to decrypt 2FA secret for verify-2fa", zap.Error(err))
+			writeInternalError(w)
+			return
+		}
 
-	if !auth.ValidateTOTPCode(string(decryptedSecret), req.Code) {
-		writeInvalidTwoFactorChallenge(w)
-		return
+		if !auth.ValidateTOTPCode(string(decryptedSecret), req.Code) {
+			writeInvalidTwoFactorChallenge(w)
+			return
+		}
 	}
 
 	if _, ok, err := h.challenges.MarkUsed(r.Context(), jti); err != nil {

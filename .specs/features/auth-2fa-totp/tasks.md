@@ -333,11 +333,11 @@ T7 → T11
 - Skill: NONE
 
 **Done when**:
-- [ ] A valid, unused recovery code logs the user in and marks it used
-- [ ] The same code retried immediately returns `401`
-- [ ] A different, unused code from the same batch still works
-- [ ] Gate check passes on disposable Postgres: `TEST_DATABASE_URL=... go test -tags=integration ./internal/api/...`
-- [ ] Test count: ≥3 new tests
+- [x] A valid, unused recovery code logs the user in and marks it used
+- [x] The same code retried immediately returns `401`
+- [x] A different, unused code from the same batch still works
+- [x] Gate check passes on disposable Postgres: `TEST_DATABASE_URL=... go test -tags=integration ./internal/api/...`
+- [x] Test count: ≥3 new tests
 
 **Tests**: integration
 **Gate**: full
