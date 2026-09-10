@@ -176,6 +176,77 @@ func TestStatusPageRepository_Create_WithDomain_Unchanged(t *testing.T) {
 	}
 }
 
+// newUnscopedPool returns a migrated pool with NO session-level
+// app.tenant_id, unlike newTenantScopedPool. A test that needs to prove
+// something about how a repository handles the caller's transaction cannot
+// use the tenant-scoped pool: presetting the setting on every connection
+// would make an independently pooled transaction resolve the tenant_id
+// DEFAULT just fine, hiding the very failure under test.
+func newUnscopedPool(t *testing.T) *Pool {
+	t.Helper()
+	dsn := testDatabaseURL(t)
+	if err := MigrateUp(dsn, "migrations"); err != nil {
+		t.Fatalf("MigrateUp() returned unexpected error: %v", err)
+	}
+	pool, err := NewPool(context.Background(), dsn)
+	if err != nil {
+		t.Fatalf("NewPool() returned unexpected error: %v", err)
+	}
+	t.Cleanup(pool.Close)
+	return pool
+}
+
+// TestStatusPageRepository_Create_InsideExistingTenantTx_ReusesCallerTransaction
+// is the regression guard on Create opening its own pooled transaction: the
+// tenant_id DEFAULT reads current_setting('app.tenant_id'), which is SET
+// LOCAL on the caller's transaction only, so a second transaction resolved
+// it to NULL and the insert died on the NOT NULL constraint. Asserts three
+// things at once: the call succeeds, the row lands on the caller's tenant,
+// and it is genuinely part of the caller's transaction (rolling that
+// transaction back removes it, which a self-committing Create could not
+// honour).
+func TestStatusPageRepository_Create_InsideExistingTenantTx_ReusesCallerTransaction(t *testing.T) {
+	pool := newUnscopedPool(t)
+	tenantID := seedPlainTenant(t, pool)
+	ctx := context.Background()
+
+	tx, err := pool.BeginTenantTx(ctx, "", tenantID)
+	if err != nil {
+		t.Fatalf("BeginTenantTx() returned unexpected error: %v", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	txCtx := WithTenantTx(ctx, tx)
+
+	repo := NewStatusPageRepository(pool)
+	statusPage := &StatusPage{Name: fmt.Sprintf("tenant-tx-page-%d", time.Now().UnixNano())}
+	if err := repo.Create(txCtx, statusPage, nil); err != nil {
+		t.Fatalf("Create() inside an existing tenant transaction returned unexpected error: %v", err)
+	}
+	if statusPage.ID == "" {
+		t.Fatal("Create() left StatusPage.ID empty")
+	}
+
+	var gotTenantID string
+	if err := pool.QueryRow(txCtx, "SELECT tenant_id FROM status_pages WHERE id = $1", statusPage.ID).Scan(&gotTenantID); err != nil {
+		t.Fatalf("reading back tenant_id returned unexpected error: %v", err)
+	}
+	if gotTenantID != tenantID {
+		t.Errorf("status_pages.tenant_id = %q, want %q", gotTenantID, tenantID)
+	}
+
+	if err := tx.Rollback(ctx); err != nil {
+		t.Fatalf("Rollback() returned unexpected error: %v", err)
+	}
+
+	var count int
+	if err := pool.QueryRow(ctx, "SELECT COUNT(*) FROM status_pages WHERE id = $1", statusPage.ID).Scan(&count); err != nil {
+		t.Fatalf("counting rows after rollback returned unexpected error: %v", err)
+	}
+	if count != 0 {
+		t.Errorf("status page rows surviving the caller's rollback = %d, want 0 (Create committed its own transaction)", count)
+	}
+}
+
 // TestStatusPageRepository_List_MixOfDomainedAndDomainless_CorrectNullability
 // asserts SPD-01/SPD-05: List returns both a domain-less and a domained
 // row with correct nullability on each.

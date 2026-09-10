@@ -75,14 +75,40 @@ func NewStatusPageRepository(pool *Pool) *StatusPageRepository {
 // SP-15), and CreatedAt. The insert and the service links are wrapped in a
 // single transaction: a status page is never left without its intended
 // service links because a later insert failed partway through.
+//
+// If ctx already carries a tenant transaction (db.WithTenantTx - e.g. a
+// request inside api.TenantContext, or router.HostRouter's public path),
+// Create runs on that transaction instead of opening its own, following
+// TenantRepository.Create's convention. This is required, not just tidier:
+// status_pages.tenant_id defaults from current_setting('app.tenant_id'),
+// which is SET LOCAL on the caller's transaction (0024), so a second,
+// independently pooled transaction would resolve that DEFAULT to NULL and
+// the insert would fail the NOT NULL constraint.
 func (r *StatusPageRepository) Create(ctx context.Context, statusPage *StatusPage, serviceIDs []string) error {
+	if _, ok := TenantTxFromContext(ctx); ok {
+		return r.insert(ctx, statusPage, serviceIDs)
+	}
+
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
 		return fmt.Errorf("db: failed to begin status page create transaction: %w", err)
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
-	row := tx.QueryRow(ctx,
+	if err := r.insert(WithTenantTx(ctx, tx), statusPage, serviceIDs); err != nil {
+		return err
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("db: failed to commit status page create transaction: %w", err)
+	}
+
+	return nil
+}
+
+// insert performs Create's writes on whatever transaction ctx carries.
+func (r *StatusPageRepository) insert(ctx context.Context, statusPage *StatusPage, serviceIDs []string) error {
+	row := r.pool.QueryRow(ctx,
 		"INSERT INTO status_pages (name, subdomain, domain_id) VALUES ($1, $2, $3) RETURNING id, state, created_at",
 		statusPage.Name, statusPage.Subdomain, statusPage.DomainID,
 	)
@@ -91,16 +117,12 @@ func (r *StatusPageRepository) Create(ctx context.Context, statusPage *StatusPag
 	}
 
 	for _, serviceID := range serviceIDs {
-		if _, err := tx.Exec(ctx,
+		if _, err := r.pool.Exec(ctx,
 			"INSERT INTO status_page_services (status_page_id, service_id) VALUES ($1, $2)",
 			statusPage.ID, serviceID,
 		); err != nil {
 			return fmt.Errorf("db: failed to link service %s to status page: %w", serviceID, err)
 		}
-	}
-
-	if err := tx.Commit(ctx); err != nil {
-		return fmt.Errorf("db: failed to commit status page create transaction: %w", err)
 	}
 
 	statusPage.ServiceIDs = serviceIDs
