@@ -18,12 +18,14 @@ import (
 // memory and stored as a Postgres bytea, not streamed to disk).
 const maxLogoBytes = 10 << 20
 
-// companySettingsStore is the subset of *db.CompanySettingsRepository the
-// company settings handler depends on.
+// companySettingsStore is the subset of *db.TenantRepository the company
+// settings handler depends on. company_settings was dropped by the
+// multi-tenancy-core migration: its columns are tenants columns now, and
+// "the company" this screen edits is the session's active tenant.
 type companySettingsStore interface {
-	Get(ctx context.Context) (*db.CompanySettings, error)
-	Update(ctx context.Context, name, contactEmail string) (*db.CompanySettings, error)
-	UpdateLogo(ctx context.Context, contentType string, data []byte) (*db.CompanySettings, error)
+	Get(ctx context.Context, tenantID string) (*db.Tenant, error)
+	Update(ctx context.Context, tenantID string, u db.TenantUpdate) (*db.Tenant, error)
+	UpdateLogo(ctx context.Context, tenantID, contentType string, data []byte) (*db.Tenant, error)
 }
 
 // CompanySettingsHandler serves the company settings admin routes: GET/PATCH
@@ -52,15 +54,17 @@ type updateCompanySettingsRequest struct {
 
 const invalidCompanySettingsRequestBody = `{"error":"name is required and contact_email must be a valid e-mail address"}`
 
-func toCompanySettingsResponse(settings *db.CompanySettings) companySettingsResponse {
-	return companySettingsResponse{Name: settings.Name, ContactEmail: settings.ContactEmail, LogoURL: settings.LogoServedURL()}
+func toCompanySettingsResponse(tenant *db.Tenant) companySettingsResponse {
+	return companySettingsResponse{Name: tenant.Name, ContactEmail: tenant.ContactEmail, LogoURL: tenant.LogoServedURL()}
 }
 
-// Get handles GET /api/company-settings, returning the singleton company
-// settings row - including on a fresh install, where it is the seeded row
-// rather than a 404 (SET-03).
+// Get handles GET /api/company-settings, returning the active tenant's
+// company profile - including on a fresh install, where it is the tenant
+// bootstrap created rather than a 404 (SET-03).
 func (h *CompanySettingsHandler) Get(w http.ResponseWriter, r *http.Request) {
-	settings, err := h.settings.Get(r.Context())
+	tenantID, _ := ActiveTenantIDFromContext(r.Context())
+
+	settings, err := h.settings.Get(r.Context(), tenantID)
 	if err != nil {
 		h.logger.Error("company-settings: failed to get settings", zap.Error(err))
 		writeInternalError(w)
@@ -91,7 +95,9 @@ func (h *CompanySettingsHandler) Update(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	settings, err := h.settings.Update(r.Context(), req.Name, req.ContactEmail)
+	tenantID, _ := ActiveTenantIDFromContext(r.Context())
+
+	settings, err := h.settings.Update(r.Context(), tenantID, db.TenantUpdate{Name: &req.Name, ContactEmail: &req.ContactEmail})
 	if err != nil {
 		h.logger.Error("company-settings: failed to update settings", zap.Error(err))
 		writeInternalError(w)
@@ -154,7 +160,9 @@ func (h *CompanySettingsHandler) UploadLogo(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	settings, err := h.settings.UpdateLogo(r.Context(), contentType, data)
+	tenantID, _ := ActiveTenantIDFromContext(r.Context())
+
+	settings, err := h.settings.UpdateLogo(r.Context(), tenantID, contentType, data)
 	if err != nil {
 		h.logger.Error("company-settings: failed to persist logo", zap.Error(err))
 		writeInternalError(w)

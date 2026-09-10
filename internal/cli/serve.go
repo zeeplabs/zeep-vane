@@ -208,9 +208,9 @@ func newHTTPSServer(pool *db.Pool, dsn string, logger *zap.Logger) *http.Server 
 	services := db.NewServiceRepository(pool)
 	intervals := db.NewStatusIntervalRepository(pool)
 	incidents := db.NewIncidentRepository(pool)
-	companySettings := db.NewCompanySettingsRepository(pool)
-	publicHandler := api.NewPublicStatusHandler(services, intervals, incidents, companySettings, logger)
-	logoFileHandler := api.NewLogoFileHandler(companySettings)
+	tenants := db.NewTenantRepository(pool)
+	publicHandler := api.NewPublicStatusHandler(services, intervals, incidents, tenants, logger)
+	logoFileHandler := api.NewLogoFileHandler(tenants)
 
 	publicMux := http.NewServeMux()
 	publicMux.Handle("/uploads/", logoFileHandler)

@@ -5,10 +5,12 @@ import (
 	"net/http"
 )
 
-// logoGetter is the subset of *db.CompanySettingsRepository the logo file
-// handler depends on.
+// logoGetter is the subset of *db.TenantRepository the logo file handler
+// depends on. This route is public - it has no session and therefore no
+// active tenant - so it reads through ActiveLogo, which falls back to the
+// installation's single tenant (see TenantRepository.activeTenantPredicate).
 type logoGetter interface {
-	GetLogo(ctx context.Context) (contentType string, data []byte, found bool, err error)
+	ActiveLogo(ctx context.Context) (contentType string, data []byte, found bool, err error)
 }
 
 // logoServeCSP is stricter than the general SecurityHeaders default:
@@ -27,14 +29,13 @@ const logoServeCSP = "default-src 'none'; sandbox"
 // NewLogoFileHandler builds the handler that serves the one stored logo
 // back over HTTP with no authentication required (SET-12 - the public
 // status page must render it unauthenticated). The logo lives in Postgres
-// (company_settings.logo_data), not on this replica's local disk - every
-// replica reading the same database serves the same logo regardless of
-// which one handled the upload (see CompanySettingsRepository.UpdateLogo's
-// doc comment). A request when no logo has ever been uploaded gets a
+// (tenants.logo_data), not on this replica's local disk - every replica
+// reading the same database serves the same logo regardless of which one
+// handled the upload (see TenantRepository.UpdateLogo's doc comment). A request when no logo has ever been uploaded gets a
 // plain 404, never a directory listing or an empty 200.
 func NewLogoFileHandler(logos logoGetter) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		contentType, data, found, err := logos.GetLogo(r.Context())
+		contentType, data, found, err := logos.ActiveLogo(r.Context())
 		if err != nil || !found {
 			http.NotFound(w, r)
 			return

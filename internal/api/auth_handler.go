@@ -13,10 +13,10 @@ import (
 	"github.com/zeeplabs/zeep-vane/internal/db"
 )
 
-// adminGetter is the subset of *db.AdminRepository the login handler
+// userGetter is the subset of *db.UserRepository the login handler
 // depends on.
-type adminGetter interface {
-	GetByEmail(ctx context.Context, email string) (*db.Admin, error)
+type userGetter interface {
+	GetByEmail(ctx context.Context, email string) (*db.User, error)
 }
 
 // authMembershipLister is the subset of *db.TenantMembershipRepository
@@ -28,7 +28,7 @@ type authMembershipLister interface {
 
 // AuthHandler serves the auth-related admin routes.
 type AuthHandler struct {
-	admins        adminGetter
+	users         userGetter
 	memberships   authMembershipLister
 	pool          *db.Pool
 	logger        *zap.Logger
@@ -36,7 +36,7 @@ type AuthHandler struct {
 	secureCookies bool
 }
 
-// NewAuthHandler builds an AuthHandler backed by admins and memberships.
+// NewAuthHandler builds an AuthHandler backed by users and memberships.
 // pool backs Login's own tenant-membership lookup (a public route, ahead of
 // the tenant-context middleware - it manages its own short-lived
 // transaction with app.user_id set to resolve which tenant(s) the
@@ -45,8 +45,8 @@ type AuthHandler struct {
 // vane_session cookie's Secure attribute (H9) - false only for an operator
 // who has explicitly accepted plaintext-network session risk via
 // VANE_SECURE_COOKIES=false.
-func NewAuthHandler(admins adminGetter, memberships authMembershipLister, pool *db.Pool, logger *zap.Logger, sessionSecret string, secureCookies bool) *AuthHandler {
-	return &AuthHandler{admins: admins, memberships: memberships, pool: pool, logger: logger, sessionSecret: sessionSecret, secureCookies: secureCookies}
+func NewAuthHandler(users userGetter, memberships authMembershipLister, pool *db.Pool, logger *zap.Logger, sessionSecret string, secureCookies bool) *AuthHandler {
+	return &AuthHandler{users: users, memberships: memberships, pool: pool, logger: logger, sessionSecret: sessionSecret, secureCookies: secureCookies}
 }
 
 type loginRequest struct {
@@ -76,7 +76,7 @@ type loginResponse struct {
 
 // Login validates email+password and reports success or a generic
 // authentication failure. It never reveals whether the submitted email is
-// registered. On success it also resolves the admin's tenant_memberships:
+// registered. On success it also resolves the user's tenant_memberships:
 // exactly one sets that tenant active in the issued session; zero refuses
 // the login entirely (no session issued); more than one still succeeds,
 // active tenant left unset.
@@ -87,18 +87,18 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	admin, err := h.admins.GetByEmail(r.Context(), req.Email)
+	user, err := h.users.GetByEmail(r.Context(), req.Email)
 	switch {
 	case errors.Is(err, db.ErrNotFound):
 		writeLoginError(w)
 		return
 	case err != nil:
-		h.logger.Error("auth: failed to look up admin by email", zap.Error(err))
+		h.logger.Error("auth: failed to look up user by email", zap.Error(err))
 		writeInternalError(w)
 		return
 	}
 
-	if !auth.VerifyPassword(admin.PasswordHash, req.Password) {
+	if !auth.VerifyPassword(user.PasswordHash, req.Password) {
 		writeLoginError(w)
 		return
 	}
@@ -106,13 +106,13 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 	// Login is public, ahead of the tenant-context middleware - it manages
 	// its own transaction here, setting only app.user_id (no active tenant
 	// is known yet; that's exactly what this query determines).
-	tx, err := h.pool.BeginTenantTx(r.Context(), admin.ID, "")
+	tx, err := h.pool.BeginTenantTx(r.Context(), user.ID, "")
 	if err != nil {
 		h.logger.Error("auth: failed to begin tenant transaction", zap.Error(err))
 		writeInternalError(w)
 		return
 	}
-	memberships, err := h.memberships.ListForUser(db.WithTenantTx(r.Context(), tx), admin.ID)
+	memberships, err := h.memberships.ListForUser(db.WithTenantTx(r.Context(), tx), user.ID)
 	if err != nil {
 		_ = tx.Rollback(r.Context())
 		h.logger.Error("auth: failed to list tenant memberships", zap.Error(err))
@@ -135,7 +135,7 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		activeTenantID = memberships[0].TenantID
 	}
 
-	token, err := auth.IssueSessionWithTenant(admin.ID, activeTenantID, h.sessionSecret)
+	token, err := auth.IssueSessionWithTenant(user.ID, activeTenantID, h.sessionSecret)
 	if err != nil {
 		h.logger.Error("auth: failed to issue session token", zap.Error(err))
 		writeInternalError(w)
@@ -194,25 +194,26 @@ type meResponse struct {
 	Memberships []meMembership `json:"memberships"`
 }
 
-// Me returns the authenticated admin's identity, as loaded into context by
+// Me returns the authenticated user's identity, as loaded into context by
 // RequireAuth, plus their active tenant and full membership list. The
 // identity itself never re-queries the database - RequireAuth already did
 // that lookup for authorization purposes - but the membership list does,
 // scoped by the request's own transaction (tenant-context middleware, T3).
 func (h *AuthHandler) Me(w http.ResponseWriter, r *http.Request) {
-	admin, ok := AdminFromContext(r.Context())
+	user, ok := UserFromContext(r.Context())
 	if !ok {
 		writeUnauthorized(w)
 		return
 	}
 
-	memberships, err := h.memberships.ListForUser(r.Context(), admin.ID)
+	memberships, err := h.memberships.ListForUser(r.Context(), user.ID)
 	if err != nil {
 		h.logger.Error("auth: failed to list tenant memberships for me", zap.Error(err))
 		writeInternalError(w)
 		return
 	}
 	activeTenantID, _ := ActiveTenantIDFromContext(r.Context())
+	role, _ := RoleFromContext(r.Context())
 
 	out := make([]meMembership, len(memberships))
 	for i, m := range memberships {
@@ -222,13 +223,13 @@ func (h *AuthHandler) Me(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	_ = json.NewEncoder(w).Encode(meResponse{
-		ID: admin.ID, Email: admin.Email, Name: admin.Name, Phone: admin.Phone, Role: admin.Role,
+		ID: user.ID, Email: user.Email, Name: user.Name, Phone: user.Phone, Role: role,
 		ActiveTenantID: activeTenantID, Memberships: out,
 	})
 }
 
 // Logout expires the vane_session cookie set at login. It requires no
-// role beyond being authenticated - any admin can end their own session.
+// role beyond being authenticated - any user can end their own session.
 func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
 	http.SetCookie(w, sessionCookie("", -1, h.secureCookies))
 	w.WriteHeader(http.StatusOK)
@@ -247,14 +248,14 @@ const invalidSwitchTenantRequestBody = `{"error":"tenant_id is required"}`
 const noMembershipForTenantBody = `{"error":"no access to that tenant"}`
 
 // SwitchTenant updates the session's active tenant to req.TenantID,
-// provided the authenticated admin has a tenant_membership for it - no new
+// provided the authenticated user has a tenant_membership for it - no new
 // login required (TENANT-20). It rejects with 403 and leaves the current
-// session's cookie untouched if the admin has no membership there
+// session's cookie untouched if the user has no membership there
 // (TENANT-21), including for a syntactically valid but nonexistent
 // tenant_id - ListForUser simply won't return a match for one, the same
 // fail-closed shape as everywhere else in this feature.
 func (h *AuthHandler) SwitchTenant(w http.ResponseWriter, r *http.Request) {
-	admin, ok := AdminFromContext(r.Context())
+	user, ok := UserFromContext(r.Context())
 	if !ok {
 		writeUnauthorized(w)
 		return
@@ -266,7 +267,7 @@ func (h *AuthHandler) SwitchTenant(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	memberships, err := h.memberships.ListForUser(r.Context(), admin.ID)
+	memberships, err := h.memberships.ListForUser(r.Context(), user.ID)
 	if err != nil {
 		h.logger.Error("auth: failed to list tenant memberships for switch-tenant", zap.Error(err))
 		writeInternalError(w)
@@ -285,7 +286,7 @@ func (h *AuthHandler) SwitchTenant(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	token, err := auth.IssueSessionWithTenant(admin.ID, req.TenantID, h.sessionSecret)
+	token, err := auth.IssueSessionWithTenant(user.ID, req.TenantID, h.sessionSecret)
 	if err != nil {
 		h.logger.Error("auth: failed to issue session token for switch-tenant", zap.Error(err))
 		writeInternalError(w)

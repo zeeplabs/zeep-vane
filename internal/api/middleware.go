@@ -12,14 +12,36 @@ import (
 // contextKey namespaces values this package stores in request context.
 type contextKey string
 
-// adminIDContextKey is the request-context key under which RequireAuth
-// stores the authenticated admin's ID.
-const adminIDContextKey contextKey = "adminID"
+// userIDContextKey is the request-context key under which RequireAuth
+// stores the authenticated user's ID.
+const userIDContextKey contextKey = "userID"
 
-// adminContextKey is the request-context key under which RequireAuth stores
-// the full *db.Admin it loaded, so downstream middleware (RequireRole) and
-// handlers can read Role without a second database round trip.
-const adminContextKey contextKey = "admin"
+// userContextKey is the request-context key under which RequireAuth stores
+// the full *db.User it loaded, so downstream middleware and handlers can
+// read the identity without a second database round trip.
+const userContextKey contextKey = "user"
+
+// roleContextKey is the request-context key under which TenantContext
+// stores the caller's role in the session's active tenant. Since
+// multi-tenancy-core (AD-022) a role is held per tenant on
+// tenant_memberships, not on the account, so it can only be resolved once
+// the active tenant is known - which is why RequireAuth no longer carries
+// it and RequireRole reads it from here.
+const roleContextKey contextKey = "role"
+
+// WithRole returns a copy of ctx carrying role, readable via
+// RoleFromContext. TenantContext sets it; RequireRole enforces on it.
+func WithRole(ctx context.Context, role string) context.Context {
+	return context.WithValue(ctx, roleContextKey, role)
+}
+
+// RoleFromContext returns the role TenantContext resolved for the active
+// tenant, and whether one was present. A caller with no active tenant
+// selected has no role, and every role-gated route rejects them.
+func RoleFromContext(ctx context.Context) (string, bool) {
+	role, ok := ctx.Value(roleContextKey).(string)
+	return role, ok
+}
 
 // activeTenantIDContextKey is the request-context key under which
 // RequireAuth stores the session token's active tenant claim (""  if the
@@ -35,33 +57,34 @@ func ActiveTenantIDFromContext(ctx context.Context) (string, bool) {
 	return tenantID, ok
 }
 
-// AdminIDFromContext returns the authenticated admin ID stored by
+// UserIDFromContext returns the authenticated user ID stored by
 // RequireAuth, and whether one was present.
-func AdminIDFromContext(ctx context.Context) (string, bool) {
-	adminID, ok := ctx.Value(adminIDContextKey).(string)
-	return adminID, ok
+func UserIDFromContext(ctx context.Context) (string, bool) {
+	userID, ok := ctx.Value(userIDContextKey).(string)
+	return userID, ok
 }
 
-// AdminFromContext returns the authenticated *db.Admin stored by
+// UserFromContext returns the authenticated *db.User stored by
 // RequireAuth, and whether one was present.
-func AdminFromContext(ctx context.Context) (*db.Admin, bool) {
-	admin, ok := ctx.Value(adminContextKey).(*db.Admin)
-	return admin, ok
+func UserFromContext(ctx context.Context) (*db.User, bool) {
+	user, ok := ctx.Value(userContextKey).(*db.User)
+	return user, ok
 }
 
-// adminLoader is the subset of *db.AdminRepository RequireAuth depends on.
-type adminLoader interface {
-	GetByID(ctx context.Context, id string) (*db.Admin, error)
+// userLoader is the subset of *db.UserRepository RequireAuth depends on.
+type userLoader interface {
+	GetByID(ctx context.Context, id string) (*db.User, error)
 }
 
 // RequireAuth builds middleware that rejects requests without a valid
 // session token in the Authorization header ("Bearer <token>"). On success
-// it loads the token's admin from admins (the current Role and
-// SessionsRevokedAt, not just what the JWT claims), rejects with 401 if the
-// token was issued before the admin's sessions were revoked, and stores the
-// loaded *db.Admin (and its ID) in the request context for handlers and
-// RequireRole downstream.
-func RequireAuth(secret string, admins adminLoader) func(http.Handler) http.Handler {
+// it loads the token's user from users (the current SessionsRevokedAt, not
+// just what the JWT claims), rejects with 401 if the token was issued
+// before that user's sessions were revoked, and stores the loaded *db.User
+// (and its ID) in the request context. The caller's role is not resolved
+// here - it belongs to a tenant, so TenantContext resolves it once the
+// active tenant is known.
+func RequireAuth(secret string, users userLoader) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			token := bearerToken(r.Header.Get("Authorization"))
@@ -79,7 +102,7 @@ func RequireAuth(secret string, admins adminLoader) func(http.Handler) http.Hand
 				return
 			}
 
-			admin, err := admins.GetByID(r.Context(), claims.AdminID)
+			user, err := users.GetByID(r.Context(), claims.AdminID)
 			if err != nil {
 				writeUnauthorized(w)
 				return
@@ -97,13 +120,13 @@ func RequireAuth(secret string, admins adminLoader) func(http.Handler) http.Hand
 			// later). It can never accept a token that was truly issued
 			// before revocation, because floor(issued) can never round
 			// forward past the real issue instant.
-			if admin.SessionsRevokedAt != nil && claims.IssuedAt.Before(*admin.SessionsRevokedAt) {
+			if user.SessionsRevokedAt != nil && claims.IssuedAt.Before(*user.SessionsRevokedAt) {
 				writeUnauthorized(w)
 				return
 			}
 
-			ctx := context.WithValue(r.Context(), adminIDContextKey, admin.ID)
-			ctx = context.WithValue(ctx, adminContextKey, admin)
+			ctx := context.WithValue(r.Context(), userIDContextKey, user.ID)
+			ctx = context.WithValue(ctx, userContextKey, user)
 			ctx = context.WithValue(ctx, activeTenantIDContextKey, claims.TenantID)
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
@@ -141,10 +164,12 @@ func writeForbidden(w http.ResponseWriter) {
 }
 
 // RequireRole builds middleware that rejects a request with 403 unless the
-// *db.Admin stored in context by RequireAuth has one of roles. It must run
-// after RequireAuth in the middleware chain - if no Admin is present in
-// context (RequireAuth didn't run, or rejected the request first), it
-// rejects with 403 rather than assuming the request is authorized.
+// role TenantContext resolved for the session's active tenant is one of
+// roles. It must run after RequireAuth and TenantContext in the middleware
+// chain - if no role is present in context (either middleware didn't run
+// or rejected the request first, or the session has no active tenant and
+// therefore no role anywhere), it rejects with 403 rather than assuming
+// the request is authorized.
 func RequireRole(roles ...string) func(http.Handler) http.Handler {
 	allowed := make(map[string]struct{}, len(roles))
 	for _, role := range roles {
@@ -153,13 +178,13 @@ func RequireRole(roles ...string) func(http.Handler) http.Handler {
 
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			admin, ok := AdminFromContext(r.Context())
+			role, ok := RoleFromContext(r.Context())
 			if !ok {
 				writeForbidden(w)
 				return
 			}
 
-			if _, ok := allowed[admin.Role]; !ok {
+			if _, ok := allowed[role]; !ok {
 				writeForbidden(w)
 				return
 			}

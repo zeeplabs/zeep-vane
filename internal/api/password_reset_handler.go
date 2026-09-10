@@ -31,20 +31,20 @@ type passwordResetRepo interface {
 	Create(ctx context.Context, token *db.PasswordResetToken) error
 	GetByTokenHash(ctx context.Context, tokenHash string) (*db.PasswordResetToken, error)
 	MarkUsed(ctx context.Context, id string) error
-	InvalidateOtherPending(ctx context.Context, adminID, excludeID string) error
+	InvalidateOtherPending(ctx context.Context, userID, excludeID string) error
 }
 
-// adminByEmailAndIDUpdater is the subset of *db.AdminRepository the password
+// userByEmailAndIDUpdater is the subset of *db.UserRepository the password
 // reset handler depends on.
-type adminByEmailAndIDUpdater interface {
-	adminGetter
-	UpdatePasswordHash(ctx context.Context, adminID, passwordHash string) error
+type userByEmailAndIDUpdater interface {
+	userGetter
+	UpdatePasswordHash(ctx context.Context, userID, passwordHash string) error
 	RevokeSessions(ctx context.Context, id string) error
 }
 
 // PasswordResetHandler serves the password reset request/confirm routes.
 type PasswordResetHandler struct {
-	admins          adminByEmailAndIDUpdater
+	users           userByEmailAndIDUpdater
 	tokens          passwordResetRepo
 	emailSvc        email.Sender
 	companySettings companySettingsGetter
@@ -64,9 +64,9 @@ type PasswordResetHandler struct {
 // would let anyone email a real victim a password-reset link pointing at a
 // host of the attacker's choosing (see adminBaseURL() in
 // admin_base_url.go).
-func NewPasswordResetHandler(admins adminByEmailAndIDUpdater, tokens passwordResetRepo, emailSvc email.Sender, companySettings companySettingsGetter, logger *zap.Logger, devTokenLogging bool, adminBaseURL string) *PasswordResetHandler {
+func NewPasswordResetHandler(users userByEmailAndIDUpdater, tokens passwordResetRepo, emailSvc email.Sender, companySettings companySettingsGetter, logger *zap.Logger, devTokenLogging bool, adminBaseURL string) *PasswordResetHandler {
 	return &PasswordResetHandler{
-		admins: admins, tokens: tokens,
+		users: users, tokens: tokens,
 		emailSvc: emailSvc, companySettings: companySettings,
 		logger: logger, devTokenLogging: devTokenLogging, adminBaseURL: adminBaseURL,
 	}
@@ -90,7 +90,7 @@ func (h *PasswordResetHandler) Request(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	admin, err := h.admins.GetByEmail(r.Context(), body.Email)
+	admin, err := h.users.GetByEmail(r.Context(), body.Email)
 	if err != nil {
 		// Covers ErrNotFound and any other lookup error identically -
 		// the response never reveals whether the email exists.
@@ -119,30 +119,30 @@ func (h *PasswordResetHandler) Request(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write([]byte(`{"status":"ok"}`))
 }
 
-// issueAndSendPasswordReset generates a reset token for adminID, persists
+// issueAndSendPasswordReset generates a reset token for userID, persists
 // it, and sends the reset email to "to". Runs in its own goroutine (see
 // Request) - ctx must already be detached from the originating request. Any
 // failure is logged and otherwise ignored, same reasoning as
 // AdminsHandler.sendAdminInviteEmail: Request has already responded 200 by
 // the time this runs.
-func (h *PasswordResetHandler) issueAndSendPasswordReset(ctx context.Context, adminID, to string) {
+func (h *PasswordResetHandler) issueAndSendPasswordReset(ctx context.Context, userID, to string) {
 	rawToken, err := generateResetToken()
 	if err != nil {
-		h.logger.Error("password-reset: failed to generate token", zap.String("admin_id", adminID), zap.Error(err))
+		h.logger.Error("password-reset: failed to generate token", zap.String("user_id", userID), zap.Error(err))
 		return
 	}
 
 	resetToken := &db.PasswordResetToken{
-		AdminID:   adminID,
+		UserID:    userID,
 		TokenHash: hashResetToken(rawToken),
 		ExpiresAt: time.Now().Add(resetTokenTTL),
 	}
 	if err := h.tokens.Create(ctx, resetToken); err != nil {
-		h.logger.Error("password-reset: failed to persist token", zap.String("admin_id", adminID), zap.Error(err))
+		h.logger.Error("password-reset: failed to persist token", zap.String("user_id", userID), zap.Error(err))
 		return
 	}
 
-	// The raw token is a bearer credential for this admin's account, so it
+	// The raw token is a bearer credential for this user's account, so it
 	// is only logged when VANE_DEV_TOKEN_LOGGING=true is explicitly set -
 	// never by default, since LOG_LEVEL=info output routinely reaches a
 	// wider audience (log aggregators, `docker logs`) than the database
@@ -150,13 +150,13 @@ func (h *PasswordResetHandler) issueAndSendPasswordReset(ctx context.Context, ad
 	// PasswordResetToken).
 	if h.devTokenLogging {
 		h.logger.Info("password-reset: token issued",
-			zap.String("admin_id", adminID), zap.String("token", rawToken))
+			zap.String("user_id", userID), zap.String("token", rawToken))
 	} else {
 		h.logger.Info("password-reset: token issued",
-			zap.String("admin_id", adminID))
+			zap.String("user_id", userID))
 	}
 
-	h.sendPasswordResetEmail(ctx, adminID, to, rawToken)
+	h.sendPasswordResetEmail(ctx, userID, to, rawToken)
 }
 
 // sendPasswordResetEmail looks up the instance display name and sends the
@@ -164,10 +164,10 @@ func (h *PasswordResetHandler) issueAndSendPasswordReset(ctx context.Context, ad
 // failure (including ErrNoActiveProvider - no email provider connected
 // yet) is logged and otherwise ignored, for the same reason as
 // issueAndSendPasswordReset above, which is always its caller.
-func (h *PasswordResetHandler) sendPasswordResetEmail(ctx context.Context, adminID, to, rawToken string) {
-	settings, err := h.companySettings.Get(ctx)
+func (h *PasswordResetHandler) sendPasswordResetEmail(ctx context.Context, userID, to, rawToken string) {
+	settings, err := h.companySettings.Active(ctx)
 	if err != nil {
-		h.logger.Error("password-reset: failed to load company settings for reset email", zap.String("admin_id", adminID), zap.Error(err))
+		h.logger.Error("password-reset: failed to load company settings for reset email", zap.String("user_id", userID), zap.Error(err))
 		return
 	}
 
@@ -177,7 +177,7 @@ func (h *PasswordResetHandler) sendPasswordResetEmail(ctx context.Context, admin
 	}
 
 	if err := h.emailSvc.SendPasswordReset(ctx, to, data); err != nil {
-		h.logger.Error("password-reset: failed to send reset email", zap.String("admin_id", adminID), zap.Error(err))
+		h.logger.Error("password-reset: failed to send reset email", zap.String("user_id", userID), zap.Error(err))
 	}
 }
 
@@ -226,7 +226,7 @@ func (h *PasswordResetHandler) Confirm(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.admins.UpdatePasswordHash(r.Context(), resetToken.AdminID, newHash); err != nil {
+	if err := h.users.UpdatePasswordHash(r.Context(), resetToken.UserID, newHash); err != nil {
 		h.logger.Error("password-reset: failed to update password", zap.Error(err))
 		writeInternalError(w)
 		return
@@ -247,11 +247,11 @@ func (h *PasswordResetHandler) Confirm(w http.ResponseWriter, r *http.Request) {
 	// password stays logged in through the reset. Both are best-effort:
 	// logged on failure, but the response still reports success since the
 	// password itself was already changed.
-	if err := h.tokens.InvalidateOtherPending(r.Context(), resetToken.AdminID, resetToken.ID); err != nil {
-		h.logger.Error("password-reset: failed to invalidate other pending tokens", zap.String("admin_id", resetToken.AdminID), zap.Error(err))
+	if err := h.tokens.InvalidateOtherPending(r.Context(), resetToken.UserID, resetToken.ID); err != nil {
+		h.logger.Error("password-reset: failed to invalidate other pending tokens", zap.String("user_id", resetToken.UserID), zap.Error(err))
 	}
-	if err := h.admins.RevokeSessions(r.Context(), resetToken.AdminID); err != nil {
-		h.logger.Error("password-reset: failed to revoke sessions", zap.String("admin_id", resetToken.AdminID), zap.Error(err))
+	if err := h.users.RevokeSessions(r.Context(), resetToken.UserID); err != nil {
+		h.logger.Error("password-reset: failed to revoke sessions", zap.String("user_id", resetToken.UserID), zap.Error(err))
 	}
 
 	w.Header().Set("Content-Type", "application/json")

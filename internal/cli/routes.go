@@ -47,11 +47,10 @@ const credentialRouteIdleTTL = 10 * time.Minute
 func buildAdminRouter(pool *db.Pool, cfg config.Config, logger *zap.Logger, pollerManager *PollerManager) http.Handler {
 	r := router.New(pool)
 
-	admins := db.NewAdminRepository(pool)
-	invites := db.NewAdminInviteRepository(pool)
+	users := db.NewUserRepository(pool)
+	invites := db.NewTenantInviteRepository(pool)
 	auditLog := audit.NewLog(pool)
 
-	companySettingsRepo := db.NewCompanySettingsRepository(pool)
 	tenantsRepo := db.NewTenantRepository(pool)
 	tenantMembershipsRepo := db.NewTenantMembershipRepository(pool)
 
@@ -76,23 +75,23 @@ func buildAdminRouter(pool *db.Pool, cfg config.Config, logger *zap.Logger, poll
 	llmService := llm.NewService(db.NewLLMProviderStore(db.NewLLMProviderRepository(pool)), llmProviderFactory, cfg.MasterKey, logger)
 	llmProvidersHandler := api.NewLLMProvidersHandler(llmService, logger)
 
-	authHandler := api.NewAuthHandler(admins, tenantMembershipsRepo, pool, logger, cfg.SessionSecret, cfg.SecureCookies)
-	bootstrapHandler := api.NewBootstrapHandler(pool, admins, tenantsRepo, tenantMembershipsRepo, logger, cfg.SessionSecret, cfg.SecureCookies)
-	passwordResetHandler := api.NewPasswordResetHandler(admins, db.NewPasswordResetRepository(pool), emailService, companySettingsRepo, logger, cfg.DevTokenLogging, cfg.AdminBaseURL)
-	adminsHandler := api.NewAdminsHandler(pool, admins, invites, emailService, companySettingsRepo, auditLog, logger, cfg.DevTokenLogging, cfg.AdminBaseURL, cfg.SessionSecret, cfg.SecureCookies)
+	authHandler := api.NewAuthHandler(users, tenantMembershipsRepo, pool, logger, cfg.SessionSecret, cfg.SecureCookies)
+	bootstrapHandler := api.NewBootstrapHandler(pool, users, tenantsRepo, tenantMembershipsRepo, logger, cfg.SessionSecret, cfg.SecureCookies)
+	passwordResetHandler := api.NewPasswordResetHandler(users, db.NewPasswordResetRepository(pool), emailService, tenantsRepo, logger, cfg.DevTokenLogging, cfg.AdminBaseURL)
+	adminsHandler := api.NewAdminsHandler(pool, users, tenantMembershipsRepo, invites, emailService, tenantsRepo, auditLog, logger, cfg.DevTokenLogging, cfg.AdminBaseURL, cfg.SessionSecret, cfg.SecureCookies)
 	domainsHandler := api.NewDomainsHandler(db.NewDomainRepository(pool), auditLog, logger)
 	servicesHandler := api.NewServicesHandler(db.NewServiceRepository(pool), logger)
 	integrationsHandler := api.NewIntegrationsHandler(db.NewIntegrationRepository(pool), validateDatadogCredentials, searchDatadogSLOs, pollerManager, cfg.MasterKey, logger)
 	incidentsHandler := api.NewIncidentsHandler(db.NewIncidentRepository(pool), logger)
 	statusPagesHandler := api.NewStatusPagesHandler(db.NewStatusPageRepository(pool), auditLog, cfg.PublicDNSTarget, logger)
 	pollerStatusHandler := api.NewPollerStatusHandler(db.NewIntegrationRepository(pool), logger)
-	publicStatusHandler := api.NewPublicStatusHandler(db.NewServiceRepository(pool), db.NewStatusIntervalRepository(pool), db.NewIncidentRepository(pool), companySettingsRepo, logger)
+	publicStatusHandler := api.NewPublicStatusHandler(db.NewServiceRepository(pool), db.NewStatusIntervalRepository(pool), db.NewIncidentRepository(pool), tenantsRepo, logger)
 	publicStatusPreviewHandler := api.NewPublicStatusPreviewHandler(db.NewStatusPageRepository(pool), publicStatusHandler, logger)
-	companySettingsHandler := api.NewCompanySettingsHandler(companySettingsRepo, logger)
-	logoFileHandler := api.NewLogoFileHandler(companySettingsRepo)
-	instanceConfigHandler := api.NewInstanceConfigHandler(cfg.PublicDNSTarget, companySettingsRepo, logger)
+	companySettingsHandler := api.NewCompanySettingsHandler(tenantsRepo, logger)
+	logoFileHandler := api.NewLogoFileHandler(tenantsRepo)
+	instanceConfigHandler := api.NewInstanceConfigHandler(cfg.PublicDNSTarget, tenantsRepo, logger)
 
-	requireAuth := api.RequireAuth(cfg.SessionSecret, admins)
+	requireAuth := api.RequireAuth(cfg.SessionSecret, users)
 	writeRoles := api.RequireRole(db.RoleOwner, db.RoleOperator)
 	anyRole := api.RequireRole(db.RoleOwner, db.RoleOperator, db.RoleViewer)
 	ownerOnly := api.RequireRole(db.RoleOwner)
@@ -132,11 +131,16 @@ func buildAdminRouter(pool *db.Pool, cfg config.Config, logger *zap.Logger, poll
 		// TenantContext must run after requireAuth (it reads the admin and
 		// active-tenant claim requireAuth stores in context) and ahead of
 		// every tenant-scoped route below it (multi-tenancy-core, AD-022).
-		protected.Use(api.TenantContext(pool, logger))
+		protected.Use(api.TenantContext(pool, tenantMembershipsRepo, logger))
 
-		protected.With(anyRole).Get("/api/auth/me", authHandler.Me)
-		protected.With(anyRole).Post("/api/auth/logout", authHandler.Logout)
-		protected.With(anyRole).Post("/api/auth/switch-tenant", authHandler.SwitchTenant)
+		// Session-management routes need authentication, not a role: a
+		// role is per tenant since multi-tenancy-core, and a user with
+		// more than one membership has no active tenant (and therefore no
+		// role) until they pick one - which is exactly what /me and
+		// switch-tenant are for.
+		protected.Get("/api/auth/me", authHandler.Me)
+		protected.Post("/api/auth/logout", authHandler.Logout)
+		protected.Post("/api/auth/switch-tenant", authHandler.SwitchTenant)
 
 		// Admin management (admin-dashboard ADM-09) - owner only.
 		protected.With(ownerOnly).Post("/api/admins", adminsHandler.Invite)

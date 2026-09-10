@@ -37,11 +37,11 @@ type brandingResponse struct {
 // (owner-only), this is deliberately public/unauthenticated. It leaks no
 // more than what every public status page already shows to any visitor
 // without auth (SET-15) - only the logo, never contact_email or any other
-// company_settings field.
+// tenant profile field.
 func (h *InstanceConfigHandler) Branding(w http.ResponseWriter, r *http.Request) {
-	companySettings, err := h.companySettings.Get(r.Context())
+	companySettings, err := h.companySettings.Active(r.Context())
 	if err != nil {
-		h.logger.Error("instance-config: failed to get company settings for branding", zap.Error(err))
+		h.logger.Error("instance-config: failed to get tenant for branding", zap.Error(err))
 		writeInternalError(w)
 		return
 	}

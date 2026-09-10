@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/jackc/pgx/v5"
 	"go.uber.org/zap"
 
 	"github.com/zeeplabs/zeep-vane/internal/audit"
@@ -28,19 +27,18 @@ const adminInviteTTL = 1 * time.Hour
 // reset token).
 const adminInviteTokenBytes = 32
 
-// AdminsHandler serves the admin management routes: invite, invite
+// AdminsHandler serves the tenant member-management routes: invite, invite
 // acceptance, role change, removal, and listing. It takes *db.Pool directly
-// (unlike other handlers' narrow repository interfaces) because
-// UpdateRole/Delete need to run CountActiveOwners and the resulting write in
-// the same transaction (design.md Risks & Concerns - lockout check must be
-// atomic), which isn't expressible through the existing per-repository
-// interfaces.
+// (unlike other handlers' narrow repository interfaces) because List joins
+// users to tenant_memberships, which isn't expressible through the
+// existing per-repository interfaces.
 type AdminsHandler struct {
 	pool            *db.Pool
-	admins          *db.AdminRepository
-	invites         *db.AdminInviteRepository
+	users           *db.UserRepository
+	memberships     *db.TenantMembershipRepository
+	invites         *db.TenantInviteRepository
 	emailSvc        *email.Service
-	companySettings *db.CompanySettingsRepository
+	tenants         *db.TenantRepository
 	audit           *audit.Log
 	logger          *zap.Logger
 	devTokenLogging bool
@@ -57,10 +55,10 @@ type AdminsHandler struct {
 // attacker-controlled (see adminBaseURL() in admin_base_url.go for why).
 // sessionSecret/secureCookies authenticate the admin created by
 // AcceptInvite, same pair AuthHandler/BootstrapHandler already take.
-func NewAdminsHandler(pool *db.Pool, admins *db.AdminRepository, invites *db.AdminInviteRepository, emailSvc *email.Service, companySettings *db.CompanySettingsRepository, auditLog *audit.Log, logger *zap.Logger, devTokenLogging bool, adminBaseURL string, sessionSecret string, secureCookies bool) *AdminsHandler {
+func NewAdminsHandler(pool *db.Pool, users *db.UserRepository, memberships *db.TenantMembershipRepository, invites *db.TenantInviteRepository, emailSvc *email.Service, tenants *db.TenantRepository, auditLog *audit.Log, logger *zap.Logger, devTokenLogging bool, adminBaseURL string, sessionSecret string, secureCookies bool) *AdminsHandler {
 	return &AdminsHandler{
-		pool: pool, admins: admins, invites: invites,
-		emailSvc: emailSvc, companySettings: companySettings,
+		pool: pool, users: users, memberships: memberships, invites: invites,
+		emailSvc: emailSvc, tenants: tenants,
 		audit: auditLog, logger: logger,
 		devTokenLogging: devTokenLogging, adminBaseURL: adminBaseURL,
 		sessionSecret: sessionSecret, secureCookies: secureCookies,
@@ -73,14 +71,14 @@ func NewAdminsHandler(pool *db.Pool, admins *db.AdminRepository, invites *db.Adm
 // failure is logged and treated as email_sent:false, matching the
 // non-blocking convention (spec.md: invite/resend must never fail on email).
 func (h *AdminsHandler) sendAdminInviteEmail(r *http.Request, inviteID, to, role, rawToken string) bool {
-	settings, err := h.companySettings.Get(r.Context())
+	tenant, err := h.tenants.Active(r.Context())
 	if err != nil {
-		h.logger.Error("admins: failed to load company settings for invite email", zap.String("invite_id", inviteID), zap.Error(err))
+		h.logger.Error("admins: failed to load tenant for invite email", zap.String("invite_id", inviteID), zap.Error(err))
 		return false
 	}
 
 	data := email.AdminInviteEmailData{
-		CompanyName: settings.Name,
+		CompanyName: tenant.Name,
 		Role:        role,
 		AcceptURL:   fmt.Sprintf("%s/accept-invite/%s", adminBaseURL(h.adminBaseURL), rawToken),
 	}
@@ -93,17 +91,12 @@ func (h *AdminsHandler) sendAdminInviteEmail(r *http.Request, inviteID, to, role
 	return true
 }
 
-// wouldLeaveZeroOwners is the ADM-06 lockout decision: true when applying
-// an action to an admin currently holding the owner role, that does not
-// keep them an owner, would leave the system with zero active owners
-// (ownerCount here already includes the target admin themselves, since
-// CountActiveOwners counts every admin currently holding the owner role).
-// It applies identically to a role change (keepsOwnerRole = new role ==
-// owner) and a removal (keepsOwnerRole = false, always), including the
-// owner acting on themselves.
-func wouldLeaveZeroOwners(currentRole string, keepsOwnerRole bool, ownerCount int) bool {
-	return currentRole == db.RoleOwner && !keepsOwnerRole && ownerCount <= 1
-}
+// The ADM-06 lockout decision (never leave a tenant with zero owners) now
+// lives in db.TenantMembershipRepository, which owns the FOR UPDATE
+// owner-count and returns db.ErrLastOwner - the check and the write have
+// to be atomic (design.md Risks & Concerns), which only the repository can
+// guarantee now that a role is a tenant_memberships row rather than an
+// admins column.
 
 func isValidAdminRole(role string) bool {
 	switch role {
@@ -141,11 +134,12 @@ const adminAlreadyActiveBody = `{"error":"an active admin already exists for thi
 // Admin row yet for an invited email, so the "invited" audit entry uses the
 // AdminInvite's own ID as target_id rather than an Admin ID.
 func (h *AdminsHandler) Invite(w http.ResponseWriter, r *http.Request) {
-	actor, ok := AdminFromContext(r.Context())
+	actor, ok := UserFromContext(r.Context())
 	if !ok {
 		writeForbidden(w)
 		return
 	}
+	tenantID, _ := ActiveTenantIDFromContext(r.Context())
 
 	var req inviteAdminRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Name == "" || req.Email == "" || !isValidAdminRole(req.Role) {
@@ -157,11 +151,11 @@ func (h *AdminsHandler) Invite(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if _, err := h.admins.GetByEmail(r.Context(), req.Email); err == nil {
+	if _, err := h.users.GetByEmail(r.Context(), req.Email); err == nil {
 		writeAdminError(w, http.StatusConflict, adminAlreadyActiveBody)
 		return
 	} else if !errors.Is(err, db.ErrNotFound) {
-		h.logger.Error("admins: failed to look up admin by email", zap.Error(err))
+		h.logger.Error("admins: failed to look up user by email", zap.Error(err))
 		writeInternalError(w)
 		return
 	}
@@ -179,7 +173,8 @@ func (h *AdminsHandler) Invite(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	invite := &db.AdminInvite{
+	invite := &db.TenantInvite{
+		TenantID:    tenantID,
 		Email:       req.Email,
 		Role:        req.Role,
 		Name:        req.Name,
@@ -275,22 +270,47 @@ func (h *AdminsHandler) AcceptInvite(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// CreateWithRole sets the invite's actual role in the same INSERT
-	// (M12) - no longer a separate UpdateRole call that could leave the
-	// account stuck on the admins.role column's default (owner) if it
-	// never ran.
-	admin := &db.Admin{Email: invite.Email, PasswordHash: passwordHash, Name: invite.Name, Phone: invite.Phone}
-	if err := h.admins.CreateWithRole(r.Context(), admin, invite.Role); err != nil {
-		h.logger.Error("admins: failed to activate invited admin", zap.Error(err))
+	// The account is created already email-verified: following the invite
+	// link is itself proof the invitee controls the address it was sent
+	// to, so a second verification round trip would prove nothing.
+	verifiedAt := time.Now()
+	user := &db.User{Email: invite.Email, PasswordHash: passwordHash, Name: invite.Name, Phone: invite.Phone, EmailVerifiedAt: &verifiedAt}
+	if err := h.users.Create(r.Context(), user); err != nil {
+		h.logger.Error("admins: failed to create invited user", zap.Error(err))
 		writeInternalError(w)
 		return
 	}
 
-	// Authenticate the newly created admin immediately (accept-invite-page
+	// The membership carries the invite's role (tenant_memberships.role -
+	// a role is per tenant since multi-tenancy-core). This route is public,
+	// ahead of the tenant-context middleware, so it opens its own
+	// transaction with app.tenant_id set to the invite's tenant, which is
+	// what the membership's RLS WITH CHECK requires.
+	tx, err := h.pool.BeginTenantTx(r.Context(), user.ID, invite.TenantID)
+	if err != nil {
+		h.logger.Error("admins: failed to begin tenant transaction for invite acceptance", zap.Error(err))
+		writeInternalError(w)
+		return
+	}
+	membership := &db.TenantMembership{UserID: user.ID, TenantID: invite.TenantID, Role: invite.Role}
+	if err := h.memberships.Create(db.WithTenantTx(r.Context(), tx), membership); err != nil {
+		_ = tx.Rollback(r.Context())
+		h.logger.Error("admins: failed to create membership for invited user", zap.Error(err))
+		writeInternalError(w)
+		return
+	}
+	if err := tx.Commit(r.Context()); err != nil {
+		h.logger.Error("admins: failed to commit invite acceptance", zap.Error(err))
+		writeInternalError(w)
+		return
+	}
+
+	// Authenticate the newly created user immediately (accept-invite-page
 	// AIP-01/02) - same issue-then-set-cookie sequence
 	// BootstrapHandler.Create already uses, so the invitee lands on an
-	// active session without a separate login step.
-	sessionToken, err := auth.IssueSession(admin.ID, h.sessionSecret)
+	// active session without a separate login step, already scoped to the
+	// tenant that invited them.
+	sessionToken, err := auth.IssueSessionWithTenant(user.ID, invite.TenantID, h.sessionSecret)
 	if err != nil {
 		h.logger.Error("admins: failed to issue session after invite acceptance", zap.Error(err))
 		writeInternalError(w)
@@ -300,7 +320,7 @@ func (h *AdminsHandler) AcceptInvite(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
-	_ = json.NewEncoder(w).Encode(acceptAdminInviteResponse{Email: admin.Email, Role: invite.Role})
+	_ = json.NewEncoder(w).Encode(acceptAdminInviteResponse{Email: user.Email, Role: invite.Role})
 }
 
 const inviteNotFoundBody = `{"error":"invite not found"}`
@@ -314,7 +334,7 @@ const inviteNotFoundBody = `{"error":"invite not found"}`
 // INVITE-04, INVITE-08, INVITE-09).
 func (h *AdminsHandler) ResendInvite(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
-	actor, ok := AdminFromContext(r.Context())
+	actor, ok := UserFromContext(r.Context())
 	if !ok {
 		writeForbidden(w)
 		return
@@ -357,7 +377,7 @@ func (h *AdminsHandler) ResendInvite(w http.ResponseWriter, r *http.Request) {
 // 404 (INVITE-05, INVITE-06, INVITE-09).
 func (h *AdminsHandler) CancelInvite(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
-	actor, ok := AdminFromContext(r.Context())
+	actor, ok := UserFromContext(r.Context())
 	if !ok {
 		writeForbidden(w)
 		return
@@ -401,21 +421,24 @@ type adminResponse struct {
 	Expired   bool       `json:"expired,omitempty"`
 }
 
-// UpdateRole handles PATCH /api/admins/{id}/role (role: owner). The role
-// change and the lockout check run inside a single transaction using
-// CountActiveOwners' SELECT ... FOR UPDATE (design.md Risks & Concerns), so
-// a concurrent request can't slip in between the count and the write. A
-// change that would leave zero active owners - including the owner
-// demoting themselves - is rejected with 409 and no state changes (ADM-06).
-// A successful change revokes the affected admin's sessions immediately
-// (ADM-05) and records a "role_changed" audit entry (ADM-08).
+// UpdateRole handles PATCH /api/admins/{id}/role (role: owner). It changes
+// the target's role in the caller's active tenant - a role is a
+// tenant_memberships row since multi-tenancy-core, so there is no
+// installation-wide role to change. The lockout check and the write are
+// atomic inside TenantMembershipRepository.UpdateRole (design.md Risks &
+// Concerns), which refuses with db.ErrLastOwner - answered here with 409
+// and no state change - when the change would leave the tenant with zero
+// owners, including an owner demoting themselves (ADM-06). A successful
+// change revokes the affected user's sessions immediately (ADM-05) and
+// records a "role_changed" audit entry (ADM-08).
 func (h *AdminsHandler) UpdateRole(w http.ResponseWriter, r *http.Request) {
 	targetID := chi.URLParam(r, "id")
-	actor, ok := AdminFromContext(r.Context())
+	actor, ok := UserFromContext(r.Context())
 	if !ok {
 		writeForbidden(w)
 		return
 	}
+	tenantID, _ := ActiveTenantIDFromContext(r.Context())
 
 	var req updateAdminRoleRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || !isValidAdminRole(req.Role) {
@@ -424,51 +447,22 @@ func (h *AdminsHandler) UpdateRole(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ctx := r.Context()
-	tx, err := h.pool.Begin(ctx)
-	if err != nil {
-		h.logger.Error("admins: failed to begin role-change transaction", zap.Error(err))
-		writeInternalError(w)
+	err := h.memberships.UpdateRole(ctx, targetID, tenantID, req.Role)
+	switch {
+	case errors.Is(err, db.ErrNotFound):
+		writeAdminError(w, http.StatusNotFound, adminNotFoundBody)
 		return
-	}
-	defer func() { _ = tx.Rollback(ctx) }()
-
-	var currentRole string
-	row := tx.QueryRow(ctx, "SELECT role FROM admins WHERE id = $1 FOR UPDATE", targetID)
-	if err := row.Scan(&currentRole); err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			writeAdminError(w, http.StatusNotFound, adminNotFoundBody)
-			return
-		}
-		h.logger.Error("admins: failed to load target admin", zap.Error(err))
-		writeInternalError(w)
-		return
-	}
-
-	ownerCount, err := h.admins.CountActiveOwners(ctx, tx)
-	if err != nil {
-		h.logger.Error("admins: failed to count active owners", zap.Error(err))
-		writeInternalError(w)
-		return
-	}
-
-	if wouldLeaveZeroOwners(currentRole, req.Role == db.RoleOwner, ownerCount) {
+	case errors.Is(err, db.ErrLastOwner):
 		writeAdminError(w, http.StatusConflict, adminLockoutBody)
 		return
-	}
-
-	if _, err := tx.Exec(ctx, "UPDATE admins SET role = $1 WHERE id = $2", req.Role, targetID); err != nil {
-		h.logger.Error("admins: failed to update admin role", zap.Error(err))
-		writeInternalError(w)
-		return
-	}
-	if _, err := tx.Exec(ctx, "UPDATE admins SET sessions_revoked_at = now() WHERE id = $1", targetID); err != nil {
-		h.logger.Error("admins: failed to revoke admin sessions", zap.Error(err))
+	case err != nil:
+		h.logger.Error("admins: failed to update membership role", zap.Error(err))
 		writeInternalError(w)
 		return
 	}
 
-	if err := tx.Commit(ctx); err != nil {
-		h.logger.Error("admins: failed to commit role change", zap.Error(err))
+	if err := h.users.RevokeSessions(ctx, targetID); err != nil {
+		h.logger.Error("admins: failed to revoke user sessions", zap.Error(err))
 		writeInternalError(w)
 		return
 	}
@@ -482,68 +476,57 @@ func (h *AdminsHandler) UpdateRole(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(adminResponse{ID: targetID, Role: req.Role})
 }
 
-// Delete handles DELETE /api/admins/{id} (role: owner). Same atomic lockout
-// protection as UpdateRole: the count and the removal run in one
-// transaction, rejecting with 409 if removing this admin would leave zero
-// active owners (ADM-06). A successful removal revokes the admin's
-// sessions and deletes the account (ADM-07), and records a "removed" audit
-// entry (ADM-08).
+// Delete handles DELETE /api/admins/{id} (role: owner). It removes the
+// target's membership of the caller's active tenant, with the same atomic
+// lockout protection as UpdateRole: 409 and no state change if that would
+// leave the tenant with zero owners (ADM-06). The account row itself is
+// deleted only when that was the target's last membership anywhere -
+// preserving the pre-multi-tenancy behaviour of "removing an admin removes
+// the account" (ADM-07) without destroying an account that still belongs
+// to another tenant. Either way the target's sessions are revoked, and a
+// "removed" audit entry is recorded (ADM-08).
 func (h *AdminsHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	targetID := chi.URLParam(r, "id")
-	actor, ok := AdminFromContext(r.Context())
+	actor, ok := UserFromContext(r.Context())
 	if !ok {
 		writeForbidden(w)
 		return
 	}
+	tenantID, _ := ActiveTenantIDFromContext(r.Context())
 
 	ctx := r.Context()
-	tx, err := h.pool.Begin(ctx)
-	if err != nil {
-		h.logger.Error("admins: failed to begin removal transaction", zap.Error(err))
-		writeInternalError(w)
+	err := h.memberships.Delete(ctx, targetID, tenantID)
+	switch {
+	case errors.Is(err, db.ErrNotFound):
+		writeAdminError(w, http.StatusNotFound, adminNotFoundBody)
 		return
-	}
-	defer func() { _ = tx.Rollback(ctx) }()
-
-	var currentRole string
-	row := tx.QueryRow(ctx, "SELECT role FROM admins WHERE id = $1 FOR UPDATE", targetID)
-	if err := row.Scan(&currentRole); err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			writeAdminError(w, http.StatusNotFound, adminNotFoundBody)
-			return
-		}
-		h.logger.Error("admins: failed to load target admin", zap.Error(err))
-		writeInternalError(w)
-		return
-	}
-
-	ownerCount, err := h.admins.CountActiveOwners(ctx, tx)
-	if err != nil {
-		h.logger.Error("admins: failed to count active owners", zap.Error(err))
-		writeInternalError(w)
-		return
-	}
-
-	if wouldLeaveZeroOwners(currentRole, false, ownerCount) {
+	case errors.Is(err, db.ErrLastOwner):
 		writeAdminError(w, http.StatusConflict, adminLockoutBody)
 		return
-	}
-
-	if _, err := tx.Exec(ctx, "UPDATE admins SET sessions_revoked_at = now() WHERE id = $1", targetID); err != nil {
-		h.logger.Error("admins: failed to revoke admin sessions", zap.Error(err))
-		writeInternalError(w)
-		return
-	}
-	if _, err := tx.Exec(ctx, "DELETE FROM admins WHERE id = $1", targetID); err != nil {
-		h.logger.Error("admins: failed to delete admin", zap.Error(err))
+	case err != nil:
+		h.logger.Error("admins: failed to remove membership", zap.Error(err))
 		writeInternalError(w)
 		return
 	}
 
-	if err := tx.Commit(ctx); err != nil {
-		h.logger.Error("admins: failed to commit admin removal", zap.Error(err))
+	if err := h.users.RevokeSessions(ctx, targetID); err != nil && !errors.Is(err, db.ErrNotFound) {
+		h.logger.Error("admins: failed to revoke user sessions", zap.Error(err))
 		writeInternalError(w)
 		return
+	}
+
+	remaining, err := h.memberships.CountForUser(ctx, targetID)
+	if err != nil {
+		h.logger.Error("admins: failed to count remaining memberships", zap.Error(err))
+		writeInternalError(w)
+		return
+	}
+	if remaining == 0 {
+		if err := h.users.Delete(ctx, targetID); err != nil && !errors.Is(err, db.ErrNotFound) {
+			h.logger.Error("admins: failed to delete user", zap.Error(err))
+			writeInternalError(w)
+			return
+		}
 	}
 
 	if err := h.audit.Record(ctx, actor.ID, targetID, "removed"); err != nil {
@@ -561,7 +544,8 @@ func (h *AdminsHandler) Delete(w http.ResponseWriter, r *http.Request) {
 const adminsPageSize = 20
 
 // List handles GET /api/admins (role: owner), returning one page (PAG-08,
-// page_size 20) of every active admin's email and current role merged with
+// page_size 20) of every member of the caller's active tenant - email and
+// role, the latter read from their tenant_membership - merged with
 // pending admin invites - not yet accepted and not expired - each item
 // tagged with Status ("active" or "pending") (AF-38). The merge itself is
 // unbounded (both queries still fetch everything); only the resulting
@@ -572,9 +556,16 @@ func (h *AdminsHandler) List(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	page := parsePage(r)
 
-	rows, err := h.pool.Query(ctx, "SELECT id, email, name, phone, role FROM admins ORDER BY email")
+	tenantID, _ := ActiveTenantIDFromContext(ctx)
+
+	rows, err := h.pool.Query(ctx,
+		`SELECT u.id, u.email, u.name, u.phone, m.role
+		 FROM tenant_memberships m
+		 JOIN users u ON u.id = m.user_id
+		 WHERE m.tenant_id = $1
+		 ORDER BY u.email`, tenantID)
 	if err != nil {
-		h.logger.Error("admins: failed to list admins", zap.Error(err))
+		h.logger.Error("admins: failed to list tenant members", zap.Error(err))
 		writeInternalError(w)
 		return
 	}
@@ -584,7 +575,7 @@ func (h *AdminsHandler) List(w http.ResponseWriter, r *http.Request) {
 	for rows.Next() {
 		var item adminResponse
 		if err := rows.Scan(&item.ID, &item.Email, &item.Name, &item.Phone, &item.Role); err != nil {
-			h.logger.Error("admins: failed to scan admin row", zap.Error(err))
+			h.logger.Error("admins: failed to scan tenant member row", zap.Error(err))
 			writeInternalError(w)
 			return
 		}
@@ -592,7 +583,7 @@ func (h *AdminsHandler) List(w http.ResponseWriter, r *http.Request) {
 		list = append(list, item)
 	}
 	if err := rows.Err(); err != nil {
-		h.logger.Error("admins: failed reading admin rows", zap.Error(err))
+		h.logger.Error("admins: failed reading tenant member rows", zap.Error(err))
 		writeInternalError(w)
 		return
 	}
