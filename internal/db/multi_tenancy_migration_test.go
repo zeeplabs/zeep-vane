@@ -27,11 +27,24 @@ var tenantScopedTables = []string{
 	"llm_settings",
 }
 
+// extraPolicies records, per table, the policies deliberately added on top
+// of tenant_isolation. status_pages and domains carry AD-023's
+// public_published_read (migration 0025), the additive PERMISSIVE SELECT
+// policy that lets an anonymous request resolve hostname -> tenant before
+// any tenant context exists. Any policy not listed here is unexpected and
+// fails the test - a stray policy on a tenant-scoped table is exactly the
+// kind of silent widening this suite exists to catch.
+var extraPolicies = map[string][]string{
+	"status_pages": {"public_published_read"},
+	"domains":      {"public_published_read"},
+}
+
 // TestMultiTenancyMigration_EveryTenantScopedTableIsRLSProtected covers
-// TENANT-01: every table in spec.md AC1's list carries exactly one RLS
-// policy, with RLS both enabled and forced. FORCE matters specifically:
-// without it the policy does not bind the table's own owner, which is the
-// role a plain deployment connects as.
+// TENANT-01: every table in spec.md AC1's list carries a tenant_isolation
+// RLS policy keyed on app.tenant_id and no policies beyond the ones
+// extraPolicies declares, with RLS both enabled and forced. FORCE matters
+// specifically: without it the policy does not bind the table's own owner,
+// which is the role a plain deployment connects as.
 func TestMultiTenancyMigration_EveryTenantScopedTableIsRLSProtected(t *testing.T) {
 	ctx := context.Background()
 	pool, _ := newTenantScopedPool(t)
@@ -50,19 +63,32 @@ func TestMultiTenancyMigration_EveryTenantScopedTableIsRLSProtected(t *testing.T
 			t.Errorf("%s: row level security is not forced - the table owner would bypass the policy", table)
 		}
 
+		wantPolicies := append([]string{"tenant_isolation"}, extraPolicies[table]...)
 		var policyCount int
 		if err := pool.QueryRow(ctx,
 			"SELECT count(*) FROM pg_policies WHERE schemaname = 'public' AND tablename = $1", table,
 		).Scan(&policyCount); err != nil {
 			t.Fatalf("%s: querying pg_policies returned unexpected error: %v", table, err)
 		}
-		if policyCount != 1 {
-			t.Errorf("%s: has %d RLS policies, want exactly 1", table, policyCount)
+		if policyCount != len(wantPolicies) {
+			t.Errorf("%s: has %d RLS policies, want exactly %d (%v)", table, policyCount, len(wantPolicies), wantPolicies)
+		}
+		for _, name := range wantPolicies {
+			var exists bool
+			if err := pool.QueryRow(ctx,
+				"SELECT EXISTS(SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = $1 AND policyname = $2)",
+				table, name,
+			).Scan(&exists); err != nil {
+				t.Fatalf("%s: checking policy %s returned unexpected error: %v", table, name, err)
+			}
+			if !exists {
+				t.Errorf("%s: expected RLS policy %q is missing", table, name)
+			}
 		}
 
 		var usingExpr string
 		if err := pool.QueryRow(ctx,
-			"SELECT qual FROM pg_policies WHERE schemaname = 'public' AND tablename = $1", table,
+			"SELECT qual FROM pg_policies WHERE schemaname = 'public' AND tablename = $1 AND policyname = 'tenant_isolation'", table,
 		).Scan(&usingExpr); err != nil {
 			t.Fatalf("%s: reading policy expression returned unexpected error: %v", table, err)
 		}
