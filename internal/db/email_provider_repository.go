@@ -24,7 +24,7 @@ type EmailProvider struct {
 }
 
 // EmailProviderRepository accesses the email_providers table and the
-// email_settings singleton row.
+// email_settings row of the active tenant.
 type EmailProviderRepository struct {
 	pool *Pool
 }
@@ -37,14 +37,14 @@ func NewEmailProviderRepository(pool *Pool) *EmailProviderRepository {
 
 // UpsertProvider stores provider's encrypted key and sender fields as
 // connected, creating the row on first connect or overwriting it on
-// reconnect - the `provider` column is unique, so there is always at most
-// one row per provider (EMAIL-01, EMAIL-03). Any previously recorded
+// reconnect - (tenant_id, provider) is unique, so there is always at most
+// one row per provider per tenant (EMAIL-01, EMAIL-03). Any previously recorded
 // last_error is cleared, since a successful (re)connect supersedes it.
 func (r *EmailProviderRepository) UpsertProvider(ctx context.Context, provider string, encryptedAPIKey []byte, fromEmail, fromName string) error {
 	_, err := r.pool.Exec(ctx,
 		`INSERT INTO email_providers (provider, encrypted_api_key, from_email, from_name, status)
 		 VALUES ($1, $2, $3, $4, 'connected')
-		 ON CONFLICT (provider) DO UPDATE SET
+		 ON CONFLICT (tenant_id, provider) DO UPDATE SET
 		   encrypted_api_key = EXCLUDED.encrypted_api_key,
 		   from_email = EXCLUDED.from_email,
 		   from_name = EXCLUDED.from_name,
@@ -144,12 +144,17 @@ func (r *EmailProviderRepository) countEmailProviders(ctx context.Context) (int,
 }
 
 // GetActiveProvider returns the currently active provider's name, or ""
-// (not an error) when email_settings.active_provider is NULL - the
-// singleton row always exists (seeded by migration 0016).
+// (not an error) when the active tenant has no email_settings row yet, or
+// has one whose active_provider is NULL. The row is created lazily by
+// SetActiveProvider: since multi-tenancy-core there is one per tenant,
+// not one seeded singleton per installation.
 func (r *EmailProviderRepository) GetActiveProvider(ctx context.Context) (string, error) {
 	var activeProvider *string
-	row := r.pool.QueryRow(ctx, "SELECT active_provider FROM email_settings WHERE id = 1")
+	row := r.pool.QueryRow(ctx, "SELECT active_provider FROM email_settings")
 	if err := row.Scan(&activeProvider); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return "", nil
+		}
 		return "", fmt.Errorf("db: failed to get active email provider: %w", err)
 	}
 	if activeProvider == nil {
@@ -158,10 +163,13 @@ func (r *EmailProviderRepository) GetActiveProvider(ctx context.Context) (string
 	return *activeProvider, nil
 }
 
-// SetActiveProvider updates the singleton email_settings row's
+// SetActiveProvider sets the active tenant's email_settings row's
 // active_provider to provider (EMAIL-04).
 func (r *EmailProviderRepository) SetActiveProvider(ctx context.Context, provider string) error {
-	_, err := r.pool.Exec(ctx, "UPDATE email_settings SET active_provider = $1 WHERE id = 1", provider)
+	_, err := r.pool.Exec(ctx,
+		`INSERT INTO email_settings (active_provider) VALUES ($1)
+		 ON CONFLICT (tenant_id) DO UPDATE SET active_provider = EXCLUDED.active_provider`,
+		provider)
 	if err != nil {
 		return fmt.Errorf("db: failed to set active email provider: %w", err)
 	}

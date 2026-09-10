@@ -5,6 +5,7 @@ package dbtest
 
 import (
 	"context"
+	"net/url"
 	"sync"
 	"testing"
 
@@ -17,20 +18,20 @@ import (
 // beyond being a stable key both sides of the lock agree on.
 const datadogIntegrationLockKey = 727100001
 
-// adminsTableLockKey is an arbitrary constant identifying the Postgres
-// advisory lock guarding the shared `admins` table. Its value has no
+// usersTableLockKey is an arbitrary constant identifying the Postgres
+// advisory lock guarding the shared `users` table. Its value has no
 // meaning beyond being a stable key both sides of the lock agree on, and
 // it is deliberately distinct from datadogIntegrationLockKey so the two
 // locks never contend with each other.
-const adminsTableLockKey = 727100002
+const usersTableLockKey = 727100002
 
-// companySettingsLockKey is an arbitrary constant identifying the
-// Postgres advisory lock guarding the `company_settings` singleton row
-// (id = 1, enforced by a CHECK constraint - there is never more than one).
+// tenantsTableLockKey is an arbitrary constant identifying the Postgres
+// advisory lock guarding the shared `tenants` table (which absorbed the
+// old company_settings singleton).
 // Its value has no meaning beyond being a stable key both sides of the
 // lock agree on, and it is deliberately distinct from the other keys in
 // this file so none of these locks ever contend with each other.
-const companySettingsLockKey = 727100003
+const tenantsTableLockKey = 727100003
 
 // LockDatadogIntegration serializes access to the Datadog integration
 // singleton row for the duration of the calling test. `go test ./...` runs
@@ -52,17 +53,17 @@ func LockDatadogIntegration(t *testing.T, ctx context.Context, dsn string) {
 	lockAdvisoryKey(t, ctx, dsn, datadogIntegrationLockKey)
 }
 
-// LockAdminsTable serializes access to the shared `admins` table for the
+// LockUsersTable serializes access to the shared `users` table for the
 // duration of the calling test. `go test ./...` runs separate packages'
 // test binaries in parallel, and internal/db, internal/api, and
-// internal/cli each have tests that bulk `DELETE FROM admins` (to get a
+// internal/cli each have tests that bulk `DELETE FROM users` (to get a
 // known-empty table for BootstrapFirst/BootstrapHandler/route tests) or
 // depend on the table's exact row count (e.g. counting active owners) -
 // without serialization, one package's clear/restore window races
 // another package's inserts, deletes, or counts against the same shared
 // TEST_DATABASE_URL Postgres instance.
 //
-// Every test that either performs such a bulk clear/restore of `admins`
+// Every test that either performs such a bulk clear/restore of `users`
 // or asserts an exact row/owner count against it must call this helper,
 // not just the tests that themselves clear the table - otherwise a
 // lock-holding clear can still run concurrently with a non-locking
@@ -71,16 +72,16 @@ func LockDatadogIntegration(t *testing.T, ctx context.Context, dsn string) {
 // See LockDatadogIntegration's doc comment for why the lock is held on
 // its own dedicated connection rather than one borrowed from the
 // caller's pool.
-func LockAdminsTable(t *testing.T, ctx context.Context, dsn string) {
+func LockUsersTable(t *testing.T, ctx context.Context, dsn string) {
 	t.Helper()
-	lockAdvisoryKey(t, ctx, dsn, adminsTableLockKey)
+	lockAdvisoryKey(t, ctx, dsn, usersTableLockKey)
 }
 
-// LockCompanySettings serializes access to the shared `company_settings`
-// singleton row for the duration of the calling test. `go test ./...`
+// LockTenantsTable serializes access to the shared `tenants` table for
+// the duration of the calling test. `go test ./...`
 // runs separate packages' test binaries in parallel, and internal/db,
 // internal/api, and internal/cli each have tests that reset, update, or
-// assert the exact content of that same row (id = 1) - without
+// assert the exact content of the installation's tenant row - without
 // serialization, one package's reset-to-blank window races another
 // package's read-and-assert or update against the same shared
 // TEST_DATABASE_URL Postgres instance.
@@ -88,15 +89,15 @@ func LockAdminsTable(t *testing.T, ctx context.Context, dsn string) {
 // See LockDatadogIntegration's doc comment for why the lock is held on
 // its own dedicated connection rather than one borrowed from the
 // caller's pool.
-func LockCompanySettings(t *testing.T, ctx context.Context, dsn string) {
+func LockTenantsTable(t *testing.T, ctx context.Context, dsn string) {
 	t.Helper()
-	lockAdvisoryKey(t, ctx, dsn, companySettingsLockKey)
+	lockAdvisoryKey(t, ctx, dsn, tenantsTableLockKey)
 }
 
 // heldLocksMu guards heldLocks, which tracks which (test, advisory-key)
 // pairs already hold their lock. This makes lockAdvisoryKey idempotent
 // per *testing.T: a test (or a shared helper it calls more than once,
-// directly or via sub-helpers) can call LockAdminsTable/
+// directly or via sub-helpers) can call LockUsersTable/
 // LockDatadogIntegration any number of times without deadlocking itself
 // on a second dedicated connection waiting for the first one - which it
 // would otherwise never release, since release only happens at that same
@@ -149,4 +150,27 @@ func lockAdvisoryKey(t *testing.T, ctx context.Context, dsn string, key int64) {
 		}
 		heldLocksMu.Unlock()
 	})
+}
+
+// TenantScopedDSN returns dsn with the Postgres connection option
+// `-c app.tenant_id=<tenantID>`, so every session opened from it starts
+// with that setting already in place. Since multi-tenancy-core every
+// tenant-scoped table's tenant_id column defaults from
+// current_setting('app.tenant_id', true) and is NOT NULL, so a fixture
+// INSERT made outside any tenant transaction is rejected; this lets an
+// integration suite pin a fixture tenant for a whole pool instead of
+// wrapping every individual call in a transaction.
+//
+// It is a test-only convenience. Production never sets app.tenant_id per
+// connection - it sets it per transaction (db.Pool.BeginTenantTx), which
+// is what makes a pooled connection safe to hand to the next request.
+func TenantScopedDSN(dsn, tenantID string) string {
+	u, err := url.Parse(dsn)
+	if err != nil {
+		return dsn
+	}
+	q := u.Query()
+	q.Set("options", "-c app.tenant_id="+tenantID)
+	u.RawQuery = q.Encode()
+	return u.String()
 }

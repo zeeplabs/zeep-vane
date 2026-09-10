@@ -125,9 +125,47 @@ func (r *TenantMembershipRepository) ListForTenant(ctx context.Context, tenantID
 	return memberships, nil
 }
 
+// GetRole returns the role userID holds in tenantID, or ErrNotFound if
+// they hold no membership there. This is what resolves a request's
+// effective role: since multi-tenancy-core a role is per tenant
+// (tenant_memberships.role), never a property of the user.
+func (r *TenantMembershipRepository) GetRole(ctx context.Context, userID, tenantID string) (string, error) {
+	var role string
+	row := r.pool.QueryRow(ctx,
+		"SELECT role FROM tenant_memberships WHERE user_id = $1 AND tenant_id = $2",
+		userID, tenantID,
+	)
+	if err := row.Scan(&role); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return "", ErrNotFound
+		}
+		return "", fmt.Errorf("db: failed to get tenant membership role: %w", err)
+	}
+	return role, nil
+}
+
 // UpdateRole sets a new role for the (userID, tenantID) membership,
-// returning ErrNotFound if no such membership exists.
+// returning ErrNotFound if no such membership exists, or ErrLastOwner - no
+// row changed - if the change would demote the tenant's only owner. Same
+// lockout protection, and the same FOR UPDATE race-safety shape, as
+// Delete.
 func (r *TenantMembershipRepository) UpdateRole(ctx context.Context, userID, tenantID, role string) error {
+	if role != RoleOwner {
+		currentRole, err := r.GetRole(ctx, userID, tenantID)
+		if err != nil {
+			return err
+		}
+		if currentRole == RoleOwner {
+			lastOwner, err := r.isLastOwner(ctx, tenantID)
+			if err != nil {
+				return err
+			}
+			if lastOwner {
+				return ErrLastOwner
+			}
+		}
+	}
+
 	tag, err := r.pool.Exec(ctx,
 		"UPDATE tenant_memberships SET role = $3 WHERE user_id = $1 AND tenant_id = $2",
 		userID, tenantID, role,
@@ -146,8 +184,7 @@ func (r *TenantMembershipRepository) UpdateRole(ctx context.Context, userID, ten
 // userID is that tenant's only owner. The owner-count check runs
 // SELECT ... FOR UPDATE against the tenant's owner rows first, so a
 // concurrent Delete/UpdateRole affecting the same tenant's owners blocks
-// until this call's transaction ends, the same race-safety shape as
-// AdminRepository.CountActiveOwners.
+// until this call's transaction ends - see isLastOwner.
 func (r *TenantMembershipRepository) Delete(ctx context.Context, userID, tenantID string) error {
 	var role string
 	row := r.pool.QueryRow(ctx,
@@ -162,15 +199,11 @@ func (r *TenantMembershipRepository) Delete(ctx context.Context, userID, tenantI
 	}
 
 	if role == RoleOwner {
-		var ownerCount int
-		countRow := r.pool.QueryRow(ctx,
-			"SELECT COUNT(*) FROM (SELECT user_id FROM tenant_memberships WHERE tenant_id = $1 AND role = $2 FOR UPDATE) locked_owners",
-			tenantID, RoleOwner,
-		)
-		if err := countRow.Scan(&ownerCount); err != nil {
-			return fmt.Errorf("db: failed to count tenant owners: %w", err)
+		lastOwner, err := r.isLastOwner(ctx, tenantID)
+		if err != nil {
+			return err
 		}
-		if ownerCount <= 1 {
+		if lastOwner {
 			return ErrLastOwner
 		}
 	}
@@ -187,4 +220,36 @@ func (r *TenantMembershipRepository) Delete(ctx context.Context, userID, tenantI
 	}
 
 	return nil
+}
+
+// isLastOwner reports whether tenantID currently has at most one owner. It
+// runs SELECT ... FOR UPDATE against that tenant's owner rows, so a
+// concurrent Delete/UpdateRole affecting the same tenant's owners blocks
+// until this call's transaction ends - the count a lockout decision is
+// based on can't go stale between the check and the write.
+func (r *TenantMembershipRepository) isLastOwner(ctx context.Context, tenantID string) (bool, error) {
+	var ownerCount int
+	row := r.pool.QueryRow(ctx,
+		"SELECT COUNT(*) FROM (SELECT user_id FROM tenant_memberships WHERE tenant_id = $1 AND role = $2 FOR UPDATE) locked_owners",
+		tenantID, RoleOwner,
+	)
+	if err := row.Scan(&ownerCount); err != nil {
+		return false, fmt.Errorf("db: failed to count tenant owners: %w", err)
+	}
+	return ownerCount <= 1, nil
+}
+
+// CountForUser returns how many tenants userID is still a member of. The
+// admin-removal path uses it to decide whether removing a membership left
+// the user with no way into the product at all (in which case the account
+// row itself goes too, preserving the pre-multi-tenancy behaviour of
+// "removing an admin removes the account"), or whether they remain a
+// member somewhere else and must be left alone.
+func (r *TenantMembershipRepository) CountForUser(ctx context.Context, userID string) (int, error) {
+	var count int
+	row := r.pool.QueryRow(ctx, "SELECT COUNT(*) FROM tenant_memberships WHERE user_id = $1", userID)
+	if err := row.Scan(&count); err != nil {
+		return 0, fmt.Errorf("db: failed to count tenant memberships for user: %w", err)
+	}
+	return count, nil
 }

@@ -15,7 +15,7 @@ import (
 // never persisted.
 type PasswordResetToken struct {
 	ID        string
-	AdminID   string
+	UserID    string
 	TokenHash string
 	ExpiresAt time.Time
 	UsedAt    *time.Time
@@ -36,8 +36,8 @@ func NewPasswordResetRepository(pool *Pool) *PasswordResetRepository {
 // written - callers must never pass a plaintext token in TokenHash.
 func (r *PasswordResetRepository) Create(ctx context.Context, token *PasswordResetToken) error {
 	row := r.pool.QueryRow(ctx,
-		"INSERT INTO password_reset_tokens (admin_id, token_hash, expires_at) VALUES ($1, $2, $3) RETURNING id",
-		token.AdminID, token.TokenHash, token.ExpiresAt,
+		"INSERT INTO password_reset_tokens (user_id, token_hash, expires_at) VALUES ($1, $2, $3) RETURNING id",
+		token.UserID, token.TokenHash, token.ExpiresAt,
 	)
 
 	if err := row.Scan(&token.ID); err != nil {
@@ -51,12 +51,12 @@ func (r *PasswordResetRepository) Create(ctx context.Context, token *PasswordRes
 // if none exists.
 func (r *PasswordResetRepository) GetByTokenHash(ctx context.Context, tokenHash string) (*PasswordResetToken, error) {
 	row := r.pool.QueryRow(ctx,
-		"SELECT id, admin_id, token_hash, expires_at, used_at FROM password_reset_tokens WHERE token_hash = $1",
+		"SELECT id, user_id, token_hash, expires_at, used_at FROM password_reset_tokens WHERE token_hash = $1",
 		tokenHash,
 	)
 
 	var token PasswordResetToken
-	if err := row.Scan(&token.ID, &token.AdminID, &token.TokenHash, &token.ExpiresAt, &token.UsedAt); err != nil {
+	if err := row.Scan(&token.ID, &token.UserID, &token.TokenHash, &token.ExpiresAt, &token.UsedAt); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, ErrNotFound
 		}
@@ -74,7 +74,7 @@ func (r *PasswordResetRepository) GetByTokenHash(ctx context.Context, tokenHash 
 // the password again.
 func (r *PasswordResetRepository) InvalidateOtherPending(ctx context.Context, adminID, excludeID string) error {
 	_, err := r.pool.Exec(ctx,
-		"UPDATE password_reset_tokens SET used_at = now() WHERE admin_id = $1 AND id != $2 AND used_at IS NULL",
+		"UPDATE password_reset_tokens SET used_at = now() WHERE user_id = $1 AND id != $2 AND used_at IS NULL",
 		adminID, excludeID,
 	)
 	if err != nil {

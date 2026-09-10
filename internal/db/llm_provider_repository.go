@@ -24,7 +24,7 @@ type LLMProvider struct {
 }
 
 // LLMProviderRepository accesses the llm_providers table and the
-// llm_settings singleton row.
+// llm_settings row of the active tenant.
 type LLMProviderRepository struct {
 	pool *Pool
 }
@@ -35,15 +35,15 @@ func NewLLMProviderRepository(pool *Pool) *LLMProviderRepository {
 }
 
 // UpsertProvider stores provider's encrypted key and model as connected,
-// creating the row on first connect or overwriting it on reconnect - the
-// `provider` column is unique, so there is always at most one row per
-// provider (AI-01, AI-03). Any previously recorded last_error is cleared,
+// creating the row on first connect or overwriting it on reconnect -
+// (tenant_id, provider) is unique, so there is always at most one row per
+// provider per tenant (AI-01, AI-03). Any previously recorded last_error is cleared,
 // since a successful (re)connect supersedes it.
 func (r *LLMProviderRepository) UpsertProvider(ctx context.Context, provider string, encryptedAPIKey []byte, model string) error {
 	_, err := r.pool.Exec(ctx,
 		`INSERT INTO llm_providers (provider, encrypted_api_key, model, status)
 		 VALUES ($1, $2, $3, 'connected')
-		 ON CONFLICT (provider) DO UPDATE SET
+		 ON CONFLICT (tenant_id, provider) DO UPDATE SET
 		   encrypted_api_key = EXCLUDED.encrypted_api_key,
 		   model = EXCLUDED.model,
 		   status = 'connected',
@@ -139,12 +139,17 @@ func (r *LLMProviderRepository) countLLMProviders(ctx context.Context) (int, err
 }
 
 // GetActiveProvider returns the currently active provider's name, or ""
-// (not an error) when llm_settings.active_provider is NULL - the singleton
-// row always exists (seeded by migration 0021).
+// (not an error) when the active tenant has no llm_settings row yet, or
+// has one whose active_provider is NULL. The row is created lazily by
+// SetActiveProvider: since multi-tenancy-core there is one per tenant,
+// not one seeded singleton per installation.
 func (r *LLMProviderRepository) GetActiveProvider(ctx context.Context) (string, error) {
 	var activeProvider *string
-	row := r.pool.QueryRow(ctx, "SELECT active_provider FROM llm_settings WHERE id = 1")
+	row := r.pool.QueryRow(ctx, "SELECT active_provider FROM llm_settings")
 	if err := row.Scan(&activeProvider); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return "", nil
+		}
 		return "", fmt.Errorf("db: failed to get active llm provider: %w", err)
 	}
 	if activeProvider == nil {
@@ -153,10 +158,13 @@ func (r *LLMProviderRepository) GetActiveProvider(ctx context.Context) (string, 
 	return *activeProvider, nil
 }
 
-// SetActiveProvider updates the singleton llm_settings row's
+// SetActiveProvider sets the active tenant's llm_settings row's
 // active_provider to provider (AI-06).
 func (r *LLMProviderRepository) SetActiveProvider(ctx context.Context, provider string) error {
-	_, err := r.pool.Exec(ctx, "UPDATE llm_settings SET active_provider = $1 WHERE id = 1", provider)
+	_, err := r.pool.Exec(ctx,
+		`INSERT INTO llm_settings (active_provider) VALUES ($1)
+		 ON CONFLICT (tenant_id) DO UPDATE SET active_provider = EXCLUDED.active_provider`,
+		provider)
 	if err != nil {
 		return fmt.Errorf("db: failed to set active llm provider: %w", err)
 	}

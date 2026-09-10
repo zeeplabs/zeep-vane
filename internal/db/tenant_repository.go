@@ -30,6 +30,24 @@ type Tenant struct {
 	CreatedAt       time.Time
 }
 
+// logoServedPath is the fixed URL a tenant's stored logo is served at.
+// The pre-multi-tenancy design encoded the file extension into the path
+// itself ("/uploads/logo.png"); the logo lives in the row as bytes plus a
+// content type, so the path never changes - LogoServedURL reports whether
+// it currently resolves to anything by checking LogoContentType, not by
+// encoding format into the path.
+const logoServedPath = "/uploads/logo"
+
+// LogoServedURL returns the URL this tenant's logo is served at, or nil if
+// no logo has ever been uploaded.
+func (t *Tenant) LogoServedURL() *string {
+	if t.LogoContentType == nil {
+		return nil
+	}
+	url := logoServedPath
+	return &url
+}
+
 // ErrInvalidTaxID is returned when TaxID's digit count doesn't match what
 // TaxIDType requires (11 for cpf, 14 for cnpj) - checked in the
 // application layer, not the database, per design.md's assumption that
@@ -249,4 +267,79 @@ func (r *TenantRepository) UpdateLogo(ctx context.Context, tenantID, contentType
 	}
 
 	return &tenant, nil
+}
+
+// legacyDataTenantID is the placeholder tenant the 0024 migration assigns
+// to any pre-existing domain row it finds (see that migration's backfill
+// note). It is never a real tenant, so the no-active-tenant fallback below
+// must never resolve to it.
+const legacyDataTenantID = "00000000-0000-0000-0000-000000000000"
+
+// activeTenantPredicate matches the session's active tenant
+// (app.tenant_id), falling back to the installation's own single tenant
+// when no tenant is active.
+//
+// The fallback exists for the routes that legitimately have no session:
+// the public status page, the public logo file, and the login screen's
+// branding, all of which read what used to be the company_settings
+// singleton. Resolving a tenant for unauthenticated traffic is not solved
+// by this feature (no task covers it; T15 covers only the poller), so
+// these paths keep their pre-multi-tenancy semantics - "the one tenant
+// this installation has" - which is exactly correct for self-hosted and
+// is the same shape the dropped company_settings row had. It does not
+// weaken RLS: under a non-superuser role the policy still fails closed and
+// this returns nothing.
+const activeTenantPredicate = `
+	WHERE id = COALESCE(NULLIF(current_setting('app.tenant_id', true), '')::uuid, id)
+	  AND id <> '` + legacyDataTenantID + `'
+	ORDER BY created_at ASC
+	LIMIT 1`
+
+// Active returns the session's active tenant, or the installation's single
+// tenant when no tenant is active - see activeTenantPredicate. It returns
+// ErrNotFound when neither resolves.
+func (r *TenantRepository) Active(ctx context.Context) (*Tenant, error) {
+	row := r.pool.QueryRow(ctx,
+		`SELECT id, name, slug, plan, status, contact_email, logo_content_type,
+		        legal_name, tax_id, tax_id_type, billing_address, locale,
+		        primary_color, secondary_color, created_at
+		 FROM tenants`+activeTenantPredicate)
+
+	var tenant Tenant
+	if err := row.Scan(
+		&tenant.ID, &tenant.Name, &tenant.Slug, &tenant.Plan, &tenant.Status, &tenant.ContactEmail,
+		&tenant.LogoContentType, &tenant.LegalName, &tenant.TaxID, &tenant.TaxIDType, &tenant.BillingAddress,
+		&tenant.Locale, &tenant.PrimaryColor, &tenant.SecondaryColor, &tenant.CreatedAt,
+	); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrNotFound
+		}
+		return nil, fmt.Errorf("db: failed to get active tenant: %w", err)
+	}
+
+	return &tenant, nil
+}
+
+// ActiveLogo returns the active tenant's stored logo bytes and content
+// type. found is false when no logo has ever been uploaded (logo_data is
+// NULL) or no tenant resolves at all - the caller must respond 404 rather
+// than serve an empty body.
+func (r *TenantRepository) ActiveLogo(ctx context.Context) (contentType string, data []byte, found bool, err error) {
+	row := r.pool.QueryRow(ctx, `SELECT logo_content_type, logo_data FROM tenants`+activeTenantPredicate)
+
+	var ct *string
+	var d []byte
+	if err := row.Scan(&ct, &d); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return "", nil, false, nil
+		}
+		return "", nil, false, fmt.Errorf("db: failed to get tenant logo: %w", err)
+	}
+	if d == nil {
+		return "", nil, false, nil
+	}
+	if ct != nil {
+		contentType = *ct
+	}
+	return contentType, d, true, nil
 }
