@@ -508,17 +508,18 @@ func TestInviteAdmin_DuplicatePendingInvite_InvalidatesPreviousWithoutDuplicateR
 	}
 }
 
+// TestInviteAdmin_EmailAlreadyActiveAdmin_409 asserts the "already active"
+// conflict is scoped to the caller's own tenant (T14): a user who already
+// has a tenant_membership *in this tenant* can't be invited again.
+// Inviting an email that has a user account only in a *different* tenant
+// is exactly the consultant scenario T14 exists to support - covered
+// separately (TestAcceptInvite_ExistingUser_EndsUpWithMembershipInBothTenants).
 func TestInviteAdmin_EmailAlreadyActiveAdmin_409(t *testing.T) {
 	r, _, admins, _ := newAdminsRouter(t)
 	token := issueTestSessionToken(t, admins)
-	activeEmail := uniqueTestEmail(t)
-	activeAdmin := &db.User{Email: activeEmail, PasswordHash: "hash"}
-	if err := admins.Create(context.Background(), activeAdmin); err != nil {
-		t.Fatalf("admins.Create() returned unexpected error: %v", err)
-	}
-	t.Cleanup(func() { _ = admins.Delete(context.Background(), activeAdmin.ID) })
+	activeAdmin := createTenantMember(t, admins, db.RoleOperator)
 
-	rec := postInviteAdmin(t, r, token, activeEmail, db.RoleOperator)
+	rec := postInviteAdmin(t, r, token, activeAdmin.Email, db.RoleOperator)
 
 	if rec.Code != http.StatusConflict {
 		t.Errorf("status = %d, want %d, body = %s", rec.Code, http.StatusConflict, rec.Body.String())
@@ -819,6 +820,169 @@ func TestAcceptInvite_WeakPassword_422(t *testing.T) {
 	}
 	if _, err := admins.GetByEmail(context.Background(), inviteEmail); !errors.Is(err, db.ErrNotFound) {
 		t.Errorf("GetByEmail() err = %v, want db.ErrNotFound (no admin created for a weak-password-rejected invite)", err)
+	}
+}
+
+// --- T14: AcceptInvite branches on existing vs. new user ---
+
+// TestAcceptInvite_ExistingUser_201_CreatesOnlyMembershipNoSessionIssued is
+// T14's branch guard: accepting an invite for an email that already
+// belongs to a user must create only the tenant_membership - no password
+// required, no duplicate user row, and no session cookie set (the client
+// is expected to send them to login instead, per the response's Redirect
+// field).
+func TestAcceptInvite_ExistingUser_201_CreatesOnlyMembershipNoSessionIssued(t *testing.T) {
+	r, pool, admins, invites := newAdminsRouter(t)
+	inviterAdmin := createTenantMember(t, admins, db.RoleOwner)
+
+	existing := &db.User{Email: uniqueTestEmail(t), PasswordHash: "existing-hash"}
+	if err := admins.Create(context.Background(), existing); err != nil {
+		t.Fatalf("admins.Create() returned unexpected error: %v", err)
+	}
+	t.Cleanup(func() { _ = admins.Delete(context.Background(), existing.ID) })
+
+	rawToken := createTestInvite(t, invites, inviterAdmin.ID, existing.Email, db.RoleOperator, 1*time.Hour)
+
+	rec := postAcceptInvite(t, r, rawToken, "")
+
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusCreated, rec.Body.String())
+	}
+	var resp acceptAdminInviteResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+	if resp.Redirect != "login" {
+		t.Errorf("response Redirect = %q, want %q", resp.Redirect, "login")
+	}
+	if resp.Role != db.RoleOperator {
+		t.Errorf("response Role = %q, want %q", resp.Role, db.RoleOperator)
+	}
+
+	for _, c := range rec.Result().Cookies() {
+		if c.Name == sessionCookieName {
+			t.Errorf("session cookie set on existing-user invite acceptance, want none (redirect to login instead)")
+		}
+	}
+
+	var userCount int
+	if err := pool.QueryRow(context.Background(), "SELECT COUNT(*) FROM users WHERE email = $1", existing.Email).Scan(&userCount); err != nil {
+		t.Fatalf("counting users returned unexpected error: %v", err)
+	}
+	if userCount != 1 {
+		t.Errorf("users rows for %q = %d, want 1 (no duplicate account)", existing.Email, userCount)
+	}
+
+	if got := memberRole(t, pool, existing.ID); got != db.RoleOperator {
+		t.Errorf("membership role = %q, want %q", got, db.RoleOperator)
+	}
+}
+
+// TestAcceptInvite_NewEmail_201_KeepsSetPasswordFlow proves the other side
+// of T14's branch: a brand new email keeps ADM-03's original behavior
+// unchanged (password set, account created, session issued), and its
+// response never carries the existing-user branch's Redirect field.
+func TestAcceptInvite_NewEmail_201_KeepsSetPasswordFlow(t *testing.T) {
+	r, pool, admins, invites := newAdminsRouter(t)
+	inviterAdmin := createTenantMember(t, admins, db.RoleOwner)
+
+	email := uniqueTestEmail(t)
+	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), "DELETE FROM users WHERE email = $1", email) })
+	rawToken := createTestInvite(t, invites, inviterAdmin.ID, email, db.RoleViewer, 1*time.Hour)
+
+	rec := postAcceptInvite(t, r, rawToken, "a-strong-password")
+
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusCreated, rec.Body.String())
+	}
+	var resp acceptAdminInviteResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+	if resp.Redirect != "" {
+		t.Errorf("response Redirect = %q, want empty (new-user branch never redirects)", resp.Redirect)
+	}
+
+	created, err := admins.GetByEmail(context.Background(), email)
+	if err != nil {
+		t.Fatalf("GetByEmail() returned unexpected error: %v", err)
+	}
+	if !auth.VerifyPassword(created.PasswordHash, "a-strong-password") {
+		t.Error("created user's password hash does not verify against the submitted password")
+	}
+
+	var sessionCookieSet bool
+	for _, c := range rec.Result().Cookies() {
+		if c.Name == sessionCookieName {
+			sessionCookieSet = true
+		}
+	}
+	if !sessionCookieSet {
+		t.Error("no session cookie set on new-user invite acceptance, want one")
+	}
+}
+
+// TestAcceptInvite_ExistingUser_EndsUpWithMembershipInBothTenants is the
+// spec.md P1 Independent Test for "Convite de membro do time escopado por
+// tenant": a user invited by tenant A, then invited again by tenant B,
+// ends up with a tenant_membership in both.
+func TestAcceptInvite_ExistingUser_EndsUpWithMembershipInBothTenants(t *testing.T) {
+	svc, provider := newTestEmailService(t)
+	r, pool, admins, invites := newAdminsRouterWithEmail(t, svc)
+	tenantA := adminsTestTenant(t)
+	inviterA := createTenantMember(t, admins, db.RoleOwner)
+
+	email := uniqueTestEmail(t)
+	firstToken := createTestInvite(t, invites, inviterA.ID, email, db.RoleOperator, 1*time.Hour)
+
+	firstAccept := postAcceptInvite(t, r, firstToken, "a-strong-password")
+	if firstAccept.Code != http.StatusCreated {
+		t.Fatalf("first accept (new user, tenant A) status = %d, want %d, body = %s", firstAccept.Code, http.StatusCreated, firstAccept.Body.String())
+	}
+
+	created, err := admins.GetByEmail(context.Background(), email)
+	if err != nil {
+		t.Fatalf("GetByEmail() returned unexpected error: %v", err)
+	}
+	t.Cleanup(func() { _ = admins.Delete(context.Background(), created.ID) })
+
+	tenantB, tokenB := seedOtherTenantOwnerToken(t, pool, admins)
+	inviteRec := postInviteAdmin(t, r, tokenB, email, db.RoleViewer)
+	if inviteRec.Code != http.StatusCreated {
+		t.Fatalf("tenant B invite status = %d, want %d, body = %s", inviteRec.Code, http.StatusCreated, inviteRec.Body.String())
+	}
+	secondRawToken := extractAcceptToken(t, provider.lastMessage.TextBody)
+
+	secondAccept := postAcceptInvite(t, r, secondRawToken, "")
+	if secondAccept.Code != http.StatusCreated {
+		t.Fatalf("second accept (existing user, tenant B) status = %d, want %d, body = %s", secondAccept.Code, http.StatusCreated, secondAccept.Body.String())
+	}
+
+	var membershipCount int
+	if err := pool.QueryRow(context.Background(),
+		"SELECT COUNT(*) FROM tenant_memberships WHERE user_id = $1", created.ID).Scan(&membershipCount); err != nil {
+		t.Fatalf("counting memberships returned unexpected error: %v", err)
+	}
+	if membershipCount != 2 {
+		t.Errorf("tenant_memberships rows for %q = %d, want 2 (tenant A and tenant B)", email, membershipCount)
+	}
+
+	var gotRoleA string
+	if err := pool.QueryRow(context.Background(),
+		"SELECT role FROM tenant_memberships WHERE user_id = $1 AND tenant_id = $2", created.ID, tenantA).Scan(&gotRoleA); err != nil {
+		t.Fatalf("querying tenant A membership returned unexpected error: %v", err)
+	}
+	if gotRoleA != db.RoleOperator {
+		t.Errorf("tenant A membership role = %q, want %q", gotRoleA, db.RoleOperator)
+	}
+
+	var gotRoleB string
+	if err := pool.QueryRow(context.Background(),
+		"SELECT role FROM tenant_memberships WHERE user_id = $1 AND tenant_id = $2", created.ID, tenantB).Scan(&gotRoleB); err != nil {
+		t.Fatalf("querying tenant B membership returned unexpected error: %v", err)
+	}
+	if gotRoleB != db.RoleViewer {
+		t.Errorf("tenant B membership role = %q, want %q", gotRoleB, db.RoleViewer)
 	}
 }
 

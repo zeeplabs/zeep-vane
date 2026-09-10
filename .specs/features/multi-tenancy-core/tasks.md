@@ -503,16 +503,22 @@ T16 → T19
 - Skill: NONE
 
 **Done when**:
-- [ ] Invite to an existing verified email creates only the membership, no password field accepted/required
-- [ ] Invite to a new email keeps today's behavior (creates `user` + sets password + membership)
-- [ ] Expired invite token (>1h) is rejected exactly as before
-- [ ] Gate check passes: `TEST_DATABASE_URL=... go test -tags=integration ./internal/api/...`
-- [ ] Test count: existing accept-invite cases still pass + 3 new branch cases
+- [x] Invite to an existing verified email creates only the membership, no password field accepted/required
+- [x] Invite to a new email keeps today's behavior (creates `user` + sets password + membership)
+- [x] Expired invite token (>1h) is rejected exactly as before
+- [x] Gate check passes: `TEST_DATABASE_URL=... go test -tags=integration ./internal/api/...`
+- [x] Test count: existing accept-invite cases still pass + 3 new branch cases (`TestAcceptInvite_ExistingUser_201_CreatesOnlyMembershipNoSessionIssued`, `TestAcceptInvite_NewEmail_201_KeepsSetPasswordFlow`, `TestAcceptInvite_ExistingUser_EndsUpWithMembershipInBothTenants`)
 
 **Tests**: integration
 **Gate**: full
 
 **Commit**: `feat(api): branch AcceptInvite for existing multi-tenant users`
+
+**Implementation notes:** `AcceptInvite` now peeks at the invite via `GetByTokenHash` (not consuming) before deciding which branch applies, so a bad password on the new-user path (422) never burns the invitee's one-shot token - only once the branch's own preconditions pass does `ClaimForUse` atomically consume it, preserving the exact concurrency guarantee `TestAcceptInvite_ConcurrentAccept_OnlyOneSucceeds` already covers. The existing-user branch (`acceptInviteForExistingUser`) creates only the `tenant_membership` and never issues a session cookie - the response carries a new `redirect: "login"` field instead. **Necessary companion fix, not scope creep:** `Invite`'s pre-existing "already active" check (`h.users.GetByEmail`) rejected *any* email with a `user` row anywhere, which directly blocked the exact consultant scenario this task exists to support - a same email invited into a second tenant would 409 before ever reaching `AcceptInvite`. Rescoped to check for an existing `tenant_membership` in the caller's *own* active tenant (`h.memberships.GetRole`) instead of a global email match; `TestInviteAdmin_EmailAlreadyActiveAdmin_409` (pre-existing) was updated to seed a same-tenant membership so it still asserts the real invariant ("already a member of this tenant"), not the invalidated one.
+
+---
+
+**Phase 5 completion gate (end of Phase 5 - T13, T14):** Build tier run in full - Quick (`go build ./... && go vet ./... && gofmt -l` + `go test ./...`) clean; Full (`TEST_DATABASE_URL=... go test -tags=integration -p 1 ./internal/db/... ./internal/api/...` against a disposable Postgres) all green; Frontend (`npx tsc -b --noEmit && npm run test`, from `web/`) clean, 277 tests. No deferred failures.
 
 ---
 

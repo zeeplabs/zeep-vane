@@ -118,9 +118,14 @@ const invalidInviteAdminRequestBody = `{"error":"name and email are required, an
 const adminAlreadyActiveBody = `{"error":"an active admin already exists for this email"}`
 
 // Invite handles POST /api/admins (role: owner). It rejects an email that
-// already belongs to an active admin (spec.md edge case), otherwise
-// invalidates any pending invite for the same email (ADM-02) before issuing
-// a new one, and records an "invited" audit entry (ADM-08).
+// already belongs to an active member of the caller's active tenant
+// (spec.md edge case) - scoped by tenant since T14, not globally: an email
+// that already has a `user` account in a *different* tenant (spec.md AC2 -
+// the consultant case) is still invitable here, since AcceptInvite (T14)
+// links that existing user to this tenant instead of creating a duplicate
+// account. Otherwise it invalidates any pending invite for the same email
+// (ADM-02) before issuing a new one, and records an "invited" audit entry
+// (ADM-08).
 //
 // SPEC_DEVIATION: spec.md AC1 says inviting "cria o registro do admin em
 // estado pending", but design.md (already implemented in T1-T4) models no
@@ -128,7 +133,7 @@ const adminAlreadyActiveBody = `{"error":"an active admin already exists for thi
 // row. The Admin row is created only at accept time (AcceptInvite). This
 // keeps this handler consistent with the schema already committed for this
 // feature; the "already active" edge case is served by checking for an
-// existing Admin row by email instead of a pending-status Admin row.
+// existing tenant_membership instead of a pending-status Admin row.
 //
 // SPEC_DEVIATION: admin_audit_log.target_id is NOT NULL and there is no
 // Admin row yet for an invited email, so the "invited" audit entry uses the
@@ -151,9 +156,15 @@ func (h *AdminsHandler) Invite(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if _, err := h.users.GetByEmail(r.Context(), req.Email); err == nil {
-		writeAdminError(w, http.StatusConflict, adminAlreadyActiveBody)
-		return
+	if existingUser, err := h.users.GetByEmail(r.Context(), req.Email); err == nil {
+		if _, err := h.memberships.GetRole(r.Context(), existingUser.ID, tenantID); err == nil {
+			writeAdminError(w, http.StatusConflict, adminAlreadyActiveBody)
+			return
+		} else if !errors.Is(err, db.ErrNotFound) {
+			h.logger.Error("admins: failed to look up existing membership for invite", zap.Error(err))
+			writeInternalError(w)
+			return
+		}
 	} else if !errors.Is(err, db.ErrNotFound) {
 		h.logger.Error("admins: failed to look up user by email", zap.Error(err))
 		writeInternalError(w)
@@ -223,27 +234,79 @@ const acceptInviteErrorBody = `{"error":"invalid or expired invite token"}`
 type acceptAdminInviteResponse struct {
 	Email string `json:"email"`
 	Role  string `json:"role"`
+	// Redirect is set only on the existing-user branch (T14): no session
+	// is issued for that case (the invitee already has a password
+	// elsewhere), so the client is told to send them to login instead.
+	Redirect string `json:"redirect,omitempty"`
 }
 
 // AcceptInvite handles POST /api/admins/invite/{token}/accept (public). A
 // missing, expired, or already-used token is rejected with 401 (ADM-04)
-// without altering any state. A valid token creates the Admin account with
-// the role the invite specified (ADM-03) and marks the invite used.
+// without altering any state. It branches on whether the invited email
+// already belongs to a `user` (T14, spec.md AC2/AC3 - the "consultant with
+// multiple tenants" case): an existing user gets only a new
+// tenant_membership, no password involved, and is pointed at login instead
+// of an issued session; a brand new email keeps the original
+// set-password-on-accept flow (ADM-03) unchanged.
 func (h *AdminsHandler) AcceptInvite(w http.ResponseWriter, r *http.Request) {
 	token := chi.URLParam(r, "token")
+	if token == "" {
+		writeAdminError(w, http.StatusUnauthorized, acceptInviteErrorBody)
+		return
+	}
 
 	var req acceptAdminInviteRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Password == "" {
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeAdminError(w, http.StatusUnprocessableEntity, invalidAcceptInviteRequestBody)
+		return
+	}
+
+	// Peek at the invite (without consuming it) to learn its email and
+	// decide which branch applies - ClaimForUse's atomic
+	// mark-used-if-unused-and-unexpired only runs once the branch (and,
+	// for a new email, password validation) has already succeeded, so a
+	// 422 on a bad password never burns the invitee's one-shot token.
+	invite, err := h.invites.GetByTokenHash(r.Context(), hashAdminInviteToken(token))
+	switch {
+	case errors.Is(err, db.ErrNotFound):
+		writeAdminError(w, http.StatusUnauthorized, acceptInviteErrorBody)
+		return
+	case err != nil:
+		h.logger.Error("admins: failed to look up invite", zap.Error(err))
+		writeInternalError(w)
+		return
+	}
+	if invite.UsedAt != nil || time.Now().After(invite.ExpiresAt) {
+		writeAdminError(w, http.StatusUnauthorized, acceptInviteErrorBody)
+		return
+	}
+
+	existing, err := h.users.GetByEmail(r.Context(), invite.Email)
+	switch {
+	case err == nil:
+		h.acceptInviteForExistingUser(w, r, token, existing)
+		return
+	case errors.Is(err, db.ErrNotFound):
+		h.acceptInviteForNewUser(w, r, token, req, invite)
+		return
+	default:
+		h.logger.Error("admins: failed to look up user by email for invite acceptance", zap.Error(err))
+		writeInternalError(w)
+		return
+	}
+}
+
+// acceptInviteForNewUser is AcceptInvite's original flow (ADM-03): claims
+// the token, creates the invited user with the submitted password, and
+// links them to the invite's tenant as a member - then authenticates them
+// immediately (AIP-01/02), same as before this task.
+func (h *AdminsHandler) acceptInviteForNewUser(w http.ResponseWriter, r *http.Request, token string, req acceptAdminInviteRequest, invite *db.TenantInvite) {
+	if req.Password == "" {
 		writeAdminError(w, http.StatusUnprocessableEntity, invalidAcceptInviteRequestBody)
 		return
 	}
 	if err := auth.ValidatePassword(req.Password); err != nil {
 		writeAdminError(w, http.StatusUnprocessableEntity, weakPasswordBody)
-		return
-	}
-
-	if token == "" {
-		writeAdminError(w, http.StatusUnauthorized, acceptInviteErrorBody)
 		return
 	}
 
@@ -255,11 +318,11 @@ func (h *AdminsHandler) AcceptInvite(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// ClaimForUse atomically checks unused+unexpired and marks the invite
-	// used in one statement (M12/L24) - unlike the old GetByTokenHash +
-	// in-Go check + later MarkUsed sequence, two concurrent requests for
-	// the same token can no longer both pass the check before either
-	// claims it.
-	invite, err := h.invites.ClaimForUse(r.Context(), hashAdminInviteToken(token))
+	// used in one statement (M12/L24) - unlike the earlier
+	// GetByTokenHash + in-Go check + later MarkUsed sequence, two
+	// concurrent requests for the same token can no longer both pass the
+	// check before either claims it.
+	claimed, err := h.invites.ClaimForUse(r.Context(), hashAdminInviteToken(token))
 	switch {
 	case errors.Is(err, db.ErrNotFound):
 		writeAdminError(w, http.StatusUnauthorized, acceptInviteErrorBody)
@@ -274,7 +337,7 @@ func (h *AdminsHandler) AcceptInvite(w http.ResponseWriter, r *http.Request) {
 	// link is itself proof the invitee controls the address it was sent
 	// to, so a second verification round trip would prove nothing.
 	verifiedAt := time.Now()
-	user := &db.User{Email: invite.Email, PasswordHash: passwordHash, Name: invite.Name, Phone: invite.Phone, EmailVerifiedAt: &verifiedAt}
+	user := &db.User{Email: claimed.Email, PasswordHash: passwordHash, Name: claimed.Name, Phone: claimed.Phone, EmailVerifiedAt: &verifiedAt}
 	if err := h.users.Create(r.Context(), user); err != nil {
 		h.logger.Error("admins: failed to create invited user", zap.Error(err))
 		writeInternalError(w)
@@ -286,13 +349,13 @@ func (h *AdminsHandler) AcceptInvite(w http.ResponseWriter, r *http.Request) {
 	// ahead of the tenant-context middleware, so it opens its own
 	// transaction with app.tenant_id set to the invite's tenant, which is
 	// what the membership's RLS WITH CHECK requires.
-	tx, err := h.pool.BeginTenantTx(r.Context(), user.ID, invite.TenantID)
+	tx, err := h.pool.BeginTenantTx(r.Context(), user.ID, claimed.TenantID)
 	if err != nil {
 		h.logger.Error("admins: failed to begin tenant transaction for invite acceptance", zap.Error(err))
 		writeInternalError(w)
 		return
 	}
-	membership := &db.TenantMembership{UserID: user.ID, TenantID: invite.TenantID, Role: invite.Role}
+	membership := &db.TenantMembership{UserID: user.ID, TenantID: claimed.TenantID, Role: claimed.Role}
 	if err := h.memberships.Create(db.WithTenantTx(r.Context(), tx), membership); err != nil {
 		_ = tx.Rollback(r.Context())
 		h.logger.Error("admins: failed to create membership for invited user", zap.Error(err))
@@ -310,7 +373,7 @@ func (h *AdminsHandler) AcceptInvite(w http.ResponseWriter, r *http.Request) {
 	// BootstrapHandler.Create already uses, so the invitee lands on an
 	// active session without a separate login step, already scoped to the
 	// tenant that invited them.
-	sessionToken, err := auth.IssueSessionWithTenant(user.ID, invite.TenantID, h.sessionSecret)
+	sessionToken, err := auth.IssueSessionWithTenant(user.ID, claimed.TenantID, h.sessionSecret)
 	if err != nil {
 		h.logger.Error("admins: failed to issue session after invite acceptance", zap.Error(err))
 		writeInternalError(w)
@@ -320,7 +383,49 @@ func (h *AdminsHandler) AcceptInvite(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
-	_ = json.NewEncoder(w).Encode(acceptAdminInviteResponse{Email: user.Email, Role: invite.Role})
+	_ = json.NewEncoder(w).Encode(acceptAdminInviteResponse{Email: user.Email, Role: claimed.Role})
+}
+
+// acceptInviteForExistingUser is AcceptInvite's branch for an email that
+// already belongs to a `user` (T14, spec.md AC2 - e.g. a consultant who
+// already has an account in another tenant): it claims the token and
+// creates only the tenant_membership linking that existing user to the
+// invite's tenant, without touching their password or issuing a session -
+// the client is expected to send them to login instead (Redirect field).
+func (h *AdminsHandler) acceptInviteForExistingUser(w http.ResponseWriter, r *http.Request, token string, existing *db.User) {
+	claimed, err := h.invites.ClaimForUse(r.Context(), hashAdminInviteToken(token))
+	switch {
+	case errors.Is(err, db.ErrNotFound):
+		writeAdminError(w, http.StatusUnauthorized, acceptInviteErrorBody)
+		return
+	case err != nil:
+		h.logger.Error("admins: failed to claim invite", zap.Error(err))
+		writeInternalError(w)
+		return
+	}
+
+	tx, err := h.pool.BeginTenantTx(r.Context(), existing.ID, claimed.TenantID)
+	if err != nil {
+		h.logger.Error("admins: failed to begin tenant transaction for invite acceptance", zap.Error(err))
+		writeInternalError(w)
+		return
+	}
+	membership := &db.TenantMembership{UserID: existing.ID, TenantID: claimed.TenantID, Role: claimed.Role}
+	if err := h.memberships.Create(db.WithTenantTx(r.Context(), tx), membership); err != nil {
+		_ = tx.Rollback(r.Context())
+		h.logger.Error("admins: failed to create membership for existing user invite acceptance", zap.Error(err))
+		writeInternalError(w)
+		return
+	}
+	if err := tx.Commit(r.Context()); err != nil {
+		h.logger.Error("admins: failed to commit invite acceptance", zap.Error(err))
+		writeInternalError(w)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	_ = json.NewEncoder(w).Encode(acceptAdminInviteResponse{Email: existing.Email, Role: claimed.Role, Redirect: "login"})
 }
 
 const inviteNotFoundBody = `{"error":"invite not found"}`
