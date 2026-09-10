@@ -834,6 +834,14 @@ func TestUpdateProfile_ExtraFieldsIgnored(t *testing.T) {
 	if updated.Email != admin.Email {
 		t.Errorf("Email = %q, want unchanged %q (email field must be ignored)", updated.Email, admin.Email)
 	}
+
+	var resp meResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+	if resp.Email != admin.Email {
+		t.Errorf("response Email = %q, want unchanged %q (must never echo a client-supplied email)", resp.Email, admin.Email)
+	}
 }
 
 // TestUpdateProfile_NoSession_401 proves the endpoint requires
