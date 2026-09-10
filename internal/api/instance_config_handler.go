@@ -38,6 +38,15 @@ type brandingResponse struct {
 // more than what every public status page already shows to any visitor
 // without auth (SET-15) - only the logo, never contact_email or any other
 // tenant profile field.
+//
+// It is served only on the admin HTTP listener (internal/cli/routes.go),
+// never behind router.HostRouter, so it has no hostname-derived tenant
+// signal to set app.tenant_id from: the admin domain is shared across
+// tenants, not per-tenant. It therefore relies on companySettingsGetter's
+// single-tenant fallback (TenantRepository.activeTenantPredicate), correct
+// for self-hosted and the same open question the public logo route
+// documents for a shared-admin-domain SaaS deployment. No tenant
+// resolution is invented here.
 func (h *InstanceConfigHandler) Branding(w http.ResponseWriter, r *http.Request) {
 	companySettings, err := h.companySettings.Active(r.Context())
 	if err != nil {

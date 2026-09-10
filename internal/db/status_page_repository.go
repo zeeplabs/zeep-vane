@@ -43,7 +43,13 @@ const pendingTLSState = "pending_tls"
 // both nullable: a status page can be created with no domain attached
 // (SPD-01) and gets both set together, exactly once, by AttachDomain.
 type StatusPage struct {
-	ID           string
+	ID string
+	// TenantID is the tenant this status page belongs to (0024). Only
+	// GetByHostname populates it: it is the one lookup that runs before any
+	// tenant context exists (an anonymous visitor has no session), so the
+	// row itself is what tells router.HostRouter which tenant to scope the
+	// rest of the request to.
+	TenantID     string
 	Name         string
 	Subdomain    *string
 	DomainID     *string
@@ -413,18 +419,20 @@ func (r *StatusPageRepository) StateByHostname(ctx context.Context, hostname str
 // joining status_pages to its parent domain. It returns ErrNotFound if no
 // status page matches. Unlike StateByHostname (used only by tls.HostPolicy,
 // which needs just the state to gate ACME issuance), this returns the
-// StatusPage's ID too, so callers like router.HostRouter can thread it down
-// to the scoped public queries that implement SP-15 (a status page shows
-// only its own linked services/incidents).
+// StatusPage's ID and TenantID too, so callers like router.HostRouter can
+// thread the ID down to the scoped public queries that implement SP-15 (a
+// status page shows only its own linked services/incidents) and the tenant
+// id into the request's RLS session settings (0024) - the hostname is the
+// only tenant signal an anonymous visitor carries.
 func (r *StatusPageRepository) GetByHostname(ctx context.Context, hostname string) (*StatusPage, error) {
 	row := r.pool.QueryRow(ctx,
-		"SELECT sp.id, sp.name, sp.subdomain, sp.domain_id, sp.state, sp.tls_last_error, sp.created_at "+
+		"SELECT sp.id, sp.tenant_id, sp.name, sp.subdomain, sp.domain_id, sp.state, sp.tls_last_error, sp.created_at "+
 			"FROM status_pages sp JOIN domains d ON "+hostnameMatch,
 		hostname,
 	)
 
 	var sp StatusPage
-	if err := row.Scan(&sp.ID, &sp.Name, &sp.Subdomain, &sp.DomainID, &sp.State, &sp.TLSLastError, &sp.CreatedAt); err != nil {
+	if err := row.Scan(&sp.ID, &sp.TenantID, &sp.Name, &sp.Subdomain, &sp.DomainID, &sp.State, &sp.TLSLastError, &sp.CreatedAt); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, ErrNotFound
 		}

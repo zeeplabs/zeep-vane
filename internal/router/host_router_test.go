@@ -103,7 +103,7 @@ func TestHostRouter_PublishedStatusPageHost_RoutesToPublicHandler(t *testing.T) 
 	req.Host = hostname
 	rec := httptest.NewRecorder()
 
-	HostRouter(statusPages, publicHandler).ServeHTTP(rec, req)
+	HostRouter(statusPages, pool, publicHandler).ServeHTTP(rec, req)
 
 	if !publicHandlerCalled {
 		t.Fatal("publicHandler was not invoked for a published status page host")
@@ -130,7 +130,7 @@ func TestHostRouter_UnrecognizedHost_404(t *testing.T) {
 	req.Host = "no-such-status-page.example.com"
 	rec := httptest.NewRecorder()
 
-	HostRouter(statusPages, publicHandler).ServeHTTP(rec, req)
+	HostRouter(statusPages, pool, publicHandler).ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusNotFound {
 		t.Errorf("status = %d, want %d", rec.Code, http.StatusNotFound)

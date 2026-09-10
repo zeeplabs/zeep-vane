@@ -189,10 +189,12 @@ func NewServeCmd() *cobra.Command {
 // (public_status_preview_handler.go), never through this production one. A
 // request's Host header resolves to a published StatusPage, whose ID is
 // threaded down so the public handler's services/incidents queries are
-// scoped to that status page (SP-15); the logo route and static SPA need
-// no such scoping - the logo file is a single, install-wide singleton
-// (SET-06), and the SPA's JS resolves its own data client-side via
-// same-origin fetch. The admin API/SPA is served on the separate HTTP
+// scoped to that status page (SP-15) and whose tenant_id is threaded down
+// as the request's RLS session tenant (0024) - which is what scopes the
+// logo route too, since the logo lives on the tenant row and is no longer
+// an install-wide singleton. The static SPA needs neither: its JS resolves
+// its own data client-side via same-origin fetch, back through the two
+// routes above. The admin API/SPA is served on the separate HTTP
 // listener built in RunE (router.New) - HostRouter here never touches it
 // (design.md placeholder).
 func newHTTPSServer(pool *db.Pool, dsn string, logger *zap.Logger) *http.Server {
@@ -219,7 +221,7 @@ func newHTTPSServer(pool *db.Pool, dsn string, logger *zap.Logger) *http.Server 
 
 	// hsts=true - this listener really does terminate TLS, unlike the admin
 	// HTTP listener (M14).
-	handler := api.SecurityHeaders(true)(router.HostRouter(statusPages, publicMux))
+	handler := api.SecurityHeaders(true)(router.HostRouter(statusPages, pool, publicMux))
 
 	tlsConfig := manager.TLSConfig()
 	tlsConfig.NextProtos = append([]string{"h2", "http/1.1"}, tlsConfig.NextProtos...)

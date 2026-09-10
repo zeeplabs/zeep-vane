@@ -638,6 +638,43 @@ T16 → T19
 
 ---
 
+### T20: Unauthenticated tenant resolution for public routes ✅
+
+**What**: Resolve and apply a tenant context on the request paths that have no session at all, which T3's middleware structurally cannot cover. Found during Execute, not planned: T1 put `tenant_id` + fail-closed RLS on every domain table, T3 set `app.tenant_id` for authenticated requests from the session's active-tenant claim, and nothing set it for anonymous ones. The public status page, its logo, and `/api/instance/branding` therefore ran every query with `app.tenant_id` unset, silently resolving whatever `TenantRepository.activeTenantPredicate`'s single-tenant fallback returned - correct only because self-hosted has exactly one tenant, wrong the moment an installation has two.
+
+**Where**: `internal/router/host_router.go`, `internal/db/status_page_repository.go`, `internal/cli/serve.go`, `internal/api/logo_file_handler.go`, `internal/api/instance_config_handler.go`
+**Depends on**: T1, T3
+**Reuses**: `Pool.BeginTenantTx` / `db.WithTenantTx` (T1), `api.TenantContext`'s `SET LOCAL app.tenant_id` mechanism (T3), `statusPageIDContextKey` convention already in `host_router.go`, `internal/db/rls_test.go`'s non-superuser `SET ROLE` fixture (T2)
+**Requirement**: TENANT-01, TENANT-02, TENANT-03 - for the **unauthenticated** path. The spec's requirement list assumed every tenant-scoped request carries a session; it never stated a requirement for anonymous traffic, so no task covered it. That is a genuine gap in the original spec, now closed rather than papered over.
+
+**Tools**:
+- MCP: NONE
+- Skill: NONE
+
+**Done when**:
+- [x] `HostRouter` resolves the request's `Host` header to a published status page and threads that page's `tenant_id` into the request context (`WithTenantID`/`TenantIDFromContext`, same convention as `WithStatusPageID`)
+- [x] `HostRouter` opens the request's transaction via `Pool.BeginTenantTx(ctx, "", tenantID)` - T3's mechanism, not a second one - and puts it on the context with `db.WithTenantTx`, so every query the public handler runs (services, incidents, tenant name/logo) executes under that tenant's RLS session settings
+- [x] `StatusPage.TenantID` is populated by `GetByHostname` (the one lookup that necessarily precedes any tenant context)
+- [x] The transaction is always rolled back, never committed - every route behind `HostRouter` is read-only
+- [x] An unknown hostname still returns 404, unchanged, and opens no transaction
+- [x] `/uploads/logo` and `/api/instance/branding` on the admin listener are documented in code: they are unauthenticated but carry no hostname tenant signal (shared admin domain), so they keep the single-tenant fallback rather than an invented resolution
+- [x] Gate check passes: `go build ./... && go vet ./... && go test ./...` and `TEST_DATABASE_URL=... go test -tags=integration -p 1 ./...`
+
+**Tests**: integration - `internal/router/host_router_tenant_test.go`
+- `TestHostRouter_PublicRequest_ScopedToHostnameTenant` (2 subtests, both directions): two tenants each with a published status page and a service; a request for either hostname sees exactly its own tenant's `services` and `tenants` rows and never the other's, asserted from a non-superuser role (`SET ROLE vane_router_rls_test`) with deliberately unfiltered `SELECT name FROM ...` queries, so RLS does the filtering, not the SQL.
+- `TestHostRouter_UnknownHostname_404_NoTenantTransaction`: regression guard on the pre-existing 404, plus proof no transaction is opened for a rejected request.
+- Discrimination check: forcing `BeginTenantTx(..., "")` makes both subtests fail (zero rows visible), so the assertions detect the regression they exist for.
+
+**Gate**: full - `go build ./...`, `go vet ./...`, `go test ./...` and `TEST_DATABASE_URL=postgres://vane:vane@localhost:5433/vane?sslmode=disable go test -tags=integration -p 1 ./...` all green against a disposable Postgres (AGENTS.md §3).
+
+**Commit**: `fix(router): resolve tenant context for unauthenticated public routes`
+
+**Open finding (not fixed here, requires an RLS decision):** the hostname → status page lookup that *produces* the tenant id is itself subject to the fail-closed `status_pages`/`domains` policies, and it necessarily runs before any tenant is known. Verified against the disposable database: under a non-superuser role with no `app.tenant_id`, `GetByHostname` returns `ErrNotFound` for a page that exists and is published - so on a deployment whose application role is a plain non-superuser (which `rls_test.go` states is the expectation), every public status page would 404. The same bootstrap problem will hit T15, which has to enumerate `tenants` with no tenant context. Closing it needs a schema-level answer (a read policy for published pages keyed on hostname, or a `SECURITY DEFINER` resolver function), which is out of this task's Go-layer scope and should be recorded as its own AD in `.specs/STATE.md`.
+
+**Also noticed, not touched (scope guardrail):** `StatusPageRepository.Create` opens its own pooled transaction (`r.pool.Begin`) instead of reusing the one on `ctx`, so the `tenant_id` DEFAULT resolves to NULL and the insert violates NOT NULL when called from inside a tenant transaction. Pre-existing; surfaced, not fixed.
+
+---
+
 ## Phase Execution Map
 
 Full dependency graph (every arrow below matches a task's `Depends on` field exactly):
