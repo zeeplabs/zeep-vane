@@ -31,12 +31,16 @@ var tenantScopedTables = []string{
 // of tenant_isolation. status_pages and domains carry AD-023's
 // public_published_read (migration 0025), the additive PERMISSIVE SELECT
 // policy that lets an anonymous request resolve hostname -> tenant before
-// any tenant context exists. Any policy not listed here is unexpected and
-// fails the test - a stray policy on a tenant-scoped table is exactly the
-// kind of silent widening this suite exists to catch.
+// any tenant context exists. tenants carries AD-024's
+// system_iteration_read (migration 0027), the additive PERMISSIVE SELECT
+// policy that lets the poller enumerate tenants under app.is_system. Any
+// policy not listed here is unexpected and fails the test - a stray
+// policy on a tenant-scoped table is exactly the kind of silent widening
+// this suite exists to catch.
 var extraPolicies = map[string][]string{
 	"status_pages": {"public_published_read"},
 	"domains":      {"public_published_read"},
+	"tenants":      {"system_iteration_read"},
 }
 
 // TestMultiTenancyMigration_EveryTenantScopedTableIsRLSProtected covers
