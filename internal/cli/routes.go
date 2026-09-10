@@ -80,7 +80,7 @@ func buildAdminRouter(pool *db.Pool, cfg config.Config, logger *zap.Logger, poll
 	signupHandler := api.NewSignupHandler(pool, users, tenantsRepo, tenantMembershipsRepo, db.NewEmailVerificationRepository(pool), emailService, logger, cfg.DevTokenLogging, cfg.AdminBaseURL)
 	passwordResetHandler := api.NewPasswordResetHandler(users, db.NewPasswordResetRepository(pool), emailService, tenantsRepo, logger, cfg.DevTokenLogging, cfg.AdminBaseURL)
 	adminsHandler := api.NewAdminsHandler(pool, users, tenantMembershipsRepo, invites, emailService, tenantsRepo, auditLog, logger, cfg.DevTokenLogging, cfg.AdminBaseURL, cfg.SessionSecret, cfg.SecureCookies)
-	domainsHandler := api.NewDomainsHandler(db.NewDomainRepository(pool), auditLog, logger)
+	domainsHandler := api.NewDomainsHandler(db.NewDomainRepository(pool), auditLog, cfg.PublicDNSTarget, logger)
 	servicesHandler := api.NewServicesHandler(db.NewServiceRepository(pool), logger)
 	integrationsHandler := api.NewIntegrationsHandler(db.NewIntegrationRepository(pool), validateDatadogCredentials, searchDatadogSLOs, pollerManager, cfg.MasterKey, logger)
 	incidentsHandler := api.NewIncidentsHandler(db.NewIncidentRepository(pool), logger)
@@ -193,6 +193,7 @@ func buildAdminRouter(pool *db.Pool, cfg config.Config, logger *zap.Logger, poll
 		protected.With(writeRoles).Post("/api/status-pages/{id}/verify-domain", statusPagesHandler.VerifyDomain)
 		protected.With(writeRoles).Delete("/api/status-pages/{id}", statusPagesHandler.Delete)
 		protected.With(writeRoles).Delete("/api/domains/{id}", domainsHandler.Delete)
+		protected.With(writeRoles).Post("/api/domains/{id}/verify", domainsHandler.Verify)
 		protected.With(writeRoles).Get("/api/instance/dns-target", instanceConfigHandler.DNSTarget)
 
 		// mvp-core read routes and poller status (admin-dashboard ADM-13) -
