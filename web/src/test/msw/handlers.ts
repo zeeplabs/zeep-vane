@@ -232,6 +232,28 @@ export function setBootstrapped(value: boolean): void {
   bootstrapState = value;
 }
 
+// signupState mirrors the real backend's per-email signup lifecycle (T9's
+// SignupHandler): unverified until the emailed link is followed. Keyed by
+// email rather than an id, same as the real handler's own GetByEmail-first
+// flow. signupVerifyToken derives a deterministic token per email instead
+// of a random one - the real token is only ever delivered via the email
+// the mock doesn't send, so tests need a stable, guessable value to
+// exercise VerifyEmailPage without a separate "extract the raw token"
+// helper.
+interface SignupFixtureEntry {
+  tenantName: string;
+  verified: boolean;
+}
+let signupState: Record<string, SignupFixtureEntry> = {};
+
+export function resetSignupState(): void {
+  signupState = {};
+}
+
+function signupVerifyToken(email: string): string {
+  return `verify-token-for-${email}`;
+}
+
 const validAdminRoles: Role[] = ["owner", "operator", "viewer"];
 
 // wouldLeaveZeroOwners mirrors admins.go's function of the same name
@@ -383,6 +405,67 @@ export const handlers = [
     }
     bootstrapState = true;
     return HttpResponse.json({ id: "admin-bootstrap-1", email: body.email, name: body.name, phone: body.phone, role: "owner" });
+  }),
+
+  // POST /api/signup - mirrors SignupHandler.Signup's "new email" path
+  // (T9): 422 on missing fields or a too-short/too-long password
+  // (auth.ValidatePassword's 8-72 range), 409 on retrying the same email
+  // while still unverified (spec.md edge case), otherwise 201 with the
+  // pending_verification status the real handler returns.
+  http.post("/api/signup", async ({ request }) => {
+    const body = (await request.json()) as { email?: string; password?: string; tenant_name?: string };
+    if (!body.email || !body.password || !body.tenant_name) {
+      return HttpResponse.json({ error: "email, password, and tenant_name are required" }, { status: 422 });
+    }
+    if (body.password.length < 8 || body.password.length > 72) {
+      return HttpResponse.json({ error: "password must be between 8 and 72 characters" }, { status: 422 });
+    }
+    const existing = signupState[body.email];
+    if (existing && !existing.verified) {
+      return HttpResponse.json(
+        { error: "a signup for this email is already pending verification" },
+        { status: 409 }
+      );
+    }
+    signupState[body.email] = { tenantName: body.tenant_name, verified: false };
+    return HttpResponse.json(
+      { status: "pending_verification", email: body.email, email_sent: true },
+      { status: 201 }
+    );
+  }),
+
+  // GET /api/signup/verify/:token - mirrors SignupHandler.Verify (T10): 401
+  // on an unrecognized token (signupVerifyToken's deterministic derivation
+  // means only a token minted for a real pending signup ever matches),
+  // otherwise marks that email verified.
+  http.get("/api/signup/verify/:token", ({ params }) => {
+    const token = params.token as string;
+    const email = Object.keys(signupState).find((e) => signupVerifyToken(e) === token);
+    if (!email) {
+      return HttpResponse.json({ error: "invalid or expired verification token" }, { status: 401 });
+    }
+    signupState[email].verified = true;
+    return HttpResponse.json({ status: "verified" });
+  }),
+
+  // POST /api/signup/resend-verification - mirrors
+  // SignupHandler.ResendVerification (T11): 422 missing email, 404 unknown
+  // email, 409 already-verified, otherwise 200 with a fresh token issued
+  // (email_sent always true in this fixture - a send-failure path has no
+  // separate mock branch since no test here exercises it).
+  http.post("/api/signup/resend-verification", async ({ request }) => {
+    const body = (await request.json()) as { email?: string };
+    if (!body.email) {
+      return HttpResponse.json({ error: "email is required" }, { status: 422 });
+    }
+    const existing = signupState[body.email];
+    if (!existing) {
+      return HttpResponse.json({ error: "no pending signup found for this email" }, { status: 404 });
+    }
+    if (existing.verified) {
+      return HttpResponse.json({ error: "this email is already verified" }, { status: 409 });
+    }
+    return HttpResponse.json({ status: "resent", email_sent: true });
   }),
 
   http.post("/api/auth/login", async ({ request }) => {

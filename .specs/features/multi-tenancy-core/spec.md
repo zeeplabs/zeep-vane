@@ -184,10 +184,10 @@ Explicitly excluded. Documented to prevent scope creep.
 | TENANT-05 | P1: Bootstrap self-hosted | Design | Pending |
 | TENANT-06 | P1: Bootstrap self-hosted | Design | Pending |
 | TENANT-07 | P1: Bootstrap self-hosted | Design | Pending |
-| TENANT-08 | P1: Signup SaaS | Design | Pending |
-| TENANT-09 | P1: Signup SaaS | Design | Pending |
-| TENANT-10 | P1: Signup SaaS | Design | Pending |
-| TENANT-11 | P1: Signup SaaS | Design | Pending |
+| TENANT-08 | P1: Signup SaaS | T18 | Implementing |
+| TENANT-09 | P1: Signup SaaS | T18 | Implementing |
+| TENANT-10 | P1: Signup SaaS | T18 | Implementing |
+| TENANT-11 | P1: Signup SaaS | T18 | Implementing |
 | TENANT-12 | P1: Signup SaaS | Design | Pending |
 | TENANT-13 | P1: Signup SaaS (rate limit) | Design | Pending |
 | TENANT-14 | P1: Convite por tenant | Design | Pending |

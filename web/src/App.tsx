@@ -11,6 +11,8 @@ import { PasswordResetRequestPage } from "./features/auth/PasswordResetRequestPa
 import { PasswordResetConfirmPage } from "./features/auth/PasswordResetConfirmPage";
 import { AcceptInvitePage } from "./features/auth/AcceptInvitePage";
 import { TenantSelector } from "./features/auth/TenantSelector";
+import { SignupPage } from "./features/signup/SignupPage";
+import { VerifyEmailPage } from "./features/signup/VerifyEmailPage";
 import { IntegrationsPage } from "./features/integrations/IntegrationsPage";
 import { ServicesPage } from "./features/services/ServicesPage";
 import { DomainsStatusPagesPage } from "./features/domains/DomainsStatusPagesPage";
@@ -146,6 +148,13 @@ export default function App() {
         />
         <Route path="/status/:id" element={<PublicStatusPage />} />
         <Route path="/select-tenant" element={<SelectTenantRoute />} />
+        {/* Public SaaS signup (T18, TENANT-08 through TENANT-11) - no
+            RedirectToBootstrapIfNeeded/auth guard, same precedent as
+            /accept-invite/:token and /status/:id: an anonymous visitor
+            reaching either of these has no session and no bootstrap state
+            to gate on. */}
+        <Route path="/signup" element={<SignupPage />} />
+        <Route path="/verify-email/:token" element={<VerifyEmailPage />} />
         <Route path="/" element={<RootRoute />} />
         {/* No RedirectToBootstrapIfNeeded/auth guard - matches /status/:id's
             precedent (spec.md accept-invite-page: an already-authenticated

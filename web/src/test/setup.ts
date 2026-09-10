@@ -12,6 +12,7 @@ import {
   resetEmailProviders,
   resetLLMProviders,
   resetPasswordResetTokens,
+  resetSignupState,
 } from "./msw/handlers";
 
 beforeAll(() => server.listen({ onUnhandledRequest: "error" }));
@@ -27,5 +28,6 @@ afterEach(() => {
   resetEmailProviders();
   resetLLMProviders();
   resetPasswordResetTokens();
+  resetSignupState();
 });
 afterAll(() => server.close());

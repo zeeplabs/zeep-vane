@@ -626,17 +626,19 @@ T16 → T19
 - Skill: NONE
 
 **Done when**:
-- [ ] Signup form submits and shows the verification-pending state on success
-- [ ] Resend button calls the resend endpoint and shows confirmation
-- [ ] 409 (duplicate pending signup) shows a clear inline error, no silent failure
-- [ ] All strings via `react-i18next`
-- [ ] Gate check passes: `npx tsc -b --noEmit && npm run test`
-- [ ] Test count: 4+ new component tests pass
+- [x] Signup form submits and shows the verification-pending state on success
+- [x] Resend button calls the resend endpoint and shows confirmation
+- [x] 409 (duplicate pending signup) shows a clear inline error, no silent failure
+- [x] All strings via `react-i18next`
+- [x] Gate check passes: `npx tsc -b --noEmit && npm run test`
+- [x] Test count: 9 new component tests pass (5 SignupPage + 4 VerifyEmailPage; 291 total, up from 282)
 
 **Tests**: unit
 **Gate**: frontend
 
 **Commit**: `feat(web): add SaaS signup and email verification UI`
+
+**Implementation notes:** delivered as two files instead of one - `web/src/features/signup/SignupPage.tsx` (form + "check your email" pending state + resend, mirroring `PasswordResetRequestPage`'s "form → confirmation state" shape) and `web/src/features/signup/VerifyEmailPage.tsx` (the destination of the emailed `/verify-email/{token}` link, calling `GET /api/signup/verify/{token}` once on mount, mirroring `AcceptInvitePage`'s token-param pattern). Both auth-shaped public pages, consistent with every other file in `web/src/features/auth/` rather than one shared with `IntegrationsPage`'s dashboard-form conventions - the "Reuses" line's `IntegrationsPage.tsx` reference turned out less relevant than the project's own public-auth-page precedent once the actual UI shape (two distinct screens: a form and a link-landing page) became concrete. `App.tsx` gained `/signup` and `/verify-email/:token` routes, unguarded by `RedirectToBootstrapIfNeeded`/`RequireAuth` - same precedent as `/accept-invite/:token` and `/status/:id`. MSW `handlers.ts` gained `/api/signup`, `/api/signup/verify/:token`, and `/api/signup/resend-verification` mocks (new `signupState` fixture, reset per-test via `resetSignupState` wired into `test/setup.ts`) - the verification token is deterministic (`verify-token-for-{email}`) rather than random, since the real token is only ever delivered by an email this fixture doesn't send, and a test needs a stable value to drive `VerifyEmailPage` without inventing a separate "read the last issued token" helper.
 
 ---
 
