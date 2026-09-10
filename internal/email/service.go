@@ -224,6 +224,61 @@ func (s *Service) SendAdminInvite(ctx context.Context, to string, data AdminInvi
 	return provider.Send(ctx, msg)
 }
 
+// SendSignupVerification renders the signup email-verification template and
+// sends it through whichever provider is currently active (T9). Same
+// active-provider and send-failure handling as SendAdminInvite - no retry,
+// no queue; the caller (SignupHandler) treats a failure here as non-fatal
+// to the signup itself (spec.md Assumptions: tenant/user/membership are not
+// rolled back on a transient email failure).
+func (s *Service) SendSignupVerification(ctx context.Context, to string, data SignupVerificationEmailData) error {
+	active, err := s.repo.GetActiveProvider(ctx)
+	if err != nil {
+		return fmt.Errorf("email: failed to get active provider: %w", err)
+	}
+	if active == "" {
+		return ErrNoActiveProvider
+	}
+
+	ep, err := s.repo.Get(ctx, active)
+	if err != nil {
+		if errors.Is(err, db.ErrNotFound) {
+			return ErrNoActiveProvider
+		}
+		return fmt.Errorf("email: failed to get active provider row: %w", err)
+	}
+
+	apiKey, err := crypto.Decrypt(s.masterKey, ep.EncryptedAPIKey)
+	if err != nil {
+		return fmt.Errorf("email: failed to decrypt active provider api key: %w", err)
+	}
+
+	provider, err := s.factory(active, string(apiKey))
+	if err != nil {
+		return fmt.Errorf("email: failed to build active provider client: %w", err)
+	}
+
+	htmlBody, textBody, err := s.templates.renderSignupVerification(data)
+	if err != nil {
+		return err
+	}
+
+	subject := "Verify your email"
+	if data.TenantName != "" {
+		subject = fmt.Sprintf("Verify your email for %s", data.TenantName)
+	}
+
+	msg := Message{
+		To:        to,
+		FromEmail: ep.FromEmail,
+		FromName:  ep.FromName,
+		Subject:   subject,
+		HTMLBody:  htmlBody,
+		TextBody:  textBody,
+	}
+
+	return provider.Send(ctx, msg)
+}
+
 // SendPasswordReset renders the password-reset template and sends it
 // through whichever provider is currently active. Same active-provider and
 // send-failure handling as SendAdminInvite (no retry, no queue) - the

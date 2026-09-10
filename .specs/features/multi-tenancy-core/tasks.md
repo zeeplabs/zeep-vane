@@ -364,16 +364,18 @@ T16 → T19
 - Skill: NONE
 
 **Done when**:
-- [ ] New email: creates tenant + user + owner membership, `email_verified_at` null, sends verification email
-- [ ] Existing verified email: creates tenant + new membership for that user, no password requested, no duplicate `users` row
-- [ ] Same unverified email retried before verifying: returns 409, no second tenant created
-- [ ] Gate check passes: `TEST_DATABASE_URL=... go test -tags=integration ./internal/api/...`
-- [ ] Test count: 5+ new tests pass
+- [x] New email: creates tenant + user + owner membership, `email_verified_at` null, sends verification email
+- [x] Existing verified email: creates tenant + new membership for that user, no password requested, no duplicate `users` row
+- [x] Same unverified email retried before verifying: returns 409, no second tenant created
+- [x] Gate check passes: `TEST_DATABASE_URL=... go test -tags=integration ./internal/api/...`
+- [x] Test count: 5 new tests pass (`TestSignup_NewEmail_...`, `TestSignup_ExistingVerifiedEmail_...`, `TestSignup_SameUnverifiedEmailRetried_409...`, `TestSignup_MissingFields_422`, `TestSignup_WeakPassword_422...`)
 
 **Tests**: integration
 **Gate**: full
 
 **Commit**: `feat(api): add public SaaS signup endpoint`
+
+**Implementation notes:** the underlying storage for signup email verification does not exist anywhere in the schema, so this task also adds migration `0026_email_verification_tokens.{up,down}.sql` (a `password_reset_tokens`-shaped table: `user_id`/`token_hash`/`expires_at`/`used_at`, not tenant-scoped - identity-level, same as password resets) and `internal/db/email_verification_repository.go`, whose `Create` method this task's `issueAndSendVerification` calls to actually send a followable, single-use verification link (spec.md AC1/AC3) - `ClaimForUse`/`InvalidatePendingForUser` are also defined on that repository now (same file) but only consumed starting T10/T11. `internal/email` gained `SendSignupVerification`/`SignupVerificationEmailData` and a new template pair (`signup_verification.{html,txt}.tmpl`), mirroring the admin-invite template exactly. `createTenantAndOwnerMembership` reuses `BootstrapHandler.Create`'s generate-id/`BeginTenantTx`/insert-both/commit shape unchanged. Wired into `internal/cli/routes.go` as a plain public route, deliberately without rate limiting yet - that is T12's own scoped change.
 
 ---
 

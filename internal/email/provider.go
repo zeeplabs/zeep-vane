@@ -43,6 +43,7 @@ type ProviderFactory func(provider, apiKey string) (Provider, error)
 type Sender interface {
 	SendAdminInvite(ctx context.Context, to string, data AdminInviteEmailData) error
 	SendPasswordReset(ctx context.Context, to string, data PasswordResetEmailData) error
+	SendSignupVerification(ctx context.Context, to string, data SignupVerificationEmailData) error
 }
 
 // AdminInviteEmailData is the data the admin-invite template renders.
@@ -62,6 +63,15 @@ type PasswordResetEmailData struct {
 	CompanyName string
 	// ResetURL is the password-reset link, built by the caller.
 	ResetURL string
+}
+
+// SignupVerificationEmailData is the data the signup email-verification
+// template renders (T9/T10, multi-tenancy-core).
+type SignupVerificationEmailData struct {
+	// TenantName is the newly created tenant's display name.
+	TenantName string
+	// VerifyURL is the email-verification link, built by the caller.
+	VerifyURL string
 }
 
 // Typed errors shared by both connectors, since the HTTP-behavior

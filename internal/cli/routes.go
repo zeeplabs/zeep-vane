@@ -77,6 +77,7 @@ func buildAdminRouter(pool *db.Pool, cfg config.Config, logger *zap.Logger, poll
 
 	authHandler := api.NewAuthHandler(users, tenantMembershipsRepo, pool, logger, cfg.SessionSecret, cfg.SecureCookies)
 	bootstrapHandler := api.NewBootstrapHandler(pool, users, tenantsRepo, tenantMembershipsRepo, logger, cfg.SessionSecret, cfg.SecureCookies)
+	signupHandler := api.NewSignupHandler(pool, users, tenantsRepo, tenantMembershipsRepo, db.NewEmailVerificationRepository(pool), emailService, logger, cfg.DevTokenLogging, cfg.AdminBaseURL)
 	passwordResetHandler := api.NewPasswordResetHandler(users, db.NewPasswordResetRepository(pool), emailService, tenantsRepo, logger, cfg.DevTokenLogging, cfg.AdminBaseURL)
 	adminsHandler := api.NewAdminsHandler(pool, users, tenantMembershipsRepo, invites, emailService, tenantsRepo, auditLog, logger, cfg.DevTokenLogging, cfg.AdminBaseURL, cfg.SessionSecret, cfg.SecureCookies)
 	domainsHandler := api.NewDomainsHandler(db.NewDomainRepository(pool), auditLog, logger)
@@ -108,6 +109,10 @@ func buildAdminRouter(pool *db.Pool, cfg config.Config, logger *zap.Logger, poll
 	r.With(credentialLimiter.Middleware).Post("/api/auth/password-reset/request", passwordResetHandler.Request)
 	r.With(credentialLimiter.Middleware).Post("/api/auth/password-reset/confirm", passwordResetHandler.Confirm)
 	r.With(credentialLimiter.Middleware).Post("/api/admins/invite/{token}/accept", adminsHandler.AcceptInvite)
+
+	// Public SaaS signup (T9) - rate limiting wired in T12; verification
+	// (T10) and resend (T11) routes follow in their own tasks.
+	r.Post("/api/signup", signupHandler.Signup)
 
 	// First-run bootstrap (SHD-14/SHD-15) - public and unauthenticated by
 	// necessity: no authenticated caller can exist before the very first

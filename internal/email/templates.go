@@ -8,14 +8,16 @@ import (
 	texttemplate "text/template"
 )
 
-//go:embed templates/admin_invite.html.tmpl templates/admin_invite.txt.tmpl templates/password_reset.html.tmpl templates/password_reset.txt.tmpl
+//go:embed templates/admin_invite.html.tmpl templates/admin_invite.txt.tmpl templates/password_reset.html.tmpl templates/password_reset.txt.tmpl templates/signup_verification.html.tmpl templates/signup_verification.txt.tmpl
 var templateFS embed.FS
 
 const (
-	adminInviteHTMLTemplatePath   = "templates/admin_invite.html.tmpl"
-	adminInviteTextTemplatePath   = "templates/admin_invite.txt.tmpl"
-	passwordResetHTMLTemplatePath = "templates/password_reset.html.tmpl"
-	passwordResetTextTemplatePath = "templates/password_reset.txt.tmpl"
+	adminInviteHTMLTemplatePath        = "templates/admin_invite.html.tmpl"
+	adminInviteTextTemplatePath        = "templates/admin_invite.txt.tmpl"
+	passwordResetHTMLTemplatePath      = "templates/password_reset.html.tmpl"
+	passwordResetTextTemplatePath      = "templates/password_reset.txt.tmpl"
+	signupVerificationHTMLTemplatePath = "templates/signup_verification.html.tmpl"
+	signupVerificationTextTemplatePath = "templates/signup_verification.txt.tmpl"
 )
 
 // templates holds every parsed template this package renders. Parsed once
@@ -23,10 +25,12 @@ const (
 // panicking via template.Must - a malformed embedded template should
 // surface as a clear startup error, not crash the process.
 type templates struct {
-	adminInviteHTML   *htmltemplate.Template
-	adminInviteText   *texttemplate.Template
-	passwordResetHTML *htmltemplate.Template
-	passwordResetText *texttemplate.Template
+	adminInviteHTML        *htmltemplate.Template
+	adminInviteText        *texttemplate.Template
+	passwordResetHTML      *htmltemplate.Template
+	passwordResetText      *texttemplate.Template
+	signupVerificationHTML *htmltemplate.Template
+	signupVerificationText *texttemplate.Template
 }
 
 // parseTemplates parses every embedded email template, returning an error
@@ -52,11 +56,23 @@ func parseTemplates() (*templates, error) {
 		return nil, fmt.Errorf("email: failed to parse password reset text template: %w", err)
 	}
 
+	signupVerificationHTML, err := htmltemplate.ParseFS(templateFS, signupVerificationHTMLTemplatePath)
+	if err != nil {
+		return nil, fmt.Errorf("email: failed to parse signup verification html template: %w", err)
+	}
+
+	signupVerificationText, err := texttemplate.ParseFS(templateFS, signupVerificationTextTemplatePath)
+	if err != nil {
+		return nil, fmt.Errorf("email: failed to parse signup verification text template: %w", err)
+	}
+
 	return &templates{
-		adminInviteHTML:   adminInviteHTML,
-		adminInviteText:   adminInviteText,
-		passwordResetHTML: passwordResetHTML,
-		passwordResetText: passwordResetText,
+		adminInviteHTML:        adminInviteHTML,
+		adminInviteText:        adminInviteText,
+		passwordResetHTML:      passwordResetHTML,
+		passwordResetText:      passwordResetText,
+		signupVerificationHTML: signupVerificationHTML,
+		signupVerificationText: signupVerificationText,
 	}, nil
 }
 
@@ -87,6 +103,22 @@ func (t *templates) renderPasswordReset(data PasswordResetEmailData) (htmlBody, 
 	var textBuf bytes.Buffer
 	if err := t.passwordResetText.Execute(&textBuf, data); err != nil {
 		return "", "", fmt.Errorf("email: failed to render password reset text template: %w", err)
+	}
+
+	return htmlBuf.String(), textBuf.String(), nil
+}
+
+// renderSignupVerification renders both the HTML and plain-text signup
+// email-verification bodies from data.
+func (t *templates) renderSignupVerification(data SignupVerificationEmailData) (htmlBody, textBody string, err error) {
+	var htmlBuf bytes.Buffer
+	if err := t.signupVerificationHTML.Execute(&htmlBuf, data); err != nil {
+		return "", "", fmt.Errorf("email: failed to render signup verification html template: %w", err)
+	}
+
+	var textBuf bytes.Buffer
+	if err := t.signupVerificationText.Execute(&textBuf, data); err != nil {
+		return "", "", fmt.Errorf("email: failed to render signup verification text template: %w", err)
 	}
 
 	return htmlBuf.String(), textBuf.String(), nil
