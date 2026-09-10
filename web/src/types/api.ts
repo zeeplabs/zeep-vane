@@ -103,10 +103,23 @@ export interface PollerStatusEntry {
   last_error: string | null;
 }
 
+// TaxIDType is CompanySettings.tax_id_type's allowed values (multi-tenancy-
+// core P2, TENANT-22/23) - CPF for a person, CNPJ for a company; both
+// Brazilian tax id formats, backend-validated by digit count
+// (db.ErrInvalidTaxID: 11 for cpf, 14 for cnpj).
+export type TaxIDType = "cpf" | "cnpj";
+
 export interface CompanySettings {
   name: string;
   contact_email: string;
   logo_url: string | null;
+  // legal_name/tax_id/tax_id_type are all optional (TENANT-22) -
+  // billing_address is deliberately absent from this type: the backend
+  // never returns it from this endpoint (TENANT-24, SaaS billing feature
+  // owns its exposure).
+  legal_name?: string | null;
+  tax_id?: string | null;
+  tax_id_type?: TaxIDType | null;
 }
 
 // Page is the shared response envelope for every paginated list endpoint

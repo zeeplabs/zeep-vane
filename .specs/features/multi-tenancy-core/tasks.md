@@ -655,16 +655,18 @@ T16 → T19
 - Skill: NONE
 
 **Done when**:
-- [ ] Owner can fill/edit legal_name/tax_id/tax_id_type; fields are optional (no required-field error on empty)
-- [ ] Invalid CPF/CNPJ length shows inline validation error, matching backend rejection from T4
-- [ ] All strings via `react-i18next`
-- [ ] Gate check passes: `npx tsc -b --noEmit && npm run test`
-- [ ] Test count: 4+ new component tests pass
+- [x] Owner can fill/edit legal_name/tax_id/tax_id_type; fields are optional (no required-field error on empty)
+- [x] Invalid CPF/CNPJ length shows inline validation error, matching backend rejection from T4
+- [x] All strings via `react-i18next`
+- [x] Gate check passes: `npx tsc -b --noEmit && npm run test`
+- [x] Test count: 5 new component tests pass (296 total, up from 291)
 
 **Tests**: unit
 **Gate**: frontend
 
 **Commit**: `feat(web): add fiscal profile fields to company settings`
+
+**Implementation notes:** no `CompanySettingsPage.tsx` file exists in this codebase - company settings has always lived in `web/src/features/settings/SettingsPage.tsx` (the task's own "Reuses" line already names it that way: "existing `SettingsPage`/company-settings frontend feature"), so the fields were added there instead of a new file. `CompanySettings`/`UpdateCompanySettingsInput` (`web/src/types/api.ts`, `web/src/features/settings/hooks.ts`) gained `legal_name`/`tax_id`/`tax_id_type` (no `billing_address` anywhere - T16 never returns it, so there is nothing to render even by accident). The form only sends a fiscal field when non-empty (omitted, not sent as `""`) - db.TenantUpdate's own "nil = unchanged" semantics, and it avoids a blank `tax_id` tripping the backend's length check against a previously-saved `tax_id_type` on an unrelated name/e-mail save. The tax-id-type `Seg` selector disables the CPF/CNPJ input until a type is chosen, preventing the "digits typed, no type selected" state the backend would silently accept without validating. This file has no pre-existing `react-i18next` usage at all (every existing label is a hardcoded pt-BR string) - the new fiscal fields use `t()` per this task's own requirement, left as the only i18n-wired strings in an otherwise non-i18n file; fixing the file's pre-existing strings is out of this task's scope (AGENTS.md §8, surgical changes only).
 
 ---
 

@@ -198,9 +198,9 @@ Explicitly excluded. Documented to prevent scope creep.
 | TENANT-19 | P2: Switch tenant | T17 | Implementing |
 | TENANT-20 | P2: Switch tenant | T17 | Implementing |
 | TENANT-21 | P2: Switch tenant | T17 | Implementing |
-| TENANT-22 | P2: Perfil fiscal | T16 | Implementing |
-| TENANT-23 | P2: Perfil fiscal | T16 | Implementing |
-| TENANT-24 | P2: Perfil fiscal | T16 | Implementing |
+| TENANT-22 | P2: Perfil fiscal | T16, T19 | Implementing |
+| TENANT-23 | P2: Perfil fiscal | T16, T19 | Implementing |
+| TENANT-24 | P2: Perfil fiscal | T16, T19 | Implementing |
 | TENANT-25 | P3: Locale/branding schema | Design | Pending |
 | TENANT-26 | P3: Locale/branding schema | Design | Pending |
 

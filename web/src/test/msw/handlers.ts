@@ -1355,14 +1355,42 @@ export const handlers = [
 
   http.patch("/api/company-settings", async ({ request }) => {
     if (!sessionAdminId) return HttpResponse.json({ error: "unauthorized" }, { status: 401 });
-    const body = (await request.json()) as { name?: string; contact_email?: string };
+    const body = (await request.json()) as {
+      name?: string;
+      contact_email?: string;
+      legal_name?: string;
+      tax_id?: string;
+      tax_id_type?: "cpf" | "cnpj";
+    };
     if (!body.name || !body.contact_email) {
       return HttpResponse.json(
         { error: "name is required and contact_email must be a valid e-mail address" },
         { status: 422 },
       );
     }
-    companySettingsState = { ...companySettingsState, name: body.name, contact_email: body.contact_email };
+    // Mirrors TenantRepository.validateTaxID (T4): a tax_id/tax_id_type
+    // pair must match cpf's 11 digits or cnpj's 14, checked only when both
+    // are present in this PATCH - either being absent leaves the
+    // previously stored value untouched (T16's "nil = no change"
+    // semantics), never re-validated against a stale pairing.
+    if (body.tax_id !== undefined && body.tax_id_type !== undefined) {
+      const digitCount = body.tax_id.replace(/\D/g, "").length;
+      const expected = body.tax_id_type === "cpf" ? 11 : 14;
+      if (digitCount !== expected) {
+        return HttpResponse.json(
+          { error: "tax_id must have 11 digits for cpf or 14 digits for cnpj" },
+          { status: 422 },
+        );
+      }
+    }
+    companySettingsState = {
+      ...companySettingsState,
+      name: body.name,
+      contact_email: body.contact_email,
+      ...(body.legal_name !== undefined ? { legal_name: body.legal_name } : {}),
+      ...(body.tax_id !== undefined ? { tax_id: body.tax_id } : {}),
+      ...(body.tax_id_type !== undefined ? { tax_id_type: body.tax_id_type } : {}),
+    };
     return HttpResponse.json(companySettingsState);
   }),
 
