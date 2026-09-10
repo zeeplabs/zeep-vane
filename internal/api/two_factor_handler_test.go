@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -40,6 +41,7 @@ func newTwoFactorRouter(t *testing.T) (http.Handler, *db.UserRepository, *db.Two
 		protected.Use(RequireAuth(testSessionSecret, users))
 		protected.Post("/api/auth/2fa/enroll", handler.Enroll)
 		protected.Post("/api/auth/2fa/confirm", handler.Confirm2FA)
+		protected.Post("/api/auth/2fa/disable", handler.Disable2FA)
 	})
 
 	return r, users, twoFactor, pool
@@ -251,5 +253,92 @@ func TestConfirm2FA_WrongCode_422NoEnableNoRecoveryCodes(t *testing.T) {
 	r.ServeHTTP(retryRec, authedRequest(t, http.MethodPost, "/api/auth/2fa/confirm", retryBody, user.ID))
 	if retryRec.Code != http.StatusOK {
 		t.Fatalf("retry with the correct code status = %d, want %d, body = %s", retryRec.Code, http.StatusOK, retryRec.Body.String())
+	}
+}
+
+func postDisable2FA(t *testing.T, r http.Handler, userID, currentPassword string) *httptest.ResponseRecorder {
+	t.Helper()
+	body, _ := json.Marshal(disable2FARequest{CurrentPassword: currentPassword})
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, authedRequest(t, http.MethodPost, "/api/auth/2fa/disable", body, userID))
+	return rec
+}
+
+// TestDisable2FA_CorrectPassword_200ClearsSecretAndRecoveryCodes proves
+// TOTP-12: a subsequent login for that user no longer requires 2FA.
+func TestDisable2FA_CorrectPassword_200ClearsSecretAndRecoveryCodes(t *testing.T) {
+	r, users, twoFactor, pool := newTwoFactorRouter(t)
+	user := createTwoFactorTestUser(t, users, pool)
+
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, authedRequest(t, http.MethodPost, "/api/auth/2fa/enroll", nil, user.ID))
+	var enrolled enrollResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &enrolled); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+	code, err := totp.GenerateCode(enrolled.Secret, time.Now())
+	if err != nil {
+		t.Fatalf("totp.GenerateCode() returned unexpected error: %v", err)
+	}
+	confirmBody, _ := json.Marshal(confirm2FARequest{Code: code})
+	confirmRec := httptest.NewRecorder()
+	r.ServeHTTP(confirmRec, authedRequest(t, http.MethodPost, "/api/auth/2fa/confirm", confirmBody, user.ID))
+	if confirmRec.Code != http.StatusOK {
+		t.Fatalf("confirm status = %d, want %d, body = %s", confirmRec.Code, http.StatusOK, confirmRec.Body.String())
+	}
+
+	disableRec := postDisable2FA(t, r, user.ID, "correct-horse-battery-staple")
+	if disableRec.Code != http.StatusOK {
+		t.Fatalf("disable status = %d, want %d, body = %s", disableRec.Code, http.StatusOK, disableRec.Body.String())
+	}
+
+	secret, err := twoFactor.GetSecret(context.Background(), user.ID)
+	if !errors.Is(err, db.ErrNotFound) {
+		t.Errorf("GetSecret() after disable = (%+v, %v), want (nil, db.ErrNotFound)", secret, err)
+	}
+	stillMatches, err := twoFactor.ConsumeRecoveryCode(context.Background(), user.ID, "any-code")
+	if err != nil {
+		t.Fatalf("ConsumeRecoveryCode() returned unexpected error: %v", err)
+	}
+	if stillMatches {
+		t.Error("ConsumeRecoveryCode() found a match after disable, want every recovery code deleted")
+	}
+}
+
+// TestDisable2FA_WrongPassword_401TwoFactorRemainsEnabled proves TOTP-13.
+func TestDisable2FA_WrongPassword_401TwoFactorRemainsEnabled(t *testing.T) {
+	r, users, twoFactor, pool := newTwoFactorRouter(t)
+	user := createTwoFactorTestUser(t, users, pool)
+
+	if err := twoFactor.CreatePendingSecret(context.Background(), user.ID, []byte("ciphertext")); err != nil {
+		t.Fatalf("CreatePendingSecret() returned unexpected error: %v", err)
+	}
+	if err := twoFactor.ConfirmSecret(context.Background(), user.ID); err != nil {
+		t.Fatalf("ConfirmSecret() returned unexpected error: %v", err)
+	}
+
+	rec := postDisable2FA(t, r, user.ID, "totally-wrong-password")
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusUnauthorized, rec.Body.String())
+	}
+	got, err := twoFactor.GetSecret(context.Background(), user.ID)
+	if err != nil {
+		t.Fatalf("GetSecret() returned unexpected error: %v", err)
+	}
+	if got.EnabledAt == nil {
+		t.Error("EnabledAt = nil after a wrong-password disable attempt, want still enabled")
+	}
+}
+
+// TestDisable2FA_NoTwoFactorEnabled_200Noop proves TOTP-13's no-op branch.
+func TestDisable2FA_NoTwoFactorEnabled_200Noop(t *testing.T) {
+	r, users, _, pool := newTwoFactorRouter(t)
+	user := createTwoFactorTestUser(t, users, pool)
+
+	rec := postDisable2FA(t, r, user.ID, "correct-horse-battery-staple")
+
+	if rec.Code != http.StatusOK {
+		t.Errorf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
 	}
 }

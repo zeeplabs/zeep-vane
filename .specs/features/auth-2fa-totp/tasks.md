@@ -359,11 +359,11 @@ T7 → T11
 - Skill: NONE
 
 **Done when**:
-- [ ] Correct password: `200`, secret cleared, recovery codes deleted, a subsequent login no longer requires 2FA
-- [ ] Wrong password: `401`, 2FA remains enabled
-- [ ] No 2FA enabled: `200` no-op
-- [ ] Gate check passes on disposable Postgres: `TEST_DATABASE_URL=... go test -tags=integration ./internal/api/...`
-- [ ] Test count: ≥3 new tests
+- [x] Correct password: `200`, secret cleared, recovery codes deleted, a subsequent login no longer requires 2FA
+- [x] Wrong password: `401`, 2FA remains enabled
+- [x] No 2FA enabled: `200` no-op
+- [x] Gate check passes on disposable Postgres: `TEST_DATABASE_URL=... go test -tags=integration ./internal/api/...`
+- [x] Test count: ≥3 new tests
 
 **Tests**: integration
 **Gate**: full

@@ -40,8 +40,10 @@ type twoFactorStore interface {
 	CreatePendingSecret(ctx context.Context, userID string, encryptedSecret []byte) error
 	GetSecret(ctx context.Context, userID string) (*db.TwoFactorSecret, error)
 	ConfirmSecret(ctx context.Context, userID string) error
+	DeleteSecret(ctx context.Context, userID string) error
 	CreateRecoveryCodes(ctx context.Context, userID string, hashes []string) error
 	ConsumeRecoveryCode(ctx context.Context, userID, code string) (bool, error)
+	DeleteRecoveryCodes(ctx context.Context, userID string) error
 }
 
 // twoFactorChallengeStore is the subset of *db.TwoFactorChallengeRepository
@@ -716,6 +718,52 @@ func (h *AuthHandler) Confirm2FA(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	_ = json.NewEncoder(w).Encode(confirm2FAResponse{RecoveryCodes: plainCodes})
+}
+
+type disable2FARequest struct {
+	CurrentPassword string `json:"current_password"`
+}
+
+// Disable2FA handles POST /api/auth/2fa/disable, requiring the
+// authenticated user's current_password (same check ChangePassword already
+// uses) before clearing their TOTP secret and every recovery code
+// (TOTP-12). It is idempotent: called with no 2FA enabled it responds `200`
+// as a no-op rather than erroring (TOTP-13) - disabling something already
+// off is not a failure state. It does not call RevokeSessions - enabling or
+// disabling 2FA is not itself evidence of a compromised password (spec.md
+// Assumptions).
+func (h *AuthHandler) Disable2FA(w http.ResponseWriter, r *http.Request) {
+	user, ok := UserFromContext(r.Context())
+	if !ok {
+		writeUnauthorized(w)
+		return
+	}
+
+	var req disable2FARequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeAdminError(w, http.StatusUnauthorized, invalidCurrentPasswordBody)
+		return
+	}
+
+	if !auth.VerifyPassword(user.PasswordHash, req.CurrentPassword) {
+		writeAdminError(w, http.StatusUnauthorized, invalidCurrentPasswordBody)
+		return
+	}
+
+	if err := h.twoFactor.DeleteSecret(r.Context(), user.ID); err != nil {
+		h.logger.Error("auth: failed to delete 2FA secret", zap.Error(err))
+		writeInternalError(w)
+		return
+	}
+	if err := h.twoFactor.DeleteRecoveryCodes(r.Context(), user.ID); err != nil {
+		h.logger.Error("auth: failed to delete 2FA recovery codes", zap.Error(err))
+		writeInternalError(w)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write([]byte(`{"status":"ok"}`))
 }
 
 // Logout expires the vane_session cookie set at login. It requires no

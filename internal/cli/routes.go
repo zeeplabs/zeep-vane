@@ -167,6 +167,11 @@ func buildAdminRouter(pool *db.Pool, cfg config.Config, logger *zap.Logger, poll
 		// the caller's own account.
 		protected.Post("/api/auth/2fa/enroll", authHandler.Enroll)
 		protected.Post("/api/auth/2fa/confirm", authHandler.Confirm2FA)
+		// disable additionally rides the shared credential-route limiter,
+		// same class as change-password above: a wrong-current-password
+		// guess is exactly the credential-guessing attempt that limiter
+		// exists to slow down.
+		protected.With(credentialLimiter.Middleware).Post("/api/auth/2fa/disable", authHandler.Disable2FA)
 
 		// Admin management (admin-dashboard ADM-09) - owner only.
 		protected.With(ownerOnly).Post("/api/admins", adminsHandler.Invite)
