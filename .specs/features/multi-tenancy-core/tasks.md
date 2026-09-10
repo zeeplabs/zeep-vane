@@ -144,7 +144,9 @@ T16 → T19
 
 **Commit**: `feat(db): recreate schema for multi-tenancy core (AD-022)`
 
-**SPEC_DEVIATION (recorded, not silent):** Implemented as `internal/db/migrations/0024_multi_tenancy_core.up/down.sql` (0022/0023 were already taken by unrelated migrations already in the repo when this batch started). Scope was reduced from the literal "What": this migration creates `tenants`, `tenant_memberships`, `tenant_invites` and adds `tenant_id` + RLS to `services` only. It does **not** rename `admins`→`users`, does **not** rename `admin_invites`→`tenant_invites` (both untouched, still live), does **not** drop `company_settings`, and does **not** add `tenant_id`/RLS to `incidents`, `status_pages`, `llm_provider_config`(`llm_providers`/`llm_settings`), `email_provider_config`(`email_providers`/`email_settings`), or `admin_audit_log`. Reason: those changes cascade into every existing integration test across `internal/db` and `internal/api` that authenticates via `admins` or reads/writes those tables (~40 files) - work that belongs to later phases (T13 tenant-scopes `admin_invites`, T16 merges `company_settings`) and to follow-up tasks this plan does not yet name for the remaining domain tables. `tenant_memberships.user_id` therefore FKs to `admins(id)`, not a new `users(id)`. Flagged for the orchestrator: spec AC1's full table list is not yet RLS-protected after this batch - only `tenants`, `tenant_memberships`, `tenant_invites`, `services`.
+**Note on numbering:** implemented as `internal/db/migrations/0024_multi_tenancy_core.up/down.sql` - 0022/0023 were already taken by unrelated migrations in the repo when this feature started.
+
+**Deviation found and corrected.** The first pass at T1 shipped a reduced migration: it created `tenants`/`tenant_memberships`/`tenant_invites` and added `tenant_id` + RLS to `services` only, leaving `admins`, `admin_invites` and `company_settings` in place (with `tenant_memberships.user_id` still FK'd to `admins(id)`) and the other six domain tables without `tenant_id`/RLS. That was recorded as a SPEC_DEVIATION at the time. It has since been corrected in place - the migration had not been released, so it was rewritten rather than superseded - and T1 now matches this task's "What" exactly: `admins`/`admin_invites`/`company_settings` are dropped, `users` (with `email_verified_at`) replaces `admins`, `tenant_memberships.user_id` FKs to `users(id)`, and `tenant_id` + a fail-closed RLS policy exist on `services`, `incidents`, `status_pages`, `domains`, `admin_audit_log`, `email_providers`, `email_settings`, `llm_providers` and `llm_settings`. `role` no longer exists on the identity table at all: it lives on `tenant_memberships.role` and is resolved per request by the tenant-context middleware. The rename was propagated through every repository, handler and test in the codebase.
 
 ---
 
@@ -474,6 +476,8 @@ T16 → T19
 
 **Commit**: `feat(api): scope admin invite/list/role endpoints by active tenant`
 
+**Schema prerequisite already satisfied.** The T1 correction dropped `admin_invites` and repointed these handlers at `tenant_invites` + `users` + `tenant_memberships`, and `List`/`UpdateRole`/`Delete` already operate on the caller's active tenant because those queries need a tenant to be expressible at all. What remains for T13 is the API-layer work this task describes: enforcing the filter on the remaining handlers (`Invite`, `ResendInvite`, `CancelInvite` still act on an invite id without checking it belongs to the caller's tenant) and the cross-tenant isolation tests.
+
 ---
 
 ### T14: `AcceptInvite` branches on existing vs. new user
@@ -550,6 +554,8 @@ T16 → T19
 **Gate**: full
 
 **Commit**: `refactor(api): merge company_settings into tenants`
+
+**Schema prerequisite already satisfied.** The T1 correction dropped `company_settings` and repointed `company_settings_handler.go`, `logo_file_handler.go`, `instance_config_handler.go` and `public_status_handler.go` at `tenants` via `TenantRepository`. What remains for T16 is the API-layer work this task describes: the fiscal fields (`legal_name`/`tax_id`/`tax_id_type`) on the endpoint's request/response with CPF/CNPJ length validation, keeping `billing_address` out of the payload, and the UI wiring.
 
 ---
 
