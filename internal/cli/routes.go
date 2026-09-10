@@ -110,8 +110,12 @@ func buildAdminRouter(pool *db.Pool, cfg config.Config, logger *zap.Logger, poll
 	r.With(credentialLimiter.Middleware).Post("/api/auth/password-reset/confirm", passwordResetHandler.Confirm)
 	r.With(credentialLimiter.Middleware).Post("/api/admins/invite/{token}/accept", adminsHandler.AcceptInvite)
 
-	// Public SaaS signup (T9) - rate limiting wired in T12.
-	r.Post("/api/signup", signupHandler.Signup)
+	// Public SaaS signup - same shared credential-route limiter as
+	// login/password-reset/bootstrap above (T12): mass tenant creation is
+	// the same threat class this limiter already exists for (H10), and an
+	// attacker splitting attempts across routes must not multiply their
+	// effective budget.
+	r.With(credentialLimiter.Middleware).Post("/api/signup", signupHandler.Signup)
 	r.Get("/api/signup/verify/{token}", signupHandler.Verify)
 	r.Post("/api/signup/resend-verification", signupHandler.ResendVerification)
 

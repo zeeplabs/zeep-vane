@@ -445,15 +445,19 @@ T16 → T19
 - Skill: NONE
 
 **Done when**:
-- [ ] `/api/signup` wrapped with `IPLimiter.Middleware()`
-- [ ] Exceeding the configured threshold from one `RemoteAddr` returns 429, no tenant created
-- [ ] Gate check passes: `TEST_DATABASE_URL=... go test -tags=integration ./internal/api/...`
-- [ ] Test count: 2+ new tests pass
+- [x] `/api/signup` wrapped with `IPLimiter.Middleware()`
+- [x] Exceeding the configured threshold from one `RemoteAddr` returns 429, no tenant created
+- [x] Gate check passes: `TEST_DATABASE_URL=... go test -tags=integration ./internal/cli/...` (task's own test location - see note)
+- [x] Test count: 2 new tests pass (`TestAdminRouter_SignupRateLimit_ExceedsBurst_429`, `TestAdminRouter_SignupRateLimit_SharedWithLoginRoute_429`)
 
 **Tests**: integration
 **Gate**: full
 
 **Commit**: `feat(api): rate-limit public signup by IP`
+
+**Implementation notes:** reuses the same shared `credentialLimiter` login/password-reset/bootstrap/invite-accept already share (`internal/cli/routes.go`), not a dedicated one - same reasoning documented there (splitting the budget across routes would let an attacker multiply their effective rate). Only `POST /api/signup` is wrapped; `GET /api/signup/verify/{token}` and `POST /api/signup/resend-verification` are unaffected (out of this task's literal scope - "Exceeding the configured threshold... no tenant created" is specifically about signup's own tenant-creation cost). Tests live in `internal/cli/routes_test.go`, not `internal/api`, mirroring where every other rate-limit regression test in this codebase already lives (`TestAdminRouter_LoginRateLimit_*`) - `internal/api`'s own `signup_handler_test.go` router never wires `IPLimiter` at all, so the task description's literal gate command is corrected here to the package that actually exercises this behavior.
+
+**Phase 4 completion gate (end of Phase 4 - T9-T12):** Build tier run in full - Quick (`go build ./... && go vet ./... && gofmt -l` + `go test ./...`) clean; Full (`TEST_DATABASE_URL=... go test -tags=integration -p 1 ./internal/db/... ./internal/api/... ./internal/cli/...` against a disposable Postgres) all green; Frontend (`npx tsc -b --noEmit && npm run test`, from `web/`) clean, 277 tests. No deferred failures.
 
 ---
 

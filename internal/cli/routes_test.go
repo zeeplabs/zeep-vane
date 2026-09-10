@@ -1097,3 +1097,135 @@ func TestAdminRouter_LoginRateLimit_SharedAcrossCredentialRoutes_429(t *testing.
 		t.Errorf("status = %d, want %d (budget shared with password-reset/request must already be exhausted)", rec.Code, http.StatusTooManyRequests)
 	}
 }
+
+// cleanupSignupRouteTestData deletes every tenant/user this test's signup
+// calls created, keyed by the email prefix signupTestBody uses.
+func cleanupSignupRouteTestData(t *testing.T, pool *db.Pool, emailPrefix string) {
+	t.Helper()
+	t.Cleanup(func() {
+		ctx := context.Background()
+		rows, err := pool.Query(ctx,
+			`SELECT tm.tenant_id FROM tenant_memberships tm JOIN users u ON u.id = tm.user_id WHERE u.email LIKE $1`,
+			emailPrefix+"%")
+		if err == nil {
+			var tenantIDs []string
+			for rows.Next() {
+				var id string
+				if err := rows.Scan(&id); err == nil {
+					tenantIDs = append(tenantIDs, id)
+				}
+			}
+			rows.Close()
+			for _, id := range tenantIDs {
+				_, _ = pool.Exec(ctx, "DELETE FROM tenants WHERE id = $1", id)
+			}
+		}
+		_, _ = pool.Exec(ctx, "DELETE FROM users WHERE email LIKE $1", emailPrefix+"%")
+	})
+}
+
+// TestAdminRouter_SignupRateLimit_ExceedsBurst_429 is T12's regression
+// guard: a public account-creation endpoint that can mint a tenant per
+// request must never accept unbounded traffic from one IP (H10, same
+// threat class as login/password-reset above).
+func TestAdminRouter_SignupRateLimit_ExceedsBurst_429(t *testing.T) {
+	r, pool, _, _ := newAdminRouterAndTenantForTest(t)
+	const testIP = "203.0.113.12"
+	emailPrefix := fmt.Sprintf("cli-routes-signup-burst-%d-", time.Now().UnixNano())
+	t.Cleanup(func() {
+		_, _ = pool.Exec(context.Background(), "DELETE FROM rate_limit_buckets WHERE ip = $1", testIP)
+	})
+	cleanupSignupRouteTestData(t, pool, emailPrefix)
+
+	postSignupFor := func(i int) *httptest.ResponseRecorder {
+		body, err := json.Marshal(map[string]string{
+			"email":       fmt.Sprintf("%s%d@example.com", emailPrefix, i),
+			"password":    "correct-horse-battery-staple",
+			"tenant_name": "Acme Inc",
+		})
+		if err != nil {
+			t.Fatalf("json.Marshal() returned unexpected error: %v", err)
+		}
+		req := httptest.NewRequest(http.MethodPost, "/api/signup", bytes.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		req.RemoteAddr = testIP + ":54321"
+		rec := httptest.NewRecorder()
+		r.ServeHTTP(rec, req)
+		return rec
+	}
+
+	for i := 0; i < credentialRouteBurst; i++ {
+		rec := postSignupFor(i)
+		if rec.Code == http.StatusTooManyRequests {
+			t.Fatalf("request %d: got 429 within burst, want it exhausted only after %d requests, body = %s", i, credentialRouteBurst, rec.Body.String())
+		}
+		if rec.Code != http.StatusCreated {
+			t.Fatalf("request %d: status = %d, want %d (rate limiter must not block within burst) body = %s", i, rec.Code, http.StatusCreated, rec.Body.String())
+		}
+	}
+
+	rec := postSignupFor(credentialRouteBurst)
+	if rec.Code != http.StatusTooManyRequests {
+		t.Errorf("request past burst: status = %d, want %d, body = %s", rec.Code, http.StatusTooManyRequests, rec.Body.String())
+	}
+}
+
+// TestAdminRouter_SignupRateLimit_SharedWithLoginRoute_429 asserts signup's
+// budget is shared with the other credential-sensitive routes, same
+// principle as TestAdminRouter_LoginRateLimit_SharedAcrossCredentialRoutes_429.
+func TestAdminRouter_SignupRateLimit_SharedWithLoginRoute_429(t *testing.T) {
+	r, pool, _, _ := newAdminRouterAndTenantForTest(t)
+	const testIP = "203.0.113.13"
+	emailPrefix := fmt.Sprintf("cli-routes-signup-shared-%d-", time.Now().UnixNano())
+	t.Cleanup(func() {
+		_, _ = pool.Exec(context.Background(), "DELETE FROM rate_limit_buckets WHERE ip = $1", testIP)
+	})
+	cleanupSignupRouteTestData(t, pool, emailPrefix)
+
+	loginBody, err := json.Marshal(map[string]string{"email": "nobody@example.com", "password": "wrong-password"})
+	if err != nil {
+		t.Fatalf("json.Marshal() returned unexpected error: %v", err)
+	}
+
+	postLoginFor := func() *httptest.ResponseRecorder {
+		req := httptest.NewRequest(http.MethodPost, "/api/auth/login", bytes.NewReader(loginBody))
+		req.Header.Set("Content-Type", "application/json")
+		req.RemoteAddr = testIP + ":54321"
+		rec := httptest.NewRecorder()
+		r.ServeHTTP(rec, req)
+		return rec
+	}
+	postSignupFor := func(i int) *httptest.ResponseRecorder {
+		body, err := json.Marshal(map[string]string{
+			"email":       fmt.Sprintf("%s%d@example.com", emailPrefix, i),
+			"password":    "correct-horse-battery-staple",
+			"tenant_name": "Acme Inc",
+		})
+		if err != nil {
+			t.Fatalf("json.Marshal() returned unexpected error: %v", err)
+		}
+		req := httptest.NewRequest(http.MethodPost, "/api/signup", bytes.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		req.RemoteAddr = testIP + ":54321"
+		rec := httptest.NewRecorder()
+		r.ServeHTTP(rec, req)
+		return rec
+	}
+
+	for i := 0; i < credentialRouteBurst; i++ {
+		var rec *httptest.ResponseRecorder
+		if i%2 == 0 {
+			rec = postLoginFor()
+		} else {
+			rec = postSignupFor(i)
+		}
+		if rec.Code == http.StatusTooManyRequests {
+			t.Fatalf("request %d: got 429 within the shared burst, want it exhausted only after %d total requests across both routes", i, credentialRouteBurst)
+		}
+	}
+
+	rec := postSignupFor(credentialRouteBurst)
+	if rec.Code != http.StatusTooManyRequests {
+		t.Errorf("status = %d, want %d (budget shared with login must already be exhausted)", rec.Code, http.StatusTooManyRequests)
+	}
+}
