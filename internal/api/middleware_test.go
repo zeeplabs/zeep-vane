@@ -18,57 +18,46 @@ import (
 
 const middlewareTestSecret = "middleware-test-secret-32-bytes-long!!"
 
-// newMiddlewareTestAdmins builds a real *db.AdminRepository against the
+// newMiddlewareTestAdmins builds a real *db.UserRepository against the
 // test database - RequireAuth now loads the admin row itself (Role,
 // SessionsRevokedAt), so its tests need a real backing repository, not just
 // a signed JWT.
-func newMiddlewareTestAdmins(t *testing.T) (*db.AdminRepository, *db.Pool) {
+func newMiddlewareTestAdmins(t *testing.T) (*db.UserRepository, *db.Pool) {
 	t.Helper()
 	dsn := testDatabaseURL(t)
 
-	if err := db.MigrateUp(dsn, "../db/migrations"); err != nil {
-		t.Fatalf("MigrateUp() returned unexpected error: %v", err)
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	pool, err := db.NewPool(ctx, dsn)
-	if err != nil {
-		t.Fatalf("NewPool() returned unexpected error: %v", err)
-	}
-	t.Cleanup(pool.Close)
+	pool, _ := newAPITenantScopedPool(t)
 
 	// Every test in this file creates an admin via this constructor's
-	// repository, and AdminRepository.Create always inserts with the
-	// `admins.role` column's database default (owner, migration 0009) -
-	// see LockAdminsTable's doc comment for why this must be held across
+	// repository, and UserRepository.Create always inserts with the
+	// shared `users` table, which other packages bulk-clear -
+	// see LockUsersTable's doc comment for why this must be held across
 	// concurrently-run packages. Deliberately context.Background(), not
 	// the bounded `ctx` above, which is canceled by the deferred cancel()
 	// as soon as this function returns.
-	dbtest.LockAdminsTable(t, context.Background(), dsn)
+	dbtest.LockUsersTable(t, context.Background(), dsn)
 
-	return db.NewAdminRepository(pool), pool
+	return db.NewUserRepository(pool), pool
 }
 
 // createMiddlewareTestAdmin inserts a real admin row so RequireAuth's
 // admins.GetByID lookup succeeds, and issues a session token for it.
-func createMiddlewareTestAdmin(t *testing.T, repo *db.AdminRepository, pool *db.Pool) *db.Admin {
+func createMiddlewareTestAdmin(t *testing.T, repo *db.UserRepository, pool *db.Pool) *db.User {
 	t.Helper()
 	ctx := context.Background()
 	email := uniqueTestEmail(t)
-	t.Cleanup(func() { _, _ = pool.Exec(ctx, "DELETE FROM admins WHERE email = $1", email) })
+	t.Cleanup(func() { _, _ = pool.Exec(ctx, "DELETE FROM users WHERE email = $1", email) })
 
-	admin := &db.Admin{Email: email, PasswordHash: "hash"}
+	admin := &db.User{Email: email, PasswordHash: "hash"}
 	if err := repo.Create(ctx, admin); err != nil {
 		t.Fatalf("repo.Create() returned unexpected error: %v", err)
 	}
 	return admin
 }
 
-func newProtectedHandler(admins *db.AdminRepository, gotAdmin **db.Admin) http.Handler {
+func newProtectedHandler(admins *db.UserRepository, gotAdmin **db.User) http.Handler {
 	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		*gotAdmin, _ = AdminFromContext(r.Context())
+		*gotAdmin, _ = UserFromContext(r.Context())
 		w.WriteHeader(http.StatusOK)
 	})
 	return RequireAuth(middlewareTestSecret, admins)(next)
@@ -101,7 +90,7 @@ func TestRequireAuth_ValidToken_PassesThrough(t *testing.T) {
 		t.Fatalf("IssueSession() returned unexpected error: %v", err)
 	}
 
-	var gotAdmin *db.Admin
+	var gotAdmin *db.User
 	handler := newProtectedHandler(repo, &gotAdmin)
 
 	req := httptest.NewRequest(http.MethodGet, "/protected", nil)
@@ -130,7 +119,7 @@ func TestRequireAuth_CookieOnly_PassesThrough(t *testing.T) {
 		t.Fatalf("IssueSession() returned unexpected error: %v", err)
 	}
 
-	var gotAdmin *db.Admin
+	var gotAdmin *db.User
 	handler := newProtectedHandler(repo, &gotAdmin)
 
 	req := httptest.NewRequest(http.MethodGet, "/protected", nil)
@@ -161,7 +150,7 @@ func TestRequireAuth_HeaderTakesPriorityOverCookie(t *testing.T) {
 		t.Fatalf("IssueSession() returned unexpected error: %v", err)
 	}
 
-	var gotAdmin *db.Admin
+	var gotAdmin *db.User
 	handler := newProtectedHandler(repo, &gotAdmin)
 
 	req := httptest.NewRequest(http.MethodGet, "/protected", nil)
@@ -181,7 +170,7 @@ func TestRequireAuth_HeaderTakesPriorityOverCookie(t *testing.T) {
 
 func TestRequireAuth_MissingToken_401(t *testing.T) {
 	repo, _ := newMiddlewareTestAdmins(t)
-	var gotAdmin *db.Admin
+	var gotAdmin *db.User
 	handler := newProtectedHandler(repo, &gotAdmin)
 
 	req := httptest.NewRequest(http.MethodGet, "/protected", nil)
@@ -196,7 +185,7 @@ func TestRequireAuth_MissingToken_401(t *testing.T) {
 
 func TestRequireAuth_InvalidToken_401(t *testing.T) {
 	repo, _ := newMiddlewareTestAdmins(t)
-	var gotAdmin *db.Admin
+	var gotAdmin *db.User
 	handler := newProtectedHandler(repo, &gotAdmin)
 
 	req := httptest.NewRequest(http.MethodGet, "/protected", nil)
@@ -213,7 +202,7 @@ func TestRequireAuth_InvalidToken_401(t *testing.T) {
 func TestRequireAuth_ExpiredToken_401(t *testing.T) {
 	repo, pool := newMiddlewareTestAdmins(t)
 	admin := createMiddlewareTestAdmin(t, repo, pool)
-	var gotAdmin *db.Admin
+	var gotAdmin *db.User
 	handler := newProtectedHandler(repo, &gotAdmin)
 
 	token := expiredToken(t, admin.ID, middlewareTestSecret)
@@ -245,7 +234,7 @@ func TestRequireAuth_TokenIssuedBeforeRevocation_401(t *testing.T) {
 		t.Fatalf("RevokeSessions() returned unexpected error: %v", err)
 	}
 
-	var gotAdmin *db.Admin
+	var gotAdmin *db.User
 	handler := newProtectedHandler(repo, &gotAdmin)
 
 	req := httptest.NewRequest(http.MethodGet, "/protected", nil)
@@ -277,7 +266,7 @@ func TestRequireAuth_TokenIssuedAfterRevocation_PassesThrough(t *testing.T) {
 		t.Fatalf("IssueSession() returned unexpected error: %v", err)
 	}
 
-	var gotAdmin *db.Admin
+	var gotAdmin *db.User
 	handler := newProtectedHandler(repo, &gotAdmin)
 
 	req := httptest.NewRequest(http.MethodGet, "/protected", nil)

@@ -34,6 +34,24 @@ func testDatabaseURL(t *testing.T) string {
 
 func newServeTestPool(t *testing.T) *db.Pool {
 	t.Helper()
+	pool, _ := newServeTestPoolWithTenant(t)
+	return pool
+}
+
+// newServeTestPoolWithTenant returns a migrated pool whose every
+// connection has app.tenant_id preset (at session level, via the
+// connection's `options` parameter) to a throwaway fixture tenant, plus
+// that tenant's id.
+//
+// Every tenant-scoped table's tenant_id defaults from
+// current_setting('app.tenant_id', true) and is NOT NULL since 0024, so a
+// fixture INSERT made outside a tenant context is rejected; and the
+// unauthenticated routes this package exercises (public status page,
+// /uploads/logo, /api/instance/branding) resolve their tenant the same
+// way. Pinning it per connection makes both deterministic without every
+// test having to open its own transaction.
+func newServeTestPoolWithTenant(t *testing.T) (*db.Pool, string) {
+	t.Helper()
 	dsn := testDatabaseURL(t)
 
 	if err := db.MigrateUp(dsn, "../db/migrations"); err != nil {
@@ -43,13 +61,27 @@ func newServeTestPool(t *testing.T) *db.Pool {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	pool, err := db.NewPool(ctx, dsn)
+	bootstrapPool, err := db.NewPool(ctx, dsn)
 	if err != nil {
 		t.Fatalf("NewPool() returned unexpected error: %v", err)
 	}
-	t.Cleanup(pool.Close)
+	var tenantID string
+	if err := bootstrapPool.QueryRow(ctx, "INSERT INTO tenants (name) VALUES ($1) RETURNING id", "cli-test-tenant").Scan(&tenantID); err != nil {
+		bootstrapPool.Close()
+		t.Fatalf("seeding fixture tenant returned unexpected error: %v", err)
+	}
+	bootstrapPool.Close()
 
-	return pool
+	pool, err := db.NewPool(ctx, dbtest.TenantScopedDSN(dsn, tenantID))
+	if err != nil {
+		t.Fatalf("NewPool() (tenant-scoped) returned unexpected error: %v", err)
+	}
+	t.Cleanup(pool.Close)
+	t.Cleanup(func() {
+		_, _ = pool.Exec(context.Background(), "DELETE FROM tenants WHERE id = $1", tenantID)
+	})
+
+	return pool, tenantID
 }
 
 // createServeTestService creates a service with an "operational" status,
@@ -60,21 +92,11 @@ func createServeTestService(t *testing.T, pool *db.Pool, namePrefix string) stri
 
 	services := db.NewServiceRepository(pool)
 	service := &db.Service{Name: fmt.Sprintf("%s-%d", namePrefix, time.Now().UnixNano()), SLOID: "slo-serve-test"}
-	var tenantID string
-	if err := pool.QueryRow(ctx, "INSERT INTO tenants (name) VALUES ($1) RETURNING id", "serve-test-tenant").Scan(&tenantID); err != nil {
-		t.Fatalf("seeding test tenant returned unexpected error: %v", err)
-	}
-	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), "DELETE FROM tenants WHERE id = $1", tenantID) })
-	tx, err := pool.BeginTenantTx(ctx, "", tenantID)
-	if err != nil {
-		t.Fatalf("BeginTenantTx() returned unexpected error: %v", err)
-	}
-	if err := services.Create(db.WithTenantTx(ctx, tx), service); err != nil {
-		_ = tx.Rollback(ctx)
+	// pool is tenant-scoped (newServeTestPoolWithTenant), so the insert's
+	// tenant_id default resolves to the fixture tenant without an explicit
+	// transaction here.
+	if err := services.Create(ctx, service); err != nil {
 		t.Fatalf("setup service Create() returned unexpected error: %v", err)
-	}
-	if err := tx.Commit(ctx); err != nil {
-		t.Fatalf("commit returned unexpected error: %v", err)
 	}
 	if err := services.UpdateStatus(ctx, service.ID, "operational"); err != nil {
 		t.Fatalf("setup UpdateStatus() returned unexpected error: %v", err)
@@ -338,19 +360,15 @@ func TestNewHTTPSServer_UnregisteredHost_404(t *testing.T) {
 // serve the logo file, not the public status JSON that HostRouter forwards
 // every other path to when handed a single handler.
 func TestNewHTTPSServer_UploadsPath_ServesLogoFile_NotStatusJSON(t *testing.T) {
-	pool := newServeTestPool(t)
+	pool, tenantID := newServeTestPoolWithTenant(t)
 
-	// The logo lives in the shared company_settings singleton row now
-	// (not a throwaway temp dir), so this races internal/db's and
-	// internal/api's own company_settings tests across the separate
-	// concurrent processes `go test ./...` runs them as - see
-	// LockCompanySettings' doc comment.
+	// The logo lives on the tenant row now (company_settings was dropped
+	// by 0024), so this races internal/api's own tenant-profile tests
+	// across the separate concurrent processes `go test ./...` runs them
+	// as - see LockTenantsTable's doc comment.
 	dsn := testDatabaseURL(t)
-	dbtest.LockCompanySettings(t, context.Background(), dsn)
-	t.Cleanup(func() {
-		_, _ = pool.Exec(context.Background(), "UPDATE company_settings SET logo_data = NULL, logo_content_type = NULL WHERE id = 1")
-	})
-	if _, err := db.NewCompanySettingsRepository(pool).UpdateLogo(context.Background(), "image/png", []byte("fake-logo-bytes")); err != nil {
+	dbtest.LockTenantsTable(t, context.Background(), dsn)
+	if _, err := db.NewTenantRepository(pool).UpdateLogo(context.Background(), tenantID, "image/png", []byte("fake-logo-bytes")); err != nil {
 		t.Fatalf("UpdateLogo() returned unexpected error: %v", err)
 	}
 

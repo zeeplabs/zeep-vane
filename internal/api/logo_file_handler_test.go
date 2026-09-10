@@ -15,31 +15,22 @@ import (
 )
 
 // newLogoFileHandlerTestPool returns a fresh *db.Pool against
-// TEST_DATABASE_URL, migrated and with the shared company_settings
+// TEST_DATABASE_URL, migrated and with the fixture tenant's
 // singleton row locked/reset for the duration of the calling test - the
-// logo now lives in that row, not on a per-test temp dir, so every test
-// here races internal/db's and internal/cli's own company_settings tests
-// the same way company_settings_handler_test.go's does.
+// logo now lives on the tenant row, not on a per-test temp dir, so every
+// test here races internal/cli's own company-profile tests the same way
+// company_settings_handler_test.go's does.
 func newLogoFileHandlerTestPool(t *testing.T) *db.Pool {
 	t.Helper()
 	dsn := testDatabaseURL(t)
 
-	if err := db.MigrateUp(dsn, "../db/migrations"); err != nil {
-		t.Fatalf("MigrateUp() returned unexpected error: %v", err)
-	}
+	pool, _ := newAPITenantScopedPool(t)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	pool, err := db.NewPool(ctx, dsn)
-	if err != nil {
-		t.Fatalf("NewPool() returned unexpected error: %v", err)
-	}
-	t.Cleanup(pool.Close)
-
-	dbtest.LockCompanySettings(t, context.Background(), dsn)
+	dbtest.LockTenantsTable(t, context.Background(), dsn)
+	tenantID := apiTestTenantID(t)
 	reset := func() {
-		_, _ = pool.Exec(context.Background(), "UPDATE company_settings SET logo_data = NULL, logo_content_type = NULL WHERE id = 1")
+		_, _ = pool.Exec(context.Background(),
+			"UPDATE tenants SET logo_data = NULL, logo_content_type = NULL WHERE id = $1", tenantID)
 	}
 	reset()
 	t.Cleanup(reset)
@@ -60,8 +51,8 @@ func getLogoFile(t *testing.T, r http.Handler) *httptest.ResponseRecorder {
 // with its stored content type and bytes.
 func TestLogoFileHandler_LogoStored_200ServesBytes(t *testing.T) {
 	pool := newLogoFileHandlerTestPool(t)
-	repo := db.NewCompanySettingsRepository(pool)
-	if _, err := repo.UpdateLogo(context.Background(), "image/png", []byte("fake-png-bytes")); err != nil {
+	repo := db.NewTenantRepository(pool)
+	if _, err := repo.UpdateLogo(context.Background(), apiTestTenantID(t), "image/png", []byte("fake-png-bytes")); err != nil {
 		t.Fatalf("UpdateLogo() returned unexpected error: %v", err)
 	}
 
@@ -82,7 +73,7 @@ func TestLogoFileHandler_LogoStored_200ServesBytes(t *testing.T) {
 // install (no logo ever uploaded) 404s rather than serving an empty body.
 func TestLogoFileHandler_NeverUploaded_404(t *testing.T) {
 	pool := newLogoFileHandlerTestPool(t)
-	repo := db.NewCompanySettingsRepository(pool)
+	repo := db.NewTenantRepository(pool)
 
 	rec := getLogoFile(t, NewLogoFileHandler(repo))
 
@@ -97,8 +88,8 @@ func TestLogoFileHandler_NeverUploaded_404(t *testing.T) {
 // in front of it, unlike every other admin route in this package.
 func TestLogoFileHandler_NoAuthenticationRequired_200(t *testing.T) {
 	pool := newLogoFileHandlerTestPool(t)
-	repo := db.NewCompanySettingsRepository(pool)
-	if _, err := repo.UpdateLogo(context.Background(), "image/svg+xml", []byte("<svg></svg>")); err != nil {
+	repo := db.NewTenantRepository(pool)
+	if _, err := repo.UpdateLogo(context.Background(), apiTestTenantID(t), "image/svg+xml", []byte("<svg></svg>")); err != nil {
 		t.Fatalf("UpdateLogo() returned unexpected error: %v", err)
 	}
 
@@ -120,8 +111,8 @@ func TestLogoFileHandler_NoAuthenticationRequired_200(t *testing.T) {
 // defense, independent of Content-Type.
 func TestLogoFileHandler_SVGFile_SandboxedCSPAndNosniff(t *testing.T) {
 	pool := newLogoFileHandlerTestPool(t)
-	repo := db.NewCompanySettingsRepository(pool)
-	if _, err := repo.UpdateLogo(context.Background(), "image/svg+xml", []byte("<svg><script>alert(1)</script></svg>")); err != nil {
+	repo := db.NewTenantRepository(pool)
+	if _, err := repo.UpdateLogo(context.Background(), apiTestTenantID(t), "image/svg+xml", []byte("<svg><script>alert(1)</script></svg>")); err != nil {
 		t.Fatalf("UpdateLogo() returned unexpected error: %v", err)
 	}
 
@@ -157,16 +148,19 @@ func TestLogoFileHandler_MultiReplica_SecondReplicaServesFirstReplicasUpload(t *
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	poolB, err := db.NewPool(ctx, dsn)
+	// Replica B connects with the same fixture tenant pinned - two
+	// processes serving the same tenant, which is the scenario this
+	// guards.
+	poolB, err := db.NewPool(ctx, dbtest.TenantScopedDSN(dsn, apiTestTenantID(t)))
 	if err != nil {
 		t.Fatalf("NewPool() for replica B returned unexpected error: %v", err)
 	}
 	t.Cleanup(poolB.Close)
 
-	replicaA := db.NewCompanySettingsRepository(poolA)
-	replicaB := db.NewCompanySettingsRepository(poolB)
+	replicaA := db.NewTenantRepository(poolA)
+	replicaB := db.NewTenantRepository(poolB)
 
-	if _, err := replicaA.UpdateLogo(context.Background(), "image/png", []byte("uploaded-via-replica-a")); err != nil {
+	if _, err := replicaA.UpdateLogo(context.Background(), apiTestTenantID(t), "image/png", []byte("uploaded-via-replica-a")); err != nil {
 		t.Fatalf("replica A UpdateLogo() returned unexpected error: %v", err)
 	}
 

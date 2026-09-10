@@ -6,7 +6,6 @@ import (
 	"context"
 	"errors"
 	"testing"
-	"time"
 
 	"github.com/zeeplabs/zeep-vane/internal/llm"
 )
@@ -15,35 +14,26 @@ import (
 // singleton's active_provider, leaving the schema in the same clean state
 // a fresh migration would - so each test in this file starts from a known
 // baseline regardless of what a previous test left behind.
-func resetLLMProviders(t *testing.T, ctx context.Context, pool *Pool) {
+// resetLLMProviders clears this tenant's provider rows and its
+// llm_settings row. Both are tenant-scoped since multi-tenancy-core, so
+// the reset is too - it must never touch another concurrently-running
+// suite's tenant.
+func resetLLMProviders(t *testing.T, ctx context.Context, pool *Pool, tenantID string) {
 	t.Helper()
-	if _, err := pool.Exec(ctx, "UPDATE llm_settings SET active_provider = NULL WHERE id = 1"); err != nil {
-		t.Fatalf("failed to reset llm_settings.active_provider: %v", err)
+	if _, err := pool.Exec(ctx, "DELETE FROM llm_settings WHERE tenant_id = $1", tenantID); err != nil {
+		t.Fatalf("failed to reset llm_settings: %v", err)
 	}
-	if _, err := pool.Exec(ctx, "DELETE FROM llm_providers"); err != nil {
+	if _, err := pool.Exec(ctx, "DELETE FROM llm_providers WHERE tenant_id = $1", tenantID); err != nil {
 		t.Fatalf("failed to clear llm_providers: %v", err)
 	}
 }
 
 func newLLMProviderRepoForTest(t *testing.T) (*LLMProviderRepository, *Pool) {
 	t.Helper()
-	dsn := testDatabaseURL(t)
+	pool, tenantID := newTenantScopedPool(t)
 
-	if err := MigrateUp(dsn, "migrations"); err != nil {
-		t.Fatalf("MigrateUp() returned unexpected error: %v", err)
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	pool, err := NewPool(ctx, dsn)
-	if err != nil {
-		t.Fatalf("NewPool() returned unexpected error: %v", err)
-	}
-	t.Cleanup(pool.Close)
-
-	resetLLMProviders(t, context.Background(), pool)
-	t.Cleanup(func() { resetLLMProviders(t, context.Background(), pool) })
+	resetLLMProviders(t, context.Background(), pool, tenantID)
+	t.Cleanup(func() { resetLLMProviders(t, context.Background(), pool, tenantID) })
 
 	return NewLLMProviderRepository(pool), pool
 }

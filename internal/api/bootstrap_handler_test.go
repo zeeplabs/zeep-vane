@@ -21,24 +21,12 @@ import (
 
 const testBootstrapSessionSecret = "test-bootstrap-session-secret-32bytes!!"
 
-func newBootstrapRouter(t *testing.T) (http.Handler, *db.AdminRepository, *db.Pool) {
+func newBootstrapRouter(t *testing.T) (http.Handler, *db.UserRepository, *db.Pool) {
 	t.Helper()
-	dsn := testDatabaseURL(t)
 
-	if err := db.MigrateUp(dsn, "../db/migrations"); err != nil {
-		t.Fatalf("MigrateUp() returned unexpected error: %v", err)
-	}
+	pool, _ := newAPITenantScopedPool(t)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	pool, err := db.NewPool(ctx, dsn)
-	if err != nil {
-		t.Fatalf("NewPool() returned unexpected error: %v", err)
-	}
-	t.Cleanup(pool.Close)
-
-	repo := db.NewAdminRepository(pool)
+	repo := db.NewUserRepository(pool)
 	tenants := db.NewTenantRepository(pool)
 	memberships := db.NewTenantMembershipRepository(pool)
 	// secureCookies=true: default behavior, no test in this file exercises
@@ -93,25 +81,25 @@ func clearAdminsForBootstrapTest(t *testing.T, pool *db.Pool) func() {
 	ctx := context.Background()
 
 	// Serialize against every other package's tests that bulk-clear or
-	// exact-count the shared `admins` table - see LockAdminsTable's doc
+	// exact-count the shared `admins` table - see LockUsersTable's doc
 	// comment for why this is needed across concurrently-run packages.
-	dbtest.LockAdminsTable(t, ctx, testDatabaseURL(t))
+	dbtest.LockUsersTable(t, ctx, testDatabaseURL(t))
 
 	invites := snapshotTableForBootstrapTest(t, pool, ctx,
-		"SELECT id, email, role, token_hash, invited_by_id, expires_at, used_at, created_at FROM admin_invites")
+		"SELECT id, tenant_id, email, role, token_hash, invited_by_id, expires_at, used_at, created_at FROM tenant_invites")
 	tokens := snapshotTableForBootstrapTest(t, pool, ctx,
-		"SELECT id, admin_id, token_hash, expires_at, used_at FROM password_reset_tokens")
+		"SELECT id, user_id, token_hash, expires_at, used_at FROM password_reset_tokens")
 	admins := snapshotTableForBootstrapTest(t, pool, ctx,
-		"SELECT id, email, password_hash, role, sessions_revoked_at, created_at FROM admins")
+		"SELECT id, email, password_hash, sessions_revoked_at, email_verified_at, created_at FROM users")
 
 	clearAll := func() {
-		if _, err := pool.Exec(ctx, "DELETE FROM admin_invites"); err != nil {
-			t.Fatalf("failed to clear admin_invites: %v", err)
+		if _, err := pool.Exec(ctx, "DELETE FROM tenant_invites"); err != nil {
+			t.Fatalf("failed to clear tenant_invites: %v", err)
 		}
 		if _, err := pool.Exec(ctx, "DELETE FROM password_reset_tokens"); err != nil {
 			t.Fatalf("failed to clear password_reset_tokens: %v", err)
 		}
-		if _, err := pool.Exec(ctx, "DELETE FROM admins"); err != nil {
+		if _, err := pool.Exec(ctx, "DELETE FROM users"); err != nil {
 			t.Fatalf("failed to clear admins table for bootstrap handler test: %v", err)
 		}
 	}
@@ -121,7 +109,7 @@ func clearAdminsForBootstrapTest(t *testing.T, pool *db.Pool) func() {
 		clearAll()
 		for _, a := range admins {
 			if _, err := pool.Exec(ctx,
-				"INSERT INTO admins (id, email, password_hash, role, sessions_revoked_at, created_at) VALUES ($1, $2, $3, $4, $5, $6)",
+				"INSERT INTO users (id, email, password_hash, sessions_revoked_at, email_verified_at, created_at) VALUES ($1, $2, $3, $4, $5, $6)",
 				a.values...,
 			); err != nil {
 				t.Fatalf("failed to restore snapshotted admin: %v", err)
@@ -129,7 +117,7 @@ func clearAdminsForBootstrapTest(t *testing.T, pool *db.Pool) func() {
 		}
 		for _, inv := range invites {
 			if _, err := pool.Exec(ctx,
-				"INSERT INTO admin_invites (id, email, role, token_hash, invited_by_id, expires_at, used_at, created_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
+				"INSERT INTO tenant_invites (id, tenant_id, email, role, token_hash, invited_by_id, expires_at, used_at, created_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)",
 				inv.values...,
 			); err != nil {
 				t.Fatalf("failed to restore snapshotted admin_invite: %v", err)
@@ -137,7 +125,7 @@ func clearAdminsForBootstrapTest(t *testing.T, pool *db.Pool) func() {
 		}
 		for _, tok := range tokens {
 			if _, err := pool.Exec(ctx,
-				"INSERT INTO password_reset_tokens (id, admin_id, token_hash, expires_at, used_at) VALUES ($1, $2, $3, $4, $5)",
+				"INSERT INTO password_reset_tokens (id, user_id, token_hash, expires_at, used_at) VALUES ($1, $2, $3, $4, $5)",
 				tok.values...,
 			); err != nil {
 				t.Fatalf("failed to restore snapshotted password_reset_token: %v", err)
@@ -338,7 +326,7 @@ func TestBootstrapHandler_Create_AlreadyBootstrapped_Returns409NoSecondAdmin(t *
 
 	ctx := context.Background()
 	var count int
-	if err := pool.QueryRow(ctx, "SELECT COUNT(*) FROM admins").Scan(&count); err != nil {
+	if err := pool.QueryRow(ctx, "SELECT COUNT(*) FROM users").Scan(&count); err != nil {
 		t.Fatalf("counting admins returned unexpected error: %v", err)
 	}
 	if count != 1 {
@@ -370,7 +358,7 @@ func TestBootstrapHandler_Create_EmptyPassword_Returns422NoAdminCreated(t *testi
 
 	ctx := context.Background()
 	var count int
-	if err := pool.QueryRow(ctx, "SELECT COUNT(*) FROM admins").Scan(&count); err != nil {
+	if err := pool.QueryRow(ctx, "SELECT COUNT(*) FROM users").Scan(&count); err != nil {
 		t.Fatalf("counting admins returned unexpected error: %v", err)
 	}
 	if count != 0 {
@@ -395,7 +383,7 @@ func TestBootstrapHandler_Create_WeakPassword_Returns422NoAdminCreated(t *testin
 
 	ctx := context.Background()
 	var count int
-	if err := pool.QueryRow(ctx, "SELECT COUNT(*) FROM admins").Scan(&count); err != nil {
+	if err := pool.QueryRow(ctx, "SELECT COUNT(*) FROM users").Scan(&count); err != nil {
 		t.Fatalf("counting admins returned unexpected error: %v", err)
 	}
 	if count != 0 {

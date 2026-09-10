@@ -24,66 +24,70 @@ import (
 
 const routesTestSessionSecret = "cli-routes-test-session-secret-32b!!"
 
-func newAdminRouterForTest(t *testing.T) (http.Handler, *db.Pool, *db.AdminRepository) {
+func newAdminRouterForTest(t *testing.T) (http.Handler, *db.Pool, *db.UserRepository) {
 	t.Helper()
-	pool := newServeTestPool(t)
+	handler, pool, users, _ := newAdminRouterAndTenantForTest(t)
+	return handler, pool, users
+}
+
+func newAdminRouterAndTenantForTest(t *testing.T) (http.Handler, *db.Pool, *db.UserRepository, string) {
+	t.Helper()
+	pool, tenantID := newServeTestPoolWithTenant(t)
 	cfg := config.Config{SessionSecret: routesTestSessionSecret, MasterKey: "cli-routes-test-master-key"}
 	pollerManager := NewPollerManager(context.Background(), pool, cfg, zap.NewNop(), testDatabaseURL(t))
 	handler := buildAdminRouter(pool, cfg, zap.NewNop(), pollerManager)
 
-	// The company_settings row is a singleton shared across every test in
-	// this package - reset it to a known state before and after each
-	// test. That reset races internal/db's and internal/api's own
-	// company_settings tests across the separate concurrent processes
+	// The company profile now lives on the fixture tenant's own row
+	// (company_settings was dropped by 0024) - reset it to a known state
+	// before and after each test. That reset races internal/api's own
+	// company-settings tests across the separate concurrent processes
 	// `go test ./...` runs them as, so take the shared advisory lock for
-	// the duration of this test - see LockCompanySettings' doc comment.
-	dbtest.LockCompanySettings(t, context.Background(), testDatabaseURL(t))
+	// the duration of this test - see LockTenantsTable's doc comment.
+	dbtest.LockTenantsTable(t, context.Background(), testDatabaseURL(t))
 	reset := func() {
-		_, _ = pool.Exec(context.Background(), "UPDATE company_settings SET name = '', contact_email = '', logo_url = NULL WHERE id = 1")
+		_, _ = pool.Exec(context.Background(),
+			"UPDATE tenants SET name = '', contact_email = '', logo_data = NULL, logo_content_type = NULL WHERE id = $1", tenantID)
 	}
 	reset()
 	t.Cleanup(reset)
 
-	return handler, pool, db.NewAdminRepository(pool)
+	return handler, pool, db.NewUserRepository(pool), tenantID
 }
 
-// issueRoutesTestToken inserts a real admin row with role and issues a
-// session token for it, so RequireAuth's GetByID lookup and RequireRole's
-// role check both see real state.
+// issueRoutesTestToken inserts a real user row plus a tenant_membership
+// carrying role in tenantID, then issues a session token bound to that
+// tenant - so RequireAuth's GetByID lookup and the role TenantContext
+// resolves for RequireRole both see real state. Since multi-tenancy-core a
+// role is a tenant_memberships row, not a users column, so the membership
+// is what makes the role real.
 //
-// admins.Create always inserts with the `admins.role` column's database
-// default, which is `owner` (see migration 0009) - regardless of the
-// `role` requested here, every call transiently creates an owner-role row
-// until/unless the UpdateRole call below moves it away. That makes this
-// helper the single common point every owner-sensitive test in this
-// package goes through, so it takes LockAdminsTable itself rather than
-// relying on each call site to remember to. See LockAdminsTable's doc
-// comment for why this must be held across concurrently-run packages,
-// not just within this one - it is not enough to serialize the calls
-// within this test binary since `go test ./...` runs each package as a
-// separate concurrent process against the same TEST_DATABASE_URL.
-func issueRoutesTestToken(t *testing.T, admins *db.AdminRepository, role string) string {
+// It takes LockUsersTable itself rather than relying on each call site to
+// remember to. See LockUsersTable's doc comment for why this must be held
+// across concurrently-run packages, not just within this one - it is not
+// enough to serialize the calls within this test binary since `go test
+// ./...` runs each package as a separate concurrent process against the
+// same TEST_DATABASE_URL.
+func issueRoutesTestToken(t *testing.T, users *db.UserRepository, pool *db.Pool, tenantID, role string) string {
 	t.Helper()
 	ctx := context.Background()
-	dbtest.LockAdminsTable(t, ctx, testDatabaseURL(t))
-	admin := &db.Admin{
+	dbtest.LockUsersTable(t, ctx, testDatabaseURL(t))
+	user := &db.User{
 		Email:        fmt.Sprintf("cli-routes-test-%d@example.com", time.Now().UnixNano()),
 		PasswordHash: "hash",
 	}
-	if err := admins.Create(ctx, admin); err != nil {
-		t.Fatalf("admins.Create() returned unexpected error: %v", err)
+	if err := users.Create(ctx, user); err != nil {
+		t.Fatalf("users.Create() returned unexpected error: %v", err)
 	}
-	t.Cleanup(func() { _ = admins.Delete(context.Background(), admin.ID) })
+	t.Cleanup(func() { _ = users.Delete(context.Background(), user.ID) })
 
-	if role != db.RoleOwner {
-		if err := admins.UpdateRole(ctx, admin.ID, role); err != nil {
-			t.Fatalf("admins.UpdateRole() returned unexpected error: %v", err)
-		}
+	memberships := db.NewTenantMembershipRepository(pool)
+	if err := memberships.Create(ctx, &db.TenantMembership{UserID: user.ID, TenantID: tenantID, Role: role}); err != nil {
+		t.Fatalf("memberships.Create() returned unexpected error: %v", err)
 	}
 
-	token, err := auth.IssueSession(admin.ID, routesTestSessionSecret)
+	token, err := auth.IssueSessionWithTenant(user.ID, tenantID, routesTestSessionSecret)
 	if err != nil {
-		t.Fatalf("auth.IssueSession() returned unexpected error: %v", err)
+		t.Fatalf("auth.IssueSessionWithTenant() returned unexpected error: %v", err)
 	}
 	return token
 }
@@ -123,8 +127,8 @@ func getServicesRoute(t *testing.T, r http.Handler, token string) *httptest.Resp
 }
 
 func TestAdminRouter_Owner_WriteRoute_200(t *testing.T) {
-	r, _, admins := newAdminRouterForTest(t)
-	token := issueRoutesTestToken(t, admins, db.RoleOwner)
+	r, pool, admins, tenantID := newAdminRouterAndTenantForTest(t)
+	token := issueRoutesTestToken(t, admins, pool, tenantID, db.RoleOwner)
 
 	rec := postCreateDomainRoute(t, r, token)
 
@@ -134,8 +138,8 @@ func TestAdminRouter_Owner_WriteRoute_200(t *testing.T) {
 }
 
 func TestAdminRouter_Owner_ReadRoute_200(t *testing.T) {
-	r, _, admins := newAdminRouterForTest(t)
-	token := issueRoutesTestToken(t, admins, db.RoleOwner)
+	r, pool, admins, tenantID := newAdminRouterAndTenantForTest(t)
+	token := issueRoutesTestToken(t, admins, pool, tenantID, db.RoleOwner)
 
 	rec := getServicesRoute(t, r, token)
 
@@ -145,8 +149,8 @@ func TestAdminRouter_Owner_ReadRoute_200(t *testing.T) {
 }
 
 func TestAdminRouter_Operator_WriteRoute_200(t *testing.T) {
-	r, _, admins := newAdminRouterForTest(t)
-	token := issueRoutesTestToken(t, admins, db.RoleOperator)
+	r, pool, admins, tenantID := newAdminRouterAndTenantForTest(t)
+	token := issueRoutesTestToken(t, admins, pool, tenantID, db.RoleOperator)
 
 	rec := postCreateDomainRoute(t, r, token)
 
@@ -156,8 +160,8 @@ func TestAdminRouter_Operator_WriteRoute_200(t *testing.T) {
 }
 
 func TestAdminRouter_Operator_ReadRoute_200(t *testing.T) {
-	r, _, admins := newAdminRouterForTest(t)
-	token := issueRoutesTestToken(t, admins, db.RoleOperator)
+	r, pool, admins, tenantID := newAdminRouterAndTenantForTest(t)
+	token := issueRoutesTestToken(t, admins, pool, tenantID, db.RoleOperator)
 
 	rec := getServicesRoute(t, r, token)
 
@@ -167,8 +171,8 @@ func TestAdminRouter_Operator_ReadRoute_200(t *testing.T) {
 }
 
 func TestAdminRouter_Viewer_WriteRoute_403(t *testing.T) {
-	r, _, admins := newAdminRouterForTest(t)
-	token := issueRoutesTestToken(t, admins, db.RoleViewer)
+	r, pool, admins, tenantID := newAdminRouterAndTenantForTest(t)
+	token := issueRoutesTestToken(t, admins, pool, tenantID, db.RoleViewer)
 
 	rec := postCreateDomainRoute(t, r, token)
 
@@ -178,8 +182,8 @@ func TestAdminRouter_Viewer_WriteRoute_403(t *testing.T) {
 }
 
 func TestAdminRouter_Viewer_ReadRoute_200(t *testing.T) {
-	r, _, admins := newAdminRouterForTest(t)
-	token := issueRoutesTestToken(t, admins, db.RoleViewer)
+	r, pool, admins, tenantID := newAdminRouterAndTenantForTest(t)
+	token := issueRoutesTestToken(t, admins, pool, tenantID, db.RoleViewer)
 
 	rec := getServicesRoute(t, r, token)
 
@@ -441,8 +445,8 @@ func doRouteRequest(t *testing.T, r http.Handler, token string, rt routeCase) *h
 // mvp-core write route mounted by buildAdminRouter must reject viewer with
 // 403, not just /api/domains.
 func TestAdminRouter_Viewer_AllWriteRoutes_403(t *testing.T) {
-	r, _, admins := newAdminRouterForTest(t)
-	token := issueRoutesTestToken(t, admins, db.RoleViewer)
+	r, pool, admins, tenantID := newAdminRouterAndTenantForTest(t)
+	token := issueRoutesTestToken(t, admins, pool, tenantID, db.RoleViewer)
 
 	for _, rt := range writeRouteCases() {
 		t.Run(rt.name, func(t *testing.T) {
@@ -465,17 +469,17 @@ func TestAdminRouter_OwnerAndOperator_AllWriteRoutes_PassAuthorization(t *testin
 	// issues still resolving to real admins mid-test - a concurrent
 	// bulk-clear of the shared `admins` table by another package's
 	// bootstrap tests would break that. issueRoutesTestToken (called in
-	// each role's subtest below) takes LockAdminsTable itself, so there is
+	// each role's subtest below) takes LockUsersTable itself, so there is
 	// no separate lock call here - taking it at this level too would
 	// deadlock, since each subtest runs on its own *testing.T (a
 	// different session's dedicated lock connection) while this level's
 	// connection sits held until this function returns.
-	r, _, admins := newAdminRouterForTest(t)
+	r, pool, admins, tenantID := newAdminRouterAndTenantForTest(t)
 
 	for _, role := range []string{db.RoleOwner, db.RoleOperator} {
 		role := role
 		t.Run(role, func(t *testing.T) {
-			token := issueRoutesTestToken(t, admins, role)
+			token := issueRoutesTestToken(t, admins, pool, tenantID, role)
 			for _, rt := range writeRouteCases() {
 				t.Run(rt.name, func(t *testing.T) {
 					rec := doRouteRequest(t, r, token, rt)
@@ -493,12 +497,12 @@ func TestAdminRouter_OwnerAndOperator_AllWriteRoutes_PassAuthorization(t *testin
 // 403 through the real router, not just through admins_test.go's
 // self-assembled router.
 func TestAdminRouter_OperatorAndViewer_AdminManagementRoutes_403(t *testing.T) {
-	r, _, admins := newAdminRouterForTest(t)
+	r, pool, admins, tenantID := newAdminRouterAndTenantForTest(t)
 
 	for _, role := range []string{db.RoleOperator, db.RoleViewer} {
 		role := role
 		t.Run(role, func(t *testing.T) {
-			token := issueRoutesTestToken(t, admins, role)
+			token := issueRoutesTestToken(t, admins, pool, tenantID, role)
 			for _, rt := range adminManagementRouteCases() {
 				t.Run(rt.name, func(t *testing.T) {
 					rec := doRouteRequest(t, r, token, rt)
@@ -515,8 +519,8 @@ func TestAdminRouter_OperatorAndViewer_AdminManagementRoutes_403(t *testing.T) {
 // (ADM-09): owner must clear RequireRole on every admin-management route
 // through the real router.
 func TestAdminRouter_Owner_AdminManagementRoutes_PassAuthorization(t *testing.T) {
-	r, _, admins := newAdminRouterForTest(t)
-	token := issueRoutesTestToken(t, admins, db.RoleOwner)
+	r, pool, admins, tenantID := newAdminRouterAndTenantForTest(t)
+	token := issueRoutesTestToken(t, admins, pool, tenantID, db.RoleOwner)
 
 	for _, rt := range adminManagementRouteCases() {
 		t.Run(rt.name, func(t *testing.T) {
@@ -532,8 +536,8 @@ func TestAdminRouter_Owner_AdminManagementRoutes_PassAuthorization(t *testing.T)
 // able to read poller status through the real router (anyRole, not
 // writeRoles - validation.md M12).
 func TestAdminRouter_Viewer_PollerStatus_200(t *testing.T) {
-	r, _, admins := newAdminRouterForTest(t)
-	token := issueRoutesTestToken(t, admins, db.RoleViewer)
+	r, pool, admins, tenantID := newAdminRouterAndTenantForTest(t)
+	token := issueRoutesTestToken(t, admins, pool, tenantID, db.RoleViewer)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/poller/status", nil)
 	req.Header.Set("Authorization", "Bearer "+token)
@@ -550,8 +554,8 @@ func TestAdminRouter_Viewer_PollerStatus_200(t *testing.T) {
 // read/write role split as the existing Datadog integration routes
 // (design.md's auth boundary assumption).
 func TestAdminRouter_Viewer_EmailProvidersList_200(t *testing.T) {
-	r, _, admins := newAdminRouterForTest(t)
-	token := issueRoutesTestToken(t, admins, db.RoleViewer)
+	r, pool, admins, tenantID := newAdminRouterAndTenantForTest(t)
+	token := issueRoutesTestToken(t, admins, pool, tenantID, db.RoleViewer)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/integrations/email", nil)
 	req.Header.Set("Authorization", "Bearer "+token)
@@ -567,8 +571,8 @@ func TestAdminRouter_Viewer_EmailProvidersList_200(t *testing.T) {
 // able to read GET /api/integrations/llm (anyRole), the same read/write role
 // split as the email integration routes above.
 func TestAdminRouter_Viewer_LLMProvidersList_200(t *testing.T) {
-	r, _, admins := newAdminRouterForTest(t)
-	token := issueRoutesTestToken(t, admins, db.RoleViewer)
+	r, pool, admins, tenantID := newAdminRouterAndTenantForTest(t)
+	token := issueRoutesTestToken(t, admins, pool, tenantID, db.RoleViewer)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/integrations/llm", nil)
 	req.Header.Set("Authorization", "Bearer "+token)
@@ -645,13 +649,13 @@ func doCompanySettingsRequest(t *testing.T, r http.Handler, token string, rt rou
 // requirement (SET-02): every company settings route rejects operator and
 // viewer with 403, the same way admin-management routes do.
 func TestAdminRouter_CompanySettings_OperatorAndViewer_403(t *testing.T) {
-	r, _, admins := newAdminRouterForTest(t)
+	r, pool, admins, tenantID := newAdminRouterAndTenantForTest(t)
 	_, logoContentType := buildMultipartLogoBody(t)
 
 	for _, role := range []string{db.RoleOperator, db.RoleViewer} {
 		role := role
 		t.Run(role, func(t *testing.T) {
-			token := issueRoutesTestToken(t, admins, role)
+			token := issueRoutesTestToken(t, admins, pool, tenantID, role)
 			for _, rt := range companySettingsRouteCases(t) {
 				t.Run(rt.name, func(t *testing.T) {
 					contentType := "application/json"
@@ -673,8 +677,8 @@ func TestAdminRouter_CompanySettings_OperatorAndViewer_403(t *testing.T) {
 // route - the response must never be 401/403 (it may still be a normal
 // application-level status like 200 or 422).
 func TestAdminRouter_CompanySettings_Owner_PassAuthorization(t *testing.T) {
-	r, _, admins := newAdminRouterForTest(t)
-	token := issueRoutesTestToken(t, admins, db.RoleOwner)
+	r, pool, admins, tenantID := newAdminRouterAndTenantForTest(t)
+	token := issueRoutesTestToken(t, admins, pool, tenantID, db.RoleOwner)
 	_, logoContentType := buildMultipartLogoBody(t)
 
 	for _, rt := range companySettingsRouteCases(t) {
@@ -695,7 +699,7 @@ func TestAdminRouter_CompanySettings_Owner_PassAuthorization(t *testing.T) {
 // settings routes require authentication at all - no Authorization header
 // or session cookie gets 401 before RequireRole is ever reached.
 func TestAdminRouter_CompanySettings_NoSession_401(t *testing.T) {
-	r, _, _ := newAdminRouterForTest(t)
+	r, _, _, _ := newAdminRouterAndTenantForTest(t)
 	_, logoContentType := buildMultipartLogoBody(t)
 
 	for _, rt := range companySettingsRouteCases(t) {
@@ -719,7 +723,7 @@ func TestAdminRouter_CompanySettings_NoSession_401(t *testing.T) {
 // expected outcome is 404 (missing file), proving the request reached
 // logoFileHandler rather than being rejected by auth middleware.
 func TestAdminRouter_UploadsLogoFile_NoSession_ReachesHandler(t *testing.T) {
-	r, _, _ := newAdminRouterForTest(t)
+	r, _, _, _ := newAdminRouterAndTenantForTest(t)
 
 	req := httptest.NewRequest(http.MethodGet, "/uploads/logo.png", nil)
 	rec := httptest.NewRecorder()
@@ -738,7 +742,7 @@ func TestAdminRouter_UploadsLogoFile_NoSession_ReachesHandler(t *testing.T) {
 // /api/instance/dns-target both require authentication - no Authorization
 // header gets 401 before RequireRole is ever reached.
 func TestAdminRouter_StatusPageDomainAttachAndDNSTarget_NoSession_401(t *testing.T) {
-	r, _, _ := newAdminRouterForTest(t)
+	r, _, _, _ := newAdminRouterAndTenantForTest(t)
 
 	cases := []routeCase{
 		{
@@ -804,25 +808,25 @@ func clearAdminsForBootstrapRoutesTest(t *testing.T, pool *db.Pool) func() {
 	ctx := context.Background()
 
 	// Serialize against every other package's tests that bulk-clear or
-	// exact-count the shared `admins` table - see LockAdminsTable's doc
+	// exact-count the shared `admins` table - see LockUsersTable's doc
 	// comment for why this is needed across concurrently-run packages.
-	dbtest.LockAdminsTable(t, ctx, testDatabaseURL(t))
+	dbtest.LockUsersTable(t, ctx, testDatabaseURL(t))
 
 	invites := snapshotTableForBootstrapRoutesTest(t, pool, ctx,
-		"SELECT id, email, role, token_hash, invited_by_id, expires_at, used_at, created_at FROM admin_invites")
+		"SELECT id, tenant_id, email, role, token_hash, invited_by_id, expires_at, used_at, created_at FROM tenant_invites")
 	tokens := snapshotTableForBootstrapRoutesTest(t, pool, ctx,
-		"SELECT id, admin_id, token_hash, expires_at, used_at FROM password_reset_tokens")
+		"SELECT id, user_id, token_hash, expires_at, used_at FROM password_reset_tokens")
 	admins := snapshotTableForBootstrapRoutesTest(t, pool, ctx,
-		"SELECT id, email, password_hash, role, sessions_revoked_at, created_at FROM admins")
+		"SELECT id, email, password_hash, sessions_revoked_at, email_verified_at, created_at FROM users")
 
 	clearAll := func() {
-		if _, err := pool.Exec(ctx, "DELETE FROM admin_invites"); err != nil {
-			t.Fatalf("failed to clear admin_invites: %v", err)
+		if _, err := pool.Exec(ctx, "DELETE FROM tenant_invites"); err != nil {
+			t.Fatalf("failed to clear tenant_invites: %v", err)
 		}
 		if _, err := pool.Exec(ctx, "DELETE FROM password_reset_tokens"); err != nil {
 			t.Fatalf("failed to clear password_reset_tokens: %v", err)
 		}
-		if _, err := pool.Exec(ctx, "DELETE FROM admins"); err != nil {
+		if _, err := pool.Exec(ctx, "DELETE FROM users"); err != nil {
 			t.Fatalf("failed to clear admins table for bootstrap routes test: %v", err)
 		}
 	}
@@ -832,7 +836,7 @@ func clearAdminsForBootstrapRoutesTest(t *testing.T, pool *db.Pool) func() {
 		clearAll()
 		for _, a := range admins {
 			if _, err := pool.Exec(ctx,
-				"INSERT INTO admins (id, email, password_hash, role, sessions_revoked_at, created_at) VALUES ($1, $2, $3, $4, $5, $6)",
+				"INSERT INTO users (id, email, password_hash, sessions_revoked_at, email_verified_at, created_at) VALUES ($1, $2, $3, $4, $5, $6)",
 				a.values...,
 			); err != nil {
 				t.Fatalf("failed to restore snapshotted admin: %v", err)
@@ -840,7 +844,7 @@ func clearAdminsForBootstrapRoutesTest(t *testing.T, pool *db.Pool) func() {
 		}
 		for _, inv := range invites {
 			if _, err := pool.Exec(ctx,
-				"INSERT INTO admin_invites (id, email, role, token_hash, invited_by_id, expires_at, used_at, created_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
+				"INSERT INTO tenant_invites (id, tenant_id, email, role, token_hash, invited_by_id, expires_at, used_at, created_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)",
 				inv.values...,
 			); err != nil {
 				t.Fatalf("failed to restore snapshotted admin_invite: %v", err)
@@ -848,7 +852,7 @@ func clearAdminsForBootstrapRoutesTest(t *testing.T, pool *db.Pool) func() {
 		}
 		for _, tok := range tokens {
 			if _, err := pool.Exec(ctx,
-				"INSERT INTO password_reset_tokens (id, admin_id, token_hash, expires_at, used_at) VALUES ($1, $2, $3, $4, $5)",
+				"INSERT INTO password_reset_tokens (id, user_id, token_hash, expires_at, used_at) VALUES ($1, $2, $3, $4, $5)",
 				tok.values...,
 			); err != nil {
 				t.Fatalf("failed to restore snapshotted password_reset_token: %v", err)
@@ -863,7 +867,7 @@ func clearAdminsForBootstrapRoutesTest(t *testing.T, pool *db.Pool) func() {
 // not a hand-rolled test router - and a full status-then-create round
 // trip against an admin-less table behaves as designed (SHD-16).
 func TestAdminRouter_BootstrapRoutes_ReachableThroughRealRouter(t *testing.T) {
-	r, pool, _ := newAdminRouterForTest(t)
+	r, pool, _, _ := newAdminRouterAndTenantForTest(t)
 	restore := clearAdminsForBootstrapRoutesTest(t, pool)
 	t.Cleanup(restore)
 
@@ -916,7 +920,7 @@ func TestAdminRouter_BootstrapRoutes_ReachableThroughRealRouter(t *testing.T) {
 // exactly the route that would silently start returning the SPA's
 // index.html instead of its own JSON.
 func TestAdminRouter_ExistingAPIRoute_StillReturnsJSON_AfterNotFoundWired(t *testing.T) {
-	r, _, _ := newAdminRouterForTest(t)
+	r, _, _, _ := newAdminRouterAndTenantForTest(t)
 
 	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
 	rec := httptest.NewRecorder()
@@ -936,7 +940,7 @@ func TestAdminRouter_ExistingAPIRoute_StillReturnsJSON_AfterNotFoundWired(t *tes
 // start with /api/ gets the embedded index.html through the real
 // production router.
 func TestAdminRouter_UnmatchedNonAPIPath_ReturnsEmbeddedIndexHTML(t *testing.T) {
-	r, _, _ := newAdminRouterForTest(t)
+	r, _, _, _ := newAdminRouterAndTenantForTest(t)
 
 	req := httptest.NewRequest(http.MethodGet, "/some-spa-route", nil)
 	rec := httptest.NewRecorder()
@@ -957,7 +961,7 @@ func TestAdminRouter_UnmatchedNonAPIPath_ReturnsEmbeddedIndexHTML(t *testing.T) 
 // unmatched /api/... path still reads as an API error, not the SPA
 // fallback, through the real production router.
 func TestAdminRouter_UnmatchedAPIPath_ReturnsJSON404NotHTML(t *testing.T) {
-	r, _, _ := newAdminRouterForTest(t)
+	r, _, _, _ := newAdminRouterAndTenantForTest(t)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/does-not-exist", nil)
 	rec := httptest.NewRecorder()
@@ -982,7 +986,7 @@ func TestAdminRouter_UnmatchedAPIPath_ReturnsJSON404NotHTML(t *testing.T) {
 // guard for the admin HTTP listener specifically: previously nothing but
 // CORS touched response headers on this listener.
 func TestAdminRouter_SecurityHeaders_SetOnAdminListener(t *testing.T) {
-	r, _, _ := newAdminRouterForTest(t)
+	r, _, _, _ := newAdminRouterAndTenantForTest(t)
 
 	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
 	rec := httptest.NewRecorder()
@@ -1004,7 +1008,7 @@ func TestAdminRouter_SecurityHeaders_SetOnAdminListener(t *testing.T) {
 // test-only chi mux): login had no rate limit at all before - an attacker
 // could brute-force a password with unbounded, unthrottled requests.
 func TestAdminRouter_LoginRateLimit_ExceedsBurst_429(t *testing.T) {
-	r, pool, _ := newAdminRouterForTest(t)
+	r, pool, _, _ := newAdminRouterAndTenantForTest(t)
 	const testIP = "203.0.113.9"
 	t.Cleanup(func() {
 		// rate_limit_buckets is a table shared across every test in this
@@ -1052,7 +1056,7 @@ func TestAdminRouter_LoginRateLimit_ExceedsBurst_429(t *testing.T) {
 // effective rate simply by spreading guesses across login/password-reset
 // (H10).
 func TestAdminRouter_LoginRateLimit_SharedAcrossCredentialRoutes_429(t *testing.T) {
-	r, pool, _ := newAdminRouterForTest(t)
+	r, pool, _, _ := newAdminRouterAndTenantForTest(t)
 	const testIP = "203.0.113.10"
 	t.Cleanup(func() {
 		_, _ = pool.Exec(context.Background(), "DELETE FROM rate_limit_buckets WHERE ip = $1", testIP)

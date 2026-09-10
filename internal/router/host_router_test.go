@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/zeeplabs/zeep-vane/internal/db"
+	"github.com/zeeplabs/zeep-vane/internal/dbtest"
 )
 
 // createPublishedStatusPageFixture inserts a domain and a status page
@@ -48,6 +49,12 @@ func createPublishedStatusPageFixture(t *testing.T, pool *db.Pool) string {
 	return hostname
 }
 
+// newHostRouterTestPool returns a migrated pool whose every connection has
+// app.tenant_id preset (at session level, via the connection's `options`
+// parameter) to a throwaway fixture tenant. Every tenant-scoped table's
+// tenant_id defaults from current_setting('app.tenant_id', true) and is
+// NOT NULL since 0024, so a fixture INSERT made outside a tenant context
+// is rejected.
 func newHostRouterTestPool(t *testing.T) *db.Pool {
 	t.Helper()
 	dsn := testDatabaseURL(t)
@@ -56,14 +63,26 @@ func newHostRouterTestPool(t *testing.T) *db.Pool {
 		t.Fatalf("MigrateUp() returned unexpected error: %v", err)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	pool, err := db.NewPool(ctx, dsn)
+	ctx := context.Background()
+	bootstrapPool, err := db.NewPool(ctx, dsn)
 	if err != nil {
 		t.Fatalf("NewPool() returned unexpected error: %v", err)
 	}
+	var tenantID string
+	if err := bootstrapPool.QueryRow(ctx, "INSERT INTO tenants (name) VALUES ($1) RETURNING id", "router-test-tenant").Scan(&tenantID); err != nil {
+		bootstrapPool.Close()
+		t.Fatalf("seeding fixture tenant returned unexpected error: %v", err)
+	}
+	bootstrapPool.Close()
+
+	pool, err := db.NewPool(ctx, dbtest.TenantScopedDSN(dsn, tenantID))
+	if err != nil {
+		t.Fatalf("NewPool() (tenant-scoped) returned unexpected error: %v", err)
+	}
 	t.Cleanup(pool.Close)
+	t.Cleanup(func() {
+		_, _ = pool.Exec(context.Background(), "DELETE FROM tenants WHERE id = $1", tenantID)
+	})
 
 	return pool
 }

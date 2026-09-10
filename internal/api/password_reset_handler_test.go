@@ -30,7 +30,7 @@ import (
 // work all happens in a goroutine dispatched after Request has already
 // responded (see issueAndSendPasswordReset's doc comment), so there is no
 // other synchronization point.
-func newPasswordResetRouter(t *testing.T) (http.Handler, *db.AdminRepository, *db.Pool, *observer.ObservedLogs, *fakeEmailProvider) {
+func newPasswordResetRouter(t *testing.T) (http.Handler, *db.UserRepository, *db.Pool, *observer.ObservedLogs, *fakeEmailProvider) {
 	t.Helper()
 	emailSvc, provider := newTestEmailService(t)
 	provider.notifySent = make(chan struct{}, 1)
@@ -53,26 +53,14 @@ func requestPasswordReset(t *testing.T, r http.Handler, provider *fakeEmailProvi
 // service as a parameter, so a test can supply one wired to a
 // *fakeEmailProvider it can inspect (e.g. with notifySent set) - same
 // split as newAdminsRouterWithEmail/newAdminsRouter in admins_test.go.
-func newPasswordResetRouterWithEmail(t *testing.T, emailSvc *email.Service) (http.Handler, *db.AdminRepository, *db.Pool, *observer.ObservedLogs) {
+func newPasswordResetRouterWithEmail(t *testing.T, emailSvc *email.Service) (http.Handler, *db.UserRepository, *db.Pool, *observer.ObservedLogs) {
 	t.Helper()
-	dsn := testDatabaseURL(t)
 
-	if err := db.MigrateUp(dsn, "../db/migrations"); err != nil {
-		t.Fatalf("MigrateUp() returned unexpected error: %v", err)
-	}
+	pool, _ := newAPITenantScopedPool(t)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	pool, err := db.NewPool(ctx, dsn)
-	if err != nil {
-		t.Fatalf("NewPool() returned unexpected error: %v", err)
-	}
-	t.Cleanup(pool.Close)
-
-	admins := db.NewAdminRepository(pool)
+	admins := db.NewUserRepository(pool)
 	tokens := db.NewPasswordResetRepository(pool)
-	companySettings := db.NewCompanySettingsRepository(pool)
+	companySettings := db.NewTenantRepository(pool)
 
 	observedCore, observedLogs := observer.New(zapcore.InfoLevel)
 	logger := zap.New(observedCore)
@@ -137,9 +125,9 @@ func TestPasswordResetRequest_DevTokenLoggingDisabled_TokenNotLogged(t *testing.
 	}
 	t.Cleanup(pool.Close)
 
-	admins := db.NewAdminRepository(pool)
+	admins := db.NewUserRepository(pool)
 	tokens := db.NewPasswordResetRepository(pool)
-	companySettings := db.NewCompanySettingsRepository(pool)
+	companySettings := db.NewTenantRepository(pool)
 	emailSvc, provider := newTestEmailService(t)
 	provider.notifySent = make(chan struct{}, 1)
 	observedCore, observedLogs := observer.New(zapcore.InfoLevel)
@@ -152,7 +140,7 @@ func TestPasswordResetRequest_DevTokenLoggingDisabled_TokenNotLogged(t *testing.
 	email := uniqueTestEmail(t)
 	createTestAdmin(t, admins, pool, email, "old-password")
 	t.Cleanup(func() {
-		_, _ = pool.Exec(context.Background(), "DELETE FROM password_reset_tokens WHERE admin_id IN (SELECT id FROM admins WHERE email = $1)", email)
+		_, _ = pool.Exec(context.Background(), "DELETE FROM password_reset_tokens WHERE user_id IN (SELECT id FROM users WHERE email = $1)", email)
 	})
 
 	rec := requestPasswordReset(t, r, provider, email)
@@ -172,7 +160,7 @@ func TestPasswordResetRequest_DevTokenLoggingDisabled_TokenNotLogged(t *testing.
 		t.Error("log entry contains a \"token\" field with devTokenLogging=false, want token never logged")
 	}
 	if observedLogs.Len() == 0 {
-		t.Error("no log entry emitted for password-reset request, want an admin_id-only entry")
+		t.Error("no log entry emitted for password-reset request, want an user_id-only entry")
 	}
 }
 
@@ -193,13 +181,13 @@ func TestPasswordResetRequest_GeneratesTokenWithOneHourExpiry(t *testing.T) {
 	var expiresAt time.Time
 	err := pool.QueryRow(ctx,
 		`SELECT prt.expires_at FROM password_reset_tokens prt
-		 JOIN admins a ON a.id = prt.admin_id WHERE a.email = $1`, email,
+		 JOIN users u ON u.id = prt.user_id WHERE u.email = $1`, email,
 	).Scan(&expiresAt)
 	if err != nil {
 		t.Fatalf("querying password_reset_tokens returned unexpected error: %v", err)
 	}
 	t.Cleanup(func() {
-		_, _ = pool.Exec(ctx, "DELETE FROM password_reset_tokens WHERE admin_id IN (SELECT id FROM admins WHERE email = $1)", email)
+		_, _ = pool.Exec(ctx, "DELETE FROM password_reset_tokens WHERE user_id IN (SELECT id FROM users WHERE email = $1)", email)
 	})
 
 	wantMin := before.Add(resetTokenTTL)
@@ -216,7 +204,7 @@ func TestPasswordResetConfirm_ValidUnexpiredToken_ChangesPassword(t *testing.T) 
 
 	ctx := context.Background()
 	t.Cleanup(func() {
-		_, _ = pool.Exec(ctx, "DELETE FROM password_reset_tokens WHERE admin_id IN (SELECT id FROM admins WHERE email = $1)", email)
+		_, _ = pool.Exec(ctx, "DELETE FROM password_reset_tokens WHERE user_id IN (SELECT id FROM users WHERE email = $1)", email)
 	})
 
 	reqRec := requestPasswordReset(t, r, provider, email)
@@ -254,7 +242,7 @@ func TestPasswordResetConfirm_WeakPassword_422NoChange(t *testing.T) {
 
 	ctx := context.Background()
 	t.Cleanup(func() {
-		_, _ = pool.Exec(ctx, "DELETE FROM password_reset_tokens WHERE admin_id IN (SELECT id FROM admins WHERE email = $1)", email)
+		_, _ = pool.Exec(ctx, "DELETE FROM password_reset_tokens WHERE user_id IN (SELECT id FROM users WHERE email = $1)", email)
 	})
 
 	reqRec := requestPasswordReset(t, r, provider, email)
@@ -293,7 +281,7 @@ func TestPasswordResetConfirm_ExpiredToken_Rejected(t *testing.T) {
 	tokens := db.NewPasswordResetRepository(pool)
 	rawToken := "expired-raw-token-" + email
 	resetToken := &db.PasswordResetToken{
-		AdminID:   admin.ID,
+		UserID:    admin.ID,
 		TokenHash: hashResetToken(rawToken),
 		ExpiresAt: time.Now().Add(-1 * time.Minute), // already expired
 	}
@@ -329,7 +317,7 @@ func TestPasswordResetConfirm_AlreadyUsedToken_Rejected(t *testing.T) {
 
 	ctx := context.Background()
 	t.Cleanup(func() {
-		_, _ = pool.Exec(ctx, "DELETE FROM password_reset_tokens WHERE admin_id IN (SELECT id FROM admins WHERE email = $1)", email)
+		_, _ = pool.Exec(ctx, "DELETE FROM password_reset_tokens WHERE user_id IN (SELECT id FROM users WHERE email = $1)", email)
 	})
 
 	reqRec := requestPasswordReset(t, r, provider, email)
@@ -392,7 +380,7 @@ func TestPasswordResetRequest_SendsEmailWithResetURL(t *testing.T) {
 	adminEmail := uniqueTestEmail(t)
 	createTestAdmin(t, admins, pool, adminEmail, "old-password")
 	t.Cleanup(func() {
-		_, _ = pool.Exec(context.Background(), "DELETE FROM password_reset_tokens WHERE admin_id IN (SELECT id FROM admins WHERE email = $1)", adminEmail)
+		_, _ = pool.Exec(context.Background(), "DELETE FROM password_reset_tokens WHERE user_id IN (SELECT id FROM users WHERE email = $1)", adminEmail)
 	})
 
 	rec := postJSON(t, r, "/api/auth/password-reset/request", passwordResetRequestBody{Email: adminEmail})
@@ -428,7 +416,7 @@ func TestPasswordResetRequest_EmailSendFails_StillReturns200(t *testing.T) {
 	adminEmail := uniqueTestEmail(t)
 	createTestAdmin(t, admins, pool, adminEmail, "old-password")
 	t.Cleanup(func() {
-		_, _ = pool.Exec(context.Background(), "DELETE FROM password_reset_tokens WHERE admin_id IN (SELECT id FROM admins WHERE email = $1)", adminEmail)
+		_, _ = pool.Exec(context.Background(), "DELETE FROM password_reset_tokens WHERE user_id IN (SELECT id FROM users WHERE email = $1)", adminEmail)
 	})
 
 	rec := postJSON(t, r, "/api/auth/password-reset/request", passwordResetRequestBody{Email: adminEmail})
@@ -457,7 +445,7 @@ func TestPasswordResetRequest_NoActiveEmailProvider_StillReturns200(t *testing.T
 	adminEmail := uniqueTestEmail(t)
 	createTestAdmin(t, admins, pool, adminEmail, "old-password")
 	t.Cleanup(func() {
-		_, _ = pool.Exec(context.Background(), "DELETE FROM password_reset_tokens WHERE admin_id IN (SELECT id FROM admins WHERE email = $1)", adminEmail)
+		_, _ = pool.Exec(context.Background(), "DELETE FROM password_reset_tokens WHERE user_id IN (SELECT id FROM users WHERE email = $1)", adminEmail)
 	})
 
 	rec := postJSON(t, r, "/api/auth/password-reset/request", passwordResetRequestBody{Email: adminEmail})

@@ -18,18 +18,8 @@ import (
 // has both columns NULL, and auto_created defaults to false for a
 // manually-created incident.
 func TestIncidentAIFieldsMigration_AppliesClean_DefaultsCorrect(t *testing.T) {
-	dsn := testDatabaseURL(t)
-
-	if err := MigrateUp(dsn, "migrations"); err != nil {
-		t.Fatalf("MigrateUp() returned unexpected error: %v", err)
-	}
-
 	ctx := context.Background()
-	pool, err := NewPool(ctx, dsn)
-	if err != nil {
-		t.Fatalf("NewPool() returned unexpected error: %v", err)
-	}
-	t.Cleanup(pool.Close)
+	pool, _ := newTenantScopedPool(t)
 
 	var incidentID string
 	row := pool.QueryRow(ctx,
@@ -62,18 +52,8 @@ func TestIncidentAIFieldsMigration_AppliesClean_DefaultsCorrect(t *testing.T) {
 // TestIncidentAIFieldsMigration_AcceptsExplicitValues confirms the new
 // columns actually store the values written to them (not just defaults).
 func TestIncidentAIFieldsMigration_AcceptsExplicitValues(t *testing.T) {
-	dsn := testDatabaseURL(t)
-
-	if err := MigrateUp(dsn, "migrations"); err != nil {
-		t.Fatalf("MigrateUp() returned unexpected error: %v", err)
-	}
-
 	ctx := context.Background()
-	pool, err := NewPool(ctx, dsn)
-	if err != nil {
-		t.Fatalf("NewPool() returned unexpected error: %v", err)
-	}
-	t.Cleanup(pool.Close)
+	pool, _ := newTenantScopedPool(t)
 
 	var incidentID string
 	row := pool.QueryRow(ctx,

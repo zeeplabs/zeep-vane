@@ -17,30 +17,22 @@ import (
 	"github.com/zeeplabs/zeep-vane/internal/db"
 )
 
-func newIncidentsRouter(t *testing.T) (http.Handler, *db.Pool, *db.AdminRepository) {
+func newIncidentsRouter(t *testing.T) (http.Handler, *db.Pool, *db.UserRepository) {
 	t.Helper()
-	dsn := testDatabaseURL(t)
 
-	if err := db.MigrateUp(dsn, "../db/migrations"); err != nil {
-		t.Fatalf("MigrateUp() returned unexpected error: %v", err)
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	pool, err := db.NewPool(ctx, dsn)
-	if err != nil {
-		t.Fatalf("NewPool() returned unexpected error: %v", err)
-	}
-	t.Cleanup(pool.Close)
+	pool, _ := newAPITenantScopedPool(t)
 
 	repo := db.NewIncidentRepository(pool)
-	admins := db.NewAdminRepository(pool)
+	admins := db.NewUserRepository(pool)
 	handler := NewIncidentsHandler(repo, zap.NewNop())
 
 	r := chi.NewRouter()
 	r.Group(func(protected chi.Router) {
 		protected.Use(RequireAuth(middlewareTestSecret, admins))
+		// Mirrors buildAdminRouter: TenantContext runs right after
+		// RequireAuth and is what resolves the caller's role in the active
+		// tenant for RequireRole (multi-tenancy-core, AD-022).
+		protected.Use(TenantContext(pool, db.NewTenantMembershipRepository(pool), zap.NewNop()))
 		protected.Post("/api/incidents", handler.Create)
 		protected.Get("/api/incidents", handler.List)
 		protected.Post("/api/incidents/{id}/updates", handler.AddUpdate)

@@ -13,15 +13,7 @@ import (
 // backed by it.
 func newDomainRepoTestPool(t *testing.T) (*DomainRepository, *Pool) {
 	t.Helper()
-	dsn := testDatabaseURL(t)
-	if err := MigrateUp(dsn, "migrations"); err != nil {
-		t.Fatalf("MigrateUp() returned unexpected error: %v", err)
-	}
-	pool, err := NewPool(context.Background(), dsn)
-	if err != nil {
-		t.Fatalf("NewPool() returned unexpected error: %v", err)
-	}
-	t.Cleanup(pool.Close)
+	pool, _ := newTenantScopedPool(t)
 	return NewDomainRepository(pool), pool
 }
 

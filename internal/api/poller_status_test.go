@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
-	"time"
 
 	"github.com/go-chi/chi/v5"
 	"go.uber.org/zap"
@@ -17,22 +16,11 @@ import (
 	"github.com/zeeplabs/zeep-vane/internal/dbtest"
 )
 
-func newPollerStatusRouter(t *testing.T) (http.Handler, *db.Pool, *db.AdminRepository) {
+func newPollerStatusRouter(t *testing.T) (http.Handler, *db.Pool, *db.UserRepository) {
 	t.Helper()
 	dsn := testDatabaseURL(t)
 
-	if err := db.MigrateUp(dsn, "../db/migrations"); err != nil {
-		t.Fatalf("MigrateUp() returned unexpected error: %v", err)
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	pool, err := db.NewPool(ctx, dsn)
-	if err != nil {
-		t.Fatalf("NewPool() returned unexpected error: %v", err)
-	}
-	t.Cleanup(pool.Close)
+	pool, _ := newAPITenantScopedPool(t)
 	// Use context.Background() here, not the bounded ctx above: this lock
 	// may need to wait for another concurrently-run package's test to
 	// release the same advisory key, and a 5s setup deadline is
@@ -43,13 +31,17 @@ func newPollerStatusRouter(t *testing.T) (http.Handler, *db.Pool, *db.AdminRepos
 	dbtest.LockDatadogIntegration(t, context.Background(), dsn)
 	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), "DELETE FROM integrations WHERE provider = 'datadog'") })
 
-	admins := db.NewAdminRepository(pool)
+	admins := db.NewUserRepository(pool)
 	integrations := db.NewIntegrationRepository(pool)
 	handler := NewPollerStatusHandler(integrations, zap.NewNop())
 
 	r := chi.NewRouter()
 	r.Group(func(protected chi.Router) {
 		protected.Use(RequireAuth(middlewareTestSecret, admins))
+		// Mirrors buildAdminRouter: TenantContext runs right after
+		// RequireAuth and is what resolves the caller's role in the active
+		// tenant for RequireRole (multi-tenancy-core, AD-022).
+		protected.Use(TenantContext(pool, db.NewTenantMembershipRepository(pool), zap.NewNop()))
 		protected.With(RequireRole(db.RoleOwner, db.RoleOperator, db.RoleViewer)).Get("/api/poller/status", handler.List)
 	})
 

@@ -32,33 +32,22 @@ func testDatabaseURL(t *testing.T) string {
 	return dsn
 }
 
-func newLoginRouter(t *testing.T) (http.Handler, *db.AdminRepository, *db.Pool) {
+func newLoginRouter(t *testing.T) (http.Handler, *db.UserRepository, *db.Pool) {
 	t.Helper()
 	dsn := testDatabaseURL(t)
 
-	if err := db.MigrateUp(dsn, "../db/migrations"); err != nil {
-		t.Fatalf("MigrateUp() returned unexpected error: %v", err)
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	pool, err := db.NewPool(ctx, dsn)
-	if err != nil {
-		t.Fatalf("NewPool() returned unexpected error: %v", err)
-	}
-	t.Cleanup(pool.Close)
+	pool, _ := newAPITenantScopedPool(t)
 
 	// Every test using this router creates an admin via createTestAdmin,
-	// and AdminRepository.Create always inserts with the `admins.role`
-	// column's database default (owner, migration 0009) - see
-	// LockAdminsTable's doc comment for why this must be held across
+	// and creating identity rows here races other packages' bulk clears
+	// of the shared `users` table - see
+	// LockUsersTable's doc comment for why this must be held across
 	// concurrently-run packages. Deliberately context.Background(), not
 	// the bounded `ctx` above, which is canceled by the deferred cancel()
 	// as soon as this function returns.
-	dbtest.LockAdminsTable(t, context.Background(), dsn)
+	dbtest.LockUsersTable(t, context.Background(), dsn)
 
-	repo := db.NewAdminRepository(pool)
+	repo := db.NewUserRepository(pool)
 	memberships := db.NewTenantMembershipRepository(pool)
 	// secureCookies=true: this file's cookie assertions expect the default,
 	// Secure-only behavior. The off case is covered separately by
@@ -81,22 +70,22 @@ func uniqueTestEmail(t *testing.T) string {
 // (TENANT-19 session half), so every test exercising a *successful* login
 // needs one. Tests specifically about the zero/multi-membership cases seed
 // those directly instead of using this helper.
-func createTestAdmin(t *testing.T, repo *db.AdminRepository, pool *db.Pool, email, plainPassword string) {
+func createTestAdmin(t *testing.T, repo *db.UserRepository, pool *db.Pool, email, plainPassword string) (tenantID string) {
 	t.Helper()
 	ctx := context.Background()
-	t.Cleanup(func() { _, _ = pool.Exec(ctx, "DELETE FROM admins WHERE email = $1", email) })
+	t.Cleanup(func() { _, _ = pool.Exec(ctx, "DELETE FROM users WHERE email = $1", email) })
 
 	hash, err := auth.HashPassword(plainPassword)
 	if err != nil {
 		t.Fatalf("HashPassword() returned unexpected error: %v", err)
 	}
 
-	admin := &db.Admin{Email: email, PasswordHash: hash}
+	admin := &db.User{Email: email, PasswordHash: hash}
 	if err := repo.Create(ctx, admin); err != nil {
 		t.Fatalf("Create() returned unexpected error: %v", err)
 	}
 
-	seedSoleTenantMembership(t, pool, admin.ID, email)
+	return seedSoleTenantMembership(t, pool, admin.ID, email)
 }
 
 // seedSoleTenantMembership creates a tenant named after namePrefix and an
@@ -234,9 +223,9 @@ func TestLogin_SecureCookiesDisabled_CookieNotSecure(t *testing.T) {
 		t.Fatalf("NewPool() returned unexpected error: %v", err)
 	}
 	t.Cleanup(pool.Close)
-	dbtest.LockAdminsTable(t, context.Background(), dsn)
+	dbtest.LockUsersTable(t, context.Background(), dsn)
 
-	repo := db.NewAdminRepository(pool)
+	repo := db.NewUserRepository(pool)
 	memberships := db.NewTenantMembershipRepository(pool)
 	handler := NewAuthHandler(repo, memberships, pool, zap.NewNop(), testSessionSecret, false)
 	r := chi.NewRouter()
@@ -280,39 +269,28 @@ func TestLogin_WrongPassword_401Generic(t *testing.T) {
 	}
 }
 
-func newMeRouter(t *testing.T) (http.Handler, *db.AdminRepository, *db.Pool) {
+func newMeRouter(t *testing.T) (http.Handler, *db.UserRepository, *db.Pool) {
 	t.Helper()
 	dsn := testDatabaseURL(t)
 
-	if err := db.MigrateUp(dsn, "../db/migrations"); err != nil {
-		t.Fatalf("MigrateUp() returned unexpected error: %v", err)
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	pool, err := db.NewPool(ctx, dsn)
-	if err != nil {
-		t.Fatalf("NewPool() returned unexpected error: %v", err)
-	}
-	t.Cleanup(pool.Close)
+	pool, _ := newAPITenantScopedPool(t)
 
 	// Every test using this router creates an admin via createTestAdmin,
-	// and AdminRepository.Create always inserts with the `admins.role`
-	// column's database default (owner, migration 0009) - see
-	// LockAdminsTable's doc comment for why this must be held across
+	// and creating identity rows here races other packages' bulk clears
+	// of the shared `users` table - see
+	// LockUsersTable's doc comment for why this must be held across
 	// concurrently-run packages. Deliberately context.Background(), not
 	// the bounded `ctx` above, which is canceled by the deferred cancel()
 	// as soon as this function returns.
-	dbtest.LockAdminsTable(t, context.Background(), dsn)
+	dbtest.LockUsersTable(t, context.Background(), dsn)
 
-	repo := db.NewAdminRepository(pool)
+	repo := db.NewUserRepository(pool)
 	memberships := db.NewTenantMembershipRepository(pool)
 	handler := NewAuthHandler(repo, memberships, pool, zap.NewNop(), testSessionSecret, true)
 
 	r := chi.NewRouter()
 	r.Group(func(protected chi.Router) {
-		protected.Use(RequireAuth(testSessionSecret, repo), TenantContext(pool, zap.NewNop()))
+		protected.Use(RequireAuth(testSessionSecret, repo), TenantContext(pool, db.NewTenantMembershipRepository(pool), zap.NewNop()))
 		protected.Get("/api/auth/me", handler.Me)
 		protected.Post("/api/auth/switch-tenant", handler.SwitchTenant)
 	})
@@ -339,21 +317,15 @@ func postSwitchTenant(t *testing.T, r http.Handler, token, tenantID string) *htt
 func TestMe_ValidSession_200WithIdentity(t *testing.T) {
 	r, repo, pool := newMeRouter(t)
 	email := uniqueTestEmail(t)
-	createTestAdmin(t, repo, pool, email, "correct-horse-battery-staple")
+	tenantID := createTestAdmin(t, repo, pool, email, "correct-horse-battery-staple")
 
-	created, err := repo.GetByEmail(context.Background(), email)
+	admin, err := repo.GetByEmail(context.Background(), email)
 	if err != nil {
 		t.Fatalf("GetByEmail() returned unexpected error: %v", err)
 	}
-	// GetByEmail's SELECT omits role - re-fetch by ID (same lookup
-	// RequireAuth performs) to get the value the handler will actually see.
-	admin, err := repo.GetByID(context.Background(), created.ID)
+	token, err := auth.IssueSessionWithTenant(admin.ID, tenantID, testSessionSecret)
 	if err != nil {
-		t.Fatalf("GetByID() returned unexpected error: %v", err)
-	}
-	token, err := auth.IssueSession(admin.ID, testSessionSecret)
-	if err != nil {
-		t.Fatalf("IssueSession() returned unexpected error: %v", err)
+		t.Fatalf("IssueSessionWithTenant() returned unexpected error: %v", err)
 	}
 
 	req := httptest.NewRequest(http.MethodGet, "/api/auth/me", nil)
@@ -369,8 +341,14 @@ func TestMe_ValidSession_200WithIdentity(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
 		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
 	}
-	if body.ID != admin.ID || body.Email != admin.Email || body.Role != admin.Role {
-		t.Errorf("body = %+v, want {ID:%q Email:%q Role:%q}", body, admin.ID, admin.Email, admin.Role)
+	// The role comes from the caller's tenant_membership (owner, seeded by
+	// createTestAdmin), resolved by TenantContext - not from the user row,
+	// which no longer carries one.
+	if body.ID != admin.ID || body.Email != admin.Email || body.Role != db.RoleOwner {
+		t.Errorf("body = %+v, want {ID:%q Email:%q Role:%q}", body, admin.ID, admin.Email, db.RoleOwner)
+	}
+	if body.ActiveTenantID != tenantID {
+		t.Errorf("body.ActiveTenantID = %q, want %q", body.ActiveTenantID, tenantID)
 	}
 }
 
@@ -386,40 +364,29 @@ func TestMe_NoSession_401(t *testing.T) {
 	}
 }
 
-func newLogoutRouter(t *testing.T) (http.Handler, *db.AdminRepository, *db.Pool) {
+func newLogoutRouter(t *testing.T) (http.Handler, *db.UserRepository, *db.Pool) {
 	t.Helper()
 	dsn := testDatabaseURL(t)
 
-	if err := db.MigrateUp(dsn, "../db/migrations"); err != nil {
-		t.Fatalf("MigrateUp() returned unexpected error: %v", err)
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	pool, err := db.NewPool(ctx, dsn)
-	if err != nil {
-		t.Fatalf("NewPool() returned unexpected error: %v", err)
-	}
-	t.Cleanup(pool.Close)
+	pool, _ := newAPITenantScopedPool(t)
 
 	// Every test using this router creates an admin via createTestAdmin,
-	// and AdminRepository.Create always inserts with the `admins.role`
-	// column's database default (owner, migration 0009) - see
-	// LockAdminsTable's doc comment for why this must be held across
+	// and creating identity rows here races other packages' bulk clears
+	// of the shared `users` table - see
+	// LockUsersTable's doc comment for why this must be held across
 	// concurrently-run packages. Deliberately context.Background(), not
 	// the bounded `ctx` above, which is canceled by the deferred cancel()
 	// as soon as this function returns.
-	dbtest.LockAdminsTable(t, context.Background(), dsn)
+	dbtest.LockUsersTable(t, context.Background(), dsn)
 
-	repo := db.NewAdminRepository(pool)
+	repo := db.NewUserRepository(pool)
 	memberships := db.NewTenantMembershipRepository(pool)
 	handler := NewAuthHandler(repo, memberships, pool, zap.NewNop(), testSessionSecret, true)
 
 	r := chi.NewRouter()
 	protected := chi.NewRouter()
 	protected.Use(RequireAuth(testSessionSecret, repo))
-	protected.Use(TenantContext(pool, zap.NewNop()))
+	protected.Use(TenantContext(pool, db.NewTenantMembershipRepository(pool), zap.NewNop()))
 	protected.Get("/api/auth/me", handler.Me)
 	protected.Post("/api/auth/logout", handler.Logout)
 	r.Mount("/", protected)
@@ -504,12 +471,12 @@ func TestLogin_ZeroMemberships_403NoSessionIssued(t *testing.T) {
 	email := uniqueTestEmail(t)
 
 	ctx := context.Background()
-	t.Cleanup(func() { _, _ = pool.Exec(ctx, "DELETE FROM admins WHERE email = $1", email) })
+	t.Cleanup(func() { _, _ = pool.Exec(ctx, "DELETE FROM users WHERE email = $1", email) })
 	hash, err := auth.HashPassword("correct-horse-battery-staple")
 	if err != nil {
 		t.Fatalf("HashPassword() returned unexpected error: %v", err)
 	}
-	admin := &db.Admin{Email: email, PasswordHash: hash}
+	admin := &db.User{Email: email, PasswordHash: hash}
 	if err := repo.Create(ctx, admin); err != nil {
 		t.Fatalf("Create() returned unexpected error: %v", err)
 	}

@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/jackc/pgx/v5"
 	"go.uber.org/zap"
 
 	"github.com/zeeplabs/zeep-vane/internal/audit"
@@ -152,48 +153,36 @@ func newTestEmailServiceNoActiveProvider(t *testing.T) *email.Service {
 	return svc
 }
 
-func newAdminsRouterWithEmail(t *testing.T, emailSvc *email.Service) (http.Handler, *db.Pool, *db.AdminRepository, *db.AdminInviteRepository) {
+func newAdminsRouterWithEmail(t *testing.T, emailSvc *email.Service) (http.Handler, *db.Pool, *db.UserRepository, *db.TenantInviteRepository) {
 	t.Helper()
 	dsn := testDatabaseURL(t)
 
-	if err := db.MigrateUp(dsn, "../db/migrations"); err != nil {
-		t.Fatalf("MigrateUp() returned unexpected error: %v", err)
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	pool, err := db.NewPool(ctx, dsn)
-	if err != nil {
-		t.Fatalf("NewPool() returned unexpected error: %v", err)
-	}
-	t.Cleanup(pool.Close)
+	pool, _ := newAPITenantScopedPool(t)
 
 	// Every test in this file goes through this constructor and virtually
-	// all of them create at least one admin, which - via
-	// AdminRepository.Create's database default (owner, migration 0009) -
-	// transiently creates an owner-role row regardless of the role the
-	// test actually cares about. `go test ./...` runs internal/db,
+	// all of them create identity rows. `go test ./...` runs internal/db,
 	// internal/api, and internal/cli as separate concurrent processes
 	// against the same TEST_DATABASE_URL, so any of these tests can
-	// otherwise race another package's owner-count-sensitive test.
-	// Centralizing the lock here (idempotent per *testing.T - see
-	// LockAdminsTable's doc comment) covers every test in this file
-	// without each one having to remember to take it individually. Note:
-	// deliberately passed context.Background(), not the bounded `ctx`
-	// above, which is canceled by the deferred cancel() as soon as this
-	// function returns - the lock's dedicated connection must outlive it.
-	dbtest.LockAdminsTable(t, context.Background(), dsn)
+	// otherwise race another package's bulk clear of the shared `users`
+	// table. Centralizing the lock here (idempotent per *testing.T - see
+	// LockUsersTable's doc comment) covers every test in this file
+	// without each one having to remember to take it individually.
+	dbtest.LockUsersTable(t, context.Background(), dsn)
 
-	admins := db.NewAdminRepository(pool)
-	invites := db.NewAdminInviteRepository(pool)
+	admins := db.NewUserRepository(pool)
+	invites := db.NewTenantInviteRepository(pool)
 	auditLog := audit.NewLog(pool)
-	companySettings := db.NewCompanySettingsRepository(pool)
-	handler := NewAdminsHandler(pool, admins, invites, emailSvc, companySettings, auditLog, zap.NewNop(), false, testAdminBaseURL, middlewareTestSecret, true)
+	companySettings := db.NewTenantRepository(pool)
+	memberships := db.NewTenantMembershipRepository(pool)
+	handler := NewAdminsHandler(pool, admins, memberships, invites, emailSvc, companySettings, auditLog, zap.NewNop(), false, testAdminBaseURL, middlewareTestSecret, true)
 
 	r := chi.NewRouter()
 	r.Group(func(protected chi.Router) {
 		protected.Use(RequireAuth(middlewareTestSecret, admins))
+		// Mirrors buildAdminRouter: TenantContext runs right after
+		// RequireAuth and is what resolves the caller's role in the active
+		// tenant for RequireRole (multi-tenancy-core, AD-022).
+		protected.Use(TenantContext(pool, db.NewTenantMembershipRepository(pool), zap.NewNop()))
 		protected.With(RequireRole(db.RoleOwner)).Post("/api/admins", handler.Invite)
 		protected.With(RequireRole(db.RoleOwner)).Patch("/api/admins/{id}/role", handler.UpdateRole)
 		protected.With(RequireRole(db.RoleOwner)).Delete("/api/admins/{id}", handler.Delete)
@@ -209,47 +198,60 @@ func newAdminsRouterWithEmail(t *testing.T, emailSvc *email.Service) (http.Handl
 // newAdminsRouter builds a router with a default working email service
 // (active provider connected) - used by every existing test that doesn't
 // specifically exercise email send-success/failure behavior.
-func newAdminsRouter(t *testing.T) (http.Handler, *db.Pool, *db.AdminRepository, *db.AdminInviteRepository) {
+func newAdminsRouter(t *testing.T) (http.Handler, *db.Pool, *db.UserRepository, *db.TenantInviteRepository) {
 	t.Helper()
 	svc, _ := newTestEmailService(t)
 	return newAdminsRouterWithEmail(t, svc)
 }
 
-// issueTestSessionTokenWithRole is issueTestSessionToken, additionally
-// setting the created admin's role - needed to exercise RequireRole's 403
+// issueTestSessionTokenWithRole is issueTestSessionToken with an explicit
+// role on the caller's membership - needed to exercise RequireRole's 403
 // path for operator/viewer.
-//
-// admins.Create always inserts with the `admins.role` column's database
-// default, which is `owner` (see migration 0009) - regardless of the
-// `role` requested here, every call transiently creates an owner-role row
-// until/unless the UpdateRole call below moves it away. That makes this
-// helper the single common point every owner-sensitive test in this
-// package (including poller_status_test.go, which shares it) goes
-// through, so it takes LockAdminsTable itself rather than relying on
-// each call site to remember to. See LockAdminsTable's doc comment for
-// why this must be held across concurrently-run packages, not just
-// within this one.
-func issueTestSessionTokenWithRole(t *testing.T, admins *db.AdminRepository, role string) string {
+func issueTestSessionTokenWithRole(t *testing.T, admins *db.UserRepository, role string) string {
 	t.Helper()
-	ctx := context.Background()
-	dbtest.LockAdminsTable(t, ctx, testDatabaseURL(t))
-	admin := &db.Admin{Email: uniqueTestEmail(t), PasswordHash: "hash"}
-	if err := admins.Create(ctx, admin); err != nil {
-		t.Fatalf("admins.Create() returned unexpected error: %v", err)
-	}
-	t.Cleanup(func() { _ = admins.Delete(context.Background(), admin.ID) })
+	return seedSessionForRole(t, admins, role)
+}
 
-	if role != db.RoleOwner {
-		if err := admins.UpdateRole(ctx, admin.ID, role); err != nil {
-			t.Fatalf("admins.UpdateRole() returned unexpected error: %v", err)
-		}
+// adminsTestTenant is the fixture tenant of the router this test built -
+// the tenant every member-management route in this suite operates on.
+func adminsTestTenant(t *testing.T) string {
+	t.Helper()
+	if currentAPITestTenant == "" {
+		t.Fatal("adminsTestTenant called before the router (and its tenant-scoped pool) was built")
 	}
+	return currentAPITestTenant
+}
 
-	token, err := auth.IssueSession(admin.ID, middlewareTestSecret)
+// createTenantMember creates a user and gives them role in the test's
+// fixture tenant. Since multi-tenancy-core the membership - not a users
+// column - is what carries the role, so a member only exists once both
+// rows do.
+func createTenantMember(t *testing.T, users *db.UserRepository, role string) *db.User {
+	t.Helper()
+	user := &db.User{Email: uniqueTestEmail(t), PasswordHash: "hash"}
+	if err := users.Create(context.Background(), user); err != nil {
+		t.Fatalf("users.Create() returned unexpected error: %v", err)
+	}
+	t.Cleanup(func() { _ = users.Delete(context.Background(), user.ID) })
+	seedMembership(t, user.ID, adminsTestTenant(t), role)
+	return user
+}
+
+// memberRole reads userID's role in the test's fixture tenant, or "" when
+// they hold no membership there.
+func memberRole(t *testing.T, pool *db.Pool, userID string) string {
+	t.Helper()
+	var role string
+	err := pool.QueryRow(context.Background(),
+		"SELECT role FROM tenant_memberships WHERE user_id = $1 AND tenant_id = $2",
+		userID, adminsTestTenant(t)).Scan(&role)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return ""
+	}
 	if err != nil {
-		t.Fatalf("auth.IssueSession() returned unexpected error: %v", err)
+		t.Fatalf("querying membership role returned unexpected error: %v", err)
 	}
-	return token
+	return role
 }
 
 func postInviteAdmin(t *testing.T, r http.Handler, token, email, role string) *httptest.ResponseRecorder {
@@ -270,7 +272,7 @@ func postInviteAdmin(t *testing.T, r http.Handler, token, email, role string) *h
 }
 
 // pendingInviteRow is the shape this test suite reads back directly from
-// admin_invites by email - the handler never returns or logs the raw token
+// tenant_invites by email - the handler never returns or logs the raw token
 // where a test could recover it (one-way hash), so assertions read invite
 // state straight from the table instead.
 type pendingInviteRow struct {
@@ -284,11 +286,11 @@ type pendingInviteRow struct {
 func latestInviteForEmail(t *testing.T, pool *db.Pool, email string) pendingInviteRow {
 	t.Helper()
 	row := pool.QueryRow(context.Background(),
-		"SELECT id, role, used_at, created_at, expires_at FROM admin_invites WHERE email = $1 ORDER BY created_at DESC LIMIT 1", email)
+		"SELECT id, role, used_at, created_at, expires_at FROM tenant_invites WHERE email = $1 ORDER BY created_at DESC LIMIT 1", email)
 
 	var got pendingInviteRow
 	if err := row.Scan(&got.id, &got.role, &got.usedAt, &got.createdAt, &got.expiresAt); err != nil {
-		t.Fatalf("querying latest admin_invites row for %q returned unexpected error: %v", email, err)
+		t.Fatalf("querying latest tenant_invites row for %q returned unexpected error: %v", email, err)
 	}
 	return got
 }
@@ -296,20 +298,14 @@ func latestInviteForEmail(t *testing.T, pool *db.Pool, email string) pendingInvi
 func TestInviteAdmin_Owner_201_CreatesInviteAndAuditEntry(t *testing.T) {
 	svc, provider := newTestEmailService(t)
 	r, pool, admins, _ := newAdminsRouterWithEmail(t, svc)
-	ctx := context.Background()
-	inviterEmail := uniqueTestEmail(t)
-	inviter := &db.Admin{Email: inviterEmail, PasswordHash: "hash"}
-	if err := admins.Create(ctx, inviter); err != nil {
-		t.Fatalf("admins.Create() returned unexpected error: %v", err)
-	}
-	t.Cleanup(func() { _ = admins.Delete(context.Background(), inviter.ID) })
-	token, err := auth.IssueSession(inviter.ID, middlewareTestSecret)
+	inviter := createTenantMember(t, admins, db.RoleOwner)
+	token, err := auth.IssueSessionWithTenant(inviter.ID, adminsTestTenant(t), middlewareTestSecret)
 	if err != nil {
-		t.Fatalf("auth.IssueSession() returned unexpected error: %v", err)
+		t.Fatalf("auth.IssueSessionWithTenant() returned unexpected error: %v", err)
 	}
 
 	email := uniqueTestEmail(t)
-	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), "DELETE FROM admin_invites WHERE email = $1", email) })
+	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), "DELETE FROM tenant_invites WHERE email = $1", email) })
 
 	rec := postInviteAdmin(t, r, token, email, db.RoleOperator)
 
@@ -403,7 +399,7 @@ func TestInviteAdmin_EmailSendFails_StillCreatesInviteWithEmailSentFalse(t *test
 	r, pool, admins, _ := newAdminsRouterWithEmail(t, svc)
 	token := issueTestSessionToken(t, admins)
 	email := uniqueTestEmail(t)
-	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), "DELETE FROM admin_invites WHERE email = $1", email) })
+	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), "DELETE FROM tenant_invites WHERE email = $1", email) })
 
 	rec := postInviteAdmin(t, r, token, email, db.RoleOperator)
 
@@ -432,7 +428,7 @@ func TestInviteAdmin_NoActiveEmailProvider_StillCreatesInviteWithEmailSentFalse(
 	r, pool, admins, _ := newAdminsRouterWithEmail(t, svc)
 	token := issueTestSessionToken(t, admins)
 	email := uniqueTestEmail(t)
-	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), "DELETE FROM admin_invites WHERE email = $1", email) })
+	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), "DELETE FROM tenant_invites WHERE email = $1", email) })
 
 	rec := postInviteAdmin(t, r, token, email, db.RoleOperator)
 
@@ -479,7 +475,7 @@ func TestInviteAdmin_DuplicatePendingInvite_InvalidatesPreviousWithoutDuplicateR
 	r, pool, admins, _ := newAdminsRouter(t)
 	token := issueTestSessionToken(t, admins)
 	email := uniqueTestEmail(t)
-	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), "DELETE FROM admin_invites WHERE email = $1", email) })
+	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), "DELETE FROM tenant_invites WHERE email = $1", email) })
 
 	first := postInviteAdmin(t, r, token, email, db.RoleOperator)
 	if first.Code != http.StatusCreated {
@@ -493,7 +489,7 @@ func TestInviteAdmin_DuplicatePendingInvite_InvalidatesPreviousWithoutDuplicateR
 	}
 
 	var firstUsedAt *time.Time
-	row := pool.QueryRow(context.Background(), "SELECT used_at FROM admin_invites WHERE id = $1", firstInviteID)
+	row := pool.QueryRow(context.Background(), "SELECT used_at FROM tenant_invites WHERE id = $1", firstInviteID)
 	if err := row.Scan(&firstUsedAt); err != nil {
 		t.Fatalf("querying first invite returned unexpected error: %v", err)
 	}
@@ -503,12 +499,12 @@ func TestInviteAdmin_DuplicatePendingInvite_InvalidatesPreviousWithoutDuplicateR
 
 	var pendingCount int
 	countRow := pool.QueryRow(context.Background(),
-		"SELECT COUNT(*) FROM admin_invites WHERE email = $1 AND used_at IS NULL", email)
+		"SELECT COUNT(*) FROM tenant_invites WHERE email = $1 AND used_at IS NULL", email)
 	if err := countRow.Scan(&pendingCount); err != nil {
-		t.Fatalf("querying admin_invites returned unexpected error: %v", err)
+		t.Fatalf("querying tenant_invites returned unexpected error: %v", err)
 	}
 	if pendingCount != 1 {
-		t.Errorf("pending admin_invites rows for %q = %d, want 1 (no duplicate)", email, pendingCount)
+		t.Errorf("pending tenant_invites rows for %q = %d, want 1 (no duplicate)", email, pendingCount)
 	}
 }
 
@@ -516,7 +512,7 @@ func TestInviteAdmin_EmailAlreadyActiveAdmin_409(t *testing.T) {
 	r, _, admins, _ := newAdminsRouter(t)
 	token := issueTestSessionToken(t, admins)
 	activeEmail := uniqueTestEmail(t)
-	activeAdmin := &db.Admin{Email: activeEmail, PasswordHash: "hash"}
+	activeAdmin := &db.User{Email: activeEmail, PasswordHash: "hash"}
 	if err := admins.Create(context.Background(), activeAdmin); err != nil {
 		t.Fatalf("admins.Create() returned unexpected error: %v", err)
 	}
@@ -540,17 +536,17 @@ func TestInviteAdmin_InvalidRole_422(t *testing.T) {
 	}
 }
 
-// createTestInvite inserts a pending admin_invites row directly (bypassing
+// createTestInvite inserts a pending tenant_invites row directly (bypassing
 // the Invite handler, whose raw token is only observable via logging), so
 // AcceptInvite tests can drive the accept endpoint with a known raw token.
-func createTestInvite(t *testing.T, invites *db.AdminInviteRepository, inviterID, email, role string, ttl time.Duration) string {
+func createTestInvite(t *testing.T, invites *db.TenantInviteRepository, inviterID, email, role string, ttl time.Duration) string {
 	t.Helper()
 	rawToken, err := generateAdminInviteToken()
 	if err != nil {
 		t.Fatalf("generateAdminInviteToken() returned unexpected error: %v", err)
 	}
 
-	invite := &db.AdminInvite{
+	invite := &db.TenantInvite{
 		Email:       email,
 		Role:        role,
 		TokenHash:   hashAdminInviteToken(rawToken),
@@ -579,14 +575,14 @@ func postAcceptInvite(t *testing.T, r http.Handler, token, password string) *htt
 
 func TestAcceptInvite_ValidToken_201_ActivatesAccountWithInvitedRole(t *testing.T) {
 	r, pool, admins, invites := newAdminsRouter(t)
-	inviterAdmin := &db.Admin{Email: uniqueTestEmail(t), PasswordHash: "hash"}
+	inviterAdmin := &db.User{Email: uniqueTestEmail(t), PasswordHash: "hash"}
 	if err := admins.Create(context.Background(), inviterAdmin); err != nil {
 		t.Fatalf("admins.Create() returned unexpected error: %v", err)
 	}
 	t.Cleanup(func() { _ = admins.Delete(context.Background(), inviterAdmin.ID) })
 
 	email := uniqueTestEmail(t)
-	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), "DELETE FROM admins WHERE email = $1", email) })
+	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), "DELETE FROM users WHERE email = $1", email) })
 	rawToken := createTestInvite(t, invites, inviterAdmin.ID, email, db.RoleOperator, 1*time.Hour)
 
 	rec := postAcceptInvite(t, r, rawToken, "a-strong-password")
@@ -599,15 +595,13 @@ func TestAcceptInvite_ValidToken_201_ActivatesAccountWithInvitedRole(t *testing.
 	if err != nil {
 		t.Fatalf("GetByEmail() returned unexpected error: %v", err)
 	}
-	// GetByEmail (mvp-core, unmodified by this feature) doesn't select
-	// role - read it back directly to confirm the invited role was applied.
-	var gotRole string
-	roleRow := pool.QueryRow(context.Background(), "SELECT role FROM admins WHERE id = $1", created.ID)
-	if err := roleRow.Scan(&gotRole); err != nil {
-		t.Fatalf("querying created admin's role returned unexpected error: %v", err)
+	// The invited role lands on the new tenant_membership, not on the user
+	// row - a role is per tenant since multi-tenancy-core.
+	if gotRole := memberRole(t, pool, created.ID); gotRole != db.RoleOperator {
+		t.Errorf("created member role = %q, want %q", gotRole, db.RoleOperator)
 	}
-	if gotRole != db.RoleOperator {
-		t.Errorf("created admin role = %q, want %q", gotRole, db.RoleOperator)
+	if created.EmailVerifiedAt == nil {
+		t.Error("created user EmailVerifiedAt = nil, want a timestamp (following the invite link proves the address)")
 	}
 
 	invite, err := invites.GetByTokenHash(context.Background(), hashAdminInviteToken(rawToken))
@@ -626,14 +620,14 @@ func TestAcceptInvite_ValidToken_201_ActivatesAccountWithInvitedRole(t *testing.
 // back to the newly created admin's own ID.
 func TestAcceptInvite_ValidToken_SetsAuthenticatingSessionCookie(t *testing.T) {
 	r, pool, admins, invites := newAdminsRouter(t)
-	inviterAdmin := &db.Admin{Email: uniqueTestEmail(t), PasswordHash: "hash"}
+	inviterAdmin := &db.User{Email: uniqueTestEmail(t), PasswordHash: "hash"}
 	if err := admins.Create(context.Background(), inviterAdmin); err != nil {
 		t.Fatalf("admins.Create() returned unexpected error: %v", err)
 	}
 	t.Cleanup(func() { _ = admins.Delete(context.Background(), inviterAdmin.ID) })
 
 	email := uniqueTestEmail(t)
-	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), "DELETE FROM admins WHERE email = $1", email) })
+	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), "DELETE FROM users WHERE email = $1", email) })
 	rawToken := createTestInvite(t, invites, inviterAdmin.ID, email, db.RoleOperator, 1*time.Hour)
 
 	rec := postAcceptInvite(t, r, rawToken, "a-strong-password")
@@ -683,7 +677,7 @@ func TestAcceptInvite_ValidToken_SetsAuthenticatingSessionCookie(t *testing.T) {
 
 func TestAcceptInvite_ExpiredToken_401_NoStateChange(t *testing.T) {
 	r, _, admins, invites := newAdminsRouter(t)
-	inviterAdmin := &db.Admin{Email: uniqueTestEmail(t), PasswordHash: "hash"}
+	inviterAdmin := &db.User{Email: uniqueTestEmail(t), PasswordHash: "hash"}
 	if err := admins.Create(context.Background(), inviterAdmin); err != nil {
 		t.Fatalf("admins.Create() returned unexpected error: %v", err)
 	}
@@ -705,14 +699,14 @@ func TestAcceptInvite_ExpiredToken_401_NoStateChange(t *testing.T) {
 
 func TestAcceptInvite_AlreadyUsedToken_401(t *testing.T) {
 	r, pool, admins, invites := newAdminsRouter(t)
-	inviterAdmin := &db.Admin{Email: uniqueTestEmail(t), PasswordHash: "hash"}
+	inviterAdmin := &db.User{Email: uniqueTestEmail(t), PasswordHash: "hash"}
 	if err := admins.Create(context.Background(), inviterAdmin); err != nil {
 		t.Fatalf("admins.Create() returned unexpected error: %v", err)
 	}
 	t.Cleanup(func() { _ = admins.Delete(context.Background(), inviterAdmin.ID) })
 
 	email := uniqueTestEmail(t)
-	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), "DELETE FROM admins WHERE email = $1", email) })
+	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), "DELETE FROM users WHERE email = $1", email) })
 	rawToken := createTestInvite(t, invites, inviterAdmin.ID, email, db.RoleViewer, 1*time.Hour)
 
 	first := postAcceptInvite(t, r, rawToken, "a-strong-password")
@@ -733,14 +727,14 @@ func TestAcceptInvite_AlreadyUsedToken_401(t *testing.T) {
 // in-Go used_at/expiry check that raced.
 func TestAcceptInvite_ConcurrentAccept_OnlyOneSucceeds(t *testing.T) {
 	r, pool, admins, invites := newAdminsRouter(t)
-	inviterAdmin := &db.Admin{Email: uniqueTestEmail(t), PasswordHash: "hash"}
+	inviterAdmin := &db.User{Email: uniqueTestEmail(t), PasswordHash: "hash"}
 	if err := admins.Create(context.Background(), inviterAdmin); err != nil {
 		t.Fatalf("admins.Create() returned unexpected error: %v", err)
 	}
 	t.Cleanup(func() { _ = admins.Delete(context.Background(), inviterAdmin.ID) })
 
 	email := uniqueTestEmail(t)
-	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), "DELETE FROM admins WHERE email = $1", email) })
+	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), "DELETE FROM users WHERE email = $1", email) })
 	rawToken := createTestInvite(t, invites, inviterAdmin.ID, email, db.RoleViewer, 1*time.Hour)
 
 	body, err := json.Marshal(acceptAdminInviteRequest{Password: "a-strong-password"})
@@ -779,7 +773,7 @@ func TestAcceptInvite_ConcurrentAccept_OnlyOneSucceeds(t *testing.T) {
 	}
 
 	var count int
-	if err := pool.QueryRow(context.Background(), "SELECT COUNT(*) FROM admins WHERE email = $1", email).Scan(&count); err != nil {
+	if err := pool.QueryRow(context.Background(), "SELECT COUNT(*) FROM users WHERE email = $1", email).Scan(&count); err != nil {
 		t.Fatalf("counting admins returned unexpected error: %v", err)
 	}
 	if count != 1 {
@@ -789,7 +783,7 @@ func TestAcceptInvite_ConcurrentAccept_OnlyOneSucceeds(t *testing.T) {
 
 func TestAcceptInvite_MissingPassword_422(t *testing.T) {
 	r, _, admins, invites := newAdminsRouter(t)
-	inviterAdmin := &db.Admin{Email: uniqueTestEmail(t), PasswordHash: "hash"}
+	inviterAdmin := &db.User{Email: uniqueTestEmail(t), PasswordHash: "hash"}
 	if err := admins.Create(context.Background(), inviterAdmin); err != nil {
 		t.Fatalf("admins.Create() returned unexpected error: %v", err)
 	}
@@ -809,7 +803,7 @@ func TestAcceptInvite_MissingPassword_422(t *testing.T) {
 // account is created.
 func TestAcceptInvite_WeakPassword_422(t *testing.T) {
 	r, _, admins, invites := newAdminsRouter(t)
-	inviterAdmin := &db.Admin{Email: uniqueTestEmail(t), PasswordHash: "hash"}
+	inviterAdmin := &db.User{Email: uniqueTestEmail(t), PasswordHash: "hash"}
 	if err := admins.Create(context.Background(), inviterAdmin); err != nil {
 		t.Fatalf("admins.Create() returned unexpected error: %v", err)
 	}
@@ -849,27 +843,18 @@ func TestUpdateAdminRole_ValidChange_200_AppliesRoleRevokesSessionsAndAudits(t *
 	r, pool, admins, _ := newAdminsRouter(t)
 	ctx := context.Background()
 
-	actor := &db.Admin{Email: uniqueTestEmail(t), PasswordHash: "hash"}
-	if err := admins.Create(ctx, actor); err != nil {
-		t.Fatalf("admins.Create() actor returned unexpected error: %v", err)
-	}
-	t.Cleanup(func() { _ = admins.Delete(context.Background(), actor.ID) })
-	actorToken, err := auth.IssueSession(actor.ID, middlewareTestSecret)
+	actor := createTenantMember(t, admins, db.RoleOwner)
+	actorToken, err := auth.IssueSessionWithTenant(actor.ID, adminsTestTenant(t), middlewareTestSecret)
 	if err != nil {
-		t.Fatalf("auth.IssueSession() actor returned unexpected error: %v", err)
+		t.Fatalf("auth.IssueSessionWithTenant() actor returned unexpected error: %v", err)
 	}
 
 	// A second owner besides actor, so this change can never trip the
-	// ADM-06 lockout guard regardless of any other ambient owner rows in
-	// the shared test database.
-	target := &db.Admin{Email: uniqueTestEmail(t), PasswordHash: "hash"}
-	if err := admins.Create(ctx, target); err != nil {
-		t.Fatalf("admins.Create() target returned unexpected error: %v", err)
-	}
-	t.Cleanup(func() { _ = admins.Delete(context.Background(), target.ID) })
-	targetOldToken, err := auth.IssueSession(target.ID, middlewareTestSecret)
+	// ADM-06 lockout guard.
+	target := createTenantMember(t, admins, db.RoleOwner)
+	targetOldToken, err := auth.IssueSessionWithTenant(target.ID, adminsTestTenant(t), middlewareTestSecret)
 	if err != nil {
-		t.Fatalf("auth.IssueSession() target returned unexpected error: %v", err)
+		t.Fatalf("auth.IssueSessionWithTenant() target returned unexpected error: %v", err)
 	}
 	targetOldClaims, err := auth.VerifySessionClaims(targetOldToken, middlewareTestSecret)
 	if err != nil {
@@ -890,14 +875,13 @@ func TestUpdateAdminRole_ValidChange_200_AppliesRoleRevokesSessionsAndAudits(t *
 		t.Errorf("response Role = %q, want %q", resp.Role, db.RoleViewer)
 	}
 
-	var gotRole string
-	var revokedAt *time.Time
-	row := pool.QueryRow(ctx, "SELECT role, sessions_revoked_at FROM admins WHERE id = $1", target.ID)
-	if err := row.Scan(&gotRole, &revokedAt); err != nil {
-		t.Fatalf("querying target admin returned unexpected error: %v", err)
+	if gotRole := memberRole(t, pool, target.ID); gotRole != db.RoleViewer {
+		t.Errorf("stored membership role = %q, want %q", gotRole, db.RoleViewer)
 	}
-	if gotRole != db.RoleViewer {
-		t.Errorf("stored role = %q, want %q", gotRole, db.RoleViewer)
+	var revokedAt *time.Time
+	row := pool.QueryRow(ctx, "SELECT sessions_revoked_at FROM users WHERE id = $1", target.ID)
+	if err := row.Scan(&revokedAt); err != nil {
+		t.Fatalf("querying target user returned unexpected error: %v", err)
 	}
 	if revokedAt == nil || revokedAt.Before(targetOldClaims.IssuedAt) {
 		t.Errorf("sessions_revoked_at = %v, want a timestamp at or after the old token's issued-at %v", revokedAt, targetOldClaims.IssuedAt)
@@ -914,72 +898,21 @@ func TestUpdateAdminRole_ValidChange_200_AppliesRoleRevokesSessionsAndAudits(t *
 	}
 }
 
-// quarantineAmbientOwners is the only reliable way to test the ADM-06
-// lockout rejection end-to-end in this shared integration test database:
-// the count this handler rejects on is a genuine SELECT ... FOR UPDATE
-// COUNT(*) over the whole admins table (CountActiveOwners has no
-// per-test scoping), and other tests/packages routinely leave owner rows
-// behind (some pre-existing fixtures never clean up, e.g. auth_handler_test.go
-// admins created across earlier runs of this same suite) - so "0 other
-// active owners" cannot be assumed. This helper demotes every currently
-// active owner to operator for the duration of the calling test and
-// restores them via t.Cleanup, so the test's own single owner is
-// deterministically the only one CountActiveOwners will see.
-func quarantineAmbientOwners(t *testing.T, admins *db.AdminRepository, pool *db.Pool) {
-	t.Helper()
-	ctx := context.Background()
-
-	// The snapshot-quarantine-restore window below only reflects an
-	// accurate "last owner" state if no other package's test can create
-	// or delete an owner-role row in the shared `admins` table while it
-	// is open - see LockAdminsTable's doc comment for why this must be
-	// held across concurrently-run packages, not just within this one.
-	dbtest.LockAdminsTable(t, ctx, testDatabaseURL(t))
-
-	rows, err := pool.Query(ctx, "SELECT id FROM admins WHERE role = $1", db.RoleOwner)
-	if err != nil {
-		t.Fatalf("querying ambient owners returned unexpected error: %v", err)
-	}
-	var ambientOwnerIDs []string
-	for rows.Next() {
-		var id string
-		if err := rows.Scan(&id); err != nil {
-			rows.Close()
-			t.Fatalf("scanning ambient owner id returned unexpected error: %v", err)
-		}
-		ambientOwnerIDs = append(ambientOwnerIDs, id)
-	}
-	rows.Close()
-	if err := rows.Err(); err != nil {
-		t.Fatalf("reading ambient owners returned unexpected error: %v", err)
-	}
-
-	for _, id := range ambientOwnerIDs {
-		if err := admins.UpdateRole(ctx, id, db.RoleOperator); err != nil {
-			t.Fatalf("quarantining ambient owner %q returned unexpected error: %v", id, err)
-		}
-	}
-
-	t.Cleanup(func() {
-		for _, id := range ambientOwnerIDs {
-			_ = admins.UpdateRole(context.Background(), id, db.RoleOwner)
-		}
-	})
-}
+// The ADM-06 lockout guard no longer counts owners installation-wide: a
+// role belongs to a tenant_membership, so "the last owner" is the last
+// owner *of this tenant*. Each test in this suite gets its own fixture
+// tenant, so the owner rows it creates are the only ones the guard can
+// see - the old quarantineAmbientOwners helper (which demoted every owner
+// in the shared database for the duration of a test) is no longer needed.
 
 func TestUpdateAdminRole_SelfDemotionAsLastOwner_409(t *testing.T) {
 	r, pool, admins, _ := newAdminsRouter(t)
 	ctx := context.Background()
-	quarantineAmbientOwners(t, admins, pool)
 
-	owner := &db.Admin{Email: uniqueTestEmail(t), PasswordHash: "hash"}
-	if err := admins.Create(ctx, owner); err != nil {
-		t.Fatalf("admins.Create() returned unexpected error: %v", err)
-	}
-	t.Cleanup(func() { _ = admins.Delete(context.Background(), owner.ID) })
-	token, err := auth.IssueSession(owner.ID, middlewareTestSecret)
+	owner := createTenantMember(t, admins, db.RoleOwner)
+	token, err := auth.IssueSessionWithTenant(owner.ID, adminsTestTenant(t), middlewareTestSecret)
 	if err != nil {
-		t.Fatalf("auth.IssueSession() returned unexpected error: %v", err)
+		t.Fatalf("auth.IssueSessionWithTenant() returned unexpected error: %v", err)
 	}
 
 	rec := patchAdminRole(t, r, token, owner.ID, db.RoleViewer)
@@ -988,12 +921,12 @@ func TestUpdateAdminRole_SelfDemotionAsLastOwner_409(t *testing.T) {
 		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusConflict, rec.Body.String())
 	}
 
+	if gotRole := memberRole(t, pool, owner.ID); gotRole != db.RoleOwner {
+		t.Errorf("membership role after rejected self-demotion = %q, want unchanged %q", gotRole, db.RoleOwner)
+	}
 	got, err := admins.GetByID(ctx, owner.ID)
 	if err != nil {
 		t.Fatalf("GetByID() returned unexpected error: %v", err)
-	}
-	if got.Role != db.RoleOwner {
-		t.Errorf("Role after rejected self-demotion = %q, want unchanged %q", got.Role, db.RoleOwner)
 	}
 	if got.SessionsRevokedAt != nil {
 		t.Errorf("SessionsRevokedAt after rejected self-demotion = %v, want nil (no state change)", got.SessionsRevokedAt)
@@ -1037,22 +970,15 @@ func TestDeleteAdmin_ValidRemoval_200_RevokesSessionsDeletesAndAudits(t *testing
 	r, pool, admins, _ := newAdminsRouter(t)
 	ctx := context.Background()
 
-	actor := &db.Admin{Email: uniqueTestEmail(t), PasswordHash: "hash"}
-	if err := admins.Create(ctx, actor); err != nil {
-		t.Fatalf("admins.Create() actor returned unexpected error: %v", err)
-	}
-	t.Cleanup(func() { _ = admins.Delete(context.Background(), actor.ID) })
-	actorToken, err := auth.IssueSession(actor.ID, middlewareTestSecret)
+	actor := createTenantMember(t, admins, db.RoleOwner)
+	actorToken, err := auth.IssueSessionWithTenant(actor.ID, adminsTestTenant(t), middlewareTestSecret)
 	if err != nil {
-		t.Fatalf("auth.IssueSession() actor returned unexpected error: %v", err)
+		t.Fatalf("auth.IssueSessionWithTenant() actor returned unexpected error: %v", err)
 	}
 
 	// A second owner besides actor, so this removal can never trip the
-	// ADM-06 lockout guard regardless of ambient owner rows.
-	target := &db.Admin{Email: uniqueTestEmail(t), PasswordHash: "hash"}
-	if err := admins.Create(ctx, target); err != nil {
-		t.Fatalf("admins.Create() target returned unexpected error: %v", err)
-	}
+	// ADM-06 lockout guard.
+	target := createTenantMember(t, admins, db.RoleOwner)
 
 	rec := deleteAdmin(t, r, actorToken, target.ID)
 
@@ -1084,27 +1010,19 @@ func TestDeleteAdmin_ValidRemoval_200_RevokesSessionsDeletesAndAudits(t *testing
 // rejected with 401, not just that the row no longer exists.
 func TestDeleteAdmin_ValidRemoval_OldJWTRejected_401(t *testing.T) {
 	r, _, admins, _ := newAdminsRouter(t)
-	ctx := context.Background()
 
-	actor := &db.Admin{Email: uniqueTestEmail(t), PasswordHash: "hash"}
-	if err := admins.Create(ctx, actor); err != nil {
-		t.Fatalf("admins.Create() actor returned unexpected error: %v", err)
-	}
-	t.Cleanup(func() { _ = admins.Delete(context.Background(), actor.ID) })
-	actorToken, err := auth.IssueSession(actor.ID, middlewareTestSecret)
+	actor := createTenantMember(t, admins, db.RoleOwner)
+	actorToken, err := auth.IssueSessionWithTenant(actor.ID, adminsTestTenant(t), middlewareTestSecret)
 	if err != nil {
-		t.Fatalf("auth.IssueSession() actor returned unexpected error: %v", err)
+		t.Fatalf("auth.IssueSessionWithTenant() actor returned unexpected error: %v", err)
 	}
 
 	// A second owner besides actor, so this removal can never trip the
-	// ADM-06 lockout guard regardless of ambient owner rows.
-	target := &db.Admin{Email: uniqueTestEmail(t), PasswordHash: "hash"}
-	if err := admins.Create(ctx, target); err != nil {
-		t.Fatalf("admins.Create() target returned unexpected error: %v", err)
-	}
-	targetToken, err := auth.IssueSession(target.ID, middlewareTestSecret)
+	// ADM-06 lockout guard.
+	target := createTenantMember(t, admins, db.RoleOwner)
+	targetToken, err := auth.IssueSessionWithTenant(target.ID, adminsTestTenant(t), middlewareTestSecret)
 	if err != nil {
-		t.Fatalf("auth.IssueSession() target returned unexpected error: %v", err)
+		t.Fatalf("auth.IssueSessionWithTenant() target returned unexpected error: %v", err)
 	}
 
 	rec := deleteAdmin(t, r, actorToken, target.ID)
@@ -1115,7 +1033,7 @@ func TestDeleteAdmin_ValidRemoval_OldJWTRejected_401(t *testing.T) {
 	// target.ID no longer exists in admins - RequireAuth's admins.GetByID
 	// lookup must treat "not found" as unauthenticated (401), not crash or
 	// pass the request through.
-	var gotAdmin *db.Admin
+	var gotAdmin *db.User
 	handler := newProtectedHandler(admins, &gotAdmin)
 
 	req := httptest.NewRequest(http.MethodGet, "/protected", nil)
@@ -1132,18 +1050,13 @@ func TestDeleteAdmin_ValidRemoval_OldJWTRejected_401(t *testing.T) {
 }
 
 func TestDeleteAdmin_SelfRemovalAsLastOwner_409(t *testing.T) {
-	r, pool, admins, _ := newAdminsRouter(t)
+	r, _, admins, _ := newAdminsRouter(t)
 	ctx := context.Background()
-	quarantineAmbientOwners(t, admins, pool)
 
-	owner := &db.Admin{Email: uniqueTestEmail(t), PasswordHash: "hash"}
-	if err := admins.Create(ctx, owner); err != nil {
-		t.Fatalf("admins.Create() returned unexpected error: %v", err)
-	}
-	t.Cleanup(func() { _ = admins.Delete(context.Background(), owner.ID) })
-	token, err := auth.IssueSession(owner.ID, middlewareTestSecret)
+	owner := createTenantMember(t, admins, db.RoleOwner)
+	token, err := auth.IssueSessionWithTenant(owner.ID, adminsTestTenant(t), middlewareTestSecret)
 	if err != nil {
-		t.Fatalf("auth.IssueSession() returned unexpected error: %v", err)
+		t.Fatalf("auth.IssueSessionWithTenant() returned unexpected error: %v", err)
 	}
 
 	rec := deleteAdmin(t, r, token, owner.ID)
@@ -1225,14 +1138,7 @@ func TestListAdmins_Owner_200_IncludesEveryAdminWithRole(t *testing.T) {
 	r, _, admins, _ := newAdminsRouter(t)
 	token := issueTestSessionToken(t, admins)
 
-	target := &db.Admin{Email: uniqueTestEmail(t), PasswordHash: "hash"}
-	if err := admins.Create(context.Background(), target); err != nil {
-		t.Fatalf("admins.Create() returned unexpected error: %v", err)
-	}
-	t.Cleanup(func() { _ = admins.Delete(context.Background(), target.ID) })
-	if err := admins.UpdateRole(context.Background(), target.ID, db.RoleViewer); err != nil {
-		t.Fatalf("admins.UpdateRole() returned unexpected error: %v", err)
-	}
+	target := createTenantMember(t, admins, db.RoleViewer)
 
 	rec := getAdminsList(t, r, token)
 
@@ -1263,11 +1169,7 @@ func TestListAdmins_Owner_200_IncludesEveryAdminWithRole(t *testing.T) {
 func TestListAdmins_Owner_200_MergesPendingInviteWithStatus(t *testing.T) {
 	r, _, admins, invites := newAdminsRouter(t)
 	token := issueTestSessionToken(t, admins)
-	inviter := &db.Admin{Email: uniqueTestEmail(t), PasswordHash: "hash"}
-	if err := admins.Create(context.Background(), inviter); err != nil {
-		t.Fatalf("admins.Create() returned unexpected error: %v", err)
-	}
-	t.Cleanup(func() { _ = admins.Delete(context.Background(), inviter.ID) })
+	inviter := createTenantMember(t, admins, db.RoleOwner)
 
 	pendingEmail := uniqueTestEmail(t)
 	createTestInvite(t, invites, inviter.ID, pendingEmail, db.RoleOperator, 1*time.Hour)
@@ -1315,18 +1217,14 @@ func postResendInvite(t *testing.T, r http.Handler, token, id string) *httptest.
 func TestResendInvite_Owner_200_NewTokenWorksOldTokenRejected(t *testing.T) {
 	svc, provider := newTestEmailService(t)
 	r, pool, admins, invites := newAdminsRouterWithEmail(t, svc)
-	inviter := &db.Admin{Email: uniqueTestEmail(t), PasswordHash: "hash"}
-	if err := admins.Create(context.Background(), inviter); err != nil {
-		t.Fatalf("admins.Create() returned unexpected error: %v", err)
-	}
-	t.Cleanup(func() { _ = admins.Delete(context.Background(), inviter.ID) })
-	token, err := auth.IssueSession(inviter.ID, middlewareTestSecret)
+	inviter := createTenantMember(t, admins, db.RoleOwner)
+	token, err := auth.IssueSessionWithTenant(inviter.ID, adminsTestTenant(t), middlewareTestSecret)
 	if err != nil {
-		t.Fatalf("auth.IssueSession() returned unexpected error: %v", err)
+		t.Fatalf("auth.IssueSessionWithTenant() returned unexpected error: %v", err)
 	}
 
 	email := uniqueTestEmail(t)
-	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), "DELETE FROM admin_invites WHERE email = $1", email) })
+	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), "DELETE FROM tenant_invites WHERE email = $1", email) })
 	oldRawToken := createTestInvite(t, invites, inviter.ID, email, db.RoleOperator, 1*time.Hour)
 	inviteID := latestInviteForEmail(t, pool, email).id
 
@@ -1389,15 +1287,11 @@ func TestResendInvite_EmailSendFails_200WithEmailSentFalse(t *testing.T) {
 	svc, provider := newTestEmailService(t)
 	provider.sendErr = errors.New("provider: send failed")
 	r, pool, admins, invites := newAdminsRouterWithEmail(t, svc)
-	inviter := &db.Admin{Email: uniqueTestEmail(t), PasswordHash: "hash"}
-	if err := admins.Create(context.Background(), inviter); err != nil {
-		t.Fatalf("admins.Create() returned unexpected error: %v", err)
-	}
-	t.Cleanup(func() { _ = admins.Delete(context.Background(), inviter.ID) })
+	inviter := createTenantMember(t, admins, db.RoleOwner)
 	token := issueTestSessionToken(t, admins)
 
 	email := uniqueTestEmail(t)
-	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), "DELETE FROM admin_invites WHERE email = $1", email) })
+	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), "DELETE FROM tenant_invites WHERE email = $1", email) })
 	createTestInvite(t, invites, inviter.ID, email, db.RoleOperator, 1*time.Hour)
 	inviteID := latestInviteForEmail(t, pool, email).id
 
@@ -1431,15 +1325,11 @@ func TestResendInvite_UnknownID_404(t *testing.T) {
 // pushed back into the future - rather than being treated as unmanageable.
 func TestResendInvite_AlreadyExpiredInvite_200_RefreshesExpiry(t *testing.T) {
 	r, pool, admins, invites := newAdminsRouter(t)
-	inviter := &db.Admin{Email: uniqueTestEmail(t), PasswordHash: "hash"}
-	if err := admins.Create(context.Background(), inviter); err != nil {
-		t.Fatalf("admins.Create() returned unexpected error: %v", err)
-	}
-	t.Cleanup(func() { _ = admins.Delete(context.Background(), inviter.ID) })
+	inviter := createTenantMember(t, admins, db.RoleOwner)
 	token := issueTestSessionToken(t, admins)
 
 	email := uniqueTestEmail(t)
-	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), "DELETE FROM admin_invites WHERE email = $1", email) })
+	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), "DELETE FROM tenant_invites WHERE email = $1", email) })
 	createTestInvite(t, invites, inviter.ID, email, db.RoleOperator, -1*time.Hour)
 	inviteID := latestInviteForEmail(t, pool, email).id
 
@@ -1467,15 +1357,11 @@ func TestResendInvite_MalformedID_404(t *testing.T) {
 
 func TestResendInvite_AlreadyAccepted_404(t *testing.T) {
 	r, pool, admins, invites := newAdminsRouter(t)
-	inviter := &db.Admin{Email: uniqueTestEmail(t), PasswordHash: "hash"}
-	if err := admins.Create(context.Background(), inviter); err != nil {
-		t.Fatalf("admins.Create() returned unexpected error: %v", err)
-	}
-	t.Cleanup(func() { _ = admins.Delete(context.Background(), inviter.ID) })
+	inviter := createTenantMember(t, admins, db.RoleOwner)
 	token := issueTestSessionToken(t, admins)
 
 	email := uniqueTestEmail(t)
-	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), "DELETE FROM admin_invites WHERE email = $1", email) })
+	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), "DELETE FROM tenant_invites WHERE email = $1", email) })
 	createTestInvite(t, invites, inviter.ID, email, db.RoleOperator, 1*time.Hour)
 	inviteID := latestInviteForEmail(t, pool, email).id
 	if err := invites.MarkUsed(context.Background(), inviteID); err != nil {
@@ -1497,18 +1383,14 @@ func TestResendInvite_AlreadyAccepted_404(t *testing.T) {
 // (whichever UPDATE committed last), never both or neither.
 func TestResendInvite_Concurrent_NoCorruption(t *testing.T) {
 	r, pool, admins, invites := newAdminsRouter(t)
-	inviter := &db.Admin{Email: uniqueTestEmail(t), PasswordHash: "hash"}
-	if err := admins.Create(context.Background(), inviter); err != nil {
-		t.Fatalf("admins.Create() returned unexpected error: %v", err)
-	}
-	t.Cleanup(func() { _ = admins.Delete(context.Background(), inviter.ID) })
-	token, err := auth.IssueSession(inviter.ID, middlewareTestSecret)
+	inviter := createTenantMember(t, admins, db.RoleOwner)
+	token, err := auth.IssueSessionWithTenant(inviter.ID, adminsTestTenant(t), middlewareTestSecret)
 	if err != nil {
-		t.Fatalf("auth.IssueSession() returned unexpected error: %v", err)
+		t.Fatalf("auth.IssueSessionWithTenant() returned unexpected error: %v", err)
 	}
 
 	email := uniqueTestEmail(t)
-	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), "DELETE FROM admin_invites WHERE email = $1", email) })
+	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), "DELETE FROM tenant_invites WHERE email = $1", email) })
 	createTestInvite(t, invites, inviter.ID, email, db.RoleOperator, 1*time.Hour)
 	inviteID := latestInviteForEmail(t, pool, email).id
 
@@ -1531,12 +1413,12 @@ func TestResendInvite_Concurrent_NoCorruption(t *testing.T) {
 
 	var pendingCount int
 	countRow := pool.QueryRow(context.Background(),
-		"SELECT COUNT(*) FROM admin_invites WHERE id = $1 AND used_at IS NULL", inviteID)
+		"SELECT COUNT(*) FROM tenant_invites WHERE id = $1 AND used_at IS NULL", inviteID)
 	if err := countRow.Scan(&pendingCount); err != nil {
-		t.Fatalf("querying admin_invites returned unexpected error: %v", err)
+		t.Fatalf("querying tenant_invites returned unexpected error: %v", err)
 	}
 	if pendingCount != 1 {
-		t.Errorf("pending admin_invites rows for id %q after concurrent resend = %d, want 1 (single row, not duplicated/lost)", inviteID, pendingCount)
+		t.Errorf("pending tenant_invites rows for id %q after concurrent resend = %d, want 1 (single row, not duplicated/lost)", inviteID, pendingCount)
 	}
 }
 
@@ -1553,18 +1435,14 @@ func deleteCancelInvite(t *testing.T, r http.Handler, token, id string) *httptes
 
 func TestCancelInvite_Owner_200_TokenRejectedAfterCancel(t *testing.T) {
 	r, pool, admins, invites := newAdminsRouter(t)
-	inviter := &db.Admin{Email: uniqueTestEmail(t), PasswordHash: "hash"}
-	if err := admins.Create(context.Background(), inviter); err != nil {
-		t.Fatalf("admins.Create() returned unexpected error: %v", err)
-	}
-	t.Cleanup(func() { _ = admins.Delete(context.Background(), inviter.ID) })
-	token, err := auth.IssueSession(inviter.ID, middlewareTestSecret)
+	inviter := createTenantMember(t, admins, db.RoleOwner)
+	token, err := auth.IssueSessionWithTenant(inviter.ID, adminsTestTenant(t), middlewareTestSecret)
 	if err != nil {
-		t.Fatalf("auth.IssueSession() returned unexpected error: %v", err)
+		t.Fatalf("auth.IssueSessionWithTenant() returned unexpected error: %v", err)
 	}
 
 	email := uniqueTestEmail(t)
-	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), "DELETE FROM admin_invites WHERE email = $1", email) })
+	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), "DELETE FROM tenant_invites WHERE email = $1", email) })
 	rawToken := createTestInvite(t, invites, inviter.ID, email, db.RoleOperator, 1*time.Hour)
 	inviteID := latestInviteForEmail(t, pool, email).id
 
@@ -1620,18 +1498,14 @@ func TestCancelInvite_UnknownID_404(t *testing.T) {
 
 func TestCancelInvite_AlreadyCanceled_404NoDuplicateAuditEntry(t *testing.T) {
 	r, pool, admins, invites := newAdminsRouter(t)
-	inviter := &db.Admin{Email: uniqueTestEmail(t), PasswordHash: "hash"}
-	if err := admins.Create(context.Background(), inviter); err != nil {
-		t.Fatalf("admins.Create() returned unexpected error: %v", err)
-	}
-	t.Cleanup(func() { _ = admins.Delete(context.Background(), inviter.ID) })
-	token, err := auth.IssueSession(inviter.ID, middlewareTestSecret)
+	inviter := createTenantMember(t, admins, db.RoleOwner)
+	token, err := auth.IssueSessionWithTenant(inviter.ID, adminsTestTenant(t), middlewareTestSecret)
 	if err != nil {
-		t.Fatalf("auth.IssueSession() returned unexpected error: %v", err)
+		t.Fatalf("auth.IssueSessionWithTenant() returned unexpected error: %v", err)
 	}
 
 	email := uniqueTestEmail(t)
-	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), "DELETE FROM admin_invites WHERE email = $1", email) })
+	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), "DELETE FROM tenant_invites WHERE email = $1", email) })
 	createTestInvite(t, invites, inviter.ID, email, db.RoleOperator, 1*time.Hour)
 	inviteID := latestInviteForEmail(t, pool, email).id
 
@@ -1659,14 +1533,10 @@ func TestCancelInvite_AlreadyCanceled_404NoDuplicateAuditEntry(t *testing.T) {
 func TestListAdmins_Owner_200_ExcludesUsedIncludesExpiredInvites(t *testing.T) {
 	r, _, admins, invites := newAdminsRouter(t)
 	token := issueTestSessionToken(t, admins)
-	inviter := &db.Admin{Email: uniqueTestEmail(t), PasswordHash: "hash"}
-	if err := admins.Create(context.Background(), inviter); err != nil {
-		t.Fatalf("admins.Create() returned unexpected error: %v", err)
-	}
-	t.Cleanup(func() { _ = admins.Delete(context.Background(), inviter.ID) })
+	inviter := createTenantMember(t, admins, db.RoleOwner)
 
 	usedEmail := uniqueTestEmail(t)
-	usedInvite := &db.AdminInvite{
+	usedInvite := &db.TenantInvite{
 		Email: usedEmail, Role: db.RoleViewer, TokenHash: "hash-" + usedEmail,
 		InvitedByID: inviter.ID, ExpiresAt: time.Now().Add(1 * time.Hour),
 	}
@@ -1703,11 +1573,7 @@ func TestListAdmins_Owner_200_ExcludesUsedIncludesExpiredInvites(t *testing.T) {
 func TestListAdmins_Owner_200_PendingNotYetExpired_ExpiredFalse(t *testing.T) {
 	r, _, admins, invites := newAdminsRouter(t)
 	token := issueTestSessionToken(t, admins)
-	inviter := &db.Admin{Email: uniqueTestEmail(t), PasswordHash: "hash"}
-	if err := admins.Create(context.Background(), inviter); err != nil {
-		t.Fatalf("admins.Create() returned unexpected error: %v", err)
-	}
-	t.Cleanup(func() { _ = admins.Delete(context.Background(), inviter.ID) })
+	inviter := createTenantMember(t, admins, db.RoleOwner)
 
 	pendingEmail := uniqueTestEmail(t)
 	createTestInvite(t, invites, inviter.ID, pendingEmail, db.RoleViewer, 1*time.Hour)

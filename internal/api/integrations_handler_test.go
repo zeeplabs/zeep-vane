@@ -11,13 +11,11 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/go-chi/chi/v5"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zaptest/observer"
 
-	"github.com/zeeplabs/zeep-vane/internal/auth"
 	"github.com/zeeplabs/zeep-vane/internal/connectors/datadog"
 	"github.com/zeeplabs/zeep-vane/internal/crypto"
 	"github.com/zeeplabs/zeep-vane/internal/db"
@@ -32,26 +30,15 @@ func alwaysEmptySearch(ctx context.Context, apiKey, appKey, query string) ([]dat
 	return nil, nil
 }
 
-func newIntegrationsRouter(t *testing.T, validate validateDatadogCredentials, logger *zap.Logger) (http.Handler, *db.Pool, *db.AdminRepository) {
+func newIntegrationsRouter(t *testing.T, validate validateDatadogCredentials, logger *zap.Logger) (http.Handler, *db.Pool, *db.UserRepository) {
 	return newIntegrationsRouterWithSearch(t, validate, alwaysEmptySearch, logger)
 }
 
-func newIntegrationsRouterWithSearch(t *testing.T, validate validateDatadogCredentials, search searchDatadogSLOs, logger *zap.Logger) (http.Handler, *db.Pool, *db.AdminRepository) {
+func newIntegrationsRouterWithSearch(t *testing.T, validate validateDatadogCredentials, search searchDatadogSLOs, logger *zap.Logger) (http.Handler, *db.Pool, *db.UserRepository) {
 	t.Helper()
 	dsn := testDatabaseURL(t)
 
-	if err := db.MigrateUp(dsn, "../db/migrations"); err != nil {
-		t.Fatalf("MigrateUp() returned unexpected error: %v", err)
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	pool, err := db.NewPool(ctx, dsn)
-	if err != nil {
-		t.Fatalf("NewPool() returned unexpected error: %v", err)
-	}
-	t.Cleanup(pool.Close)
+	pool, _ := newAPITenantScopedPool(t)
 	// Use context.Background() here, not the bounded ctx above: this lock
 	// may need to wait for another concurrently-run package's test to
 	// release the same advisory key, and a 5s setup deadline is
@@ -67,20 +54,20 @@ func newIntegrationsRouterWithSearch(t *testing.T, validate validateDatadogCrede
 	// NeverContainPlaintextKey deliberately closes pool mid-test to force
 	// the integrations repository to fail downstream of auth, and that
 	// must not also break the auth lookup itself.
-	authPool, err := db.NewPool(ctx, dsn)
+	authPool, err := db.NewPool(context.Background(), dsn)
 	if err != nil {
 		t.Fatalf("NewPool() for auth returned unexpected error: %v", err)
 	}
 	t.Cleanup(authPool.Close)
-	admins := db.NewAdminRepository(authPool)
+	admins := db.NewUserRepository(authPool)
 
 	repo := db.NewIntegrationRepository(pool)
 	handler := NewIntegrationsHandler(repo, validate, search, &spyPollerRestarter{}, testMasterKey, logger)
 
 	r := chi.NewRouter()
-	r.With(RequireAuth(middlewareTestSecret, admins)).Post("/api/integrations/datadog", handler.ConnectDatadog)
-	r.With(RequireAuth(middlewareTestSecret, admins)).Get("/api/integrations/datadog/status", handler.Status)
-	r.With(RequireAuth(middlewareTestSecret, admins)).Get("/api/integrations/datadog/slos", handler.SearchSLOs)
+	r.With(RequireAuth(middlewareTestSecret, admins), TenantContext(pool, db.NewTenantMembershipRepository(pool), logger)).Post("/api/integrations/datadog", handler.ConnectDatadog)
+	r.With(RequireAuth(middlewareTestSecret, admins), TenantContext(pool, db.NewTenantMembershipRepository(pool), logger)).Get("/api/integrations/datadog/status", handler.Status)
+	r.With(RequireAuth(middlewareTestSecret, admins), TenantContext(pool, db.NewTenantMembershipRepository(pool), logger)).Get("/api/integrations/datadog/slos", handler.SearchSLOs)
 
 	return r, pool, admins
 }
@@ -89,39 +76,28 @@ func newIntegrationsRouterWithSearch(t *testing.T, validate validateDatadogCrede
 // but takes the caller's own pollerRestarter, letting tests observe or
 // fail the poller (re)start triggered by a successful connect (PLD-01,
 // PLD-06).
-func newIntegrationsRouterWithPoller(t *testing.T, validate validateDatadogCredentials, poller pollerRestarter, logger *zap.Logger) (http.Handler, *db.Pool, *db.AdminRepository) {
+func newIntegrationsRouterWithPoller(t *testing.T, validate validateDatadogCredentials, poller pollerRestarter, logger *zap.Logger) (http.Handler, *db.Pool, *db.UserRepository) {
 	t.Helper()
 	dsn := testDatabaseURL(t)
 
-	if err := db.MigrateUp(dsn, "../db/migrations"); err != nil {
-		t.Fatalf("MigrateUp() returned unexpected error: %v", err)
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	pool, err := db.NewPool(ctx, dsn)
-	if err != nil {
-		t.Fatalf("NewPool() returned unexpected error: %v", err)
-	}
-	t.Cleanup(pool.Close)
+	pool, _ := newAPITenantScopedPool(t)
 	// See newIntegrationsRouterWithSearch's identical comment: use
 	// context.Background() for the lock wait, not the bounded setup ctx.
 	dbtest.LockDatadogIntegration(t, context.Background(), dsn)
 	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), "DELETE FROM integrations WHERE provider = 'datadog'") })
 
-	authPool, err := db.NewPool(ctx, dsn)
+	authPool, err := db.NewPool(context.Background(), dsn)
 	if err != nil {
 		t.Fatalf("NewPool() for auth returned unexpected error: %v", err)
 	}
 	t.Cleanup(authPool.Close)
-	admins := db.NewAdminRepository(authPool)
+	admins := db.NewUserRepository(authPool)
 
 	repo := db.NewIntegrationRepository(pool)
 	handler := NewIntegrationsHandler(repo, validate, alwaysEmptySearch, poller, testMasterKey, logger)
 
 	r := chi.NewRouter()
-	r.With(RequireAuth(middlewareTestSecret, admins)).Post("/api/integrations/datadog", handler.ConnectDatadog)
+	r.With(RequireAuth(middlewareTestSecret, admins), TenantContext(pool, db.NewTenantMembershipRepository(pool), logger)).Post("/api/integrations/datadog", handler.ConnectDatadog)
 
 	return r, pool, admins
 }
@@ -248,10 +224,14 @@ func TestConnectDatadog_NoAuth_401(t *testing.T) {
 }
 
 func TestConnectDatadog_ResponseAndLogs_NeverContainPlaintextKey(t *testing.T) {
-	// Force a downstream error (persistence failure) after validation
-	// succeeds, so the handler's error-logging path runs, and confirm even
-	// then the raw key never reaches the logger or the response body
-	// (SP-01.4).
+	// Force a downstream error after validation succeeds, so an
+	// error-logging path runs while the raw key is in flight, and confirm
+	// even then it never reaches the logger or the response body
+	// (SP-01.4). Closing the pool now trips the request's tenant
+	// transaction (TenantContext opens one ahead of every handler since
+	// multi-tenancy-core) rather than the upsert itself - either way the
+	// request carries the plaintext key and something gets logged, which
+	// is what this asserts on.
 	core, logs := observer.New(zap.ErrorLevel)
 	logger := zap.New(core)
 
@@ -411,30 +391,17 @@ func TestSearchDatadogSLOs_NoAuth_401(t *testing.T) {
 // issueTestSessionToken inserts a real admin row via admins (so RequireAuth's
 // GetByID lookup succeeds) and issues a session token for it.
 //
-// admins.Create always inserts with the `admins.role` column's database
-// default, which is `owner` (see migration 0009), and this helper never
-// changes it away - every call creates a real, permanent owner-role row
-// for the life of the test. It is used across most of this package's test
+// Every call creates a real user plus an owner membership of the test's
+// fixture tenant - since multi-tenancy-core the membership is what carries
+// the role. It is used across most of this package's test
 // files (company_settings, domains, incidents, instance_config,
 // integrations, poller_status, public_status_preview, services,
 // status_pages, admins), making it the single common point that needs
-// LockAdminsTable - see that helper's doc comment for why this must be
+// LockUsersTable - see that helper's doc comment for why this must be
 // held across concurrently-run packages, not just within this one.
-func issueTestSessionToken(t *testing.T, admins *db.AdminRepository) string {
+func issueTestSessionToken(t *testing.T, admins *db.UserRepository) string {
 	t.Helper()
-	ctx := context.Background()
-	dbtest.LockAdminsTable(t, ctx, testDatabaseURL(t))
-	admin := &db.Admin{Email: uniqueTestEmail(t), PasswordHash: "hash"}
-	if err := admins.Create(ctx, admin); err != nil {
-		t.Fatalf("admins.Create() returned unexpected error: %v", err)
-	}
-	t.Cleanup(func() { _ = admins.Delete(context.Background(), admin.ID) })
-
-	token, err := auth.IssueSession(admin.ID, middlewareTestSecret)
-	if err != nil {
-		t.Fatalf("auth.IssueSession() returned unexpected error: %v", err)
-	}
-	return token
+	return seedSessionForRole(t, admins, db.RoleOwner)
 }
 
 // TestConnectDatadog_ValidCredentials_RestartsPoller covers PLD-01: a

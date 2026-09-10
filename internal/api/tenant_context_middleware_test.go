@@ -41,8 +41,8 @@ func newTenantContextTestRouter(pool *db.Pool, gotUserID, gotTenantID *string) h
 		w.WriteHeader(http.StatusOK)
 	})
 
-	return RequireAuth(middlewareTestSecret, db.NewAdminRepository(pool))(
-		TenantContext(pool, zap.NewNop())(probe),
+	return RequireAuth(middlewareTestSecret, db.NewUserRepository(pool))(
+		TenantContext(pool, db.NewTenantMembershipRepository(pool), zap.NewNop())(probe),
 	)
 }
 
@@ -91,7 +91,11 @@ func TestTenantContext_ActiveTenantClaim_SetsAppTenantID(t *testing.T) {
 // some other tenant, and never erroring - which every tenant-scoped RLS
 // policy treats as fail-closed (zero rows), not a leak.
 func TestTenantContext_NoActiveTenant_AppTenantIDUnset(t *testing.T) {
-	repo, pool := newMiddlewareTestAdmins(t)
+	repo, _ := newMiddlewareTestAdmins(t)
+	// A plain, non-tenant-scoped pool: this test's whole point is that the
+	// setting is genuinely absent, which the fixture pools deliberately
+	// preset at connection level (see newAPITenantScopedPool).
+	pool := newPlainTestPool(t)
 	admin := createMiddlewareTestAdmin(t, repo, pool)
 
 	var gotUserID, gotTenantID string
@@ -127,7 +131,7 @@ func TestTenantContext_NoAdminInContext_401(t *testing.T) {
 	probe := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		t.Fatal("handler ran without an admin in context - TenantContext should have rejected the request first")
 	})
-	r := TenantContext(pool, zap.NewNop())(probe)
+	r := TenantContext(pool, db.NewTenantMembershipRepository(pool), zap.NewNop())(probe)
 
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	rec := httptest.NewRecorder()

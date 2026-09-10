@@ -10,18 +10,8 @@ import (
 )
 
 func TestIncidentsMigration_AppliesClean_AndEnforcesForeignKeys(t *testing.T) {
-	dsn := testDatabaseURL(t)
-
-	if err := MigrateUp(dsn, "migrations"); err != nil {
-		t.Fatalf("MigrateUp() returned unexpected error: %v", err)
-	}
-
 	ctx := context.Background()
-	pool, err := NewPool(ctx, dsn)
-	if err != nil {
-		t.Fatalf("NewPool() returned unexpected error: %v", err)
-	}
-	t.Cleanup(pool.Close)
+	pool, _ := newTenantScopedPool(t)
 
 	var incidentID, status string
 	row := pool.QueryRow(ctx,
@@ -38,7 +28,7 @@ func TestIncidentsMigration_AppliesClean_AndEnforcesForeignKeys(t *testing.T) {
 
 	// incident_services.service_id must reject a service_id that doesn't
 	// exist.
-	_, err = pool.Exec(ctx,
+	_, err := pool.Exec(ctx,
 		"INSERT INTO incident_services (incident_id, service_id) VALUES ($1, gen_random_uuid())",
 		incidentID)
 	if err == nil {

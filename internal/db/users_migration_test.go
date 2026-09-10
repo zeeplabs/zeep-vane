@@ -9,7 +9,7 @@ import (
 	"github.com/zeeplabs/zeep-vane/internal/dbtest"
 )
 
-func TestAdminsMigration_AppliesClean_AndEnforcesUniqueEmail(t *testing.T) {
+func TestUsersMigration_AppliesClean_AndEnforcesUniqueEmail(t *testing.T) {
 	dsn := testDatabaseURL(t)
 
 	if err := MigrateUp(dsn, "migrations"); err != nil {
@@ -27,11 +27,10 @@ func TestAdminsMigration_AppliesClean_AndEnforcesUniqueEmail(t *testing.T) {
 	// cleanup still needs.
 	t.Cleanup(pool.Close)
 
-	// This INSERT relies on `admins.role`'s database default (owner, see
-	// migration 0009), so it transiently creates an owner-role row like
-	// any other admin-creating test - see LockAdminsTable's doc comment
-	// for why this must be held across concurrently-run packages.
-	dbtest.LockAdminsTable(t, ctx, dsn)
+	// Serialize against every other package's tests that bulk-clear or
+	// exact-count the shared `users` table - see LockUsersTable's doc
+	// comment for why this must be held across concurrently-run packages.
+	dbtest.LockUsersTable(t, ctx, dsn)
 
 	// A fixed literal email here (rather than a per-run-unique one) would
 	// collide with a leftover row from a previous failed/interrupted run
@@ -39,17 +38,17 @@ func TestAdminsMigration_AppliesClean_AndEnforcesUniqueEmail(t *testing.T) {
 	// failure or a spurious pass unrelated to what this test checks.
 	email := uniqueTestEmail(t)
 	t.Cleanup(func() {
-		_, _ = pool.Exec(ctx, "DELETE FROM admins WHERE email = $1", email)
+		_, _ = pool.Exec(ctx, "DELETE FROM users WHERE email = $1", email)
 	})
 
 	_, err = pool.Exec(ctx,
-		"INSERT INTO admins (email, password_hash) VALUES ($1, $2)", email, "hash-1")
+		"INSERT INTO users (email, password_hash) VALUES ($1, $2)", email, "hash-1")
 	if err != nil {
 		t.Fatalf("first insert returned unexpected error: %v", err)
 	}
 
 	_, err = pool.Exec(ctx,
-		"INSERT INTO admins (email, password_hash) VALUES ($1, $2)", email, "hash-2")
+		"INSERT INTO users (email, password_hash) VALUES ($1, $2)", email, "hash-2")
 	if err == nil {
 		t.Fatal("second insert with duplicate email returned nil error, want unique constraint violation")
 	}

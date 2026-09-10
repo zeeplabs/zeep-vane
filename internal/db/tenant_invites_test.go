@@ -12,56 +12,44 @@ import (
 	"github.com/zeeplabs/zeep-vane/internal/dbtest"
 )
 
-func newAdminInviteRepositoryForTest(t *testing.T) (*AdminInviteRepository, *AdminRepository, *Pool) {
+func newTenantInviteRepositoryForTest(t *testing.T) (*TenantInviteRepository, *UserRepository, *Pool) {
 	t.Helper()
 	dsn := testDatabaseURL(t)
-
-	if err := MigrateUp(dsn, "migrations"); err != nil {
-		t.Fatalf("MigrateUp() returned unexpected error: %v", err)
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	pool, err := NewPool(ctx, dsn)
-	if err != nil {
-		t.Fatalf("NewPool() returned unexpected error: %v", err)
-	}
-	t.Cleanup(pool.Close)
+	pool, _ := newTenantScopedPool(t)
 
 	// Tests in this file create an admin via createTestAdminForInvite,
-	// and AdminRepository.Create always inserts with the `admins.role`
-	// column's database default (owner, migration 0009) - see
-	// LockAdminsTable's doc comment for why this must be held across
+	// and creating identity rows here races other packages' bulk clears
+	// of the shared `users` table - see
+	// LockUsersTable's doc comment for why this must be held across
 	// concurrently-run packages. Deliberately context.Background(), not
 	// the bounded `ctx` above, which is canceled by the deferred cancel()
 	// as soon as this function returns.
-	dbtest.LockAdminsTable(t, context.Background(), dsn)
+	dbtest.LockUsersTable(t, context.Background(), dsn)
 
-	return NewAdminInviteRepository(pool), NewAdminRepository(pool), pool
+	return NewTenantInviteRepository(pool), NewUserRepository(pool), pool
 }
 
-func createTestAdminForInvite(t *testing.T, admins *AdminRepository, pool *Pool) *Admin {
+func createTestAdminForInvite(t *testing.T, admins *UserRepository, pool *Pool) *User {
 	t.Helper()
 	ctx := context.Background()
 	email := uniqueTestEmail(t)
-	t.Cleanup(func() { _, _ = pool.Exec(ctx, "DELETE FROM admins WHERE email = $1", email) })
+	t.Cleanup(func() { _, _ = pool.Exec(ctx, "DELETE FROM users WHERE email = $1", email) })
 
-	admin := &Admin{Email: email, PasswordHash: "hash"}
+	admin := &User{Email: email, PasswordHash: "hash"}
 	if err := admins.Create(ctx, admin); err != nil {
 		t.Fatalf("admins.Create() returned unexpected error: %v", err)
 	}
 	return admin
 }
 
-func TestAdminInviteRepository_Create_Success(t *testing.T) {
-	repo, admins, pool := newAdminInviteRepositoryForTest(t)
+func TestTenantInviteRepository_Create_Success(t *testing.T) {
+	repo, admins, pool := newTenantInviteRepositoryForTest(t)
 	inviter := createTestAdminForInvite(t, admins, pool)
 	ctx := context.Background()
 	email := uniqueTestEmail(t)
-	t.Cleanup(func() { _, _ = pool.Exec(ctx, "DELETE FROM admin_invites WHERE email = $1", email) })
+	t.Cleanup(func() { _, _ = pool.Exec(ctx, "DELETE FROM tenant_invites WHERE email = $1", email) })
 
-	invite := &AdminInvite{
+	invite := &TenantInvite{
 		Email:       email,
 		Role:        "operator",
 		TokenHash:   "hash-" + email,
@@ -80,15 +68,15 @@ func TestAdminInviteRepository_Create_Success(t *testing.T) {
 	}
 }
 
-func TestAdminInviteRepository_GetByTokenHash_Existing_ReturnsInvite(t *testing.T) {
-	repo, admins, pool := newAdminInviteRepositoryForTest(t)
+func TestTenantInviteRepository_GetByTokenHash_Existing_ReturnsInvite(t *testing.T) {
+	repo, admins, pool := newTenantInviteRepositoryForTest(t)
 	inviter := createTestAdminForInvite(t, admins, pool)
 	ctx := context.Background()
 	email := uniqueTestEmail(t)
-	t.Cleanup(func() { _, _ = pool.Exec(ctx, "DELETE FROM admin_invites WHERE email = $1", email) })
+	t.Cleanup(func() { _, _ = pool.Exec(ctx, "DELETE FROM tenant_invites WHERE email = $1", email) })
 
 	expiresAt := time.Now().Add(1 * time.Hour).Truncate(time.Second)
-	created := &AdminInvite{
+	created := &TenantInvite{
 		Email:       email,
 		Role:        "viewer",
 		TokenHash:   "hash-" + email,
@@ -124,8 +112,8 @@ func TestAdminInviteRepository_GetByTokenHash_Existing_ReturnsInvite(t *testing.
 	}
 }
 
-func TestAdminInviteRepository_GetByTokenHash_Missing_ErrNotFound(t *testing.T) {
-	repo, _, _ := newAdminInviteRepositoryForTest(t)
+func TestTenantInviteRepository_GetByTokenHash_Missing_ErrNotFound(t *testing.T) {
+	repo, _, _ := newTenantInviteRepositoryForTest(t)
 
 	_, err := repo.GetByTokenHash(context.Background(), "does-not-exist-hash")
 	if !errors.Is(err, ErrNotFound) {
@@ -133,14 +121,14 @@ func TestAdminInviteRepository_GetByTokenHash_Missing_ErrNotFound(t *testing.T) 
 	}
 }
 
-func TestAdminInviteRepository_MarkUsed_SetsUsedAt(t *testing.T) {
-	repo, admins, pool := newAdminInviteRepositoryForTest(t)
+func TestTenantInviteRepository_MarkUsed_SetsUsedAt(t *testing.T) {
+	repo, admins, pool := newTenantInviteRepositoryForTest(t)
 	inviter := createTestAdminForInvite(t, admins, pool)
 	ctx := context.Background()
 	email := uniqueTestEmail(t)
-	t.Cleanup(func() { _, _ = pool.Exec(ctx, "DELETE FROM admin_invites WHERE email = $1", email) })
+	t.Cleanup(func() { _, _ = pool.Exec(ctx, "DELETE FROM tenant_invites WHERE email = $1", email) })
 
-	invite := &AdminInvite{
+	invite := &TenantInvite{
 		Email:       email,
 		Role:        "operator",
 		TokenHash:   "hash-" + email,
@@ -164,17 +152,17 @@ func TestAdminInviteRepository_MarkUsed_SetsUsedAt(t *testing.T) {
 	}
 }
 
-func TestAdminInviteRepository_InvalidatePendingForEmail_MarksPendingUsed_LeavesOthersAlone(t *testing.T) {
-	repo, admins, pool := newAdminInviteRepositoryForTest(t)
+func TestTenantInviteRepository_InvalidatePendingForEmail_MarksPendingUsed_LeavesOthersAlone(t *testing.T) {
+	repo, admins, pool := newTenantInviteRepositoryForTest(t)
 	inviter := createTestAdminForInvite(t, admins, pool)
 	ctx := context.Background()
 	email := uniqueTestEmail(t)
 	otherEmail := uniqueTestEmail(t)
 	t.Cleanup(func() {
-		_, _ = pool.Exec(ctx, "DELETE FROM admin_invites WHERE email IN ($1, $2)", email, otherEmail)
+		_, _ = pool.Exec(ctx, "DELETE FROM tenant_invites WHERE email IN ($1, $2)", email, otherEmail)
 	})
 
-	pending := &AdminInvite{
+	pending := &TenantInvite{
 		Email: email, Role: "operator", TokenHash: "hash-pending-" + email,
 		InvitedByID: inviter.ID, ExpiresAt: time.Now().Add(1 * time.Hour),
 	}
@@ -182,7 +170,7 @@ func TestAdminInviteRepository_InvalidatePendingForEmail_MarksPendingUsed_Leaves
 		t.Fatalf("Create() pending returned unexpected error: %v", err)
 	}
 
-	otherAdminInvite := &AdminInvite{
+	otherAdminInvite := &TenantInvite{
 		Email: otherEmail, Role: "operator", TokenHash: "hash-other-" + otherEmail,
 		InvitedByID: inviter.ID, ExpiresAt: time.Now().Add(1 * time.Hour),
 	}
@@ -211,26 +199,26 @@ func TestAdminInviteRepository_InvalidatePendingForEmail_MarksPendingUsed_Leaves
 	}
 }
 
-func TestAdminInviteRepository_List_ReturnsPendingIncludingExpiredMostRecentFirst(t *testing.T) {
-	repo, admins, pool := newAdminInviteRepositoryForTest(t)
+func TestTenantInviteRepository_List_ReturnsPendingIncludingExpiredMostRecentFirst(t *testing.T) {
+	repo, admins, pool := newTenantInviteRepositoryForTest(t)
 	inviter := createTestAdminForInvite(t, admins, pool)
 	ctx := context.Background()
 
-	pendingOlder := &AdminInvite{
+	pendingOlder := &TenantInvite{
 		Email: uniqueTestEmail(t), Role: "operator", TokenHash: "hash-" + uniqueTestEmail(t),
 		InvitedByID: inviter.ID, ExpiresAt: time.Now().Add(1 * time.Hour),
 	}
 	if err := repo.Create(ctx, pendingOlder); err != nil {
 		t.Fatalf("Create() pendingOlder returned unexpected error: %v", err)
 	}
-	pendingNewer := &AdminInvite{
+	pendingNewer := &TenantInvite{
 		Email: uniqueTestEmail(t), Role: "viewer", TokenHash: "hash-" + uniqueTestEmail(t),
 		InvitedByID: inviter.ID, ExpiresAt: time.Now().Add(2 * time.Hour),
 	}
 	if err := repo.Create(ctx, pendingNewer); err != nil {
 		t.Fatalf("Create() pendingNewer returned unexpected error: %v", err)
 	}
-	used := &AdminInvite{
+	used := &TenantInvite{
 		Email: uniqueTestEmail(t), Role: "operator", TokenHash: "hash-" + uniqueTestEmail(t),
 		InvitedByID: inviter.ID, ExpiresAt: time.Now().Add(1 * time.Hour),
 	}
@@ -240,19 +228,19 @@ func TestAdminInviteRepository_List_ReturnsPendingIncludingExpiredMostRecentFirs
 	if err := repo.MarkUsed(ctx, used.ID); err != nil {
 		t.Fatalf("MarkUsed() returned unexpected error: %v", err)
 	}
-	expired := &AdminInvite{
+	expired := &TenantInvite{
 		Email: uniqueTestEmail(t), Role: "operator", TokenHash: "hash-" + uniqueTestEmail(t),
 		InvitedByID: inviter.ID, ExpiresAt: time.Now().Add(-1 * time.Hour),
 	}
 	if _, err := pool.Exec(ctx,
-		`INSERT INTO admin_invites (id, email, role, token_hash, invited_by_id, expires_at)
+		`INSERT INTO tenant_invites (id, email, role, token_hash, invited_by_id, expires_at)
 		 VALUES (gen_random_uuid(), $1, $2, $3, $4, $5)`,
 		expired.Email, expired.Role, expired.TokenHash, expired.InvitedByID, expired.ExpiresAt,
 	); err != nil {
 		t.Fatalf("insert expired invite returned unexpected error: %v", err)
 	}
 	t.Cleanup(func() {
-		_, _ = pool.Exec(ctx, "DELETE FROM admin_invites WHERE email IN ($1, $2, $3, $4)",
+		_, _ = pool.Exec(ctx, "DELETE FROM tenant_invites WHERE email IN ($1, $2, $3, $4)",
 			pendingOlder.Email, pendingNewer.Email, used.Email, expired.Email)
 	})
 
@@ -301,14 +289,14 @@ func TestAdminInviteRepository_List_ReturnsPendingIncludingExpiredMostRecentFirs
 	}
 }
 
-func TestAdminInviteRepository_Refresh_Success(t *testing.T) {
-	repo, admins, pool := newAdminInviteRepositoryForTest(t)
+func TestTenantInviteRepository_Refresh_Success(t *testing.T) {
+	repo, admins, pool := newTenantInviteRepositoryForTest(t)
 	inviter := createTestAdminForInvite(t, admins, pool)
 	ctx := context.Background()
 	email := uniqueTestEmail(t)
-	t.Cleanup(func() { _, _ = pool.Exec(ctx, "DELETE FROM admin_invites WHERE email = $1", email) })
+	t.Cleanup(func() { _, _ = pool.Exec(ctx, "DELETE FROM tenant_invites WHERE email = $1", email) })
 
-	invite := &AdminInvite{
+	invite := &TenantInvite{
 		Email: email, Role: "operator", TokenHash: "hash-old-" + email,
 		InvitedByID: inviter.ID, ExpiresAt: time.Now().Add(1 * time.Hour),
 	}
@@ -337,8 +325,8 @@ func TestAdminInviteRepository_Refresh_Success(t *testing.T) {
 	}
 }
 
-func TestAdminInviteRepository_Refresh_UnknownID_ErrNotFound(t *testing.T) {
-	repo, _, _ := newAdminInviteRepositoryForTest(t)
+func TestTenantInviteRepository_Refresh_UnknownID_ErrNotFound(t *testing.T) {
+	repo, _, _ := newTenantInviteRepositoryForTest(t)
 
 	_, err := repo.Refresh(context.Background(), "00000000-0000-0000-0000-000000000000", "irrelevant-hash", time.Now().Add(1*time.Hour))
 	if !errors.Is(err, ErrNotFound) {
@@ -346,14 +334,14 @@ func TestAdminInviteRepository_Refresh_UnknownID_ErrNotFound(t *testing.T) {
 	}
 }
 
-func TestAdminInviteRepository_Refresh_AlreadyAccepted_ErrNotFound(t *testing.T) {
-	repo, admins, pool := newAdminInviteRepositoryForTest(t)
+func TestTenantInviteRepository_Refresh_AlreadyAccepted_ErrNotFound(t *testing.T) {
+	repo, admins, pool := newTenantInviteRepositoryForTest(t)
 	inviter := createTestAdminForInvite(t, admins, pool)
 	ctx := context.Background()
 	email := uniqueTestEmail(t)
-	t.Cleanup(func() { _, _ = pool.Exec(ctx, "DELETE FROM admin_invites WHERE email = $1", email) })
+	t.Cleanup(func() { _, _ = pool.Exec(ctx, "DELETE FROM tenant_invites WHERE email = $1", email) })
 
-	invite := &AdminInvite{
+	invite := &TenantInvite{
 		Email: email, Role: "operator", TokenHash: "hash-" + email,
 		InvitedByID: inviter.ID, ExpiresAt: time.Now().Add(1 * time.Hour),
 	}
@@ -370,14 +358,14 @@ func TestAdminInviteRepository_Refresh_AlreadyAccepted_ErrNotFound(t *testing.T)
 	}
 }
 
-func TestAdminInviteRepository_Refresh_AlreadyCanceled_ErrNotFound(t *testing.T) {
-	repo, admins, pool := newAdminInviteRepositoryForTest(t)
+func TestTenantInviteRepository_Refresh_AlreadyCanceled_ErrNotFound(t *testing.T) {
+	repo, admins, pool := newTenantInviteRepositoryForTest(t)
 	inviter := createTestAdminForInvite(t, admins, pool)
 	ctx := context.Background()
 	email := uniqueTestEmail(t)
-	t.Cleanup(func() { _, _ = pool.Exec(ctx, "DELETE FROM admin_invites WHERE email = $1", email) })
+	t.Cleanup(func() { _, _ = pool.Exec(ctx, "DELETE FROM tenant_invites WHERE email = $1", email) })
 
-	invite := &AdminInvite{
+	invite := &TenantInvite{
 		Email: email, Role: "operator", TokenHash: "hash-" + email,
 		InvitedByID: inviter.ID, ExpiresAt: time.Now().Add(1 * time.Hour),
 	}
@@ -394,8 +382,8 @@ func TestAdminInviteRepository_Refresh_AlreadyCanceled_ErrNotFound(t *testing.T)
 	}
 }
 
-func TestAdminInviteRepository_Refresh_MalformedID_ErrNotFound(t *testing.T) {
-	repo, _, _ := newAdminInviteRepositoryForTest(t)
+func TestTenantInviteRepository_Refresh_MalformedID_ErrNotFound(t *testing.T) {
+	repo, _, _ := newTenantInviteRepositoryForTest(t)
 
 	_, err := repo.Refresh(context.Background(), "not-a-uuid", "irrelevant-hash", time.Now().Add(1*time.Hour))
 	if !errors.Is(err, ErrNotFound) {
@@ -403,14 +391,14 @@ func TestAdminInviteRepository_Refresh_MalformedID_ErrNotFound(t *testing.T) {
 	}
 }
 
-func TestAdminInviteRepository_Cancel_AlreadyAccepted_ErrNotFound(t *testing.T) {
-	repo, admins, pool := newAdminInviteRepositoryForTest(t)
+func TestTenantInviteRepository_Cancel_AlreadyAccepted_ErrNotFound(t *testing.T) {
+	repo, admins, pool := newTenantInviteRepositoryForTest(t)
 	inviter := createTestAdminForInvite(t, admins, pool)
 	ctx := context.Background()
 	email := uniqueTestEmail(t)
-	t.Cleanup(func() { _, _ = pool.Exec(ctx, "DELETE FROM admin_invites WHERE email = $1", email) })
+	t.Cleanup(func() { _, _ = pool.Exec(ctx, "DELETE FROM tenant_invites WHERE email = $1", email) })
 
-	invite := &AdminInvite{
+	invite := &TenantInvite{
 		Email: email, Role: "operator", TokenHash: "hash-" + email,
 		InvitedByID: inviter.ID, ExpiresAt: time.Now().Add(1 * time.Hour),
 	}
@@ -426,14 +414,14 @@ func TestAdminInviteRepository_Cancel_AlreadyAccepted_ErrNotFound(t *testing.T) 
 	}
 }
 
-func TestAdminInviteRepository_Cancel_AlreadyCanceled_ErrNotFound(t *testing.T) {
-	repo, admins, pool := newAdminInviteRepositoryForTest(t)
+func TestTenantInviteRepository_Cancel_AlreadyCanceled_ErrNotFound(t *testing.T) {
+	repo, admins, pool := newTenantInviteRepositoryForTest(t)
 	inviter := createTestAdminForInvite(t, admins, pool)
 	ctx := context.Background()
 	email := uniqueTestEmail(t)
-	t.Cleanup(func() { _, _ = pool.Exec(ctx, "DELETE FROM admin_invites WHERE email = $1", email) })
+	t.Cleanup(func() { _, _ = pool.Exec(ctx, "DELETE FROM tenant_invites WHERE email = $1", email) })
 
-	invite := &AdminInvite{
+	invite := &TenantInvite{
 		Email: email, Role: "operator", TokenHash: "hash-" + email,
 		InvitedByID: inviter.ID, ExpiresAt: time.Now().Add(1 * time.Hour),
 	}
@@ -449,8 +437,8 @@ func TestAdminInviteRepository_Cancel_AlreadyCanceled_ErrNotFound(t *testing.T) 
 	}
 }
 
-func TestAdminInviteRepository_Cancel_MalformedID_ErrNotFound(t *testing.T) {
-	repo, _, _ := newAdminInviteRepositoryForTest(t)
+func TestTenantInviteRepository_Cancel_MalformedID_ErrNotFound(t *testing.T) {
+	repo, _, _ := newTenantInviteRepositoryForTest(t)
 
 	err := repo.Cancel(context.Background(), "not-a-uuid")
 	if !errors.Is(err, ErrNotFound) {
@@ -458,14 +446,14 @@ func TestAdminInviteRepository_Cancel_MalformedID_ErrNotFound(t *testing.T) {
 	}
 }
 
-func TestAdminInviteRepository_Cancel_Success(t *testing.T) {
-	repo, admins, pool := newAdminInviteRepositoryForTest(t)
+func TestTenantInviteRepository_Cancel_Success(t *testing.T) {
+	repo, admins, pool := newTenantInviteRepositoryForTest(t)
 	inviter := createTestAdminForInvite(t, admins, pool)
 	ctx := context.Background()
 	email := uniqueTestEmail(t)
-	t.Cleanup(func() { _, _ = pool.Exec(ctx, "DELETE FROM admin_invites WHERE email = $1", email) })
+	t.Cleanup(func() { _, _ = pool.Exec(ctx, "DELETE FROM tenant_invites WHERE email = $1", email) })
 
-	invite := &AdminInvite{
+	invite := &TenantInvite{
 		Email: email, Role: "operator", TokenHash: "hash-" + email,
 		InvitedByID: inviter.ID, ExpiresAt: time.Now().Add(1 * time.Hour),
 	}
@@ -486,8 +474,8 @@ func TestAdminInviteRepository_Cancel_Success(t *testing.T) {
 	}
 }
 
-func TestAdminInviteRepository_Cancel_UnknownID_ErrNotFound(t *testing.T) {
-	repo, _, _ := newAdminInviteRepositoryForTest(t)
+func TestTenantInviteRepository_Cancel_UnknownID_ErrNotFound(t *testing.T) {
+	repo, _, _ := newTenantInviteRepositoryForTest(t)
 
 	err := repo.Cancel(context.Background(), "00000000-0000-0000-0000-000000000000")
 	if !errors.Is(err, ErrNotFound) {
@@ -495,14 +483,14 @@ func TestAdminInviteRepository_Cancel_UnknownID_ErrNotFound(t *testing.T) {
 	}
 }
 
-func TestAdminInviteRepository_RefreshCancel_Concurrent_OnlyOneSucceeds(t *testing.T) {
-	repo, admins, pool := newAdminInviteRepositoryForTest(t)
+func TestTenantInviteRepository_RefreshCancel_Concurrent_OnlyOneSucceeds(t *testing.T) {
+	repo, admins, pool := newTenantInviteRepositoryForTest(t)
 	inviter := createTestAdminForInvite(t, admins, pool)
 	ctx := context.Background()
 	email := uniqueTestEmail(t)
-	t.Cleanup(func() { _, _ = pool.Exec(ctx, "DELETE FROM admin_invites WHERE email = $1", email) })
+	t.Cleanup(func() { _, _ = pool.Exec(ctx, "DELETE FROM tenant_invites WHERE email = $1", email) })
 
-	invite := &AdminInvite{
+	invite := &TenantInvite{
 		Email: email, Role: "operator", TokenHash: "hash-" + email,
 		InvitedByID: inviter.ID, ExpiresAt: time.Now().Add(1 * time.Hour),
 	}
@@ -536,8 +524,8 @@ func TestAdminInviteRepository_RefreshCancel_Concurrent_OnlyOneSucceeds(t *testi
 	}
 }
 
-func TestAdminInviteRepository_InvalidatePendingForEmail_NoPending_NoError(t *testing.T) {
-	repo, _, _ := newAdminInviteRepositoryForTest(t)
+func TestTenantInviteRepository_InvalidatePendingForEmail_NoPending_NoError(t *testing.T) {
+	repo, _, _ := newTenantInviteRepositoryForTest(t)
 
 	if err := repo.InvalidatePendingForEmail(context.Background(), "no-such-invite-"+uniqueTestEmail(t)); err != nil {
 		t.Errorf("InvalidatePendingForEmail() with no pending invite returned unexpected error: %v", err)

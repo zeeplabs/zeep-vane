@@ -43,33 +43,17 @@ func createStatusPageFixture(t *testing.T, pool *Pool) string {
 }
 
 func TestStatusPageRepository_StateByHostname_UnknownHostname_ErrNotFound(t *testing.T) {
-	dsn := testDatabaseURL(t)
-	if err := MigrateUp(dsn, "migrations"); err != nil {
-		t.Fatalf("MigrateUp() returned unexpected error: %v", err)
-	}
-	pool, err := NewPool(context.Background(), dsn)
-	if err != nil {
-		t.Fatalf("NewPool() returned unexpected error: %v", err)
-	}
-	t.Cleanup(pool.Close)
+	pool, _ := newTenantScopedPool(t)
 
 	repo := NewStatusPageRepository(pool)
-	_, err = repo.StateByHostname(context.Background(), "no-such-page.example.com")
+	_, err := repo.StateByHostname(context.Background(), "no-such-page.example.com")
 	if !errors.Is(err, ErrNotFound) {
 		t.Fatalf("StateByHostname() error = %v, want ErrNotFound", err)
 	}
 }
 
 func TestStatusPageRepository_MarkPublished_SetsPublishedStateAndClearsError(t *testing.T) {
-	dsn := testDatabaseURL(t)
-	if err := MigrateUp(dsn, "migrations"); err != nil {
-		t.Fatalf("MigrateUp() returned unexpected error: %v", err)
-	}
-	pool, err := NewPool(context.Background(), dsn)
-	if err != nil {
-		t.Fatalf("NewPool() returned unexpected error: %v", err)
-	}
-	t.Cleanup(pool.Close)
+	pool, _ := newTenantScopedPool(t)
 
 	hostname := createStatusPageFixture(t, pool)
 	repo := NewStatusPageRepository(pool)
@@ -104,15 +88,7 @@ func TestStatusPageRepository_MarkPublished_SetsPublishedStateAndClearsError(t *
 }
 
 func TestStatusPageRepository_MarkTLSFailed_SetsTLSFailedStateWithReason(t *testing.T) {
-	dsn := testDatabaseURL(t)
-	if err := MigrateUp(dsn, "migrations"); err != nil {
-		t.Fatalf("MigrateUp() returned unexpected error: %v", err)
-	}
-	pool, err := NewPool(context.Background(), dsn)
-	if err != nil {
-		t.Fatalf("NewPool() returned unexpected error: %v", err)
-	}
-	t.Cleanup(pool.Close)
+	pool, _ := newTenantScopedPool(t)
 
 	hostname := createStatusPageFixture(t, pool)
 	repo := NewStatusPageRepository(pool)
@@ -146,15 +122,7 @@ func TestStatusPageRepository_MarkTLSFailed_SetsTLSFailedStateWithReason(t *test
 // both nil, and the returned row reflects both as nil (no domain forced on
 // creation).
 func TestStatusPageRepository_Create_NoDomain_ReturnsNullDomainAndSubdomain(t *testing.T) {
-	dsn := testDatabaseURL(t)
-	if err := MigrateUp(dsn, "migrations"); err != nil {
-		t.Fatalf("MigrateUp() returned unexpected error: %v", err)
-	}
-	pool, err := NewPool(context.Background(), dsn)
-	if err != nil {
-		t.Fatalf("NewPool() returned unexpected error: %v", err)
-	}
-	t.Cleanup(pool.Close)
+	pool, _ := newTenantScopedPool(t)
 
 	repo := NewStatusPageRepository(pool)
 	statusPage := &StatusPage{Name: fmt.Sprintf("no-domain-page-%d", time.Now().UnixNano())}
@@ -180,15 +148,7 @@ func TestStatusPageRepository_Create_NoDomain_ReturnsNullDomainAndSubdomain(t *t
 // existing with-domain create path (SPD-05: backward compatible) still
 // returns the exact domain/subdomain provided.
 func TestStatusPageRepository_Create_WithDomain_Unchanged(t *testing.T) {
-	dsn := testDatabaseURL(t)
-	if err := MigrateUp(dsn, "migrations"); err != nil {
-		t.Fatalf("MigrateUp() returned unexpected error: %v", err)
-	}
-	pool, err := NewPool(context.Background(), dsn)
-	if err != nil {
-		t.Fatalf("NewPool() returned unexpected error: %v", err)
-	}
-	t.Cleanup(pool.Close)
+	pool, _ := newTenantScopedPool(t)
 
 	hostname := fmt.Sprintf("status-page-repo-create-test-%d.example.com", time.Now().UnixNano())
 	domains := NewDomainRepository(pool)
@@ -220,15 +180,7 @@ func TestStatusPageRepository_Create_WithDomain_Unchanged(t *testing.T) {
 // asserts SPD-01/SPD-05: List returns both a domain-less and a domained
 // row with correct nullability on each.
 func TestStatusPageRepository_List_MixOfDomainedAndDomainless_CorrectNullability(t *testing.T) {
-	dsn := testDatabaseURL(t)
-	if err := MigrateUp(dsn, "migrations"); err != nil {
-		t.Fatalf("MigrateUp() returned unexpected error: %v", err)
-	}
-	pool, err := NewPool(context.Background(), dsn)
-	if err != nil {
-		t.Fatalf("NewPool() returned unexpected error: %v", err)
-	}
-	t.Cleanup(pool.Close)
+	pool, _ := newTenantScopedPool(t)
 
 	repo := NewStatusPageRepository(pool)
 
@@ -330,15 +282,7 @@ func createDomainlessStatusPage(t *testing.T, repo *StatusPageRepository, pool *
 
 func newAttachDomainTestRepo(t *testing.T) (*StatusPageRepository, *Pool) {
 	t.Helper()
-	dsn := testDatabaseURL(t)
-	if err := MigrateUp(dsn, "migrations"); err != nil {
-		t.Fatalf("MigrateUp() returned unexpected error: %v", err)
-	}
-	pool, err := NewPool(context.Background(), dsn)
-	if err != nil {
-		t.Fatalf("NewPool() returned unexpected error: %v", err)
-	}
-	t.Cleanup(pool.Close)
+	pool, _ := newTenantScopedPool(t)
 	return NewStatusPageRepository(pool), pool
 }
 

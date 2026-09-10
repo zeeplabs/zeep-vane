@@ -22,25 +22,13 @@ import (
 
 func newPublicStatusRouter(t *testing.T) (http.Handler, *db.Pool) {
 	t.Helper()
-	dsn := testDatabaseURL(t)
 
-	if err := db.MigrateUp(dsn, "../db/migrations"); err != nil {
-		t.Fatalf("MigrateUp() returned unexpected error: %v", err)
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	pool, err := db.NewPool(ctx, dsn)
-	if err != nil {
-		t.Fatalf("NewPool() returned unexpected error: %v", err)
-	}
-	t.Cleanup(pool.Close)
+	pool, _ := newAPITenantScopedPool(t)
 
 	services := db.NewServiceRepository(pool)
 	intervals := db.NewStatusIntervalRepository(pool)
 	incidents := db.NewIncidentRepository(pool)
-	companySettings := db.NewCompanySettingsRepository(pool)
+	companySettings := db.NewTenantRepository(pool)
 	handler := NewPublicStatusHandler(services, intervals, incidents, companySettings, zap.NewNop())
 
 	r := chi.NewRouter()
@@ -684,7 +672,7 @@ func TestPublicStatusGet_ResolvedIncidentWithinRetention_AppearsInHistory(t *tes
 	}
 }
 
-// resetCompanySettingsForPublicStatusTest resets the company_settings
+// resetCompanySettingsForPublicStatusTest resets the fixture tenant's
 // singleton row to a known state, registering the same reset as cleanup -
 // mirrors newCompanySettingsRouter's reset in company_settings_handler_test.go,
 // since the row is shared across every test in this package.
@@ -692,13 +680,14 @@ func resetCompanySettingsForPublicStatusTest(t *testing.T, pool *db.Pool) {
 	t.Helper()
 
 	// This reset races internal/db's and internal/cli's own
-	// company_settings tests across the separate concurrent processes
+	// company-profile tests across the separate concurrent processes
 	// `go test ./...` runs them as, so take the shared advisory lock for
-	// the duration of this test - see LockCompanySettings' doc comment.
-	dbtest.LockCompanySettings(t, context.Background(), testDatabaseURL(t))
+	// the duration of this test - see LockTenantsTable' doc comment.
+	dbtest.LockTenantsTable(t, context.Background(), testDatabaseURL(t))
 
 	reset := func() {
-		_, _ = pool.Exec(context.Background(), "UPDATE company_settings SET name = '', contact_email = '', logo_data = NULL, logo_content_type = NULL WHERE id = 1")
+		_, _ = pool.Exec(context.Background(),
+			"UPDATE tenants SET name = '', contact_email = '', logo_data = NULL, logo_content_type = NULL WHERE id = $1", apiTestTenantID(t))
 	}
 	reset()
 	t.Cleanup(reset)
@@ -711,11 +700,11 @@ func TestPublicStatusGet_CompanySettingsSet_IncludesNameAndLogo(t *testing.T) {
 	r, pool := newPublicStatusRouter(t)
 	resetCompanySettingsForPublicStatusTest(t, pool)
 
-	companySettings := db.NewCompanySettingsRepository(pool)
-	if _, err := companySettings.Update(context.Background(), "Acme Status", "contato@acme.example"); err != nil {
+	companySettings := db.NewTenantRepository(pool)
+	if _, err := companySettings.Update(context.Background(), apiTestTenantID(t), db.TenantUpdate{Name: ptr("Acme Status"), ContactEmail: ptr("contato@acme.example")}); err != nil {
 		t.Fatalf("setup Update() returned unexpected error: %v", err)
 	}
-	if _, err := companySettings.UpdateLogo(context.Background(), "image/png", []byte("fake-png-bytes")); err != nil {
+	if _, err := companySettings.UpdateLogo(context.Background(), apiTestTenantID(t), "image/png", []byte("fake-png-bytes")); err != nil {
 		t.Fatalf("setup UpdateLogo() returned unexpected error: %v", err)
 	}
 
@@ -1174,22 +1163,12 @@ func (c *countingServiceLister) ListForStatusPage(ctx context.Context, statusPag
 // invalid range value is rejected with 422 before composeResponse (and
 // therefore before any services/intervals DB query) ever runs.
 func TestPublicStatusGet_InvalidRange_422NoDBQueryIssued(t *testing.T) {
-	dsn := testDatabaseURL(t)
-	if err := db.MigrateUp(dsn, "../db/migrations"); err != nil {
-		t.Fatalf("MigrateUp() returned unexpected error: %v", err)
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	pool, err := db.NewPool(ctx, dsn)
-	if err != nil {
-		t.Fatalf("NewPool() returned unexpected error: %v", err)
-	}
-	t.Cleanup(pool.Close)
+	pool, _ := newAPITenantScopedPool(t)
 
 	spy := &countingServiceLister{inner: db.NewServiceRepository(pool)}
 	intervals := db.NewStatusIntervalRepository(pool)
 	incidents := db.NewIncidentRepository(pool)
-	companySettings := db.NewCompanySettingsRepository(pool)
+	companySettings := db.NewTenantRepository(pool)
 	handler := NewPublicStatusHandler(spy, intervals, incidents, companySettings, zap.NewNop())
 
 	r := chi.NewRouter()

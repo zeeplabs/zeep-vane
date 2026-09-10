@@ -15,39 +15,29 @@ import (
 	"github.com/go-chi/chi/v5"
 	"go.uber.org/zap"
 
-	"github.com/zeeplabs/zeep-vane/internal/auth"
 	"github.com/zeeplabs/zeep-vane/internal/db"
-	"github.com/zeeplabs/zeep-vane/internal/dbtest"
 )
 
-func newServicesRouter(t *testing.T) (http.Handler, *db.Pool, *db.AdminRepository) {
+func newServicesRouter(t *testing.T) (http.Handler, *db.Pool, *db.UserRepository) {
 	t.Helper()
-	dsn := testDatabaseURL(t)
 
-	if err := db.MigrateUp(dsn, "../db/migrations"); err != nil {
-		t.Fatalf("MigrateUp() returned unexpected error: %v", err)
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	pool, err := db.NewPool(ctx, dsn)
-	if err != nil {
-		t.Fatalf("NewPool() returned unexpected error: %v", err)
-	}
-	t.Cleanup(pool.Close)
+	pool, _ := newAPITenantScopedPool(t)
 
 	repo := db.NewServiceRepository(pool)
-	admins := db.NewAdminRepository(pool)
+	admins := db.NewUserRepository(pool)
 	handler := NewServicesHandler(repo, zap.NewNop())
 
 	r := chi.NewRouter()
 	r.Group(func(protected chi.Router) {
 		protected.Use(RequireAuth(middlewareTestSecret, admins))
+		// Mirrors buildAdminRouter: TenantContext runs right after
+		// RequireAuth and is what resolves the caller's role in the active
+		// tenant for RequireRole (multi-tenancy-core, AD-022).
+		protected.Use(TenantContext(pool, db.NewTenantMembershipRepository(pool), zap.NewNop()))
 		// TenantContext must run (services now carries tenant_id + RLS,
 		// 0024) for Create/List to see anything at all - matches
 		// production wiring in routes.go.
-		protected.Use(TenantContext(pool, zap.NewNop()))
+		protected.Use(TenantContext(pool, db.NewTenantMembershipRepository(pool), zap.NewNop()))
 		protected.Post("/api/services", handler.Create)
 		protected.Get("/api/services", handler.List)
 	})
@@ -67,41 +57,10 @@ func uniqueServiceName(t *testing.T) string {
 // file rather than folded into the shared issueTestSessionToken (used by
 // ~10 other handler test files whose tables aren't tenant-scoped in this
 // batch).
-func issueTestSessionTokenWithTenant(t *testing.T, admins *db.AdminRepository, pool *db.Pool) string {
+func issueTestSessionTokenWithTenant(t *testing.T, admins *db.UserRepository, pool *db.Pool) string {
 	t.Helper()
-	ctx := context.Background()
-	dbtest.LockAdminsTable(t, ctx, testDatabaseURL(t))
-	admin := &db.Admin{Email: uniqueTestEmail(t), PasswordHash: "hash"}
-	if err := admins.Create(ctx, admin); err != nil {
-		t.Fatalf("admins.Create() returned unexpected error: %v", err)
-	}
-	t.Cleanup(func() { _ = admins.Delete(context.Background(), admin.ID) })
-
-	var tenantID string
-	if err := pool.QueryRow(ctx, "INSERT INTO tenants (name) VALUES ($1) RETURNING id", "services-handler-test-tenant").Scan(&tenantID); err != nil {
-		t.Fatalf("seeding tenant returned unexpected error: %v", err)
-	}
-	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), "DELETE FROM tenants WHERE id = $1", tenantID) })
-
-	tx, err := pool.BeginTenantTx(ctx, "", tenantID)
-	if err != nil {
-		t.Fatalf("BeginTenantTx() returned unexpected error: %v", err)
-	}
-	if _, err := pool.Exec(db.WithTenantTx(ctx, tx),
-		"INSERT INTO tenant_memberships (user_id, tenant_id, role) VALUES ($1, $2, $3)", admin.ID, tenantID, db.RoleOwner,
-	); err != nil {
-		_ = tx.Rollback(ctx)
-		t.Fatalf("seeding tenant membership returned unexpected error: %v", err)
-	}
-	if err := tx.Commit(ctx); err != nil {
-		t.Fatalf("commit returned unexpected error: %v", err)
-	}
-
-	token, err := auth.IssueSessionWithTenant(admin.ID, tenantID, middlewareTestSecret)
-	if err != nil {
-		t.Fatalf("auth.IssueSessionWithTenant() returned unexpected error: %v", err)
-	}
-	return token
+	_ = pool
+	return seedSessionForRole(t, admins, db.RoleOwner)
 }
 
 func postCreateService(t *testing.T, r http.Handler, token, name, sloID string) *httptest.ResponseRecorder {

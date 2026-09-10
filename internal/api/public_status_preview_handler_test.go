@@ -16,35 +16,27 @@ import (
 	"github.com/zeeplabs/zeep-vane/internal/db"
 )
 
-func newPublicStatusPreviewRouter(t *testing.T) (http.Handler, *db.Pool, *db.AdminRepository) {
+func newPublicStatusPreviewRouter(t *testing.T) (http.Handler, *db.Pool, *db.UserRepository) {
 	t.Helper()
-	dsn := testDatabaseURL(t)
 
-	if err := db.MigrateUp(dsn, "../db/migrations"); err != nil {
-		t.Fatalf("MigrateUp() returned unexpected error: %v", err)
-	}
+	pool, _ := newAPITenantScopedPool(t)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	pool, err := db.NewPool(ctx, dsn)
-	if err != nil {
-		t.Fatalf("NewPool() returned unexpected error: %v", err)
-	}
-	t.Cleanup(pool.Close)
-
-	admins := db.NewAdminRepository(pool)
+	admins := db.NewUserRepository(pool)
 	services := db.NewServiceRepository(pool)
 	intervals := db.NewStatusIntervalRepository(pool)
 	incidents := db.NewIncidentRepository(pool)
 	statusPages := db.NewStatusPageRepository(pool)
-	companySettings := db.NewCompanySettingsRepository(pool)
+	companySettings := db.NewTenantRepository(pool)
 	inner := NewPublicStatusHandler(services, intervals, incidents, companySettings, zap.NewNop())
 	handler := NewPublicStatusPreviewHandler(statusPages, inner, zap.NewNop())
 
 	r := chi.NewRouter()
 	r.Group(func(protected chi.Router) {
 		protected.Use(RequireAuth(middlewareTestSecret, admins))
+		// Mirrors buildAdminRouter: TenantContext runs right after
+		// RequireAuth and is what resolves the caller's role in the active
+		// tenant for RequireRole (multi-tenancy-core, AD-022).
+		protected.Use(TenantContext(pool, db.NewTenantMembershipRepository(pool), zap.NewNop()))
 		protected.Get("/api/status-pages/{id}/public-preview", handler.Get)
 	})
 
@@ -191,8 +183,8 @@ func TestPublicStatusPreview_CompanySettingsSet_IncludesNameAndLogo(t *testing.T
 	resetCompanySettingsForPublicStatusTest(t, pool)
 	token := issueTestSessionToken(t, admins)
 
-	companySettings := db.NewCompanySettingsRepository(pool)
-	if _, err := companySettings.Update(context.Background(), "Acme Status", "contato@acme.example"); err != nil {
+	companySettings := db.NewTenantRepository(pool)
+	if _, err := companySettings.Update(context.Background(), apiTestTenantID(t), db.TenantUpdate{Name: ptr("Acme Status"), ContactEmail: ptr("contato@acme.example")}); err != nil {
 		t.Fatalf("setup Update() returned unexpected error: %v", err)
 	}
 

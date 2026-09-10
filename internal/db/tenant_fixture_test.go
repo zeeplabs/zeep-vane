@@ -5,6 +5,8 @@ package db
 import (
 	"context"
 	"testing"
+
+	"github.com/zeeplabs/zeep-vane/internal/dbtest"
 )
 
 // seedPlainTenant inserts and returns the id of a throwaway tenant row for
@@ -51,4 +53,40 @@ func withTenantTx(t *testing.T, pool *Pool, tenantID string, fn func(ctx context
 	if err := tx.Commit(ctx); err != nil {
 		t.Fatalf("commit returned unexpected error: %v", err)
 	}
+}
+
+// newTenantScopedPool returns a migrated pool whose every connection has
+// app.tenant_id preset (at session level, via the connection's `options`
+// parameter) to a throwaway fixture tenant, plus that tenant's id.
+//
+// Every tenant-scoped table's tenant_id column defaults to
+// NULLIF(current_setting('app.tenant_id', true), ”)::uuid and is NOT NULL
+// (0024), so a fixture INSERT made outside any tenant context is rejected.
+// Presetting the session setting is what lets the repository suites below
+// keep inserting through plain context.Background() calls - what they are
+// testing is the repository's own behaviour, not tenant resolution, which
+// has its own suite in rls_test.go (which deliberately does NOT use this
+// helper: it needs the setting genuinely unset to prove fail-closed).
+func newTenantScopedPool(t *testing.T) (*Pool, string) {
+	t.Helper()
+	dsn := testDatabaseURL(t)
+	if err := MigrateUp(dsn, "migrations"); err != nil {
+		t.Fatalf("MigrateUp() returned unexpected error: %v", err)
+	}
+
+	ctx := context.Background()
+	bootstrapPool, err := NewPool(ctx, dsn)
+	if err != nil {
+		t.Fatalf("NewPool() returned unexpected error: %v", err)
+	}
+	tenantID := seedPlainTenant(t, bootstrapPool)
+	bootstrapPool.Close()
+
+	pool, err := NewPool(ctx, dbtest.TenantScopedDSN(dsn, tenantID))
+	if err != nil {
+		t.Fatalf("NewPool() (tenant-scoped) returned unexpected error: %v", err)
+	}
+	t.Cleanup(pool.Close)
+
+	return pool, tenantID
 }

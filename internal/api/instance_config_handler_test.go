@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
-	"time"
 
 	"github.com/go-chi/chi/v5"
 	"go.uber.org/zap"
@@ -17,31 +16,23 @@ import (
 	"github.com/zeeplabs/zeep-vane/internal/dbtest"
 )
 
-func newInstanceConfigRouter(t *testing.T, dnsTarget string) (http.Handler, *db.AdminRepository, *db.Pool) {
+func newInstanceConfigRouter(t *testing.T, dnsTarget string) (http.Handler, *db.UserRepository, *db.Pool) {
 	t.Helper()
-	dsn := testDatabaseURL(t)
 
-	if err := db.MigrateUp(dsn, "../db/migrations"); err != nil {
-		t.Fatalf("MigrateUp() returned unexpected error: %v", err)
-	}
+	pool, _ := newAPITenantScopedPool(t)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	pool, err := db.NewPool(ctx, dsn)
-	if err != nil {
-		t.Fatalf("NewPool() returned unexpected error: %v", err)
-	}
-	t.Cleanup(pool.Close)
-
-	admins := db.NewAdminRepository(pool)
-	companySettings := db.NewCompanySettingsRepository(pool)
+	admins := db.NewUserRepository(pool)
+	companySettings := db.NewTenantRepository(pool)
 	handler := NewInstanceConfigHandler(dnsTarget, companySettings, zap.NewNop())
 
 	r := chi.NewRouter()
 	r.Get("/api/instance/branding", handler.Branding)
 	r.Group(func(protected chi.Router) {
 		protected.Use(RequireAuth(middlewareTestSecret, admins))
+		// Mirrors buildAdminRouter: TenantContext runs right after
+		// RequireAuth and is what resolves the caller's role in the active
+		// tenant for RequireRole (multi-tenancy-core, AD-022).
+		protected.Use(TenantContext(pool, db.NewTenantMembershipRepository(pool), zap.NewNop()))
 		protected.Get("/api/instance/dns-target", handler.DNSTarget)
 	})
 
@@ -133,18 +124,18 @@ func TestBranding_NoAuth_200(t *testing.T) {
 // TestBranding_LogoUploaded_ReturnsLogoURL asserts the real, persisted logo
 // URL is surfaced, not a placeholder.
 func TestBranding_LogoUploaded_ReturnsLogoURL(t *testing.T) {
-	// This test mutates the shared company_settings singleton row, which
-	// races internal/db's and internal/cli's own company_settings tests
+	// This test mutates the fixture tenant's own row, which races
+	// internal/cli's own company-profile tests
 	// across the separate concurrent processes `go test ./...` runs them
-	// as - see LockCompanySettings' doc comment.
-	dbtest.LockCompanySettings(t, context.Background(), testDatabaseURL(t))
+	// as - see LockTenantsTable' doc comment.
+	dbtest.LockTenantsTable(t, context.Background(), testDatabaseURL(t))
 
 	r, _, pool := newInstanceConfigRouter(t, "vane.example.com")
-	companySettings := db.NewCompanySettingsRepository(pool)
+	companySettings := db.NewTenantRepository(pool)
 	t.Cleanup(func() {
-		_, _ = pool.Exec(context.Background(), "UPDATE company_settings SET logo_data = NULL, logo_content_type = NULL WHERE id = 1")
+		_, _ = pool.Exec(context.Background(), "UPDATE tenants SET logo_data = NULL, logo_content_type = NULL WHERE id = $1", apiTestTenantID(t))
 	})
-	if _, err := companySettings.UpdateLogo(context.Background(), "image/png", []byte("fake-png-bytes")); err != nil {
+	if _, err := companySettings.UpdateLogo(context.Background(), apiTestTenantID(t), "image/png", []byte("fake-png-bytes")); err != nil {
 		t.Fatalf("setup UpdateLogo() returned unexpected error: %v", err)
 	}
 
@@ -165,17 +156,17 @@ func TestBranding_LogoUploaded_ReturnsLogoURL(t *testing.T) {
 // TestBranding_NoLogoUploaded_ReturnsNull asserts the no-logo case never
 // fabricates a placeholder path.
 func TestBranding_NoLogoUploaded_ReturnsNull(t *testing.T) {
-	// This test mutates the shared company_settings singleton row, which
-	// races internal/db's and internal/cli's own company_settings tests
+	// This test mutates the fixture tenant's own row, which races
+	// internal/cli's own company-profile tests
 	// across the separate concurrent processes `go test ./...` runs them
-	// as - see LockCompanySettings' doc comment.
-	dbtest.LockCompanySettings(t, context.Background(), testDatabaseURL(t))
+	// as - see LockTenantsTable' doc comment.
+	dbtest.LockTenantsTable(t, context.Background(), testDatabaseURL(t))
 
 	r, _, pool := newInstanceConfigRouter(t, "vane.example.com")
 	t.Cleanup(func() {
-		_, _ = pool.Exec(context.Background(), "UPDATE company_settings SET logo_data = NULL, logo_content_type = NULL WHERE id = 1")
+		_, _ = pool.Exec(context.Background(), "UPDATE tenants SET logo_data = NULL, logo_content_type = NULL WHERE id = $1", apiTestTenantID(t))
 	})
-	if _, err := pool.Exec(context.Background(), "UPDATE company_settings SET logo_data = NULL, logo_content_type = NULL WHERE id = 1"); err != nil {
+	if _, err := pool.Exec(context.Background(), "UPDATE tenants SET logo_data = NULL, logo_content_type = NULL WHERE id = $1", apiTestTenantID(t)); err != nil {
 		t.Fatalf("setup returned unexpected error: %v", err)
 	}
 
