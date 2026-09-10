@@ -110,6 +110,14 @@ func VerifySessionClaims(tokenString, secret string) (SessionClaims, error) {
 	if !ok || claims.Subject == "" || claims.IssuedAt == nil {
 		return SessionClaims{}, ErrInvalidToken
 	}
+	// A real session token never sets Audience. A 2FA challenge token
+	// (internal/auth/two_factor.go) always does, so this rejects any
+	// challenge token from ever being accepted as a session, even if a
+	// future refactor changed how challenge tokens are parsed
+	// (auth-2fa-totp design.md).
+	if len(claims.Audience) > 0 {
+		return SessionClaims{}, ErrInvalidToken
+	}
 
 	return SessionClaims{AdminID: claims.Subject, IssuedAt: claims.IssuedAt.Time, TenantID: claims.TenantID}, nil
 }

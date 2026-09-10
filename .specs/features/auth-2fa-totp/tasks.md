@@ -148,10 +148,10 @@ T7 → T11
 - Skill: NONE
 
 **Done when**:
-- [ ] A token signed with `Audience: []string{"2fa_challenge"}` fails `VerifySessionClaims` with `ErrInvalidToken`
-- [ ] Every existing `VerifySessionClaims`/`RequireAuth` test still passes unmodified (no `Audience` is ever set by `IssueSessionWithTenant` today)
-- [ ] Gate check passes: `go build ./... && go vet ./... && gofmt -l internal/auth/session.go && go test ./internal/auth/... ./internal/api/...`
-- [ ] Test count: +1 new test (`TestVerifySessionClaims_AudienceClaimSet_Rejected`), all prior tests unchanged and passing
+- [x] A token signed with `Audience: []string{"2fa_challenge"}` fails `VerifySessionClaims` with `ErrInvalidToken`
+- [x] Every existing `VerifySessionClaims`/`RequireAuth` test still passes unmodified (no `Audience` is ever set by `IssueSessionWithTenant` today)
+- [x] Gate check passes: `go build ./... && go vet ./... && gofmt -l internal/auth/session.go && go test ./internal/auth/... ./internal/api/...`
+- [x] Test count: +1 new test (`TestVerifySessionClaims_AudienceClaimSet_Rejected`), all prior tests unchanged and passing
 
 **Tests**: unit
 **Gate**: quick

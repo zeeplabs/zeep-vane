@@ -54,3 +54,18 @@ func TestVerifySession_MalformedToken_ErrInvalidToken(t *testing.T) {
 		t.Errorf("VerifySession() error = %v, want ErrInvalidToken", err)
 	}
 }
+
+func TestVerifySessionClaims_AudienceClaimSet_Rejected(t *testing.T) {
+	// A 2FA challenge token always sets Audience - VerifySessionClaims must
+	// reject it as a session even though it is otherwise well-formed and
+	// signed with the correct secret (auth-2fa-totp TOTP-05).
+	token, err := IssueTwoFactorChallenge("admin-123", "jti-abc", testSecret)
+	if err != nil {
+		t.Fatalf("IssueTwoFactorChallenge() returned unexpected error: %v", err)
+	}
+
+	_, err = VerifySessionClaims(token, testSecret)
+	if err != ErrInvalidToken {
+		t.Errorf("VerifySessionClaims() error = %v, want ErrInvalidToken", err)
+	}
+}
