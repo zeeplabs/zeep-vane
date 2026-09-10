@@ -229,7 +229,7 @@ func TestIncidentRepository_ListUpdatesPaginated_Page1And2_CorrectSlicing(t *tes
 
 	const seedCount = 27
 	for i := 0; i < seedCount; i++ {
-		if _, err := repo.AddUpdate(context.Background(), incident.ID, fmt.Sprintf("update-%d", i)); err != nil {
+		if _, err := repo.AddUpdate(context.Background(), incident.ID, fmt.Sprintf("update-%d", i), nil, false); err != nil {
 			t.Fatalf("setup AddUpdate() returned unexpected error: %v", err)
 		}
 		time.Sleep(time.Millisecond)
@@ -262,7 +262,7 @@ func TestIncidentRepository_ListUpdatesPaginated_PageBeyondLast_EmptyItemsCorrec
 	repo, pool := newIncidentRepoTestPool(t)
 	incident := createIncidentFixture(t, repo, pool, fmt.Sprintf("updates-paginated-beyond-%d", time.Now().UnixNano()))
 
-	if _, err := repo.AddUpdate(context.Background(), incident.ID, "only update"); err != nil {
+	if _, err := repo.AddUpdate(context.Background(), incident.ID, "only update", nil, false); err != nil {
 		t.Fatalf("setup AddUpdate() returned unexpected error: %v", err)
 	}
 
@@ -283,13 +283,13 @@ func TestIncidentRepository_ListUpdatesPaginated_ScopedToOneIncident(t *testing.
 	incidentA := createIncidentFixture(t, repo, pool, fmt.Sprintf("updates-scoped-a-%d", time.Now().UnixNano()))
 	incidentB := createIncidentFixture(t, repo, pool, fmt.Sprintf("updates-scoped-b-%d", time.Now().UnixNano()))
 
-	if _, err := repo.AddUpdate(context.Background(), incidentA.ID, "a-update-1"); err != nil {
+	if _, err := repo.AddUpdate(context.Background(), incidentA.ID, "a-update-1", nil, false); err != nil {
 		t.Fatalf("setup AddUpdate() (A) returned unexpected error: %v", err)
 	}
-	if _, err := repo.AddUpdate(context.Background(), incidentB.ID, "b-update-1"); err != nil {
+	if _, err := repo.AddUpdate(context.Background(), incidentB.ID, "b-update-1", nil, false); err != nil {
 		t.Fatalf("setup AddUpdate() (B) returned unexpected error: %v", err)
 	}
-	if _, err := repo.AddUpdate(context.Background(), incidentB.ID, "b-update-2"); err != nil {
+	if _, err := repo.AddUpdate(context.Background(), incidentB.ID, "b-update-2", nil, false); err != nil {
 		t.Fatalf("setup AddUpdate() (B) returned unexpected error: %v", err)
 	}
 
@@ -319,5 +319,130 @@ func TestIncidentRepository_ListUpdatesPaginated_UnknownIncident_ErrNotFound(t *
 	_, _, err := repo.ListUpdatesPaginated(context.Background(), "00000000-0000-0000-0000-000000000000", 1, 25)
 	if !errors.Is(err, ErrNotFound) {
 		t.Fatalf("ListUpdatesPaginated() error = %v, want ErrNotFound", err)
+	}
+}
+
+// TestIncidentRepository_Create_PersistsExplicitSeverity covers INCSEV-01:
+// Create stores the caller-supplied severity verbatim.
+func TestIncidentRepository_Create_PersistsExplicitSeverity(t *testing.T) {
+	repo, pool := newIncidentRepoTestPool(t)
+	incident := &Incident{Title: "critical incident", Severity: "critical"}
+
+	if err := repo.Create(context.Background(), incident, nil); err != nil {
+		t.Fatalf("Create() returned unexpected error: %v", err)
+	}
+	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), "DELETE FROM incidents WHERE id = $1", incident.ID) })
+
+	if incident.Severity != "critical" {
+		t.Errorf("Severity = %q, want %q", incident.Severity, "critical")
+	}
+}
+
+// TestIncidentRepository_Create_NoSeverity_DefaultsToModerate covers the
+// spec's default-fallback assumption: a caller that leaves Severity unset
+// (e.g. SLOAnalyzer's auto-created incidents) gets the same "moderate"
+// default as any other incident.
+func TestIncidentRepository_Create_NoSeverity_DefaultsToModerate(t *testing.T) {
+	repo, pool := newIncidentRepoTestPool(t)
+	incident := createIncidentFixture(t, repo, pool, "default severity incident")
+
+	if incident.Severity != "moderate" {
+		t.Errorf("Severity = %q, want %q (default)", incident.Severity, "moderate")
+	}
+}
+
+// TestIncidentRepository_SetSeverity_UpdatesAndReturnsIncident covers
+// INCSEV-04's happy path, including on a resolved incident - severity is
+// independent of the status state machine.
+func TestIncidentRepository_SetSeverity_UpdatesAndReturnsIncident(t *testing.T) {
+	repo, pool := newIncidentRepoTestPool(t)
+	incident := createIncidentFixture(t, repo, pool, "severity update incident")
+
+	if _, err := repo.Transition(context.Background(), incident.ID, "resolved"); err != nil {
+		t.Fatalf("setup Transition() returned unexpected error: %v", err)
+	}
+
+	updated, err := repo.SetSeverity(context.Background(), incident.ID, "critical")
+	if err != nil {
+		t.Fatalf("SetSeverity() returned unexpected error: %v", err)
+	}
+	if updated.Severity != "critical" {
+		t.Errorf("Severity = %q, want %q", updated.Severity, "critical")
+	}
+	if updated.Status != "resolved" {
+		t.Errorf("Status = %q, want unchanged %q", updated.Status, "resolved")
+	}
+}
+
+// TestIncidentRepository_SetSeverity_UnknownIncident_ErrNotFound covers
+// INCSEV-04's 404 path.
+func TestIncidentRepository_SetSeverity_UnknownIncident_ErrNotFound(t *testing.T) {
+	repo, _ := newIncidentRepoTestPool(t)
+
+	_, err := repo.SetSeverity(context.Background(), "00000000-0000-0000-0000-000000000000", "critical")
+	if !errors.Is(err, ErrNotFound) {
+		t.Fatalf("SetSeverity() error = %v, want ErrNotFound", err)
+	}
+}
+
+// TestIncidentRepository_AddUpdate_WithAuthorID_PersistsAuthorshipNotAISummary
+// covers INCSEV-05: a manually-authored update carries the given author_id
+// and is_ai_summary = false.
+func TestIncidentRepository_AddUpdate_WithAuthorID_PersistsAuthorshipNotAISummary(t *testing.T) {
+	repo, pool := newIncidentRepoTestPool(t)
+	incident := createIncidentFixture(t, repo, pool, "authored update incident")
+	admins := NewUserRepository(pool)
+	author := &User{Email: fmt.Sprintf("update-author-%d@example.com", time.Now().UnixNano()), PasswordHash: "hash"}
+	if err := admins.Create(context.Background(), author); err != nil {
+		t.Fatalf("setup admins.Create() returned unexpected error: %v", err)
+	}
+	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), "DELETE FROM users WHERE id = $1", author.ID) })
+
+	update, err := repo.AddUpdate(context.Background(), incident.ID, "manual note", &author.ID, false)
+	if err != nil {
+		t.Fatalf("AddUpdate() returned unexpected error: %v", err)
+	}
+	if update.AuthorID == nil || *update.AuthorID != author.ID {
+		t.Errorf("AuthorID = %v, want %q", update.AuthorID, author.ID)
+	}
+	if update.IsAISummary {
+		t.Error("IsAISummary = true, want false")
+	}
+
+	updates, err := repo.ListUpdates(context.Background(), incident.ID)
+	if err != nil {
+		t.Fatalf("ListUpdates() returned unexpected error: %v", err)
+	}
+	if len(updates) != 1 || updates[0].AuthorID == nil || *updates[0].AuthorID != author.ID || updates[0].IsAISummary {
+		t.Errorf("ListUpdates()[0] = %+v, want author_id=%q is_ai_summary=false", updates[0], author.ID)
+	}
+}
+
+// TestIncidentRepository_ConfirmPendingClose_AppendsUpdate_NoAuthorIsAISummary
+// covers INCSEV-06: the AI-drafted closing summary carries no human author
+// and is_ai_summary = true.
+func TestIncidentRepository_ConfirmPendingClose_AppendsUpdate_NoAuthorIsAISummary(t *testing.T) {
+	repo, pool := newIncidentRepoTestPool(t)
+	incident := createIncidentFixture(t, repo, pool, "confirm-close authorship incident")
+
+	if err := repo.SetPendingCloseComment(context.Background(), incident.ID, "service recovered"); err != nil {
+		t.Fatalf("setup SetPendingCloseComment() returned unexpected error: %v", err)
+	}
+	if _, err := repo.ConfirmPendingClose(context.Background(), incident.ID, "service recovered"); err != nil {
+		t.Fatalf("ConfirmPendingClose() returned unexpected error: %v", err)
+	}
+
+	updates, err := repo.ListUpdates(context.Background(), incident.ID)
+	if err != nil {
+		t.Fatalf("ListUpdates() returned unexpected error: %v", err)
+	}
+	if len(updates) != 1 {
+		t.Fatalf("len(updates) = %d, want 1", len(updates))
+	}
+	if updates[0].AuthorID != nil {
+		t.Errorf("AuthorID = %v, want nil", updates[0].AuthorID)
+	}
+	if !updates[0].IsAISummary {
+		t.Error("IsAISummary = false, want true")
 	}
 }
