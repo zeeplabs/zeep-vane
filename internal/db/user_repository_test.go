@@ -169,6 +169,43 @@ func TestUserRepository_GetByID_Missing_ErrNotFound(t *testing.T) {
 // owns it now, by TestTenantMembershipRepository_UpdateRole_PersistsRole
 // and TestTenantMembershipRepository_UpdateRole_Unknown_ErrNotFound.
 
+// TestUserRepository_UpdateName_RoundTrips covers PROFSS-01: UpdateName
+// persists the new name, readable back via GetByID.
+func TestUserRepository_UpdateName_RoundTrips(t *testing.T) {
+	repo, pool := newUserRepositoryForTest(t)
+	ctx := context.Background()
+	email := uniqueTestEmail(t)
+	t.Cleanup(func() { _, _ = pool.Exec(ctx, "DELETE FROM users WHERE email = $1", email) })
+
+	admin := &User{Email: email, PasswordHash: "hash"}
+	if err := repo.Create(ctx, admin); err != nil {
+		t.Fatalf("Create() returned unexpected error: %v", err)
+	}
+
+	if err := repo.UpdateName(ctx, admin.ID, "Updated Name"); err != nil {
+		t.Fatalf("UpdateName() returned unexpected error: %v", err)
+	}
+
+	got, err := repo.GetByID(ctx, admin.ID)
+	if err != nil {
+		t.Fatalf("GetByID() returned unexpected error: %v", err)
+	}
+	if got.Name != "Updated Name" {
+		t.Errorf("Name = %q, want %q", got.Name, "Updated Name")
+	}
+}
+
+// TestUserRepository_UpdateName_Missing_ErrNotFound covers UpdateName's
+// not-found path.
+func TestUserRepository_UpdateName_Missing_ErrNotFound(t *testing.T) {
+	repo, _ := newUserRepositoryForTest(t)
+
+	err := repo.UpdateName(context.Background(), "00000000-0000-0000-0000-000000000000", "Nobody")
+	if !errors.Is(err, ErrNotFound) {
+		t.Fatalf("UpdateName() error = %v, want ErrNotFound", err)
+	}
+}
+
 func TestUserRepository_RevokeSessions_SetsSessionsRevokedAt(t *testing.T) {
 	repo, pool := newUserRepositoryForTest(t)
 	ctx := context.Background()

@@ -116,6 +116,23 @@ func (r *UserRepository) GetByID(ctx context.Context, id string) (*User, error) 
 	return &user, nil
 }
 
+// UpdateName sets the display name for the user with the given ID
+// (profile-self-service PROFSS-01), returning ErrNotFound if no such user
+// exists.
+func (r *UserRepository) UpdateName(ctx context.Context, userID, name string) error {
+	tag, err := r.pool.Exec(ctx,
+		"UPDATE users SET name = $1 WHERE id = $2", name, userID,
+	)
+	if err != nil {
+		return fmt.Errorf("db: failed to update user name: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+
+	return nil
+}
+
 // UpdatePasswordHash sets a new password hash for the user with the given
 // ID, returning ErrNotFound if no such user exists.
 func (r *UserRepository) UpdatePasswordHash(ctx context.Context, userID, passwordHash string) error {
