@@ -16,7 +16,10 @@ import (
 	"github.com/go-chi/chi/v5"
 	"go.uber.org/zap"
 
+	"github.com/pquerna/otp/totp"
+
 	"github.com/zeeplabs/zeep-vane/internal/auth"
+	"github.com/zeeplabs/zeep-vane/internal/crypto"
 	"github.com/zeeplabs/zeep-vane/internal/db"
 	"github.com/zeeplabs/zeep-vane/internal/dbtest"
 )
@@ -34,9 +37,21 @@ func testDatabaseURL(t *testing.T) string {
 
 func newLoginRouter(t *testing.T) (http.Handler, *db.UserRepository, *db.Pool) {
 	t.Helper()
+	r, repo, _, _, pool := newLoginRouterWith2FA(t)
+	return r, repo, pool
+}
+
+// newLoginRouterWith2FA is newLoginRouter, additionally exposing the
+// TwoFactorRepository/TwoFactorChallengeRepository backing the handler and
+// mounting POST /api/auth/login/verify-2fa - used by the auth-2fa-totp T9/T10
+// tests that need to drive a user through Login's 2FA branch and then
+// verify-2fa, alongside the plain-login tests above that don't touch 2FA at
+// all.
+func newLoginRouterWith2FA(t *testing.T) (r http.Handler, repo *db.UserRepository, twoFactor *db.TwoFactorRepository, challenges *db.TwoFactorChallengeRepository, pool *db.Pool) {
+	t.Helper()
 	dsn := testDatabaseURL(t)
 
-	pool, _ := newAPITenantScopedPool(t)
+	pool, _ = newAPITenantScopedPool(t)
 
 	// Every test using this router creates an admin via createTestAdmin,
 	// and creating identity rows here races other packages' bulk clears
@@ -47,17 +62,20 @@ func newLoginRouter(t *testing.T) (http.Handler, *db.UserRepository, *db.Pool) {
 	// as soon as this function returns.
 	dbtest.LockUsersTable(t, context.Background(), dsn)
 
-	repo := db.NewUserRepository(pool)
+	repo = db.NewUserRepository(pool)
 	memberships := db.NewTenantMembershipRepository(pool)
+	twoFactor = db.NewTwoFactorRepository(pool)
+	challenges = db.NewTwoFactorChallengeRepository(pool)
 	// secureCookies=true: this file's cookie assertions expect the default,
 	// Secure-only behavior. The off case is covered separately by
 	// TestLogin_SecureCookiesDisabled_CookieNotSecure.
-	handler := NewAuthHandler(repo, memberships, db.NewTwoFactorRepository(pool), pool, zap.NewNop(), testSessionSecret, true, testMasterKey)
+	handler := NewAuthHandler(repo, memberships, twoFactor, challenges, pool, zap.NewNop(), testSessionSecret, true, testMasterKey)
 
-	r := chi.NewRouter()
-	r.Post("/api/auth/login", handler.Login)
+	router := chi.NewRouter()
+	router.Post("/api/auth/login", handler.Login)
+	router.Post("/api/auth/login/verify-2fa", handler.VerifyTwoFactor)
 
-	return r, repo, pool
+	return router, repo, twoFactor, challenges, pool
 }
 
 func uniqueTestEmail(t *testing.T) string {
@@ -231,7 +249,7 @@ func TestLogin_SecureCookiesDisabled_CookieNotSecure(t *testing.T) {
 
 	repo := db.NewUserRepository(pool)
 	memberships := db.NewTenantMembershipRepository(pool)
-	handler := NewAuthHandler(repo, memberships, db.NewTwoFactorRepository(pool), pool, zap.NewNop(), testSessionSecret, false, testMasterKey)
+	handler := NewAuthHandler(repo, memberships, db.NewTwoFactorRepository(pool), db.NewTwoFactorChallengeRepository(pool), pool, zap.NewNop(), testSessionSecret, false, testMasterKey)
 	r := chi.NewRouter()
 	r.Post("/api/auth/login", handler.Login)
 
@@ -290,7 +308,7 @@ func newMeRouter(t *testing.T) (http.Handler, *db.UserRepository, *db.Pool) {
 
 	repo := db.NewUserRepository(pool)
 	memberships := db.NewTenantMembershipRepository(pool)
-	handler := NewAuthHandler(repo, memberships, db.NewTwoFactorRepository(pool), pool, zap.NewNop(), testSessionSecret, true, testMasterKey)
+	handler := NewAuthHandler(repo, memberships, db.NewTwoFactorRepository(pool), db.NewTwoFactorChallengeRepository(pool), pool, zap.NewNop(), testSessionSecret, true, testMasterKey)
 
 	r := chi.NewRouter()
 	r.Group(func(protected chi.Router) {
@@ -387,7 +405,7 @@ func newLogoutRouter(t *testing.T) (http.Handler, *db.UserRepository, *db.Pool) 
 
 	repo := db.NewUserRepository(pool)
 	memberships := db.NewTenantMembershipRepository(pool)
-	handler := NewAuthHandler(repo, memberships, db.NewTwoFactorRepository(pool), pool, zap.NewNop(), testSessionSecret, true, testMasterKey)
+	handler := NewAuthHandler(repo, memberships, db.NewTwoFactorRepository(pool), db.NewTwoFactorChallengeRepository(pool), pool, zap.NewNop(), testSessionSecret, true, testMasterKey)
 
 	r := chi.NewRouter()
 	protected := chi.NewRouter()
@@ -986,5 +1004,302 @@ func TestChangePassword_NoSession_401(t *testing.T) {
 
 	if rec.Code != http.StatusUnauthorized {
 		t.Errorf("status = %d, want %d", rec.Code, http.StatusUnauthorized)
+	}
+}
+
+// enableTwoFactorForUser drives userID directly into a confirmed 2FA state
+// via the repository (bypassing the enroll/confirm HTTP endpoints, which
+// have their own dedicated tests in two_factor_handler_test.go), returning
+// the raw TOTP secret so a test can compute valid codes against it.
+func enableTwoFactorForUser(t *testing.T, twoFactor *db.TwoFactorRepository, userID, email string) (secret string) {
+	t.Helper()
+	secret, _, err := auth.GenerateTOTPSecret(email, twoFactorIssuer)
+	if err != nil {
+		t.Fatalf("GenerateTOTPSecret() returned unexpected error: %v", err)
+	}
+	encrypted, err := crypto.Encrypt(testMasterKey, []byte(secret))
+	if err != nil {
+		t.Fatalf("crypto.Encrypt() returned unexpected error: %v", err)
+	}
+	ctx := context.Background()
+	if err := twoFactor.CreatePendingSecret(ctx, userID, encrypted); err != nil {
+		t.Fatalf("CreatePendingSecret() returned unexpected error: %v", err)
+	}
+	if err := twoFactor.ConfirmSecret(ctx, userID); err != nil {
+		t.Fatalf("ConfirmSecret() returned unexpected error: %v", err)
+	}
+	return secret
+}
+
+func postVerifyTwoFactor(t *testing.T, r http.Handler, challengeToken, code string) *httptest.ResponseRecorder {
+	t.Helper()
+	body, err := json.Marshal(verifyTwoFactorRequest{ChallengeToken: challengeToken, Code: code})
+	if err != nil {
+		t.Fatalf("json.Marshal() returned unexpected error: %v", err)
+	}
+	req := httptest.NewRequest(http.MethodPost, "/api/auth/login/verify-2fa", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+	return rec
+}
+
+func vaneSessionCookie(rec *httptest.ResponseRecorder) *http.Cookie {
+	for _, c := range rec.Result().Cookies() {
+		if c.Name == sessionCookieName {
+			return c
+		}
+	}
+	return nil
+}
+
+// TestLogin_TwoFactorEnabled_200WithChallengeTokenNoCookie proves TOTP-05:
+// a 2FA-enabled user's correct password does not by itself issue a session.
+func TestLogin_TwoFactorEnabled_200WithChallengeTokenNoCookie(t *testing.T) {
+	r, repo, twoFactor, _, pool := newLoginRouterWith2FA(t)
+	email := uniqueTestEmail(t)
+	createTestAdmin(t, repo, pool, email, "correct-horse-battery-staple")
+	admin, err := repo.GetByEmail(context.Background(), email)
+	if err != nil {
+		t.Fatalf("GetByEmail() returned unexpected error: %v", err)
+	}
+	enableTwoFactorForUser(t, twoFactor, admin.ID, email)
+
+	rec := postLogin(t, r, email, "correct-horse-battery-staple")
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	if vaneSessionCookie(rec) != nil {
+		t.Error("vane_session cookie set on a 2FA-enabled login, want none until verify-2fa succeeds")
+	}
+	var body loginChallengeResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+	if body.ChallengeToken == "" {
+		t.Error("response has empty challenge_token, want a non-empty challenge token")
+	}
+}
+
+// TestLogin_TwoFactorDisabled_UnaffectedByHandlerWithChallengeSupport
+// re-confirms, on the same handler wiring VerifyTwoFactor now shares, that a
+// user without 2FA still gets a full session directly from Login (TOTP-09) -
+// T8 already proved this for the pre-2FA-branch Login; this joins it to the
+// post-branch handler construction.
+func TestLogin_TwoFactorDisabled_UnaffectedByHandlerWithChallengeSupport(t *testing.T) {
+	r, repo, _, _, pool := newLoginRouterWith2FA(t)
+	email := uniqueTestEmail(t)
+	createTestAdmin(t, repo, pool, email, "correct-horse-battery-staple")
+
+	rec := postLogin(t, r, email, "correct-horse-battery-staple")
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	if vaneSessionCookie(rec) == nil {
+		t.Error("no vane_session cookie set, want one for a user without 2FA enabled")
+	}
+}
+
+// TestVerifyTwoFactor_CorrectCode_200IssuesSession proves TOTP-06.
+func TestVerifyTwoFactor_CorrectCode_200IssuesSession(t *testing.T) {
+	r, repo, twoFactor, _, pool := newLoginRouterWith2FA(t)
+	email := uniqueTestEmail(t)
+	tenantID := createTestAdmin(t, repo, pool, email, "correct-horse-battery-staple")
+	admin, err := repo.GetByEmail(context.Background(), email)
+	if err != nil {
+		t.Fatalf("GetByEmail() returned unexpected error: %v", err)
+	}
+	secret := enableTwoFactorForUser(t, twoFactor, admin.ID, email)
+
+	loginRec := postLogin(t, r, email, "correct-horse-battery-staple")
+	var challenge loginChallengeResponse
+	if err := json.Unmarshal(loginRec.Body.Bytes(), &challenge); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+
+	code, err := totp.GenerateCode(secret, time.Now())
+	if err != nil {
+		t.Fatalf("totp.GenerateCode() returned unexpected error: %v", err)
+	}
+	rec := postVerifyTwoFactor(t, r, challenge.ChallengeToken, code)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	if vaneSessionCookie(rec) == nil {
+		t.Error("no vane_session cookie set after a correct verify-2fa, want one")
+	}
+	var body loginResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+	if body.Token == "" {
+		t.Error("response has empty token, want the same loginResponse shape as a direct Login")
+	}
+	if body.TenantID != tenantID {
+		t.Errorf("response tenant_id = %q, want %q", body.TenantID, tenantID)
+	}
+}
+
+// TestVerifyTwoFactor_MalformedToken_401 proves TOTP-07's malformed-token
+// branch.
+func TestVerifyTwoFactor_MalformedToken_401(t *testing.T) {
+	r, _, _, _, _ := newLoginRouterWith2FA(t)
+
+	rec := postVerifyTwoFactor(t, r, "not-a-real-token", "123456")
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Errorf("status = %d, want %d", rec.Code, http.StatusUnauthorized)
+	}
+	if vaneSessionCookie(rec) != nil {
+		t.Error("vane_session cookie set for a malformed challenge token, want none")
+	}
+}
+
+// TestVerifyTwoFactor_ExpiredChallengeRow_401 proves TOTP-07's expired-token
+// branch, backed by the challenge row's own expires_at (not just the JWT's
+// exp) - a signed-but-row-expired challenge must still be rejected.
+func TestVerifyTwoFactor_ExpiredChallengeRow_401(t *testing.T) {
+	r, repo, twoFactor, challenges, pool := newLoginRouterWith2FA(t)
+	email := uniqueTestEmail(t)
+	createTestAdmin(t, repo, pool, email, "correct-horse-battery-staple")
+	admin, err := repo.GetByEmail(context.Background(), email)
+	if err != nil {
+		t.Fatalf("GetByEmail() returned unexpected error: %v", err)
+	}
+	secret := enableTwoFactorForUser(t, twoFactor, admin.ID, email)
+
+	jti, _, err := challenges.Create(context.Background(), admin.ID, -1*time.Second)
+	if err != nil {
+		t.Fatalf("Create() returned unexpected error: %v", err)
+	}
+	token, err := auth.IssueTwoFactorChallenge(admin.ID, jti, testSessionSecret)
+	if err != nil {
+		t.Fatalf("IssueTwoFactorChallenge() returned unexpected error: %v", err)
+	}
+	code, err := totp.GenerateCode(secret, time.Now())
+	if err != nil {
+		t.Fatalf("totp.GenerateCode() returned unexpected error: %v", err)
+	}
+
+	rec := postVerifyTwoFactor(t, r, token, code)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Errorf("status = %d, want %d, body = %s", rec.Code, http.StatusUnauthorized, rec.Body.String())
+	}
+	if vaneSessionCookie(rec) != nil {
+		t.Error("vane_session cookie set for an expired challenge, want none")
+	}
+}
+
+// TestVerifyTwoFactor_AlreadyConsumedToken_401 proves TOTP-07's
+// already-consumed branch.
+func TestVerifyTwoFactor_AlreadyConsumedToken_401(t *testing.T) {
+	r, repo, twoFactor, _, pool := newLoginRouterWith2FA(t)
+	email := uniqueTestEmail(t)
+	createTestAdmin(t, repo, pool, email, "correct-horse-battery-staple")
+	admin, err := repo.GetByEmail(context.Background(), email)
+	if err != nil {
+		t.Fatalf("GetByEmail() returned unexpected error: %v", err)
+	}
+	secret := enableTwoFactorForUser(t, twoFactor, admin.ID, email)
+
+	loginRec := postLogin(t, r, email, "correct-horse-battery-staple")
+	var challenge loginChallengeResponse
+	if err := json.Unmarshal(loginRec.Body.Bytes(), &challenge); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+	code, err := totp.GenerateCode(secret, time.Now())
+	if err != nil {
+		t.Fatalf("totp.GenerateCode() returned unexpected error: %v", err)
+	}
+
+	first := postVerifyTwoFactor(t, r, challenge.ChallengeToken, code)
+	if first.Code != http.StatusOK {
+		t.Fatalf("first verify-2fa status = %d, want %d, body = %s", first.Code, http.StatusOK, first.Body.String())
+	}
+
+	second := postVerifyTwoFactor(t, r, challenge.ChallengeToken, code)
+	if second.Code != http.StatusUnauthorized {
+		t.Errorf("second verify-2fa (same token) status = %d, want %d, body = %s", second.Code, http.StatusUnauthorized, second.Body.String())
+	}
+	if vaneSessionCookie(second) != nil {
+		t.Error("vane_session cookie set on an already-consumed challenge retry, want none")
+	}
+}
+
+// TestVerifyTwoFactor_WrongCode_401TokenStaysUsable proves TOTP-08: a wrong
+// code does not consume the challenge - a correct code retried on the same
+// token still succeeds.
+func TestVerifyTwoFactor_WrongCode_401TokenStaysUsable(t *testing.T) {
+	r, repo, twoFactor, _, pool := newLoginRouterWith2FA(t)
+	email := uniqueTestEmail(t)
+	createTestAdmin(t, repo, pool, email, "correct-horse-battery-staple")
+	admin, err := repo.GetByEmail(context.Background(), email)
+	if err != nil {
+		t.Fatalf("GetByEmail() returned unexpected error: %v", err)
+	}
+	secret := enableTwoFactorForUser(t, twoFactor, admin.ID, email)
+
+	loginRec := postLogin(t, r, email, "correct-horse-battery-staple")
+	var challenge loginChallengeResponse
+	if err := json.Unmarshal(loginRec.Body.Bytes(), &challenge); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+
+	wrongRec := postVerifyTwoFactor(t, r, challenge.ChallengeToken, "000000")
+	if wrongRec.Code != http.StatusUnauthorized {
+		t.Fatalf("wrong-code status = %d, want %d, body = %s", wrongRec.Code, http.StatusUnauthorized, wrongRec.Body.String())
+	}
+	if vaneSessionCookie(wrongRec) != nil {
+		t.Error("vane_session cookie set on a wrong verify-2fa code, want none")
+	}
+
+	code, err := totp.GenerateCode(secret, time.Now())
+	if err != nil {
+		t.Fatalf("totp.GenerateCode() returned unexpected error: %v", err)
+	}
+	retryRec := postVerifyTwoFactor(t, r, challenge.ChallengeToken, code)
+	if retryRec.Code != http.StatusOK {
+		t.Fatalf("retry with correct code status = %d, want %d, body = %s", retryRec.Code, http.StatusOK, retryRec.Body.String())
+	}
+}
+
+// TestVerifyTwoFactor_TwoFactorDisabledSinceChallengeIssued_401 proves the
+// spec.md edge case: 2FA disabled between Login issuing the challenge and
+// verify-2fa being called must reject, not silently issue a session.
+func TestVerifyTwoFactor_TwoFactorDisabledSinceChallengeIssued_401(t *testing.T) {
+	r, repo, twoFactor, _, pool := newLoginRouterWith2FA(t)
+	email := uniqueTestEmail(t)
+	createTestAdmin(t, repo, pool, email, "correct-horse-battery-staple")
+	admin, err := repo.GetByEmail(context.Background(), email)
+	if err != nil {
+		t.Fatalf("GetByEmail() returned unexpected error: %v", err)
+	}
+	secret := enableTwoFactorForUser(t, twoFactor, admin.ID, email)
+
+	loginRec := postLogin(t, r, email, "correct-horse-battery-staple")
+	var challenge loginChallengeResponse
+	if err := json.Unmarshal(loginRec.Body.Bytes(), &challenge); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+	code, err := totp.GenerateCode(secret, time.Now())
+	if err != nil {
+		t.Fatalf("totp.GenerateCode() returned unexpected error: %v", err)
+	}
+
+	if err := twoFactor.DeleteSecret(context.Background(), admin.ID); err != nil {
+		t.Fatalf("DeleteSecret() returned unexpected error: %v", err)
+	}
+
+	rec := postVerifyTwoFactor(t, r, challenge.ChallengeToken, code)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Errorf("status = %d, want %d, body = %s", rec.Code, http.StatusUnauthorized, rec.Body.String())
+	}
+	if vaneSessionCookie(rec) != nil {
+		t.Error("vane_session cookie set despite 2FA having been disabled since the challenge was issued, want none")
 	}
 }

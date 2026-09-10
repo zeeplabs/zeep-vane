@@ -14,9 +14,11 @@ import (
 // (auth-2fa-totp design.md).
 const twoFactorChallengeAudience = "2fa_challenge"
 
-// twoFactorChallengeTTL is how long an issued 2FA challenge token stays
-// valid (spec.md Assumptions: 5 minutes).
-const twoFactorChallengeTTL = 5 * time.Minute
+// TwoFactorChallengeTTL is how long an issued 2FA challenge token stays
+// valid (spec.md Assumptions: 5 minutes). Exported so a caller backing the
+// token with a server-side row (internal/db.TwoFactorChallengeRepository.Create)
+// can expire that row on the exact same schedule as the signed token itself.
+const TwoFactorChallengeTTL = 5 * time.Minute
 
 // GenerateTOTPSecret generates a new random TOTP secret for accountEmail,
 // under issuer, returning the raw base32 secret (for manual entry) and the
@@ -54,7 +56,7 @@ type twoFactorChallengeClaims struct {
 // ID), using secret. The token carries Audience: ["2fa_challenge"], so
 // VerifySessionClaims will always reject it as a session token.
 func IssueTwoFactorChallenge(userID, jti, secret string) (string, error) {
-	return issueTwoFactorChallengeWithTTL(userID, jti, secret, twoFactorChallengeTTL)
+	return issueTwoFactorChallengeWithTTL(userID, jti, secret, TwoFactorChallengeTTL)
 }
 
 // issueTwoFactorChallengeWithTTL is IssueTwoFactorChallenge with an explicit

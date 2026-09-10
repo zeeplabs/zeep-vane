@@ -35,7 +35,7 @@ func newSignupRouterWithEmail(t *testing.T, emailSvc *email.Service) (http.Handl
 	verifications := db.NewEmailVerificationRepository(pool)
 
 	signupHandler := NewSignupHandler(pool, users, tenants, memberships, verifications, emailSvc, zap.NewNop(), false, testAdminBaseURL)
-	authHandler := NewAuthHandler(users, memberships, db.NewTwoFactorRepository(pool), pool, zap.NewNop(), testSessionSecret, true, testMasterKey)
+	authHandler := NewAuthHandler(users, memberships, db.NewTwoFactorRepository(pool), db.NewTwoFactorChallengeRepository(pool), pool, zap.NewNop(), testSessionSecret, true, testMasterKey)
 
 	r := chi.NewRouter()
 	r.Post("/api/signup", signupHandler.Signup)

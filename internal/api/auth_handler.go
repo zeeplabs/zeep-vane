@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"time"
 
 	"go.uber.org/zap"
 
@@ -20,6 +21,7 @@ import (
 // userGetter is the subset of *db.UserRepository AuthHandler depends on.
 type userGetter interface {
 	GetByEmail(ctx context.Context, email string) (*db.User, error)
+	GetByID(ctx context.Context, id string) (*db.User, error)
 	UpdateName(ctx context.Context, userID, name string) error
 	UpdatePasswordHash(ctx context.Context, userID, passwordHash string) error
 	RevokeSessions(ctx context.Context, id string) error
@@ -41,6 +43,15 @@ type twoFactorStore interface {
 	CreateRecoveryCodes(ctx context.Context, userID string, hashes []string) error
 }
 
+// twoFactorChallengeStore is the subset of *db.TwoFactorChallengeRepository
+// AuthHandler depends on for the pre-2FA challenge token's server-side
+// one-time-use state (auth-2fa-totp T9).
+type twoFactorChallengeStore interface {
+	Create(ctx context.Context, userID string, ttl time.Duration) (jti string, expiresAt time.Time, err error)
+	Lookup(ctx context.Context, jti string) (*db.TwoFactorChallenge, error)
+	MarkUsed(ctx context.Context, jti string) (userID string, ok bool, err error)
+}
+
 // twoFactorIssuer is the otpauth:// issuer name shown in an authenticator
 // app's entry for an enrolled account. Not configurable - this codebase has
 // no instance-name/branding config field to source it from (auth-2fa-totp
@@ -52,6 +63,7 @@ type AuthHandler struct {
 	users         userGetter
 	memberships   authMembershipLister
 	twoFactor     twoFactorStore
+	challenges    twoFactorChallengeStore
 	pool          *db.Pool
 	logger        *zap.Logger
 	sessionSecret string
@@ -59,19 +71,21 @@ type AuthHandler struct {
 	masterKey     string
 }
 
-// NewAuthHandler builds an AuthHandler backed by users, memberships, and
-// twoFactor. pool backs Login's own tenant-membership lookup (a public
-// route, ahead of the tenant-context middleware - it manages its own
-// short-lived transaction with app.user_id set to resolve which tenant(s)
-// the authenticating user belongs to). sessionSecret signs issued session
-// tokens (see internal/auth.IssueSession). secureCookies controls the
-// vane_session cookie's Secure attribute (H9) - false only for an operator
-// who has explicitly accepted plaintext-network session risk via
+// NewAuthHandler builds an AuthHandler backed by users, memberships,
+// twoFactor, and challenges. pool backs Login's own tenant-membership lookup
+// (a public route, ahead of the tenant-context middleware - it manages its
+// own short-lived transaction with app.user_id set to resolve which
+// tenant(s) the authenticating user belongs to). sessionSecret signs issued
+// session tokens (see internal/auth.IssueSession) and 2FA challenge tokens
+// (internal/auth.IssueTwoFactorChallenge) - the same HMAC secret backs both,
+// distinguished only by claim shape (auth-2fa-totp design.md). secureCookies
+// controls the vane_session cookie's Secure attribute (H9) - false only for
+// an operator who has explicitly accepted plaintext-network session risk via
 // VANE_SECURE_COOKIES=false. masterKey encrypts/decrypts TOTP secrets at
 // rest (internal/crypto.Encrypt, same primitive email_provider_repository.go
 // uses for provider API keys).
-func NewAuthHandler(users userGetter, memberships authMembershipLister, twoFactor twoFactorStore, pool *db.Pool, logger *zap.Logger, sessionSecret string, secureCookies bool, masterKey string) *AuthHandler {
-	return &AuthHandler{users: users, memberships: memberships, twoFactor: twoFactor, pool: pool, logger: logger, sessionSecret: sessionSecret, secureCookies: secureCookies, masterKey: masterKey}
+func NewAuthHandler(users userGetter, memberships authMembershipLister, twoFactor twoFactorStore, challenges twoFactorChallengeStore, pool *db.Pool, logger *zap.Logger, sessionSecret string, secureCookies bool, masterKey string) *AuthHandler {
+	return &AuthHandler{users: users, memberships: memberships, twoFactor: twoFactor, challenges: challenges, pool: pool, logger: logger, sessionSecret: sessionSecret, secureCookies: secureCookies, masterKey: masterKey}
 }
 
 type loginRequest struct {
@@ -137,6 +151,148 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 
 	if user.EmailVerifiedAt == nil {
 		writeAdminError(w, http.StatusForbidden, emailNotVerifiedBody)
+		return
+	}
+
+	secret, err := h.twoFactor.GetSecret(r.Context(), user.ID)
+	if err != nil && !errors.Is(err, db.ErrNotFound) {
+		h.logger.Error("auth: failed to look up 2FA secret at login", zap.Error(err))
+		writeInternalError(w)
+		return
+	}
+	if secret != nil && secret.EnabledAt != nil {
+		h.issueTwoFactorChallenge(w, r, user.ID)
+		return
+	}
+
+	h.issueSessionForUser(w, r, user)
+}
+
+type loginChallengeResponse struct {
+	ChallengeToken string `json:"challenge_token"`
+}
+
+// issueTwoFactorChallenge responds 200 with a short-lived challenge token
+// for userID instead of a session (TOTP-05) - Login takes this path only
+// for a user whose 2FA is confirmed enabled. No vane_session cookie is set;
+// the caller must complete POST /api/auth/login/verify-2fa to obtain one.
+func (h *AuthHandler) issueTwoFactorChallenge(w http.ResponseWriter, r *http.Request, userID string) {
+	jti, _, err := h.challenges.Create(r.Context(), userID, auth.TwoFactorChallengeTTL)
+	if err != nil {
+		h.logger.Error("auth: failed to create 2FA challenge", zap.Error(err))
+		writeInternalError(w)
+		return
+	}
+
+	token, err := auth.IssueTwoFactorChallenge(userID, jti, h.sessionSecret)
+	if err != nil {
+		h.logger.Error("auth: failed to issue 2FA challenge token", zap.Error(err))
+		writeInternalError(w)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(loginChallengeResponse{ChallengeToken: token})
+}
+
+type verifyTwoFactorRequest struct {
+	ChallengeToken string `json:"challenge_token"`
+	Code           string `json:"code"`
+}
+
+// invalidTwoFactorChallengeBody is returned for every verify-2fa failure
+// mode (expired/malformed/already-consumed token, wrong code) - a single
+// generic body, matching this codebase's anti-enumeration convention for
+// auth failures (genericLoginErrorBody).
+const invalidTwoFactorChallengeBody = `{"error":"invalid or expired verification"}`
+
+func writeInvalidTwoFactorChallenge(w http.ResponseWriter) {
+	writeAdminError(w, http.StatusUnauthorized, invalidTwoFactorChallengeBody)
+}
+
+// VerifyTwoFactor handles POST /api/auth/login/verify-2fa, completing the
+// login Login deferred when it issued a challenge token for a 2FA-enabled
+// user. It validates req.ChallengeToken (signature, expiry, audience claim,
+// and - via the backing two_factor_challenges row - not already consumed),
+// then req.Code against that user's confirmed TOTP secret. On success it
+// atomically claims the challenge row (so it can never be reused, TOTP-07)
+// and issues a full session exactly like Login would (TOTP-06). A wrong
+// code leaves the challenge unconsumed so the user may retry within its
+// remaining validity (TOTP-08).
+func (h *AuthHandler) VerifyTwoFactor(w http.ResponseWriter, r *http.Request) {
+	var req verifyTwoFactorRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.ChallengeToken == "" {
+		writeInvalidTwoFactorChallenge(w)
+		return
+	}
+
+	claimUserID, jti, err := auth.VerifyTwoFactorChallenge(req.ChallengeToken, h.sessionSecret)
+	if err != nil {
+		writeInvalidTwoFactorChallenge(w)
+		return
+	}
+
+	challenge, err := h.challenges.Lookup(r.Context(), jti)
+	if err != nil {
+		if errors.Is(err, db.ErrNotFound) {
+			writeInvalidTwoFactorChallenge(w)
+			return
+		}
+		h.logger.Error("auth: failed to look up 2FA challenge", zap.Error(err))
+		writeInternalError(w)
+		return
+	}
+	if challenge.UserID != claimUserID || challenge.UsedAt != nil || time.Now().After(challenge.ExpiresAt) {
+		writeInvalidTwoFactorChallenge(w)
+		return
+	}
+
+	secret, err := h.twoFactor.GetSecret(r.Context(), claimUserID)
+	if err != nil {
+		if errors.Is(err, db.ErrNotFound) {
+			// 2FA was disabled after the challenge was issued (spec.md Edge
+			// Cases) - the challenge's implied precondition no longer holds.
+			writeInvalidTwoFactorChallenge(w)
+			return
+		}
+		h.logger.Error("auth: failed to look up 2FA secret for verify-2fa", zap.Error(err))
+		writeInternalError(w)
+		return
+	}
+	if secret.EnabledAt == nil {
+		writeInvalidTwoFactorChallenge(w)
+		return
+	}
+
+	decryptedSecret, err := crypto.Decrypt(h.masterKey, secret.EncryptedSecret)
+	if err != nil {
+		h.logger.Error("auth: failed to decrypt 2FA secret for verify-2fa", zap.Error(err))
+		writeInternalError(w)
+		return
+	}
+
+	if !auth.ValidateTOTPCode(string(decryptedSecret), req.Code) {
+		writeInvalidTwoFactorChallenge(w)
+		return
+	}
+
+	if _, ok, err := h.challenges.MarkUsed(r.Context(), jti); err != nil {
+		h.logger.Error("auth: failed to mark 2FA challenge used", zap.Error(err))
+		writeInternalError(w)
+		return
+	} else if !ok {
+		// Lost a race with a concurrent verify-2fa call on the same
+		// challenge (design.md Risks & Concerns) - the other request already
+		// claimed it.
+		writeInvalidTwoFactorChallenge(w)
+		return
+	}
+
+	user, err := h.users.GetByID(r.Context(), claimUserID)
+	if err != nil {
+		h.logger.Error("auth: failed to look up user for verify-2fa", zap.Error(err))
+		writeInternalError(w)
 		return
 	}
 

@@ -33,7 +33,7 @@ func newTwoFactorRouter(t *testing.T) (http.Handler, *db.UserRepository, *db.Two
 	users := db.NewUserRepository(pool)
 	memberships := db.NewTenantMembershipRepository(pool)
 	twoFactor := db.NewTwoFactorRepository(pool)
-	handler := NewAuthHandler(users, memberships, twoFactor, pool, zap.NewNop(), testSessionSecret, true, testMasterKey)
+	handler := NewAuthHandler(users, memberships, twoFactor, db.NewTwoFactorChallengeRepository(pool), pool, zap.NewNop(), testSessionSecret, true, testMasterKey)
 
 	r := chi.NewRouter()
 	r.Group(func(protected chi.Router) {

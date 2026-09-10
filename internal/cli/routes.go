@@ -75,7 +75,7 @@ func buildAdminRouter(pool *db.Pool, cfg config.Config, logger *zap.Logger, poll
 	llmService := llm.NewService(db.NewLLMProviderStore(db.NewLLMProviderRepository(pool)), llmProviderFactory, cfg.MasterKey, logger)
 	llmProvidersHandler := api.NewLLMProvidersHandler(llmService, logger)
 
-	authHandler := api.NewAuthHandler(users, tenantMembershipsRepo, db.NewTwoFactorRepository(pool), pool, logger, cfg.SessionSecret, cfg.SecureCookies, cfg.MasterKey)
+	authHandler := api.NewAuthHandler(users, tenantMembershipsRepo, db.NewTwoFactorRepository(pool), db.NewTwoFactorChallengeRepository(pool), pool, logger, cfg.SessionSecret, cfg.SecureCookies, cfg.MasterKey)
 	bootstrapHandler := api.NewBootstrapHandler(pool, users, tenantsRepo, tenantMembershipsRepo, logger, cfg.SessionSecret, cfg.SecureCookies)
 	signupHandler := api.NewSignupHandler(pool, users, tenantsRepo, tenantMembershipsRepo, db.NewEmailVerificationRepository(pool), emailService, logger, cfg.DevTokenLogging, cfg.AdminBaseURL)
 	passwordResetHandler := api.NewPasswordResetHandler(users, db.NewPasswordResetRepository(pool), emailService, tenantsRepo, logger, cfg.DevTokenLogging, cfg.AdminBaseURL)
@@ -106,6 +106,10 @@ func buildAdminRouter(pool *db.Pool, cfg config.Config, logger *zap.Logger, poll
 
 	// Public - no authentication.
 	r.With(credentialLimiter.Middleware).Post("/api/auth/login", authHandler.Login)
+	// verify-2fa is the credential-guessing surface of the login flow (a
+	// 6-digit TOTP code, or a 10-code recovery pool) - shares the same
+	// limiter instance as login itself (auth-2fa-totp spec.md Assumptions).
+	r.With(credentialLimiter.Middleware).Post("/api/auth/login/verify-2fa", authHandler.VerifyTwoFactor)
 	r.With(credentialLimiter.Middleware).Post("/api/auth/password-reset/request", passwordResetHandler.Request)
 	r.With(credentialLimiter.Middleware).Post("/api/auth/password-reset/confirm", passwordResetHandler.Confirm)
 	r.With(credentialLimiter.Middleware).Post("/api/admins/invite/{token}/accept", adminsHandler.AcceptInvite)

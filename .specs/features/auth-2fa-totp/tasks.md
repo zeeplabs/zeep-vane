@@ -304,14 +304,14 @@ T7 → T11
 - Skill: NONE
 
 **Done when**:
-- [ ] `Login` for a 2FA-enabled user returns `200` with a challenge token, no `vane_session` cookie set
-- [ ] `Login` for a 2FA-disabled user is unaffected (T8 already guarantees this; this task re-confirms via a joint test)
-- [ ] `verify-2fa` with a valid token + correct code issues a full session (cookie set, `loginResponse` body)
-- [ ] `verify-2fa` with an expired/malformed/already-consumed token returns `401`, no session
-- [ ] `verify-2fa` with a wrong code returns `401`, challenge token remains usable for retry (not marked used)
-- [ ] `verify-2fa` rejects a challenge whose user disabled 2FA since the token was issued (edge case)
-- [ ] Gate check passes on disposable Postgres: `TEST_DATABASE_URL=... go test -tags=integration ./internal/api/...`
-- [ ] Test count: ≥8 new tests
+- [x] `Login` for a 2FA-enabled user returns `200` with a challenge token, no `vane_session` cookie set
+- [x] `Login` for a 2FA-disabled user is unaffected (T8 already guarantees this; this task re-confirms via a joint test)
+- [x] `verify-2fa` with a valid token + correct code issues a full session (cookie set, `loginResponse` body)
+- [x] `verify-2fa` with an expired/malformed/already-consumed token returns `401`, no session
+- [x] `verify-2fa` with a wrong code returns `401`, challenge token remains usable for retry (not marked used)
+- [x] `verify-2fa` rejects a challenge whose user disabled 2FA since the token was issued (edge case)
+- [x] Gate check passes on disposable Postgres: `TEST_DATABASE_URL=... go test -tags=integration ./internal/api/...`
+- [x] Test count: ≥8 new tests
 
 **Tests**: integration
 **Gate**: full
