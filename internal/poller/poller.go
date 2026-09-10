@@ -212,6 +212,12 @@ func (p *Poller) TenantIterationEnabled() bool {
 // over an empty service list is already a no-op. Otherwise it falls back
 // to the single ambient-context behavior pollOnce always had, unchanged
 // for every existing caller of NewPoller.
+//
+// Each tenant's transaction (and the Datadog calls pollOnce makes while it
+// is open, per AD-024's trade-off note) is bounded to p.interval so one
+// slow/hanging tenant can never hold its connection past the next tick -
+// worst case that tenant's cycle is cut short and retried next interval,
+// it never blocks the tenants after it in the same cycle indefinitely.
 func (p *Poller) pollCycle(ctx context.Context) {
 	if p.tenants == nil || p.tenantTx == nil {
 		p.pollOnce(ctx)
@@ -225,11 +231,15 @@ func (p *Poller) pollCycle(ctx context.Context) {
 	}
 
 	for _, tenant := range tenants {
-		tenantCtx, commit, rollback, err := p.tenantTx(ctx, tenant.ID)
+		tenantCtx, cancel := context.WithTimeout(ctx, p.interval)
+
+		tenantTxCtx, commit, rollback, err := p.tenantTx(tenantCtx, tenant.ID)
 		if err != nil {
 			p.logger.Error("poller: failed to begin tenant transaction", zap.String("tenant_id", tenant.ID), zap.Error(err))
+			cancel()
 			continue
 		}
+		tenantCtx = tenantTxCtx
 
 		p.pollOnce(tenantCtx)
 
@@ -237,6 +247,7 @@ func (p *Poller) pollCycle(ctx context.Context) {
 			p.logger.Error("poller: failed to commit tenant transaction", zap.String("tenant_id", tenant.ID), zap.Error(err))
 			rollback(tenantCtx)
 		}
+		cancel()
 	}
 }
 

@@ -334,12 +334,21 @@ func (r *TenantRepository) Active(ctx context.Context) (*Tenant, error) {
 // system_iteration_read policy from 0027 checks (AD-024). Called with a
 // plain context this stays fail-closed exactly like every other
 // tenant-scoped query.
+// legacyPlaceholderTenantID is the synthetic tenant row 0024's migration
+// inserted to hold pre-multi-tenancy data during backfill (see
+// internal/db/migrations/0024_multi_tenancy_core.up.sql). It carries no
+// real owner/membership and must never be treated as an iterable tenant -
+// List excludes it so callers like the poller's tenant enumeration never
+// waste a cycle on it.
+const legacyPlaceholderTenantID = "00000000-0000-0000-0000-000000000000"
+
 func (r *TenantRepository) List(ctx context.Context) ([]Tenant, error) {
 	rows, err := r.pool.Query(ctx,
 		`SELECT id, name, slug, plan, status, contact_email, logo_content_type,
 		        legal_name, tax_id, tax_id_type, billing_address, locale,
 		        primary_color, secondary_color, created_at
-		 FROM tenants WHERE status = 'active' ORDER BY created_at ASC`)
+		 FROM tenants WHERE status = 'active' AND id != $1 ORDER BY created_at ASC`,
+		legacyPlaceholderTenantID)
 	if err != nil {
 		return nil, fmt.Errorf("db: failed to list tenants: %w", err)
 	}
