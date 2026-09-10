@@ -162,6 +162,7 @@ func buildAdminRouter(pool *db.Pool, cfg config.Config, logger *zap.Logger, poll
 		// middleware, since UserFromContext always scopes the operation to
 		// the caller's own account.
 		protected.Post("/api/auth/2fa/enroll", authHandler.Enroll)
+		protected.Post("/api/auth/2fa/confirm", authHandler.Confirm2FA)
 
 		// Admin management (admin-dashboard ADM-09) - owner only.
 		protected.With(ownerOnly).Post("/api/admins", adminsHandler.Invite)

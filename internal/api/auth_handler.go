@@ -3,8 +3,11 @@ package api
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 
 	"go.uber.org/zap"
@@ -34,6 +37,8 @@ type authMembershipLister interface {
 type twoFactorStore interface {
 	CreatePendingSecret(ctx context.Context, userID string, encryptedSecret []byte) error
 	GetSecret(ctx context.Context, userID string) (*db.TwoFactorSecret, error)
+	ConfirmSecret(ctx context.Context, userID string) error
+	CreateRecoveryCodes(ctx context.Context, userID string, hashes []string) error
 }
 
 // twoFactorIssuer is the otpauth:// issuer name shown in an authenticator
@@ -429,6 +434,97 @@ func (h *AuthHandler) Enroll(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(enrollResponse{Secret: secret, OtpauthURI: otpauthURI})
 }
 
+type confirm2FARequest struct {
+	Code string `json:"code"`
+}
+
+const invalidConfirm2FACodeBody = `{"error":"invalid verification code"}`
+
+// recoveryCodeCount is how many one-time recovery codes are generated on
+// enrollment confirmation (spec.md Assumptions).
+const recoveryCodeCount = 10
+
+type confirm2FAResponse struct {
+	RecoveryCodes []string `json:"recovery_codes"`
+}
+
+// Confirm2FA handles POST /api/auth/2fa/confirm, validating req.Code against
+// the authenticated user's pending TOTP secret. On a correct code it enables
+// 2FA and issues 10 recovery codes, returned in plaintext exactly once
+// (TOTP-02). On a wrong code it responds 422 without enabling 2FA or
+// generating recovery codes (TOTP-03).
+func (h *AuthHandler) Confirm2FA(w http.ResponseWriter, r *http.Request) {
+	user, ok := UserFromContext(r.Context())
+	if !ok {
+		writeUnauthorized(w)
+		return
+	}
+
+	var req confirm2FARequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeAdminError(w, http.StatusUnprocessableEntity, invalidConfirm2FACodeBody)
+		return
+	}
+
+	pending, err := h.twoFactor.GetSecret(r.Context(), user.ID)
+	if err != nil {
+		if errors.Is(err, db.ErrNotFound) {
+			writeAdminError(w, http.StatusUnprocessableEntity, invalidConfirm2FACodeBody)
+			return
+		}
+		h.logger.Error("auth: failed to look up pending 2FA secret", zap.Error(err))
+		writeInternalError(w)
+		return
+	}
+
+	secret, err := crypto.Decrypt(h.masterKey, pending.EncryptedSecret)
+	if err != nil {
+		h.logger.Error("auth: failed to decrypt pending 2FA secret", zap.Error(err))
+		writeInternalError(w)
+		return
+	}
+
+	if !auth.ValidateTOTPCode(string(secret), req.Code) {
+		writeAdminError(w, http.StatusUnprocessableEntity, invalidConfirm2FACodeBody)
+		return
+	}
+
+	if err := h.twoFactor.ConfirmSecret(r.Context(), user.ID); err != nil {
+		h.logger.Error("auth: failed to confirm 2FA secret", zap.Error(err))
+		writeInternalError(w)
+		return
+	}
+
+	plainCodes := make([]string, recoveryCodeCount)
+	hashes := make([]string, recoveryCodeCount)
+	for i := range plainCodes {
+		code, err := generateRecoveryCode()
+		if err != nil {
+			h.logger.Error("auth: failed to generate recovery code", zap.Error(err))
+			writeInternalError(w)
+			return
+		}
+		hash, err := auth.HashPassword(code)
+		if err != nil {
+			h.logger.Error("auth: failed to hash recovery code", zap.Error(err))
+			writeInternalError(w)
+			return
+		}
+		plainCodes[i] = code
+		hashes[i] = hash
+	}
+
+	if err := h.twoFactor.CreateRecoveryCodes(r.Context(), user.ID, hashes); err != nil {
+		h.logger.Error("auth: failed to store recovery codes", zap.Error(err))
+		writeInternalError(w)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(confirm2FAResponse{RecoveryCodes: plainCodes})
+}
+
 // Logout expires the vane_session cookie set at login. It requires no
 // role beyond being authenticated - any user can end their own session.
 func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
@@ -510,4 +606,20 @@ func writeInternalError(w http.ResponseWriter) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusInternalServerError)
 	_, _ = w.Write([]byte(`{"error":"internal server error"}`))
+}
+
+// recoveryCodeBytes is the amount of randomness backing each generated
+// recovery code, same size class as generateResetToken's token
+// (password_reset_handler.go).
+const recoveryCodeBytes = 10
+
+// generateRecoveryCode returns a random, URL-safe plaintext one-time
+// recovery code, using the same crypto/rand + base64 pattern
+// generateResetToken already established in this package.
+func generateRecoveryCode() (string, error) {
+	raw := make([]byte, recoveryCodeBytes)
+	if _, err := rand.Read(raw); err != nil {
+		return "", fmt.Errorf("auth: failed to generate recovery code: %w", err)
+	}
+	return base64.RawURLEncoding.EncodeToString(raw), nil
 }

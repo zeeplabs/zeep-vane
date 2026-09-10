@@ -9,17 +9,20 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"go.uber.org/zap"
+
+	"github.com/pquerna/otp/totp"
 
 	"github.com/zeeplabs/zeep-vane/internal/auth"
 	"github.com/zeeplabs/zeep-vane/internal/db"
 	"github.com/zeeplabs/zeep-vane/internal/dbtest"
 )
 
-// newTwoFactorRouter builds a router exposing the 2FA enroll route behind
-// RequireAuth, backed by a fresh TwoFactorRepository.
+// newTwoFactorRouter builds a router exposing the 2FA enroll/confirm routes
+// behind RequireAuth, backed by a fresh TwoFactorRepository.
 func newTwoFactorRouter(t *testing.T) (http.Handler, *db.UserRepository, *db.TwoFactorRepository, *db.Pool) {
 	t.Helper()
 	dsn := testDatabaseURL(t)
@@ -36,6 +39,7 @@ func newTwoFactorRouter(t *testing.T) (http.Handler, *db.UserRepository, *db.Two
 	r.Group(func(protected chi.Router) {
 		protected.Use(RequireAuth(testSessionSecret, users))
 		protected.Post("/api/auth/2fa/enroll", handler.Enroll)
+		protected.Post("/api/auth/2fa/confirm", handler.Confirm2FA)
 	})
 
 	return r, users, twoFactor, pool
@@ -157,5 +161,95 @@ func TestEnroll_AlreadyEnabled_409NoMutation(t *testing.T) {
 	}
 	if got.EnabledAt == nil {
 		t.Error("EnabledAt = nil, want still set after a 409 enroll attempt")
+	}
+}
+
+func TestConfirm2FA_CorrectCode_200WithTenRecoveryCodesAndEnabled(t *testing.T) {
+	r, users, _, pool := newTwoFactorRouter(t)
+	user := createTwoFactorTestUser(t, users, pool)
+
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, authedRequest(t, http.MethodPost, "/api/auth/2fa/enroll", nil, user.ID))
+	var enrolled enrollResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &enrolled); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+
+	code, err := totp.GenerateCode(enrolled.Secret, time.Now())
+	if err != nil {
+		t.Fatalf("totp.GenerateCode() returned unexpected error: %v", err)
+	}
+	confirmBody, _ := json.Marshal(confirm2FARequest{Code: code})
+
+	confirmRec := httptest.NewRecorder()
+	r.ServeHTTP(confirmRec, authedRequest(t, http.MethodPost, "/api/auth/2fa/confirm", confirmBody, user.ID))
+	if confirmRec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", confirmRec.Code, http.StatusOK, confirmRec.Body.String())
+	}
+
+	var body confirm2FAResponse
+	if err := json.Unmarshal(confirmRec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+	if len(body.RecoveryCodes) != recoveryCodeCount {
+		t.Errorf("len(RecoveryCodes) = %d, want %d", len(body.RecoveryCodes), recoveryCodeCount)
+	}
+	seen := map[string]bool{}
+	for _, c := range body.RecoveryCodes {
+		if c == "" {
+			t.Error("a recovery code is empty, want a non-empty plaintext code")
+		}
+		if seen[c] {
+			t.Errorf("recovery code %q appeared more than once, want all 10 distinct", c)
+		}
+		seen[c] = true
+	}
+}
+
+func TestConfirm2FA_WrongCode_422NoEnableNoRecoveryCodes(t *testing.T) {
+	r, users, twoFactor, pool := newTwoFactorRouter(t)
+	user := createTwoFactorTestUser(t, users, pool)
+
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, authedRequest(t, http.MethodPost, "/api/auth/2fa/enroll", nil, user.ID))
+	var enrolled enrollResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &enrolled); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+
+	confirmBody, _ := json.Marshal(confirm2FARequest{Code: "000000"})
+	confirmRec := httptest.NewRecorder()
+	r.ServeHTTP(confirmRec, authedRequest(t, http.MethodPost, "/api/auth/2fa/confirm", confirmBody, user.ID))
+	if confirmRec.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("status = %d, want %d, body = %s", confirmRec.Code, http.StatusUnprocessableEntity, confirmRec.Body.String())
+	}
+
+	// enabled_at must still be NULL, and no recovery codes generated: a
+	// direct repository check confirms neither mutation happened.
+	got, err := twoFactor.GetSecret(context.Background(), user.ID)
+	if err != nil {
+		t.Fatalf("GetSecret() returned unexpected error: %v", err)
+	}
+	if got.EnabledAt != nil {
+		t.Error("EnabledAt is set after a wrong confirm code, want nil")
+	}
+	ok, err := twoFactor.ConsumeRecoveryCode(context.Background(), user.ID, "any-code")
+	if err != nil {
+		t.Fatalf("ConsumeRecoveryCode() returned unexpected error: %v", err)
+	}
+	if ok {
+		t.Error("ConsumeRecoveryCode() found a match after a wrong confirm code, want none generated")
+	}
+
+	// A subsequent confirm with the correct code must still succeed.
+	code, err := totp.GenerateCode(enrolled.Secret, time.Now())
+	if err != nil {
+		t.Fatalf("totp.GenerateCode() returned unexpected error: %v", err)
+	}
+	retryBody, _ := json.Marshal(confirm2FARequest{Code: code})
+	retryRec := httptest.NewRecorder()
+	r.ServeHTTP(retryRec, authedRequest(t, http.MethodPost, "/api/auth/2fa/confirm", retryBody, user.ID))
+	if retryRec.Code != http.StatusOK {
+		t.Fatalf("retry with the correct code status = %d, want %d, body = %s", retryRec.Code, http.StatusOK, retryRec.Body.String())
 	}
 }
