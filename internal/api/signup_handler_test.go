@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -39,6 +40,7 @@ func newSignupRouterWithEmail(t *testing.T, emailSvc *email.Service) (http.Handl
 	r := chi.NewRouter()
 	r.Post("/api/signup", signupHandler.Signup)
 	r.Get("/api/signup/verify/{token}", signupHandler.Verify)
+	r.Post("/api/signup/resend-verification", signupHandler.ResendVerification)
 	r.Post("/api/auth/login", authHandler.Login)
 
 	return r, pool, users
@@ -116,6 +118,19 @@ func extractVerifyToken(t *testing.T, textBody string) string {
 		end = len(rest)
 	}
 	return rest[:end]
+}
+
+func postResendVerification(t *testing.T, r http.Handler, email string) *httptest.ResponseRecorder {
+	t.Helper()
+	body, err := json.Marshal(resendVerificationRequest{Email: email})
+	if err != nil {
+		t.Fatalf("json.Marshal() returned unexpected error: %v", err)
+	}
+	req := httptest.NewRequest(http.MethodPost, "/api/signup/resend-verification", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+	return rec
 }
 
 // --- T9: POST /api/signup ---
@@ -371,5 +386,97 @@ func TestLogin_UnverifiedEmail_403_ClearMessage(t *testing.T) {
 	}
 	if loginRec.Body.String() != emailNotVerifiedBody {
 		t.Errorf("body = %q, want %q", loginRec.Body.String(), emailNotVerifiedBody)
+	}
+}
+
+// --- T11: resend verification email ---
+
+func TestResendVerification_Success_NewTokenInvalidatesOld(t *testing.T) {
+	r, pool, _, provider := newSignupRouter(t)
+	email := uniqueTestEmail(t)
+	cleanupSignupTestData(t, pool, email)
+
+	signupRec := postSignup(t, r, email, "correct-horse-battery-staple", "Acme Inc")
+	if signupRec.Code != http.StatusCreated {
+		t.Fatalf("signup status = %d, want %d", signupRec.Code, http.StatusCreated)
+	}
+	oldToken := extractVerifyToken(t, provider.lastMessage.TextBody)
+
+	resendRec := postResendVerification(t, r, email)
+	if resendRec.Code != http.StatusOK {
+		t.Fatalf("resend status = %d, want %d, body = %s", resendRec.Code, http.StatusOK, resendRec.Body.String())
+	}
+	var resp map[string]any
+	if err := json.Unmarshal(resendRec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+	if resp["email_sent"] != true {
+		t.Errorf(`response["email_sent"] = %v, want true`, resp["email_sent"])
+	}
+	newToken := extractVerifyToken(t, provider.lastMessage.TextBody)
+	if newToken == oldToken {
+		t.Fatal("resend produced the same token as the original signup, want a fresh one")
+	}
+
+	if rec := getVerify(t, r, oldToken); rec.Code != http.StatusUnauthorized {
+		t.Errorf("verify with old (invalidated) token status = %d, want %d", rec.Code, http.StatusUnauthorized)
+	}
+	if rec := getVerify(t, r, newToken); rec.Code != http.StatusOK {
+		t.Errorf("verify with new token status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+}
+
+func TestResendVerification_EmailSendFails_TenantUserMembershipIntact(t *testing.T) {
+	svc, provider := newTestEmailService(t)
+	provider.sendErr = errors.New("provider: send failed")
+	r, pool, users := newSignupRouterWithEmail(t, svc)
+	email := uniqueTestEmail(t)
+	cleanupSignupTestData(t, pool, email)
+
+	signupRec := postSignup(t, r, email, "correct-horse-battery-staple", "Acme Inc")
+	if signupRec.Code != http.StatusCreated {
+		t.Fatalf("signup status = %d, want %d, body = %s", signupRec.Code, http.StatusCreated, signupRec.Body.String())
+	}
+	var signupResp signupResponse
+	if err := json.Unmarshal(signupRec.Body.Bytes(), &signupResp); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+	if signupResp.EmailSent {
+		t.Fatal("signup email_sent = true, want false (provider configured to fail sends)")
+	}
+
+	resendRec := postResendVerification(t, r, email)
+	if resendRec.Code != http.StatusOK {
+		t.Fatalf("resend status = %d, want %d, body = %s", resendRec.Code, http.StatusOK, resendRec.Body.String())
+	}
+	var resendResp map[string]any
+	if err := json.Unmarshal(resendRec.Body.Bytes(), &resendResp); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+	if resendResp["email_sent"] != false {
+		t.Errorf(`response["email_sent"] = %v, want false (send configured to fail)`, resendResp["email_sent"])
+	}
+
+	created, err := users.GetByEmail(context.Background(), email)
+	if err != nil {
+		t.Fatalf("GetByEmail() returned unexpected error: %v (user/tenant/membership must survive a send failure)", err)
+	}
+	var membershipCount int
+	if err := pool.QueryRow(context.Background(),
+		"SELECT COUNT(*) FROM tenant_memberships WHERE user_id = $1", created.ID).Scan(&membershipCount); err != nil {
+		t.Fatalf("counting memberships returned unexpected error: %v", err)
+	}
+	if membershipCount != 1 {
+		t.Errorf("tenant_memberships rows = %d, want 1 (tenant/membership from original signup intact)", membershipCount)
+	}
+}
+
+func TestResendVerification_UnknownEmail_404(t *testing.T) {
+	r, _, _, _ := newSignupRouter(t)
+
+	rec := postResendVerification(t, r, uniqueTestEmail(t))
+
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("status = %d, want %d, body = %s", rec.Code, http.StatusNotFound, rec.Body.String())
 	}
 }

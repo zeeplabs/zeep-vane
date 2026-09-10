@@ -418,15 +418,17 @@ T16 → T19
 - Skill: NONE
 
 **Done when**:
-- [ ] Resend issues a new token for the same unverified user, invalidating the previous one
-- [ ] Simulated email-provider failure during resend returns an error to the caller but leaves tenant/user/membership intact
-- [ ] Gate check passes: `TEST_DATABASE_URL=... go test -tags=integration ./internal/api/...`
-- [ ] Test count: 3+ new tests pass
+- [x] Resend issues a new token for the same unverified user, invalidating the previous one
+- [x] Simulated email-provider failure during resend returns an error to the caller but leaves tenant/user/membership intact
+- [x] Gate check passes: `TEST_DATABASE_URL=... go test -tags=integration ./internal/api/...`
+- [x] Test count: 3 new tests pass (`TestResendVerification_Success_NewTokenInvalidatesOld`, `TestResendVerification_EmailSendFails_TenantUserMembershipIntact`, `TestResendVerification_UnknownEmail_404`)
 
 **Tests**: integration
 **Gate**: full
 
 **Commit**: `feat(api): add resend-verification endpoint`
+
+**Implementation notes:** "an error to the caller" is surfaced the same way `ResendInvite` already does - `email_sent:false` in an otherwise-200 JSON body, never a distinct HTTP error status - since the endpoint's job (issue a new token) still succeeded even when delivery itself failed. `InvalidatePendingForUser` (defined in T9's commit, unused until now) is what makes the old token stop working. The resend email omits `TenantName` (empty string, template renders a generic "Welcome!" - see `signup_verification.{html,txt}.tmpl`'s `{{if .TenantName}}` branch added in T9) rather than looking it up via `ListForUser`/`TenantRepository.Get`, which would need this public, pre-tenant-context route to open its own short-lived tenant transaction for a cosmetic subject-line improvement only - not worth the added complexity for this task's scope.
 
 ---
 

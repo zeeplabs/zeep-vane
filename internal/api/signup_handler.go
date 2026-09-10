@@ -48,6 +48,7 @@ type signupMembershipCreator interface {
 type signupVerificationStore interface {
 	Create(ctx context.Context, token *db.EmailVerificationToken) error
 	ClaimForUse(ctx context.Context, tokenHash string) (*db.EmailVerificationToken, error)
+	InvalidatePendingForUser(ctx context.Context, userID string) error
 }
 
 // SignupHandler serves the public SaaS signup routes (multi-tenancy-core,
@@ -301,4 +302,54 @@ func (h *SignupHandler) Verify(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write([]byte(`{"status":"verified"}`))
+}
+
+type resendVerificationRequest struct {
+	Email string `json:"email"`
+}
+
+const invalidResendVerificationRequestBody = `{"error":"email is required"}`
+const resendVerificationNotFoundBody = `{"error":"no pending signup found for this email"}`
+const alreadyVerifiedBody = `{"error":"this email is already verified"}`
+
+// ResendVerification handles POST /api/signup/resend-verification
+// (public). It mints a fresh verification token for the given email,
+// invalidating any previous one (T11) - mirrors
+// AdminsHandler.ResendInvite's pattern. An unknown email or one already
+// verified is rejected without issuing a token; a send failure is reported
+// back as email_sent:false without discarding the token already persisted,
+// leaving the tenant/user/membership from the original signup untouched.
+func (h *SignupHandler) ResendVerification(w http.ResponseWriter, r *http.Request) {
+	var req resendVerificationRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Email == "" {
+		writeAdminError(w, http.StatusUnprocessableEntity, invalidResendVerificationRequestBody)
+		return
+	}
+
+	user, err := h.users.GetByEmail(r.Context(), req.Email)
+	switch {
+	case errors.Is(err, db.ErrNotFound):
+		writeAdminError(w, http.StatusNotFound, resendVerificationNotFoundBody)
+		return
+	case err != nil:
+		h.logger.Error("signup: failed to look up user for resend", zap.Error(err))
+		writeInternalError(w)
+		return
+	}
+	if user.EmailVerifiedAt != nil {
+		writeAdminError(w, http.StatusConflict, alreadyVerifiedBody)
+		return
+	}
+
+	if err := h.verifications.InvalidatePendingForUser(r.Context(), user.ID); err != nil {
+		h.logger.Error("signup: failed to invalidate pending verification tokens", zap.String("user_id", user.ID), zap.Error(err))
+		writeInternalError(w)
+		return
+	}
+
+	emailSent := h.issueAndSendVerification(r, user.ID, user.Email, "")
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(map[string]any{"status": "resent", "email_sent": emailSent})
 }
