@@ -125,21 +125,21 @@ The redesigned Meu Perfil screen (`handoff-new-layout/Meu Perfil.dc.html`) shows
 
 | Requirement ID | Story | Phase | Status |
 | --- | --- | --- | --- |
-| TOTP-01 | P1: User enrolls in TOTP 2FA | Execute | Pending |
-| TOTP-02 | P1: User enrolls in TOTP 2FA (confirm) | Execute | Pending |
-| TOTP-03 | P1: User enrolls in TOTP 2FA (bad code) | Execute | Pending |
-| TOTP-04 | P1: User enrolls in TOTP 2FA (already enabled) | Execute | Pending |
-| TOTP-05 | P1: Login requires second factor | - | Pending |
-| TOTP-06 | P1: Login requires second factor (verify success) | - | Pending |
-| TOTP-07 | P1: Login requires second factor (bad/expired token) | - | Pending |
-| TOTP-08 | P1: Login requires second factor (bad code) | - | Pending |
-| TOTP-09 | P1: Login requires second factor (no 2FA, unchanged) | - | Pending |
-| TOTP-10 | P2: Recovery code login | - | Pending |
-| TOTP-11 | P2: Recovery code reuse rejected | - | Pending |
-| TOTP-12 | P1: Disable 2FA with password | - | Pending |
-| TOTP-13 | P1: Disable 2FA wrong password | - | Pending |
+| TOTP-01 | P1: User enrolls in TOTP 2FA | Execute | Verified |
+| TOTP-02 | P1: User enrolls in TOTP 2FA (confirm) | Execute | Verified |
+| TOTP-03 | P1: User enrolls in TOTP 2FA (bad code) | Execute | Verified |
+| TOTP-04 | P1: User enrolls in TOTP 2FA (already enabled) | Execute | Verified |
+| TOTP-05 | P1: Login requires second factor | - | Verified |
+| TOTP-06 | P1: Login requires second factor (verify success) | - | Verified |
+| TOTP-07 | P1: Login requires second factor (bad/expired token) | - | Verified |
+| TOTP-08 | P1: Login requires second factor (bad code) | - | Verified |
+| TOTP-09 | P1: Login requires second factor (no 2FA, unchanged) | - | Verified |
+| TOTP-10 | P2: Recovery code login | - | Verified |
+| TOTP-11 | P2: Recovery code reuse rejected | - | Verified |
+| TOTP-12 | P1: Disable 2FA with password | - | Verified |
+| TOTP-13 | P1: Disable 2FA wrong password | - | Verified |
 
-**Coverage:** 13 total, 0 mapped to tasks, 13 unmapped ⚠️ (Large scope — formal Design and Tasks phases run before Execute, not skipped)
+**Coverage:** 13 total, 13 verified, 0 unmapped. See `.specs/features/auth-2fa-totp/validation.md`.
 
 ---
 
