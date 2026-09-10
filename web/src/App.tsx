@@ -10,6 +10,7 @@ import { BootstrapPage } from "./features/auth/BootstrapPage";
 import { PasswordResetRequestPage } from "./features/auth/PasswordResetRequestPage";
 import { PasswordResetConfirmPage } from "./features/auth/PasswordResetConfirmPage";
 import { AcceptInvitePage } from "./features/auth/AcceptInvitePage";
+import { TenantSelector } from "./features/auth/TenantSelector";
 import { IntegrationsPage } from "./features/integrations/IntegrationsPage";
 import { ServicesPage } from "./features/services/ServicesPage";
 import { DomainsStatusPagesPage } from "./features/domains/DomainsStatusPagesPage";
@@ -90,6 +91,19 @@ function RootRoute() {
   );
 }
 
+// SelectTenantRoute mirrors BootstrapRoute's dead-end-redirect shape: a
+// direct visit to /select-tenant with 0 or 1 membership (nothing to pick)
+// bounces to "/" instead of showing an empty/pointless list (T17,
+// TENANT-19/20/21).
+function SelectTenantRoute() {
+  const { status, needsTenantSelection } = useAuth();
+
+  if (status === "loading") return null;
+  if (status !== "authenticated") return <Navigate to="/login" replace />;
+  if (!needsTenantSelection) return <Navigate to="/" replace />;
+  return <TenantSelector />;
+}
+
 function AuthenticatedLayout() {
   return (
     <div className="flex h-screen w-full bg-bg">
@@ -131,6 +145,7 @@ export default function App() {
           }
         />
         <Route path="/status/:id" element={<PublicStatusPage />} />
+        <Route path="/select-tenant" element={<SelectTenantRoute />} />
         <Route path="/" element={<RootRoute />} />
         {/* No RedirectToBootstrapIfNeeded/auth guard - matches /status/:id's
             precedent (spec.md accept-invite-page: an already-authenticated

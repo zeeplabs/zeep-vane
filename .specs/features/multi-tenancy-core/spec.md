@@ -195,9 +195,9 @@ Explicitly excluded. Documented to prevent scope creep.
 | TENANT-16 | P1: Convite por tenant | Design | Pending |
 | TENANT-17 | P1: Convite por tenant | Design | Pending |
 | TENANT-18 | P1: Convite por tenant | Design | Pending |
-| TENANT-19 | P2: Switch tenant | Design | Pending |
-| TENANT-20 | P2: Switch tenant | Design | Pending |
-| TENANT-21 | P2: Switch tenant | Design | Pending |
+| TENANT-19 | P2: Switch tenant | T17 | Implementing |
+| TENANT-20 | P2: Switch tenant | T17 | Implementing |
+| TENANT-21 | P2: Switch tenant | T17 | Implementing |
 | TENANT-22 | P2: Perfil fiscal | T16 | Implementing |
 | TENANT-23 | P2: Perfil fiscal | T16 | Implementing |
 | TENANT-24 | P2: Perfil fiscal | T16 | Implementing |

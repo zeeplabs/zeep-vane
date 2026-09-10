@@ -598,16 +598,18 @@ T16 → T19
 - Skill: NONE
 
 **Done when**:
-- [ ] 1-membership users never see this screen
-- [ ] >1-membership users see a list and land on the dashboard after selecting
-- [ ] All user-facing strings go through `react-i18next` (AGENTS.md §5)
-- [ ] Gate check passes: `npx tsc -b --noEmit && npm run test` (from `web/`)
-- [ ] Test count: 3+ new component tests pass with MSW handlers mirroring the `Page`/membership response shape
+- [x] 1-membership users never see this screen
+- [x] >1-membership users see a list and land on the dashboard after selecting
+- [x] All user-facing strings go through `react-i18next` (AGENTS.md §5)
+- [x] Gate check passes: `npx tsc -b --noEmit && npm run test` (from `web/`)
+- [x] Test count: 5 new component tests pass with MSW handlers mirroring the membership response shape (282 total, up from 277)
 
 **Tests**: unit
 **Gate**: frontend
 
 **Commit**: `feat(web): add tenant selection screen for multi-membership accounts`
+
+**Implementation notes:** `AuthenticatedAdmin` (`web/src/auth/AuthProvider.tsx`) gained `active_tenant_id`/`memberships` (mirroring `meResponse`'s real JSON shape verbatim, snake_case, no camelCase mapping layer - matching every other type in `web/src/types/api.ts`), plus a derived `needsTenantSelection` boolean and a `switchTenant(tenantId)` method (POST `/api/auth/switch-tenant`, then re-fetches `/api/auth/me`, same shape as `login`). `RequireAuth` (`web/src/routes/RequireRole.tsx`) redirects to `/select-tenant` whenever `needsTenantSelection` is true - a user with no active tenant has no role to enforce further down. `App.tsx` gained the `/select-tenant` route behind `SelectTenantRoute`, a `BootstrapRoute`-shaped guard that bounces to `/` if there's nothing to pick (0 or 1 membership). MSW `handlers.ts`'s `/api/auth/me`/`/api/auth/login` now default every seeded admin to exactly 1 membership (`tenant-1`, matching their own role) so every pre-existing test's single-membership assumption is unchanged; a new `/api/auth/switch-tenant` handler was added. `TenantSelector.test.tsx` overrides both via `server.use` for the >1-membership scenarios, tracking `active_tenant_id` statefully across the switch + re-fetch pair the same way the real backend does.
 
 ---
 

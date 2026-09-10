@@ -8,7 +8,7 @@ import {
   type ReactNode,
 } from "react";
 import { apiFetch, ApiError, setUnauthorizedHandler } from "../lib/apiClient";
-import type { Role } from "../types/api";
+import type { Role, TenantMembership } from "../types/api";
 
 type Status = "loading" | "authenticated" | "anonymous";
 
@@ -21,6 +21,14 @@ export interface AuthenticatedAdmin {
   email: string;
   name?: string;
   role: Role;
+  // active_tenant_id is "" (or absent, real backend omits empty fields via
+  // omitempty) when the user has more than one tenant_membership and
+  // hasn't picked one yet - pending tenant selection (T17, TENANT-19/20).
+  active_tenant_id?: string;
+  // memberships always has at least one entry for an authenticated
+  // session (Login refuses zero memberships outright, internal/api's
+  // noTenantAccessBody).
+  memberships: TenantMembership[];
 }
 
 interface State {
@@ -54,8 +62,18 @@ export interface AuthContextValue {
    * assume bootstrap is needed without a confirmed "false" from the
    * server. */
   needsBootstrap: boolean;
+  /** true once an authenticated admin has more than 1 tenant_membership and
+   * hasn't picked an active tenant yet - gates the /select-tenant screen
+   * (T17, TENANT-19/20/21). Always false for the every-day self-hosted
+   * case (exactly 1 membership). */
+  needsTenantSelection: boolean;
   login: (email: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
+  /** Sets tenantId as the session's active tenant (POST
+   * /api/auth/switch-tenant) and re-hydrates the authenticated admin from
+   * /api/auth/me - no new login required (TENANT-20). Throws ApiError on a
+   * tenant_id the caller has no membership for (403, TENANT-21). */
+  switchTenant: (tenantId: string) => Promise<void>;
   hasRole: (roles: Role[]) => boolean;
   sessionExpired: boolean;
   dismissSessionExpired: () => void;
@@ -141,6 +159,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     dispatch({ type: "AUTHENTICATED", admin });
   }, []);
 
+  const switchTenant = useCallback(async (tenantId: string) => {
+    // Body's own {token, tenant_id} is discarded, same reasoning as
+    // login's: the real session lives in the httpOnly cookie the endpoint
+    // also sets (AD-004); identity is re-hydrated via /api/auth/me right
+    // after, same as login.
+    await apiFetch<{ token: string; tenant_id?: string }>("/api/auth/switch-tenant", {
+      method: "POST",
+      body: JSON.stringify({ tenant_id: tenantId }),
+    });
+    const admin = await apiFetch<AuthenticatedAdmin>("/api/auth/me");
+    dispatch({ type: "AUTHENTICATED", admin });
+  }, []);
+
   const logout = useCallback(async () => {
     try {
       await apiFetch("/api/auth/logout", { method: "POST" });
@@ -165,12 +196,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (!seed) return;
       dispatch({
         type: "AUTHENTICATED",
-        admin: { id: seed.id, email: seed.email, role: seed.role },
+        admin: {
+          id: seed.id,
+          email: seed.email,
+          role: seed.role,
+          active_tenant_id: "dev-tenant",
+          memberships: [{ tenant_id: "dev-tenant", role: seed.role }],
+        },
       });
     });
   }, []);
 
   const simulateSessionExpired = useCallback(() => setSessionExpired(true), []);
+
+  const needsTenantSelection =
+    state.admin !== null && state.admin.memberships.length > 1 && !state.admin.active_tenant_id;
 
   return (
     <AuthContext.Provider
@@ -178,8 +218,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         admin: state.admin,
         status: state.status,
         needsBootstrap,
+        needsTenantSelection,
         login,
         logout,
+        switchTenant,
         hasRole,
         sessionExpired,
         dismissSessionExpired,

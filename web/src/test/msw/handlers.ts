@@ -335,6 +335,17 @@ function buildFixtureHistory(status: Service["current_status"], bucketCount: num
   }));
 }
 
+// defaultMembershipsFor mirrors the real backend's every-day case
+// (self-hosted, exactly 1 tenant_membership): every seeded admin belongs
+// to exactly one fixture tenant, in their own seeded role. Tests
+// exercising >1 membership (T17's TenantSelector) override /api/auth/me
+// (and /api/auth/switch-tenant) via server.use rather than changing this
+// default, so every other test's single-membership assumption (no
+// /select-tenant redirect) stays intact.
+function defaultMembershipsFor(role: Role) {
+  return [{ tenant_id: "tenant-1", role }];
+}
+
 export const handlers = [
   // GET /api/public-status - mirrors the production public status page
   // endpoint (AD-018), only ever wired up on the public HTTPS listener in
@@ -389,12 +400,35 @@ export const handlers = [
     if (!admin) {
       return HttpResponse.json({ error: "unauthorized" }, { status: 401 });
     }
-    return HttpResponse.json({ id: admin.id, email: admin.email, name: admin.name, role: admin.role });
+    return HttpResponse.json({
+      id: admin.id,
+      email: admin.email,
+      name: admin.name,
+      role: admin.role,
+      active_tenant_id: "tenant-1",
+      memberships: defaultMembershipsFor(admin.role),
+    });
   }),
 
   http.post("/api/auth/logout", () => {
     sessionAdminId = null;
     return new HttpResponse(null, { status: 200 });
+  }),
+
+  // POST /api/auth/switch-tenant - mirrors AuthHandler.SwitchTenant: 403 on
+  // a tenant_id outside the fixture's own memberships (multi-tenancy-core,
+  // TENANT-21), otherwise 200 with the new active tenant. The default
+  // fixture only ever has "tenant-1" - tests needing a real >1-membership
+  // switch scenario override this handler via server.use (T17).
+  http.post("/api/auth/switch-tenant", async ({ request }) => {
+    const body = (await request.json()) as { tenant_id?: string };
+    if (!sessionAdminId) {
+      return HttpResponse.json({ error: "unauthorized" }, { status: 401 });
+    }
+    if (body.tenant_id !== "tenant-1") {
+      return HttpResponse.json({ error: "no access to that tenant" }, { status: 403 });
+    }
+    return HttpResponse.json({ token: `msw-token-${sessionAdminId}`, tenant_id: body.tenant_id });
   }),
 
   // POST /api/auth/password-reset/request - mirrors

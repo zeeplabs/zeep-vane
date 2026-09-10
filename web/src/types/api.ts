@@ -4,6 +4,14 @@
 
 export type Role = "owner" | "operator" | "viewer";
 
+// TenantMembership is one entry in GET /api/auth/me's memberships list -
+// a tenant the authenticated user belongs to, and their role in it
+// (multi-tenancy-core, TENANT-19/20/21).
+export interface TenantMembership {
+  tenant_id: string;
+  role: Role;
+}
+
 export interface Admin {
   id: string;
   email: string;
