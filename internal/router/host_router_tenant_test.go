@@ -4,6 +4,7 @@ package router
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -109,11 +110,18 @@ type tenantFixture struct {
 	serviceName string
 }
 
-// seedTenantWithPublishedStatusPage creates a tenant, a domain, a published
-// status page under it, and one service - all inside a transaction with
+// seedTenantWithPublishedStatusPage is seedTenantWithStatusPage's
+// published-state case, which is what most tests here need.
+func seedTenantWithPublishedStatusPage(t *testing.T, pool *db.Pool, prefix string) tenantFixture {
+	t.Helper()
+	return seedTenantWithStatusPage(t, pool, prefix, "published")
+}
+
+// seedTenantWithStatusPage creates a tenant, a domain, a status page under
+// it in the given state, and one service - all inside a transaction with
 // app.tenant_id set to the new tenant, which every 0024 tenant_id DEFAULT
 // and WITH CHECK requires.
-func seedTenantWithPublishedStatusPage(t *testing.T, pool *db.Pool, prefix string) tenantFixture {
+func seedTenantWithStatusPage(t *testing.T, pool *db.Pool, prefix, state string) tenantFixture {
 	t.Helper()
 	ctx := context.Background()
 
@@ -155,14 +163,11 @@ func seedTenantWithPublishedStatusPage(t *testing.T, pool *db.Pool, prefix strin
 	}
 
 	// Inserted directly rather than through StatusPageRepository.Create:
-	// that method opens its own pooled transaction (r.pool.Begin) instead of
-	// reusing the one on ctx, so the tenant_id DEFAULT
-	// (current_setting('app.tenant_id')) resolves to NULL there and the
-	// NOT NULL constraint rejects the row. Pre-existing, unrelated to this
-	// fix, and reported rather than changed here.
+	// Create always inserts at the "draft" default and has no way to set
+	// state, which is exactly what these fixtures vary.
 	if _, err := pool.Exec(txCtx,
-		"INSERT INTO status_pages (name, subdomain, domain_id, state) VALUES ($1, $2, $3, 'published')",
-		prefix+"-page", subdomain, domain.ID,
+		"INSERT INTO status_pages (name, subdomain, domain_id, state) VALUES ($1, $2, $3, $4)",
+		prefix+"-page", subdomain, domain.ID, state,
 	); err != nil {
 		_ = tx.Rollback(ctx)
 		t.Fatalf("seeding status page returned unexpected error: %v", err)
@@ -322,6 +327,136 @@ func TestHostRouter_UnknownHostname_404_NoTenantTransaction(t *testing.T) {
 	}
 	if beginner.begun != 0 {
 		t.Errorf("BeginTenantTx() called %d times for an unknown hostname, want 0", beginner.begun)
+	}
+}
+
+// beginAnonymousRLSTx opens a transaction downgraded to routerRLSRole with
+// app.tenant_id deliberately left unset - the exact session shape a real
+// deployment's hostname lookup runs in, since an anonymous visitor carries
+// no tenant signal and the lookup is what discovers one. Returns the tx
+// (caller must roll it back) and a context that routes pool.* calls onto it.
+func beginAnonymousRLSTx(t *testing.T, pool *db.Pool) (pgx.Tx, context.Context) {
+	t.Helper()
+	ctx := context.Background()
+
+	tx, err := pool.Pool.Begin(ctx)
+	if err != nil {
+		t.Fatalf("Begin() returned unexpected error: %v", err)
+	}
+	if _, err := tx.Exec(ctx, "SET ROLE "+routerRLSRole); err != nil {
+		_ = tx.Rollback(ctx)
+		t.Fatalf("SET ROLE returned unexpected error: %v", err)
+	}
+
+	return tx, db.WithTenantTx(ctx, tx)
+}
+
+// TestHostRouter_AnonymousSession_ResolvesPublishedPageAndScopesData is the
+// regression test for the bootstrap paradox AD-023 closes: the hostname ->
+// tenant lookup runs before any tenant is known, so under a non-superuser
+// role with no app.tenant_id it hit 0024's fail-closed status_pages/domains
+// policies and returned ErrNotFound for a page that exists and is published
+// - every public status page would 404. Here the whole request, lookup
+// included, runs in such a session, and must still resolve the page, carry
+// its tenant id into the handler, and return that tenant's data only.
+func TestHostRouter_AnonymousSession_ResolvesPublishedPageAndScopesData(t *testing.T) {
+	pool := newTenantRLSTestPool(t)
+	suffix := tRouterUniqueSuffix()
+	want := seedTenantWithPublishedStatusPage(t, pool, fmt.Sprintf("anon-published-%d", suffix))
+	other := seedTenantWithPublishedStatusPage(t, pool, fmt.Sprintf("anon-other-%d", suffix))
+
+	statusPages := db.NewStatusPageRepository(pool)
+
+	anonTx, anonCtx := beginAnonymousRLSTx(t, pool)
+	defer func() { _ = anonTx.Rollback(context.Background()) }()
+
+	// The lookup itself, under the anonymous session, is the thing that used
+	// to fail.
+	statusPage, err := statusPages.GetByHostname(anonCtx, want.hostname)
+	if err != nil {
+		t.Fatalf("GetByHostname() in an anonymous non-superuser session returned unexpected error: %v", err)
+	}
+	if statusPage.TenantID != want.tenantID {
+		t.Errorf("GetByHostname() TenantID = %q, want %q", statusPage.TenantID, want.tenantID)
+	}
+	if statusPage.State != "published" {
+		t.Errorf("GetByHostname() State = %q, want %q", statusPage.State, "published")
+	}
+
+	var gotTenantID string
+	var gotTenantIDPresent bool
+	var services []string
+	publicHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotTenantID, gotTenantIDPresent = TenantIDFromContext(r.Context())
+		services = collectStrings(t, pool, r.Context(), "SELECT name FROM services")
+		w.WriteHeader(http.StatusOK)
+	})
+
+	beginner := &rlsRoleBeginner{pool: pool}
+	req := httptest.NewRequest(http.MethodGet, "/api/public-status", nil).WithContext(anonCtx)
+	req.Host = want.hostname
+	rec := httptest.NewRecorder()
+
+	HostRouter(statusPages, beginner, publicHandler).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
+	}
+	if !gotTenantIDPresent {
+		t.Fatal("TenantIDFromContext() reported no tenant id on the request context")
+	}
+	if gotTenantID != want.tenantID {
+		t.Errorf("TenantIDFromContext() = %q, want %q", gotTenantID, want.tenantID)
+	}
+	if len(services) != 1 || services[0] != want.serviceName {
+		t.Errorf("services visible to the anonymous request = %v, want exactly [%q]", services, want.serviceName)
+	}
+	for _, name := range services {
+		if name == other.serviceName {
+			t.Errorf("anonymous request for %s saw the other tenant's service %q - cross-tenant leak", want.hostname, name)
+		}
+	}
+}
+
+// TestHostRouter_AnonymousSession_DraftPageStaysInvisible is the other half
+// of AD-023: the new read policy is scoped to published pages, so a draft
+// page's hostname must still resolve to nothing in an anonymous session -
+// both at the repository (the policy, not HostRouter's state check, is what
+// hides it) and end to end.
+func TestHostRouter_AnonymousSession_DraftPageStaysInvisible(t *testing.T) {
+	pool := newTenantRLSTestPool(t)
+	draft := seedTenantWithStatusPage(t, pool, fmt.Sprintf("anon-draft-%d", tRouterUniqueSuffix()), "draft")
+
+	statusPages := db.NewStatusPageRepository(pool)
+
+	anonTx, anonCtx := beginAnonymousRLSTx(t, pool)
+	defer func() { _ = anonTx.Rollback(context.Background()) }()
+
+	if _, err := statusPages.GetByHostname(anonCtx, draft.hostname); !errors.Is(err, db.ErrNotFound) {
+		t.Fatalf("GetByHostname() for a draft page's hostname error = %v, want ErrNotFound", err)
+	}
+
+	publicHandlerCalled := false
+	publicHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		publicHandlerCalled = true
+		w.WriteHeader(http.StatusOK)
+	})
+
+	beginner := &rlsRoleBeginner{pool: pool}
+	req := httptest.NewRequest(http.MethodGet, "/api/public-status", nil).WithContext(anonCtx)
+	req.Host = draft.hostname
+	rec := httptest.NewRecorder()
+
+	HostRouter(statusPages, beginner, publicHandler).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("status = %d, want %d", rec.Code, http.StatusNotFound)
+	}
+	if publicHandlerCalled {
+		t.Error("publicHandler was invoked for a draft status page's hostname")
+	}
+	if beginner.begun != 0 {
+		t.Errorf("BeginTenantTx() called %d times for a draft page, want 0", beginner.begun)
 	}
 }
 

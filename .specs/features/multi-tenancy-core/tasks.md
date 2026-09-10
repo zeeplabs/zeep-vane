@@ -669,9 +669,45 @@ T16 → T19
 
 **Commit**: `fix(router): resolve tenant context for unauthenticated public routes`
 
-**Open finding (not fixed here, requires an RLS decision):** the hostname → status page lookup that *produces* the tenant id is itself subject to the fail-closed `status_pages`/`domains` policies, and it necessarily runs before any tenant is known. Verified against the disposable database: under a non-superuser role with no `app.tenant_id`, `GetByHostname` returns `ErrNotFound` for a page that exists and is published - so on a deployment whose application role is a plain non-superuser (which `rls_test.go` states is the expectation), every public status page would 404. The same bootstrap problem will hit T15, which has to enumerate `tenants` with no tenant context. Closing it needs a schema-level answer (a read policy for published pages keyed on hostname, or a `SECURITY DEFINER` resolver function), which is out of this task's Go-layer scope and should be recorded as its own AD in `.specs/STATE.md`.
+**Open finding (closed by T20b):** the hostname → status page lookup that *produces* the tenant id is itself subject to the fail-closed `status_pages`/`domains` policies, and it necessarily runs before any tenant is known. Verified against the disposable database: under a non-superuser role with no `app.tenant_id`, `GetByHostname` returns `ErrNotFound` for a page that exists and is published - so on a deployment whose application role is a plain non-superuser (which `rls_test.go` states is the expectation), every public status page would 404. The same bootstrap problem will hit T15, which has to enumerate `tenants` with no tenant context.
 
-**Also noticed, not touched (scope guardrail):** `StatusPageRepository.Create` opens its own pooled transaction (`r.pool.Begin`) instead of reusing the one on `ctx`, so the `tenant_id` DEFAULT resolves to NULL and the insert violates NOT NULL when called from inside a tenant transaction. Pre-existing; surfaced, not fixed.
+**Also noticed, not touched here (closed by T20b):** `StatusPageRepository.Create` opens its own pooled transaction (`r.pool.Begin`) instead of reusing the one on `ctx`, so the `tenant_id` DEFAULT resolves to NULL and the insert violates NOT NULL when called from inside a tenant transaction.
+
+---
+
+### T20b: Anonymous read path for published status pages (AD-023) ✅
+
+**What**: Closes the two findings T20 surfaced but left open. (1) The bootstrap paradox: adds migration `0025_public_status_page_read`, a second PERMISSIVE `FOR SELECT` policy (`public_published_read`) on `status_pages` and `domains` that applies only when `app.tenant_id` is unset and only to published pages, so the hostname → tenant lookup works under a real non-superuser role without a `BYPASSRLS` role or a `SECURITY DEFINER` function - RLS stays the single enforcement path. (2) `StatusPageRepository.Create` now reuses the transaction already on `ctx` when there is one, following `TenantRepository.Create`'s convention.
+
+**Where**: `internal/db/migrations/0025_public_status_page_read.{up,down}.sql`, `internal/db/status_page_repository.go`, `.specs/STATE.md` (AD-023)
+**Depends on**: T20
+**Reuses**: 0024's `NULLIF(current_setting('app.tenant_id', true), '')` idiom and `tenant_isolation` policy style; `TenantRepository.Create`'s "reuse the caller's tenant tx, else open one" pattern; `host_router_tenant_test.go`'s non-superuser `SET ROLE` fixture (T20)
+**Requirement**: TENANT-01, TENANT-02, TENANT-03 - unauthenticated path, same gap T20 opened.
+
+**Tools**:
+- MCP: NONE
+- Skill: NONE
+
+**Done when**:
+- [x] AD-023 recorded in `.specs/STATE.md` (decision, reason, trade-off, scope, status)
+- [x] `status_pages` carries a PERMISSIVE `FOR SELECT` policy allowing rows with `state = 'published'` when `app.tenant_id` is unset; `domains` the same, conditioned on `EXISTS (... sp.domain_id = domains.id AND sp.state = 'published')`
+- [x] Both policies are gated on `app.tenant_id` being unset, so no tenant-scoped session gains visibility of another tenant's rows - without that clause tenant A's unfiltered `ListPaginated`/domain-list queries would return tenant B's published pages, a real cross-tenant leak. This is the one deliberate deviation from the handed-down design; recorded in AD-023's trade-off.
+- [x] 0024's `tenant_isolation` policies unchanged; `0024_*.sql` not edited
+- [x] `GetByHostname` resolves a published page in an anonymous non-superuser session; a draft page's hostname still resolves to nothing
+- [x] `StatusPageRepository.Create` succeeds inside an existing tenant transaction and writes the caller's `tenant_id`
+- [x] Gate check passes: `go build ./... && go vet ./... && go test ./...` and `TEST_DATABASE_URL=... go test -tags=integration -p 1 ./...`
+
+**Tests**: integration
+- `internal/router/host_router_tenant_test.go` → `TestHostRouter_AnonymousSession_ResolvesPublishedPageAndScopesData`: the whole request, hostname lookup included, runs in a `SET ROLE vane_router_rls_test` transaction with `app.tenant_id` deliberately unset; asserts `GetByHostname` returns the page with the right `TenantID`/`State`, and that the handler then sees exactly that tenant's service and never the second seeded tenant's.
+- `internal/router/host_router_tenant_test.go` → `TestHostRouter_AnonymousSession_DraftPageStaysInvisible`: same anonymous session against a `draft` page's hostname; asserts `ErrNotFound` at the repository (the policy hides it, not HostRouter's state check) plus a 404 and no transaction opened.
+- `internal/db/status_page_repository_test.go` → `TestStatusPageRepository_Create_InsideExistingTenantTx_ReusesCallerTransaction`: asserts the insert succeeds on the caller's tenant transaction, lands the caller's `tenant_id`, and disappears when the caller rolls back (proving it did not commit its own transaction).
+- `internal/db/multi_tenancy_migration_test.go` updated to assert the exact policy set per table (`tenant_isolation` plus the declared extras) instead of a bare count of one - a stray policy still fails.
+- `internal/db/user_repository_test.go`'s `snapshotAndClearUsers` restore statements repaired: they still named the pre-0024 columns (`users.role`, `password_reset_tokens.admin_id`, and `tenant_invites` short one column against its own 9-column snapshot), so they could never execute. The bug was masked because every `m.Steps(-1)` migration test used to reverse 0024 and recreate `users` empty; with 0025 on top, one step down no longer drops that table, the snapshot is non-empty, and the restore path finally runs. Surfaced by this task, not caused by it.
+- Discrimination check, run against the disposable database: neutering `0025_*.up.sql` makes `..._ResolvesPublishedPageAndScopesData` fail with `db: not found`; relaxing the policy to ignore `state` makes `..._DraftPageStaysInvisible` fail. Both assertions detect the regression they exist for.
+
+**Gate**: full - `go build ./...`, `go vet ./...`, `go test ./...` and `TEST_DATABASE_URL=postgres://vane:vane@localhost:5433/vane?sslmode=disable go test -tags=integration -p 1 ./...` all green against a disposable Postgres (AGENTS.md §3).
+
+**Commit**: `docs(state): record AD-023 for public status page RLS policy` (3bcdfef), `feat(db): add permissive public-read RLS policy for published status pages` (7c8d48e), `fix(db): reuse caller's transaction in StatusPageRepository.Create` (73c8a9e), `test(db): repair stale column lists in the users snapshot restore` (aa1c9f1), `test(router): verify anonymous status page resolution under real RLS`
 
 ---
 
