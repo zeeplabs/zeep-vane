@@ -4,6 +4,7 @@ package db
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"testing"
 	"time"
@@ -141,5 +142,129 @@ func TestDomainRepository_ListPaginated_OrderByHostnameUnchanged(t *testing.T) {
 		if d.ID != seeded[i].ID {
 			t.Errorf("ours[%d].ID = %q, want %q (ORDER BY hostname)", i, d.ID, seeded[i].ID)
 		}
+	}
+}
+
+// TestDomainRepository_Create_DefaultsToPendingCustom covers DOMVER-02: a
+// newly created domain starts as domain_type=custom, status=pending,
+// ssl_status=pending, verified_at=NULL.
+func TestDomainRepository_Create_DefaultsToPendingCustom(t *testing.T) {
+	repo, pool := newDomainRepoTestPool(t)
+	domain := &Domain{Hostname: fmt.Sprintf("create-defaults-%d.example.com", time.Now().UnixNano())}
+
+	if err := repo.Create(context.Background(), domain); err != nil {
+		t.Fatalf("Create() returned unexpected error: %v", err)
+	}
+	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), "DELETE FROM domains WHERE id = $1", domain.ID) })
+
+	if domain.DomainType != "custom" {
+		t.Errorf("DomainType = %q, want %q", domain.DomainType, "custom")
+	}
+	if domain.Status != "pending" {
+		t.Errorf("Status = %q, want %q", domain.Status, "pending")
+	}
+	if domain.SSLStatus != "pending" {
+		t.Errorf("SSLStatus = %q, want %q", domain.SSLStatus, "pending")
+	}
+	if domain.VerifiedAt != nil {
+		t.Errorf("VerifiedAt = %v, want nil", domain.VerifiedAt)
+	}
+	if domain.LastError != nil {
+		t.Errorf("LastError = %v, want nil", domain.LastError)
+	}
+}
+
+// TestDomainRepository_GetByID_Existing_ReturnsDomain covers a basic lookup.
+func TestDomainRepository_GetByID_Existing_ReturnsDomain(t *testing.T) {
+	repo, pool := newDomainRepoTestPool(t)
+	domain := &Domain{Hostname: fmt.Sprintf("get-by-id-%d.example.com", time.Now().UnixNano())}
+	if err := repo.Create(context.Background(), domain); err != nil {
+		t.Fatalf("setup Create() returned unexpected error: %v", err)
+	}
+	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), "DELETE FROM domains WHERE id = $1", domain.ID) })
+
+	got, err := repo.GetByID(context.Background(), domain.ID)
+	if err != nil {
+		t.Fatalf("GetByID() returned unexpected error: %v", err)
+	}
+	if got.Hostname != domain.Hostname {
+		t.Errorf("Hostname = %q, want %q", got.Hostname, domain.Hostname)
+	}
+}
+
+// TestDomainRepository_GetByID_Unknown_ErrNotFound covers the not-found
+// path.
+func TestDomainRepository_GetByID_Unknown_ErrNotFound(t *testing.T) {
+	repo, _ := newDomainRepoTestPool(t)
+
+	_, err := repo.GetByID(context.Background(), "00000000-0000-0000-0000-000000000000")
+	if !errors.Is(err, ErrNotFound) {
+		t.Fatalf("GetByID() error = %v, want ErrNotFound", err)
+	}
+}
+
+// TestDomainRepository_SetVerificationResult_Success_UpdatesAllFields
+// covers DOMVER-04/07: a successful check's result is persisted in full.
+func TestDomainRepository_SetVerificationResult_Success_UpdatesAllFields(t *testing.T) {
+	repo, pool := newDomainRepoTestPool(t)
+	domain := &Domain{Hostname: fmt.Sprintf("verify-success-%d.example.com", time.Now().UnixNano())}
+	if err := repo.Create(context.Background(), domain); err != nil {
+		t.Fatalf("setup Create() returned unexpected error: %v", err)
+	}
+	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), "DELETE FROM domains WHERE id = $1", domain.ID) })
+
+	checkedAt := time.Now().UTC().Truncate(time.Millisecond)
+	updated, err := repo.SetVerificationResult(context.Background(), domain.ID, "verified", "active", nil, checkedAt)
+	if err != nil {
+		t.Fatalf("SetVerificationResult() returned unexpected error: %v", err)
+	}
+	if updated.Status != "verified" {
+		t.Errorf("Status = %q, want %q", updated.Status, "verified")
+	}
+	if updated.SSLStatus != "active" {
+		t.Errorf("SSLStatus = %q, want %q", updated.SSLStatus, "active")
+	}
+	if updated.LastError != nil {
+		t.Errorf("LastError = %v, want nil", updated.LastError)
+	}
+	if updated.VerifiedAt == nil || !updated.VerifiedAt.Equal(checkedAt) {
+		t.Errorf("VerifiedAt = %v, want %v", updated.VerifiedAt, checkedAt)
+	}
+}
+
+// TestDomainRepository_SetVerificationResult_Failure_PersistsLastError
+// covers DOMVER-08: a failed check's error message is persisted.
+func TestDomainRepository_SetVerificationResult_Failure_PersistsLastError(t *testing.T) {
+	repo, pool := newDomainRepoTestPool(t)
+	domain := &Domain{Hostname: fmt.Sprintf("verify-failure-%d.example.com", time.Now().UnixNano())}
+	if err := repo.Create(context.Background(), domain); err != nil {
+		t.Fatalf("setup Create() returned unexpected error: %v", err)
+	}
+	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), "DELETE FROM domains WHERE id = $1", domain.ID) })
+
+	errMsg := "DNS not resolved"
+	updated, err := repo.SetVerificationResult(context.Background(), domain.ID, "error", "error", &errMsg, time.Now())
+	if err != nil {
+		t.Fatalf("SetVerificationResult() returned unexpected error: %v", err)
+	}
+	if updated.Status != "error" {
+		t.Errorf("Status = %q, want %q", updated.Status, "error")
+	}
+	if updated.SSLStatus != "error" {
+		t.Errorf("SSLStatus = %q, want %q", updated.SSLStatus, "error")
+	}
+	if updated.LastError == nil || *updated.LastError != errMsg {
+		t.Errorf("LastError = %v, want %q", updated.LastError, errMsg)
+	}
+}
+
+// TestDomainRepository_SetVerificationResult_Unknown_ErrNotFound covers the
+// not-found path.
+func TestDomainRepository_SetVerificationResult_Unknown_ErrNotFound(t *testing.T) {
+	repo, _ := newDomainRepoTestPool(t)
+
+	_, err := repo.SetVerificationResult(context.Background(), "00000000-0000-0000-0000-000000000000", "verified", "active", nil, time.Now())
+	if !errors.Is(err, ErrNotFound) {
+		t.Fatalf("SetVerificationResult() error = %v, want ErrNotFound", err)
 	}
 }
