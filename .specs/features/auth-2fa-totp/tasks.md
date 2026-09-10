@@ -279,10 +279,10 @@ T7 → T11
 - Skill: NONE
 
 **Done when**:
-- [ ] `Login`'s behavior is byte-for-byte unchanged for a user without 2FA (all existing `TestLogin_*` tests pass with zero modifications)
-- [ ] The extracted helper is callable with just a `*db.User` and the response writer
-- [ ] Gate check passes on disposable Postgres: `TEST_DATABASE_URL=... go test -tags=integration ./internal/api/...`
-- [ ] Test count: same as before this task (0 net new tests expected - this is a refactor task, verified by an unchanged pass count)
+- [x] `Login`'s behavior is byte-for-byte unchanged for a user without 2FA (all existing `TestLogin_*` tests pass with zero modifications)
+- [x] The extracted helper is callable with just a `*db.User` and the response writer
+- [x] Gate check passes on disposable Postgres: `TEST_DATABASE_URL=... go test -tags=integration ./internal/api/...`
+- [x] Test count: same as before this task (0 net new tests expected - this is a refactor task, verified by an unchanged pass count)
 
 **Tests**: integration
 **Gate**: full

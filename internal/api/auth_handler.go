@@ -140,9 +140,23 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Login is public, ahead of the tenant-context middleware - it manages
-	// its own transaction here, setting only app.user_id (no active tenant
-	// is known yet; that's exactly what this query determines).
+	h.issueSessionForUser(w, r, user)
+}
+
+// issueSessionForUser resolves user's tenant_memberships and, on success,
+// issues a full session: exactly one membership sets that tenant active in
+// the session; zero refuses the login entirely (no session issued,
+// TENANT-19 session half); more than one still succeeds, active tenant left
+// unset. It writes the HTTP response itself. Extracted from Login
+// (auth-2fa-totp T8) so VerifyTwoFactor can perform the exact same
+// tenant-resolution + session-issuance sequence once a challenge's second
+// factor validates, instead of duplicating this security-sensitive logic at
+// a second call site.
+func (h *AuthHandler) issueSessionForUser(w http.ResponseWriter, r *http.Request, user *db.User) {
+	// Called ahead of the tenant-context middleware (from both Login and
+	// VerifyTwoFactor, both public routes) - it manages its own transaction
+	// here, setting only app.user_id (no active tenant is known yet; that's
+	// exactly what this query determines).
 	tx, err := h.pool.BeginTenantTx(r.Context(), user.ID, "")
 	if err != nil {
 		h.logger.Error("auth: failed to begin tenant transaction", zap.Error(err))
