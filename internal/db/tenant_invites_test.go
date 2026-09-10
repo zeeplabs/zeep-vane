@@ -12,10 +12,10 @@ import (
 	"github.com/zeeplabs/zeep-vane/internal/dbtest"
 )
 
-func newTenantInviteRepositoryForTest(t *testing.T) (*TenantInviteRepository, *UserRepository, *Pool) {
+func newTenantInviteRepositoryForTest(t *testing.T) (*TenantInviteRepository, *UserRepository, *Pool, string) {
 	t.Helper()
 	dsn := testDatabaseURL(t)
-	pool, _ := newTenantScopedPool(t)
+	pool, tenantID := newTenantScopedPool(t)
 
 	// Tests in this file create an admin via createTestAdminForInvite,
 	// and creating identity rows here races other packages' bulk clears
@@ -26,7 +26,7 @@ func newTenantInviteRepositoryForTest(t *testing.T) (*TenantInviteRepository, *U
 	// as soon as this function returns.
 	dbtest.LockUsersTable(t, context.Background(), dsn)
 
-	return NewTenantInviteRepository(pool), NewUserRepository(pool), pool
+	return NewTenantInviteRepository(pool), NewUserRepository(pool), pool, tenantID
 }
 
 func createTestAdminForInvite(t *testing.T, admins *UserRepository, pool *Pool) *User {
@@ -43,7 +43,7 @@ func createTestAdminForInvite(t *testing.T, admins *UserRepository, pool *Pool) 
 }
 
 func TestTenantInviteRepository_Create_Success(t *testing.T) {
-	repo, admins, pool := newTenantInviteRepositoryForTest(t)
+	repo, admins, pool, _ := newTenantInviteRepositoryForTest(t)
 	inviter := createTestAdminForInvite(t, admins, pool)
 	ctx := context.Background()
 	email := uniqueTestEmail(t)
@@ -69,7 +69,7 @@ func TestTenantInviteRepository_Create_Success(t *testing.T) {
 }
 
 func TestTenantInviteRepository_GetByTokenHash_Existing_ReturnsInvite(t *testing.T) {
-	repo, admins, pool := newTenantInviteRepositoryForTest(t)
+	repo, admins, pool, _ := newTenantInviteRepositoryForTest(t)
 	inviter := createTestAdminForInvite(t, admins, pool)
 	ctx := context.Background()
 	email := uniqueTestEmail(t)
@@ -113,7 +113,7 @@ func TestTenantInviteRepository_GetByTokenHash_Existing_ReturnsInvite(t *testing
 }
 
 func TestTenantInviteRepository_GetByTokenHash_Missing_ErrNotFound(t *testing.T) {
-	repo, _, _ := newTenantInviteRepositoryForTest(t)
+	repo, _, _, _ := newTenantInviteRepositoryForTest(t)
 
 	_, err := repo.GetByTokenHash(context.Background(), "does-not-exist-hash")
 	if !errors.Is(err, ErrNotFound) {
@@ -122,7 +122,7 @@ func TestTenantInviteRepository_GetByTokenHash_Missing_ErrNotFound(t *testing.T)
 }
 
 func TestTenantInviteRepository_MarkUsed_SetsUsedAt(t *testing.T) {
-	repo, admins, pool := newTenantInviteRepositoryForTest(t)
+	repo, admins, pool, _ := newTenantInviteRepositoryForTest(t)
 	inviter := createTestAdminForInvite(t, admins, pool)
 	ctx := context.Background()
 	email := uniqueTestEmail(t)
@@ -153,7 +153,7 @@ func TestTenantInviteRepository_MarkUsed_SetsUsedAt(t *testing.T) {
 }
 
 func TestTenantInviteRepository_InvalidatePendingForEmail_MarksPendingUsed_LeavesOthersAlone(t *testing.T) {
-	repo, admins, pool := newTenantInviteRepositoryForTest(t)
+	repo, admins, pool, tenantID := newTenantInviteRepositoryForTest(t)
 	inviter := createTestAdminForInvite(t, admins, pool)
 	ctx := context.Background()
 	email := uniqueTestEmail(t)
@@ -178,7 +178,7 @@ func TestTenantInviteRepository_InvalidatePendingForEmail_MarksPendingUsed_Leave
 		t.Fatalf("Create() other returned unexpected error: %v", err)
 	}
 
-	if err := repo.InvalidatePendingForEmail(ctx, email); err != nil {
+	if err := repo.InvalidatePendingForEmail(ctx, tenantID, email); err != nil {
 		t.Fatalf("InvalidatePendingForEmail() returned unexpected error: %v", err)
 	}
 
@@ -200,7 +200,7 @@ func TestTenantInviteRepository_InvalidatePendingForEmail_MarksPendingUsed_Leave
 }
 
 func TestTenantInviteRepository_List_ReturnsPendingIncludingExpiredMostRecentFirst(t *testing.T) {
-	repo, admins, pool := newTenantInviteRepositoryForTest(t)
+	repo, admins, pool, tenantID := newTenantInviteRepositoryForTest(t)
 	inviter := createTestAdminForInvite(t, admins, pool)
 	ctx := context.Background()
 
@@ -244,7 +244,7 @@ func TestTenantInviteRepository_List_ReturnsPendingIncludingExpiredMostRecentFir
 			pendingOlder.Email, pendingNewer.Email, used.Email, expired.Email)
 	})
 
-	got, err := repo.List(ctx)
+	got, err := repo.List(ctx, tenantID)
 	if err != nil {
 		t.Fatalf("List() returned unexpected error: %v", err)
 	}
@@ -290,7 +290,7 @@ func TestTenantInviteRepository_List_ReturnsPendingIncludingExpiredMostRecentFir
 }
 
 func TestTenantInviteRepository_Refresh_Success(t *testing.T) {
-	repo, admins, pool := newTenantInviteRepositoryForTest(t)
+	repo, admins, pool, tenantID := newTenantInviteRepositoryForTest(t)
 	inviter := createTestAdminForInvite(t, admins, pool)
 	ctx := context.Background()
 	email := uniqueTestEmail(t)
@@ -306,7 +306,7 @@ func TestTenantInviteRepository_Refresh_Success(t *testing.T) {
 
 	newHash := "hash-new-" + email
 	newExpiresAt := time.Now().Add(2 * time.Hour).Truncate(time.Second)
-	got, err := repo.Refresh(ctx, invite.ID, newHash, newExpiresAt)
+	got, err := repo.Refresh(ctx, tenantID, invite.ID, newHash, newExpiresAt)
 	if err != nil {
 		t.Fatalf("Refresh() returned unexpected error: %v", err)
 	}
@@ -326,16 +326,16 @@ func TestTenantInviteRepository_Refresh_Success(t *testing.T) {
 }
 
 func TestTenantInviteRepository_Refresh_UnknownID_ErrNotFound(t *testing.T) {
-	repo, _, _ := newTenantInviteRepositoryForTest(t)
+	repo, _, _, tenantID := newTenantInviteRepositoryForTest(t)
 
-	_, err := repo.Refresh(context.Background(), "00000000-0000-0000-0000-000000000000", "irrelevant-hash", time.Now().Add(1*time.Hour))
+	_, err := repo.Refresh(context.Background(), tenantID, "00000000-0000-0000-0000-000000000000", "irrelevant-hash", time.Now().Add(1*time.Hour))
 	if !errors.Is(err, ErrNotFound) {
 		t.Errorf("Refresh() error = %v, want ErrNotFound", err)
 	}
 }
 
 func TestTenantInviteRepository_Refresh_AlreadyAccepted_ErrNotFound(t *testing.T) {
-	repo, admins, pool := newTenantInviteRepositoryForTest(t)
+	repo, admins, pool, tenantID := newTenantInviteRepositoryForTest(t)
 	inviter := createTestAdminForInvite(t, admins, pool)
 	ctx := context.Background()
 	email := uniqueTestEmail(t)
@@ -352,14 +352,14 @@ func TestTenantInviteRepository_Refresh_AlreadyAccepted_ErrNotFound(t *testing.T
 		t.Fatalf("MarkUsed() returned unexpected error: %v", err)
 	}
 
-	_, err := repo.Refresh(ctx, invite.ID, "hash-new-"+email, time.Now().Add(1*time.Hour))
+	_, err := repo.Refresh(ctx, tenantID, invite.ID, "hash-new-"+email, time.Now().Add(1*time.Hour))
 	if !errors.Is(err, ErrNotFound) {
 		t.Errorf("Refresh() on already-accepted invite error = %v, want ErrNotFound", err)
 	}
 }
 
 func TestTenantInviteRepository_Refresh_AlreadyCanceled_ErrNotFound(t *testing.T) {
-	repo, admins, pool := newTenantInviteRepositoryForTest(t)
+	repo, admins, pool, tenantID := newTenantInviteRepositoryForTest(t)
 	inviter := createTestAdminForInvite(t, admins, pool)
 	ctx := context.Background()
 	email := uniqueTestEmail(t)
@@ -372,27 +372,27 @@ func TestTenantInviteRepository_Refresh_AlreadyCanceled_ErrNotFound(t *testing.T
 	if err := repo.Create(ctx, invite); err != nil {
 		t.Fatalf("Create() returned unexpected error: %v", err)
 	}
-	if err := repo.Cancel(ctx, invite.ID); err != nil {
+	if err := repo.Cancel(ctx, tenantID, invite.ID); err != nil {
 		t.Fatalf("Cancel() returned unexpected error: %v", err)
 	}
 
-	_, err := repo.Refresh(ctx, invite.ID, "hash-new-"+email, time.Now().Add(1*time.Hour))
+	_, err := repo.Refresh(ctx, tenantID, invite.ID, "hash-new-"+email, time.Now().Add(1*time.Hour))
 	if !errors.Is(err, ErrNotFound) {
 		t.Errorf("Refresh() on already-canceled invite error = %v, want ErrNotFound", err)
 	}
 }
 
 func TestTenantInviteRepository_Refresh_MalformedID_ErrNotFound(t *testing.T) {
-	repo, _, _ := newTenantInviteRepositoryForTest(t)
+	repo, _, _, tenantID := newTenantInviteRepositoryForTest(t)
 
-	_, err := repo.Refresh(context.Background(), "not-a-uuid", "irrelevant-hash", time.Now().Add(1*time.Hour))
+	_, err := repo.Refresh(context.Background(), tenantID, "not-a-uuid", "irrelevant-hash", time.Now().Add(1*time.Hour))
 	if !errors.Is(err, ErrNotFound) {
 		t.Errorf("Refresh() with malformed id error = %v, want ErrNotFound", err)
 	}
 }
 
 func TestTenantInviteRepository_Cancel_AlreadyAccepted_ErrNotFound(t *testing.T) {
-	repo, admins, pool := newTenantInviteRepositoryForTest(t)
+	repo, admins, pool, tenantID := newTenantInviteRepositoryForTest(t)
 	inviter := createTestAdminForInvite(t, admins, pool)
 	ctx := context.Background()
 	email := uniqueTestEmail(t)
@@ -409,13 +409,13 @@ func TestTenantInviteRepository_Cancel_AlreadyAccepted_ErrNotFound(t *testing.T)
 		t.Fatalf("MarkUsed() returned unexpected error: %v", err)
 	}
 
-	if err := repo.Cancel(ctx, invite.ID); !errors.Is(err, ErrNotFound) {
+	if err := repo.Cancel(ctx, tenantID, invite.ID); !errors.Is(err, ErrNotFound) {
 		t.Errorf("Cancel() on already-accepted invite error = %v, want ErrNotFound", err)
 	}
 }
 
 func TestTenantInviteRepository_Cancel_AlreadyCanceled_ErrNotFound(t *testing.T) {
-	repo, admins, pool := newTenantInviteRepositoryForTest(t)
+	repo, admins, pool, tenantID := newTenantInviteRepositoryForTest(t)
 	inviter := createTestAdminForInvite(t, admins, pool)
 	ctx := context.Background()
 	email := uniqueTestEmail(t)
@@ -428,26 +428,26 @@ func TestTenantInviteRepository_Cancel_AlreadyCanceled_ErrNotFound(t *testing.T)
 	if err := repo.Create(ctx, invite); err != nil {
 		t.Fatalf("Create() returned unexpected error: %v", err)
 	}
-	if err := repo.Cancel(ctx, invite.ID); err != nil {
+	if err := repo.Cancel(ctx, tenantID, invite.ID); err != nil {
 		t.Fatalf("first Cancel() returned unexpected error: %v", err)
 	}
 
-	if err := repo.Cancel(ctx, invite.ID); !errors.Is(err, ErrNotFound) {
+	if err := repo.Cancel(ctx, tenantID, invite.ID); !errors.Is(err, ErrNotFound) {
 		t.Errorf("Cancel() on already-canceled invite error = %v, want ErrNotFound", err)
 	}
 }
 
 func TestTenantInviteRepository_Cancel_MalformedID_ErrNotFound(t *testing.T) {
-	repo, _, _ := newTenantInviteRepositoryForTest(t)
+	repo, _, _, tenantID := newTenantInviteRepositoryForTest(t)
 
-	err := repo.Cancel(context.Background(), "not-a-uuid")
+	err := repo.Cancel(context.Background(), tenantID, "not-a-uuid")
 	if !errors.Is(err, ErrNotFound) {
 		t.Errorf("Cancel() with malformed id error = %v, want ErrNotFound", err)
 	}
 }
 
 func TestTenantInviteRepository_Cancel_Success(t *testing.T) {
-	repo, admins, pool := newTenantInviteRepositoryForTest(t)
+	repo, admins, pool, tenantID := newTenantInviteRepositoryForTest(t)
 	inviter := createTestAdminForInvite(t, admins, pool)
 	ctx := context.Background()
 	email := uniqueTestEmail(t)
@@ -461,7 +461,7 @@ func TestTenantInviteRepository_Cancel_Success(t *testing.T) {
 		t.Fatalf("Create() returned unexpected error: %v", err)
 	}
 
-	if err := repo.Cancel(ctx, invite.ID); err != nil {
+	if err := repo.Cancel(ctx, tenantID, invite.ID); err != nil {
 		t.Fatalf("Cancel() returned unexpected error: %v", err)
 	}
 
@@ -475,16 +475,16 @@ func TestTenantInviteRepository_Cancel_Success(t *testing.T) {
 }
 
 func TestTenantInviteRepository_Cancel_UnknownID_ErrNotFound(t *testing.T) {
-	repo, _, _ := newTenantInviteRepositoryForTest(t)
+	repo, _, _, tenantID := newTenantInviteRepositoryForTest(t)
 
-	err := repo.Cancel(context.Background(), "00000000-0000-0000-0000-000000000000")
+	err := repo.Cancel(context.Background(), tenantID, "00000000-0000-0000-0000-000000000000")
 	if !errors.Is(err, ErrNotFound) {
 		t.Errorf("Cancel() error = %v, want ErrNotFound", err)
 	}
 }
 
 func TestTenantInviteRepository_RefreshCancel_Concurrent_OnlyOneSucceeds(t *testing.T) {
-	repo, admins, pool := newTenantInviteRepositoryForTest(t)
+	repo, admins, pool, tenantID := newTenantInviteRepositoryForTest(t)
 	inviter := createTestAdminForInvite(t, admins, pool)
 	ctx := context.Background()
 	email := uniqueTestEmail(t)
@@ -503,11 +503,11 @@ func TestTenantInviteRepository_RefreshCancel_Concurrent_OnlyOneSucceeds(t *test
 	wg.Add(2)
 	go func() {
 		defer wg.Done()
-		_, errs[0] = repo.Refresh(ctx, invite.ID, "hash-race-new-"+email, time.Now().Add(1*time.Hour))
+		_, errs[0] = repo.Refresh(ctx, tenantID, invite.ID, "hash-race-new-"+email, time.Now().Add(1*time.Hour))
 	}()
 	go func() {
 		defer wg.Done()
-		errs[1] = repo.Cancel(ctx, invite.ID)
+		errs[1] = repo.Cancel(ctx, tenantID, invite.ID)
 	}()
 	wg.Wait()
 
@@ -525,9 +525,9 @@ func TestTenantInviteRepository_RefreshCancel_Concurrent_OnlyOneSucceeds(t *test
 }
 
 func TestTenantInviteRepository_InvalidatePendingForEmail_NoPending_NoError(t *testing.T) {
-	repo, _, _ := newTenantInviteRepositoryForTest(t)
+	repo, _, _, tenantID := newTenantInviteRepositoryForTest(t)
 
-	if err := repo.InvalidatePendingForEmail(context.Background(), "no-such-invite-"+uniqueTestEmail(t)); err != nil {
+	if err := repo.InvalidatePendingForEmail(context.Background(), tenantID, "no-such-invite-"+uniqueTestEmail(t)); err != nil {
 		t.Errorf("InvalidatePendingForEmail() with no pending invite returned unexpected error: %v", err)
 	}
 }

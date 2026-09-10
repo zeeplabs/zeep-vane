@@ -137,16 +137,18 @@ func isInvalidUUIDText(err error) bool {
 }
 
 // Refresh atomically replaces an invite's token hash and expiry, provided
-// the invite hasn't already been accepted/canceled (used_at IS NULL). Same
+// the invite hasn't already been accepted/canceled (used_at IS NULL) and
+// belongs to tenantID (T13, TENANT-14/17 - an owner must never be able to
+// refresh another tenant's invite by guessing/reusing its id). Same
 // atomic-guard shape as ClaimForUse: only one concurrent Refresh/Cancel call
 // on the same id can match the row, so a losing caller gets ErrNotFound
 // instead of silently overwriting a settled invite.
-func (r *TenantInviteRepository) Refresh(ctx context.Context, id, newTokenHash string, newExpiresAt time.Time) (*TenantInvite, error) {
+func (r *TenantInviteRepository) Refresh(ctx context.Context, tenantID, id, newTokenHash string, newExpiresAt time.Time) (*TenantInvite, error) {
 	row := r.pool.QueryRow(ctx,
-		`UPDATE tenant_invites SET token_hash = $2, expires_at = $3
-		 WHERE id = $1 AND used_at IS NULL
+		`UPDATE tenant_invites SET token_hash = $2, expires_at = $4
+		 WHERE id = $1 AND tenant_id = $3 AND used_at IS NULL
 		 RETURNING id, tenant_id, email, role, name, phone, token_hash, invited_by_id, expires_at, used_at, created_at`,
-		id, newTokenHash, newExpiresAt,
+		id, newTokenHash, tenantID, newExpiresAt,
 	)
 
 	var invite TenantInvite
@@ -165,11 +167,12 @@ func (r *TenantInviteRepository) Refresh(ctx context.Context, id, newTokenHash s
 
 // Cancel atomically marks an invite used (so its token becomes permanently
 // unacceptable) without creating an account for it, returning ErrNotFound
-// if no unused invite with the given id exists (including a malformed,
-// non-uuid id - see isInvalidUUIDText).
-func (r *TenantInviteRepository) Cancel(ctx context.Context, id string) error {
+// if no unused invite with the given id exists for tenantID (including a
+// malformed, non-uuid id - see isInvalidUUIDText, or an id that belongs to
+// a different tenant - T13, TENANT-14/17).
+func (r *TenantInviteRepository) Cancel(ctx context.Context, tenantID, id string) error {
 	tag, err := r.pool.Exec(ctx,
-		"UPDATE tenant_invites SET used_at = now() WHERE id = $1 AND used_at IS NULL", id,
+		"UPDATE tenant_invites SET used_at = now() WHERE id = $1 AND tenant_id = $2 AND used_at IS NULL", id, tenantID,
 	)
 	if err != nil {
 		if isInvalidUUIDText(err) {
@@ -200,17 +203,20 @@ func (r *TenantInviteRepository) MarkUsed(ctx context.Context, id string) error 
 	return nil
 }
 
-// List returns every pending invite - not used, regardless of expiry - most
-// recent first. Expired-but-unused invites stay listed so an owner can
-// resend/cancel them instead of them silently disappearing (spec P2).
-// TokenHash is never selected: the raw list is exposed via the admins API
-// and must never leak the hash needed to accept an invite.
-func (r *TenantInviteRepository) List(ctx context.Context) ([]TenantInvite, error) {
+// List returns every pending invite belonging to tenantID - not used,
+// regardless of expiry - most recent first (T13, TENANT-14: an owner must
+// never see another tenant's pending invites). Expired-but-unused invites
+// stay listed so an owner can resend/cancel them instead of them silently
+// disappearing (spec P2). TokenHash is never selected: the raw list is
+// exposed via the admins API and must never leak the hash needed to accept
+// an invite.
+func (r *TenantInviteRepository) List(ctx context.Context, tenantID string) ([]TenantInvite, error) {
 	rows, err := r.pool.Query(ctx,
 		`SELECT id, tenant_id, email, role, name, phone, invited_by_id, expires_at, created_at
 		 FROM tenant_invites
-		 WHERE used_at IS NULL
+		 WHERE tenant_id = $1 AND used_at IS NULL
 		 ORDER BY created_at DESC`,
+		tenantID,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("db: failed to list tenant invites: %w", err)
@@ -236,12 +242,15 @@ func (r *TenantInviteRepository) List(ctx context.Context) ([]TenantInvite, erro
 }
 
 // InvalidatePendingForEmail marks every still-pending (unused) invite for
-// email as used, so a new invite can be created for the same address
-// without leaving more than one live token. It is a no-op (not an error) if
-// no pending invite exists for email.
-func (r *TenantInviteRepository) InvalidatePendingForEmail(ctx context.Context, email string) error {
+// email within tenantID as used, so a new invite can be created for the
+// same address without leaving more than one live token - scoped by
+// tenantID (T13, TENANT-14/17) so inviting an email in one tenant never
+// invalidates that same email's still-pending invite in a different
+// tenant. It is a no-op (not an error) if no pending invite exists for
+// email in tenantID.
+func (r *TenantInviteRepository) InvalidatePendingForEmail(ctx context.Context, tenantID, email string) error {
 	if _, err := r.pool.Exec(ctx,
-		"UPDATE tenant_invites SET used_at = now() WHERE email = $1 AND used_at IS NULL", email,
+		"UPDATE tenant_invites SET used_at = now() WHERE email = $1 AND tenant_id = $2 AND used_at IS NULL", email, tenantID,
 	); err != nil {
 		return fmt.Errorf("db: failed to invalidate pending tenant invites for email: %w", err)
 	}

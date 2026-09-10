@@ -160,7 +160,7 @@ func (h *AdminsHandler) Invite(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.invites.InvalidatePendingForEmail(r.Context(), req.Email); err != nil {
+	if err := h.invites.InvalidatePendingForEmail(r.Context(), tenantID, req.Email); err != nil {
 		h.logger.Error("admins: failed to invalidate pending invites", zap.Error(err))
 		writeInternalError(w)
 		return
@@ -330,8 +330,8 @@ const inviteNotFoundBody = `{"error":"invite not found"}`
 // adminInviteTTL, and re-sends the invite email - invalidating the old
 // token in the same atomic update (Refresh). Works on an expired-but-unused
 // invite exactly like a not-yet-expired one (spec P2/P1 resend story); an
-// unknown, already-accepted, or already-canceled id gets 404 (INVITE-03,
-// INVITE-04, INVITE-08, INVITE-09).
+// unknown, already-accepted, already-canceled, or another tenant's id gets
+// 404 (INVITE-03, INVITE-04, INVITE-08, INVITE-09, TENANT-14/17).
 func (h *AdminsHandler) ResendInvite(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	actor, ok := UserFromContext(r.Context())
@@ -339,6 +339,7 @@ func (h *AdminsHandler) ResendInvite(w http.ResponseWriter, r *http.Request) {
 		writeForbidden(w)
 		return
 	}
+	tenantID, _ := ActiveTenantIDFromContext(r.Context())
 
 	rawToken, err := generateAdminInviteToken()
 	if err != nil {
@@ -347,7 +348,7 @@ func (h *AdminsHandler) ResendInvite(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	invite, err := h.invites.Refresh(r.Context(), id, hashAdminInviteToken(rawToken), time.Now().Add(adminInviteTTL))
+	invite, err := h.invites.Refresh(r.Context(), tenantID, id, hashAdminInviteToken(rawToken), time.Now().Add(adminInviteTTL))
 	switch {
 	case errors.Is(err, db.ErrNotFound):
 		writeAdminError(w, http.StatusNotFound, inviteNotFoundBody)
@@ -373,8 +374,8 @@ func (h *AdminsHandler) ResendInvite(w http.ResponseWriter, r *http.Request) {
 // marks the invite used (without creating an admin account), so its token
 // is subsequently rejected by AcceptInvite exactly like an already-used one
 // (falls out of ClaimForUse's existing WHERE used_at IS NULL - no change
-// needed there). An unknown, already-accepted, or already-canceled id gets
-// 404 (INVITE-05, INVITE-06, INVITE-09).
+// needed there). An unknown, already-accepted, already-canceled, or another
+// tenant's id gets 404 (INVITE-05, INVITE-06, INVITE-09, TENANT-14/17).
 func (h *AdminsHandler) CancelInvite(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	actor, ok := UserFromContext(r.Context())
@@ -382,8 +383,9 @@ func (h *AdminsHandler) CancelInvite(w http.ResponseWriter, r *http.Request) {
 		writeForbidden(w)
 		return
 	}
+	tenantID, _ := ActiveTenantIDFromContext(r.Context())
 
-	if err := h.invites.Cancel(r.Context(), id); err != nil {
+	if err := h.invites.Cancel(r.Context(), tenantID, id); err != nil {
 		if errors.Is(err, db.ErrNotFound) {
 			writeAdminError(w, http.StatusNotFound, inviteNotFoundBody)
 			return
@@ -588,7 +590,7 @@ func (h *AdminsHandler) List(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	invites, err := h.invites.List(ctx)
+	invites, err := h.invites.List(ctx, tenantID)
 	if err != nil {
 		h.logger.Error("admins: failed to list pending invites", zap.Error(err))
 		writeInternalError(w)

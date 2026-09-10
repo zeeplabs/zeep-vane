@@ -1613,3 +1613,144 @@ func TestListAdmins_Viewer_403(t *testing.T) {
 		t.Errorf("status = %d, want %d, body = %s", rec.Code, http.StatusForbidden, rec.Body.String())
 	}
 }
+
+// --- T13: cross-tenant isolation for invite/list/resend/cancel ---
+
+// seedOtherTenantOwnerToken creates a brand-new tenant (distinct from the
+// router's own fixture tenant, adminsTestTenant(t)) plus an owner
+// user/membership for it, and returns a session token for that owner -
+// used by this file's cross-tenant isolation tests (T13, TENANT-14/17).
+func seedOtherTenantOwnerToken(t *testing.T, pool *db.Pool, admins *db.UserRepository) (tenantID, token string) {
+	t.Helper()
+	tenantID = seedTestTenant(t, pool)
+	user := &db.User{Email: uniqueTestEmail(t), PasswordHash: "hash"}
+	if err := admins.Create(context.Background(), user); err != nil {
+		t.Fatalf("users.Create() returned unexpected error: %v", err)
+	}
+	t.Cleanup(func() { _ = admins.Delete(context.Background(), user.ID) })
+	seedMembership(t, user.ID, tenantID, db.RoleOwner)
+
+	tok, err := auth.IssueSessionWithTenant(user.ID, tenantID, middlewareTestSecret)
+	if err != nil {
+		t.Fatalf("auth.IssueSessionWithTenant() returned unexpected error: %v", err)
+	}
+	return tenantID, tok
+}
+
+// TestListAdmins_OwnerFromOtherTenant_NeverSeesMembersOrInvites is T13's
+// isolation guard for List: an owner authenticated against a different
+// tenant must never see this tenant's members or pending invites, even
+// though both requests hit the exact same GET /api/admins route.
+func TestListAdmins_OwnerFromOtherTenant_NeverSeesMembersOrInvites(t *testing.T) {
+	r, pool, admins, invites := newAdminsRouter(t)
+	member := createTenantMember(t, admins, db.RoleViewer)
+	inviter := createTenantMember(t, admins, db.RoleOwner)
+	pendingEmail := uniqueTestEmail(t)
+	createTestInvite(t, invites, inviter.ID, pendingEmail, db.RoleOperator, 1*time.Hour)
+
+	_, otherToken := seedOtherTenantOwnerToken(t, pool, admins)
+
+	rec := getAdminsList(t, r, otherToken)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	if got := findAdminAcrossPages(t, r, otherToken, member.Email); got != nil {
+		t.Errorf("owner from a different tenant saw tenant A's member %q, want none", member.Email)
+	}
+	if got := findAdminAcrossPages(t, r, otherToken, pendingEmail); got != nil {
+		t.Errorf("owner from a different tenant saw tenant A's pending invite %q, want none", pendingEmail)
+	}
+}
+
+// TestResendInvite_OtherTenantInviteID_404NoStateChange is T13's isolation
+// guard for ResendInvite: an owner from a different tenant must not be
+// able to resend (and thereby refresh the token/expiry of) an invite that
+// belongs to another tenant, even knowing its id.
+func TestResendInvite_OtherTenantInviteID_404NoStateChange(t *testing.T) {
+	r, pool, admins, invites := newAdminsRouter(t)
+	inviter := createTenantMember(t, admins, db.RoleOwner)
+	email := uniqueTestEmail(t)
+	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), "DELETE FROM tenant_invites WHERE email = $1", email) })
+	createTestInvite(t, invites, inviter.ID, email, db.RoleOperator, 1*time.Hour)
+	before := latestInviteForEmail(t, pool, email)
+
+	_, otherToken := seedOtherTenantOwnerToken(t, pool, admins)
+
+	rec := postResendInvite(t, r, otherToken, before.id)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusNotFound, rec.Body.String())
+	}
+	if rec.Body.String() != inviteNotFoundBody {
+		t.Errorf("body = %q, want %q", rec.Body.String(), inviteNotFoundBody)
+	}
+
+	after := latestInviteForEmail(t, pool, email)
+	if after.usedAt != nil {
+		t.Error("invite used_at changed after a cross-tenant resend attempt, want unchanged")
+	}
+	if after.expiresAt != before.expiresAt {
+		t.Errorf("invite expires_at changed after a cross-tenant resend attempt (%v -> %v), want unchanged", before.expiresAt, after.expiresAt)
+	}
+}
+
+// TestCancelInvite_OtherTenantInviteID_404NoStateChange is T13's isolation
+// guard for CancelInvite: an owner from a different tenant must not be
+// able to cancel an invite that belongs to another tenant, even knowing
+// its id.
+func TestCancelInvite_OtherTenantInviteID_404NoStateChange(t *testing.T) {
+	r, pool, admins, invites := newAdminsRouter(t)
+	inviter := createTenantMember(t, admins, db.RoleOwner)
+	email := uniqueTestEmail(t)
+	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), "DELETE FROM tenant_invites WHERE email = $1", email) })
+	createTestInvite(t, invites, inviter.ID, email, db.RoleOperator, 1*time.Hour)
+	inviteID := latestInviteForEmail(t, pool, email).id
+
+	_, otherToken := seedOtherTenantOwnerToken(t, pool, admins)
+
+	rec := deleteCancelInvite(t, r, otherToken, inviteID)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusNotFound, rec.Body.String())
+	}
+	if rec.Body.String() != inviteNotFoundBody {
+		t.Errorf("body = %q, want %q", rec.Body.String(), inviteNotFoundBody)
+	}
+
+	after := latestInviteForEmail(t, pool, email)
+	if after.usedAt != nil {
+		t.Error("invite used_at changed after a cross-tenant cancel attempt, want unchanged (still acceptable)")
+	}
+}
+
+// TestInviteAdmin_SameEmailPendingInOtherTenant_NotInvalidated is T13's
+// isolation guard for Invite/InvalidatePendingForEmail: inviting an email
+// that already has a pending invite in a *different* tenant must not
+// invalidate that other tenant's invite - only a second invite for the
+// same email within the *same* tenant does that (see
+// TestInviteAdmin_DuplicatePendingInvite_InvalidatesPreviousWithoutDuplicateRow).
+func TestInviteAdmin_SameEmailPendingInOtherTenant_NotInvalidated(t *testing.T) {
+	r, pool, admins, _ := newAdminsRouter(t)
+	tokenA := issueTestSessionToken(t, admins)
+	email := uniqueTestEmail(t)
+	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), "DELETE FROM tenant_invites WHERE email = $1", email) })
+
+	firstRec := postInviteAdmin(t, r, tokenA, email, db.RoleOperator)
+	if firstRec.Code != http.StatusCreated {
+		t.Fatalf("first (tenant A) invite status = %d, want %d, body = %s", firstRec.Code, http.StatusCreated, firstRec.Body.String())
+	}
+	firstInviteID := latestInviteForEmail(t, pool, email).id
+
+	_, tokenB := seedOtherTenantOwnerToken(t, pool, admins)
+	secondRec := postInviteAdmin(t, r, tokenB, email, db.RoleViewer)
+	if secondRec.Code != http.StatusCreated {
+		t.Fatalf("second (tenant B) invite for the same email status = %d, want %d, body = %s", secondRec.Code, http.StatusCreated, secondRec.Body.String())
+	}
+
+	var firstUsedAt *time.Time
+	row := pool.QueryRow(context.Background(), "SELECT used_at FROM tenant_invites WHERE id = $1", firstInviteID)
+	if err := row.Scan(&firstUsedAt); err != nil {
+		t.Fatalf("querying first invite returned unexpected error: %v", err)
+	}
+	if firstUsedAt != nil {
+		t.Error("tenant A's pending invite was invalidated by a same-email invite created in a different tenant, want unaffected")
+	}
+}

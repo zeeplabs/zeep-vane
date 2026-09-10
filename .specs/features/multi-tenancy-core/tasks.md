@@ -474,10 +474,10 @@ T16 → T19
 - Skill: NONE
 
 **Done when**:
-- [ ] Every listed handler filters strictly by the caller's active `tenant_id` - a request from tenant B's owner never lists/mutates tenant A's members or invites
-- [ ] `Delete` on a tenant's last `owner` returns an error, no row removed
-- [ ] Gate check passes: `TEST_DATABASE_URL=... go test -tags=integration ./internal/api/...`
-- [ ] Test count: existing `admins_test.go` cases still pass + 4 new cross-tenant-isolation cases
+- [x] Every listed handler filters strictly by the caller's active `tenant_id` - a request from tenant B's owner never lists/mutates tenant A's members or invites
+- [x] `Delete` on a tenant's last `owner` returns an error, no row removed (already true since T5/T13's prerequisite note - unchanged by this task)
+- [x] Gate check passes: `TEST_DATABASE_URL=... go test -tags=integration ./internal/api/...`
+- [x] Test count: existing `admins_test.go` cases still pass + 4 new cross-tenant-isolation cases (`TestListAdmins_OwnerFromOtherTenant_...`, `TestResendInvite_OtherTenantInviteID_404...`, `TestCancelInvite_OtherTenantInviteID_404...`, `TestInviteAdmin_SameEmailPendingInOtherTenant_NotInvalidated`)
 
 **Tests**: integration
 **Gate**: full
@@ -485,6 +485,8 @@ T16 → T19
 **Commit**: `feat(api): scope admin invite/list/role endpoints by active tenant`
 
 **Schema prerequisite already satisfied.** The T1 correction dropped `admin_invites` and repointed these handlers at `tenant_invites` + `users` + `tenant_memberships`, and `List`/`UpdateRole`/`Delete` already operate on the caller's active tenant because those queries need a tenant to be expressible at all. What remains for T13 is the API-layer work this task describes: enforcing the filter on the remaining handlers (`Invite`, `ResendInvite`, `CancelInvite` still act on an invite id without checking it belongs to the caller's tenant) and the cross-tenant isolation tests.
+
+**Implementation notes:** three real cross-tenant gaps existed at the repository layer, not caught by RLS in test/dev (the disposable-container role is a superuser, which bypasses RLS regardless of `FORCE ROW LEVEL SECURITY` - see `rls_test.go`'s note): `TenantInviteRepository.List`/`Refresh`/`Cancel`/`InvalidatePendingForEmail` took no `tenantID` parameter at all, filtering only by invite `id` (or `email`, for the last one) - so an owner in tenant B who guessed/observed tenant A's invite id could resend or cancel it, and inviting an email that already had a pending invite in a *different* tenant would silently invalidate that other tenant's invite. All four methods now take `tenantID` and filter on it explicitly (defense-in-depth alongside RLS, matching the explicit-filter pattern `TenantMembershipRepository.UpdateRole`/`Delete` already established in T5) - `internal/db/tenant_invites_test.go`'s existing call sites were updated to pass the fixture tenant id `newTenantInviteRepositoryForTest` already seeds. `Invite`/`ResendInvite`/`CancelInvite` in `internal/api/admins.go` now read `ActiveTenantIDFromContext` and pass it through; `List`'s handler already had `tenantID` in scope from the membership-listing code above it.
 
 ---
 
