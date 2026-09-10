@@ -177,32 +177,32 @@ Explicitly excluded. Documented to prevent scope creep.
 
 | Requirement ID | Story | Phase | Status |
 | --- | --- | --- | --- |
-| TENANT-01 | P1: Isolamento RLS | Design | Pending |
-| TENANT-02 | P1: Isolamento RLS | Design | Pending |
-| TENANT-03 | P1: Isolamento RLS | Design | Pending |
-| TENANT-04 | P1: Isolamento RLS (poller) | Design | Pending |
-| TENANT-05 | P1: Bootstrap self-hosted | Design | Pending |
-| TENANT-06 | P1: Bootstrap self-hosted | Design | Pending |
-| TENANT-07 | P1: Bootstrap self-hosted | Design | Pending |
-| TENANT-08 | P1: Signup SaaS | T18 | Implementing |
-| TENANT-09 | P1: Signup SaaS | T18 | Implementing |
-| TENANT-10 | P1: Signup SaaS | T18 | Implementing |
-| TENANT-11 | P1: Signup SaaS | T18 | Implementing |
-| TENANT-12 | P1: Signup SaaS | Design | Pending |
-| TENANT-13 | P1: Signup SaaS (rate limit) | Design | Pending |
-| TENANT-14 | P1: Convite por tenant | Design | Pending |
-| TENANT-15 | P1: Convite por tenant | Design | Pending |
-| TENANT-16 | P1: Convite por tenant | Design | Pending |
-| TENANT-17 | P1: Convite por tenant | Design | Pending |
-| TENANT-18 | P1: Convite por tenant | Design | Pending |
-| TENANT-19 | P2: Switch tenant | T17 | Implementing |
-| TENANT-20 | P2: Switch tenant | T17 | Implementing |
-| TENANT-21 | P2: Switch tenant | T17 | Implementing |
-| TENANT-22 | P2: Perfil fiscal | T16, T19 | Implementing |
-| TENANT-23 | P2: Perfil fiscal | T16, T19 | Implementing |
-| TENANT-24 | P2: Perfil fiscal | T16, T19 | Implementing |
-| TENANT-25 | P3: Locale/branding schema | Design | Pending |
-| TENANT-26 | P3: Locale/branding schema | Design | Pending |
+| TENANT-01 | P1: Isolamento RLS | T1, T2 | Verified |
+| TENANT-02 | P1: Isolamento RLS | T1, T2, T3 | Verified |
+| TENANT-03 | P1: Isolamento RLS | T1, T2, AD-023 | Verified |
+| TENANT-04 | P1: Isolamento RLS (poller) | T15, AD-024 | Verified |
+| TENANT-05 | P1: Bootstrap self-hosted | T4, T6 | Verified |
+| TENANT-06 | P1: Bootstrap self-hosted | T5, T6 | Verified |
+| TENANT-07 | P1: Bootstrap self-hosted | T6 | Verified |
+| TENANT-08 | P1: Signup SaaS | T9, T18 | Verified |
+| TENANT-09 | P1: Signup SaaS | T10, T18 | Verified |
+| TENANT-10 | P1: Signup SaaS | T10, T18 | Verified |
+| TENANT-11 | P1: Signup SaaS | T11, T18 | Verified |
+| TENANT-12 | P1: Signup SaaS | T9 | Verified |
+| TENANT-13 | P1: Signup SaaS (rate limit) | T12 | Verified |
+| TENANT-14 | P1: Convite por tenant | T13 | Verified |
+| TENANT-15 | P1: Convite por tenant | T14 | Verified |
+| TENANT-16 | P1: Convite por tenant | T14 | Verified |
+| TENANT-17 | P1: Convite por tenant | T13 | Verified |
+| TENANT-18 | P1: Convite por tenant | T14 | Verified |
+| TENANT-19 | P2: Switch tenant | T7, T8, T17 | Verified |
+| TENANT-20 | P2: Switch tenant | T8, T17 | Verified |
+| TENANT-21 | P2: Switch tenant | T8, T17 | Verified |
+| TENANT-22 | P2: Perfil fiscal | T4, T16, T19 | Verified |
+| TENANT-23 | P2: Perfil fiscal | T4, T16, T19 | Verified |
+| TENANT-24 | P2: Perfil fiscal | T16, T19 | Verified |
+| TENANT-25 | P3: Locale/branding schema | T1 | Verified |
+| TENANT-26 | P3: Locale/branding schema | T1 | Verified (validação de formato hex adiada — spec-precision gap registrado em validation.md, deferido a feature futura) |
 
 **ID format:** `TENANT-NN`
 
