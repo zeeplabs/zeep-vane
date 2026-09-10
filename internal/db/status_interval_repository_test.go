@@ -397,3 +397,84 @@ func TestDeleteClosedBefore_DeletesOnlyClosedRowsOlderThanCutoff(t *testing.T) {
 		}
 	}
 }
+
+// TestCountUpdatedSince_CountsOnlyRowsInsideWindow covers POLLST-05/06: only
+// rows whose last_seen_at falls at or after the given cutoff are counted.
+// CountUpdatedSince is a table-wide count (spec.md: scoped only to the
+// caller's tenant via ambient RLS, not per-service), so this compares
+// before/after each insert rather than an absolute count, which would be
+// flaky against rows other tests in this run left inside the real-time
+// last-minute window.
+func TestCountUpdatedSince_CountsOnlyRowsInsideWindow(t *testing.T) {
+	pool := newStatusIntervalRepositoryTestPool(t)
+	repo := NewStatusIntervalRepository(pool)
+	ctx := context.Background()
+
+	insideService := createStatusIntervalRepositoryTestService(t, pool, "count-updated-since-inside")
+	outsideService := createStatusIntervalRepositoryTestService(t, pool, "count-updated-since-outside")
+
+	now := time.Now().UTC().Truncate(time.Millisecond)
+	cutoff := now.Add(-60 * time.Second)
+	inside := now.Add(-10 * time.Second)
+	outside := now.Add(-5 * time.Minute)
+
+	baseline, err := repo.CountUpdatedSince(ctx, cutoff)
+	if err != nil {
+		t.Fatalf("CountUpdatedSince() (baseline) returned unexpected error: %v", err)
+	}
+
+	if err := repo.OpenOrExtend(ctx, outsideService, "operational", 95.0, outside); err != nil {
+		t.Fatalf("OpenOrExtend() (outside) returned unexpected error: %v", err)
+	}
+	afterOutside, err := repo.CountUpdatedSince(ctx, cutoff)
+	if err != nil {
+		t.Fatalf("CountUpdatedSince() (after outside) returned unexpected error: %v", err)
+	}
+	if afterOutside != baseline {
+		t.Errorf("count went from %d to %d after a row outside the window, want unchanged", baseline, afterOutside)
+	}
+
+	if err := repo.OpenOrExtend(ctx, insideService, "operational", 95.0, inside); err != nil {
+		t.Fatalf("OpenOrExtend() (inside) returned unexpected error: %v", err)
+	}
+	afterInside, err := repo.CountUpdatedSince(ctx, cutoff)
+	if err != nil {
+		t.Fatalf("CountUpdatedSince() (after inside) returned unexpected error: %v", err)
+	}
+	if afterInside != baseline+1 {
+		t.Errorf("count = %d, want %d (baseline + the row inside the window)", afterInside, baseline+1)
+	}
+}
+
+// TestCountUpdatedSince_StaleRowOutsideWindow_DoesNotIncreaseCount covers
+// POLLST-07's edge case: a row updated well outside the window must not be
+// counted. CountUpdatedSince is a table-wide count (not service-scoped -
+// spec.md: scoped only to the caller's tenant via ambient RLS), so this
+// compares before/after a stale insert rather than asserting an absolute 0,
+// which would be flaky against rows other tests in this run left inside the
+// real-time last-minute window.
+func TestCountUpdatedSince_StaleRowOutsideWindow_DoesNotIncreaseCount(t *testing.T) {
+	pool := newStatusIntervalRepositoryTestPool(t)
+	repo := NewStatusIntervalRepository(pool)
+	ctx := context.Background()
+
+	cutoff := time.Now().UTC().Add(-60 * time.Second)
+	before, err := repo.CountUpdatedSince(ctx, cutoff)
+	if err != nil {
+		t.Fatalf("CountUpdatedSince() (before) returned unexpected error: %v", err)
+	}
+
+	serviceID := createStatusIntervalRepositoryTestService(t, pool, "count-updated-since-stale")
+	old := time.Now().UTC().Add(-1 * time.Hour)
+	if err := repo.OpenOrExtend(ctx, serviceID, "operational", 95.0, old); err != nil {
+		t.Fatalf("OpenOrExtend() returned unexpected error: %v", err)
+	}
+
+	after, err := repo.CountUpdatedSince(ctx, cutoff)
+	if err != nil {
+		t.Fatalf("CountUpdatedSince() (after) returned unexpected error: %v", err)
+	}
+	if after != before {
+		t.Errorf("count went from %d to %d after inserting a stale row, want unchanged", before, after)
+	}
+}

@@ -189,6 +189,20 @@ func (r *StatusIntervalRepository) DeleteClosedBefore(ctx context.Context, cutof
 	return tag.RowsAffected(), nil
 }
 
+// CountUpdatedSince returns the number of status_intervals rows whose
+// last_seen_at falls at or after since (POLLST-05/06), tenant-scoped via the
+// same ambient RLS every other query in this repository relies on - no
+// explicit tenant_id filter needed. WHILE no row has been updated in the
+// window this returns 0, a valid state, not an error (POLLST-07).
+func (r *StatusIntervalRepository) CountUpdatedSince(ctx context.Context, since time.Time) (int, error) {
+	var count int
+	row := r.pool.QueryRow(ctx, "SELECT COUNT(*) FROM status_intervals WHERE last_seen_at >= $1", since)
+	if err := row.Scan(&count); err != nil {
+		return 0, fmt.Errorf("db: failed to count status intervals updated since %s: %w", since, err)
+	}
+	return count, nil
+}
+
 // insertOpenInterval inserts a new open interval (starts_at == last_seen_at
 // == at, ends_at NULL) for serviceID within tx, translating a unique
 // partial index violation into ErrIntervalRaceLost.
