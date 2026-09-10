@@ -298,7 +298,7 @@ func snapshotAndClearUsers(t *testing.T, pool *Pool) func() {
 		clearAll()
 		for _, a := range admins {
 			_, err := pool.Exec(ctx,
-				"INSERT INTO users (id, email, password_hash, role, sessions_revoked_at, created_at) VALUES ($1, $2, $3, $4, $5, $6)",
+				"INSERT INTO users (id, email, password_hash, sessions_revoked_at, email_verified_at, created_at) VALUES ($1, $2, $3, $4, $5, $6)",
 				a.values...,
 			)
 			if err != nil {
@@ -307,7 +307,7 @@ func snapshotAndClearUsers(t *testing.T, pool *Pool) func() {
 		}
 		for _, inv := range invites {
 			_, err := pool.Exec(ctx,
-				"INSERT INTO tenant_invites (id, email, role, token_hash, invited_by_id, expires_at, used_at, created_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
+				"INSERT INTO tenant_invites (id, tenant_id, email, role, token_hash, invited_by_id, expires_at, used_at, created_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)",
 				inv.values...,
 			)
 			if err != nil {
@@ -316,7 +316,7 @@ func snapshotAndClearUsers(t *testing.T, pool *Pool) func() {
 		}
 		for _, tok := range tokens {
 			_, err := pool.Exec(ctx,
-				"INSERT INTO password_reset_tokens (id, admin_id, token_hash, expires_at, used_at) VALUES ($1, $2, $3, $4, $5)",
+				"INSERT INTO password_reset_tokens (id, user_id, token_hash, expires_at, used_at) VALUES ($1, $2, $3, $4, $5)",
 				tok.values...,
 			)
 			if err != nil {
