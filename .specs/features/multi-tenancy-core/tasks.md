@@ -568,11 +568,11 @@ T16 → T19
 - Skill: NONE
 
 **Done when**:
-- [ ] `GET`/`PATCH /api/company-settings` read/write the active tenant's row via `TenantRepository`
-- [ ] `billing_address` is never accepted/returned by this endpoint (SaaS billing feature owns that field's exposure)
-- [ ] Public status page still renders the correct tenant's company name/logo
-- [ ] Gate check passes: `TEST_DATABASE_URL=... go test -tags=integration ./internal/api/...`
-- [ ] Test count: existing `company_settings` tests migrated and passing + 2 new validation cases (CPF/CNPJ length)
+- [x] `GET`/`PATCH /api/company-settings` read/write the active tenant's row via `TenantRepository`
+- [x] `billing_address` is never accepted/returned by this endpoint (SaaS billing feature owns that field's exposure)
+- [x] Public status page still renders the correct tenant's company name/logo
+- [x] Gate check passes: `TEST_DATABASE_URL=... go test -tags=integration ./internal/api/...`
+- [x] Test count: existing `company_settings` tests migrated and passing + 2 new validation cases (CPF/CNPJ length)
 
 **Tests**: integration
 **Gate**: full
@@ -580,6 +580,8 @@ T16 → T19
 **Commit**: `refactor(api): merge company_settings into tenants`
 
 **Schema prerequisite already satisfied.** The T1 correction dropped `company_settings` and repointed `company_settings_handler.go`, `logo_file_handler.go`, `instance_config_handler.go` and `public_status_handler.go` at `tenants` via `TenantRepository`. What remains for T16 is the API-layer work this task describes: the fiscal fields (`legal_name`/`tax_id`/`tax_id_type`) on the endpoint's request/response with CPF/CNPJ length validation, keeping `billing_address` out of the payload, and the UI wiring.
+
+**Implementation notes:** `companySettingsResponse`/`updateCompanySettingsRequest` gained `LegalName`/`TaxID`/`TaxIDType` (all `*string`, matching `db.TenantUpdate`'s "nil = leave unchanged" semantics); no `billing_address` field was added anywhere in either struct, so it can never round-trip through this endpoint - `TestCompanySettingsGet_NeverExposesBillingAddress` asserts the marshaled JSON has no such key. `Update` now maps `db.ErrInvalidTaxID` (already implemented in T4's `TenantRepository.Update`) to a 422 (`invalidTaxIDRequestBody`) instead of falling through to `writeInternalError`'s 500 - the validation logic itself required no new code, only wiring the existing repository error to the right HTTP status. `public_status_handler.go`'s `Active(ctx)` call already resolves the request's tenant correctly since T20/T20b wired `HostRouter` to open the request's transaction with the resolved tenant's `app.tenant_id` - no change needed here.
 
 ---
 

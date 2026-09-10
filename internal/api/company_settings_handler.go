@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/mail"
@@ -41,21 +42,43 @@ func NewCompanySettingsHandler(settings companySettingsStore, logger *zap.Logger
 	return &CompanySettingsHandler{settings: settings, logger: logger}
 }
 
+// companySettingsResponse never carries billing_address (SaaS billing
+// feature owns that field's exposure - not this screen's, self-hosted or
+// SaaS) even though db.Tenant has the column (TENANT-24).
 type companySettingsResponse struct {
 	Name         string  `json:"name"`
 	ContactEmail string  `json:"contact_email"`
 	LogoURL      *string `json:"logo_url"`
+	LegalName    *string `json:"legal_name"`
+	TaxID        *string `json:"tax_id"`
+	TaxIDType    *string `json:"tax_id_type"`
 }
 
+// updateCompanySettingsRequest's fiscal fields (LegalName/TaxID/TaxIDType)
+// are all optional (TENANT-22) - a nil pointer means "leave unchanged",
+// matching db.TenantUpdate's own semantics. billing_address is never
+// accepted here (TENANT-24).
 type updateCompanySettingsRequest struct {
-	Name         string `json:"name"`
-	ContactEmail string `json:"contact_email"`
+	Name         string  `json:"name"`
+	ContactEmail string  `json:"contact_email"`
+	LegalName    *string `json:"legal_name"`
+	TaxID        *string `json:"tax_id"`
+	TaxIDType    *string `json:"tax_id_type"`
 }
 
 const invalidCompanySettingsRequestBody = `{"error":"name is required and contact_email must be a valid e-mail address"}`
 
+const invalidTaxIDRequestBody = `{"error":"tax_id must have 11 digits for cpf or 14 digits for cnpj"}`
+
 func toCompanySettingsResponse(tenant *db.Tenant) companySettingsResponse {
-	return companySettingsResponse{Name: tenant.Name, ContactEmail: tenant.ContactEmail, LogoURL: tenant.LogoServedURL()}
+	return companySettingsResponse{
+		Name:         tenant.Name,
+		ContactEmail: tenant.ContactEmail,
+		LogoURL:      tenant.LogoServedURL(),
+		LegalName:    tenant.LegalName,
+		TaxID:        tenant.TaxID,
+		TaxIDType:    tenant.TaxIDType,
+	}
 }
 
 // Get handles GET /api/company-settings, returning the active tenant's
@@ -97,8 +120,20 @@ func (h *CompanySettingsHandler) Update(w http.ResponseWriter, r *http.Request) 
 
 	tenantID, _ := ActiveTenantIDFromContext(r.Context())
 
-	settings, err := h.settings.Update(r.Context(), tenantID, db.TenantUpdate{Name: &req.Name, ContactEmail: &req.ContactEmail})
+	settings, err := h.settings.Update(r.Context(), tenantID, db.TenantUpdate{
+		Name:         &req.Name,
+		ContactEmail: &req.ContactEmail,
+		LegalName:    req.LegalName,
+		TaxID:        req.TaxID,
+		TaxIDType:    req.TaxIDType,
+	})
 	if err != nil {
+		if errors.Is(err, db.ErrInvalidTaxID) {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusUnprocessableEntity)
+			_, _ = w.Write([]byte(invalidTaxIDRequestBody))
+			return
+		}
 		h.logger.Error("company-settings: failed to update settings", zap.Error(err))
 		writeInternalError(w)
 		return

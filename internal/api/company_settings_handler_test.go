@@ -267,6 +267,123 @@ func TestCompanySettingsUpdate_MalformedContactEmail_422NoPersistence(t *testing
 	}
 }
 
+// TestCompanySettingsUpdate_CPFWrongDigitCount_422NoPersistence asserts
+// spec.md's P2 "Perfil da empresa" AC2: tax_id_type=cpf with a tax_id that
+// isn't 11 digits is rejected with 422, no persistence (TENANT-23).
+func TestCompanySettingsUpdate_CPFWrongDigitCount_422NoPersistence(t *testing.T) {
+	r, _, admins := newCompanySettingsRouter(t)
+	token := issueTestSessionToken(t, admins)
+
+	if rec := patchCompanySettings(t, r, token, updateCompanySettingsRequest{Name: "Acme Inc.", ContactEmail: "owner@acme.example.com"}); rec.Code != http.StatusOK {
+		t.Fatalf("setup PATCH status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	shortCPF := "1234"
+	cpfType := "cpf"
+	rec := patchCompanySettings(t, r, token, updateCompanySettingsRequest{
+		Name: "Acme Inc.", ContactEmail: "owner@acme.example.com",
+		TaxID: &shortCPF, TaxIDType: &cpfType,
+	})
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusUnprocessableEntity, rec.Body.String())
+	}
+
+	getRec := getCompanySettings(t, r, token)
+	var getResp companySettingsResponse
+	if err := json.Unmarshal(getRec.Body.Bytes(), &getResp); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+	if getResp.TaxID != nil {
+		t.Errorf("TaxID after rejected PATCH = %v, want nil (unchanged)", *getResp.TaxID)
+	}
+}
+
+// TestCompanySettingsUpdate_CNPJWrongDigitCount_422NoPersistence asserts
+// spec.md's P2 "Perfil da empresa" AC2 for tax_id_type=cnpj (14 digits
+// required), TENANT-23.
+func TestCompanySettingsUpdate_CNPJWrongDigitCount_422NoPersistence(t *testing.T) {
+	r, _, admins := newCompanySettingsRouter(t)
+	token := issueTestSessionToken(t, admins)
+
+	if rec := patchCompanySettings(t, r, token, updateCompanySettingsRequest{Name: "Acme Inc.", ContactEmail: "owner@acme.example.com"}); rec.Code != http.StatusOK {
+		t.Fatalf("setup PATCH status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	shortCNPJ := "123456"
+	cnpjType := "cnpj"
+	rec := patchCompanySettings(t, r, token, updateCompanySettingsRequest{
+		Name: "Acme Inc.", ContactEmail: "owner@acme.example.com",
+		TaxID: &shortCNPJ, TaxIDType: &cnpjType,
+	})
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusUnprocessableEntity, rec.Body.String())
+	}
+
+	getRec := getCompanySettings(t, r, token)
+	var getResp companySettingsResponse
+	if err := json.Unmarshal(getRec.Body.Bytes(), &getResp); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+	if getResp.TaxID != nil {
+		t.Errorf("TaxID after rejected PATCH = %v, want nil (unchanged)", *getResp.TaxID)
+	}
+}
+
+// TestCompanySettingsUpdate_ValidCNPJ_200PersistsFiscalFields asserts
+// spec.md's P2 AC1: legal_name/tax_id/tax_id_type persist together when
+// valid (TENANT-22).
+func TestCompanySettingsUpdate_ValidCNPJ_200PersistsFiscalFields(t *testing.T) {
+	r, _, admins := newCompanySettingsRouter(t)
+	token := issueTestSessionToken(t, admins)
+
+	legalName := "Acme Comercio Ltda"
+	cnpj := "12345678000199"
+	cnpjType := "cnpj"
+	rec := patchCompanySettings(t, r, token, updateCompanySettingsRequest{
+		Name: "Acme Inc.", ContactEmail: "owner@acme.example.com",
+		LegalName: &legalName, TaxID: &cnpj, TaxIDType: &cnpjType,
+	})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	getRec := getCompanySettings(t, r, token)
+	var getResp companySettingsResponse
+	if err := json.Unmarshal(getRec.Body.Bytes(), &getResp); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+	if getResp.LegalName == nil || *getResp.LegalName != legalName {
+		t.Errorf("LegalName = %v, want %q", getResp.LegalName, legalName)
+	}
+	if getResp.TaxID == nil || *getResp.TaxID != cnpj {
+		t.Errorf("TaxID = %v, want %q", getResp.TaxID, cnpj)
+	}
+	if getResp.TaxIDType == nil || *getResp.TaxIDType != cnpjType {
+		t.Errorf("TaxIDType = %v, want %q", getResp.TaxIDType, cnpjType)
+	}
+}
+
+// TestCompanySettingsGet_NeverExposesBillingAddress asserts spec.md's P2
+// AC3: billing_address is never returned by this endpoint, self-hosted or
+// SaaS (TENANT-24) - the SaaS billing feature owns that field's exposure.
+func TestCompanySettingsGet_NeverExposesBillingAddress(t *testing.T) {
+	r, _, admins := newCompanySettingsRouter(t)
+	token := issueTestSessionToken(t, admins)
+
+	rec := getCompanySettings(t, r, token)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	var raw map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &raw); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+	if _, present := raw["billing_address"]; present {
+		t.Errorf("response contains billing_address key, want it absent: %v", raw)
+	}
+}
+
 // TestUploadLogo_ValidPNG_200UpdatesLogoURL asserts SET-07: a valid PNG
 // upload under 10 MB is persisted and responds 200 with the fixed
 // "/uploads/logo" URL.
