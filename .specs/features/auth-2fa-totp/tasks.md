@@ -173,13 +173,13 @@ T7 → T11
 - Skill: NONE
 
 **Done when**:
-- [ ] `CreatePendingSecret` upserts with `enabled_at NULL`
-- [ ] `GetSecret` returns `db.ErrNotFound` for no row
-- [ ] `ConfirmSecret` only sets `enabled_at` when it was NULL
-- [ ] `CreateRecoveryCodes` replaces any prior batch (delete-then-insert, atomic within one transaction)
-- [ ] `ConsumeRecoveryCode` matches a hash via bcrypt, marks it used atomically (`UPDATE ... WHERE used_at IS NULL RETURNING`), and rejects a second consumption of the same code
-- [ ] Gate check passes on disposable Postgres: `TEST_DATABASE_URL=... go test -tags=integration ./internal/db/...`
-- [ ] Test count: ≥10 new subtests (create/get/confirm happy+error paths, recovery code create/consume/reuse-rejected)
+- [x] `CreatePendingSecret` upserts with `enabled_at NULL`
+- [x] `GetSecret` returns `db.ErrNotFound` for no row
+- [x] `ConfirmSecret` only sets `enabled_at` when it was NULL
+- [x] `CreateRecoveryCodes` replaces any prior batch (delete-then-insert, atomic within one transaction)
+- [x] `ConsumeRecoveryCode` matches a hash via bcrypt, marks it used atomically (`UPDATE ... WHERE used_at IS NULL RETURNING`), and rejects a second consumption of the same code
+- [x] Gate check passes on disposable Postgres: `TEST_DATABASE_URL=... go test -tags=integration ./internal/db/...`
+- [x] Test count: ≥10 new subtests (create/get/confirm happy+error paths, recovery code create/consume/reuse-rejected)
 
 **Tests**: integration
 **Gate**: full
