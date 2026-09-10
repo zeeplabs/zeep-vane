@@ -122,11 +122,11 @@ T7 → T11
 - Skill: NONE
 
 **Done when**:
-- [ ] `GenerateTOTPSecret` returns a valid `otpauth://` URI and raw secret
-- [ ] `ValidateTOTPCode` accepts a code computed from the same secret and rejects a wrong one, with the library's default ±1 skew
-- [ ] `IssueTwoFactorChallenge`/`VerifyTwoFactorChallenge` round-trip correctly; `VerifyTwoFactorChallenge` rejects an expired token
-- [ ] Gate check passes: `go build ./... && go vet ./... && gofmt -l internal/auth/two_factor.go && go test ./internal/auth/...`
-- [ ] Test count: ≥8 new tests pass (generate, validate correct/wrong/skew, issue/verify round-trip, expired, tampered)
+- [x] `GenerateTOTPSecret` returns a valid `otpauth://` URI and raw secret
+- [x] `ValidateTOTPCode` accepts a code computed from the same secret and rejects a wrong one, with the library's default ±1 skew
+- [x] `IssueTwoFactorChallenge`/`VerifyTwoFactorChallenge` round-trip correctly; `VerifyTwoFactorChallenge` rejects an expired token
+- [x] Gate check passes: `go build ./... && go vet ./... && gofmt -l internal/auth/two_factor.go && go test ./internal/auth/...`
+- [x] Test count: ≥8 new tests pass (generate, validate correct/wrong/skew, issue/verify round-trip, expired, tampered)
 
 **Tests**: unit
 **Gate**: quick
