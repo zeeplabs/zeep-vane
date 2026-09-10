@@ -201,12 +201,12 @@ T7 → T11
 - Skill: NONE
 
 **Done when**:
-- [ ] `Create` inserts a row with the given TTL and returns its ID
-- [ ] `Lookup` returns the row without mutating it (a wrong-code retry must not consume it)
-- [ ] `MarkUsed` succeeds exactly once per row; a second call returns `ok=false`, no error
-- [ ] A concurrency test proves two simultaneous `MarkUsed` calls on the same row never both succeed (real contention, not a same-goroutine sequential call - same discipline as `status-page-domain-attach`'s corrected concurrency test)
-- [ ] Gate check passes on disposable Postgres: `TEST_DATABASE_URL=... go test -tags=integration ./internal/db/...`
-- [ ] Test count: ≥6 new subtests
+- [x] `Create` inserts a row with the given TTL and returns its ID
+- [x] `Lookup` returns the row without mutating it (a wrong-code retry must not consume it)
+- [x] `MarkUsed` succeeds exactly once per row; a second call returns `ok=false`, no error
+- [x] A concurrency test proves two simultaneous `MarkUsed` calls on the same row never both succeed (real contention, not a same-goroutine sequential call - same discipline as `status-page-domain-attach`'s corrected concurrency test)
+- [x] Gate check passes on disposable Postgres: `TEST_DATABASE_URL=... go test -tags=integration ./internal/db/...`
+- [x] Test count: ≥6 new subtests
 
 **Tests**: integration
 **Gate**: full
