@@ -296,7 +296,9 @@ func newMeRouter(t *testing.T) (http.Handler, *db.UserRepository, *db.Pool) {
 	r.Group(func(protected chi.Router) {
 		protected.Use(RequireAuth(testSessionSecret, repo), TenantContext(pool, db.NewTenantMembershipRepository(pool), zap.NewNop()))
 		protected.Get("/api/auth/me", handler.Me)
+		protected.Patch("/api/auth/me", handler.UpdateProfile)
 		protected.Post("/api/auth/switch-tenant", handler.SwitchTenant)
+		protected.Post("/api/auth/change-password", handler.ChangePassword)
 	})
 
 	return r, repo, pool
@@ -706,6 +708,273 @@ func TestSwitchTenant_NoSession_401(t *testing.T) {
 	r, _, _ := newMeRouter(t)
 
 	rec := postSwitchTenant(t, r, "", "00000000-0000-0000-0000-000000000000")
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Errorf("status = %d, want %d", rec.Code, http.StatusUnauthorized)
+	}
+}
+
+func patchProfile(t *testing.T, r http.Handler, token string, body []byte) *httptest.ResponseRecorder {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodPatch, "/api/auth/me", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+	return rec
+}
+
+func issueTestTokenFor(t *testing.T, admin *db.User, tenantID string) string {
+	t.Helper()
+	token, err := auth.IssueSessionWithTenant(admin.ID, tenantID, testSessionSecret)
+	if err != nil {
+		t.Fatalf("IssueSessionWithTenant() returned unexpected error: %v", err)
+	}
+	return token
+}
+
+// TestUpdateProfile_ValidName_200UpdatesName covers PROFSS-01: a non-empty
+// name updates the user's Name and is reflected in the response.
+func TestUpdateProfile_ValidName_200UpdatesName(t *testing.T) {
+	r, repo, pool := newMeRouter(t)
+	email := uniqueTestEmail(t)
+	tenantID := createTestAdmin(t, repo, pool, email, "correct-horse-battery-staple")
+	admin, err := repo.GetByEmail(context.Background(), email)
+	if err != nil {
+		t.Fatalf("GetByEmail() returned unexpected error: %v", err)
+	}
+	token := issueTestTokenFor(t, admin, tenantID)
+
+	body, err := json.Marshal(updateProfileRequest{Name: "New Display Name"})
+	if err != nil {
+		t.Fatalf("json.Marshal() returned unexpected error: %v", err)
+	}
+	rec := patchProfile(t, r, token, body)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	var resp meResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+	if resp.Name != "New Display Name" {
+		t.Errorf("Name = %q, want %q", resp.Name, "New Display Name")
+	}
+
+	updated, err := repo.GetByID(context.Background(), admin.ID)
+	if err != nil {
+		t.Fatalf("GetByID() returned unexpected error: %v", err)
+	}
+	if updated.Name != "New Display Name" {
+		t.Errorf("persisted Name = %q, want %q", updated.Name, "New Display Name")
+	}
+}
+
+// TestUpdateProfile_EmptyName_422NoChange covers PROFSS-02.
+func TestUpdateProfile_EmptyName_422NoChange(t *testing.T) {
+	r, repo, pool := newMeRouter(t)
+	email := uniqueTestEmail(t)
+	tenantID := createTestAdmin(t, repo, pool, email, "correct-horse-battery-staple")
+	admin, err := repo.GetByEmail(context.Background(), email)
+	if err != nil {
+		t.Fatalf("GetByEmail() returned unexpected error: %v", err)
+	}
+	token := issueTestTokenFor(t, admin, tenantID)
+	originalName := admin.Name
+
+	body, err := json.Marshal(updateProfileRequest{Name: ""})
+	if err != nil {
+		t.Fatalf("json.Marshal() returned unexpected error: %v", err)
+	}
+	rec := patchProfile(t, r, token, body)
+
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusUnprocessableEntity, rec.Body.String())
+	}
+
+	unchanged, err := repo.GetByID(context.Background(), admin.ID)
+	if err != nil {
+		t.Fatalf("GetByID() returned unexpected error: %v", err)
+	}
+	if unchanged.Name != originalName {
+		t.Errorf("Name = %q, want unchanged %q", unchanged.Name, originalName)
+	}
+}
+
+// TestUpdateProfile_ExtraFieldsIgnored covers PROFSS-03: a body containing
+// fields other than name (email, role) has those fields ignored, not
+// applied.
+func TestUpdateProfile_ExtraFieldsIgnored(t *testing.T) {
+	r, repo, pool := newMeRouter(t)
+	email := uniqueTestEmail(t)
+	tenantID := createTestAdmin(t, repo, pool, email, "correct-horse-battery-staple")
+	admin, err := repo.GetByEmail(context.Background(), email)
+	if err != nil {
+		t.Fatalf("GetByEmail() returned unexpected error: %v", err)
+	}
+	token := issueTestTokenFor(t, admin, tenantID)
+
+	body := []byte(`{"name":"Scoped Update","email":"attacker@example.com","role":"owner"}`)
+	rec := patchProfile(t, r, token, body)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	updated, err := repo.GetByID(context.Background(), admin.ID)
+	if err != nil {
+		t.Fatalf("GetByID() returned unexpected error: %v", err)
+	}
+	if updated.Name != "Scoped Update" {
+		t.Errorf("Name = %q, want %q", updated.Name, "Scoped Update")
+	}
+	if updated.Email != admin.Email {
+		t.Errorf("Email = %q, want unchanged %q (email field must be ignored)", updated.Email, admin.Email)
+	}
+}
+
+// TestUpdateProfile_NoSession_401 proves the endpoint requires
+// authentication like every other protected route.
+func TestUpdateProfile_NoSession_401(t *testing.T) {
+	r, _, _ := newMeRouter(t)
+
+	body, err := json.Marshal(updateProfileRequest{Name: "New Name"})
+	if err != nil {
+		t.Fatalf("json.Marshal() returned unexpected error: %v", err)
+	}
+	rec := patchProfile(t, r, "", body)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Errorf("status = %d, want %d", rec.Code, http.StatusUnauthorized)
+	}
+}
+
+func postChangePassword(t *testing.T, r http.Handler, token, currentPassword, newPassword string) *httptest.ResponseRecorder {
+	t.Helper()
+	body, err := json.Marshal(changePasswordRequest{CurrentPassword: currentPassword, NewPassword: newPassword})
+	if err != nil {
+		t.Fatalf("json.Marshal() returned unexpected error: %v", err)
+	}
+	req := httptest.NewRequest(http.MethodPost, "/api/auth/change-password", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+	return rec
+}
+
+// TestChangePassword_CorrectCurrentAndValidNew_200RevokesOtherSessions
+// covers PROFSS-04: a correct current password and a policy-valid new
+// password updates PasswordHash, responds 200, and revokes every other
+// active session for that user - proven here by a second, previously
+// issued session (session B) being rejected on its next authenticated
+// request afterward.
+func TestChangePassword_CorrectCurrentAndValidNew_200RevokesOtherSessions(t *testing.T) {
+	r, repo, pool := newMeRouter(t)
+	email := uniqueTestEmail(t)
+	const currentPassword = "correct-horse-battery-staple"
+	tenantID := createTestAdmin(t, repo, pool, email, currentPassword)
+	admin, err := repo.GetByEmail(context.Background(), email)
+	if err != nil {
+		t.Fatalf("GetByEmail() returned unexpected error: %v", err)
+	}
+
+	tokenA := issueTestTokenFor(t, admin, tenantID)
+	tokenB := issueTestTokenFor(t, admin, tenantID)
+
+	const newPassword = "brand-new-correct-horse-password"
+	rec := postChangePassword(t, r, tokenA, currentPassword, newPassword)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	updated, err := repo.GetByID(context.Background(), admin.ID)
+	if err != nil {
+		t.Fatalf("GetByID() returned unexpected error: %v", err)
+	}
+	if !auth.VerifyPassword(updated.PasswordHash, newPassword) {
+		t.Error("stored PasswordHash does not verify against the new password")
+	}
+
+	// Session B, issued before the change, must now be rejected.
+	meRec := patchProfile(t, r, tokenB, []byte(`{"name":"should not apply"}`))
+	if meRec.Code != http.StatusUnauthorized {
+		t.Errorf("session B status = %d, want %d (revoked by the password change)", meRec.Code, http.StatusUnauthorized)
+	}
+}
+
+// TestChangePassword_WrongCurrentPassword_401NoChange covers PROFSS-05.
+func TestChangePassword_WrongCurrentPassword_401NoChange(t *testing.T) {
+	r, repo, pool := newMeRouter(t)
+	email := uniqueTestEmail(t)
+	const currentPassword = "correct-horse-battery-staple"
+	tenantID := createTestAdmin(t, repo, pool, email, currentPassword)
+	admin, err := repo.GetByEmail(context.Background(), email)
+	if err != nil {
+		t.Fatalf("GetByEmail() returned unexpected error: %v", err)
+	}
+	token := issueTestTokenFor(t, admin, tenantID)
+	originalHash := admin.PasswordHash
+
+	rec := postChangePassword(t, r, token, "totally-wrong-password", "brand-new-correct-horse-password")
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusUnauthorized, rec.Body.String())
+	}
+
+	unchanged, err := repo.GetByID(context.Background(), admin.ID)
+	if err != nil {
+		t.Fatalf("GetByID() returned unexpected error: %v", err)
+	}
+	if unchanged.PasswordHash != originalHash {
+		t.Error("PasswordHash changed despite a wrong current password")
+	}
+
+	// The session used for this failed attempt must still work (nothing
+	// revoked).
+	meRec := patchProfile(t, r, token, []byte(`{"name":"still valid"}`))
+	if meRec.Code != http.StatusOK {
+		t.Errorf("session status after failed change = %d, want %d (nothing should be revoked)", meRec.Code, http.StatusOK)
+	}
+}
+
+// TestChangePassword_WeakNewPassword_422NoChange covers PROFSS-06.
+func TestChangePassword_WeakNewPassword_422NoChange(t *testing.T) {
+	r, repo, pool := newMeRouter(t)
+	email := uniqueTestEmail(t)
+	const currentPassword = "correct-horse-battery-staple"
+	tenantID := createTestAdmin(t, repo, pool, email, currentPassword)
+	admin, err := repo.GetByEmail(context.Background(), email)
+	if err != nil {
+		t.Fatalf("GetByEmail() returned unexpected error: %v", err)
+	}
+	token := issueTestTokenFor(t, admin, tenantID)
+	originalHash := admin.PasswordHash
+
+	rec := postChangePassword(t, r, token, currentPassword, "short")
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusUnprocessableEntity, rec.Body.String())
+	}
+
+	unchanged, err := repo.GetByID(context.Background(), admin.ID)
+	if err != nil {
+		t.Fatalf("GetByID() returned unexpected error: %v", err)
+	}
+	if unchanged.PasswordHash != originalHash {
+		t.Error("PasswordHash changed despite a weak new password")
+	}
+}
+
+// TestChangePassword_NoSession_401 proves the endpoint requires
+// authentication.
+func TestChangePassword_NoSession_401(t *testing.T) {
+	r, _, _ := newMeRouter(t)
+
+	rec := postChangePassword(t, r, "", "anything", "brand-new-correct-horse-password")
 
 	if rec.Code != http.StatusUnauthorized {
 		t.Errorf("status = %d, want %d", rec.Code, http.StatusUnauthorized)

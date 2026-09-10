@@ -13,10 +13,12 @@ import (
 	"github.com/zeeplabs/zeep-vane/internal/db"
 )
 
-// userGetter is the subset of *db.UserRepository the login handler
-// depends on.
+// userGetter is the subset of *db.UserRepository AuthHandler depends on.
 type userGetter interface {
 	GetByEmail(ctx context.Context, email string) (*db.User, error)
+	UpdateName(ctx context.Context, userID, name string) error
+	UpdatePasswordHash(ctx context.Context, userID, passwordHash string) error
+	RevokeSessions(ctx context.Context, id string) error
 }
 
 // authMembershipLister is the subset of *db.TenantMembershipRepository
@@ -238,6 +240,119 @@ func (h *AuthHandler) Me(w http.ResponseWriter, r *http.Request) {
 		ID: user.ID, Email: user.Email, Name: user.Name, Phone: user.Phone, Role: role,
 		ActiveTenantID: activeTenantID, Memberships: out,
 	})
+}
+
+type updateProfileRequest struct {
+	Name string `json:"name"`
+}
+
+const invalidUpdateProfileRequestBody = `{"error":"name is required"}`
+
+// UpdateProfile handles PATCH /api/auth/me, letting the authenticated user
+// change their own display name only (profile-self-service PROFSS-01/02/03).
+// Any other field in the request body is ignored (updateProfileRequest has
+// no field for them, so json.Decode simply drops them - matches this
+// codebase's existing JSON-decoding convention).
+func (h *AuthHandler) UpdateProfile(w http.ResponseWriter, r *http.Request) {
+	user, ok := UserFromContext(r.Context())
+	if !ok {
+		writeUnauthorized(w)
+		return
+	}
+
+	var req updateProfileRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Name == "" {
+		writeAdminError(w, http.StatusUnprocessableEntity, invalidUpdateProfileRequestBody)
+		return
+	}
+
+	if err := h.users.UpdateName(r.Context(), user.ID, req.Name); err != nil {
+		h.logger.Error("auth: failed to update user name", zap.Error(err))
+		writeInternalError(w)
+		return
+	}
+	user.Name = req.Name
+
+	memberships, err := h.memberships.ListForUser(r.Context(), user.ID)
+	if err != nil {
+		h.logger.Error("auth: failed to list tenant memberships for update-profile", zap.Error(err))
+		writeInternalError(w)
+		return
+	}
+	activeTenantID, _ := ActiveTenantIDFromContext(r.Context())
+	role, _ := RoleFromContext(r.Context())
+
+	out := make([]meMembership, len(memberships))
+	for i, m := range memberships {
+		out[i] = meMembership{TenantID: m.TenantID, Role: m.Role}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(meResponse{
+		ID: user.ID, Email: user.Email, Name: user.Name, Phone: user.Phone, Role: role,
+		ActiveTenantID: activeTenantID, Memberships: out,
+	})
+}
+
+type changePasswordRequest struct {
+	CurrentPassword string `json:"current_password"`
+	NewPassword     string `json:"new_password"`
+}
+
+const invalidCurrentPasswordBody = `{"error":"current password is incorrect"}`
+
+// ChangePassword handles POST /api/auth/change-password, letting the
+// authenticated user rotate their own password by proving they know the
+// current one (profile-self-service PROFSS-04/05/06) - independent of the
+// unauthenticated email-token reset flow. On success it revokes every other
+// session for this user (RevokeSessions), exactly like
+// PasswordResetHandler.Confirm already does; the caller's own current
+// request is unaffected since it already passed RequireAuth before this
+// handler ran.
+func (h *AuthHandler) ChangePassword(w http.ResponseWriter, r *http.Request) {
+	user, ok := UserFromContext(r.Context())
+	if !ok {
+		writeUnauthorized(w)
+		return
+	}
+
+	var req changePasswordRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeAdminError(w, http.StatusUnauthorized, invalidCurrentPasswordBody)
+		return
+	}
+
+	if !auth.VerifyPassword(user.PasswordHash, req.CurrentPassword) {
+		writeAdminError(w, http.StatusUnauthorized, invalidCurrentPasswordBody)
+		return
+	}
+
+	if err := auth.ValidatePassword(req.NewPassword); err != nil {
+		writeAdminError(w, http.StatusUnprocessableEntity, weakPasswordBody)
+		return
+	}
+
+	newHash, err := auth.HashPassword(req.NewPassword)
+	if err != nil {
+		h.logger.Error("auth: failed to hash new password", zap.Error(err))
+		writeInternalError(w)
+		return
+	}
+
+	if err := h.users.UpdatePasswordHash(r.Context(), user.ID, newHash); err != nil {
+		h.logger.Error("auth: failed to update password", zap.Error(err))
+		writeInternalError(w)
+		return
+	}
+
+	if err := h.users.RevokeSessions(r.Context(), user.ID); err != nil {
+		h.logger.Error("auth: failed to revoke sessions after password change", zap.String("user_id", user.ID), zap.Error(err))
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write([]byte(`{"status":"ok"}`))
 }
 
 // Logout expires the vane_session cookie set at login. It requires no

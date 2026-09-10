@@ -149,8 +149,14 @@ func buildAdminRouter(pool *db.Pool, cfg config.Config, logger *zap.Logger, poll
 		// role) until they pick one - which is exactly what /me and
 		// switch-tenant are for.
 		protected.Get("/api/auth/me", authHandler.Me)
+		protected.Patch("/api/auth/me", authHandler.UpdateProfile)
 		protected.Post("/api/auth/logout", authHandler.Logout)
 		protected.Post("/api/auth/switch-tenant", authHandler.SwitchTenant)
+		// change-password additionally rides the shared credential-route
+		// limiter (profile-self-service, H10 class): a wrong-current-password
+		// guess is exactly the credential-guessing attempt that limiter
+		// exists to slow down.
+		protected.With(credentialLimiter.Middleware).Post("/api/auth/change-password", authHandler.ChangePassword)
 
 		// Admin management (admin-dashboard ADM-09) - owner only.
 		protected.With(ownerOnly).Post("/api/admins", adminsHandler.Invite)
