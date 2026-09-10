@@ -478,3 +478,32 @@ func TestCountUpdatedSince_StaleRowOutsideWindow_DoesNotIncreaseCount(t *testing
 		t.Errorf("count went from %d to %d after inserting a stale row, want unchanged", before, after)
 	}
 }
+
+// TestCountUpdatedSince_ExactBoundary_Included pins the boundary the
+// Verifier flagged as untested: a row whose last_seen_at exactly equals the
+// cutoff must be counted (>=, not >).
+func TestCountUpdatedSince_ExactBoundary_Included(t *testing.T) {
+	pool := newStatusIntervalRepositoryTestPool(t)
+	repo := NewStatusIntervalRepository(pool)
+	ctx := context.Background()
+
+	serviceID := createStatusIntervalRepositoryTestService(t, pool, "count-updated-since-boundary")
+	cutoff := time.Now().UTC().Truncate(time.Millisecond)
+
+	baseline, err := repo.CountUpdatedSince(ctx, cutoff)
+	if err != nil {
+		t.Fatalf("CountUpdatedSince() (baseline) returned unexpected error: %v", err)
+	}
+
+	if err := repo.OpenOrExtend(ctx, serviceID, "operational", 95.0, cutoff); err != nil {
+		t.Fatalf("OpenOrExtend() returned unexpected error: %v", err)
+	}
+
+	count, err := repo.CountUpdatedSince(ctx, cutoff)
+	if err != nil {
+		t.Fatalf("CountUpdatedSince() returned unexpected error: %v", err)
+	}
+	if count != baseline+1 {
+		t.Errorf("count = %d, want %d (a row whose last_seen_at exactly equals cutoff must be included)", count, baseline+1)
+	}
+}
