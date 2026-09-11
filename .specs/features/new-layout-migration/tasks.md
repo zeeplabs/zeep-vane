@@ -198,10 +198,10 @@ T3 → T14
 - Skill: NONE
 
 **Done when**:
-- [ ] With no stored value, `document.documentElement.dataset.theme` is unset/`"light"` before first paint (no dark flash)
-- [ ] With a stored `"dark"` value, the attribute is `"dark"` before first paint
-- [ ] `localStorage` access wrapped in `try/catch` - a throw (e.g. private-mode restriction) does not block app boot
-- [ ] Gate check passes: `npx tsc -b --noEmit` (script is plain JS in the HTML, not type-checked, but the app must still build) and `npm run test`
+- [x] With no stored value, `document.documentElement.dataset.theme` is unset/`"light"` before first paint (no dark flash)
+- [x] With a stored `"dark"` value, the attribute is `"dark"` before first paint
+- [x] `localStorage` access wrapped in `try/catch` - a throw (e.g. private-mode restriction) does not block app boot
+- [x] Gate check passes: `npx tsc -b --noEmit` (script is plain JS in the HTML, not type-checked, but the app must still build) and `npm run test`
 
 **Tests**: none
 **Gate**: build
