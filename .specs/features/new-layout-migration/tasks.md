@@ -327,11 +327,11 @@ T3 → T14
 - Skill: frontend-design
 
 **Done when**:
-- [ ] Shows authenticated user's name/email
-- [ ] "Configurações" link only rendered for `hasRole(["owner"])`, matching `Sidebar.tsx`'s current gate on the Settings nav item
-- [ ] "Sair" opens `LogoutConfirmDialog`; confirming calls `logout()`
-- [ ] Gate check passes: `npm run test`
-- [ ] Test count: 4 new tests
+- [x] Shows authenticated user's name/email
+- [x] "Configurações" link only rendered for `hasRole(["owner"])`, matching `Sidebar.tsx`'s current gate on the Settings nav item
+- [x] "Sair" opens `LogoutConfirmDialog`; confirming calls `logout()`
+- [x] Gate check passes: `npm run test`
+- [x] Test count: 4 new tests
 
 **Tests**: unit
 **Gate**: build

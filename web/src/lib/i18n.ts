@@ -34,6 +34,9 @@ const resources = {
         label: "Trocar de organização",
         freePlan: "Free",
       },
+      avatarMenu: {
+        trigger: "Menu do usuário",
+      },
       sessionExpired: {
         title: "Sessão expirada",
         body: "Sua sessão expirou. Faça login novamente para continuar.",
@@ -194,6 +197,9 @@ const resources = {
       tenantSwitcher: {
         label: "Switch organization",
         freePlan: "Free",
+      },
+      avatarMenu: {
+        trigger: "User menu",
       },
       sessionExpired: {
         title: "Session expired",
