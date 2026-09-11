@@ -407,6 +407,12 @@ func sessionCookie(value string, maxAge int, secure bool) *http.Cookie {
 type meMembership struct {
 	TenantID string `json:"tenant_id"`
 	Role     string `json:"role"`
+	// Name and PlanTier are the tenant's display name and plan (new-layout-
+	// migration, SHELL-20/21) - sourced from db.TenantMembership.Name/.Plan
+	// (ListForUser's JOIN tenants), never a backend-invented default: an
+	// empty PlanTier is passed through as-is.
+	Name     string `json:"name"`
+	PlanTier string `json:"plan_tier"`
 }
 
 type meResponse struct {
@@ -449,7 +455,7 @@ func (h *AuthHandler) Me(w http.ResponseWriter, r *http.Request) {
 
 	out := make([]meMembership, len(memberships))
 	for i, m := range memberships {
-		out[i] = meMembership{TenantID: m.TenantID, Role: m.Role}
+		out[i] = meMembership{TenantID: m.TenantID, Role: m.Role, Name: m.Name, PlanTier: m.Plan}
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -502,7 +508,7 @@ func (h *AuthHandler) UpdateProfile(w http.ResponseWriter, r *http.Request) {
 
 	out := make([]meMembership, len(memberships))
 	for i, m := range memberships {
-		out[i] = meMembership{TenantID: m.TenantID, Role: m.Role}
+		out[i] = meMembership{TenantID: m.TenantID, Role: m.Role, Name: m.Name, PlanTier: m.Plan}
 	}
 
 	w.Header().Set("Content-Type", "application/json")

@@ -376,6 +376,83 @@ func TestMe_ValidSession_200WithIdentity(t *testing.T) {
 	}
 }
 
+// TestMe_ReturnsMembershipNamePlanTier covers SHELL-20/21: the caller's
+// membership entry carries the tenant's real name and plan_tier, not the
+// zero value ListForUser used to return before it joined tenants.
+func TestMe_ReturnsMembershipNamePlanTier(t *testing.T) {
+	r, repo, pool := newMeRouter(t)
+	email := uniqueTestEmail(t)
+	tenantID := createTestAdmin(t, repo, pool, email, "correct-horse-battery-staple")
+	if _, err := pool.Exec(context.Background(), "UPDATE tenants SET plan = $1 WHERE id = $2", "scale", tenantID); err != nil {
+		t.Fatalf("seeding tenant plan returned unexpected error: %v", err)
+	}
+
+	admin, err := repo.GetByEmail(context.Background(), email)
+	if err != nil {
+		t.Fatalf("GetByEmail() returned unexpected error: %v", err)
+	}
+	token := issueTestTokenFor(t, admin, tenantID)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/auth/me", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	var body meResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+	if len(body.Memberships) != 1 {
+		t.Fatalf("len(body.Memberships) = %d, want 1", len(body.Memberships))
+	}
+	if body.Memberships[0].Name != "auth-test-tenant-"+email {
+		t.Errorf("Memberships[0].Name = %q, want %q", body.Memberships[0].Name, "auth-test-tenant-"+email)
+	}
+	if body.Memberships[0].PlanTier != "scale" {
+		t.Errorf("Memberships[0].PlanTier = %q, want %q", body.Memberships[0].PlanTier, "scale")
+	}
+}
+
+// TestMe_MembershipEmptyPlanTier_PassesThroughUnchanged covers SHELL-21's
+// edge case for the API layer: a tenant with plan = ” comes back as
+// plan_tier: "" - the handler invents no default.
+func TestMe_MembershipEmptyPlanTier_PassesThroughUnchanged(t *testing.T) {
+	r, repo, pool := newMeRouter(t)
+	email := uniqueTestEmail(t)
+	tenantID := createTestAdmin(t, repo, pool, email, "correct-horse-battery-staple")
+	if _, err := pool.Exec(context.Background(), "UPDATE tenants SET plan = '' WHERE id = $1", tenantID); err != nil {
+		t.Fatalf("seeding empty tenant plan returned unexpected error: %v", err)
+	}
+
+	admin, err := repo.GetByEmail(context.Background(), email)
+	if err != nil {
+		t.Fatalf("GetByEmail() returned unexpected error: %v", err)
+	}
+	token := issueTestTokenFor(t, admin, tenantID)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/auth/me", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	var body meResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+	if len(body.Memberships) != 1 {
+		t.Fatalf("len(body.Memberships) = %d, want 1", len(body.Memberships))
+	}
+	if body.Memberships[0].PlanTier != "" {
+		t.Errorf("Memberships[0].PlanTier = %q, want empty string unchanged (no backend default invented)", body.Memberships[0].PlanTier)
+	}
+}
+
 func TestMe_NoSession_401(t *testing.T) {
 	r, _, _ := newMeRouter(t)
 
@@ -859,6 +936,82 @@ func TestUpdateProfile_ExtraFieldsIgnored(t *testing.T) {
 	}
 	if resp.Email != admin.Email {
 		t.Errorf("response Email = %q, want unchanged %q (must never echo a client-supplied email)", resp.Email, admin.Email)
+	}
+}
+
+// TestUpdateProfile_ReturnsMembershipNamePlanTier covers SHELL-20/21 for the
+// UpdateProfile call site: its membership list is enriched the same way
+// Me's is.
+func TestUpdateProfile_ReturnsMembershipNamePlanTier(t *testing.T) {
+	r, repo, pool := newMeRouter(t)
+	email := uniqueTestEmail(t)
+	tenantID := createTestAdmin(t, repo, pool, email, "correct-horse-battery-staple")
+	if _, err := pool.Exec(context.Background(), "UPDATE tenants SET plan = $1 WHERE id = $2", "scale", tenantID); err != nil {
+		t.Fatalf("seeding tenant plan returned unexpected error: %v", err)
+	}
+	admin, err := repo.GetByEmail(context.Background(), email)
+	if err != nil {
+		t.Fatalf("GetByEmail() returned unexpected error: %v", err)
+	}
+	token := issueTestTokenFor(t, admin, tenantID)
+
+	body, err := json.Marshal(updateProfileRequest{Name: "Name Update"})
+	if err != nil {
+		t.Fatalf("json.Marshal() returned unexpected error: %v", err)
+	}
+	rec := patchProfile(t, r, token, body)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	var resp meResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+	if len(resp.Memberships) != 1 {
+		t.Fatalf("len(resp.Memberships) = %d, want 1", len(resp.Memberships))
+	}
+	if resp.Memberships[0].Name != "auth-test-tenant-"+email {
+		t.Errorf("Memberships[0].Name = %q, want %q", resp.Memberships[0].Name, "auth-test-tenant-"+email)
+	}
+	if resp.Memberships[0].PlanTier != "scale" {
+		t.Errorf("Memberships[0].PlanTier = %q, want %q", resp.Memberships[0].PlanTier, "scale")
+	}
+}
+
+// TestUpdateProfile_MembershipEmptyPlanTier_PassesThroughUnchanged covers
+// SHELL-21's edge case on the UpdateProfile call site.
+func TestUpdateProfile_MembershipEmptyPlanTier_PassesThroughUnchanged(t *testing.T) {
+	r, repo, pool := newMeRouter(t)
+	email := uniqueTestEmail(t)
+	tenantID := createTestAdmin(t, repo, pool, email, "correct-horse-battery-staple")
+	if _, err := pool.Exec(context.Background(), "UPDATE tenants SET plan = '' WHERE id = $1", tenantID); err != nil {
+		t.Fatalf("seeding empty tenant plan returned unexpected error: %v", err)
+	}
+	admin, err := repo.GetByEmail(context.Background(), email)
+	if err != nil {
+		t.Fatalf("GetByEmail() returned unexpected error: %v", err)
+	}
+	token := issueTestTokenFor(t, admin, tenantID)
+
+	body, err := json.Marshal(updateProfileRequest{Name: "Name Update"})
+	if err != nil {
+		t.Fatalf("json.Marshal() returned unexpected error: %v", err)
+	}
+	rec := patchProfile(t, r, token, body)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	var resp meResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+	if len(resp.Memberships) != 1 {
+		t.Fatalf("len(resp.Memberships) = %d, want 1", len(resp.Memberships))
+	}
+	if resp.Memberships[0].PlanTier != "" {
+		t.Errorf("Memberships[0].PlanTier = %q, want empty string unchanged (no backend default invented)", resp.Memberships[0].PlanTier)
 	}
 }
 

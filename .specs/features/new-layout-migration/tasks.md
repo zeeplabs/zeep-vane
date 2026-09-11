@@ -120,11 +120,11 @@ T3 → T14
 - Skill: NONE
 
 **Done when**:
-- [ ] `GET /api/auth/me` returns `name`/`plan_tier` per membership
-- [ ] `PATCH /api/auth/me` (UpdateProfile) returns the same enriched membership shape
-- [ ] Every pre-existing `Me`/`UpdateProfile` test passes unmodified except assertions extended for the new fields
-- [ ] Gate check passes on disposable Postgres: `TEST_DATABASE_URL=... go test -tags=integration ./internal/api/...`
-- [ ] Test count: +4 new tests (2 per handler: happy path with real name/plan, empty-plan passthrough)
+- [x] `GET /api/auth/me` returns `name`/`plan_tier` per membership
+- [x] `PATCH /api/auth/me` (UpdateProfile) returns the same enriched membership shape
+- [x] Every pre-existing `Me`/`UpdateProfile` test passes unmodified except assertions extended for the new fields
+- [x] Gate check passes on disposable Postgres: `TEST_DATABASE_URL=... go test -tags=integration ./internal/api/...`
+- [x] Test count: +4 new tests (2 per handler: happy path with real name/plan, empty-plan passthrough)
 
 **Tests**: integration
 **Gate**: full
