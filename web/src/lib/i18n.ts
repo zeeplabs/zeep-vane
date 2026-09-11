@@ -183,6 +183,7 @@ const resources = {
         revokeSuccess: "Sessão encerrada.",
         revokeCurrentError: "Você não pode encerrar a sessão que está usando.",
         genericError: "Não foi possível encerrar a sessão. Tente novamente.",
+        loadError: "Não foi possível carregar as sessões. Tente novamente.",
         loading: "Carregando sessões...",
         columns: {
           ip: "IP",
@@ -369,6 +370,7 @@ const resources = {
         revokeSuccess: "Session ended.",
         revokeCurrentError: "You can't end the session you're currently using.",
         genericError: "Could not end the session. Please try again.",
+        loadError: "Could not load sessions. Please try again.",
         loading: "Loading sessions...",
         columns: {
           ip: "IP",

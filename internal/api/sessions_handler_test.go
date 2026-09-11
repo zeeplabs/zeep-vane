@@ -180,6 +180,33 @@ func TestSessionsHandler_List_ReturnsCurrentAndOthers(t *testing.T) {
 	}
 }
 
+// TestSessionsHandler_List_OnlyCurrentSession proves the single-session
+// edge case (F4 in validation.md): a user whose only session is their
+// current one gets a one-item list, marked current, with no error.
+func TestSessionsHandler_List_OnlyCurrentSession(t *testing.T) {
+	sessionsH := NewSessionsHandler(db.NewSessionRepository(nil), zap.NewNop())
+	r, pool, users := newSessionsRouterForTest(t, sessionsH)
+
+	currentToken, userID := issueTestSessionTokenWithID(t, users)
+	bindFixtureSessionToUser(t, pool, userID)
+
+	rec := doSessionsRequest(t, r, http.MethodGet, "/api/auth/sessions", currentToken)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200, body = %s", rec.Code, rec.Body.String())
+	}
+
+	views := decodeSessionViews(t, rec.Body.Bytes())
+	if len(views) != 1 {
+		t.Fatalf("len(views) = %d, want 1 (only the current session) (views: %+v)", len(views), views)
+	}
+	if !views[0].Current {
+		t.Errorf("single session Current = false, want true (id = %q)", views[0].ID)
+	}
+	if views[0].ID != auth.IssueTestSessionID {
+		t.Errorf("single session id = %q, want %q", views[0].ID, auth.IssueTestSessionID)
+	}
+}
+
 // TestSessionsHandler_List_ExcludesRevoked proves the revoked_at filter
 // in ListForUser: a session revoked between list calls disappears from
 // the next response.

@@ -21,9 +21,9 @@ import { Card } from "../../components/ui/Card";
 import { Tag } from "../../components/ui/Tag";
 import { useRevokeSession, useSessions } from "./hooks";
 
-function formatTimestamp(iso: string | null): string {
+function formatTimestamp(iso: string | null, locale: string): string {
   if (!iso) return "-";
-  return new Date(iso).toLocaleString("pt-BR");
+  return new Date(iso).toLocaleString(locale);
 }
 
 // deviceLabel shortens a User-Agent to a one-word OS/browser label
@@ -43,7 +43,7 @@ function deviceLabel(userAgent: string | null, unknownLabel: string): string {
 }
 
 export function SessionsSection() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const { data, isLoading, isError } = useSessions();
   const revoke = useRevokeSession();
   const sessions = data ?? [];
@@ -80,7 +80,7 @@ export function SessionsSection() {
           </p>
         ) : isError ? (
           <p className="px-4 py-6 text-center text-neutral-400" data-testid="sessions-error">
-            {t("sessions.genericError")}
+            {t("sessions.loadError")}
           </p>
         ) : sessions.length === 0 ? (
           <p className="px-4 py-6 text-center text-neutral-400" data-testid="sessions-empty">
@@ -112,7 +112,7 @@ export function SessionsSection() {
               </div>
               <div className="text-right text-xs text-neutral-400">
                 <div>{t("sessions.columns.lastSeen")}</div>
-                <div className="mt-0.5 text-[13px] text-text">{formatTimestamp(s.last_seen_at)}</div>
+                <div className="mt-0.5 text-[13px] text-text">{formatTimestamp(s.last_seen_at, i18n.language)}</div>
               </div>
               {s.current ? null : (
                 <Button

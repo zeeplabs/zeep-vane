@@ -59,4 +59,22 @@ describe("sessions hooks", () => {
     await waitFor(() => expect(result.current.sessions.data).toHaveLength(1));
     expect(result.current.sessions.data![0].id).toBe("sess-1");
   });
+
+  it("a resposta do mock espelha o shape exato do backend (sem campos mock-only)", async () => {
+    await loginAsOwner();
+    const raw = await apiFetch<Record<string, unknown>[]>("/api/auth/sessions");
+    expect(raw.length).toBeGreaterThan(0);
+
+    // Backend `SessionView` (internal/api/sessions_handler.go:45-52) expõe
+    // apenas id/user_agent?/ip?/created_at/last_seen_at?/current. Campos
+    // que só existem no seed do mock (user_id/revoked_at) não podem
+    // vazar na resposta - é exatamente o drift que o AGENTS.md §5 proíbe.
+    for (const forbidden of ["user_id", "revoked_at", "expires_at"]) {
+      expect(Object.keys(raw[0])).not.toContain(forbidden);
+    }
+    const keys = Object.keys(raw[0]);
+    expect(keys).toContain("id");
+    expect(keys).toContain("created_at");
+    expect(keys).toContain("current");
+  });
 });

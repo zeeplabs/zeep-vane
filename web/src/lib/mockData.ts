@@ -26,6 +26,16 @@ interface AdminSeed extends Admin {
   password: string;
 }
 
+// MockSession is the mock-internal seed shape: it adds the fields the
+// MSW layer needs to emulate backend filtering/state (row ownership and
+// revocation), which the real GET /api/auth/sessions response never
+// includes. The handler projects these rows back down to the exact
+// SessionView shape before responding (AGENTS.md §5).
+export interface MockSession extends SessionView {
+  user_id: string;
+  revoked_at: string | null;
+}
+
 export const admins: AdminSeed[] = [
   {
     id: "admin-1",
@@ -298,7 +308,7 @@ export function nextId(prefix: string): string {
 // matching how the real backend's sessionsHandler.List derives it from
 // the JWT sid claim.
 
-export const sessions: SessionView[] = [
+export const sessions: MockSession[] = [
   {
     id: "sess-1",
     user_id: "admin-1",
@@ -306,7 +316,6 @@ export const sessions: SessionView[] = [
     ip: "10.0.0.42",
     created_at: new Date(Date.now() - 1000 * 60 * 60 * 2).toISOString(),
     last_seen_at: new Date(Date.now() - 1000 * 60 * 5).toISOString(),
-    expires_at: new Date(Date.now() + 1000 * 60 * 60 * 22).toISOString(),
     revoked_at: null,
     current: false,
   },
@@ -317,7 +326,6 @@ export const sessions: SessionView[] = [
     ip: "10.0.0.99",
     created_at: new Date(Date.now() - 1000 * 60 * 60 * 24).toISOString(),
     last_seen_at: new Date(Date.now() - 1000 * 60 * 30).toISOString(),
-    expires_at: new Date(Date.now() + 1000 * 60 * 60).toISOString(),
     revoked_at: null,
     current: false,
   },
@@ -328,7 +336,6 @@ export const sessions: SessionView[] = [
     ip: "192.168.1.10",
     created_at: new Date(Date.now() - 1000 * 60 * 60 * 6).toISOString(),
     last_seen_at: new Date(Date.now() - 1000 * 60 * 60).toISOString(),
-    expires_at: new Date(Date.now() + 1000 * 60 * 60 * 18).toISOString(),
     revoked_at: null,
     current: false,
   },

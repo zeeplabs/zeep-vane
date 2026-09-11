@@ -98,7 +98,7 @@ describe("SessionsSection", () => {
     expect(await screen.findByTestId("sessions-empty")).toHaveTextContent("Nenhuma sessão ativa.");
   });
 
-  it("renderiza mensagem de erro genérica quando o GET falha", async () => {
+  it("renderiza a mensagem de erro de carregamento (não a de encerrar) quando o GET falha", async () => {
     server.use(
       http.get("/api/auth/sessions", () =>
         HttpResponse.json({ error: "boom" }, { status: 500 })
@@ -108,7 +108,7 @@ describe("SessionsSection", () => {
     renderSection();
 
     expect(await screen.findByTestId("sessions-error")).toHaveTextContent(
-      "Não foi possível encerrar a sessão. Tente novamente."
+      "Não foi possível carregar as sessões. Tente novamente."
     );
   });
 });

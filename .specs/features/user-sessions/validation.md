@@ -128,6 +128,7 @@ Gate commands from `tasks.md` §"Gate Check Commands" (release gate).
 - **Impact**: none at runtime today (the component reads only `id`/`user_agent`/`ip`/`last_seen_at`/`current`); it is contract drift that will mislead the next consumer of `SessionView`.
 - **Fix task**: align `SessionView` and the mock seed to the backend's exact fields (keep mock-only fields on a separate mock-internal type), or add the fields to the backend response if they are wanted.
 - **Priority**: Minor.
+- **Status (2026-09-11)**: ✅ Fixed - `SessionView` now mirrors the backend exactly; the seed's mock-only `user_id`/`revoked_at` moved to a separate `MockSession` type and the MSW GET handler projects back down to the backend shape. Regression test added in `hooks.test.ts` ("a resposta do mock espelha o shape exato do backend").
 
 ### F2: `ip` design deviation (`INET` → `TEXT`) not tagged `SPEC_DEVIATION`
 
@@ -135,6 +136,7 @@ Gate commands from `tasks.md` §"Gate Check Commands" (release gate).
 - **Impact**: none on any AC (the spec requires a nullable `ip`, not a SQL type); process/convention gap only.
 - **Fix task**: add the `// SPEC_DEVIATION` tag at the migration/repo, or update `design.md`.
 - **Priority**: Minor.
+- **Status (2026-09-11)**: ✅ Fixed - a `SPEC_DEVIATION` tag noting the `INET` -> `TEXT` choice added at `internal/db/session_repository.go` and `internal/db/migrations/0031_sessions.up.sql`.
 
 ### F3: Default-parallel full integration gate is flaky (pre-existing), amplified by the new `sessions` fixture dependency
 
@@ -147,11 +149,13 @@ Gate commands from `tasks.md` §"Gate Check Commands" (release gate).
 
 - **Root cause**: edge case "user has no other sessions ⇒ single-item list". Behavior is correct (`ListForUser` returns the current row), but no test exercises exactly one row.
 - **Priority**: Minor.
+- **Status (2026-09-11)**: ✅ Fixed - `TestSessionsHandler_List_OnlyCurrentSession` added (asserts a one-item list, marked current, matching the request's sid).
 
 ### F5: Frontend locale/copy nits
 
 - `SessionsSection.tsx:26` hardcodes `toLocaleString("pt-BR")` instead of the active i18n language; the load-error state reuses `sessions.genericError` ("Não foi possível encerrar a sessão") for a *fetch* failure. Cosmetic.
 - **Priority**: Cosmetic.
+- **Status (2026-09-11)**: ✅ Fixed - `formatTimestamp` now formats with the active `i18n.language`; fetch failures render a new `sessions.loadError` key (pt-BR + en) instead of the revoke-action `genericError`.
 
 ---
 
@@ -183,6 +187,6 @@ Gate commands from `tasks.md` §"Gate Check Commands" (release gate).
 
 **What works**: Every session-issuing path (Login, VerifyTwoFactor, AcceptInvite, Bootstrap) creates a real `sessions` row carrying request UA/IP and a `sid` claim; `SwitchTenant` reuses the row; `RequireAuth` enforces per-row existence + `revoked_at` plus the throttled `last_seen_at`; List/Revoke implement the full 200/404/409 anti-enumeration matrix with exactly one `current`; Logout revokes the row so a copied raw token is dead; change-password/reset keep the global revoke while admin events moved to per-session revocation.
 
-**Issues found**: F1 frontend `SessionView`/mock contract drift (unused today); F2 missing `SPEC_DEVIATION` tag for `INET`→`TEXT`; F3 pre-existing flaky parallel integration gate (base commit also fails) that the new shared fixture can amplify; F4 missing single-current-session list test; F5 locale/copy nits.
+**Issues found**: F1 frontend `SessionView`/mock contract drift (unused today); F2 missing `SPEC_DEVIATION` tag for `INET`→`TEXT`; F3 pre-existing flaky parallel integration gate (base commit also fails) that the new shared fixture can amplify; F4 missing single-current-session list test; F5 locale/copy nits. **All resolved**: F3 on 2026-09-11 (CI gate pinned to `-p 1`; migration down-tests moved to per-test scratch DBs); F1/F2/F4/F5 on 2026-09-11 (see each finding's Status).
 
-**Next steps**: feature is Done. Follow-up items F1–F5 are candidates for a small cleanup task or the backlog; none blocks the release.
+**Next steps**: feature is Done and all follow-ups F1–F5 are resolved (2026-09-11). Remaining work lives elsewhere: the "Meu Perfil" page spec (hosts `<SessionsSection/>` plus 2FA / change-password / notification preferences) and the standing backlog (AD-025 seat-limit, admin-invite resend/cancel, `PollerManager` concurrency, NB-7).

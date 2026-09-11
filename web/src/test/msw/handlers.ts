@@ -14,6 +14,7 @@ import {
   companySettings as seedCompanySettings,
   sessions as seedSessions,
 } from "../../lib/mockData";
+import type { MockSession } from "../../lib/mockData";
 import type {
   Admin,
   AdminInvite,
@@ -48,7 +49,7 @@ export function resetAuthSession(): void {
 // row id against the sid RequireAuth put in the request context, and
 // we mirror that here so the list/revoke handlers can answer
 // current:true/409 without a real JWT parse.
-let sessionsState: SessionView[] = [];
+let sessionsState: MockSession[] = [];
 let currentSessionId: string | null = null;
 
 export function resetSessions(): void {
@@ -535,10 +536,20 @@ export const handlers = [
     if (!sessionAdminId) {
       return HttpResponse.json({ error: "unauthorized" }, { status: 401 });
     }
-    const userSessions = sessionsState
+    // Project to the backend's exact SessionView fields - the seed's
+    // mock-only user_id/revoked_at must not leak into the response
+    // (AGENTS.md §5).
+    const userSessions: SessionView[] = sessionsState
       .filter((s) => s.user_id === sessionAdminId && !s.revoked_at)
       .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
-      .map((s) => ({ ...s, current: s.id === currentSessionId }));
+      .map((s) => ({
+        id: s.id,
+        user_agent: s.user_agent,
+        ip: s.ip,
+        created_at: s.created_at,
+        last_seen_at: s.last_seen_at,
+        current: s.id === currentSessionId,
+      }));
     return HttpResponse.json(userSessions);
   }),
 

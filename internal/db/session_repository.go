@@ -23,9 +23,9 @@ import (
 // connections that don't surface an IP become NULL rather than empty
 // strings, so the row genuinely means "not recorded" rather than "empty".
 //
-// ip is TEXT (not INET) - design.md initially chose INET, but pgx
-// returns INET as "host/netmask" (e.g. "10.0.0.42/32"), which would
-// surface in the UI's "Sessões ativas" list as "/32" suffixes that
+// SPEC_DEVIATION: design.md specifies `ip INET`, but this repo uses
+// TEXT. pgx returns INET as "host/netmask" (e.g. "10.0.0.42/32"), which
+// would surface in the UI's "Sessões ativas" list as "/32" suffixes that
 // no operator wants to read. No CIDR queries are needed here (the
 // "Sessões ativas" list shows the raw address, doesn't filter by
 // subnet), so TEXT is the right shape for the actual use.

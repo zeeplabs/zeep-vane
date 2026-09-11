@@ -138,15 +138,19 @@ export interface Page<T> {
 // list (not wrapped in Page<T> - per-device sessions are bounded by a
 // single user's device count, typically 1-5 rows; pagination is not
 // useful at that scale and would just add noise to the contract).
+//
+// Fields are exactly those the backend serializes (the nullable columns
+// are `omitempty`, so they come back absent rather than null): id,
+// user_agent?, ip?, created_at, last_seen_at?, current. The row's owner
+// and revocation state are never returned - the endpoint is already
+// scoped to the caller - so do not add user_id/revoked_at/expires_at
+// here; that drift is what AGENTS.md §5 warns about.
 export interface SessionView {
   id: string;
-  user_id: string;
   user_agent: string | null;
   ip: string | null;
   created_at: string;
   last_seen_at: string | null;
-  expires_at: string;
-  revoked_at: string | null;
   // current is true when this row's id matches the JWT's sid claim
   // (i.e. this is the session the request is being made from). The real
   // backend sets it in sessionsHandler.List by comparing to the sid the
