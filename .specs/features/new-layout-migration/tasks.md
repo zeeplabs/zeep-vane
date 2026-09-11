@@ -249,11 +249,11 @@ T3 → T14
 - Skill: NONE
 
 **Done when**:
-- [ ] `togglePinned()` flips `pinned` and persists to `localStorage`
-- [ ] Default (no stored value) is `pinned: false`
-- [ ] `localStorage` failure falls back silently to in-memory state
-- [ ] Gate check passes: `npm run test`
-- [ ] Test count: 3 new tests
+- [x] `togglePinned()` flips `pinned` and persists to `localStorage`
+- [x] Default (no stored value) is `pinned: false`
+- [x] `localStorage` failure falls back silently to in-memory state
+- [x] Gate check passes: `npm run test`
+- [x] Test count: 3 new tests
 
 **Tests**: unit
 **Gate**: build
