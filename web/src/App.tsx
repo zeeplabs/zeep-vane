@@ -23,6 +23,7 @@ import { IncidentDetail } from "./features/incidents/IncidentDetail";
 import { AdminsPage } from "./features/admins/AdminsPage";
 import { PollerStatusPage } from "./features/poller/PollerStatusPage";
 import { SettingsPage } from "./features/settings/SettingsPage";
+import { ProfilePage } from "./features/profile/ProfilePage";
 import { PublicStatusPage } from "./features/public-status/PublicStatusPage";
 import "./lib/i18n";
 
@@ -176,6 +177,9 @@ export default function App() {
             }
           />
           <Route path="/poller-status" element={<PollerStatusPage />} />
+          {/* Self-service profile, reachable by any authenticated role
+              (profile-page PROFPAGE-01/03) - no RequireRole. */}
+          <Route path="/profile" element={<ProfilePage />} />
           <Route
             path="/settings"
             element={
