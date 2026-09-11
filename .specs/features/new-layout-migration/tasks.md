@@ -275,10 +275,10 @@ T3 → T14
 - Skill: frontend-design
 
 **Done when**:
-- [ ] Component accepts `open`/`onOpenChange`/`onConfirm` props and renders the same copy/behavior `Sidebar.tsx`'s inline modal has today
-- [ ] Confirming calls `onConfirm`; cancelling closes without calling it
-- [ ] Gate check passes: `npm run test`
-- [ ] Test count: 3 new tests
+- [x] Component accepts `open`/`onOpenChange`/`onConfirm` props and renders the same copy/behavior `Sidebar.tsx`'s inline modal has today
+- [x] Confirming calls `onConfirm`; cancelling closes without calling it
+- [x] Gate check passes: `npm run test`
+- [x] Test count: 3 new tests
 
 **Tests**: unit
 **Gate**: build
