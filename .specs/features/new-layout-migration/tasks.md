@@ -169,12 +169,14 @@ T3 → T14
 - Skill: frontend-design
 
 **Done when**:
-- [ ] `:root` defines the light token set, `[data-theme="dark"]` overrides with the dark set, using the exact hex values from `handoff-new-layout/README.md`'s Global shell/Design tokens tables
-- [ ] `--color-accent`/`--color-accent-hover` are `#5A46C7`/`#4C3AAE` in both themes
-- [ ] Status colors (`--color-success`/`--color-warning`/`--color-critical`) are identical in both themes (only their light-mode background tint token differs, if one is added)
-- [ ] Manrope loaded (Google Fonts `@import`, weights 400/500/600/700), `--font-heading`/`--font-body` point to it
-- [ ] New shell tokens (`--color-sidebar-bg`, `--color-sidebar-hover-bg`, `--color-card-header-bg`, `--color-text-muted`, `--color-topbar-icon`) defined in both themes
-- [ ] Gate check passes: `npx tsc -b --noEmit` (no TS impact expected, run as safety net) and `npm run test` (no existing test breaks from the token rename/value change)
+- [x] `:root` defines the light token set, `[data-theme="dark"]` overrides with the dark set, using the exact hex values from `handoff-new-layout/README.md`'s Global shell/Design tokens tables
+- [x] `--color-accent`/`--color-accent-hover` are `#5A46C7`/`#4C3AAE` in both themes
+- [x] Status colors (`--color-success`/`--color-warning`/`--color-critical`) are identical in both themes (only their light-mode background tint token differs, if one is added)
+- [x] Manrope loaded (Google Fonts `@import`, weights 400/500/600/700), `--font-heading`/`--font-body` point to it
+- [x] New shell tokens (`--color-sidebar-bg`, `--color-sidebar-hover-bg`, `--color-card-header-bg`, `--color-text-muted`, `--color-topbar-icon`) defined in both themes
+- [x] Gate check passes: `npx tsc -b --noEmit` (no TS impact expected, run as safety net) and `npm run test` (no existing test breaks from the token rename/value change)
+
+**Deviation**: `tokens.test.tsx` had one pre-existing assertion (`define os 3 tokens semânticos em OKLCH`) that hard-required the Nocturne OKLCH format for the 3 semantic tokens. That format is exactly what this task replaces (spec.md AC4/SHELL-04 mandates the handoff's fixed hex values). Updated the assertion to check the new hex values instead of removing/weakening it - see `SPEC_DEVIATION` comment at the call site. No other test was touched; all 296 tests pass.
 
 **Tests**: none
 **Gate**: build

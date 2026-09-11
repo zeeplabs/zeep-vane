@@ -48,11 +48,17 @@ describe("tokens.css", () => {
     }
   );
 
-  it("define os 3 tokens semânticos em OKLCH no bloco @theme", () => {
+  // SPEC_DEVIATION: this assertion previously required OKLCH for the 3
+  // semantic tokens (Nocturne). new-layout-migration (spec.md AC4, SHELL-04)
+  // replaces those with the handoff's fixed hex values, identical in both
+  // themes - OKLCH is no longer the format the spec mandates, so the
+  // assertion is updated to match the new spec rather than the old
+  // implementation it used to describe.
+  it("define os 3 tokens semânticos com os valores hex do handoff, idênticos nos dois temas", () => {
     const css = compiledCss();
-    expect(css).toMatch(/--color-success:\s*oklch\(/);
-    expect(css).toMatch(/--color-warning:\s*oklch\(/);
-    expect(css).toMatch(/--color-critical:\s*oklch\(/);
+    expect(css).toMatch(/--color-success:\s*#1a9e6b/i);
+    expect(css).toMatch(/--color-warning:\s*#b45309/i);
+    expect(css).toMatch(/--color-critical:\s*#d6395b/i);
   });
 
   it("define a ramp neutral e accent (100–900) na fonte de tokens.css", () => {

@@ -1,20 +1,30 @@
-/* Nocturne design tokens — Vane. Valores derivados a partir da referência em
-   dashboard-handoff/nocturne-styles.css, recriados (não copiados byte a byte). */
+/* Vane design tokens — light+dark, replacing Nocturne (new-layout-migration,
+   SHELL-01..04). Values recreated from handoff-new-layout/README.md's
+   "Design tokens"/"Global shell" tables, not copied byte-for-byte. */
 @import "tailwindcss";
+@import url("https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&display=swap");
 
 @theme {
-  /* Core */
-  --color-bg: #161826;
-  --color-surface: #232532;
-  --color-text: #e9e9ed;
-  --color-accent: #9184d9;
+  /* Core (light defaults - overridden for dark below) */
+  --color-bg: #ffffff;
+  --color-surface: #ffffff;
+  --color-text: #1c1526;
+  --color-text-muted: #6e6779;
+  --color-accent: #5a46c7;
+  --color-accent-hover: #4c3aae;
   --color-accent-2: #a7a1db;
-  --color-divider: color-mix(in srgb, #e9e9ed 16%, transparent);
+  --color-divider: #ece9f2;
 
-  /* Semantic (OKLCH) */
-  --color-success: oklch(0.72 0.135 152);
-  --color-warning: oklch(0.78 0.15 80);
-  --color-critical: oklch(0.685 0.19 25);
+  /* Shell-only tokens (light defaults) */
+  --color-sidebar-bg: #fafafc;
+  --color-sidebar-hover-bg: #f2f0f6;
+  --color-card-header-bg: #fafafc;
+  --color-topbar-icon: #6e6779;
+
+  /* Status/severity/role - identical in both themes (SHELL-04) */
+  --color-success: #1a9e6b;
+  --color-warning: #b45309;
+  --color-critical: #d6395b;
 
   /* Neutral ramp */
   --color-neutral-100: #f3f5fe;
@@ -38,7 +48,9 @@
   --color-accent-800: #423a6a;
   --color-accent-900: #2b2741;
 
-  /* Accent-2 ramp */
+  /* Accent-2 ramp - not redefined by the handoff (design.md Risks &
+     Concerns); kept at its prior value until the screen that uses it is
+     migrated. */
   --color-accent-2-100: #f5f4ff;
   --color-accent-2-200: #e7e5fe;
   --color-accent-2-300: #d2cefd;
@@ -50,8 +62,8 @@
   --color-accent-2-900: #2b293a;
 
   /* Type */
-  --font-heading: "Inter", system-ui, sans-serif;
-  --font-body: "Inter", system-ui, sans-serif;
+  --font-heading: "Manrope", system-ui, sans-serif;
+  --font-body: "Manrope", system-ui, sans-serif;
   --text-h1: 42px;
   --text-h2: 34px;
   --text-h3: 27px;
@@ -67,15 +79,28 @@
   --spacing-6: 16.8px;
   --spacing-8: 22.4px;
 
-  /* Radius */
-  --radius-sm: 4px;
-  --radius-md: 8px;
-  --radius-lg: 14px;
+  /* Radius - 8px controls, 12px cards/tables, 16px drawer/modal-adjacent */
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
 
-  /* Shadows */
-  --shadow-sm: 0 0 0 1px var(--color-neutral-800);
-  --shadow-md: 0 0 0 1px var(--color-neutral-700), 0 6px 18px rgba(0, 0, 0, 0.55);
-  --shadow-lg: 0 0 0 1px var(--color-divider), 0 16px 40px rgba(0, 0, 0, 0.65);
+  /* Shadows - popovers/dropdowns, drawers, modals */
+  --shadow-sm: 0 8px 24px rgba(28, 21, 38, 0.12);
+  --shadow-md: -8px 0 24px rgba(28, 21, 38, 0.1);
+  --shadow-lg: 0 20px 48px rgba(28, 21, 38, 0.22);
+}
+
+[data-theme="dark"] {
+  --color-bg: #15111f;
+  --color-surface: #1f1a35;
+  --color-text: #edebf3;
+  --color-text-muted: #9a93b0;
+  --color-divider: #2c2645;
+
+  --color-sidebar-bg: #1b1730;
+  --color-sidebar-hover-bg: rgba(255, 255, 255, 0.06);
+  --color-card-header-bg: #241e3d;
+  --color-topbar-icon: #b4aec2;
 }
 
 body {
