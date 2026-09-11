@@ -3,7 +3,7 @@
   "promote_threshold": 2,
   "window_days": 45,
   "quarantine_threshold": 2,
-  "next_id": 37,
+  "next_id": 41,
   "lessons": [
     {
       "id": "L-001",
@@ -652,6 +652,78 @@
       ],
       "created": "2026-09-09T17:58:22Z",
       "last_seen": "2026-09-09T17:58:22Z"
+    },
+    {
+      "id": "L-037",
+      "key": "spec_precision_gap::when a spec pins exact design token literals hex colors font family weights add a compiled css regex assertion for each one not just a smoke test that a css variable is wired up",
+      "text": "When a spec pins exact design-token literals (hex colors, font family/weights), add a compiled-CSS regex assertion for each one, not just a smoke test that a CSS variable is wired up.",
+      "signal": "spec_precision_gap",
+      "scope": "frontend-tokens",
+      "status": "candidate",
+      "features": [
+        "new-layout-migration"
+      ],
+      "recurrence": 1,
+      "harmful": 0,
+      "evidence": [
+        "validation.md#SHELL-01,SHELL-02,SHELL-03 (frontend-tokens)"
+      ],
+      "created": "2026-09-11T14:36:52Z",
+      "last_seen": "2026-09-11T14:36:52Z"
+    },
+    {
+      "id": "L-038",
+      "key": "spec_precision_gap::when a spec pins exact layout literals padding max width that jsdom cannot compute still assert the literal tailwind arbitrary value class name in the dom instead of leaving the criterion untested",
+      "text": "When a spec pins exact layout literals (padding, max-width) that jsdom cannot compute, still assert the literal Tailwind arbitrary-value class name in the DOM instead of leaving the criterion untested.",
+      "signal": "spec_precision_gap",
+      "scope": "frontend-layout",
+      "status": "candidate",
+      "features": [
+        "new-layout-migration"
+      ],
+      "recurrence": 1,
+      "harmful": 0,
+      "evidence": [
+        "validation.md#SHELL-19 (frontend-layout)"
+      ],
+      "created": "2026-09-11T14:37:00Z",
+      "last_seen": "2026-09-11T14:37:00Z"
+    },
+    {
+      "id": "L-039",
+      "key": "spec_precision_gap::for a pre mount inline script behavior e g theme boot flash prevention that jsdom can t observe add a dedicated unit test that evaluates the script s logic in isolation instead of leaving it untested",
+      "text": "For a pre-mount inline-script behavior (e.g. theme-boot flash prevention) that jsdom can't observe, add a dedicated unit test that evaluates the script's logic in isolation instead of leaving it untested.",
+      "signal": "spec_precision_gap",
+      "scope": "frontend-bootstrap",
+      "status": "candidate",
+      "features": [
+        "new-layout-migration"
+      ],
+      "recurrence": 1,
+      "harmful": 0,
+      "evidence": [
+        "validation.md#SHELL-07 (frontend-bootstrap)"
+      ],
+      "created": "2026-09-11T14:37:01Z",
+      "last_seen": "2026-09-11T14:37:01Z"
+    },
+    {
+      "id": "L-040",
+      "key": "ac_gap::when spec md s requirement traceability table assigns sequential ids per story double check each task s requirement field cites the same ids instead of reusing ids from an earlier story",
+      "text": "When spec.md's requirement traceability table assigns sequential IDs per story, double check each task's Requirement field cites the same IDs instead of reusing IDs from an earlier story.",
+      "signal": "ac_gap",
+      "scope": "tasks-traceability",
+      "status": "candidate",
+      "features": [
+        "new-layout-migration"
+      ],
+      "recurrence": 1,
+      "harmful": 0,
+      "evidence": [
+        "tasks.md T7,T9,T10,T11,T12,T13 Requirement fields (tasks-traceability)"
+      ],
+      "created": "2026-09-11T14:37:01Z",
+      "last_seen": "2026-09-11T14:37:01Z"
     }
   ]
 }

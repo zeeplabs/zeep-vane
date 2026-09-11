@@ -230,6 +230,30 @@ Seen once or not yet corroborated. Tracked, not trusted.
 - evidence: spec.md Edge Cases: revoked/expired API key marked invalid (internal/llm)
 - last seen: 2026-09-09T17:58:22Z
 
+### L-037 - When a spec pins exact design-token literals (hex colors, font family/weights), add a compiled-CSS regex assertion for each one, not just a smoke test that a CSS variable is wired up.
+- signal: `spec_precision_gap` · recurrence: 1 feature(s) · scope: `frontend-tokens` · harmful: 0
+- features: new-layout-migration
+- evidence: validation.md#SHELL-01,SHELL-02,SHELL-03 (frontend-tokens)
+- last seen: 2026-09-11T14:36:52Z
+
+### L-038 - When a spec pins exact layout literals (padding, max-width) that jsdom cannot compute, still assert the literal Tailwind arbitrary-value class name in the DOM instead of leaving the criterion untested.
+- signal: `spec_precision_gap` · recurrence: 1 feature(s) · scope: `frontend-layout` · harmful: 0
+- features: new-layout-migration
+- evidence: validation.md#SHELL-19 (frontend-layout)
+- last seen: 2026-09-11T14:37:00Z
+
+### L-039 - For a pre-mount inline-script behavior (e.g. theme-boot flash prevention) that jsdom can't observe, add a dedicated unit test that evaluates the script's logic in isolation instead of leaving it untested.
+- signal: `spec_precision_gap` · recurrence: 1 feature(s) · scope: `frontend-bootstrap` · harmful: 0
+- features: new-layout-migration
+- evidence: validation.md#SHELL-07 (frontend-bootstrap)
+- last seen: 2026-09-11T14:37:01Z
+
+### L-040 - When spec.md's requirement traceability table assigns sequential IDs per story, double check each task's Requirement field cites the same IDs instead of reusing IDs from an earlier story.
+- signal: `ac_gap` · recurrence: 1 feature(s) · scope: `tasks-traceability` · harmful: 0
+- features: new-layout-migration
+- evidence: tasks.md T7,T9,T10,T11,T12,T13 Requirement fields (tasks-traceability)
+- last seen: 2026-09-11T14:37:01Z
+
 ## Quarantined (failed when applied - ignore)
 
 A confirmed lesson that recurred alongside failure. Kept for the maintainer to review.

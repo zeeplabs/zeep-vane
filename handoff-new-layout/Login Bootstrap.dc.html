@@ -1,0 +1,344 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <script src="./image-slot.js"></script>
+  <style>
+    body { margin: 0; }
+    a { color: #5A46C7; }
+    a:hover { color: #4C3AAE; }
+    ::placeholder { color: #B4AEC2; }
+  </style>
+</helmet>
+
+<div style="min-height:100vh; width:100%; box-sizing:border-box; background:#FFFFFF; display:flex; flex-wrap:wrap; font-family:'Manrope',sans-serif; color:#1C1526;">
+
+  <div style="flex:1.6 1 460px; min-height:360px; background:#2A1F3D; position:relative; overflow:hidden;">
+    <image-slot id="login-illustration" shape="rect" placeholder="Ilustração da marca Vane" style="position:absolute; inset:0; width:100%; height:100%;"></image-slot>
+    <div style="position:absolute; left:40px; bottom:36px; z-index:2; pointer-events:none;">
+      <img src="assets/vane-lockup.png" alt="Vane" style="height:36px; width:auto; display:block;" />
+    </div>
+  </div>
+
+  <div style="flex:1 1 300px; display:flex; align-items:center; justify-content:center; padding:56px 40px; position:relative;">
+
+    <sc-if value="{{ isSelfHosted }}" hint-placeholder-val="{{ false }}">
+      <div style="position:absolute; top:36px; right:40px; font-size:11px; font-weight:600; letter-spacing:0.07em; text-transform:uppercase; color:#9A93A8;">Self-hosted</div>
+    </sc-if>
+
+    <div style="width:100%; max-width:400px;">
+
+
+
+      <sc-if value="{{ isBootstrap }}" hint-placeholder-val="{{ false }}">
+        <div style="font-size:11px; font-weight:700; letter-spacing:0.08em; text-transform:uppercase; color:#5A46C7; margin-bottom:8px;">Configuração inicial</div>
+        <h1 style="margin:0 0 6px; font-size:22px; font-weight:700; letter-spacing:-0.01em; color:#1C1526;">Configurar esta instalação</h1>
+        <p style="margin:0 0 28px; font-size:13.5px; line-height:1.55; color:#6E6779;">Crie a conta de administrador para inicializar o Vane nesta instância.</p>
+
+        <label style="display:block; font-size:12.5px; font-weight:600; color:#6E6779; margin-bottom:6px;">Nome da organização</label>
+        <div style="position:relative; margin-bottom:18px;">
+          <span style="position:absolute; left:14px; top:50%; transform:translateY(-50%); color:#9A93A8; display:flex;">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="7" width="18" height="13" rx="2"></rect><path d="M8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="3" y1="12" x2="21" y2="12"></line></svg>
+          </span>
+          <input type="text" placeholder="Ex: Acme Health" style="width:100%; box-sizing:border-box; background:#F2F0F6; border:1.5px solid transparent; border-radius:10px; padding:12px 14px 12px 40px; font-size:14px; color:#1C1526; font-family:inherit;" style-focus="border-color:#5A46C7; background:#FFFFFF; box-shadow:0 0 0 3px rgba(90,70,199,0.14); outline:none;" />
+        </div>
+
+        <div style="display:flex; align-items:center; gap:8px; margin:4px 0 14px;">
+          <span style="font-size:10.5px; font-weight:700; letter-spacing:0.08em; text-transform:uppercase; color:#6E6779;">Administrador</span>
+          <div style="flex:1; height:1px; background:#ECE9F2;"></div>
+        </div>
+
+        <label style="display:block; font-size:12.5px; font-weight:600; color:#6E6779; margin-bottom:6px;">Nome completo</label>
+        <div style="position:relative; margin-bottom:16px;">
+          <span style="position:absolute; left:14px; top:50%; transform:translateY(-50%); color:#9A93A8; display:flex;">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"></circle><path d="M4 21c0-4 4-6 8-6s8 2 8 6"></path></svg>
+          </span>
+          <input type="text" placeholder="Seu nome" style="width:100%; box-sizing:border-box; background:#F2F0F6; border:1.5px solid transparent; border-radius:10px; padding:12px 14px 12px 40px; font-size:14px; color:#1C1526; font-family:inherit;" style-focus="border-color:#5A46C7; background:#FFFFFF; box-shadow:0 0 0 3px rgba(90,70,199,0.14); outline:none;" />
+        </div>
+
+        <label style="display:block; font-size:12.5px; font-weight:600; color:#6E6779; margin-bottom:6px;">Email</label>
+        <div style="position:relative; margin-bottom:16px;">
+          <span style="position:absolute; left:14px; top:50%; transform:translateY(-50%); color:#9A93A8; display:flex;">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"></rect><path d="M3 7l9 6 9-6"></path></svg>
+          </span>
+          <input type="email" placeholder="admin@empresa.com" style="width:100%; box-sizing:border-box; background:#F2F0F6; border:1.5px solid transparent; border-radius:10px; padding:12px 14px 12px 40px; font-size:14px; color:#1C1526; font-family:inherit;" style-focus="border-color:#5A46C7; background:#FFFFFF; box-shadow:0 0 0 3px rgba(90,70,199,0.14); outline:none;" />
+        </div>
+
+        <label style="display:block; font-size:12.5px; font-weight:600; color:#6E6779; margin-bottom:6px;">Senha</label>
+        <div style="position:relative; margin-bottom:16px;">
+          <span style="position:absolute; left:14px; top:50%; transform:translateY(-50%); color:#9A93A8; display:flex;">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="10" rx="2"></rect><path d="M8 11V7a4 4 0 0 1 8 0v4"></path></svg>
+          </span>
+          <input type="{{ passwordType }}" placeholder="Mínimo 8 caracteres" style="width:100%; box-sizing:border-box; background:#F2F0F6; border:1.5px solid transparent; border-radius:10px; padding:12px 40px 12px 40px; font-size:14px; color:#1C1526; font-family:inherit;" style-focus="border-color:#5A46C7; background:#FFFFFF; box-shadow:0 0 0 3px rgba(90,70,199,0.14); outline:none;" />
+          <span onClick="{{ togglePassword }}" style="position:absolute; right:14px; top:50%; transform:translateY(-50%); color:#9A93A8; display:flex; cursor:pointer;">
+            <sc-if value="{{ passwordVisible }}" hint-placeholder-val="{{ false }}">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+            </sc-if>
+            <sc-if value="{{ passwordHidden }}" hint-placeholder-val="{{ true }}">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3l18 18"></path><path d="M9.9 4.24A10.94 10.94 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-4.06 5.06M6.06 6.06A18.6 18.6 0 0 0 1 12s4 8 11 8a10.9 10.9 0 0 0 5-1.19"></path></svg>
+            </sc-if>
+          </span>
+        </div>
+
+        <label style="display:block; font-size:12.5px; font-weight:600; color:#6E6779; margin-bottom:6px;">Confirmar senha</label>
+        <div style="position:relative; margin-bottom:26px;">
+          <span style="position:absolute; left:14px; top:50%; transform:translateY(-50%); color:#9A93A8; display:flex;">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="10" rx="2"></rect><path d="M8 11V7a4 4 0 0 1 8 0v4"></path></svg>
+          </span>
+          <input type="{{ confirmType }}" placeholder="Repita a senha" style="width:100%; box-sizing:border-box; background:#F2F0F6; border:1.5px solid transparent; border-radius:10px; padding:12px 40px 12px 40px; font-size:14px; color:#1C1526; font-family:inherit;" style-focus="border-color:#5A46C7; background:#FFFFFF; box-shadow:0 0 0 3px rgba(90,70,199,0.14); outline:none;" />
+          <span onClick="{{ toggleConfirm }}" style="position:absolute; right:14px; top:50%; transform:translateY(-50%); color:#9A93A8; display:flex; cursor:pointer;">
+            <sc-if value="{{ confirmVisible }}" hint-placeholder-val="{{ false }}">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+            </sc-if>
+            <sc-if value="{{ confirmHidden }}" hint-placeholder-val="{{ true }}">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3l18 18"></path><path d="M9.9 4.24A10.94 10.94 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-4.06 5.06M6.06 6.06A18.6 18.6 0 0 0 1 12s4 8 11 8a10.9 10.9 0 0 0 5-1.19"></path></svg>
+            </sc-if>
+          </span>
+        </div>
+
+        <button style="width:100%; box-sizing:border-box; padding:13px 16px; background:#5A46C7; color:#FFFFFF; border:none; border-radius:10px; font-size:14.5px; font-weight:700; font-family:inherit; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:6px;" style-hover="background:#4C3AAE;" style-active="background:#402F94;">
+          Criar administrador e continuar
+        </button>
+
+        <p style="margin:16px 0 0; font-size:12px; text-align:center; color:#6E6779; line-height:1.5;">Esta etapa roda apenas uma vez, no primeiro acesso da instância.</p>
+      </sc-if>
+
+      <sc-if value="{{ isLogin }}" hint-placeholder-val="{{ true }}">
+        <h1 style="margin:0 0 6px; font-size:22px; font-weight:700; letter-spacing:-0.01em; color:#1C1526;">Entrar</h1>
+        <p style="margin:0 0 24px; font-size:13.5px; line-height:1.55; color:#6E6779;">Acesse o painel de monitoramento da sua organização.</p>
+
+        <div style="display:flex; gap:12px; margin-bottom:20px;">
+          <button style="flex:1; box-sizing:border-box; padding:11px 14px; background:#F2F0F6; color:#1C1526; border:none; border-radius:10px; font-size:13.5px; font-weight:600; font-family:inherit; cursor:pointer; display:flex; align-items:center; justify-content:space-between; gap:8px;" style-hover="background:#EAE7F1;">
+            Google
+            <svg width="16" height="16" viewBox="0 0 24 24"><path fill="#4285F4" d="M23.52 12.27c0-.85-.08-1.67-.22-2.45H12v4.64h6.47a5.54 5.54 0 0 1-2.4 3.63v3h3.88c2.27-2.09 3.57-5.17 3.57-8.82z"></path><path fill="#34A853" d="M12 24c3.24 0 5.96-1.07 7.95-2.91l-3.88-3c-1.08.72-2.45 1.15-4.07 1.15-3.13 0-5.78-2.11-6.73-4.96H1.27v3.12A11.99 11.99 0 0 0 12 24z"></path><path fill="#FBBC05" d="M5.27 14.28A7.2 7.2 0 0 1 4.89 12c0-.79.14-1.56.38-2.28V6.6H1.27A11.99 11.99 0 0 0 0 12c0 1.94.47 3.77 1.27 5.4z"></path><path fill="#EA4335" d="M12 4.75c1.76 0 3.34.6 4.58 1.79l3.44-3.44C17.95 1.19 15.24 0 12 0 7.31 0 3.26 2.69 1.27 6.6l4 3.12C6.22 6.86 8.87 4.75 12 4.75z"></path></svg>
+          </button>
+          <button style="flex:1; box-sizing:border-box; padding:11px 14px; background:#F2F0F6; color:#1C1526; border:none; border-radius:10px; font-size:13.5px; font-weight:600; font-family:inherit; cursor:pointer; display:flex; align-items:center; justify-content:space-between; gap:8px;" style-hover="background:#EAE7F1;">
+            Microsoft
+            <svg width="15" height="15" viewBox="0 0 24 24"><rect x="1" y="1" width="10" height="10" fill="#F25022"></rect><rect x="13" y="1" width="10" height="10" fill="#7FBA00"></rect><rect x="1" y="13" width="10" height="10" fill="#00A4EF"></rect><rect x="13" y="13" width="10" height="10" fill="#FFB900"></rect></svg>
+          </button>
+        </div>
+
+        <div style="display:flex; align-items:center; gap:10px; margin-bottom:20px;">
+          <div style="flex:1; height:1px; background:#ECE9F2;"></div>
+          <span style="font-size:11.5px; color:#6E6779;">ou continue com email</span>
+          <div style="flex:1; height:1px; background:#ECE9F2;"></div>
+        </div>
+
+        <label style="display:block; font-size:12.5px; font-weight:600; color:#6E6779; margin-bottom:6px;">Email</label>
+        <div style="position:relative; margin-bottom:16px;">
+          <span style="position:absolute; left:14px; top:50%; transform:translateY(-50%); color:#9A93A8; display:flex;">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"></rect><path d="M3 7l9 6 9-6"></path></svg>
+          </span>
+          <input type="email" placeholder="voce@empresa.com" style="width:100%; box-sizing:border-box; background:#F2F0F6; border:1.5px solid transparent; border-radius:10px; padding:12px 14px 12px 40px; font-size:14px; color:#1C1526; font-family:inherit;" style-focus="border-color:#5A46C7; background:#FFFFFF; box-shadow:0 0 0 3px rgba(90,70,199,0.14); outline:none;" />
+        </div>
+
+        <label style="display:block; font-size:12.5px; font-weight:600; color:#6E6779; margin-bottom:6px;">Senha</label>
+        <div style="position:relative; margin-bottom:22px;">
+          <span style="position:absolute; left:14px; top:50%; transform:translateY(-50%); color:#9A93A8; display:flex;">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="10" rx="2"></rect><path d="M8 11V7a4 4 0 0 1 8 0v4"></path></svg>
+          </span>
+          <input type="{{ passwordType }}" placeholder="Sua senha" style="width:100%; box-sizing:border-box; background:#F2F0F6; border:1.5px solid transparent; border-radius:10px; padding:12px 40px 12px 40px; font-size:14px; color:#1C1526; font-family:inherit;" style-focus="border-color:#5A46C7; background:#FFFFFF; box-shadow:0 0 0 3px rgba(90,70,199,0.14); outline:none;" />
+          <span onClick="{{ togglePassword }}" style="position:absolute; right:14px; top:50%; transform:translateY(-50%); color:#9A93A8; display:flex; cursor:pointer;">
+            <sc-if value="{{ passwordVisible }}" hint-placeholder-val="{{ false }}">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+            </sc-if>
+            <sc-if value="{{ passwordHidden }}" hint-placeholder-val="{{ true }}">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3l18 18"></path><path d="M9.9 4.24A10.94 10.94 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-4.06 5.06M6.06 6.06A18.6 18.6 0 0 0 1 12s4 8 11 8a10.9 10.9 0 0 0 5-1.19"></path></svg>
+            </sc-if>
+          </span>
+        </div>
+
+        <button style="width:100%; box-sizing:border-box; padding:13px 16px; background:#5A46C7; color:#FFFFFF; border:none; border-radius:10px; font-size:14.5px; font-weight:700; font-family:inherit; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:6px;" style-hover="background:#4C3AAE;" style-active="background:#402F94;">
+          Entrar
+        </button>
+
+        <sc-if value="{{ showError }}" hint-placeholder-val="{{ false }}">
+          <p style="margin:16px 0 0; font-size:12.5px; text-align:center; color:#D6395B; line-height:1.55;">Não encontramos uma conta com esse email e senha. Verifique os dados ou use "Esqueci minha senha".</p>
+        </sc-if>
+
+        <div style="text-align:center; margin-top:18px;">
+          <a href="#" onClick="{{ goToForgotPassword }}" style="font-size:13px; font-weight:600; text-decoration:none;">Esqueceu a senha?</a>
+        </div>
+
+        <sc-if value="{{ isSaas }}" hint-placeholder-val="{{ true }}">
+          <div style="text-align:center; margin-top:20px; font-size:13px; color:#6E6779;">Não tem uma conta? <a href="#" onClick="{{ goToSignup }}" style="font-weight:600; text-decoration:none;">Criar conta</a></div>
+        </sc-if>
+        <sc-if value="{{ isSelfHosted }}" hint-placeholder-val="{{ false }}">
+          <div style="text-align:center; margin-top:20px; font-size:12.5px; color:#6E6779;">Acesso restrito a administradores desta instância.</div>
+        </sc-if>
+      </sc-if>
+
+      <sc-if value="{{ isSignup }}" hint-placeholder-val="{{ false }}">
+        <h1 style="margin:0 0 6px; font-size:22px; font-weight:700; letter-spacing:-0.01em; color:#1C1526;">Criar conta</h1>
+        <p style="margin:0 0 24px; font-size:13.5px; line-height:1.55; color:#6E6779;">Comece a monitorar sua infraestrutura em minutos.</p>
+
+        <div style="display:flex; gap:12px; margin-bottom:20px;">
+          <button style="flex:1; box-sizing:border-box; padding:11px 14px; background:#F2F0F6; color:#1C1526; border:none; border-radius:10px; font-size:13.5px; font-weight:600; font-family:inherit; cursor:pointer; display:flex; align-items:center; justify-content:space-between; gap:8px;" style-hover="background:#EAE7F1;">
+            Google
+            <svg width="16" height="16" viewBox="0 0 24 24"><path fill="#4285F4" d="M23.52 12.27c0-.85-.08-1.67-.22-2.45H12v4.64h6.47a5.54 5.54 0 0 1-2.4 3.63v3h3.88c2.27-2.09 3.57-5.17 3.57-8.82z"></path><path fill="#34A853" d="M12 24c3.24 0 5.96-1.07 7.95-2.91l-3.88-3c-1.08.72-2.45 1.15-4.07 1.15-3.13 0-5.78-2.11-6.73-4.96H1.27v3.12A11.99 11.99 0 0 0 12 24z"></path><path fill="#FBBC05" d="M5.27 14.28A7.2 7.2 0 0 1 4.89 12c0-.79.14-1.56.38-2.28V6.6H1.27A11.99 11.99 0 0 0 0 12c0 1.94.47 3.77 1.27 5.4z"></path><path fill="#EA4335" d="M12 4.75c1.76 0 3.34.6 4.58 1.79l3.44-3.44C17.95 1.19 15.24 0 12 0 7.31 0 3.26 2.69 1.27 6.6l4 3.12C6.22 6.86 8.87 4.75 12 4.75z"></path></svg>
+          </button>
+          <button style="flex:1; box-sizing:border-box; padding:11px 14px; background:#F2F0F6; color:#1C1526; border:none; border-radius:10px; font-size:13.5px; font-weight:600; font-family:inherit; cursor:pointer; display:flex; align-items:center; justify-content:space-between; gap:8px;" style-hover="background:#EAE7F1;">
+            Microsoft
+            <svg width="15" height="15" viewBox="0 0 24 24"><rect x="1" y="1" width="10" height="10" fill="#F25022"></rect><rect x="13" y="1" width="10" height="10" fill="#7FBA00"></rect><rect x="1" y="13" width="10" height="10" fill="#00A4EF"></rect><rect x="13" y="13" width="10" height="10" fill="#FFB900"></rect></svg>
+          </button>
+        </div>
+
+        <div style="display:flex; align-items:center; gap:10px; margin-bottom:20px;">
+          <div style="flex:1; height:1px; background:#ECE9F2;"></div>
+          <span style="font-size:11.5px; color:#6E6779;">ou continue com email</span>
+          <div style="flex:1; height:1px; background:#ECE9F2;"></div>
+        </div>
+
+        <label style="display:block; font-size:12.5px; font-weight:600; color:#6E6779; margin-bottom:6px;">Nome completo</label>
+        <div style="position:relative; margin-bottom:16px;">
+          <span style="position:absolute; left:14px; top:50%; transform:translateY(-50%); color:#9A93A8; display:flex;">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"></circle><path d="M4 21c0-4 4-6 8-6s8 2 8 6"></path></svg>
+          </span>
+          <input type="text" placeholder="Seu nome" style="width:100%; box-sizing:border-box; background:#F2F0F6; border:1.5px solid transparent; border-radius:10px; padding:12px 14px 12px 40px; font-size:14px; color:#1C1526; font-family:inherit;" style-focus="border-color:#5A46C7; background:#FFFFFF; box-shadow:0 0 0 3px rgba(90,70,199,0.14); outline:none;" />
+        </div>
+
+        <label style="display:block; font-size:12.5px; font-weight:600; color:#6E6779; margin-bottom:6px;">Email</label>
+        <div style="position:relative; margin-bottom:16px;">
+          <span style="position:absolute; left:14px; top:50%; transform:translateY(-50%); color:#9A93A8; display:flex;">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"></rect><path d="M3 7l9 6 9-6"></path></svg>
+          </span>
+          <input type="email" placeholder="voce@empresa.com" style="width:100%; box-sizing:border-box; background:#F2F0F6; border:1.5px solid transparent; border-radius:10px; padding:12px 14px 12px 40px; font-size:14px; color:#1C1526; font-family:inherit;" style-focus="border-color:#5A46C7; background:#FFFFFF; box-shadow:0 0 0 3px rgba(90,70,199,0.14); outline:none;" />
+        </div>
+
+        <label style="display:block; font-size:12.5px; font-weight:600; color:#6E6779; margin-bottom:6px;">Senha</label>
+        <div style="position:relative; margin-bottom:8px;">
+          <span style="position:absolute; left:14px; top:50%; transform:translateY(-50%); color:#9A93A8; display:flex;">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="10" rx="2"></rect><path d="M8 11V7a4 4 0 0 1 8 0v4"></path></svg>
+          </span>
+          <input type="{{ passwordType }}" placeholder="Mínimo 8 caracteres" style="width:100%; box-sizing:border-box; background:#F2F0F6; border:1.5px solid transparent; border-radius:10px; padding:12px 40px 12px 40px; font-size:14px; color:#1C1526; font-family:inherit;" style-focus="border-color:#5A46C7; background:#FFFFFF; box-shadow:0 0 0 3px rgba(90,70,199,0.14); outline:none;" />
+          <span onClick="{{ togglePassword }}" style="position:absolute; right:14px; top:50%; transform:translateY(-50%); color:#9A93A8; display:flex; cursor:pointer;">
+            <sc-if value="{{ passwordVisible }}" hint-placeholder-val="{{ false }}">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+            </sc-if>
+            <sc-if value="{{ passwordHidden }}" hint-placeholder-val="{{ true }}">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3l18 18"></path><path d="M9.9 4.24A10.94 10.94 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-4.06 5.06M6.06 6.06A18.6 18.6 0 0 0 1 12s4 8 11 8a10.9 10.9 0 0 0 5-1.19"></path></svg>
+            </sc-if>
+          </span>
+        </div>
+        <p style="margin:0 0 20px; font-size:12px; color:#6E6779;">Use pelo menos 8 caracteres, com letras e números.</p>
+
+        <button style="width:100%; box-sizing:border-box; padding:13px 16px; background:#5A46C7; color:#FFFFFF; border:none; border-radius:10px; font-size:14.5px; font-weight:700; font-family:inherit; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:6px;" style-hover="background:#4C3AAE;" style-active="background:#402F94;">
+          Criar conta
+        </button>
+
+        <sc-if value="{{ signupError }}" hint-placeholder-val="{{ false }}">
+          <p style="margin:16px 0 0; font-size:12.5px; text-align:center; color:#D6395B; line-height:1.55;">Este email já está cadastrado. <a href="#" onClick="{{ goToLogin }}" style="color:#D6395B; text-decoration:underline;">Entrar</a> ou recupere sua senha.</p>
+        </sc-if>
+
+        <p style="margin:18px 0 0; font-size:11.5px; text-align:center; color:#6E6779; line-height:1.5;">Ao continuar, você concorda com os Termos de Uso e a Política de Privacidade.</p>
+
+        <div style="text-align:center; margin-top:16px; font-size:13px; color:#6E6779;">Já tem uma conta? <a href="#" onClick="{{ goToLogin }}" style="font-weight:600; text-decoration:none;">Entrar</a></div>
+      </sc-if>
+
+      <sc-if value="{{ isSignupVerify }}" hint-placeholder-val="{{ false }}">
+        <div style="width:52px; height:52px; border-radius:14px; background:rgba(90,70,199,0.1); display:flex; align-items:center; justify-content:center; margin-bottom:20px;">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#5A46C7" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"></rect><path d="M3 7l9 6 9-6"></path></svg>
+        </div>
+        <h1 style="margin:0 0 8px; font-size:22px; font-weight:700; letter-spacing:-0.01em; color:#1C1526;">Verifique seu email</h1>
+        <p style="margin:0 0 24px; font-size:13.5px; line-height:1.6; color:#6E6779;">Enviamos um link de confirmação para <strong style="color:#1C1526;">ana.silva@empresa.com</strong>. Clique no link para ativar sua conta.</p>
+
+        <button style="width:100%; box-sizing:border-box; padding:12px 16px; background:#FFFFFF; color:#5A46C7; border:1.5px solid #5A46C7; border-radius:10px; font-size:14px; font-weight:700; font-family:inherit; cursor:pointer;" style-hover="background:rgba(90,70,199,0.06);">
+          Reenviar email
+        </button>
+
+        <div style="text-align:center; margin-top:18px; font-size:13px; color:#6E6779;">Errou o email? <a href="#" onClick="{{ goToSignup }}" style="font-weight:600; text-decoration:none;">Usar outro endereço</a></div>
+      </sc-if>
+
+      <sc-if value="{{ isForgotPassword }}" hint-placeholder-val="{{ false }}">
+        <h1 style="margin:0 0 6px; font-size:22px; font-weight:700; letter-spacing:-0.01em; color:#1C1526;">Redefinir senha</h1>
+        <p style="margin:0 0 26px; font-size:13.5px; line-height:1.55; color:#6E6779;">Informe seu email e enviaremos um link para redefinir sua senha.</p>
+
+        <label style="display:block; font-size:12.5px; font-weight:600; color:#6E6779; margin-bottom:6px;">Email</label>
+        <div style="position:relative; margin-bottom:22px;">
+          <span style="position:absolute; left:14px; top:50%; transform:translateY(-50%); color:#9A93A8; display:flex;">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"></rect><path d="M3 7l9 6 9-6"></path></svg>
+          </span>
+          <input type="email" placeholder="voce@empresa.com" style="width:100%; box-sizing:border-box; background:#F2F0F6; border:1.5px solid transparent; border-radius:10px; padding:12px 14px 12px 40px; font-size:14px; color:#1C1526; font-family:inherit;" style-focus="border-color:#5A46C7; background:#FFFFFF; box-shadow:0 0 0 3px rgba(90,70,199,0.14); outline:none;" />
+        </div>
+
+        <button onClick="{{ goToForgotPasswordSent }}" style="width:100%; box-sizing:border-box; padding:13px 16px; background:#5A46C7; color:#FFFFFF; border:none; border-radius:10px; font-size:14.5px; font-weight:700; font-family:inherit; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:6px;" style-hover="background:#4C3AAE;" style-active="background:#402F94;">
+          Enviar link de redefinição
+        </button>
+
+        <div style="text-align:center; margin-top:20px; font-size:13px; color:#6E6779;">Lembrou a senha? <a href="#" onClick="{{ goToLogin }}" style="font-weight:600; text-decoration:none;">Voltar para o login</a></div>
+      </sc-if>
+
+      <sc-if value="{{ isForgotPasswordSent }}" hint-placeholder-val="{{ false }}">
+        <div style="width:52px; height:52px; border-radius:14px; background:rgba(90,70,199,0.1); display:flex; align-items:center; justify-content:center; margin-bottom:20px;">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#5A46C7" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="10" rx="2"></rect><path d="M8 11V7a4 4 0 0 1 8 0v4"></path></svg>
+        </div>
+        <h1 style="margin:0 0 8px; font-size:22px; font-weight:700; letter-spacing:-0.01em; color:#1C1526;">Verifique seu email</h1>
+        <p style="margin:0 0 24px; font-size:13.5px; line-height:1.6; color:#6E6779;">Enviamos um link de redefinição de senha para <strong style="color:#1C1526;">ana.silva@empresa.com</strong>. O link expira em 30 minutos.</p>
+
+        <button style="width:100%; box-sizing:border-box; padding:12px 16px; background:#FFFFFF; color:#5A46C7; border:1.5px solid #5A46C7; border-radius:10px; font-size:14px; font-weight:700; font-family:inherit; cursor:pointer;" style-hover="background:rgba(90,70,199,0.06);">
+          Reenviar link
+        </button>
+
+        <div style="text-align:center; margin-top:18px; font-size:13px; color:#6E6779;"><a href="#" onClick="{{ goToLogin }}" style="font-weight:600; text-decoration:none;">Voltar para o login</a></div>
+      </sc-if>
+
+    </div>
+
+    <div style="position:absolute; bottom:24px; right:40px; font-size:11px; color:#6E6779;">Vane v0.9.0-beta</div>
+  </div>
+
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{
+  &quot;$preview&quot;: {&quot;width&quot;: 1280, &quot;height&quot;: 860},
+  &quot;view&quot;: {&quot;editor&quot;: &quot;enum&quot;, &quot;default&quot;: &quot;login&quot;, &quot;tsType&quot;: &quot;string&quot;, &quot;options&quot;: [&quot;bootstrap&quot;, &quot;login&quot;, &quot;signup&quot;, &quot;signup_verify&quot;, &quot;forgot_password&quot;, &quot;forgot_password_sent&quot;], &quot;section&quot;: &quot;Estado&quot;},
+  &quot;installMode&quot;: {&quot;editor&quot;: &quot;enum&quot;, &quot;default&quot;: &quot;saas&quot;, &quot;tsType&quot;: &quot;string&quot;, &quot;options&quot;: [&quot;saas&quot;, &quot;self_hosted&quot;], &quot;section&quot;: &quot;Estado&quot;},
+  &quot;showError&quot;: {&quot;editor&quot;: &quot;boolean&quot;, &quot;default&quot;: false, &quot;tsType&quot;: &quot;boolean&quot;, &quot;section&quot;: &quot;Estado&quot;},
+  &quot;signupError&quot;: {&quot;editor&quot;: &quot;boolean&quot;, &quot;default&quot;: false, &quot;tsType&quot;: &quot;boolean&quot;, &quot;section&quot;: &quot;Estado&quot;}
+}">
+class Component extends DCLogic {
+  state = { passwordVisible: false, confirmVisible: false, activeView: null };
+
+  renderVals() {
+    const view = this.state.activeView ?? this.props.view ?? 'login';
+    const installMode = this.props.installMode ?? 'saas';
+    const goTo = (v) => (e) => { if (e && e.preventDefault) e.preventDefault(); this.setState({ activeView: v }); };
+    return {
+      isBootstrap: view === 'bootstrap',
+      isLogin: view === 'login',
+      isSignup: view === 'signup',
+      isSignupVerify: view === 'signup_verify',
+      isForgotPassword: view === 'forgot_password',
+      isForgotPasswordSent: view === 'forgot_password_sent',
+      goToSignup: goTo('signup'),
+      goToLogin: goTo('login'),
+      goToForgotPassword: goTo('forgot_password'),
+      goToForgotPasswordSent: goTo('forgot_password_sent'),
+      isSaas: installMode === 'saas',
+      isSelfHosted: installMode === 'self_hosted',
+      showError: this.props.showError ?? false,
+      signupError: this.props.signupError ?? false,
+      passwordType: this.state.passwordVisible ? 'text' : 'password',
+      passwordVisible: this.state.passwordVisible,
+      passwordHidden: !this.state.passwordVisible,
+      confirmType: this.state.confirmVisible ? 'text' : 'password',
+      confirmVisible: this.state.confirmVisible,
+      confirmHidden: !this.state.confirmVisible,
+      togglePassword: () => this.setState(s => ({ passwordVisible: !s.passwordVisible })),
+      toggleConfirm: () => this.setState(s => ({ confirmVisible: !s.confirmVisible })),
+    };
+  }
+}
+
+</script>
+</body>
+</html>

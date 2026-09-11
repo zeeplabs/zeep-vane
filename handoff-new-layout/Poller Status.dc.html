@@ -1,0 +1,422 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    body { margin: 0; }
+    a { color: #5A46C7; }
+    a:hover { color: #4C3AAE; }
+    ::placeholder { color: #B4AEC2; }
+  </style>
+</helmet>
+
+<div style="height:100vh; width:100%; box-sizing:border-box; background:{{ pageBg }}; display:flex; font-family:'Manrope',sans-serif; color:{{ pageText }}; overflow:hidden;">
+
+  <div onMouseEnter="{{ sidebarMouseEnter }}" onMouseLeave="{{ sidebarMouseLeave }}" style="width:{{ sidebarWidthPx }}; flex-shrink:0; background:{{ sidebarBg }}; border-right:1px solid {{ sidebarBorder }}; display:flex; flex-direction:column; transition:width 0.16s ease; overflow:visible; position:relative; z-index:20;">
+
+    <div style="padding:14px 12px; position:relative;">
+      <div onClick="{{ toggleTenantDropdown }}" style="display:flex; align-items:center; justify-content:{{ navJustify }}; gap:10px; padding:8px; border-radius:10px; cursor:pointer; white-space:nowrap;" style-hover="background:{{ cardHeaderBg }};">
+        <div style="width:28px; height:28px; border-radius:8px; background:#5A46C7; color:#FFFFFF; font-size:11.5px; font-weight:700; display:flex; align-items:center; justify-content:center; flex-shrink:0;">AH</div>
+        <sc-if value="{{ sidebarExpanded }}" hint-placeholder-val="{{ false }}">
+          <div style="min-width:0; flex:1;">
+            <div style="font-size:13px; font-weight:700; color:{{ sidebarTextPrimary }}; overflow:hidden; text-overflow:ellipsis;">Acme Health</div>
+            <div style="display:flex; align-items:center; gap:6px; margin-top:1px;">
+              <span style="font-size:10.5px; font-weight:700; letter-spacing:0.02em; padding:1px 6px; border-radius:5px; background:{{ planBadgeBg }}; color:{{ planBadgeColor }};">{{ planBadgeLabel }}</span>
+            </div>
+          </div>
+          <sc-if value="{{ isMultiTenant }}" hint-placeholder-val="{{ true }}">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#9A93A8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><polyline points="6 9 12 15 18 9"></polyline></svg>
+          </sc-if>
+        </sc-if>
+      </div>
+
+      <sc-if value="{{ tenantDropdownOpenAndMulti }}" hint-placeholder-val="{{ false }}">
+        <div style="position:absolute; top:64px; left:12px; width:240px; background:{{ cardBg }}; border:1px solid {{ sidebarBorder }}; border-radius:12px; box-shadow:0 8px 24px rgba(28,21,38,0.12); padding:6px; z-index:30;">
+          <div style="padding:8px 10px; font-size:10.5px; font-weight:700; letter-spacing:0.06em; text-transform:uppercase; color:#9A93A8;">Suas contas</div>
+          <div style="display:flex; align-items:center; gap:10px; padding:8px 10px; border-radius:8px; background:{{ cardHeaderBg }};">
+            <div style="width:24px; height:24px; border-radius:7px; background:#5A46C7; color:#fff; font-size:10px; font-weight:700; display:flex; align-items:center; justify-content:center;">AH</div>
+            <span style="font-size:13px; font-weight:600; flex:1;">Acme Health</span>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#5A46C7" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+          </div>
+          <div style="display:flex; align-items:center; gap:10px; padding:8px 10px; border-radius:8px; cursor:pointer;" style-hover="background:{{ cardHeaderBg }};">
+            <div style="width:24px; height:24px; border-radius:7px; background:#E8A73B; color:#fff; font-size:10px; font-weight:700; display:flex; align-items:center; justify-content:center;">BC</div>
+            <span style="font-size:13px; font-weight:600; flex:1;">Beta Clinic</span>
+          </div>
+          <div style="display:flex; align-items:center; gap:10px; padding:8px 10px; border-radius:8px; cursor:pointer;" style-hover="background:{{ cardHeaderBg }};">
+            <div style="width:24px; height:24px; border-radius:7px; background:#3B9EE8; color:#fff; font-size:10px; font-weight:700; display:flex; align-items:center; justify-content:center;">NL</div>
+            <span style="font-size:13px; font-weight:600; flex:1;">Northwind Labs</span>
+          </div>
+          <div style="height:1px; background:{{ sidebarBorder }}; margin:6px 4px;"></div>
+          <div onClick="{{ openLogoutConfirm }}" style="display:flex; align-items:center; gap:10px; padding:8px 10px; border-radius:8px; cursor:pointer; color:{{ pageTextMuted }}; font-size:13px; font-weight:600;" style-hover="background:{{ cardHeaderBg }};">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line></svg>
+            Sair
+          </div>
+        </div>
+      </sc-if>
+    </div>
+
+    <div style="height:1px; background:{{ sidebarBorder }}; margin:2px 12px 10px;"></div>
+
+    <div style="flex:1; padding:0 8px; display:flex; flex-direction:column; overflow-y:auto;">
+
+      <sc-if value="{{ sidebarExpanded }}" hint-placeholder-val="{{ false }}">
+        <div style="padding:10px 10px 6px; font-size:10.5px; font-weight:700; letter-spacing:0.06em; text-transform:uppercase; color:{{ sidebarTextMuted }}; white-space:nowrap;">Monitoramento</div>
+      </sc-if>
+      <div style="display:flex; flex-direction:column; gap:2px; margin-bottom:14px;">
+        <a href="Servicos Monitorados.dc.html" style="display:flex; align-items:center; justify-content:{{ navJustify }}; gap:12px; padding:9px 10px; border-radius:8px; color:{{ sidebarTextMuted }}; white-space:nowrap; cursor:pointer; text-decoration:none;" style-hover="background:{{ sidebarHoverBg }};">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><polyline points="3 12 8 12 10 6 14 18 16 12 21 12"></polyline></svg>
+          <sc-if value="{{ sidebarExpanded }}" hint-placeholder-val="{{ false }}"><span style="font-size:13.5px; font-weight:600;">Serviços monitorados</span></sc-if>
+        </a>
+        <a href="Dominios e Status Pages.dc.html" style="display:flex; align-items:center; justify-content:{{ navJustify }}; gap:12px; padding:9px 10px; border-radius:8px; color:{{ sidebarTextMuted }}; white-space:nowrap; cursor:pointer; text-decoration:none;" style-hover="background:{{ sidebarHoverBg }};">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><circle cx="12" cy="12" r="9"></circle><line x1="3" y1="12" x2="21" y2="12"></line><path d="M12 3a15 15 0 0 1 0 18a15 15 0 0 1 0-18z"></path></svg>
+          <sc-if value="{{ sidebarExpanded }}" hint-placeholder-val="{{ false }}"><span style="font-size:13.5px; font-weight:600;">Domínios &amp; Status</span></sc-if>
+        </a>
+        <a href="Incidentes.dc.html" style="display:flex; align-items:center; justify-content:{{ navJustify }}; gap:12px; padding:9px 10px; border-radius:8px; color:{{ sidebarTextMuted }}; white-space:nowrap; cursor:pointer; text-decoration:none;" style-hover="background:{{ sidebarHoverBg }};">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><path d="M12 3l9 16H3z"></path><line x1="12" y1="9" x2="12" y2="13"></line><circle cx="12" cy="16.3" r="0.6" fill="currentColor" stroke="none"></circle></svg>
+          <sc-if value="{{ sidebarExpanded }}" hint-placeholder-val="{{ false }}"><span style="font-size:13.5px; font-weight:600;">Incidentes</span></sc-if>
+        </a>
+      </div>
+
+      <sc-if value="{{ sidebarExpanded }}" hint-placeholder-val="{{ false }}">
+        <div style="padding:10px 10px 6px; font-size:10.5px; font-weight:700; letter-spacing:0.06em; text-transform:uppercase; color:{{ sidebarTextMuted }}; white-space:nowrap;">Plataforma</div>
+      </sc-if>
+      <div style="display:flex; flex-direction:column; gap:2px; margin-bottom:14px;">
+        <a href="Dashboard Integracoes.dc.html" style="display:flex; align-items:center; justify-content:{{ navJustify }}; gap:12px; padding:9px 10px; border-radius:8px; color:{{ sidebarTextMuted }}; white-space:nowrap; cursor:pointer; text-decoration:none;" style-hover="background:{{ sidebarHoverBg }};">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><path d="M10 13a5 5 0 0 0 7.07 0l1.93-1.93a5 5 0 0 0-7.07-7.07L10.5 5.5"></path><path d="M14 11a5 5 0 0 0-7.07 0L4.99 12.93a5 5 0 0 0 7.07 7.07L13.5 18.5"></path></svg>
+          <sc-if value="{{ sidebarExpanded }}" hint-placeholder-val="{{ false }}"><span style="font-size:13.5px; font-weight:600;">Integrações</span></sc-if>
+        </a>
+        <div style="display:flex; align-items:center; justify-content:{{ navJustify }}; gap:12px; padding:9px 10px; border-radius:8px; background:rgba(90,70,199,0.08); color:#5A46C7; white-space:nowrap; cursor:pointer;">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><rect x="3" y="4" width="18" height="6" rx="1.5"></rect><rect x="3" y="14" width="18" height="6" rx="1.5"></rect><circle cx="7" cy="7" r="0.6" fill="currentColor" stroke="none"></circle><circle cx="7" cy="17" r="0.6" fill="currentColor" stroke="none"></circle></svg>
+          <sc-if value="{{ sidebarExpanded }}" hint-placeholder-val="{{ false }}"><span style="font-size:13.5px; font-weight:600;">Poller Status</span></sc-if>
+        </div>
+      </div>
+
+      <sc-if value="{{ sidebarExpanded }}" hint-placeholder-val="{{ false }}">
+        <div style="padding:10px 10px 6px; font-size:10.5px; font-weight:700; letter-spacing:0.06em; text-transform:uppercase; color:{{ sidebarTextMuted }}; white-space:nowrap;">Organização</div>
+      </sc-if>
+      <div style="display:flex; flex-direction:column; gap:2px;">
+        <a href="Usuarios.dc.html" style="display:flex; align-items:center; justify-content:{{ navJustify }}; gap:12px; padding:9px 10px; border-radius:8px; color:{{ sidebarTextMuted }}; white-space:nowrap; cursor:pointer; text-decoration:none;" style-hover="background:{{ sidebarHoverBg }};">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><circle cx="9" cy="8" r="3"></circle><path d="M2 20c0-3.5 3-6 7-6s7 2.5 7 6"></path><circle cx="17" cy="8" r="2.3"></circle><path d="M22 20c0-2.5-1.8-4.5-4-5.3"></path></svg>
+          <sc-if value="{{ sidebarExpanded }}" hint-placeholder-val="{{ false }}"><span style="font-size:13.5px; font-weight:600;">Usuários</span></sc-if>
+        </a>
+        <a href="Planos e Faturamento.dc.html" style="display:flex; align-items:center; justify-content:{{ navJustify }}; gap:12px; padding:9px 10px; border-radius:8px; color:{{ sidebarTextMuted }}; white-space:nowrap; cursor:pointer; text-decoration:none;" style-hover="background:{{ sidebarHoverBg }};">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><rect x="2" y="5" width="20" height="14" rx="2.5"></rect><line x1="2" y1="10" x2="22" y2="10"></line></svg>
+          <sc-if value="{{ sidebarExpanded }}" hint-placeholder-val="{{ false }}"><span style="font-size:13.5px; font-weight:600;">Planos &amp; Faturamento</span></sc-if>
+        </a>
+      </div>
+    </div>
+
+    <div style="padding:8px; display:flex; flex-direction:column; gap:2px; border-top:1px solid {{ sidebarBorder }};">
+      <a href="Configuracoes.dc.html" style="display:flex; align-items:center; justify-content:{{ navJustify }}; gap:12px; padding:9px 10px; border-radius:8px; color:{{ sidebarTextMuted }}; white-space:nowrap; cursor:pointer; text-decoration:none;" style-hover="background:{{ sidebarHoverBg }};">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
+        <sc-if value="{{ sidebarExpanded }}" hint-placeholder-val="{{ false }}"><span style="font-size:13.5px; font-weight:600;">Configurações</span></sc-if>
+      </a>
+      <div onClick="{{ toggleSidebarPin }}" style="display:flex; align-items:center; justify-content:{{ navJustify }}; gap:12px; padding:9px 10px; border-radius:8px; color:#9A93A8; white-space:nowrap; cursor:pointer;" style-hover="background:{{ sidebarHoverBg }};">
+        <sc-if value="{{ sidebarPinned }}" hint-placeholder-val="{{ false }}">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><polyline points="15 6 9 12 15 18"></polyline></svg>
+        </sc-if>
+        <sc-if value="{{ sidebarNotPinned }}" hint-placeholder-val="{{ true }}">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><polyline points="9 6 15 12 9 18"></polyline></svg>
+        </sc-if>
+        <sc-if value="{{ sidebarExpanded }}" hint-placeholder-val="{{ false }}"><span style="font-size:12.5px; font-weight:600;">Fixar menu</span></sc-if>
+      </div>
+    </div>
+  </div>
+
+  <div style="flex:1; display:flex; flex-direction:column; min-width:0; position:relative;">
+
+    <div style="height:60px; flex-shrink:0; border-bottom:1px solid {{ sidebarBorder }}; display:flex; align-items:center; justify-content:space-between; padding:0 28px;">
+      <div style="font-size:15px; font-weight:700; color:{{ pageText }};">Poller Status</div>
+      <div style="display:flex; align-items:center; gap:16px;">
+        <div onClick="{{ toggleDarkMode }}" style="color:{{ iconColor }}; cursor:pointer; display:flex;">
+          <sc-if value="{{ darkMode }}" hint-placeholder-val="{{ false }}">
+            <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4.5"></circle><line x1="12" y1="1.5" x2="12" y2="4"></line><line x1="12" y1="20" x2="12" y2="22.5"></line><line x1="4.2" y1="4.2" x2="6" y2="6"></line><line x1="18" y1="18" x2="19.8" y2="19.8"></line><line x1="1.5" y1="12" x2="4" y2="12"></line><line x1="20" y1="12" x2="22.5" y2="12"></line><line x1="4.2" y1="19.8" x2="6" y2="18"></line><line x1="18" y1="6" x2="19.8" y2="4.2"></line></svg>
+          </sc-if>
+          <sc-if value="{{ darkModeOff }}" hint-placeholder-val="{{ true }}">
+            <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg>
+          </sc-if>
+        </div>
+        <a href="Notificacoes.dc.html" style="position:relative; color:{{ iconColor }}; display:flex; text-decoration:none;">
+          <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" style="cursor:pointer;"><path d="M18 8a6 6 0 1 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"></path><path d="M13.73 21a2 2 0 0 1-3.46 0"></path></svg>
+          <span style="position:absolute; top:-3px; right:-3px; width:8px; height:8px; border-radius:999px; background:#D6395B; border:1.5px solid {{ pageBg }};"></span>
+        </a>
+        <div onClick="{{ toggleUserMenu }}" style="position:relative;">
+          <div style="width:32px; height:32px; border-radius:9px; background:rgba(90,70,199,0.1); color:#5A46C7; font-size:12.5px; font-weight:700; display:flex; align-items:center; justify-content:center; cursor:pointer;">AS</div>
+          <sc-if value="{{ userMenuOpen }}" hint-placeholder-val="{{ false }}">
+            <div style="position:absolute; top:42px; right:0; width:200px; background:{{ cardBg }}; border:1px solid {{ sidebarBorder }}; border-radius:12px; box-shadow:0 8px 24px rgba(28,21,38,0.12); padding:6px; z-index:30;">
+              <div style="padding:10px 10px 8px; border-bottom:1px solid #ECE9F2; margin-bottom:4px;">
+                <div style="font-size:13px; font-weight:700; color:{{ pageText }};">Ana Silva</div>
+                <div style="font-size:12px; color:{{ pageTextMuted }};">ana.silva@empresa.com</div>
+              </div>
+              <a href="Meu Perfil.dc.html" style="display:block; padding:8px 10px; border-radius:8px; font-size:13px; font-weight:600; color:{{ pageTextMuted }}; cursor:pointer; text-decoration:none;" style-hover="background:{{ cardHeaderBg }};">Meu perfil</a>
+              <div style="padding:8px 10px; border-radius:8px; font-size:13px; font-weight:600; color:{{ pageTextMuted }}; cursor:pointer;" style-hover="background:{{ cardHeaderBg }};">Configurações</div>
+              <div onClick="{{ openLogoutConfirm }}" style="padding:8px 10px; border-radius:8px; font-size:13px; font-weight:600; color:#D6395B; cursor:pointer;" style-hover="background:#FBE9ED;">Sair</div>
+            </div>
+          </sc-if>
+        </div>
+      </div>
+    </div>
+
+    <div style="flex:1; overflow-y:auto; padding:32px 40px;">
+      <div style="max-width:1200px; margin:0 auto;">
+
+        <div style="margin-bottom:24px;">
+          <h1 style="margin:0 0 6px; font-size:20px; font-weight:700; letter-spacing:-0.01em; color:{{ pageText }};">Poller Status</h1>
+          <p style="margin:0; font-size:13.5px; line-height:1.55; color:{{ pageTextMuted }}; max-width:560px;">Saúde da infraestrutura de verificação do Vane em tempo real, por região.</p>
+        </div>
+
+        <sc-if value="{{ hasDegradedNodes }}" hint-placeholder-val="{{ false }}">
+          <div style="display:flex; gap:10px; padding:12px 14px; border-radius:10px; background:#FEF9F0; border:1px solid #F7E4BE; margin-bottom:20px;">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#B45309" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0; margin-top:1px;"><path d="M13 2 3 14h7l-1 8 10-12h-7z"></path></svg>
+            <div style="font-size:12.5px; line-height:1.5; color:{{ pageTextMuted }};">{{ degradedBannerText }}</div>
+          </div>
+        </sc-if>
+
+        <div style="display:grid; grid-template-columns:repeat(4, 1fr); gap:14px; margin-bottom:24px;">
+          <div style="border:1px solid {{ sidebarBorder }}; border-radius:12px; padding:16px 18px;">
+            <div style="font-size:10.5px; font-weight:700; letter-spacing:0.05em; text-transform:uppercase; color:{{ pageTextMuted }}; margin-bottom:8px;">Pollers ativos</div>
+            <div style="font-size:22px; font-weight:700; color:{{ pageText }};">{{ activeCountLabel }}</div>
+          </div>
+          <div style="border:1px solid {{ sidebarBorder }}; border-radius:12px; padding:16px 18px;">
+            <div style="font-size:10.5px; font-weight:700; letter-spacing:0.05em; text-transform:uppercase; color:{{ pageTextMuted }}; margin-bottom:8px;">Verificações/min</div>
+            <div style="font-size:22px; font-weight:700; color:{{ pageText }};">{{ totalChecksLabel }}</div>
+          </div>
+          <div style="border:1px solid {{ sidebarBorder }}; border-radius:12px; padding:16px 18px;">
+            <div style="font-size:10.5px; font-weight:700; letter-spacing:0.05em; text-transform:uppercase; color:{{ pageTextMuted }}; margin-bottom:8px;">Fila total</div>
+            <div style="font-size:22px; font-weight:700; color:{{ queueColor }};">{{ totalQueueLabel }}</div>
+          </div>
+          <div style="border:1px solid {{ sidebarBorder }}; border-radius:12px; padding:16px 18px;">
+            <div style="font-size:10.5px; font-weight:700; letter-spacing:0.05em; text-transform:uppercase; color:{{ pageTextMuted }}; margin-bottom:8px;">Taxa de erro (24h)</div>
+            <div style="font-size:22px; font-weight:700; color:{{ pageText }};">0.4%</div>
+          </div>
+        </div>
+
+        <div style="border:1px solid {{ sidebarBorder }}; border-radius:12px; overflow-x:auto; overflow-y:hidden; background:{{ cardBg }};">
+          <div style="display:grid; grid-template-columns:120px minmax(160px,1fr) 140px 100px 130px 120px 20px; align-items:center; gap:10px; padding:11px 20px; background:{{ cardHeaderBg }}; border-bottom:1px solid {{ sidebarBorder }};">
+            <span style="font-size:11px; font-weight:700; letter-spacing:0.04em; text-transform:uppercase; color:{{ pageTextMuted }};">Status</span>
+            <span style="font-size:11px; font-weight:700; letter-spacing:0.04em; text-transform:uppercase; color:{{ pageTextMuted }};">Região</span>
+            <span style="font-size:11px; font-weight:700; letter-spacing:0.04em; text-transform:uppercase; color:{{ pageTextMuted }};">Verificações/min</span>
+            <span style="font-size:11px; font-weight:700; letter-spacing:0.04em; text-transform:uppercase; color:{{ pageTextMuted }};">Fila</span>
+            <span style="font-size:11px; font-weight:700; letter-spacing:0.04em; text-transform:uppercase; color:{{ pageTextMuted }};">Latência média</span>
+            <span style="font-size:11px; font-weight:700; letter-spacing:0.04em; text-transform:uppercase; color:{{ pageTextMuted }};">Heartbeat</span>
+            <span></span>
+          </div>
+
+          <sc-for list="{{ nodeRows }}" as="node" hint-placeholder-count="4">
+            <div onClick="{{ node.select }}" style="display:grid; grid-template-columns:120px minmax(160px,1fr) 140px 100px 130px 120px 20px; align-items:center; gap:10px; padding:14px 20px; border-bottom:1px solid {{ sidebarBorder }}; cursor:pointer; background:{{ node.rowBg }};" style-hover="background:{{ cardHeaderBg }};">
+              <span style="display:inline-flex; align-items:center; gap:6px; padding:4px 10px; border-radius:999px; background:{{ node.statusBg }}; color:{{ node.statusColor }}; font-size:12px; font-weight:700; width:fit-content;">
+                <span style="width:6px; height:6px; border-radius:999px; background:{{ node.statusDot }};"></span>{{ node.statusLabel }}
+              </span>
+              <div style="font-size:13.5px; font-weight:700; color:{{ pageText }}; font-family:monospace;">{{ node.region }}</div>
+              <div style="font-size:13px; color:{{ pageText }}; font-weight:600;">{{ node.checksPerMinLabel }}</div>
+              <div style="font-size:13px; color:{{ node.queueColor }}; font-weight:600;">{{ node.queue }}</div>
+              <div style="font-size:13px; color:{{ pageText }};">{{ node.avgLatency }}</div>
+              <div style="font-size:12.5px; color:{{ pageTextMuted }};">{{ node.lastHeartbeat }}</div>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#9A93A8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
+            </div>
+          </sc-for>
+        </div>
+
+      </div>
+    </div>
+
+    <sc-if value="{{ hasSelected }}" hint-placeholder-val="{{ false }}">
+      <div onClick="{{ closeDrawer }}" style="position:fixed; inset:0; background:rgba(28,21,38,0.32); z-index:50;"></div>
+      <div onClick="{{ stopClick }}" style="position:fixed; top:0; right:0; bottom:0; width:440px; background:{{ cardBg }}; border-left:1px solid {{ sidebarBorder }}; box-shadow:-8px 0 24px rgba(28,21,38,0.1); z-index:51; padding:24px; overflow-y:auto; box-sizing:border-box;">
+        <div style="display:flex; align-items:flex-start; justify-content:space-between; margin-bottom:18px;">
+          <span style="display:inline-flex; align-items:center; gap:6px; padding:4px 10px; border-radius:999px; background:{{ selected.statusBg }}; color:{{ selected.statusColor }}; font-size:12px; font-weight:700;">
+            <span style="width:6px; height:6px; border-radius:999px; background:{{ selected.statusDot }};"></span>{{ selected.statusLabel }}
+          </span>
+          <svg onClick="{{ closeDrawer }}" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="{{ pageTextMuted }}" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="cursor:pointer;"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+        </div>
+        <h2 style="margin:0 0 4px; font-size:19px; font-weight:700; color:{{ pageText }}; font-family:monospace;">{{ selected.region }}</h2>
+        <div style="font-size:13px; color:{{ pageTextMuted }}; margin-bottom:22px;">Último heartbeat {{ selected.lastHeartbeat }}</div>
+
+        <sc-if value="{{ selected.hasNote }}" hint-placeholder-val="{{ false }}">
+          <div style="display:flex; gap:10px; padding:12px 14px; border-radius:10px; background:{{ selected.noteBg }}; border:1px solid {{ selected.noteBorder }}; margin-bottom:20px;">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="{{ selected.statusColor }}" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0; margin-top:1px;"><path d="M13 2 3 14h7l-1 8 10-12h-7z"></path></svg>
+            <div style="font-size:12.5px; line-height:1.5; color:{{ pageTextMuted }};">{{ selected.note }}</div>
+          </div>
+        </sc-if>
+
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:14px; margin-bottom:22px;">
+          <div>
+            <div style="font-size:10.5px; font-weight:700; letter-spacing:0.05em; text-transform:uppercase; color:{{ pageTextMuted }}; margin-bottom:4px;">Verificações/min</div>
+            <div style="font-size:18px; font-weight:700; color:{{ pageText }};">{{ selected.checksPerMinLabel }}</div>
+          </div>
+          <div>
+            <div style="font-size:10.5px; font-weight:700; letter-spacing:0.05em; text-transform:uppercase; color:{{ pageTextMuted }}; margin-bottom:4px;">Fila</div>
+            <div style="font-size:18px; font-weight:700; color:{{ selected.queueColor }};">{{ selected.queue }}</div>
+          </div>
+          <div>
+            <div style="font-size:10.5px; font-weight:700; letter-spacing:0.05em; text-transform:uppercase; color:{{ pageTextMuted }}; margin-bottom:4px;">Latência média</div>
+            <div style="font-size:18px; font-weight:700; color:{{ pageText }};">{{ selected.avgLatency }}</div>
+          </div>
+          <div>
+            <div style="font-size:10.5px; font-weight:700; letter-spacing:0.05em; text-transform:uppercase; color:{{ pageTextMuted }}; margin-bottom:4px;">CPU / Memória</div>
+            <div style="font-size:18px; font-weight:700; color:{{ pageText }};">{{ selected.cpu }} / {{ selected.mem }}</div>
+          </div>
+        </div>
+
+        <div style="margin-bottom:8px; font-size:10.5px; font-weight:700; letter-spacing:0.05em; text-transform:uppercase; color:{{ pageTextMuted }};">Throughput — últimos 24 minutos</div>
+        <div style="display:flex; gap:3px; margin-bottom:26px;">
+          <sc-for list="{{ selected.checkBars }}" as="chk" hint-placeholder-count="24">
+            <div style="width:12px; height:22px; border-radius:3px; background:{{ chk.color }};"></div>
+          </sc-for>
+        </div>
+
+        <button style="width:100%; box-sizing:border-box; padding:10px; background:{{ cardBg }}; color:{{ pageText }}; border:1px solid {{ sidebarBorder }}; border-radius:9px; font-size:13px; font-weight:600; font-family:inherit; cursor:pointer;" style-hover="background:{{ cardHeaderBg }};">Reiniciar poller</button>
+      </div>
+    </sc-if>
+  </div>
+
+  <sc-if value="{{ logoutConfirmOpen }}" hint-placeholder-val="{{ false }}">
+    <div onClick="{{ closeLogoutConfirm }}" style="position:fixed; inset:0; background:rgba(28,21,38,0.4); z-index:70; display:flex; align-items:center; justify-content:center;">
+      <div onClick="{{ stopPropagationClick }}" style="width:360px; box-sizing:border-box; background:{{ cardBg }}; border-radius:16px; padding:24px; box-shadow:0 20px 48px rgba(28,21,38,0.22);">
+        <div style="width:40px; height:40px; border-radius:10px; background:{{ cardHeaderBg }}; color:{{ pageTextMuted }}; display:flex; align-items:center; justify-content:center; margin-bottom:16px;">
+          <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line></svg>
+        </div>
+        <h3 style="margin:0 0 6px; font-size:16px; font-weight:700; color:{{ pageText }};">Sair da conta?</h3>
+        <p style="margin:0 0 22px; font-size:13px; line-height:1.5; color:{{ pageTextMuted }};">Você precisará entrar novamente para acessar o Vane.</p>
+        <div style="display:flex; gap:10px;">
+          <button onClick="{{ closeLogoutConfirm }}" style="flex:1; box-sizing:border-box; padding:10px; background:{{ cardBg }}; color:{{ pageText }}; border:1px solid {{ sidebarBorder }}; border-radius:9px; font-size:13px; font-weight:600; font-family:inherit; cursor:pointer;" style-hover="background:{{ cardHeaderBg }};">Cancelar</button>
+          <button onClick="{{ confirmLogout }}" style="flex:1; box-sizing:border-box; padding:10px; background:#1C1526; color:#FFFFFF; border:none; border-radius:9px; font-size:13px; font-weight:700; font-family:inherit; cursor:pointer;" style-hover="background:#332B44;">Sair</button>
+        </div>
+      </div>
+    </div>
+  </sc-if>
+
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{
+  &quot;$preview&quot;: {&quot;width&quot;: 1440, &quot;height&quot;: 900},
+  &quot;planTier&quot;: {&quot;editor&quot;: &quot;enum&quot;, &quot;default&quot;: &quot;free&quot;, &quot;tsType&quot;: &quot;string&quot;, &quot;options&quot;: [&quot;free&quot;, &quot;pro&quot;], &quot;section&quot;: &quot;Estado&quot;},
+  &quot;tenantMode&quot;: {&quot;editor&quot;: &quot;enum&quot;, &quot;default&quot;: &quot;multi&quot;, &quot;tsType&quot;: &quot;string&quot;, &quot;options&quot;: [&quot;single&quot;, &quot;multi&quot;], &quot;section&quot;: &quot;Estado&quot;}
+}">
+const STATUS_META = {
+  healthy: { label: 'Saudável', bg: '#E7F6EF', color: '#1A9E6B', dot: '#1A9E6B' },
+  degraded: { label: 'Degradado', bg: '#FEF3E2', color: '#B45309', dot: '#B45309' },
+  offline: { label: 'Offline', bg: '#FBE9ED', color: '#D6395B', dot: '#D6395B' },
+};
+
+function buildBars(pattern) {
+  return Array.from({ length: 24 }, (_, i) => pattern(i));
+}
+
+const NODES = [
+  { id: 'n1', region: 'us-east-1', status: 'healthy', checksPerMin: 842, queue: 0, avgLatency: '118 ms', lastHeartbeat: 'há 4s', cpu: '32%', mem: '54%', bars: buildBars(() => 'ok') },
+  { id: 'n2', region: 'sa-east-1', status: 'healthy', checksPerMin: 611, queue: 0, avgLatency: '96 ms', lastHeartbeat: 'há 6s', cpu: '28%', mem: '47%', bars: buildBars(() => 'ok') },
+  { id: 'n3', region: 'eu-west-1', status: 'degraded', checksPerMin: 390, queue: 214, avgLatency: '740 ms', lastHeartbeat: 'há 22s', cpu: '81%', mem: '88%', note: 'Fila crescendo — throughput abaixo do esperado nos últimos 15 minutos.', bars: buildBars(i => i >= 14 ? 'warn' : 'ok') },
+  { id: 'n4', region: 'ap-southeast-1', status: 'offline', checksPerMin: 0, queue: 1042, avgLatency: '—', lastHeartbeat: 'há 6 min', cpu: '—', mem: '—', note: 'Sem heartbeat há mais de 5 minutos. Verificações da região redirecionadas para us-east-1.', bars: buildBars(i => i >= 18 ? 'down' : (i >= 12 ? 'warn' : 'ok')) },
+];
+
+class Component extends DCLogic {
+  state = { pinned: false, hovered: false, tenantDropdownOpen: false, userMenuOpen: false, selectedId: null };
+
+  renderVals() {
+    const planTier = this.props.planTier ?? 'free';
+    const tenantMode = this.props.tenantMode ?? 'multi';
+    const isMultiTenant = tenantMode === 'multi';
+    const expanded = this.state.pinned || this.state.hovered;
+    const isFree = planTier === 'free';
+    const { selectedId } = this.state;
+
+    const nodeRows = NODES.map(n => {
+      const meta = STATUS_META[n.status];
+      return {
+        ...n,
+        statusLabel: meta.label, statusBg: meta.bg, statusColor: meta.color, statusDot: meta.dot,
+        checksPerMinLabel: n.checksPerMin.toLocaleString('pt-BR'),
+        queueColor: n.queue > 500 ? '#D6395B' : (n.queue > 0 ? '#B45309' : '#1C1526'),
+        rowBg: selectedId === n.id ? 'rgba(90,70,199,0.08)' : (this.state.darkMode ? '#1F1A35' : '#FFFFFF'),
+        select: () => this.setState({ selectedId: n.id }),
+      };
+    });
+
+    const selectedRaw = NODES.find(n => n.id === selectedId) || null;
+    const selected = selectedRaw ? (() => {
+      const meta = STATUS_META[selectedRaw.status];
+      return {
+        ...selectedRaw,
+        statusLabel: meta.label, statusBg: meta.bg, statusColor: meta.color, statusDot: meta.dot,
+        checksPerMinLabel: selectedRaw.checksPerMin.toLocaleString('pt-BR'),
+        queueColor: selectedRaw.queue > 500 ? '#D6395B' : (selectedRaw.queue > 0 ? '#B45309' : '#1C1526'),
+        hasNote: !!selectedRaw.note,
+        noteBg: selectedRaw.status === 'offline' ? '#FDF0F2' : '#FEF9F0',
+        noteBorder: selectedRaw.status === 'offline' ? '#F5C3CE' : '#F7E4BE',
+        checkBars: selectedRaw.bars.map(c => ({ color: STATUS_META[c === 'ok' ? 'healthy' : (c === 'warn' ? 'degraded' : 'offline')].dot })),
+      };
+    })() : null;
+
+    const degraded = NODES.filter(n => n.status !== 'healthy');
+    const totalChecks = NODES.reduce((s, n) => s + n.checksPerMin, 0);
+    const totalQueue = NODES.reduce((s, n) => s + n.queue, 0);
+
+    return {
+      sidebarPinned: this.state.pinned,
+      sidebarNotPinned: !this.state.pinned,
+      sidebarExpanded: expanded,
+      sidebarWidthPx: expanded ? '240px' : '72px',
+      navJustify: expanded ? 'flex-start' : 'center',
+      sidebarMouseEnter: () => this.setState({ hovered: true }),
+      sidebarMouseLeave: () => this.setState({ hovered: false }),
+      toggleSidebarPin: () => this.setState(s => ({ pinned: !s.pinned })),
+      isMultiTenant,
+      tenantDropdownOpenAndMulti: this.state.tenantDropdownOpen && isMultiTenant,
+      toggleTenantDropdown: () => { if (isMultiTenant) this.setState(s => ({ tenantDropdownOpen: !s.tenantDropdownOpen })); },
+      userMenuOpen: this.state.userMenuOpen,
+      toggleUserMenu: () => this.setState(s => ({ userMenuOpen: !s.userMenuOpen })),
+      darkMode: this.state.darkMode,
+      darkModeOff: !this.state.darkMode,
+      toggleDarkMode: () => this.setState(s => ({ darkMode: !s.darkMode })),
+      pageBg: this.state.darkMode ? '#15111F' : '#FFFFFF',
+      pageText: this.state.darkMode ? '#EDEBF3' : '#1C1526',
+      sidebarBg: this.state.darkMode ? '#1B1730' : '#FAFAFC',
+      sidebarBorder: this.state.darkMode ? '#2C2645' : '#ECE9F2',
+      sidebarTextPrimary: this.state.darkMode ? '#F2F0F6' : '#1C1526',
+      sidebarTextMuted: this.state.darkMode ? '#9A93B0' : '#6E6779',
+      iconColor: this.state.darkMode ? '#B4AEC2' : '#6E6779',
+      pageTextMuted: this.state.darkMode ? '#9A93B0' : '#6E6779',
+      cardBg: this.state.darkMode ? '#1F1A35' : '#FFFFFF',
+      cardHeaderBg: this.state.darkMode ? '#241E3D' : '#FAFAFC',
+      sidebarHoverBg: this.state.darkMode ? 'rgba(255,255,255,0.06)' : '#F2F0F6',
+      logoutConfirmOpen: this.state.logoutConfirmOpen,
+      openLogoutConfirm: () => this.setState({ logoutConfirmOpen: true, tenantDropdownOpen: false, userMenuOpen: false }),
+      closeLogoutConfirm: () => this.setState({ logoutConfirmOpen: false }),
+      confirmLogout: () => { window.location.href = 'Login Bootstrap.dc.html'; },
+      stopPropagationClick: (e) => e.stopPropagation(),
+      isFree, isPro: !isFree,
+      planBadgeLabel: isFree ? 'Free' : 'Pro',
+      planBadgeBg: isFree ? '#F2F0F6' : 'rgba(90,70,199,0.1)',
+      planBadgeColor: isFree ? '#6E6779' : '#5A46C7',
+
+      hasDegradedNodes: degraded.length > 0,
+      degradedBannerText: degraded.length === 1
+        ? `1 região (${degraded[0].region}) está com problemas de throughput ou heartbeat.`
+        : `${degraded.length} regiões estão com problemas de throughput ou heartbeat.`,
+      activeCountLabel: `${NODES.filter(n => n.status !== 'offline').length}/${NODES.length}`,
+      totalChecksLabel: totalChecks.toLocaleString('pt-BR'),
+      totalQueueLabel: totalQueue.toLocaleString('pt-BR'),
+      queueColor: totalQueue > 500 ? '#D6395B' : (totalQueue > 0 ? '#B45309' : '#1C1526'),
+
+      nodeRows,
+      hasSelected: !!selected,
+      selected: selected || {},
+      closeDrawer: () => this.setState({ selectedId: null }),
+      stopClick: (e) => e.stopPropagation(),
+    };
+  }
+}
+
+</script>
+</body>
+</html>

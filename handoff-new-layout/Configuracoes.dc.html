@@ -1,0 +1,468 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <script src="./image-slot.js"></script>
+  <style>
+    body { margin: 0; }
+    a { color: #5A46C7; }
+    a:hover { color: #4C3AAE; }
+    ::placeholder { color: #B4AEC2; }
+  </style>
+</helmet>
+
+<div style="height:100vh; width:100%; box-sizing:border-box; background:{{ pageBg }}; display:flex; font-family:'Manrope',sans-serif; color:{{ pageText }}; overflow:hidden;">
+
+  <div onMouseEnter="{{ sidebarMouseEnter }}" onMouseLeave="{{ sidebarMouseLeave }}" style="width:{{ sidebarWidthPx }}; flex-shrink:0; background:{{ sidebarBg }}; border-right:1px solid {{ sidebarBorder }}; display:flex; flex-direction:column; transition:width 0.16s ease; overflow:visible; position:relative; z-index:20;">
+
+    <div style="padding:14px 12px; position:relative;">
+      <div onClick="{{ toggleTenantDropdown }}" style="display:flex; align-items:center; justify-content:{{ navJustify }}; gap:10px; padding:8px; border-radius:10px; cursor:pointer; white-space:nowrap;" style-hover="background:{{ cardHeaderBg }};">
+        <div style="width:28px; height:28px; border-radius:8px; background:#5A46C7; color:#FFFFFF; font-size:11.5px; font-weight:700; display:flex; align-items:center; justify-content:center; flex-shrink:0;">AH</div>
+        <sc-if value="{{ sidebarExpanded }}" hint-placeholder-val="{{ false }}">
+          <div style="min-width:0; flex:1;">
+            <div style="font-size:13px; font-weight:700; color:{{ sidebarTextPrimary }}; overflow:hidden; text-overflow:ellipsis;">Acme Health</div>
+            <div style="display:flex; align-items:center; gap:6px; margin-top:1px;">
+              <span style="font-size:10.5px; font-weight:700; letter-spacing:0.02em; padding:1px 6px; border-radius:5px; background:{{ planBadgeBg }}; color:{{ planBadgeColor }};">{{ planBadgeLabel }}</span>
+            </div>
+          </div>
+          <sc-if value="{{ isMultiTenant }}" hint-placeholder-val="{{ true }}">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#9A93A8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><polyline points="6 9 12 15 18 9"></polyline></svg>
+          </sc-if>
+        </sc-if>
+      </div>
+
+      <sc-if value="{{ tenantDropdownOpenAndMulti }}" hint-placeholder-val="{{ false }}">
+        <div style="position:absolute; top:64px; left:12px; width:240px; background:{{ cardBg }}; border:1px solid {{ sidebarBorder }}; border-radius:12px; box-shadow:0 8px 24px rgba(28,21,38,0.12); padding:6px; z-index:30;">
+          <div style="padding:8px 10px; font-size:10.5px; font-weight:700; letter-spacing:0.06em; text-transform:uppercase; color:#9A93A8;">Suas contas</div>
+          <div style="display:flex; align-items:center; gap:10px; padding:8px 10px; border-radius:8px; background:{{ cardHeaderBg }};">
+            <div style="width:24px; height:24px; border-radius:7px; background:#5A46C7; color:#fff; font-size:10px; font-weight:700; display:flex; align-items:center; justify-content:center;">AH</div>
+            <span style="font-size:13px; font-weight:600; flex:1;">Acme Health</span>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#5A46C7" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+          </div>
+          <div style="display:flex; align-items:center; gap:10px; padding:8px 10px; border-radius:8px; cursor:pointer;" style-hover="background:{{ cardHeaderBg }};">
+            <div style="width:24px; height:24px; border-radius:7px; background:#E8A73B; color:#fff; font-size:10px; font-weight:700; display:flex; align-items:center; justify-content:center;">BC</div>
+            <span style="font-size:13px; font-weight:600; flex:1;">Beta Clinic</span>
+          </div>
+          <div style="display:flex; align-items:center; gap:10px; padding:8px 10px; border-radius:8px; cursor:pointer;" style-hover="background:{{ cardHeaderBg }};">
+            <div style="width:24px; height:24px; border-radius:7px; background:#3B9EE8; color:#fff; font-size:10px; font-weight:700; display:flex; align-items:center; justify-content:center;">NL</div>
+            <span style="font-size:13px; font-weight:600; flex:1;">Northwind Labs</span>
+          </div>
+          <div style="height:1px; background:{{ sidebarBorder }}; margin:6px 4px;"></div>
+          <div onClick="{{ openLogoutConfirm }}" style="display:flex; align-items:center; gap:10px; padding:8px 10px; border-radius:8px; cursor:pointer; color:{{ pageTextMuted }}; font-size:13px; font-weight:600;" style-hover="background:{{ cardHeaderBg }};">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line></svg>
+            Sair
+          </div>
+        </div>
+      </sc-if>
+    </div>
+
+    <div style="height:1px; background:{{ sidebarBorder }}; margin:2px 12px 10px;"></div>
+
+    <div style="flex:1; padding:0 8px; display:flex; flex-direction:column; overflow-y:auto;">
+
+      <sc-if value="{{ sidebarExpanded }}" hint-placeholder-val="{{ false }}">
+        <div style="padding:10px 10px 6px; font-size:10.5px; font-weight:700; letter-spacing:0.06em; text-transform:uppercase; color:{{ sidebarTextMuted }}; white-space:nowrap;">Monitoramento</div>
+      </sc-if>
+      <div style="display:flex; flex-direction:column; gap:2px; margin-bottom:14px;">
+        <a href="Servicos Monitorados.dc.html" style="display:flex; align-items:center; justify-content:{{ navJustify }}; gap:12px; padding:9px 10px; border-radius:8px; color:{{ sidebarTextMuted }}; white-space:nowrap; cursor:pointer; text-decoration:none;" style-hover="background:{{ sidebarHoverBg }};">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><polyline points="3 12 8 12 10 6 14 18 16 12 21 12"></polyline></svg>
+          <sc-if value="{{ sidebarExpanded }}" hint-placeholder-val="{{ false }}"><span style="font-size:13.5px; font-weight:600;">Serviços monitorados</span></sc-if>
+        </a>
+        <a href="Dominios e Status Pages.dc.html" style="display:flex; align-items:center; justify-content:{{ navJustify }}; gap:12px; padding:9px 10px; border-radius:8px; color:{{ sidebarTextMuted }}; white-space:nowrap; cursor:pointer; text-decoration:none;" style-hover="background:{{ sidebarHoverBg }};">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><circle cx="12" cy="12" r="9"></circle><line x1="3" y1="12" x2="21" y2="12"></line><path d="M12 3a15 15 0 0 1 0 18a15 15 0 0 1 0-18z"></path></svg>
+          <sc-if value="{{ sidebarExpanded }}" hint-placeholder-val="{{ false }}"><span style="font-size:13.5px; font-weight:600;">Domínios &amp; Status</span></sc-if>
+        </a>
+        <a href="Incidentes.dc.html" style="display:flex; align-items:center; justify-content:{{ navJustify }}; gap:12px; padding:9px 10px; border-radius:8px; color:{{ sidebarTextMuted }}; white-space:nowrap; cursor:pointer; text-decoration:none;" style-hover="background:{{ sidebarHoverBg }};">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><path d="M12 3l9 16H3z"></path><line x1="12" y1="9" x2="12" y2="13"></line><circle cx="12" cy="16.3" r="0.6" fill="currentColor" stroke="none"></circle></svg>
+          <sc-if value="{{ sidebarExpanded }}" hint-placeholder-val="{{ false }}"><span style="font-size:13.5px; font-weight:600;">Incidentes</span></sc-if>
+        </a>
+      </div>
+
+      <sc-if value="{{ sidebarExpanded }}" hint-placeholder-val="{{ false }}">
+        <div style="padding:10px 10px 6px; font-size:10.5px; font-weight:700; letter-spacing:0.06em; text-transform:uppercase; color:{{ sidebarTextMuted }}; white-space:nowrap;">Plataforma</div>
+      </sc-if>
+      <div style="display:flex; flex-direction:column; gap:2px; margin-bottom:14px;">
+        <a href="Dashboard Integracoes.dc.html" style="display:flex; align-items:center; justify-content:{{ navJustify }}; gap:12px; padding:9px 10px; border-radius:8px; color:{{ sidebarTextMuted }}; white-space:nowrap; cursor:pointer; text-decoration:none;" style-hover="background:{{ sidebarHoverBg }};">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><path d="M10 13a5 5 0 0 0 7.07 0l1.93-1.93a5 5 0 0 0-7.07-7.07L10.5 5.5"></path><path d="M14 11a5 5 0 0 0-7.07 0L4.99 12.93a5 5 0 0 0 7.07 7.07L13.5 18.5"></path></svg>
+          <sc-if value="{{ sidebarExpanded }}" hint-placeholder-val="{{ false }}"><span style="font-size:13.5px; font-weight:600;">Integrações</span></sc-if>
+        </a>
+        <a href="Poller Status.dc.html" style="display:flex; align-items:center; justify-content:{{ navJustify }}; gap:12px; padding:9px 10px; border-radius:8px; color:{{ sidebarTextMuted }}; white-space:nowrap; cursor:pointer; text-decoration:none;" style-hover="background:{{ sidebarHoverBg }};">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><rect x="3" y="4" width="18" height="6" rx="1.5"></rect><rect x="3" y="14" width="18" height="6" rx="1.5"></rect><circle cx="7" cy="7" r="0.6" fill="currentColor" stroke="none"></circle><circle cx="7" cy="17" r="0.6" fill="currentColor" stroke="none"></circle></svg>
+          <sc-if value="{{ sidebarExpanded }}" hint-placeholder-val="{{ false }}"><span style="font-size:13.5px; font-weight:600;">Poller Status</span></sc-if>
+        </a>
+      </div>
+
+      <sc-if value="{{ sidebarExpanded }}" hint-placeholder-val="{{ false }}">
+        <div style="padding:10px 10px 6px; font-size:10.5px; font-weight:700; letter-spacing:0.06em; text-transform:uppercase; color:{{ sidebarTextMuted }}; white-space:nowrap;">Organização</div>
+      </sc-if>
+      <div style="display:flex; flex-direction:column; gap:2px;">
+        <a href="Usuarios.dc.html" style="display:flex; align-items:center; justify-content:{{ navJustify }}; gap:12px; padding:9px 10px; border-radius:8px; color:{{ sidebarTextMuted }}; white-space:nowrap; cursor:pointer; text-decoration:none;" style-hover="background:{{ sidebarHoverBg }};">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><circle cx="9" cy="8" r="3"></circle><path d="M2 20c0-3.5 3-6 7-6s7 2.5 7 6"></path><circle cx="17" cy="8" r="2.3"></circle><path d="M22 20c0-2.5-1.8-4.5-4-5.3"></path></svg>
+          <sc-if value="{{ sidebarExpanded }}" hint-placeholder-val="{{ false }}"><span style="font-size:13.5px; font-weight:600;">Usuários</span></sc-if>
+        </a>
+        <a href="Planos e Faturamento.dc.html" style="display:flex; align-items:center; justify-content:{{ navJustify }}; gap:12px; padding:9px 10px; border-radius:8px; color:{{ sidebarTextMuted }}; white-space:nowrap; cursor:pointer; text-decoration:none;" style-hover="background:{{ sidebarHoverBg }};">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><rect x="2" y="5" width="20" height="14" rx="2.5"></rect><line x1="2" y1="10" x2="22" y2="10"></line></svg>
+          <sc-if value="{{ sidebarExpanded }}" hint-placeholder-val="{{ false }}"><span style="font-size:13.5px; font-weight:600;">Planos &amp; Faturamento</span></sc-if>
+        </a>
+      </div>
+    </div>
+
+    <div style="padding:8px; display:flex; flex-direction:column; gap:2px; border-top:1px solid {{ sidebarBorder }};">
+      <div style="display:flex; align-items:center; justify-content:{{ navJustify }}; gap:12px; padding:9px 10px; border-radius:8px; background:rgba(90,70,199,0.08); color:#5A46C7; white-space:nowrap; cursor:pointer;">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
+        <sc-if value="{{ sidebarExpanded }}" hint-placeholder-val="{{ false }}"><span style="font-size:13.5px; font-weight:600;">Configurações</span></sc-if>
+      </div>
+      <div onClick="{{ toggleSidebarPin }}" style="display:flex; align-items:center; justify-content:{{ navJustify }}; gap:12px; padding:9px 10px; border-radius:8px; color:#9A93A8; white-space:nowrap; cursor:pointer;" style-hover="background:{{ sidebarHoverBg }};">
+        <sc-if value="{{ sidebarPinned }}" hint-placeholder-val="{{ false }}">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><polyline points="15 6 9 12 15 18"></polyline></svg>
+        </sc-if>
+        <sc-if value="{{ sidebarNotPinned }}" hint-placeholder-val="{{ true }}">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><polyline points="9 6 15 12 9 18"></polyline></svg>
+        </sc-if>
+        <sc-if value="{{ sidebarExpanded }}" hint-placeholder-val="{{ false }}"><span style="font-size:12.5px; font-weight:600;">Fixar menu</span></sc-if>
+      </div>
+    </div>
+  </div>
+
+  <div style="flex:1; display:flex; flex-direction:column; min-width:0; position:relative;">
+
+    <div style="height:60px; flex-shrink:0; border-bottom:1px solid {{ sidebarBorder }}; display:flex; align-items:center; justify-content:space-between; padding:0 28px;">
+      <div style="font-size:15px; font-weight:700; color:{{ pageText }};">Configurações</div>
+      <div style="display:flex; align-items:center; gap:16px;">
+        <div onClick="{{ toggleDarkMode }}" style="color:{{ iconColor }}; cursor:pointer; display:flex;">
+          <sc-if value="{{ darkMode }}" hint-placeholder-val="{{ false }}">
+            <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4.5"></circle><line x1="12" y1="1.5" x2="12" y2="4"></line><line x1="12" y1="20" x2="12" y2="22.5"></line><line x1="4.2" y1="4.2" x2="6" y2="6"></line><line x1="18" y1="18" x2="19.8" y2="19.8"></line><line x1="1.5" y1="12" x2="4" y2="12"></line><line x1="20" y1="12" x2="22.5" y2="12"></line><line x1="4.2" y1="19.8" x2="6" y2="18"></line><line x1="18" y1="6" x2="19.8" y2="4.2"></line></svg>
+          </sc-if>
+          <sc-if value="{{ darkModeOff }}" hint-placeholder-val="{{ true }}">
+            <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg>
+          </sc-if>
+        </div>
+        <a href="Notificacoes.dc.html" style="position:relative; color:{{ iconColor }}; display:flex; text-decoration:none;">
+          <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" style="cursor:pointer;"><path d="M18 8a6 6 0 1 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"></path><path d="M13.73 21a2 2 0 0 1-3.46 0"></path></svg>
+          <span style="position:absolute; top:-3px; right:-3px; width:8px; height:8px; border-radius:999px; background:#D6395B; border:1.5px solid {{ pageBg }};"></span>
+        </a>
+        <div onClick="{{ toggleUserMenu }}" style="position:relative;">
+          <div style="width:32px; height:32px; border-radius:9px; background:rgba(90,70,199,0.1); color:#5A46C7; font-size:12.5px; font-weight:700; display:flex; align-items:center; justify-content:center; cursor:pointer;">AS</div>
+          <sc-if value="{{ userMenuOpen }}" hint-placeholder-val="{{ false }}">
+            <div style="position:absolute; top:42px; right:0; width:200px; background:{{ cardBg }}; border:1px solid {{ sidebarBorder }}; border-radius:12px; box-shadow:0 8px 24px rgba(28,21,38,0.12); padding:6px; z-index:30;">
+              <div style="padding:10px 10px 8px; border-bottom:1px solid #ECE9F2; margin-bottom:4px;">
+                <div style="font-size:13px; font-weight:700; color:{{ pageText }};">Ana Silva</div>
+                <div style="font-size:12px; color:{{ pageTextMuted }};">ana.silva@empresa.com</div>
+              </div>
+              <a href="Meu Perfil.dc.html" style="display:block; padding:8px 10px; border-radius:8px; font-size:13px; font-weight:600; color:{{ pageTextMuted }}; cursor:pointer; text-decoration:none;" style-hover="background:{{ cardHeaderBg }};">Meu perfil</a>
+              <div style="padding:8px 10px; border-radius:8px; font-size:13px; font-weight:600; color:{{ pageTextMuted }}; cursor:pointer;" style-hover="background:{{ cardHeaderBg }};">Configurações</div>
+              <div onClick="{{ openLogoutConfirm }}" style="padding:8px 10px; border-radius:8px; font-size:13px; font-weight:600; color:#D6395B; cursor:pointer;" style-hover="background:#FBE9ED;">Sair</div>
+            </div>
+          </sc-if>
+        </div>
+      </div>
+    </div>
+
+    <div style="flex:1; overflow-y:auto; padding:32px 40px;">
+      <div style="max-width:1200px; margin:0 auto;">
+
+        <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:16px; margin-bottom:26px;">
+          <div>
+            <h1 style="margin:0 0 6px; font-size:20px; font-weight:700; letter-spacing:-0.01em; color:{{ pageText }};">Configurações</h1>
+            <p style="margin:0; font-size:13.5px; line-height:1.55; color:{{ pageTextMuted }}; max-width:560px;">Perfil da empresa e dados fiscais usados nas faturas da conta.</p>
+          </div>
+          <sc-if value="{{ showSavedToast }}" hint-placeholder-val="{{ false }}">
+            <span style="display:inline-flex; align-items:center; gap:6px; padding:7px 14px; border-radius:999px; background:#E7F6EF; color:#1A9E6B; font-size:12.5px; font-weight:700;">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+              Alterações salvas
+            </span>
+          </sc-if>
+        </div>
+
+        <div style="border:1px solid {{ sidebarBorder }}; border-radius:12px; padding:24px; margin-bottom:20px;">
+          <div style="font-size:14px; font-weight:700; color:{{ pageText }}; margin-bottom:4px;">Perfil da empresa</div>
+          <p style="margin:0 0 20px; font-size:12.5px; color:{{ pageTextMuted }};">Como a conta aparece no Vane e nas páginas de status públicas.</p>
+
+          <div style="display:flex; align-items:center; gap:16px; margin-bottom:22px;">
+            <image-slot id="company-logo" shape="circle" placeholder="Logo" style="width:64px; height:64px; flex-shrink:0;"></image-slot>
+            <div style="font-size:12.5px; line-height:1.5; color:{{ pageTextMuted }};">PNG ou SVG, fundo transparente.<br />Recomendado 256×256px.</div>
+          </div>
+
+          <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-bottom:16px;">
+            <div>
+              <label style="display:block; font-size:12.5px; font-weight:600; color:{{ pageTextMuted }}; margin-bottom:6px;">Nome da empresa</label>
+              <input type="text" value="{{ companyName }}" onChange="{{ handleCompanyNameChange }}" style="width:100%; box-sizing:border-box; background:{{ cardHeaderBg }}; border:1.5px solid transparent; border-radius:9px; padding:11px 12px; font-size:14px; color:{{ pageText }}; font-family:inherit;" style-focus="border-color:#5A46C7; background:{{ cardBg }}; box-shadow:0 0 0 3px rgba(90,70,199,0.14); outline:none;" />
+            </div>
+            <div>
+              <label style="display:block; font-size:12.5px; font-weight:600; color:{{ pageTextMuted }}; margin-bottom:6px;">Site</label>
+              <input type="text" value="{{ website }}" onChange="{{ handleWebsiteChange }}" placeholder="https://acme.health" style="width:100%; box-sizing:border-box; background:{{ cardHeaderBg }}; border:1.5px solid transparent; border-radius:9px; padding:11px 12px; font-size:14px; color:{{ pageText }}; font-family:inherit;" style-focus="border-color:#5A46C7; background:{{ cardBg }}; box-shadow:0 0 0 3px rgba(90,70,199,0.14); outline:none;" />
+            </div>
+          </div>
+
+          <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px;">
+            <div>
+              <label style="display:block; font-size:12.5px; font-weight:600; color:{{ pageTextMuted }}; margin-bottom:6px;">Fuso horário</label>
+              <select value="{{ timezone }}" onChange="{{ handleTimezoneChange }}" style="width:100%; box-sizing:border-box; background:{{ cardHeaderBg }}; border:1.5px solid transparent; border-radius:9px; padding:11px 12px; font-size:14px; color:{{ pageText }}; font-family:inherit;" style-focus="border-color:#5A46C7; background:{{ cardBg }}; box-shadow:0 0 0 3px rgba(90,70,199,0.14); outline:none;">
+                <sc-for list="{{ timezoneOptions }}" as="opt" hint-placeholder-count="3">
+                  <option value="{{ opt }}">{{ opt }}</option>
+                </sc-for>
+              </select>
+            </div>
+            <div>
+              <label style="display:block; font-size:12.5px; font-weight:600; color:{{ pageTextMuted }}; margin-bottom:6px;">Idioma</label>
+              <select value="{{ language }}" onChange="{{ handleLanguageChange }}" style="width:100%; box-sizing:border-box; background:{{ cardHeaderBg }}; border:1.5px solid transparent; border-radius:9px; padding:11px 12px; font-size:14px; color:{{ pageText }}; font-family:inherit;" style-focus="border-color:#5A46C7; background:{{ cardBg }}; box-shadow:0 0 0 3px rgba(90,70,199,0.14); outline:none;">
+                <option value="pt-BR">Português (Brasil)</option>
+                <option value="en-US">English (US)</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <div style="border:1px solid {{ sidebarBorder }}; border-radius:12px; padding:24px; margin-bottom:20px;">
+          <div style="font-size:14px; font-weight:700; color:{{ pageText }}; margin-bottom:4px;">Dados fiscais</div>
+          <p style="margin:0 0 20px; font-size:12.5px; color:{{ pageTextMuted }};">Usados para emissão de notas fiscais e faturas.</p>
+
+          <label style="display:block; font-size:12.5px; font-weight:600; color:{{ pageTextMuted }}; margin-bottom:6px;">Tipo</label>
+          <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:18px; max-width:340px;">
+            <div onClick="{{ setPersonTypePj }}" style="{{ personTypePjStyle }}">Pessoa Jurídica</div>
+            <div onClick="{{ setPersonTypePf }}" style="{{ personTypePfStyle }}">Pessoa Física</div>
+          </div>
+
+          <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-bottom:16px;">
+            <div>
+              <label style="display:block; font-size:12.5px; font-weight:600; color:{{ pageTextMuted }}; margin-bottom:6px;">{{ legalNameLabel }}</label>
+              <input type="text" value="{{ legalName }}" onChange="{{ handleLegalNameChange }}" style="width:100%; box-sizing:border-box; background:{{ cardHeaderBg }}; border:1.5px solid transparent; border-radius:9px; padding:11px 12px; font-size:14px; color:{{ pageText }}; font-family:inherit;" style-focus="border-color:#5A46C7; background:{{ cardBg }}; box-shadow:0 0 0 3px rgba(90,70,199,0.14); outline:none;" />
+            </div>
+            <div>
+              <label style="display:block; font-size:12.5px; font-weight:600; color:{{ pageTextMuted }}; margin-bottom:6px;">{{ taxIdLabel }}</label>
+              <input type="text" value="{{ taxId }}" onChange="{{ handleTaxIdChange }}" placeholder="{{ taxIdPlaceholder }}" style="width:100%; box-sizing:border-box; background:{{ cardHeaderBg }}; border:1.5px solid transparent; border-radius:9px; padding:11px 12px; font-size:14px; color:{{ pageText }}; font-family:inherit;" style-focus="border-color:#5A46C7; background:{{ cardBg }}; box-shadow:0 0 0 3px rgba(90,70,199,0.14); outline:none;" />
+            </div>
+          </div>
+
+          <sc-if value="{{ isPersonTypePj }}" hint-placeholder-val="{{ true }}">
+            <div style="margin-bottom:16px; max-width:340px;">
+              <label style="display:block; font-size:12.5px; font-weight:600; color:{{ pageTextMuted }}; margin-bottom:6px;">Inscrição estadual</label>
+              <input type="text" value="{{ stateRegistration }}" onChange="{{ handleStateRegistrationChange }}" placeholder="Isento, se não houver" style="width:100%; box-sizing:border-box; background:{{ cardHeaderBg }}; border:1.5px solid transparent; border-radius:9px; padding:11px 12px; font-size:14px; color:{{ pageText }}; font-family:inherit;" style-focus="border-color:#5A46C7; background:{{ cardBg }}; box-shadow:0 0 0 3px rgba(90,70,199,0.14); outline:none;" />
+            </div>
+          </sc-if>
+
+          <div style="height:1px; background:{{ sidebarBorder }}; margin:16px 0 18px;"></div>
+
+          <div style="display:grid; grid-template-columns:160px 1fr; gap:16px; margin-bottom:16px;">
+            <div>
+              <label style="display:block; font-size:12.5px; font-weight:600; color:{{ pageTextMuted }}; margin-bottom:6px;">CEP</label>
+              <input type="text" value="{{ zip }}" onChange="{{ handleZipChange }}" style="width:100%; box-sizing:border-box; background:{{ cardHeaderBg }}; border:1.5px solid transparent; border-radius:9px; padding:11px 12px; font-size:14px; color:{{ pageText }}; font-family:inherit;" style-focus="border-color:#5A46C7; background:{{ cardBg }}; box-shadow:0 0 0 3px rgba(90,70,199,0.14); outline:none;" />
+            </div>
+            <div>
+              <label style="display:block; font-size:12.5px; font-weight:600; color:{{ pageTextMuted }}; margin-bottom:6px;">Endereço</label>
+              <input type="text" value="{{ street }}" onChange="{{ handleStreetChange }}" style="width:100%; box-sizing:border-box; background:{{ cardHeaderBg }}; border:1.5px solid transparent; border-radius:9px; padding:11px 12px; font-size:14px; color:{{ pageText }}; font-family:inherit;" style-focus="border-color:#5A46C7; background:{{ cardBg }}; box-shadow:0 0 0 3px rgba(90,70,199,0.14); outline:none;" />
+            </div>
+          </div>
+
+          <div style="display:grid; grid-template-columns:160px 1fr 160px; gap:16px; margin-bottom:16px;">
+            <div>
+              <label style="display:block; font-size:12.5px; font-weight:600; color:{{ pageTextMuted }}; margin-bottom:6px;">Número</label>
+              <input type="text" value="{{ number }}" onChange="{{ handleNumberChange }}" style="width:100%; box-sizing:border-box; background:{{ cardHeaderBg }}; border:1.5px solid transparent; border-radius:9px; padding:11px 12px; font-size:14px; color:{{ pageText }}; font-family:inherit;" style-focus="border-color:#5A46C7; background:{{ cardBg }}; box-shadow:0 0 0 3px rgba(90,70,199,0.14); outline:none;" />
+            </div>
+            <div>
+              <label style="display:block; font-size:12.5px; font-weight:600; color:{{ pageTextMuted }}; margin-bottom:6px;">Complemento</label>
+              <input type="text" value="{{ complement }}" onChange="{{ handleComplementChange }}" placeholder="Opcional" style="width:100%; box-sizing:border-box; background:{{ cardHeaderBg }}; border:1.5px solid transparent; border-radius:9px; padding:11px 12px; font-size:14px; color:{{ pageText }}; font-family:inherit;" style-focus="border-color:#5A46C7; background:{{ cardBg }}; box-shadow:0 0 0 3px rgba(90,70,199,0.14); outline:none;" />
+            </div>
+            <div>
+              <label style="display:block; font-size:12.5px; font-weight:600; color:{{ pageTextMuted }}; margin-bottom:6px;">Estado</label>
+              <input type="text" value="{{ state }}" onChange="{{ handleStateChange }}" placeholder="UF" style="width:100%; box-sizing:border-box; background:{{ cardHeaderBg }}; border:1.5px solid transparent; border-radius:9px; padding:11px 12px; font-size:14px; color:{{ pageText }}; font-family:inherit;" style-focus="border-color:#5A46C7; background:{{ cardBg }}; box-shadow:0 0 0 3px rgba(90,70,199,0.14); outline:none;" />
+            </div>
+          </div>
+
+          <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px;">
+            <div>
+              <label style="display:block; font-size:12.5px; font-weight:600; color:{{ pageTextMuted }}; margin-bottom:6px;">Cidade</label>
+              <input type="text" value="{{ city }}" onChange="{{ handleCityChange }}" style="width:100%; box-sizing:border-box; background:{{ cardHeaderBg }}; border:1.5px solid transparent; border-radius:9px; padding:11px 12px; font-size:14px; color:{{ pageText }}; font-family:inherit;" style-focus="border-color:#5A46C7; background:{{ cardBg }}; box-shadow:0 0 0 3px rgba(90,70,199,0.14); outline:none;" />
+            </div>
+            <div>
+              <label style="display:block; font-size:12.5px; font-weight:600; color:{{ pageTextMuted }}; margin-bottom:6px;">País</label>
+              <input type="text" value="{{ country }}" onChange="{{ handleCountryChange }}" style="width:100%; box-sizing:border-box; background:{{ cardHeaderBg }}; border:1.5px solid transparent; border-radius:9px; padding:11px 12px; font-size:14px; color:{{ pageText }}; font-family:inherit;" style-focus="border-color:#5A46C7; background:{{ cardBg }}; box-shadow:0 0 0 3px rgba(90,70,199,0.14); outline:none;" />
+            </div>
+          </div>
+        </div>
+
+        <div style="display:flex; justify-content:flex-end; gap:10px; margin-bottom:32px;">
+          <button style="box-sizing:border-box; padding:10px 18px; background:{{ cardBg }}; color:{{ pageText }}; border:1px solid {{ sidebarBorder }}; border-radius:9px; font-size:13.5px; font-weight:600; font-family:inherit; cursor:pointer;" style-hover="background:{{ cardHeaderBg }};">Descartar</button>
+          <button onClick="{{ saveChanges }}" style="box-sizing:border-box; padding:10px 18px; background:#5A46C7; color:#FFFFFF; border:none; border-radius:9px; font-size:13.5px; font-weight:700; font-family:inherit; cursor:pointer;" style-hover="background:#4C3AAE;">Salvar alterações</button>
+        </div>
+
+        <div style="border:1px solid #F5C3CE; border-radius:12px; padding:20px 24px; display:flex; align-items:center; justify-content:space-between; gap:16px;">
+          <div>
+            <div style="font-size:13.5px; font-weight:700; color:#D6395B; margin-bottom:4px;">Excluir conta</div>
+            <p style="margin:0; font-size:12.5px; line-height:1.5; color:{{ pageTextMuted }}; max-width:480px;">Remove permanentemente esta conta, incluindo serviços monitorados, incidentes e status pages. Essa ação não pode ser desfeita.</p>
+          </div>
+          <button onClick="{{ openDeleteConfirm }}" style="flex-shrink:0; box-sizing:border-box; padding:10px 16px; background:{{ cardBg }}; color:#D6395B; border:1.5px solid #F5C3CE; border-radius:9px; font-size:13px; font-weight:700; font-family:inherit; cursor:pointer;" style-hover="background:#FDF0F2;">Excluir conta</button>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <sc-if value="{{ logoutConfirmOpen }}" hint-placeholder-val="{{ false }}">
+    <div onClick="{{ closeLogoutConfirm }}" style="position:fixed; inset:0; background:rgba(28,21,38,0.4); z-index:70; display:flex; align-items:center; justify-content:center;">
+      <div onClick="{{ stopPropagationClick }}" style="width:360px; box-sizing:border-box; background:{{ cardBg }}; border-radius:16px; padding:24px; box-shadow:0 20px 48px rgba(28,21,38,0.22);">
+        <div style="width:40px; height:40px; border-radius:10px; background:{{ cardHeaderBg }}; color:{{ pageTextMuted }}; display:flex; align-items:center; justify-content:center; margin-bottom:16px;">
+          <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line></svg>
+        </div>
+        <h3 style="margin:0 0 6px; font-size:16px; font-weight:700; color:{{ pageText }};">Sair da conta?</h3>
+        <p style="margin:0 0 22px; font-size:13px; line-height:1.5; color:{{ pageTextMuted }};">Você precisará entrar novamente para acessar o Vane.</p>
+        <div style="display:flex; gap:10px;">
+          <button onClick="{{ closeLogoutConfirm }}" style="flex:1; box-sizing:border-box; padding:10px; background:{{ cardBg }}; color:{{ pageText }}; border:1px solid {{ sidebarBorder }}; border-radius:9px; font-size:13px; font-weight:600; font-family:inherit; cursor:pointer;" style-hover="background:{{ cardHeaderBg }};">Cancelar</button>
+          <button onClick="{{ confirmLogout }}" style="flex:1; box-sizing:border-box; padding:10px; background:#1C1526; color:#FFFFFF; border:none; border-radius:9px; font-size:13px; font-weight:700; font-family:inherit; cursor:pointer;" style-hover="background:#332B44;">Sair</button>
+        </div>
+      </div>
+    </div>
+  </sc-if>
+
+
+  <sc-if value="{{ deleteConfirmOpen }}" hint-placeholder-val="{{ false }}">
+    <div onClick="{{ closeDeleteConfirm }}" style="position:fixed; inset:0; background:rgba(28,21,38,0.4); z-index:70; display:flex; align-items:center; justify-content:center;">
+      <div onClick="{{ stopPropagationClick }}" style="width:380px; box-sizing:border-box; background:{{ cardBg }}; border-radius:16px; padding:24px; box-shadow:0 20px 48px rgba(28,21,38,0.22);">
+        <div style="width:40px; height:40px; border-radius:10px; background:#FBE9ED; color:#D6395B; display:flex; align-items:center; justify-content:center; margin-bottom:16px;">
+          <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 3 14h7l-1 8 10-12h-7z"></path></svg>
+        </div>
+        <h3 style="margin:0 0 6px; font-size:16px; font-weight:700; color:{{ pageText }};">Excluir conta?</h3>
+        <p style="margin:0 0 22px; font-size:13px; line-height:1.5; color:{{ pageTextMuted }};">Essa ação é permanente e remove todos os serviços monitorados, incidentes e status pages. Não pode ser desfeita.</p>
+        <div style="display:flex; gap:10px;">
+          <button onClick="{{ closeDeleteConfirm }}" style="flex:1; box-sizing:border-box; padding:10px; background:{{ cardBg }}; color:{{ pageText }}; border:1px solid {{ sidebarBorder }}; border-radius:9px; font-size:13px; font-weight:600; font-family:inherit; cursor:pointer;" style-hover="background:{{ cardHeaderBg }};">Cancelar</button>
+          <button onClick="{{ confirmDelete }}" style="flex:1; box-sizing:border-box; padding:10px; background:#D6395B; color:#FFFFFF; border:none; border-radius:9px; font-size:13px; font-weight:700; font-family:inherit; cursor:pointer;" style-hover="background:#BC2E4C;">Excluir conta</button>
+        </div>
+      </div>
+    </div>
+  </sc-if>
+
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{
+  &quot;$preview&quot;: {&quot;width&quot;: 1440, &quot;height&quot;: 900},
+  &quot;tenantMode&quot;: {&quot;editor&quot;: &quot;enum&quot;, &quot;default&quot;: &quot;multi&quot;, &quot;tsType&quot;: &quot;string&quot;, &quot;options&quot;: [&quot;single&quot;, &quot;multi&quot;], &quot;section&quot;: &quot;Estado&quot;}
+}">
+const TIMEZONE_OPTIONS = ['America/Sao_Paulo (GMT-3)', 'America/New_York (GMT-5)', 'UTC (GMT+0)'];
+
+let DARK_MODE = false;
+function boxStyle(active) {
+  const base = 'padding:10px 12px; border-radius:9px; text-align:center; font-size:13px; font-weight:600; cursor:pointer; border:1.5px solid ';
+  return active ? `${base}#5A46C7; background:rgba(90,70,199,0.06); color:${DARK_MODE ? '#F2F0F6' : '#1C1526'};` : `${base}${DARK_MODE ? '#2C2645' : '#ECE9F2'}; background:${DARK_MODE ? '#1F1A35' : '#FFFFFF'}; color:${DARK_MODE ? '#9A93B0' : '#4A4553'};`;
+}
+
+class Component extends DCLogic {
+  state = {
+    pinned: false, hovered: false, tenantDropdownOpen: false, userMenuOpen: false, showSavedToast: false,
+    companyName: 'Acme Health', website: 'https://acme.health', timezone: TIMEZONE_OPTIONS[0], language: 'pt-BR',
+    personType: 'pj', legalName: 'Acme Health Tecnologia Ltda.', taxId: '12.345.678/0001-90', stateRegistration: '',
+    zip: '01310-100', street: 'Av. Paulista, 1000', number: '1000', complement: 'Sala 12', state: 'SP', city: 'São Paulo', country: 'Brasil',
+  };
+
+  renderVals() {
+    DARK_MODE = this.state.darkMode;
+    const tenantMode = this.props.tenantMode ?? 'multi';
+    const isMultiTenant = tenantMode === 'multi';
+    const expanded = this.state.pinned || this.state.hovered;
+    const {
+      showSavedToast, companyName, website, timezone, language, personType, legalName, taxId, stateRegistration,
+      zip, street, number, complement, state, city, country,
+    } = this.state;
+    const isPersonTypePj = personType === 'pj';
+
+    return {
+      sidebarPinned: this.state.pinned,
+      sidebarNotPinned: !this.state.pinned,
+      sidebarExpanded: expanded,
+      sidebarWidthPx: expanded ? '240px' : '72px',
+      navJustify: expanded ? 'flex-start' : 'center',
+      sidebarMouseEnter: () => this.setState({ hovered: true }),
+      sidebarMouseLeave: () => this.setState({ hovered: false }),
+      toggleSidebarPin: () => this.setState(s => ({ pinned: !s.pinned })),
+      isMultiTenant,
+      tenantDropdownOpenAndMulti: this.state.tenantDropdownOpen && isMultiTenant,
+      toggleTenantDropdown: () => { if (isMultiTenant) this.setState(s => ({ tenantDropdownOpen: !s.tenantDropdownOpen })); },
+      userMenuOpen: this.state.userMenuOpen,
+      toggleUserMenu: () => this.setState(s => ({ userMenuOpen: !s.userMenuOpen })),
+      darkMode: this.state.darkMode,
+      darkModeOff: !this.state.darkMode,
+      toggleDarkMode: () => this.setState(s => ({ darkMode: !s.darkMode })),
+      pageBg: this.state.darkMode ? '#15111F' : '#FFFFFF',
+      pageText: this.state.darkMode ? '#EDEBF3' : '#1C1526',
+      sidebarBg: this.state.darkMode ? '#1B1730' : '#FAFAFC',
+      sidebarBorder: this.state.darkMode ? '#2C2645' : '#ECE9F2',
+      sidebarTextPrimary: this.state.darkMode ? '#F2F0F6' : '#1C1526',
+      sidebarTextMuted: this.state.darkMode ? '#9A93B0' : '#6E6779',
+      iconColor: this.state.darkMode ? '#B4AEC2' : '#6E6779',
+      pageTextMuted: this.state.darkMode ? '#9A93B0' : '#6E6779',
+      cardBg: this.state.darkMode ? '#1F1A35' : '#FFFFFF',
+      cardHeaderBg: this.state.darkMode ? '#241E3D' : '#FAFAFC',
+      sidebarHoverBg: this.state.darkMode ? 'rgba(255,255,255,0.06)' : '#F2F0F6',
+      logoutConfirmOpen: this.state.logoutConfirmOpen,
+      openLogoutConfirm: () => this.setState({ logoutConfirmOpen: true, tenantDropdownOpen: false, userMenuOpen: false }),
+      closeLogoutConfirm: () => this.setState({ logoutConfirmOpen: false }),
+      confirmLogout: () => { window.location.href = 'Login Bootstrap.dc.html'; },
+      stopPropagationClick: (e) => e.stopPropagation(),
+      deleteConfirmOpen: this.state.deleteConfirmOpen,
+      openDeleteConfirm: () => this.setState({ deleteConfirmOpen: true }),
+      closeDeleteConfirm: () => this.setState({ deleteConfirmOpen: false }),
+      confirmDelete: () => this.setState({ deleteConfirmOpen: false }),
+      planBadgeLabel: 'Free',
+      planBadgeBg: '#F2F0F6',
+      planBadgeColor: '#6E6779',
+
+      showSavedToast,
+      saveChanges: () => {
+        this.setState({ showSavedToast: true });
+        setTimeout(() => this.setState({ showSavedToast: false }), 2200);
+      },
+
+      companyName,
+      handleCompanyNameChange: (e) => this.setState({ companyName: e.target.value }),
+      website,
+      handleWebsiteChange: (e) => this.setState({ website: e.target.value }),
+      timezone,
+      timezoneOptions: TIMEZONE_OPTIONS,
+      handleTimezoneChange: (e) => this.setState({ timezone: e.target.value }),
+      language,
+      handleLanguageChange: (e) => this.setState({ language: e.target.value }),
+
+      isPersonTypePj, isPersonTypePf: !isPersonTypePj,
+      personTypePjStyle: boxStyle(isPersonTypePj),
+      personTypePfStyle: boxStyle(!isPersonTypePj),
+      setPersonTypePj: () => this.setState({ personType: 'pj' }),
+      setPersonTypePf: () => this.setState({ personType: 'pf' }),
+      legalNameLabel: isPersonTypePj ? 'Razão social' : 'Nome completo',
+      taxIdLabel: isPersonTypePj ? 'CNPJ' : 'CPF',
+      taxIdPlaceholder: isPersonTypePj ? '00.000.000/0000-00' : '000.000.000-00',
+      legalName,
+      handleLegalNameChange: (e) => this.setState({ legalName: e.target.value }),
+      taxId,
+      handleTaxIdChange: (e) => this.setState({ taxId: e.target.value }),
+      stateRegistration,
+      handleStateRegistrationChange: (e) => this.setState({ stateRegistration: e.target.value }),
+
+      zip,
+      handleZipChange: (e) => this.setState({ zip: e.target.value }),
+      street,
+      handleStreetChange: (e) => this.setState({ street: e.target.value }),
+      number,
+      handleNumberChange: (e) => this.setState({ number: e.target.value }),
+      complement,
+      handleComplementChange: (e) => this.setState({ complement: e.target.value }),
+      state,
+      handleStateChange: (e) => this.setState({ state: e.target.value }),
+      city,
+      handleCityChange: (e) => this.setState({ city: e.target.value }),
+      country,
+      handleCountryChange: (e) => this.setState({ country: e.target.value }),
+    };
+  }
+}
+
+</script>
+</body>
+</html>

@@ -1,0 +1,544 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    body { margin: 0; }
+    a { color: #5A46C7; }
+    a:hover { color: #4C3AAE; }
+    ::placeholder { color: #B4AEC2; }
+    @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+  </style>
+</helmet>
+
+<div style="height:100vh; width:100%; box-sizing:border-box; background:{{ pageBg }}; display:flex; font-family:'Manrope',sans-serif; color:{{ pageText }}; overflow:hidden;">
+
+  <div onMouseEnter="{{ sidebarMouseEnter }}" onMouseLeave="{{ sidebarMouseLeave }}" style="width:{{ sidebarWidthPx }}; flex-shrink:0; background:{{ sidebarBg }}; border-right:1px solid {{ sidebarBorder }}; display:flex; flex-direction:column; transition:width 0.16s ease; overflow:visible; position:relative; z-index:20;">
+
+    <div style="padding:14px 12px; position:relative;">
+      <div onClick="{{ toggleTenantDropdown }}" style="display:flex; align-items:center; justify-content:{{ navJustify }}; gap:10px; padding:8px; border-radius:10px; cursor:pointer; white-space:nowrap;" style-hover="background:{{ cardHeaderBg }};">
+        <div style="width:28px; height:28px; border-radius:8px; background:#5A46C7; color:#FFFFFF; font-size:11.5px; font-weight:700; display:flex; align-items:center; justify-content:center; flex-shrink:0;">AH</div>
+        <sc-if value="{{ sidebarExpanded }}" hint-placeholder-val="{{ false }}">
+          <div style="min-width:0; flex:1;">
+            <div style="font-size:13px; font-weight:700; color:{{ sidebarTextPrimary }}; overflow:hidden; text-overflow:ellipsis;">Acme Health</div>
+            <div style="display:flex; align-items:center; gap:6px; margin-top:1px;">
+              <span style="font-size:10.5px; font-weight:700; letter-spacing:0.02em; padding:1px 6px; border-radius:5px; background:{{ planBadgeBg }}; color:{{ planBadgeColor }};">{{ planBadgeLabel }}</span>
+            </div>
+          </div>
+          <sc-if value="{{ isMultiTenant }}" hint-placeholder-val="{{ true }}">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#9A93A8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><polyline points="6 9 12 15 18 9"></polyline></svg>
+          </sc-if>
+        </sc-if>
+      </div>
+
+      <sc-if value="{{ tenantDropdownOpenAndMulti }}" hint-placeholder-val="{{ false }}">
+        <div style="position:absolute; top:64px; left:12px; width:240px; background:{{ cardBg }}; border:1px solid {{ sidebarBorder }}; border-radius:12px; box-shadow:0 8px 24px rgba(28,21,38,0.12); padding:6px; z-index:30;">
+          <div style="padding:8px 10px; font-size:10.5px; font-weight:700; letter-spacing:0.06em; text-transform:uppercase; color:#9A93A8;">Suas contas</div>
+          <div style="display:flex; align-items:center; gap:10px; padding:8px 10px; border-radius:8px; background:{{ cardHeaderBg }};">
+            <div style="width:24px; height:24px; border-radius:7px; background:#5A46C7; color:#fff; font-size:10px; font-weight:700; display:flex; align-items:center; justify-content:center;">AH</div>
+            <span style="font-size:13px; font-weight:600; flex:1;">Acme Health</span>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#5A46C7" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+          </div>
+          <div style="display:flex; align-items:center; gap:10px; padding:8px 10px; border-radius:8px; cursor:pointer;" style-hover="background:{{ cardHeaderBg }};">
+            <div style="width:24px; height:24px; border-radius:7px; background:#E8A73B; color:#fff; font-size:10px; font-weight:700; display:flex; align-items:center; justify-content:center;">BC</div>
+            <span style="font-size:13px; font-weight:600; flex:1;">Beta Clinic</span>
+          </div>
+          <div style="display:flex; align-items:center; gap:10px; padding:8px 10px; border-radius:8px; cursor:pointer;" style-hover="background:{{ cardHeaderBg }};">
+            <div style="width:24px; height:24px; border-radius:7px; background:#3B9EE8; color:#fff; font-size:10px; font-weight:700; display:flex; align-items:center; justify-content:center;">NL</div>
+            <span style="font-size:13px; font-weight:600; flex:1;">Northwind Labs</span>
+          </div>
+          <div style="height:1px; background:{{ sidebarBorder }}; margin:6px 4px;"></div>
+          <div onClick="{{ openLogoutConfirm }}" style="display:flex; align-items:center; gap:10px; padding:8px 10px; border-radius:8px; cursor:pointer; color:{{ pageTextMuted }}; font-size:13px; font-weight:600;" style-hover="background:{{ cardHeaderBg }};">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line></svg>
+            Sair
+          </div>
+        </div>
+      </sc-if>
+    </div>
+
+    <div style="height:1px; background:{{ sidebarBorder }}; margin:2px 12px 10px;"></div>
+
+    <div style="flex:1; padding:0 8px; display:flex; flex-direction:column; overflow-y:auto;">
+
+      <sc-if value="{{ sidebarExpanded }}" hint-placeholder-val="{{ false }}">
+        <div style="padding:10px 10px 6px; font-size:10.5px; font-weight:700; letter-spacing:0.06em; text-transform:uppercase; color:{{ sidebarTextMuted }}; white-space:nowrap;">Monitoramento</div>
+      </sc-if>
+      <div style="display:flex; flex-direction:column; gap:2px; margin-bottom:14px;">
+        <a href="Servicos Monitorados.dc.html" style="display:flex; align-items:center; justify-content:{{ navJustify }}; gap:12px; padding:9px 10px; border-radius:8px; color:{{ sidebarTextMuted }}; white-space:nowrap; cursor:pointer; text-decoration:none;" style-hover="background:{{ sidebarHoverBg }};">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><polyline points="3 12 8 12 10 6 14 18 16 12 21 12"></polyline></svg>
+          <sc-if value="{{ sidebarExpanded }}" hint-placeholder-val="{{ false }}"><span style="font-size:13.5px; font-weight:600;">Serviços monitorados</span></sc-if>
+        </a>
+        <a href="Dominios e Status Pages.dc.html" style="display:flex; align-items:center; justify-content:{{ navJustify }}; gap:12px; padding:9px 10px; border-radius:8px; color:{{ sidebarTextMuted }}; white-space:nowrap; cursor:pointer; text-decoration:none;" style-hover="background:{{ sidebarHoverBg }};">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><circle cx="12" cy="12" r="9"></circle><line x1="3" y1="12" x2="21" y2="12"></line><path d="M12 3a15 15 0 0 1 0 18a15 15 0 0 1 0-18z"></path></svg>
+          <sc-if value="{{ sidebarExpanded }}" hint-placeholder-val="{{ false }}"><span style="font-size:13.5px; font-weight:600;">Domínios &amp; Status</span></sc-if>
+        </a>
+        <div style="display:flex; align-items:center; justify-content:{{ navJustify }}; gap:12px; padding:9px 10px; border-radius:8px; background:rgba(90,70,199,0.08); color:#5A46C7; white-space:nowrap; cursor:pointer;">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><path d="M12 3l9 16H3z"></path><line x1="12" y1="9" x2="12" y2="13"></line><circle cx="12" cy="16.3" r="0.6" fill="currentColor" stroke="none"></circle></svg>
+          <sc-if value="{{ sidebarExpanded }}" hint-placeholder-val="{{ false }}"><span style="font-size:13.5px; font-weight:600;">Incidentes</span></sc-if>
+        </div>
+      </div>
+
+      <sc-if value="{{ sidebarExpanded }}" hint-placeholder-val="{{ false }}">
+        <div style="padding:10px 10px 6px; font-size:10.5px; font-weight:700; letter-spacing:0.06em; text-transform:uppercase; color:{{ sidebarTextMuted }}; white-space:nowrap;">Plataforma</div>
+      </sc-if>
+      <div style="display:flex; flex-direction:column; gap:2px; margin-bottom:14px;">
+        <a href="Dashboard Integracoes.dc.html" style="display:flex; align-items:center; justify-content:{{ navJustify }}; gap:12px; padding:9px 10px; border-radius:8px; color:{{ sidebarTextMuted }}; white-space:nowrap; cursor:pointer; text-decoration:none;" style-hover="background:{{ sidebarHoverBg }};">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><path d="M10 13a5 5 0 0 0 7.07 0l1.93-1.93a5 5 0 0 0-7.07-7.07L10.5 5.5"></path><path d="M14 11a5 5 0 0 0-7.07 0L4.99 12.93a5 5 0 0 0 7.07 7.07L13.5 18.5"></path></svg>
+          <sc-if value="{{ sidebarExpanded }}" hint-placeholder-val="{{ false }}"><span style="font-size:13.5px; font-weight:600;">Integrações</span></sc-if>
+        </a>
+        <a href="Poller Status.dc.html" style="display:flex; align-items:center; justify-content:{{ navJustify }}; gap:12px; padding:9px 10px; border-radius:8px; color:{{ sidebarTextMuted }}; white-space:nowrap; cursor:pointer; text-decoration:none;" style-hover="background:{{ sidebarHoverBg }};">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><rect x="3" y="4" width="18" height="6" rx="1.5"></rect><rect x="3" y="14" width="18" height="6" rx="1.5"></rect><circle cx="7" cy="7" r="0.6" fill="currentColor" stroke="none"></circle><circle cx="7" cy="17" r="0.6" fill="currentColor" stroke="none"></circle></svg>
+          <sc-if value="{{ sidebarExpanded }}" hint-placeholder-val="{{ false }}"><span style="font-size:13.5px; font-weight:600;">Poller Status</span></sc-if>
+        </a>
+      </div>
+
+      <sc-if value="{{ sidebarExpanded }}" hint-placeholder-val="{{ false }}">
+        <div style="padding:10px 10px 6px; font-size:10.5px; font-weight:700; letter-spacing:0.06em; text-transform:uppercase; color:{{ sidebarTextMuted }}; white-space:nowrap;">Organização</div>
+      </sc-if>
+      <div style="display:flex; flex-direction:column; gap:2px;">
+        <a href="Usuarios.dc.html" style="display:flex; align-items:center; justify-content:{{ navJustify }}; gap:12px; padding:9px 10px; border-radius:8px; color:{{ sidebarTextMuted }}; white-space:nowrap; cursor:pointer; text-decoration:none;" style-hover="background:{{ sidebarHoverBg }};">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><circle cx="9" cy="8" r="3"></circle><path d="M2 20c0-3.5 3-6 7-6s7 2.5 7 6"></path><circle cx="17" cy="8" r="2.3"></circle><path d="M22 20c0-2.5-1.8-4.5-4-5.3"></path></svg>
+          <sc-if value="{{ sidebarExpanded }}" hint-placeholder-val="{{ false }}"><span style="font-size:13.5px; font-weight:600;">Usuários</span></sc-if>
+        </a>
+        <a href="Planos e Faturamento.dc.html" style="display:flex; align-items:center; justify-content:{{ navJustify }}; gap:12px; padding:9px 10px; border-radius:8px; color:{{ sidebarTextMuted }}; white-space:nowrap; cursor:pointer; text-decoration:none;" style-hover="background:{{ sidebarHoverBg }};">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><rect x="2" y="5" width="20" height="14" rx="2.5"></rect><line x1="2" y1="10" x2="22" y2="10"></line></svg>
+          <sc-if value="{{ sidebarExpanded }}" hint-placeholder-val="{{ false }}"><span style="font-size:13.5px; font-weight:600;">Planos &amp; Faturamento</span></sc-if>
+        </a>
+      </div>
+    </div>
+
+    <div style="padding:8px; display:flex; flex-direction:column; gap:2px; border-top:1px solid {{ sidebarBorder }};">
+      <a href="Configuracoes.dc.html" style="display:flex; align-items:center; justify-content:{{ navJustify }}; gap:12px; padding:9px 10px; border-radius:8px; color:{{ sidebarTextMuted }}; white-space:nowrap; cursor:pointer; text-decoration:none;" style-hover="background:{{ sidebarHoverBg }};">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
+        <sc-if value="{{ sidebarExpanded }}" hint-placeholder-val="{{ false }}"><span style="font-size:13.5px; font-weight:600;">Configurações</span></sc-if>
+      </a>
+      <div onClick="{{ toggleSidebarPin }}" style="display:flex; align-items:center; justify-content:{{ navJustify }}; gap:12px; padding:9px 10px; border-radius:8px; color:#9A93A8; white-space:nowrap; cursor:pointer;" style-hover="background:{{ sidebarHoverBg }};">
+        <sc-if value="{{ sidebarPinned }}" hint-placeholder-val="{{ false }}">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><polyline points="15 6 9 12 15 18"></polyline></svg>
+        </sc-if>
+        <sc-if value="{{ sidebarNotPinned }}" hint-placeholder-val="{{ true }}">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><polyline points="9 6 15 12 9 18"></polyline></svg>
+        </sc-if>
+        <sc-if value="{{ sidebarExpanded }}" hint-placeholder-val="{{ false }}"><span style="font-size:12.5px; font-weight:600;">Fixar menu</span></sc-if>
+      </div>
+    </div>
+  </div>
+
+  <div style="flex:1; display:flex; flex-direction:column; min-width:0; position:relative;">
+
+    <div style="height:60px; flex-shrink:0; border-bottom:1px solid {{ sidebarBorder }}; display:flex; align-items:center; justify-content:space-between; padding:0 28px;">
+      <div style="font-size:15px; font-weight:700; color:{{ pageText }};">Incidentes</div>
+      <div style="display:flex; align-items:center; gap:16px;">
+        <div onClick="{{ toggleDarkMode }}" style="color:{{ iconColor }}; cursor:pointer; display:flex;">
+          <sc-if value="{{ darkMode }}" hint-placeholder-val="{{ false }}">
+            <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4.5"></circle><line x1="12" y1="1.5" x2="12" y2="4"></line><line x1="12" y1="20" x2="12" y2="22.5"></line><line x1="4.2" y1="4.2" x2="6" y2="6"></line><line x1="18" y1="18" x2="19.8" y2="19.8"></line><line x1="1.5" y1="12" x2="4" y2="12"></line><line x1="20" y1="12" x2="22.5" y2="12"></line><line x1="4.2" y1="19.8" x2="6" y2="18"></line><line x1="18" y1="6" x2="19.8" y2="4.2"></line></svg>
+          </sc-if>
+          <sc-if value="{{ darkModeOff }}" hint-placeholder-val="{{ true }}">
+            <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg>
+          </sc-if>
+        </div>
+        <a href="Notificacoes.dc.html" style="position:relative; color:{{ iconColor }}; display:flex; text-decoration:none;">
+          <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" style="cursor:pointer;"><path d="M18 8a6 6 0 1 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"></path><path d="M13.73 21a2 2 0 0 1-3.46 0"></path></svg>
+          <span style="position:absolute; top:-3px; right:-3px; width:8px; height:8px; border-radius:999px; background:#D6395B; border:1.5px solid {{ pageBg }};"></span>
+        </a>
+        <div onClick="{{ toggleUserMenu }}" style="position:relative;">
+          <div style="width:32px; height:32px; border-radius:9px; background:rgba(90,70,199,0.1); color:#5A46C7; font-size:12.5px; font-weight:700; display:flex; align-items:center; justify-content:center; cursor:pointer;">AS</div>
+          <sc-if value="{{ userMenuOpen }}" hint-placeholder-val="{{ false }}">
+            <div style="position:absolute; top:42px; right:0; width:200px; background:{{ cardBg }}; border:1px solid {{ sidebarBorder }}; border-radius:12px; box-shadow:0 8px 24px rgba(28,21,38,0.12); padding:6px; z-index:30;">
+              <div style="padding:10px 10px 8px; border-bottom:1px solid #ECE9F2; margin-bottom:4px;">
+                <div style="font-size:13px; font-weight:700; color:{{ pageText }};">Ana Silva</div>
+                <div style="font-size:12px; color:{{ pageTextMuted }};">ana.silva@empresa.com</div>
+              </div>
+              <a href="Meu Perfil.dc.html" style="display:block; padding:8px 10px; border-radius:8px; font-size:13px; font-weight:600; color:{{ pageTextMuted }}; cursor:pointer; text-decoration:none;" style-hover="background:{{ cardHeaderBg }};">Meu perfil</a>
+              <div style="padding:8px 10px; border-radius:8px; font-size:13px; font-weight:600; color:{{ pageTextMuted }}; cursor:pointer;" style-hover="background:{{ cardHeaderBg }};">Configurações</div>
+              <div onClick="{{ openLogoutConfirm }}" style="padding:8px 10px; border-radius:8px; font-size:13px; font-weight:600; color:#D6395B; cursor:pointer;" style-hover="background:#FBE9ED;">Sair</div>
+            </div>
+          </sc-if>
+        </div>
+      </div>
+    </div>
+
+    <div style="flex:1; overflow-y:auto; padding:32px 40px;">
+      <div style="max-width:1200px; margin:0 auto;">
+
+        <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:16px; margin-bottom:24px;">
+          <div>
+            <h1 style="margin:0 0 6px; font-size:20px; font-weight:700; letter-spacing:-0.01em; color:{{ pageText }};">Incidentes</h1>
+            <p style="margin:0; font-size:13.5px; line-height:1.55; color:{{ pageTextMuted }}; max-width:560px;">Acompanhe, atualize e encerre incidentes dos serviços monitorados.</p>
+          </div>
+          <button onClick="{{ openAddDrawer }}" style="flex-shrink:0; box-sizing:border-box; padding:9px 16px; background:#5A46C7; color:#FFFFFF; border:none; border-radius:9px; font-size:13px; font-weight:700; font-family:inherit; cursor:pointer; display:flex; align-items:center; gap:7px;" style-hover="background:#4C3AAE;">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+            Novo incidente
+          </button>
+        </div>
+
+        <div style="display:flex; align-items:center; gap:8px; margin-bottom:18px; flex-wrap:wrap;">
+          <div onClick="{{ setFilterAll }}" style="{{ chipAllStyle }}">Todos <span style="opacity:0.7;">{{ countAll }}</span></div>
+          <div onClick="{{ setFilterInvestigating }}" style="{{ chipInvestigatingStyle }}">Investigando <span style="opacity:0.7;">{{ countInvestigating }}</span></div>
+          <div onClick="{{ setFilterMonitoring }}" style="{{ chipMonitoringStyle }}">Monitorando <span style="opacity:0.7;">{{ countMonitoring }}</span></div>
+          <div onClick="{{ setFilterResolved }}" style="{{ chipResolvedStyle }}">Resolvido <span style="opacity:0.7;">{{ countResolved }}</span></div>
+        </div>
+
+        <div style="border:1px solid {{ sidebarBorder }}; border-radius:12px; overflow-x:auto; overflow-y:hidden; background:{{ cardBg }};">
+          <div style="display:grid; grid-template-columns:130px minmax(220px,1fr) 140px 100px 130px 90px 20px; align-items:center; gap:10px; padding:11px 20px; background:{{ cardHeaderBg }}; border-bottom:1px solid {{ sidebarBorder }};">
+            <span style="font-size:11px; font-weight:700; letter-spacing:0.04em; text-transform:uppercase; color:{{ pageTextMuted }};">Status</span>
+            <span style="font-size:11px; font-weight:700; letter-spacing:0.04em; text-transform:uppercase; color:{{ pageTextMuted }};">Incidente</span>
+            <span style="font-size:11px; font-weight:700; letter-spacing:0.04em; text-transform:uppercase; color:{{ pageTextMuted }};">Serviço</span>
+            <span style="font-size:11px; font-weight:700; letter-spacing:0.04em; text-transform:uppercase; color:{{ pageTextMuted }};">Severidade</span>
+            <span style="font-size:11px; font-weight:700; letter-spacing:0.04em; text-transform:uppercase; color:{{ pageTextMuted }};">Aberto em</span>
+            <span style="font-size:11px; font-weight:700; letter-spacing:0.04em; text-transform:uppercase; color:{{ pageTextMuted }};">Duração</span>
+            <span></span>
+          </div>
+
+          <sc-for list="{{ filteredIncidents }}" as="inc" hint-placeholder-count="4">
+            <div onClick="{{ inc.select }}" style="display:grid; grid-template-columns:130px minmax(220px,1fr) 140px 100px 130px 90px 20px; align-items:center; gap:10px; padding:14px 20px; border-bottom:1px solid {{ sidebarBorder }}; cursor:pointer; background:{{ inc.rowBg }};" style-hover="background:{{ cardHeaderBg }};">
+              <span style="display:inline-flex; align-items:center; gap:6px; padding:4px 10px; border-radius:999px; background:{{ inc.statusBg }}; color:{{ inc.statusColor }}; font-size:12px; font-weight:700; width:fit-content;">
+                <span style="width:6px; height:6px; border-radius:999px; background:{{ inc.statusDot }};"></span>{{ inc.statusLabel }}
+              </span>
+              <div style="min-width:0; font-size:13.5px; font-weight:700; color:{{ pageText }}; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">{{ inc.title }}</div>
+              <div style="font-size:12.5px; color:{{ pageTextMuted }}; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">{{ inc.service }}</div>
+              <div style="font-size:12.5px; font-weight:700; color:{{ inc.severityColor }};">{{ inc.severityLabel }}</div>
+              <div style="font-size:12.5px; color:{{ pageTextMuted }};">{{ inc.openedAt }}</div>
+              <div style="font-size:12.5px; color:{{ pageText }}; font-weight:600;">{{ inc.duration }}</div>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#9A93A8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
+            </div>
+          </sc-for>
+
+          <sc-if value="{{ isEmpty }}" hint-placeholder-val="{{ false }}">
+            <div style="padding:48px 20px; text-align:center; font-size:13.5px; color:{{ pageTextMuted }};">Nenhum incidente encontrado com esse filtro.</div>
+          </sc-if>
+        </div>
+
+      </div>
+    </div>
+
+    <sc-if value="{{ hasSelected }}" hint-placeholder-val="{{ false }}">
+      <div onClick="{{ closeDrawer }}" style="position:fixed; inset:0; background:rgba(28,21,38,0.32); z-index:50;"></div>
+      <div onClick="{{ stopClick }}" style="position:fixed; top:0; right:0; bottom:0; width:460px; background:{{ cardBg }}; border-left:1px solid {{ sidebarBorder }}; box-shadow:-8px 0 24px rgba(28,21,38,0.1); z-index:51; padding:24px; overflow-y:auto; box-sizing:border-box;">
+        <div style="display:flex; align-items:flex-start; justify-content:space-between; margin-bottom:18px;">
+          <span style="display:inline-flex; align-items:center; gap:6px; padding:4px 10px; border-radius:999px; background:{{ selected.statusBg }}; color:{{ selected.statusColor }}; font-size:12px; font-weight:700;">
+            <span style="width:6px; height:6px; border-radius:999px; background:{{ selected.statusDot }};"></span>{{ selected.statusLabel }}
+          </span>
+          <svg onClick="{{ closeDrawer }}" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="{{ pageTextMuted }}" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="cursor:pointer;"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+        </div>
+        <h2 style="margin:0 0 4px; font-size:18px; font-weight:700; color:{{ pageText }}; line-height:1.3;">{{ selected.title }}</h2>
+        <div style="font-size:13px; color:{{ pageTextMuted }}; margin-bottom:20px;">{{ selected.service }} · <span style="font-weight:700; color:{{ selected.severityColor }};">{{ selected.severityLabel }}</span></div>
+
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:14px; margin-bottom:22px;">
+          <div>
+            <div style="font-size:10.5px; font-weight:700; letter-spacing:0.05em; text-transform:uppercase; color:{{ pageTextMuted }}; margin-bottom:4px;">Aberto em</div>
+            <div style="font-size:14.5px; font-weight:700; color:{{ pageText }};">{{ selected.openedAt }}</div>
+          </div>
+          <div>
+            <div style="font-size:10.5px; font-weight:700; letter-spacing:0.05em; text-transform:uppercase; color:{{ pageTextMuted }}; margin-bottom:4px;">Duração</div>
+            <div style="font-size:14.5px; font-weight:700; color:{{ pageText }};">{{ selected.duration }}</div>
+          </div>
+        </div>
+
+        <sc-if value="{{ selected.hasAiSummary }}" hint-placeholder-val="{{ false }}">
+          <div style="padding:14px; background:#F3F1FB; border:1px solid #E0DCEC; border-radius:10px; margin-bottom:22px;">
+            <div style="display:flex; align-items:center; gap:6px; margin-bottom:8px;">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#5A46C7" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.9 4.6L18 9l-4.1 1.9L12 15l-1.9-4.1L6 9l4.1-1.4z"></path></svg>
+              <span style="font-size:11px; font-weight:700; letter-spacing:0.04em; text-transform:uppercase; color:#5A46C7;">Resumo gerado por IA</span>
+            </div>
+            <div style="font-size:13px; line-height:1.55; color:{{ pageTextMuted }};">{{ selected.aiSummary }}</div>
+          </div>
+        </sc-if>
+
+        <div style="margin-bottom:10px; font-size:10.5px; font-weight:700; letter-spacing:0.05em; text-transform:uppercase; color:{{ pageTextMuted }};">Linha do tempo</div>
+        <div style="border-left:2px solid #ECE9F2; margin-left:4px; padding-left:16px; display:flex; flex-direction:column; gap:16px; margin-bottom:22px;">
+          <sc-for list="{{ selected.updates }}" as="upd" hint-placeholder-count="3">
+            <div style="position:relative;">
+              <div style="position:absolute; left:-21px; top:3px; width:8px; height:8px; border-radius:999px; background:#5A46C7; box-shadow:0 0 0 2px {{ cardBg }};"></div>
+              <div style="font-size:11.5px; color:#9A93A8; margin-bottom:3px; font-weight:600;">{{ upd.time }} · {{ upd.author }}</div>
+              <div style="font-size:13px; color:{{ pageText }}; line-height:1.5;">{{ upd.text }}</div>
+            </div>
+          </sc-for>
+        </div>
+
+        <sc-if value="{{ selected.isOpen }}" hint-placeholder-val="{{ true }}">
+          <label style="display:block; font-size:12.5px; font-weight:600; color:{{ pageTextMuted }}; margin-bottom:6px;">Adicionar atualização</label>
+          <textarea value="{{ updateText }}" onChange="{{ handleUpdateTextChange }}" placeholder="Descreva o progresso da investigação..." rows="3" style="width:100%; box-sizing:border-box; background:{{ cardHeaderBg }}; border:1.5px solid transparent; border-radius:9px; padding:11px 12px; font-size:13.5px; color:{{ pageText }}; font-family:inherit; resize:vertical; margin-bottom:10px;" style-focus="border-color:#5A46C7; background:{{ cardBg }}; box-shadow:0 0 0 3px rgba(90,70,199,0.14); outline:none;"></textarea>
+          <button onClick="{{ addUpdate }}" style="width:100%; box-sizing:border-box; padding:10px; background:{{ cardBg }}; color:{{ pageText }}; border:1px solid {{ sidebarBorder }}; border-radius:9px; font-size:13px; font-weight:600; font-family:inherit; cursor:pointer; margin-bottom:22px;" style-hover="background:{{ cardHeaderBg }};">Publicar atualização</button>
+
+          <button onClick="{{ resolveWithAi }}" style="width:100%; box-sizing:border-box; padding:11px; background:#5A46C7; color:#FFFFFF; border:none; border-radius:9px; font-size:13.5px; font-weight:700; font-family:inherit; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:8px;" style-hover="background:#4C3AAE;">
+            <sc-if value="{{ aiGenerating }}" hint-placeholder-val="{{ false }}">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" stroke-width="2.5" stroke-linecap="round" style="animation:spin 0.8s linear infinite;"><path d="M12 2a10 10 0 0 1 10 10"></path></svg>
+            </sc-if>
+            {{ resolveButtonLabel }}
+          </button>
+        </sc-if>
+
+        <sc-if value="{{ selected.isResolvedState }}" hint-placeholder-val="{{ false }}">
+          <div style="padding:12px 14px; background:#E7F6EF; border:1px solid #BFE8D4; border-radius:9px; font-size:12.5px; line-height:1.5; color:#146C4A;">Incidente resolvido em {{ selected.resolvedAt }}.</div>
+        </sc-if>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ addDrawerOpen }}" hint-placeholder-val="{{ false }}">
+      <div onClick="{{ closeAddDrawer }}" style="position:fixed; inset:0; background:rgba(28,21,38,0.32); z-index:50;"></div>
+      <div onClick="{{ stopClick }}" style="position:fixed; top:0; right:0; bottom:0; width:440px; background:{{ cardBg }}; border-left:1px solid {{ sidebarBorder }}; box-shadow:-8px 0 24px rgba(28,21,38,0.1); z-index:51; padding:24px; overflow-y:auto; box-sizing:border-box; display:flex; flex-direction:column;">
+        <div style="display:flex; align-items:flex-start; justify-content:space-between; margin-bottom:6px;">
+          <h2 style="margin:0; font-size:19px; font-weight:700; color:{{ pageText }};">Novo incidente</h2>
+          <svg onClick="{{ closeAddDrawer }}" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="{{ pageTextMuted }}" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="cursor:pointer;"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+        </div>
+        <p style="margin:0 0 24px; font-size:13px; line-height:1.55; color:{{ pageTextMuted }};">Registre um incidente para começar a linha do tempo e notificar o time.</p>
+
+        <label style="display:block; font-size:12.5px; font-weight:600; color:{{ pageTextMuted }}; margin-bottom:6px;">Título</label>
+        <input type="text" value="{{ newTitle }}" onChange="{{ handleNewTitleChange }}" placeholder="Ex: Latência elevada no checkout" style="width:100%; box-sizing:border-box; background:{{ cardHeaderBg }}; border:1.5px solid transparent; border-radius:9px; padding:11px 12px; font-size:14px; color:{{ pageText }}; font-family:inherit; margin-bottom:16px;" style-focus="border-color:#5A46C7; background:{{ cardBg }}; box-shadow:0 0 0 3px rgba(90,70,199,0.14); outline:none;" />
+
+        <label style="display:block; font-size:12.5px; font-weight:600; color:{{ pageTextMuted }}; margin-bottom:6px;">Serviço afetado</label>
+        <select value="{{ newService }}" onChange="{{ handleNewServiceChange }}" style="width:100%; box-sizing:border-box; background:{{ cardHeaderBg }}; border:1.5px solid transparent; border-radius:9px; padding:11px 12px; font-size:14px; color:{{ pageText }}; font-family:inherit; margin-bottom:16px;" style-focus="border-color:#5A46C7; background:{{ cardBg }}; box-shadow:0 0 0 3px rgba(90,70,199,0.14); outline:none;">
+          <sc-for list="{{ serviceOptions }}" as="opt" hint-placeholder-count="6">
+            <option value="{{ opt }}">{{ opt }}</option>
+          </sc-for>
+        </select>
+
+        <label style="display:block; font-size:12.5px; font-weight:600; color:{{ pageTextMuted }}; margin-bottom:6px;">Severidade</label>
+        <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:8px; margin-bottom:16px;">
+          <div onClick="{{ setSeverityMinor }}" style="{{ severityMinorStyle }}">Menor</div>
+          <div onClick="{{ setSeverityModerate }}" style="{{ severityModerateStyle }}">Moderado</div>
+          <div onClick="{{ setSeverityCritical }}" style="{{ severityCriticalStyle }}">Crítico</div>
+        </div>
+
+        <label style="display:block; font-size:12.5px; font-weight:600; color:{{ pageTextMuted }}; margin-bottom:6px;">Descrição inicial</label>
+        <textarea value="{{ newDescription }}" onChange="{{ handleNewDescriptionChange }}" placeholder="O que está acontecendo?" rows="4" style="width:100%; box-sizing:border-box; background:{{ cardHeaderBg }}; border:1.5px solid transparent; border-radius:9px; padding:11px 12px; font-size:13.5px; color:{{ pageText }}; font-family:inherit; resize:vertical; margin-bottom:24px;" style-focus="border-color:#5A46C7; background:{{ cardBg }}; box-shadow:0 0 0 3px rgba(90,70,199,0.14); outline:none;"></textarea>
+
+        <div style="flex:1;"></div>
+
+        <div style="display:flex; gap:10px; padding-top:16px; border-top:1px solid {{ sidebarBorder }};">
+          <button onClick="{{ closeAddDrawer }}" style="flex:1; box-sizing:border-box; padding:11px; background:{{ cardBg }}; color:{{ pageText }}; border:1px solid {{ sidebarBorder }}; border-radius:9px; font-size:13.5px; font-weight:600; font-family:inherit; cursor:pointer;" style-hover="background:{{ cardHeaderBg }};">Cancelar</button>
+          <button onClick="{{ closeAddDrawer }}" style="flex:1; box-sizing:border-box; padding:11px; background:#5A46C7; color:#FFFFFF; border:none; border-radius:9px; font-size:13.5px; font-weight:700; font-family:inherit; cursor:pointer;" style-hover="background:#4C3AAE;">Criar incidente</button>
+        </div>
+      </div>
+    </sc-if>
+  </div>
+
+  <sc-if value="{{ logoutConfirmOpen }}" hint-placeholder-val="{{ false }}">
+    <div onClick="{{ closeLogoutConfirm }}" style="position:fixed; inset:0; background:rgba(28,21,38,0.4); z-index:70; display:flex; align-items:center; justify-content:center;">
+      <div onClick="{{ stopPropagationClick }}" style="width:360px; box-sizing:border-box; background:{{ cardBg }}; border-radius:16px; padding:24px; box-shadow:0 20px 48px rgba(28,21,38,0.22);">
+        <div style="width:40px; height:40px; border-radius:10px; background:{{ cardHeaderBg }}; color:{{ pageTextMuted }}; display:flex; align-items:center; justify-content:center; margin-bottom:16px;">
+          <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line></svg>
+        </div>
+        <h3 style="margin:0 0 6px; font-size:16px; font-weight:700; color:{{ pageText }};">Sair da conta?</h3>
+        <p style="margin:0 0 22px; font-size:13px; line-height:1.5; color:{{ pageTextMuted }};">Você precisará entrar novamente para acessar o Vane.</p>
+        <div style="display:flex; gap:10px;">
+          <button onClick="{{ closeLogoutConfirm }}" style="flex:1; box-sizing:border-box; padding:10px; background:{{ cardBg }}; color:{{ pageText }}; border:1px solid {{ sidebarBorder }}; border-radius:9px; font-size:13px; font-weight:600; font-family:inherit; cursor:pointer;" style-hover="background:{{ cardHeaderBg }};">Cancelar</button>
+          <button onClick="{{ confirmLogout }}" style="flex:1; box-sizing:border-box; padding:10px; background:#1C1526; color:#FFFFFF; border:none; border-radius:9px; font-size:13px; font-weight:700; font-family:inherit; cursor:pointer;" style-hover="background:#332B44;">Sair</button>
+        </div>
+      </div>
+    </div>
+  </sc-if>
+
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{
+  &quot;$preview&quot;: {&quot;width&quot;: 1440, &quot;height&quot;: 900},
+  &quot;planTier&quot;: {&quot;editor&quot;: &quot;enum&quot;, &quot;default&quot;: &quot;free&quot;, &quot;tsType&quot;: &quot;string&quot;, &quot;options&quot;: [&quot;free&quot;, &quot;pro&quot;], &quot;section&quot;: &quot;Estado&quot;},
+  &quot;tenantMode&quot;: {&quot;editor&quot;: &quot;enum&quot;, &quot;default&quot;: &quot;multi&quot;, &quot;tsType&quot;: &quot;string&quot;, &quot;options&quot;: [&quot;single&quot;, &quot;multi&quot;], &quot;section&quot;: &quot;Estado&quot;}
+}">
+const STATUS_META = {
+  investigating: { label: 'Investigando', bg: '#FBE9ED', color: '#D6395B', dot: '#D6395B' },
+  monitoring: { label: 'Monitorando', bg: '#FEF3E2', color: '#B45309', dot: '#B45309' },
+  resolved: { label: 'Resolvido', bg: '#E7F6EF', color: '#1A9E6B', dot: '#1A9E6B' },
+};
+const SEVERITY_META = {
+  critical: { label: 'Crítico', color: '#D6395B' },
+  moderate: { label: 'Moderado', color: '#B45309' },
+  minor: { label: 'Menor', color: '#6E6779' },
+};
+const SERVICE_OPTIONS = ['API Gateway', 'Auth Service', 'Billing Worker', 'Notification Queue', 'Webhook Receiver', 'Postgres Primary', '—'];
+
+const INCIDENTS_SEED = [
+  { id: 'i1', title: 'Latência elevada no Billing Worker', service: 'Billing Worker', severity: 'moderate', status: 'monitoring', openedAt: '10 set, 14:32', duration: '2h 10min', updates: [
+    { time: '14:32', author: 'Sistema', text: 'Detectado aumento de latência acima de 500ms no Billing Worker.' },
+    { time: '14:40', author: 'Ana Silva', text: 'Investigando — aumento de carga na fila de billing.' },
+    { time: '15:05', author: 'Ana Silva', text: 'Escalado para o time de infra. Aplicando scale-up temporário.' },
+  ] },
+  { id: 'i2', title: 'Webhook Receiver fora do ar', service: 'Webhook Receiver', severity: 'critical', status: 'investigating', openedAt: '10 set, 16:02', duration: '38min', updates: [
+    { time: '16:02', author: 'Sistema', text: '6 falhas consecutivas de verificação em hooks.acme.health.' },
+    { time: '16:10', author: 'Diego Rocha', text: 'Confirmado — serviço não está respondendo. Reiniciando pods.' },
+  ] },
+  { id: 'i3', title: 'Falha intermitente de DNS em painel.acme.health', service: '—', severity: 'minor', status: 'resolved', openedAt: '8 set, 09:15', duration: '1h 05min', resolvedAt: '8 set, 10:20', updates: [
+    { time: '09:15', author: 'Sistema', text: 'Falhas intermitentes de resolução DNS detectadas.' },
+    { time: '09:40', author: 'Ana Silva', text: 'Identificado TTL baixo no provedor de DNS causando cache miss.' },
+    { time: '10:20', author: 'Ana Silva', text: 'TTL ajustado. Resolução estável nas últimas verificações.' },
+  ], aiSummary: 'Falhas intermitentes de DNS em painel.acme.health foram causadas por um TTL configurado abaixo do recomendado, gerando cache miss sob picos de tráfego. O time ajustou o TTL do registro no provedor às 10:20, e o serviço voltou a resolver de forma consistente nas verificações subsequentes. Impacto limitado a acessos ocasionais ao painel administrativo, sem afetar serviços de produção.' },
+  { id: 'i4', title: 'Timeout no Auth Service durante deploy', service: 'Auth Service', severity: 'moderate', status: 'resolved', openedAt: '5 set, 22:40', duration: '22min', resolvedAt: '5 set, 23:02', updates: [
+    { time: '22:40', author: 'Sistema', text: 'Aumento de timeouts em auth.acme.health após início de deploy.' },
+    { time: '22:48', author: 'Diego Rocha', text: 'Rollback iniciado — nova versão apresentava vazamento de conexões.' },
+    { time: '23:02', author: 'Diego Rocha', text: 'Rollback concluído. Latência normalizada.' },
+  ], aiSummary: 'O deploy da versão mais recente do Auth Service introduziu um vazamento de conexões com o banco, causando timeouts crescentes a partir das 22:40. O time identificou a regressão e executou rollback para a versão anterior, restaurando a latência normal em 22 minutos. Recomenda-se revisar o pool de conexões antes do próximo deploy.' },
+];
+
+const CHIP_BASE = 'display:inline-flex; align-items:center; gap:6px; padding:7px 14px; border-radius:999px; font-size:12.5px; font-weight:600; cursor:pointer; border:1.5px solid ';
+let DARK_MODE = false;
+function chipStyle(active, borderColor, bg, color) {
+  return active ? `${CHIP_BASE}${borderColor}; background:${bg}; color:${color};` : `${CHIP_BASE}${DARK_MODE ? '#2C2645' : '#ECE9F2'}; background:${DARK_MODE ? '#1F1A35' : '#FFFFFF'}; color:${DARK_MODE ? '#9A93B0' : '#6E6779'};`;
+}
+function severityBoxStyle(active, color) {
+  const base = 'padding:9px; border-radius:9px; text-align:center; font-size:12.5px; font-weight:700; cursor:pointer; border:1.5px solid ';
+  return active ? `${base}${color}; background:${color}18; color:${color};` : `${base}${DARK_MODE ? '#2C2645' : '#ECE9F2'}; background:${DARK_MODE ? '#1F1A35' : '#FFFFFF'}; color:${DARK_MODE ? '#9A93B0' : '#6E6779'};`;
+}
+
+class Component extends DCLogic {
+  state = {
+    pinned: false, hovered: false, tenantDropdownOpen: false, userMenuOpen: false,
+    statusFilter: 'all', selectedId: null, updateText: '', aiGenerating: false,
+    addDrawerOpen: false, newTitle: '', newService: SERVICE_OPTIONS[0], newSeverity: 'moderate', newDescription: '',
+    incidents: INCIDENTS_SEED,
+  };
+
+  addUpdateEntry(id, entry) {
+    this.setState(s => ({ incidents: s.incidents.map(i => i.id === id ? { ...i, updates: [...i.updates, entry] } : i) }));
+  }
+
+  renderVals() {
+    DARK_MODE = this.state.darkMode;
+    const planTier = this.props.planTier ?? 'free';
+    const tenantMode = this.props.tenantMode ?? 'multi';
+    const isMultiTenant = tenantMode === 'multi';
+    const expanded = this.state.pinned || this.state.hovered;
+    const isFree = planTier === 'free';
+    const { statusFilter, selectedId, updateText, aiGenerating, addDrawerOpen, newTitle, newService, newSeverity, newDescription, incidents } = this.state;
+
+    const filtered = incidents.filter(i => statusFilter === 'all' || i.status === statusFilter).map(i => {
+      const meta = STATUS_META[i.status];
+      const sev = SEVERITY_META[i.severity];
+      return {
+        ...i,
+        statusLabel: meta.label, statusBg: meta.bg, statusColor: meta.color, statusDot: meta.dot,
+        severityLabel: sev.label, severityColor: sev.color,
+        rowBg: selectedId === i.id ? 'rgba(90,70,199,0.08)' : (this.state.darkMode ? '#1F1A35' : '#FFFFFF'),
+        select: () => this.setState({ selectedId: i.id, updateText: '' }),
+      };
+    });
+
+    const selectedRaw = incidents.find(i => i.id === selectedId) || null;
+    const selected = selectedRaw ? (() => {
+      const meta = STATUS_META[selectedRaw.status];
+      const sev = SEVERITY_META[selectedRaw.severity];
+      return {
+        ...selectedRaw,
+        statusLabel: meta.label, statusBg: meta.bg, statusColor: meta.color, statusDot: meta.dot,
+        severityLabel: sev.label, severityColor: sev.color,
+        isOpen: selectedRaw.status !== 'resolved',
+        isResolvedState: selectedRaw.status === 'resolved',
+        hasAiSummary: !!selectedRaw.aiSummary,
+      };
+    })() : null;
+
+    return {
+      sidebarPinned: this.state.pinned,
+      sidebarNotPinned: !this.state.pinned,
+      sidebarExpanded: expanded,
+      sidebarWidthPx: expanded ? '240px' : '72px',
+      navJustify: expanded ? 'flex-start' : 'center',
+      sidebarMouseEnter: () => this.setState({ hovered: true }),
+      sidebarMouseLeave: () => this.setState({ hovered: false }),
+      toggleSidebarPin: () => this.setState(s => ({ pinned: !s.pinned })),
+      isMultiTenant,
+      tenantDropdownOpenAndMulti: this.state.tenantDropdownOpen && isMultiTenant,
+      toggleTenantDropdown: () => { if (isMultiTenant) this.setState(s => ({ tenantDropdownOpen: !s.tenantDropdownOpen })); },
+      userMenuOpen: this.state.userMenuOpen,
+      toggleUserMenu: () => this.setState(s => ({ userMenuOpen: !s.userMenuOpen })),
+      darkMode: this.state.darkMode,
+      darkModeOff: !this.state.darkMode,
+      toggleDarkMode: () => this.setState(s => ({ darkMode: !s.darkMode })),
+      pageBg: this.state.darkMode ? '#15111F' : '#FFFFFF',
+      pageText: this.state.darkMode ? '#EDEBF3' : '#1C1526',
+      sidebarBg: this.state.darkMode ? '#1B1730' : '#FAFAFC',
+      sidebarBorder: this.state.darkMode ? '#2C2645' : '#ECE9F2',
+      sidebarTextPrimary: this.state.darkMode ? '#F2F0F6' : '#1C1526',
+      sidebarTextMuted: this.state.darkMode ? '#9A93B0' : '#6E6779',
+      iconColor: this.state.darkMode ? '#B4AEC2' : '#6E6779',
+      pageTextMuted: this.state.darkMode ? '#9A93B0' : '#6E6779',
+      cardBg: this.state.darkMode ? '#1F1A35' : '#FFFFFF',
+      cardHeaderBg: this.state.darkMode ? '#241E3D' : '#FAFAFC',
+      sidebarHoverBg: this.state.darkMode ? 'rgba(255,255,255,0.06)' : '#F2F0F6',
+      logoutConfirmOpen: this.state.logoutConfirmOpen,
+      openLogoutConfirm: () => this.setState({ logoutConfirmOpen: true, tenantDropdownOpen: false, userMenuOpen: false }),
+      closeLogoutConfirm: () => this.setState({ logoutConfirmOpen: false }),
+      confirmLogout: () => { window.location.href = 'Login Bootstrap.dc.html'; },
+      stopPropagationClick: (e) => e.stopPropagation(),
+      isFree, isPro: !isFree,
+      planBadgeLabel: isFree ? 'Free' : 'Pro',
+      planBadgeBg: isFree ? '#F2F0F6' : 'rgba(90,70,199,0.1)',
+      planBadgeColor: isFree ? '#6E6779' : '#5A46C7',
+
+      countAll: incidents.length,
+      countInvestigating: incidents.filter(i => i.status === 'investigating').length,
+      countMonitoring: incidents.filter(i => i.status === 'monitoring').length,
+      countResolved: incidents.filter(i => i.status === 'resolved').length,
+      chipAllStyle: chipStyle(statusFilter === 'all', '#5A46C7', 'rgba(90,70,199,0.08)', '#5A46C7'),
+      chipInvestigatingStyle: chipStyle(statusFilter === 'investigating', '#D6395B', '#FBE9ED', '#D6395B'),
+      chipMonitoringStyle: chipStyle(statusFilter === 'monitoring', '#B45309', '#FEF3E2', '#B45309'),
+      chipResolvedStyle: chipStyle(statusFilter === 'resolved', '#1A9E6B', '#E7F6EF', '#1A9E6B'),
+      setFilterAll: () => this.setState({ statusFilter: 'all' }),
+      setFilterInvestigating: () => this.setState({ statusFilter: 'investigating' }),
+      setFilterMonitoring: () => this.setState({ statusFilter: 'monitoring' }),
+      setFilterResolved: () => this.setState({ statusFilter: 'resolved' }),
+
+      filteredIncidents: filtered,
+      isEmpty: filtered.length === 0,
+      hasSelected: !!selected,
+      selected: selected || {},
+      closeDrawer: () => this.setState({ selectedId: null, updateText: '' }),
+      stopClick: (e) => e.stopPropagation(),
+
+      updateText,
+      handleUpdateTextChange: (e) => this.setState({ updateText: e.target.value }),
+      addUpdate: () => {
+        const text = updateText.trim();
+        if (!text || !selectedId) return;
+        const now = new Date();
+        const time = now.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+        this.addUpdateEntry(selectedId, { time, author: 'Ana Silva', text });
+        this.setState({ updateText: '' });
+      },
+      aiGenerating,
+      resolveButtonLabel: aiGenerating ? 'Gerando resumo...' : 'Resolver com resumo de IA',
+      resolveWithAi: () => {
+        if (!selectedId || aiGenerating) return;
+        this.setState({ aiGenerating: true });
+        setTimeout(() => {
+          const summary = 'Este incidente foi encerrado com um resumo gerado automaticamente a partir da linha do tempo registrada. Revise o texto e ajuste antes de compartilhar externamente, se necessário.';
+          this.setState(s => ({
+            aiGenerating: false,
+            incidents: s.incidents.map(i => i.id === selectedId ? { ...i, status: 'resolved', resolvedAt: 'agora', aiSummary: summary, updates: [...i.updates, { time: 'agora', author: 'IA', text: 'Incidente encerrado automaticamente com resumo gerado por IA.' }] } : i),
+          }));
+        }, 1400);
+      },
+
+      addDrawerOpen,
+      openAddDrawer: () => this.setState({ addDrawerOpen: true }),
+      closeAddDrawer: () => this.setState({ addDrawerOpen: false, newTitle: '', newService: SERVICE_OPTIONS[0], newSeverity: 'moderate', newDescription: '' }),
+      newTitle,
+      handleNewTitleChange: (e) => this.setState({ newTitle: e.target.value }),
+      serviceOptions: SERVICE_OPTIONS,
+      newService,
+      handleNewServiceChange: (e) => this.setState({ newService: e.target.value }),
+      newDescription,
+      handleNewDescriptionChange: (e) => this.setState({ newDescription: e.target.value }),
+      setSeverityMinor: () => this.setState({ newSeverity: 'minor' }),
+      setSeverityModerate: () => this.setState({ newSeverity: 'moderate' }),
+      setSeverityCritical: () => this.setState({ newSeverity: 'critical' }),
+      severityMinorStyle: severityBoxStyle(newSeverity === 'minor', '#6E6779'),
+      severityModerateStyle: severityBoxStyle(newSeverity === 'moderate', '#B45309'),
+      severityCriticalStyle: severityBoxStyle(newSeverity === 'critical', '#D6395B'),
+    };
+  }
+}
+
+</script>
+</body>
+</html>

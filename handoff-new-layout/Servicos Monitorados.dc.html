@@ -1,0 +1,559 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    body { margin: 0; }
+    a { color: #5A46C7; }
+    a:hover { color: #4C3AAE; }
+    ::placeholder { color: #B4AEC2; }
+  </style>
+</helmet>
+
+<div style="height:100vh; width:100%; box-sizing:border-box; background:{{ pageBg }}; display:flex; font-family:'Manrope',sans-serif; color:{{ pageText }}; overflow:hidden;">
+
+  <div onMouseEnter="{{ sidebarMouseEnter }}" onMouseLeave="{{ sidebarMouseLeave }}" style="width:{{ sidebarWidthPx }}; flex-shrink:0; background:{{ sidebarBg }}; border-right:1px solid {{ sidebarBorder }}; display:flex; flex-direction:column; transition:width 0.16s ease; overflow:visible; position:relative; z-index:20;">
+
+    <div style="padding:14px 12px; position:relative;">
+      <div onClick="{{ toggleTenantDropdown }}" style="display:flex; align-items:center; justify-content:{{ navJustify }}; gap:10px; padding:8px; border-radius:10px; cursor:pointer; white-space:nowrap;" style-hover="background:{{ cardHeaderBg }};">
+        <div style="width:28px; height:28px; border-radius:8px; background:#5A46C7; color:#FFFFFF; font-size:11.5px; font-weight:700; display:flex; align-items:center; justify-content:center; flex-shrink:0;">AH</div>
+        <sc-if value="{{ sidebarExpanded }}" hint-placeholder-val="{{ false }}">
+          <div style="min-width:0; flex:1;">
+            <div style="font-size:13px; font-weight:700; color:{{ sidebarTextPrimary }}; overflow:hidden; text-overflow:ellipsis;">Acme Health</div>
+            <div style="display:flex; align-items:center; gap:6px; margin-top:1px;">
+              <span style="font-size:10.5px; font-weight:700; letter-spacing:0.02em; padding:1px 6px; border-radius:5px; background:{{ planBadgeBg }}; color:{{ planBadgeColor }};">{{ planBadgeLabel }}</span>
+            </div>
+          </div>
+          <sc-if value="{{ isMultiTenant }}" hint-placeholder-val="{{ true }}">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#9A93A8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><polyline points="6 9 12 15 18 9"></polyline></svg>
+          </sc-if>
+        </sc-if>
+      </div>
+
+      <sc-if value="{{ tenantDropdownOpenAndMulti }}" hint-placeholder-val="{{ false }}">
+        <div style="position:absolute; top:64px; left:12px; width:240px; background:{{ cardBg }}; border:1px solid {{ sidebarBorder }}; border-radius:12px; box-shadow:0 8px 24px rgba(28,21,38,0.12); padding:6px; z-index:30;">
+          <div style="padding:8px 10px; font-size:10.5px; font-weight:700; letter-spacing:0.06em; text-transform:uppercase; color:#9A93A8;">Suas contas</div>
+          <div style="display:flex; align-items:center; gap:10px; padding:8px 10px; border-radius:8px; background:{{ cardHeaderBg }};">
+            <div style="width:24px; height:24px; border-radius:7px; background:#5A46C7; color:#fff; font-size:10px; font-weight:700; display:flex; align-items:center; justify-content:center;">AH</div>
+            <span style="font-size:13px; font-weight:600; flex:1;">Acme Health</span>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#5A46C7" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+          </div>
+          <div style="display:flex; align-items:center; gap:10px; padding:8px 10px; border-radius:8px; cursor:pointer;" style-hover="background:{{ cardHeaderBg }};">
+            <div style="width:24px; height:24px; border-radius:7px; background:#E8A73B; color:#fff; font-size:10px; font-weight:700; display:flex; align-items:center; justify-content:center;">BC</div>
+            <span style="font-size:13px; font-weight:600; flex:1;">Beta Clinic</span>
+          </div>
+          <div style="display:flex; align-items:center; gap:10px; padding:8px 10px; border-radius:8px; cursor:pointer;" style-hover="background:{{ cardHeaderBg }};">
+            <div style="width:24px; height:24px; border-radius:7px; background:#3B9EE8; color:#fff; font-size:10px; font-weight:700; display:flex; align-items:center; justify-content:center;">NL</div>
+            <span style="font-size:13px; font-weight:600; flex:1;">Northwind Labs</span>
+          </div>
+          <div style="height:1px; background:{{ sidebarBorder }}; margin:6px 4px;"></div>
+          <div onClick="{{ openLogoutConfirm }}" style="display:flex; align-items:center; gap:10px; padding:8px 10px; border-radius:8px; cursor:pointer; color:{{ pageTextMuted }}; font-size:13px; font-weight:600;" style-hover="background:{{ cardHeaderBg }};">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line></svg>
+            Sair
+          </div>
+        </div>
+      </sc-if>
+    </div>
+
+    <div style="height:1px; background:{{ sidebarBorder }}; margin:2px 12px 10px;"></div>
+
+    <div style="flex:1; padding:0 8px; display:flex; flex-direction:column; overflow-y:auto;">
+
+      <sc-if value="{{ sidebarExpanded }}" hint-placeholder-val="{{ false }}">
+        <div style="padding:10px 10px 6px; font-size:10.5px; font-weight:700; letter-spacing:0.06em; text-transform:uppercase; color:{{ sidebarTextMuted }}; white-space:nowrap;">Monitoramento</div>
+      </sc-if>
+      <div style="display:flex; flex-direction:column; gap:2px; margin-bottom:14px;">
+        <div style="display:flex; align-items:center; justify-content:{{ navJustify }}; gap:12px; padding:9px 10px; border-radius:8px; background:rgba(90,70,199,0.08); color:#5A46C7; white-space:nowrap; cursor:pointer;">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><polyline points="3 12 8 12 10 6 14 18 16 12 21 12"></polyline></svg>
+          <sc-if value="{{ sidebarExpanded }}" hint-placeholder-val="{{ false }}"><span style="font-size:13.5px; font-weight:600;">Serviços monitorados</span></sc-if>
+        </div>
+        <a href="Dominios e Status Pages.dc.html" style="display:flex; align-items:center; justify-content:{{ navJustify }}; gap:12px; padding:9px 10px; border-radius:8px; color:{{ sidebarTextMuted }}; white-space:nowrap; cursor:pointer; text-decoration:none;" style-hover="background:{{ sidebarHoverBg }};">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><circle cx="12" cy="12" r="9"></circle><line x1="3" y1="12" x2="21" y2="12"></line><path d="M12 3a15 15 0 0 1 0 18a15 15 0 0 1 0-18z"></path></svg>
+          <sc-if value="{{ sidebarExpanded }}" hint-placeholder-val="{{ false }}"><span style="font-size:13.5px; font-weight:600;">Domínios &amp; Status</span></sc-if>
+        </a>
+        <a href="Incidentes.dc.html" style="display:flex; align-items:center; justify-content:{{ navJustify }}; gap:12px; padding:9px 10px; border-radius:8px; color:{{ sidebarTextMuted }}; white-space:nowrap; cursor:pointer; text-decoration:none;" style-hover="background:{{ sidebarHoverBg }};">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><path d="M12 3l9 16H3z"></path><line x1="12" y1="9" x2="12" y2="13"></line><circle cx="12" cy="16.3" r="0.6" fill="currentColor" stroke="none"></circle></svg>
+          <sc-if value="{{ sidebarExpanded }}" hint-placeholder-val="{{ false }}"><span style="font-size:13.5px; font-weight:600;">Incidentes</span></sc-if>
+        </a>
+      </div>
+
+      <sc-if value="{{ sidebarExpanded }}" hint-placeholder-val="{{ false }}">
+        <div style="padding:10px 10px 6px; font-size:10.5px; font-weight:700; letter-spacing:0.06em; text-transform:uppercase; color:{{ sidebarTextMuted }}; white-space:nowrap;">Plataforma</div>
+      </sc-if>
+      <div style="display:flex; flex-direction:column; gap:2px; margin-bottom:14px;">
+        <a href="Dashboard Integracoes.dc.html" style="display:flex; align-items:center; justify-content:{{ navJustify }}; gap:12px; padding:9px 10px; border-radius:8px; color:{{ sidebarTextMuted }}; white-space:nowrap; cursor:pointer; text-decoration:none;" style-hover="background:{{ sidebarHoverBg }};">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><path d="M10 13a5 5 0 0 0 7.07 0l1.93-1.93a5 5 0 0 0-7.07-7.07L10.5 5.5"></path><path d="M14 11a5 5 0 0 0-7.07 0L4.99 12.93a5 5 0 0 0 7.07 7.07L13.5 18.5"></path></svg>
+          <sc-if value="{{ sidebarExpanded }}" hint-placeholder-val="{{ false }}"><span style="font-size:13.5px; font-weight:600;">Integrações</span></sc-if>
+        </a>
+        <a href="Poller Status.dc.html" style="display:flex; align-items:center; justify-content:{{ navJustify }}; gap:12px; padding:9px 10px; border-radius:8px; color:{{ sidebarTextMuted }}; white-space:nowrap; cursor:pointer; text-decoration:none;" style-hover="background:{{ sidebarHoverBg }};">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><rect x="3" y="4" width="18" height="6" rx="1.5"></rect><rect x="3" y="14" width="18" height="6" rx="1.5"></rect><circle cx="7" cy="7" r="0.6" fill="currentColor" stroke="none"></circle><circle cx="7" cy="17" r="0.6" fill="currentColor" stroke="none"></circle></svg>
+          <sc-if value="{{ sidebarExpanded }}" hint-placeholder-val="{{ false }}"><span style="font-size:13.5px; font-weight:600;">Poller Status</span></sc-if>
+        </a>
+      </div>
+
+      <sc-if value="{{ sidebarExpanded }}" hint-placeholder-val="{{ false }}">
+        <div style="padding:10px 10px 6px; font-size:10.5px; font-weight:700; letter-spacing:0.06em; text-transform:uppercase; color:{{ sidebarTextMuted }}; white-space:nowrap;">Organização</div>
+      </sc-if>
+      <div style="display:flex; flex-direction:column; gap:2px;">
+        <a href="Usuarios.dc.html" style="display:flex; align-items:center; justify-content:{{ navJustify }}; gap:12px; padding:9px 10px; border-radius:8px; color:{{ sidebarTextMuted }}; white-space:nowrap; cursor:pointer; text-decoration:none;" style-hover="background:{{ sidebarHoverBg }};">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><circle cx="9" cy="8" r="3"></circle><path d="M2 20c0-3.5 3-6 7-6s7 2.5 7 6"></path><circle cx="17" cy="8" r="2.3"></circle><path d="M22 20c0-2.5-1.8-4.5-4-5.3"></path></svg>
+          <sc-if value="{{ sidebarExpanded }}" hint-placeholder-val="{{ false }}"><span style="font-size:13.5px; font-weight:600;">Usuários</span></sc-if>
+        </a>
+        <a href="Planos e Faturamento.dc.html" style="display:flex; align-items:center; justify-content:{{ navJustify }}; gap:12px; padding:9px 10px; border-radius:8px; color:{{ sidebarTextMuted }}; white-space:nowrap; cursor:pointer; text-decoration:none;" style-hover="background:{{ sidebarHoverBg }};">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><rect x="2" y="5" width="20" height="14" rx="2.5"></rect><line x1="2" y1="10" x2="22" y2="10"></line></svg>
+          <sc-if value="{{ sidebarExpanded }}" hint-placeholder-val="{{ false }}"><span style="font-size:13.5px; font-weight:600;">Planos &amp; Faturamento</span></sc-if>
+        </a>
+      </div>
+    </div>
+
+    <div style="padding:8px; display:flex; flex-direction:column; gap:2px; border-top:1px solid {{ sidebarBorder }};">
+      <a href="Configuracoes.dc.html" style="display:flex; align-items:center; justify-content:{{ navJustify }}; gap:12px; padding:9px 10px; border-radius:8px; color:{{ sidebarTextMuted }}; white-space:nowrap; cursor:pointer; text-decoration:none;" style-hover="background:{{ sidebarHoverBg }};">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
+        <sc-if value="{{ sidebarExpanded }}" hint-placeholder-val="{{ false }}"><span style="font-size:13.5px; font-weight:600;">Configurações</span></sc-if>
+      </a>
+      <div onClick="{{ toggleSidebarPin }}" style="display:flex; align-items:center; justify-content:{{ navJustify }}; gap:12px; padding:9px 10px; border-radius:8px; color:#9A93A8; white-space:nowrap; cursor:pointer;" style-hover="background:{{ sidebarHoverBg }};">
+        <sc-if value="{{ sidebarPinned }}" hint-placeholder-val="{{ false }}">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><polyline points="15 6 9 12 15 18"></polyline></svg>
+        </sc-if>
+        <sc-if value="{{ sidebarNotPinned }}" hint-placeholder-val="{{ true }}">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><polyline points="9 6 15 12 9 18"></polyline></svg>
+        </sc-if>
+        <sc-if value="{{ sidebarExpanded }}" hint-placeholder-val="{{ false }}"><span style="font-size:12.5px; font-weight:600;">Fixar menu</span></sc-if>
+      </div>
+    </div>
+  </div>
+
+  <div style="flex:1; display:flex; flex-direction:column; min-width:0; position:relative;">
+
+    <div style="height:60px; flex-shrink:0; border-bottom:1px solid {{ sidebarBorder }}; display:flex; align-items:center; justify-content:space-between; padding:0 28px;">
+      <div style="font-size:15px; font-weight:700; color:{{ pageText }};">Serviços monitorados</div>
+      <div style="display:flex; align-items:center; gap:16px;">
+        <div onClick="{{ toggleDarkMode }}" style="color:{{ iconColor }}; cursor:pointer; display:flex;">
+          <sc-if value="{{ darkMode }}" hint-placeholder-val="{{ false }}">
+            <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4.5"></circle><line x1="12" y1="1.5" x2="12" y2="4"></line><line x1="12" y1="20" x2="12" y2="22.5"></line><line x1="4.2" y1="4.2" x2="6" y2="6"></line><line x1="18" y1="18" x2="19.8" y2="19.8"></line><line x1="1.5" y1="12" x2="4" y2="12"></line><line x1="20" y1="12" x2="22.5" y2="12"></line><line x1="4.2" y1="19.8" x2="6" y2="18"></line><line x1="18" y1="6" x2="19.8" y2="4.2"></line></svg>
+          </sc-if>
+          <sc-if value="{{ darkModeOff }}" hint-placeholder-val="{{ true }}">
+            <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg>
+          </sc-if>
+        </div>
+        <a href="Notificacoes.dc.html" style="position:relative; color:{{ iconColor }}; display:flex; text-decoration:none;">
+          <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" style="cursor:pointer;"><path d="M18 8a6 6 0 1 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"></path><path d="M13.73 21a2 2 0 0 1-3.46 0"></path></svg>
+          <span style="position:absolute; top:-3px; right:-3px; width:8px; height:8px; border-radius:999px; background:#D6395B; border:1.5px solid {{ pageBg }};"></span>
+        </a>
+        <div onClick="{{ toggleUserMenu }}" style="position:relative;">
+          <div style="width:32px; height:32px; border-radius:9px; background:rgba(90,70,199,0.1); color:#5A46C7; font-size:12.5px; font-weight:700; display:flex; align-items:center; justify-content:center; cursor:pointer;">AS</div>
+          <sc-if value="{{ userMenuOpen }}" hint-placeholder-val="{{ false }}">
+            <div style="position:absolute; top:42px; right:0; width:200px; background:{{ cardBg }}; border:1px solid {{ sidebarBorder }}; border-radius:12px; box-shadow:0 8px 24px rgba(28,21,38,0.12); padding:6px; z-index:30;">
+              <div style="padding:10px 10px 8px; border-bottom:1px solid #ECE9F2; margin-bottom:4px;">
+                <div style="font-size:13px; font-weight:700; color:{{ pageText }};">Ana Silva</div>
+                <div style="font-size:12px; color:{{ pageTextMuted }};">ana.silva@empresa.com</div>
+              </div>
+              <a href="Meu Perfil.dc.html" style="display:block; padding:8px 10px; border-radius:8px; font-size:13px; font-weight:600; color:{{ pageTextMuted }}; cursor:pointer; text-decoration:none;" style-hover="background:{{ cardHeaderBg }};">Meu perfil</a>
+              <div style="padding:8px 10px; border-radius:8px; font-size:13px; font-weight:600; color:{{ pageTextMuted }}; cursor:pointer;" style-hover="background:{{ cardHeaderBg }};">Configurações</div>
+              <div onClick="{{ openLogoutConfirm }}" style="padding:8px 10px; border-radius:8px; font-size:13px; font-weight:600; color:#D6395B; cursor:pointer;" style-hover="background:#FBE9ED;">Sair</div>
+            </div>
+          </sc-if>
+        </div>
+      </div>
+    </div>
+
+    <div style="flex:1; overflow-y:auto; padding:32px 40px;">
+      <div style="max-width:1200px; margin:0 auto;">
+
+        <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:16px; margin-bottom:24px;">
+          <div>
+            <h1 style="margin:0 0 6px; font-size:20px; font-weight:700; letter-spacing:-0.01em; color:{{ pageText }};">Serviços monitorados</h1>
+            <p style="margin:0; font-size:13.5px; line-height:1.55; color:{{ pageTextMuted }}; max-width:520px;">Acompanhe a saúde dos serviços monitorados pelo Vane em tempo real.</p>
+          </div>
+          <button onClick="{{ openAddDrawer }}" style="flex-shrink:0; box-sizing:border-box; padding:9px 16px; background:#5A46C7; color:#FFFFFF; border:none; border-radius:9px; font-size:13px; font-weight:700; font-family:inherit; cursor:pointer; display:flex; align-items:center; gap:7px;" style-hover="background:#4C3AAE;">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+            Adicionar serviço
+          </button>
+        </div>
+
+        <div style="display:flex; align-items:center; justify-content:space-between; gap:16px; margin-bottom:18px; flex-wrap:wrap;">
+          <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+            <div onClick="{{ setFilterAll }}" style="{{ chipAllStyle }}">Todos <span style="opacity:0.7;">{{ countAll }}</span></div>
+            <div onClick="{{ setFilterOk }}" style="{{ chipOkStyle }}">Operacional <span style="opacity:0.7;">{{ countOk }}</span></div>
+            <div onClick="{{ setFilterWarn }}" style="{{ chipWarnStyle }}">Degradado <span style="opacity:0.7;">{{ countWarn }}</span></div>
+            <div onClick="{{ setFilterDown }}" style="{{ chipDownStyle }}">Inativo <span style="opacity:0.7;">{{ countDown }}</span></div>
+          </div>
+          <div style="position:relative; width:240px; flex-shrink:0;">
+            <span style="position:absolute; left:12px; top:50%; transform:translateY(-50%); color:#9A93A8; display:flex;">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+            </span>
+            <input type="text" value="{{ searchQuery }}" onChange="{{ handleSearchChange }}" placeholder="Buscar serviço" style="width:100%; box-sizing:border-box; background:{{ cardHeaderBg }}; border:1.5px solid transparent; border-radius:9px; padding:9px 12px 9px 36px; font-size:13px; color:{{ pageText }}; font-family:inherit;" style-focus="border-color:#5A46C7; background:{{ cardBg }}; box-shadow:0 0 0 3px rgba(90,70,199,0.14); outline:none;" />
+          </div>
+        </div>
+
+        <div style="border:1px solid {{ sidebarBorder }}; border-radius:12px; overflow-x:auto; overflow-y:hidden; background:{{ cardBg }};">
+          <div style="display:grid; grid-template-columns:100px minmax(180px,1fr) 90px 90px 110px 20px; align-items:center; gap:10px; padding:11px 20px; background:{{ cardHeaderBg }}; border-bottom:1px solid {{ sidebarBorder }};">
+            <span style="font-size:11px; font-weight:700; letter-spacing:0.04em; text-transform:uppercase; color:{{ pageTextMuted }};">Status</span>
+            <span style="font-size:11px; font-weight:700; letter-spacing:0.04em; text-transform:uppercase; color:{{ pageTextMuted }};">Serviço</span>
+            <span style="font-size:11px; font-weight:700; letter-spacing:0.04em; text-transform:uppercase; color:{{ pageTextMuted }};">Uptime 30d</span>
+            <span style="font-size:11px; font-weight:700; letter-spacing:0.04em; text-transform:uppercase; color:{{ pageTextMuted }};">Latência</span>
+            <span style="font-size:11px; font-weight:700; letter-spacing:0.04em; text-transform:uppercase; color:{{ pageTextMuted }};">Última verificação</span>
+            <span></span>
+          </div>
+
+          <sc-for list="{{ filteredServices }}" as="svc" hint-placeholder-count="6">
+            <div onClick="{{ svc.select }}" style="display:grid; grid-template-columns:100px minmax(180px,1fr) 90px 90px 110px 20px; align-items:center; gap:10px; padding:14px 20px; border-bottom:1px solid {{ sidebarBorder }}; cursor:pointer; background:{{ svc.rowBg }};" style-hover="background:{{ cardHeaderBg }};">
+              <span style="display:inline-flex; align-items:center; gap:6px; padding:4px 10px; border-radius:999px; background:{{ svc.statusBg }}; color:{{ svc.statusColor }}; font-size:12px; font-weight:700; width:fit-content;">
+                <span style="width:6px; height:6px; border-radius:999px; background:{{ svc.statusDot }};"></span>{{ svc.statusLabel }}
+              </span>
+              <div style="min-width:0;">
+                <div style="font-size:13.5px; font-weight:700; color:{{ pageText }}; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">{{ svc.name }}</div>
+                <div style="font-size:12px; color:{{ pageTextMuted }}; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">{{ svc.url }}</div>
+              </div>
+              <div style="font-size:13px; color:{{ pageText }}; font-weight:600;">{{ svc.uptime }}</div>
+              <div style="font-size:13px; color:{{ pageText }};">{{ svc.latency }}</div>
+              <div style="font-size:12.5px; color:{{ pageTextMuted }};">{{ svc.lastCheck }}</div>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#9A93A8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
+            </div>
+          </sc-for>
+
+          <sc-if value="{{ isEmpty }}" hint-placeholder-val="{{ false }}">
+            <div style="padding:48px 20px; text-align:center; font-size:13.5px; color:{{ pageTextMuted }};">Nenhum serviço encontrado com esses filtros.</div>
+          </sc-if>
+        </div>
+
+      </div>
+    </div>
+
+    <sc-if value="{{ hasSelected }}" hint-placeholder-val="{{ false }}">
+      <div onClick="{{ closeDrawer }}" style="position:fixed; inset:0; background:rgba(28,21,38,0.32); z-index:50;"></div>
+      <div onClick="{{ stopClick }}" style="position:fixed; top:0; right:0; bottom:0; width:440px; background:{{ cardBg }}; border-left:1px solid {{ sidebarBorder }}; box-shadow:-8px 0 24px rgba(28,21,38,0.1); z-index:51; padding:24px; overflow-y:auto; box-sizing:border-box;">
+        <div style="display:flex; align-items:flex-start; justify-content:space-between; margin-bottom:18px;">
+          <span style="display:inline-flex; align-items:center; gap:6px; padding:4px 10px; border-radius:999px; background:{{ selected.statusBg }}; color:{{ selected.statusColor }}; font-size:12px; font-weight:700;">
+            <span style="width:6px; height:6px; border-radius:999px; background:{{ selected.statusDot }};"></span>{{ selected.statusLabel }}
+          </span>
+          <svg onClick="{{ closeDrawer }}" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="{{ pageTextMuted }}" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="cursor:pointer;"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+        </div>
+        <h2 style="margin:0 0 4px; font-size:19px; font-weight:700; color:{{ pageText }};">{{ selected.name }}</h2>
+        <div style="font-size:13px; color:{{ pageTextMuted }}; margin-bottom:22px;">{{ selected.url }}</div>
+
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:14px; margin-bottom:20px;">
+          <div>
+            <div style="font-size:10.5px; font-weight:700; letter-spacing:0.05em; text-transform:uppercase; color:{{ pageTextMuted }}; margin-bottom:4px;">Uptime 30d</div>
+            <div style="font-size:18px; font-weight:700; color:{{ pageText }};">{{ selected.uptime }}</div>
+          </div>
+          <div>
+            <div style="font-size:10.5px; font-weight:700; letter-spacing:0.05em; text-transform:uppercase; color:{{ pageTextMuted }}; margin-bottom:4px;">Latência média</div>
+            <div style="font-size:18px; font-weight:700; color:{{ pageText }};">{{ selected.latency }}</div>
+          </div>
+          <div>
+            <div style="font-size:10.5px; font-weight:700; letter-spacing:0.05em; text-transform:uppercase; color:{{ pageTextMuted }}; margin-bottom:4px;">Última verificação</div>
+            <div style="font-size:18px; font-weight:700; color:{{ pageText }};">{{ selected.lastCheck }}</div>
+          </div>
+          <div>
+            <div style="font-size:10.5px; font-weight:700; letter-spacing:0.05em; text-transform:uppercase; color:{{ pageTextMuted }}; margin-bottom:4px;">Incidentes (30d)</div>
+            <div style="font-size:18px; font-weight:700; color:{{ pageText }};">{{ selected.incidents }}</div>
+          </div>
+        </div>
+
+        <sc-if value="{{ selected.hasNote }}" hint-placeholder-val="{{ false }}">
+          <div style="display:flex; gap:10px; padding:12px 14px; border-radius:10px; background:{{ selected.noteBg }}; border:1px solid {{ selected.noteBorder }}; margin-bottom:20px;">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="{{ selected.statusColor }}" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0; margin-top:1px;"><path d="M13 2 3 14h7l-1 8 10-12h-7z"></path></svg>
+            <div style="font-size:12.5px; line-height:1.5; color:{{ pageTextMuted }};">{{ selected.note }}</div>
+          </div>
+        </sc-if>
+
+        <div style="margin-bottom:8px; font-size:10.5px; font-weight:700; letter-spacing:0.05em; text-transform:uppercase; color:{{ pageTextMuted }};">Últimas 24 verificações</div>
+        <div style="display:flex; gap:3px; margin-bottom:26px;">
+          <sc-for list="{{ selected.checkBars }}" as="chk" hint-placeholder-count="24">
+            <div style="width:12px; height:22px; border-radius:3px; background:{{ chk.color }};"></div>
+          </sc-for>
+        </div>
+
+        <div style="display:flex; gap:10px;">
+          <button style="flex:1; box-sizing:border-box; padding:10px; background:{{ cardBg }}; color:{{ pageText }}; border:1px solid {{ sidebarBorder }}; border-radius:9px; font-size:13px; font-weight:600; font-family:inherit; cursor:pointer;" style-hover="background:{{ cardHeaderBg }};">Pausar monitoramento</button>
+          <button style="flex:1; box-sizing:border-box; padding:10px; background:{{ cardBg }}; color:#5A46C7; border:1.5px solid #5A46C7; border-radius:9px; font-size:13px; font-weight:700; font-family:inherit; cursor:pointer;" style-hover="background:rgba(90,70,199,0.06);">Editar configuração</button>
+        </div>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ addDrawerOpen }}" hint-placeholder-val="{{ false }}">
+      <div onClick="{{ closeAddDrawer }}" style="position:fixed; inset:0; background:rgba(28,21,38,0.32); z-index:50;"></div>
+      <div onClick="{{ stopClick }}" style="position:fixed; top:0; right:0; bottom:0; width:440px; background:{{ cardBg }}; border-left:1px solid {{ sidebarBorder }}; box-shadow:-8px 0 24px rgba(28,21,38,0.1); z-index:51; padding:24px; overflow-y:auto; box-sizing:border-box; display:flex; flex-direction:column;">
+        <div style="display:flex; align-items:flex-start; justify-content:space-between; margin-bottom:6px;">
+          <h2 style="margin:0; font-size:19px; font-weight:700; color:{{ pageText }};">Adicionar serviço</h2>
+          <svg onClick="{{ closeAddDrawer }}" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="{{ pageTextMuted }}" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="cursor:pointer;"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+        </div>
+        <p style="margin:0 0 24px; font-size:13px; line-height:1.55; color:{{ pageTextMuted }};">Configure um novo alvo de monitoramento. O Vane começa a verificar assim que você salvar.</p>
+
+        <label style="display:block; font-size:12.5px; font-weight:600; color:{{ pageTextMuted }}; margin-bottom:6px;">Nome do serviço</label>
+        <input type="text" value="{{ newName }}" onChange="{{ handleNewNameChange }}" placeholder="Ex: Payments API" style="width:100%; box-sizing:border-box; background:{{ cardHeaderBg }}; border:1.5px solid transparent; border-radius:9px; padding:11px 12px; font-size:14px; color:{{ pageText }}; font-family:inherit; margin-bottom:16px;" style-focus="border-color:#5A46C7; background:{{ cardBg }}; box-shadow:0 0 0 3px rgba(90,70,199,0.14); outline:none;" />
+
+        <label style="display:block; font-size:12.5px; font-weight:600; color:{{ pageTextMuted }}; margin-bottom:6px;">Como monitorar</label>
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:20px;">
+          <div onClick="{{ setModeSlo }}" style="{{ modeSloStyle }}">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" style="margin-bottom:8px;"><path d="M10 13a5 5 0 0 0 7.07 0l1.93-1.93a5 5 0 0 0-7.07-7.07L10.5 5.5"></path><path d="M14 11a5 5 0 0 0-7.07 0L4.99 12.93a5 5 0 0 0 7.07 7.07L13.5 18.5"></path></svg>
+            <div style="font-size:13px; font-weight:700; margin-bottom:2px;">Baseado em SLO</div>
+            <div style="font-size:11.5px; line-height:1.4; opacity:0.8;">Importa o alvo do serviço de observabilidade conectado</div>
+          </div>
+          <div onClick="{{ setModePolling }}" style="{{ modePollingStyle }}">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" style="margin-bottom:8px;"><polyline points="3 12 8 12 10 6 14 18 16 12 21 12"></polyline></svg>
+            <div style="font-size:13px; font-weight:700; margin-bottom:2px;">Polling manual</div>
+            <div style="font-size:11.5px; line-height:1.4; opacity:0.8;">Vane verifica por HTTP, TCP ou ping</div>
+          </div>
+        </div>
+
+        <sc-if value="{{ isModeSlo }}" hint-placeholder-val="{{ true }}">
+          <label style="display:block; font-size:12.5px; font-weight:600; color:{{ pageTextMuted }}; margin-bottom:6px;">Fonte</label>
+          <div style="display:flex; gap:8px; margin-bottom:16px;">
+            <div onClick="{{ setSourceDatadog }}" style="{{ sourceDatadogStyle }}">Datadog</div>
+            <div onClick="{{ setSourceNewRelic }}" style="{{ sourceNewRelicStyle }}">New Relic</div>
+          </div>
+
+          <label style="display:block; font-size:12.5px; font-weight:600; color:{{ pageTextMuted }}; margin-bottom:6px;">SLO</label>
+          <select value="{{ sloSelection }}" onChange="{{ handleSloChange }}" style="width:100%; box-sizing:border-box; background:{{ cardHeaderBg }}; border:1.5px solid transparent; border-radius:9px; padding:11px 12px; font-size:14px; color:{{ pageText }}; font-family:inherit; margin-bottom:14px;" style-focus="border-color:#5A46C7; background:{{ cardBg }}; box-shadow:0 0 0 3px rgba(90,70,199,0.14); outline:none;">
+            <sc-for list="{{ sloOptions }}" as="opt" hint-placeholder-count="3">
+              <option value="{{ opt }}">{{ opt }}</option>
+            </sc-for>
+          </select>
+
+          <div style="padding:10px 12px; background:#F3F1FB; border:1px solid #E0DCEC; border-radius:9px; font-size:12px; line-height:1.5; color:{{ pageTextMuted }}; margin-bottom:24px;">Os limites de alerta são herdados do SLO configurado no provedor.</div>
+        </sc-if>
+
+        <sc-if value="{{ isModePolling }}" hint-placeholder-val="{{ false }}">
+          <label style="display:block; font-size:12.5px; font-weight:600; color:{{ pageTextMuted }}; margin-bottom:6px;">Tipo de verificação</label>
+          <div style="display:flex; gap:8px; margin-bottom:16px;">
+            <div onClick="{{ setTypeHttp }}" style="{{ typeHttpStyle }}">HTTP(S)</div>
+            <div onClick="{{ setTypeTcp }}" style="{{ typeTcpStyle }}">TCP</div>
+            <div onClick="{{ setTypePing }}" style="{{ typePingStyle }}">Ping</div>
+          </div>
+
+          <label style="display:block; font-size:12.5px; font-weight:600; color:{{ pageTextMuted }}; margin-bottom:6px;">{{ urlFieldLabel }}</label>
+          <input type="text" value="{{ newUrl }}" onChange="{{ handleNewUrlChange }}" placeholder="{{ urlFieldPlaceholder }}" style="width:100%; box-sizing:border-box; background:{{ cardHeaderBg }}; border:1.5px solid transparent; border-radius:9px; padding:11px 12px; font-size:14px; color:{{ pageText }}; font-family:inherit; margin-bottom:16px; font-family:monospace;" style-focus="border-color:#5A46C7; background:{{ cardBg }}; box-shadow:0 0 0 3px rgba(90,70,199,0.14); outline:none;" />
+
+          <label style="display:block; font-size:12.5px; font-weight:600; color:{{ pageTextMuted }}; margin-bottom:6px;">Intervalo de verificação</label>
+          <div style="display:flex; gap:8px; margin-bottom:24px;">
+            <div onClick="{{ setInterval30s }}" style="{{ interval30sStyle }}">30s</div>
+            <div onClick="{{ setInterval1m }}" style="{{ interval1mStyle }}">1 min</div>
+            <div onClick="{{ setInterval5m }}" style="{{ interval5mStyle }}">5 min</div>
+          </div>
+        </sc-if>
+
+        <div style="flex:1;"></div>
+
+        <div style="display:flex; gap:10px; padding-top:16px; border-top:1px solid {{ sidebarBorder }};">
+          <button onClick="{{ closeAddDrawer }}" style="flex:1; box-sizing:border-box; padding:11px; background:{{ cardBg }}; color:{{ pageText }}; border:1px solid {{ sidebarBorder }}; border-radius:9px; font-size:13.5px; font-weight:600; font-family:inherit; cursor:pointer;" style-hover="background:{{ cardHeaderBg }};">Cancelar</button>
+          <button onClick="{{ closeAddDrawer }}" style="flex:1; box-sizing:border-box; padding:11px; background:#5A46C7; color:#FFFFFF; border:none; border-radius:9px; font-size:13.5px; font-weight:700; font-family:inherit; cursor:pointer;" style-hover="background:#4C3AAE;">Adicionar serviço</button>
+        </div>
+      </div>
+    </sc-if>
+  </div>
+
+  <sc-if value="{{ logoutConfirmOpen }}" hint-placeholder-val="{{ false }}">
+    <div onClick="{{ closeLogoutConfirm }}" style="position:fixed; inset:0; background:rgba(28,21,38,0.4); z-index:70; display:flex; align-items:center; justify-content:center;">
+      <div onClick="{{ stopPropagationClick }}" style="width:360px; box-sizing:border-box; background:{{ cardBg }}; border-radius:16px; padding:24px; box-shadow:0 20px 48px rgba(28,21,38,0.22);">
+        <div style="width:40px; height:40px; border-radius:10px; background:{{ cardHeaderBg }}; color:{{ pageTextMuted }}; display:flex; align-items:center; justify-content:center; margin-bottom:16px;">
+          <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line></svg>
+        </div>
+        <h3 style="margin:0 0 6px; font-size:16px; font-weight:700; color:{{ pageText }};">Sair da conta?</h3>
+        <p style="margin:0 0 22px; font-size:13px; line-height:1.5; color:{{ pageTextMuted }};">Você precisará entrar novamente para acessar o Vane.</p>
+        <div style="display:flex; gap:10px;">
+          <button onClick="{{ closeLogoutConfirm }}" style="flex:1; box-sizing:border-box; padding:10px; background:{{ cardBg }}; color:{{ pageText }}; border:1px solid {{ sidebarBorder }}; border-radius:9px; font-size:13px; font-weight:600; font-family:inherit; cursor:pointer;" style-hover="background:{{ cardHeaderBg }};">Cancelar</button>
+          <button onClick="{{ confirmLogout }}" style="flex:1; box-sizing:border-box; padding:10px; background:#1C1526; color:#FFFFFF; border:none; border-radius:9px; font-size:13px; font-weight:700; font-family:inherit; cursor:pointer;" style-hover="background:#332B44;">Sair</button>
+        </div>
+      </div>
+    </div>
+  </sc-if>
+
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{
+  &quot;$preview&quot;: {&quot;width&quot;: 1440, &quot;height&quot;: 900},
+  &quot;planTier&quot;: {&quot;editor&quot;: &quot;enum&quot;, &quot;default&quot;: &quot;free&quot;, &quot;tsType&quot;: &quot;string&quot;, &quot;options&quot;: [&quot;free&quot;, &quot;pro&quot;], &quot;section&quot;: &quot;Estado&quot;},
+  &quot;tenantMode&quot;: {&quot;editor&quot;: &quot;enum&quot;, &quot;default&quot;: &quot;multi&quot;, &quot;tsType&quot;: &quot;string&quot;, &quot;options&quot;: [&quot;single&quot;, &quot;multi&quot;], &quot;section&quot;: &quot;Estado&quot;}
+}">
+const STATUS_META = {
+  ok: { label: 'Operacional', bg: '#E7F6EF', color: '#1A9E6B', dot: '#1A9E6B' },
+  warn: { label: 'Degradado', bg: '#FEF3E2', color: '#B45309', dot: '#B45309' },
+  down: { label: 'Inativo', bg: '#FBE9ED', color: '#D6395B', dot: '#D6395B' },
+};
+
+function buildChecks(overrides) {
+  const arr = Array(24).fill('ok');
+  if (overrides) Object.keys(overrides).forEach(i => { arr[i] = overrides[i]; });
+  return arr;
+}
+
+const SERVICES = [
+  { id: 'api-gateway', name: 'API Gateway', url: 'api.acme.health', status: 'ok', uptime: '99.98%', latency: '142 ms', lastCheck: 'há 30s', incidents: 0, note: '', checks: buildChecks() },
+  { id: 'auth-service', name: 'Auth Service', url: 'auth.acme.health', status: 'ok', uptime: '99.95%', latency: '89 ms', lastCheck: 'há 30s', incidents: 1, note: '', checks: buildChecks({ 9: 'warn' }) },
+  { id: 'billing-worker', name: 'Billing Worker', url: 'fila assíncrona · interno', status: 'warn', uptime: '98.20%', latency: '610 ms', lastCheck: 'há 45s', incidents: 2, note: 'Latência acima do normal nas últimas 2 horas.', checks: buildChecks({ 17: 'warn', 18: 'warn', 19: 'warn', 20: 'warn', 21: 'warn', 22: 'warn', 23: 'warn' }) },
+  { id: 'notification-queue', name: 'Notification Queue', url: 'fila assíncrona · interno', status: 'ok', uptime: '99.99%', latency: '54 ms', lastCheck: 'há 15s', incidents: 0, note: '', checks: buildChecks() },
+  { id: 'webhook-receiver', name: 'Webhook Receiver', url: 'hooks.acme.health', status: 'down', uptime: '92.40%', latency: 'timeout', lastCheck: 'há 12s', incidents: 4, note: '5 falhas consecutivas — investigando.', checks: buildChecks({ 18: 'down', 19: 'down', 20: 'down', 21: 'down', 22: 'down', 23: 'down' }) },
+  { id: 'postgres-primary', name: 'Postgres Primary', url: 'db.acme.health:5432', status: 'ok', uptime: '99.999%', latency: '8 ms', lastCheck: 'há 20s', incidents: 0, note: '', checks: buildChecks() },
+];
+
+const CHIP_BASE = 'display:inline-flex; align-items:center; gap:6px; padding:7px 14px; border-radius:999px; font-size:12.5px; font-weight:600; cursor:pointer; border:1.5px solid ';
+let DARK_MODE = false;
+function chipStyle(active, borderColor, bg, color) {
+  return active ? `${CHIP_BASE}${borderColor}; background:${bg}; color:${color};` : `${CHIP_BASE}${DARK_MODE ? '#2C2645' : '#ECE9F2'}; background:${DARK_MODE ? '#1F1A35' : '#FFFFFF'}; color:${DARK_MODE ? '#9A93B0' : '#6E6779'};`;
+}
+
+class Component extends DCLogic {
+  state = { pinned: false, hovered: false, tenantDropdownOpen: false, userMenuOpen: false, searchQuery: '', statusFilter: 'all', selectedId: null, addDrawerOpen: false, addMode: 'slo', newName: '', newUrl: '', newType: 'http', newInterval: '30s', sloSource: 'datadog', sloSelection: '' };
+
+  renderVals() {
+    DARK_MODE = this.state.darkMode;
+    const planTier = this.props.planTier ?? 'free';
+    const tenantMode = this.props.tenantMode ?? 'multi';
+    const isMultiTenant = tenantMode === 'multi';
+    const expanded = this.state.pinned || this.state.hovered;
+    const isFree = planTier === 'free';
+    const { statusFilter, searchQuery, selectedId, addDrawerOpen, addMode, newName, newUrl, newType, newInterval, sloSource, sloSelection } = this.state;
+    const urlLabels = { http: 'URL a verificar', tcp: 'Host:porta', ping: 'Host' };
+    const urlPlaceholders = { http: 'https://api.acme.health/health', tcp: 'db.acme.health:5432', ping: 'cache.acme.health' };
+    const SLO_OPTIONS = {
+      datadog: ['API Gateway — Availability (99.9%)', 'Checkout — Latency p99 < 300ms', 'Auth Service — Error rate < 1%'],
+      newrelic: ['Billing Worker — Apdex > 0.9', 'Notification Queue — Throughput'],
+    };
+    const sloOptions = SLO_OPTIONS[sloSource];
+    const modeBoxBase = 'padding:14px; border-radius:10px; cursor:pointer;';
+    const dm = this.state.darkMode;
+    const modeBoxStyle = (active) => active
+      ? `${modeBoxBase} border:1.5px solid #5A46C7; background:rgba(90,70,199,0.06); color:${dm ? '#F2F0F6' : '#1C1526'};`
+      : `${modeBoxBase} border:1.5px solid ${dm ? '#2C2645' : '#ECE9F2'}; background:${dm ? '#1F1A35' : '#FFFFFF'}; color:${dm ? '#9A93B0' : '#4A4553'};`;
+    const q = searchQuery.trim().toLowerCase();
+
+    const filtered = SERVICES.filter(s => {
+      const matchesFilter = statusFilter === 'all' || s.status === statusFilter;
+      const matchesQuery = !q || s.name.toLowerCase().includes(q) || s.url.toLowerCase().includes(q);
+      return matchesFilter && matchesQuery;
+    }).map(s => {
+      const meta = STATUS_META[s.status];
+      return {
+        ...s,
+        statusLabel: meta.label, statusBg: meta.bg, statusColor: meta.color, statusDot: meta.dot,
+        rowBg: selectedId === s.id ? 'rgba(90,70,199,0.08)' : (this.state.darkMode ? '#1F1A35' : '#FFFFFF'),
+        select: () => this.setState({ selectedId: s.id }),
+      };
+    });
+
+    const selectedRaw = SERVICES.find(s => s.id === selectedId) || null;
+    const selected = selectedRaw ? (() => {
+      const meta = STATUS_META[selectedRaw.status];
+      return {
+        ...selectedRaw,
+        statusLabel: meta.label, statusBg: meta.bg, statusColor: meta.color, statusDot: meta.dot,
+        hasNote: !!selectedRaw.note,
+        noteBg: selectedRaw.status === 'down' ? '#FDF0F2' : '#FEF9F0',
+        noteBorder: selectedRaw.status === 'down' ? '#F5C3CE' : '#F7E4BE',
+        checkBars: selectedRaw.checks.map(c => ({ color: STATUS_META[c].dot })),
+      };
+    })() : null;
+
+    return {
+      sidebarPinned: this.state.pinned,
+      sidebarNotPinned: !this.state.pinned,
+      sidebarExpanded: expanded,
+      sidebarWidthPx: expanded ? '240px' : '72px',
+      navJustify: expanded ? 'flex-start' : 'center',
+      sidebarMouseEnter: () => this.setState({ hovered: true }),
+      sidebarMouseLeave: () => this.setState({ hovered: false }),
+      toggleSidebarPin: () => this.setState(s => ({ pinned: !s.pinned })),
+      isMultiTenant,
+      tenantDropdownOpenAndMulti: this.state.tenantDropdownOpen && isMultiTenant,
+      toggleTenantDropdown: () => { if (isMultiTenant) this.setState(s => ({ tenantDropdownOpen: !s.tenantDropdownOpen })); },
+      userMenuOpen: this.state.userMenuOpen,
+      toggleUserMenu: () => this.setState(s => ({ userMenuOpen: !s.userMenuOpen })),
+      darkMode: this.state.darkMode,
+      darkModeOff: !this.state.darkMode,
+      toggleDarkMode: () => this.setState(s => ({ darkMode: !s.darkMode })),
+      pageBg: this.state.darkMode ? '#15111F' : '#FFFFFF',
+      pageText: this.state.darkMode ? '#EDEBF3' : '#1C1526',
+      sidebarBg: this.state.darkMode ? '#1B1730' : '#FAFAFC',
+      sidebarBorder: this.state.darkMode ? '#2C2645' : '#ECE9F2',
+      sidebarTextPrimary: this.state.darkMode ? '#F2F0F6' : '#1C1526',
+      sidebarTextMuted: this.state.darkMode ? '#9A93B0' : '#6E6779',
+      iconColor: this.state.darkMode ? '#B4AEC2' : '#6E6779',
+      pageTextMuted: this.state.darkMode ? '#9A93B0' : '#6E6779',
+      cardBg: this.state.darkMode ? '#1F1A35' : '#FFFFFF',
+      cardHeaderBg: this.state.darkMode ? '#241E3D' : '#FAFAFC',
+      sidebarHoverBg: this.state.darkMode ? 'rgba(255,255,255,0.06)' : '#F2F0F6',
+      logoutConfirmOpen: this.state.logoutConfirmOpen,
+      openLogoutConfirm: () => this.setState({ logoutConfirmOpen: true, tenantDropdownOpen: false, userMenuOpen: false }),
+      closeLogoutConfirm: () => this.setState({ logoutConfirmOpen: false }),
+      confirmLogout: () => { window.location.href = 'Login Bootstrap.dc.html'; },
+      stopPropagationClick: (e) => e.stopPropagation(),
+      isFree, isPro: !isFree,
+      planBadgeLabel: isFree ? 'Free' : 'Pro',
+      planBadgeBg: isFree ? '#F2F0F6' : 'rgba(90,70,199,0.1)',
+      planBadgeColor: isFree ? '#6E6779' : '#5A46C7',
+
+      searchQuery,
+      handleSearchChange: (e) => this.setState({ searchQuery: e.target.value }),
+      countAll: SERVICES.length,
+      countOk: SERVICES.filter(s => s.status === 'ok').length,
+      countWarn: SERVICES.filter(s => s.status === 'warn').length,
+      countDown: SERVICES.filter(s => s.status === 'down').length,
+      chipAllStyle: chipStyle(statusFilter === 'all', '#5A46C7', 'rgba(90,70,199,0.08)', '#5A46C7'),
+      chipOkStyle: chipStyle(statusFilter === 'ok', '#1A9E6B', '#E7F6EF', '#1A9E6B'),
+      chipWarnStyle: chipStyle(statusFilter === 'warn', '#B45309', '#FEF3E2', '#B45309'),
+      chipDownStyle: chipStyle(statusFilter === 'down', '#D6395B', '#FBE9ED', '#D6395B'),
+      setFilterAll: () => this.setState({ statusFilter: 'all' }),
+      setFilterOk: () => this.setState({ statusFilter: 'ok' }),
+      setFilterWarn: () => this.setState({ statusFilter: 'warn' }),
+      setFilterDown: () => this.setState({ statusFilter: 'down' }),
+
+      filteredServices: filtered,
+      isEmpty: filtered.length === 0,
+      hasSelected: !!selected,
+      selected: selected || {},
+      closeDrawer: () => this.setState({ selectedId: null }),
+      stopClick: (e) => e.stopPropagation(),
+
+      addDrawerOpen,
+      openAddDrawer: () => this.setState({ addDrawerOpen: true }),
+      closeAddDrawer: () => this.setState({ addDrawerOpen: false, newName: '', newUrl: '', newType: 'http', newInterval: '30s', addMode: 'slo', sloSource: 'datadog', sloSelection: '' }),
+      isModeSlo: addMode === 'slo',
+      isModePolling: addMode === 'polling',
+      setModeSlo: () => this.setState({ addMode: 'slo' }),
+      setModePolling: () => this.setState({ addMode: 'polling' }),
+      modeSloStyle: modeBoxStyle(addMode === 'slo'),
+      modePollingStyle: modeBoxStyle(addMode === 'polling'),
+      sloSource,
+      setSourceDatadog: () => this.setState({ sloSource: 'datadog', sloSelection: '' }),
+      setSourceNewRelic: () => this.setState({ sloSource: 'newrelic', sloSelection: '' }),
+      sourceDatadogStyle: chipStyle(sloSource === 'datadog', '#5A46C7', 'rgba(90,70,199,0.08)', '#5A46C7'),
+      sourceNewRelicStyle: chipStyle(sloSource === 'newrelic', '#5A46C7', 'rgba(90,70,199,0.08)', '#5A46C7'),
+      sloOptions,
+      sloSelection: sloSelection || sloOptions[0],
+      handleSloChange: (e) => this.setState({ sloSelection: e.target.value }),
+      newName,
+      handleNewNameChange: (e) => this.setState({ newName: e.target.value }),
+      newUrl,
+      handleNewUrlChange: (e) => this.setState({ newUrl: e.target.value }),
+      urlFieldLabel: urlLabels[newType],
+      urlFieldPlaceholder: urlPlaceholders[newType],
+      setTypeHttp: () => this.setState({ newType: 'http' }),
+      setTypeTcp: () => this.setState({ newType: 'tcp' }),
+      setTypePing: () => this.setState({ newType: 'ping' }),
+      typeHttpStyle: chipStyle(newType === 'http', '#5A46C7', 'rgba(90,70,199,0.08)', '#5A46C7'),
+      typeTcpStyle: chipStyle(newType === 'tcp', '#5A46C7', 'rgba(90,70,199,0.08)', '#5A46C7'),
+      typePingStyle: chipStyle(newType === 'ping', '#5A46C7', 'rgba(90,70,199,0.08)', '#5A46C7'),
+      setInterval30s: () => this.setState({ newInterval: '30s' }),
+      setInterval1m: () => this.setState({ newInterval: '1m' }),
+      setInterval5m: () => this.setState({ newInterval: '5m' }),
+      interval30sStyle: chipStyle(newInterval === '30s', '#5A46C7', 'rgba(90,70,199,0.08)', '#5A46C7'),
+      interval1mStyle: chipStyle(newInterval === '1m', '#5A46C7', 'rgba(90,70,199,0.08)', '#5A46C7'),
+      interval5mStyle: chipStyle(newInterval === '5m', '#5A46C7', 'rgba(90,70,199,0.08)', '#5A46C7'),
+    };
+  }
+}
+
+</script>
+</body>
+</html>

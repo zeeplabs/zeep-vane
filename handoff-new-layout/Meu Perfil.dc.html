@@ -1,0 +1,555 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <script src="./image-slot.js"></script>
+  <style>
+    body { margin: 0; }
+    a { color: #5A46C7; }
+    a:hover { color: #4C3AAE; }
+    ::placeholder { color: #B4AEC2; }
+  </style>
+</helmet>
+
+<div style="height:100vh; width:100%; box-sizing:border-box; background:{{ pageBg }}; display:flex; font-family:'Manrope',sans-serif; color:{{ pageText }}; overflow:hidden;">
+
+  <div onMouseEnter="{{ sidebarMouseEnter }}" onMouseLeave="{{ sidebarMouseLeave }}" style="width:{{ sidebarWidthPx }}; flex-shrink:0; background:{{ sidebarBg }}; border-right:1px solid {{ sidebarBorder }}; display:flex; flex-direction:column; transition:width 0.16s ease; overflow:visible; position:relative; z-index:20;">
+
+    <div style="padding:14px 12px; position:relative;">
+      <div onClick="{{ toggleTenantDropdown }}" style="display:flex; align-items:center; justify-content:{{ navJustify }}; gap:10px; padding:8px; border-radius:10px; cursor:pointer; white-space:nowrap;" style-hover="background:{{ cardHeaderBg }};">
+        <div style="width:28px; height:28px; border-radius:8px; background:#5A46C7; color:#FFFFFF; font-size:11.5px; font-weight:700; display:flex; align-items:center; justify-content:center; flex-shrink:0;">AH</div>
+        <sc-if value="{{ sidebarExpanded }}" hint-placeholder-val="{{ false }}">
+          <div style="min-width:0; flex:1;">
+            <div style="font-size:13px; font-weight:700; color:{{ sidebarTextPrimary }}; overflow:hidden; text-overflow:ellipsis;">Acme Health</div>
+            <div style="display:flex; align-items:center; gap:6px; margin-top:1px;">
+              <span style="font-size:10.5px; font-weight:700; letter-spacing:0.02em; padding:1px 6px; border-radius:5px; background:{{ planBadgeBg }}; color:{{ planBadgeColor }};">{{ planBadgeLabel }}</span>
+            </div>
+          </div>
+          <sc-if value="{{ isMultiTenant }}" hint-placeholder-val="{{ true }}">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#9A93A8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><polyline points="6 9 12 15 18 9"></polyline></svg>
+          </sc-if>
+        </sc-if>
+      </div>
+
+      <sc-if value="{{ tenantDropdownOpenAndMulti }}" hint-placeholder-val="{{ false }}">
+        <div style="position:absolute; top:64px; left:12px; width:240px; background:{{ cardBg }}; border:1px solid {{ sidebarBorder }}; border-radius:12px; box-shadow:0 8px 24px rgba(28,21,38,0.12); padding:6px; z-index:30;">
+          <div style="padding:8px 10px; font-size:10.5px; font-weight:700; letter-spacing:0.06em; text-transform:uppercase; color:#9A93A8;">Suas contas</div>
+          <div style="display:flex; align-items:center; gap:10px; padding:8px 10px; border-radius:8px; background:{{ cardHeaderBg }};">
+            <div style="width:24px; height:24px; border-radius:7px; background:#5A46C7; color:#fff; font-size:10px; font-weight:700; display:flex; align-items:center; justify-content:center;">AH</div>
+            <span style="font-size:13px; font-weight:600; flex:1;">Acme Health</span>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#5A46C7" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+          </div>
+          <div style="display:flex; align-items:center; gap:10px; padding:8px 10px; border-radius:8px; cursor:pointer;" style-hover="background:{{ cardHeaderBg }};">
+            <div style="width:24px; height:24px; border-radius:7px; background:#E8A73B; color:#fff; font-size:10px; font-weight:700; display:flex; align-items:center; justify-content:center;">BC</div>
+            <span style="font-size:13px; font-weight:600; flex:1;">Beta Clinic</span>
+          </div>
+          <div style="display:flex; align-items:center; gap:10px; padding:8px 10px; border-radius:8px; cursor:pointer;" style-hover="background:{{ cardHeaderBg }};">
+            <div style="width:24px; height:24px; border-radius:7px; background:#3B9EE8; color:#fff; font-size:10px; font-weight:700; display:flex; align-items:center; justify-content:center;">NL</div>
+            <span style="font-size:13px; font-weight:600; flex:1;">Northwind Labs</span>
+          </div>
+          <div style="height:1px; background:{{ sidebarBorder }}; margin:6px 4px;"></div>
+          <div onClick="{{ openLogoutConfirm }}" style="display:flex; align-items:center; gap:10px; padding:8px 10px; border-radius:8px; cursor:pointer; color:{{ pageTextMuted }}; font-size:13px; font-weight:600;" style-hover="background:{{ cardHeaderBg }};">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line></svg>
+            Sair
+          </div>
+        </div>
+      </sc-if>
+    </div>
+
+    <div style="height:1px; background:{{ sidebarBorder }}; margin:2px 12px 10px;"></div>
+
+    <div style="flex:1; padding:0 8px; display:flex; flex-direction:column; overflow-y:auto;">
+
+      <sc-if value="{{ sidebarExpanded }}" hint-placeholder-val="{{ false }}">
+        <div style="padding:10px 10px 6px; font-size:10.5px; font-weight:700; letter-spacing:0.06em; text-transform:uppercase; color:{{ sidebarTextMuted }}; white-space:nowrap;">Monitoramento</div>
+      </sc-if>
+      <div style="display:flex; flex-direction:column; gap:2px; margin-bottom:14px;">
+        <a href="Servicos Monitorados.dc.html" style="display:flex; align-items:center; justify-content:{{ navJustify }}; gap:12px; padding:9px 10px; border-radius:8px; color:{{ sidebarTextMuted }}; white-space:nowrap; cursor:pointer; text-decoration:none;" style-hover="background:{{ sidebarHoverBg }};">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><polyline points="3 12 8 12 10 6 14 18 16 12 21 12"></polyline></svg>
+          <sc-if value="{{ sidebarExpanded }}" hint-placeholder-val="{{ false }}"><span style="font-size:13.5px; font-weight:600;">Serviços monitorados</span></sc-if>
+        </a>
+        <a href="Dominios e Status Pages.dc.html" style="display:flex; align-items:center; justify-content:{{ navJustify }}; gap:12px; padding:9px 10px; border-radius:8px; color:{{ sidebarTextMuted }}; white-space:nowrap; cursor:pointer; text-decoration:none;" style-hover="background:{{ sidebarHoverBg }};">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><circle cx="12" cy="12" r="9"></circle><line x1="3" y1="12" x2="21" y2="12"></line><path d="M12 3a15 15 0 0 1 0 18a15 15 0 0 1 0-18z"></path></svg>
+          <sc-if value="{{ sidebarExpanded }}" hint-placeholder-val="{{ false }}"><span style="font-size:13.5px; font-weight:600;">Domínios &amp; Status</span></sc-if>
+        </a>
+        <a href="Incidentes.dc.html" style="display:flex; align-items:center; justify-content:{{ navJustify }}; gap:12px; padding:9px 10px; border-radius:8px; color:{{ sidebarTextMuted }}; white-space:nowrap; cursor:pointer; text-decoration:none;" style-hover="background:{{ sidebarHoverBg }};">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><path d="M12 3l9 16H3z"></path><line x1="12" y1="9" x2="12" y2="13"></line><circle cx="12" cy="16.3" r="0.6" fill="currentColor" stroke="none"></circle></svg>
+          <sc-if value="{{ sidebarExpanded }}" hint-placeholder-val="{{ false }}"><span style="font-size:13.5px; font-weight:600;">Incidentes</span></sc-if>
+        </a>
+      </div>
+
+      <sc-if value="{{ sidebarExpanded }}" hint-placeholder-val="{{ false }}">
+        <div style="padding:10px 10px 6px; font-size:10.5px; font-weight:700; letter-spacing:0.06em; text-transform:uppercase; color:{{ sidebarTextMuted }}; white-space:nowrap;">Plataforma</div>
+      </sc-if>
+      <div style="display:flex; flex-direction:column; gap:2px; margin-bottom:14px;">
+        <a href="Dashboard Integracoes.dc.html" style="display:flex; align-items:center; justify-content:{{ navJustify }}; gap:12px; padding:9px 10px; border-radius:8px; color:{{ sidebarTextMuted }}; white-space:nowrap; cursor:pointer; text-decoration:none;" style-hover="background:{{ sidebarHoverBg }};">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><path d="M10 13a5 5 0 0 0 7.07 0l1.93-1.93a5 5 0 0 0-7.07-7.07L10.5 5.5"></path><path d="M14 11a5 5 0 0 0-7.07 0L4.99 12.93a5 5 0 0 0 7.07 7.07L13.5 18.5"></path></svg>
+          <sc-if value="{{ sidebarExpanded }}" hint-placeholder-val="{{ false }}"><span style="font-size:13.5px; font-weight:600;">Integrações</span></sc-if>
+        </a>
+        <a href="Poller Status.dc.html" style="display:flex; align-items:center; justify-content:{{ navJustify }}; gap:12px; padding:9px 10px; border-radius:8px; color:{{ sidebarTextMuted }}; white-space:nowrap; cursor:pointer; text-decoration:none;" style-hover="background:{{ sidebarHoverBg }};">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><rect x="3" y="4" width="18" height="6" rx="1.5"></rect><rect x="3" y="14" width="18" height="6" rx="1.5"></rect><circle cx="7" cy="7" r="0.6" fill="currentColor" stroke="none"></circle><circle cx="7" cy="17" r="0.6" fill="currentColor" stroke="none"></circle></svg>
+          <sc-if value="{{ sidebarExpanded }}" hint-placeholder-val="{{ false }}"><span style="font-size:13.5px; font-weight:600;">Poller Status</span></sc-if>
+        </a>
+      </div>
+
+      <sc-if value="{{ sidebarExpanded }}" hint-placeholder-val="{{ false }}">
+        <div style="padding:10px 10px 6px; font-size:10.5px; font-weight:700; letter-spacing:0.06em; text-transform:uppercase; color:{{ sidebarTextMuted }}; white-space:nowrap;">Organização</div>
+      </sc-if>
+      <div style="display:flex; flex-direction:column; gap:2px;">
+        <a href="Usuarios.dc.html" style="display:flex; align-items:center; justify-content:{{ navJustify }}; gap:12px; padding:9px 10px; border-radius:8px; color:{{ sidebarTextMuted }}; white-space:nowrap; cursor:pointer; text-decoration:none;" style-hover="background:{{ sidebarHoverBg }};">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><circle cx="9" cy="8" r="3"></circle><path d="M2 20c0-3.5 3-6 7-6s7 2.5 7 6"></path><circle cx="17" cy="8" r="2.3"></circle><path d="M22 20c0-2.5-1.8-4.5-4-5.3"></path></svg>
+          <sc-if value="{{ sidebarExpanded }}" hint-placeholder-val="{{ false }}"><span style="font-size:13.5px; font-weight:600;">Usuários</span></sc-if>
+        </a>
+        <a href="Planos e Faturamento.dc.html" style="display:flex; align-items:center; justify-content:{{ navJustify }}; gap:12px; padding:9px 10px; border-radius:8px; color:{{ sidebarTextMuted }}; white-space:nowrap; cursor:pointer; text-decoration:none;" style-hover="background:{{ sidebarHoverBg }};">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><rect x="2" y="5" width="20" height="14" rx="2.5"></rect><line x1="2" y1="10" x2="22" y2="10"></line></svg>
+          <sc-if value="{{ sidebarExpanded }}" hint-placeholder-val="{{ false }}"><span style="font-size:13.5px; font-weight:600;">Planos &amp; Faturamento</span></sc-if>
+        </a>
+      </div>
+    </div>
+
+    <div style="padding:8px; display:flex; flex-direction:column; gap:2px; border-top:1px solid {{ sidebarBorder }};">
+      <a href="Configuracoes.dc.html" style="display:flex; align-items:center; justify-content:{{ navJustify }}; gap:12px; padding:9px 10px; border-radius:8px; color:{{ sidebarTextMuted }}; white-space:nowrap; cursor:pointer; text-decoration:none;" style-hover="background:{{ sidebarHoverBg }};">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
+        <sc-if value="{{ sidebarExpanded }}" hint-placeholder-val="{{ false }}"><span style="font-size:13.5px; font-weight:600;">Configurações</span></sc-if>
+      </a>
+      <div onClick="{{ toggleSidebarPin }}" style="display:flex; align-items:center; justify-content:{{ navJustify }}; gap:12px; padding:9px 10px; border-radius:8px; color:#9A93A8; white-space:nowrap; cursor:pointer;" style-hover="background:{{ sidebarHoverBg }};">
+        <sc-if value="{{ sidebarPinned }}" hint-placeholder-val="{{ false }}">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><polyline points="15 6 9 12 15 18"></polyline></svg>
+        </sc-if>
+        <sc-if value="{{ sidebarNotPinned }}" hint-placeholder-val="{{ true }}">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><polyline points="9 6 15 12 9 18"></polyline></svg>
+        </sc-if>
+        <sc-if value="{{ sidebarExpanded }}" hint-placeholder-val="{{ false }}"><span style="font-size:12.5px; font-weight:600;">Fixar menu</span></sc-if>
+      </div>
+    </div>
+  </div>
+
+  <div style="flex:1; display:flex; flex-direction:column; min-width:0; position:relative;">
+
+    <div style="height:60px; flex-shrink:0; border-bottom:1px solid {{ sidebarBorder }}; display:flex; align-items:center; justify-content:space-between; padding:0 28px;">
+      <div style="font-size:15px; font-weight:700; color:{{ pageText }};">Meu Perfil</div>
+      <div style="display:flex; align-items:center; gap:16px;">
+        <div onClick="{{ toggleDarkMode }}" style="color:{{ iconColor }}; cursor:pointer; display:flex;">
+          <sc-if value="{{ darkMode }}" hint-placeholder-val="{{ false }}">
+            <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4.5"></circle><line x1="12" y1="1.5" x2="12" y2="4"></line><line x1="12" y1="20" x2="12" y2="22.5"></line><line x1="4.2" y1="4.2" x2="6" y2="6"></line><line x1="18" y1="18" x2="19.8" y2="19.8"></line><line x1="1.5" y1="12" x2="4" y2="12"></line><line x1="20" y1="12" x2="22.5" y2="12"></line><line x1="4.2" y1="19.8" x2="6" y2="18"></line><line x1="18" y1="6" x2="19.8" y2="4.2"></line></svg>
+          </sc-if>
+          <sc-if value="{{ darkModeOff }}" hint-placeholder-val="{{ true }}">
+            <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg>
+          </sc-if>
+        </div>
+        <a href="Notificacoes.dc.html" style="position:relative; color:{{ iconColor }}; display:flex; text-decoration:none;">
+          <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" style="cursor:pointer;"><path d="M18 8a6 6 0 1 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"></path><path d="M13.73 21a2 2 0 0 1-3.46 0"></path></svg>
+          <span style="position:absolute; top:-3px; right:-3px; width:8px; height:8px; border-radius:999px; background:#D6395B; border:1.5px solid {{ pageBg }};"></span>
+        </a>
+        <div onClick="{{ toggleUserMenu }}" style="position:relative;">
+          <div style="width:32px; height:32px; border-radius:9px; background:rgba(90,70,199,0.1); color:#5A46C7; font-size:12.5px; font-weight:700; display:flex; align-items:center; justify-content:center; cursor:pointer;">AS</div>
+          <sc-if value="{{ userMenuOpen }}" hint-placeholder-val="{{ false }}">
+            <div style="position:absolute; top:42px; right:0; width:200px; background:{{ cardBg }}; border:1px solid {{ sidebarBorder }}; border-radius:12px; box-shadow:0 8px 24px rgba(28,21,38,0.12); padding:6px; z-index:30;">
+              <div style="padding:10px 10px 8px; border-bottom:1px solid #ECE9F2; margin-bottom:4px;">
+                <div style="font-size:13px; font-weight:700; color:{{ pageText }};">Ana Silva</div>
+                <div style="font-size:12px; color:{{ pageTextMuted }};">ana.silva@empresa.com</div>
+              </div>
+              <div style="padding:8px 10px; border-radius:8px; font-size:13px; font-weight:600; background:{{ cardHeaderBg }}; color:{{ pageText }}; cursor:pointer;">Meu perfil</div>
+              <a href="Configuracoes.dc.html" style="display:block; padding:8px 10px; border-radius:8px; font-size:13px; font-weight:600; color:{{ pageTextMuted }}; cursor:pointer; text-decoration:none;" style-hover="background:{{ cardHeaderBg }};">Configurações</a>
+              <div onClick="{{ openLogoutConfirm }}" style="padding:8px 10px; border-radius:8px; font-size:13px; font-weight:600; color:#D6395B; cursor:pointer;" style-hover="background:#FBE9ED;">Sair</div>
+            </div>
+          </sc-if>
+        </div>
+      </div>
+    </div>
+
+    <div style="flex:1; overflow-y:auto; padding:32px 40px;">
+      <div style="max-width:1200px; margin:0 auto;">
+
+        <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:16px; margin-bottom:26px;">
+          <div>
+            <h1 style="margin:0 0 6px; font-size:20px; font-weight:700; letter-spacing:-0.01em; color:{{ pageText }};">Meu Perfil</h1>
+            <p style="margin:0; font-size:13.5px; line-height:1.55; color:{{ pageTextMuted }}; max-width:560px;">Suas informações pessoais, segurança e preferências de notificação.</p>
+          </div>
+          <sc-if value="{{ showSavedToast }}" hint-placeholder-val="{{ false }}">
+            <span style="display:inline-flex; align-items:center; gap:6px; padding:7px 14px; border-radius:999px; background:#E7F6EF; color:#1A9E6B; font-size:12.5px; font-weight:700;">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+              Alterações salvas
+            </span>
+          </sc-if>
+        </div>
+
+        <div style="border:1px solid {{ sidebarBorder }}; border-radius:12px; padding:24px; margin-bottom:20px;">
+          <div style="font-size:14px; font-weight:700; color:{{ pageText }}; margin-bottom:4px;">Informações pessoais</div>
+          <p style="margin:0 0 20px; font-size:12.5px; color:{{ pageTextMuted }};">Como você aparece para outros membros do time.</p>
+
+          <div style="display:flex; align-items:center; gap:16px; margin-bottom:22px;">
+            <image-slot id="profile-avatar" shape="circle" placeholder="Foto" style="width:64px; height:64px; flex-shrink:0;"></image-slot>
+            <div style="font-size:12.5px; line-height:1.5; color:{{ pageTextMuted }};">PNG ou JPG.<br />Recomendado 256×256px.</div>
+          </div>
+
+          <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px;">
+            <div>
+              <label style="display:block; font-size:12.5px; font-weight:600; color:{{ pageTextMuted }}; margin-bottom:6px;">Nome</label>
+              <input type="text" value="{{ name }}" onChange="{{ handleNameChange }}" style="width:100%; box-sizing:border-box; background:{{ cardHeaderBg }}; border:1.5px solid transparent; border-radius:9px; padding:11px 12px; font-size:14px; color:{{ pageText }}; font-family:inherit;" style-focus="border-color:#5A46C7; background:{{ cardBg }}; box-shadow:0 0 0 3px rgba(90,70,199,0.14); outline:none;" />
+            </div>
+            <div>
+              <label style="display:block; font-size:12.5px; font-weight:600; color:{{ pageTextMuted }}; margin-bottom:6px;">Email</label>
+              <input type="text" value="{{ email }}" onChange="{{ handleEmailChange }}" style="width:100%; box-sizing:border-box; background:{{ cardHeaderBg }}; border:1.5px solid transparent; border-radius:9px; padding:11px 12px; font-size:14px; color:{{ pageText }}; font-family:inherit;" style-focus="border-color:#5A46C7; background:{{ cardBg }}; box-shadow:0 0 0 3px rgba(90,70,199,0.14); outline:none;" />
+            </div>
+          </div>
+        </div>
+
+        <div style="border:1px solid {{ sidebarBorder }}; border-radius:12px; padding:24px; margin-bottom:20px;">
+          <div style="font-size:14px; font-weight:700; color:{{ pageText }}; margin-bottom:4px;">Segurança</div>
+          <p style="margin:0 0 20px; font-size:12.5px; color:{{ pageTextMuted }};">Senha de acesso e autenticação em duas etapas.</p>
+
+          <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-bottom:16px;">
+            <div>
+              <label style="display:block; font-size:12.5px; font-weight:600; color:{{ pageTextMuted }}; margin-bottom:6px;">Senha atual</label>
+              <input type="password" value="{{ currentPassword }}" onChange="{{ handleCurrentPasswordChange }}" style="width:100%; box-sizing:border-box; background:{{ cardHeaderBg }}; border:1.5px solid transparent; border-radius:9px; padding:11px 12px; font-size:14px; color:{{ pageText }}; font-family:inherit;" style-focus="border-color:#5A46C7; background:{{ cardBg }}; box-shadow:0 0 0 3px rgba(90,70,199,0.14); outline:none;" />
+            </div>
+            <div></div>
+            <div>
+              <label style="display:block; font-size:12.5px; font-weight:600; color:{{ pageTextMuted }}; margin-bottom:6px;">Nova senha</label>
+              <input type="password" value="{{ newPassword }}" onChange="{{ handleNewPasswordChange }}" style="width:100%; box-sizing:border-box; background:{{ cardHeaderBg }}; border:1.5px solid transparent; border-radius:9px; padding:11px 12px; font-size:14px; color:{{ pageText }}; font-family:inherit;" style-focus="border-color:#5A46C7; background:{{ cardBg }}; box-shadow:0 0 0 3px rgba(90,70,199,0.14); outline:none;" />
+            </div>
+            <div>
+              <label style="display:block; font-size:12.5px; font-weight:600; color:{{ pageTextMuted }}; margin-bottom:6px;">Confirmar nova senha</label>
+              <input type="password" value="{{ confirmPassword }}" onChange="{{ handleConfirmPasswordChange }}" style="width:100%; box-sizing:border-box; background:{{ cardHeaderBg }}; border:1.5px solid transparent; border-radius:9px; padding:11px 12px; font-size:14px; color:{{ pageText }}; font-family:inherit;" style-focus="border-color:#5A46C7; background:{{ cardBg }}; box-shadow:0 0 0 3px rgba(90,70,199,0.14); outline:none;" />
+            </div>
+          </div>
+          <button onClick="{{ updatePassword }}" style="box-sizing:border-box; padding:10px 16px; background:{{ cardBg }}; color:{{ pageText }}; border:1px solid {{ sidebarBorder }}; border-radius:9px; font-size:13px; font-weight:600; font-family:inherit; cursor:pointer; margin-bottom:20px;" style-hover="background:{{ cardHeaderBg }};">Atualizar senha</button>
+
+          <div style="height:1px; background:{{ sidebarBorder }}; margin-bottom:20px;"></div>
+
+          <div style="display:flex; align-items:center; justify-content:space-between; gap:16px;">
+            <div style="display:flex; align-items:center; gap:12px;">
+              <div>
+                <div style="display:flex; align-items:center; gap:8px; margin-bottom:2px;">
+                  <span style="font-size:13.5px; font-weight:700; color:{{ pageText }};">Autenticação em duas etapas</span>
+                  <span style="display:inline-flex; align-items:center; gap:5px; padding:2px 9px; border-radius:999px; background:{{ twoFaBadgeBg }}; color:{{ twoFaBadgeColor }}; font-size:11px; font-weight:700;">
+                    <span style="width:5px; height:5px; border-radius:999px; background:{{ twoFaBadgeColor }};"></span>{{ twoFaBadgeLabel }}
+                  </span>
+                </div>
+                <div style="font-size:12.5px; color:{{ pageTextMuted }};">Exige um código do seu app autenticador ao entrar.</div>
+              </div>
+            </div>
+            <button onClick="{{ twoFaButtonAction }}" style="flex-shrink:0; box-sizing:border-box; padding:9px 14px; background:{{ cardBg }}; color:{{ pageText }}; border:1px solid {{ sidebarBorder }}; border-radius:9px; font-size:13px; font-weight:600; font-family:inherit; cursor:pointer;" style-hover="background:{{ cardHeaderBg }};">{{ twoFaButtonLabel }}</button>
+          </div>
+        </div>
+
+        <div style="border:1px solid {{ sidebarBorder }}; border-radius:12px; padding:24px; margin-bottom:20px;">
+          <div style="font-size:14px; font-weight:700; color:{{ pageText }}; margin-bottom:4px;">Notificações</div>
+          <p style="margin:0 0 18px; font-size:12.5px; color:{{ pageTextMuted }};">Quando o Vane deve te avisar por email.</p>
+
+          <div style="display:flex; flex-direction:column; gap:14px;">
+            <sc-for list="{{ notificationToggles }}" as="notif" hint-placeholder-count="3">
+              <div style="display:flex; align-items:center; justify-content:space-between; gap:16px;">
+                <div>
+                  <div style="font-size:13px; font-weight:600; color:{{ pageText }}; margin-bottom:2px;">{{ notif.label }}</div>
+                  <div style="font-size:12px; color:{{ pageTextMuted }};">{{ notif.description }}</div>
+                </div>
+                <div onClick="{{ notif.toggle }}" style="{{ notif.trackStyle }}">
+                  <div style="{{ notif.thumbStyle }}"></div>
+                </div>
+              </div>
+            </sc-for>
+          </div>
+        </div>
+
+        <div style="border:1px solid {{ sidebarBorder }}; border-radius:12px; padding:24px; margin-bottom:32px;">
+          <div style="font-size:14px; font-weight:700; color:{{ pageText }}; margin-bottom:4px;">Sessões ativas</div>
+          <p style="margin:0 0 18px; font-size:12.5px; color:{{ pageTextMuted }};">Dispositivos com acesso à sua conta.</p>
+
+          <div style="display:flex; flex-direction:column; gap:2px;">
+            <sc-for list="{{ sessions }}" as="sess" hint-placeholder-count="2">
+              <div style="display:flex; align-items:center; justify-content:space-between; gap:16px; padding:12px 0; border-bottom:1px solid #ECE9F2;">
+                <div style="display:flex; align-items:center; gap:12px;">
+                  <div style="width:36px; height:36px; border-radius:9px; background:{{ cardHeaderBg }}; border:1px solid {{ sidebarBorder }}; color:{{ pageTextMuted }}; display:flex; align-items:center; justify-content:center; flex-shrink:0;">
+                    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="2" width="16" height="20" rx="2.5"></rect><line x1="10" y1="18" x2="14" y2="18"></line></svg>
+                  </div>
+                  <div>
+                    <div style="font-size:13px; font-weight:600; color:{{ pageText }};">{{ sess.device }}</div>
+                    <div style="font-size:12px; color:{{ pageTextMuted }};">{{ sess.location }} · {{ sess.lastActive }}</div>
+                  </div>
+                </div>
+                <sc-if value="{{ sess.canEnd }}" hint-placeholder-val="{{ true }}">
+                  <button onClick="{{ sess.openEndConfirm }}" style="flex-shrink:0; background:none; border:none; color:#D6395B; font-size:12.5px; font-weight:700; font-family:inherit; cursor:pointer; padding:0;">Encerrar</button>
+                </sc-if>
+              </div>
+            </sc-for>
+          </div>
+        </div>
+
+        <div style="display:flex; justify-content:flex-end; gap:10px; margin-bottom:32px;">
+          <button style="box-sizing:border-box; padding:10px 18px; background:{{ cardBg }}; color:{{ pageText }}; border:1px solid {{ sidebarBorder }}; border-radius:9px; font-size:13.5px; font-weight:600; font-family:inherit; cursor:pointer;" style-hover="background:{{ cardHeaderBg }};">Descartar</button>
+          <button onClick="{{ saveChanges }}" style="box-sizing:border-box; padding:10px 18px; background:#5A46C7; color:#FFFFFF; border:none; border-radius:9px; font-size:13.5px; font-weight:700; font-family:inherit; cursor:pointer;" style-hover="background:#4C3AAE;">Salvar alterações</button>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <sc-if value="{{ twoFaDrawerOpen }}" hint-placeholder-val="{{ false }}">
+    <div onClick="{{ closeTwoFaDrawer }}" style="position:fixed; inset:0; background:rgba(28,21,38,0.32); z-index:60;"></div>
+    <div onClick="{{ stopPropagationClick }}" style="position:fixed; top:0; right:0; bottom:0; width:440px; background:{{ cardBg }}; border-left:1px solid {{ sidebarBorder }}; box-shadow:-8px 0 24px rgba(28,21,38,0.1); z-index:61; padding:24px; overflow-y:auto; box-sizing:border-box; display:flex; flex-direction:column;">
+      <div style="display:flex; align-items:flex-start; justify-content:space-between; margin-bottom:6px;">
+        <h2 style="margin:0; font-size:19px; font-weight:700; color:{{ pageText }};">{{ twoFaDrawerTitle }}</h2>
+        <svg onClick="{{ closeTwoFaDrawer }}" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="{{ pageTextMuted }}" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="cursor:pointer;"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+      </div>
+
+      <sc-if value="{{ isTwoFaStepScan }}" hint-placeholder-val="{{ true }}">
+        <p style="margin:0 0 22px; font-size:13px; line-height:1.55; color:{{ pageTextMuted }};">Escaneie o QR code com seu app autenticador (Google Authenticator, Authy, 1Password...).</p>
+        <div style="display:flex; justify-content:center; margin-bottom:18px;">
+          <div style="width:180px; height:180px; padding:10px; background:{{ cardBg }}; border:1px solid {{ sidebarBorder }}; border-radius:12px; display:grid; grid-template-columns:repeat(9, 1fr); grid-template-rows:repeat(9, 1fr); gap:2px;">
+            <sc-for list="{{ qrCells }}" as="cell" hint-placeholder-count="81">
+              <div style="background:{{ cell.color }}; border-radius:1px;"></div>
+            </sc-for>
+          </div>
+        </div>
+        <div style="text-align:center; font-size:12px; color:{{ pageTextMuted }}; margin-bottom:20px;">Ou insira o código manualmente</div>
+        <div style="padding:12px 14px; background:{{ cardHeaderBg }}; border:1px solid {{ sidebarBorder }}; border-radius:9px; font-size:13.5px; font-weight:700; font-family:monospace; color:{{ pageText }}; text-align:center; letter-spacing:0.04em; margin-bottom:24px;">{{ twoFaSecret }}</div>
+        <div style="flex:1;"></div>
+        <button onClick="{{ goToTwoFaVerify }}" style="width:100%; box-sizing:border-box; padding:11px; background:#5A46C7; color:#FFFFFF; border:none; border-radius:9px; font-size:13.5px; font-weight:700; font-family:inherit; cursor:pointer;" style-hover="background:#4C3AAE;">Continuar</button>
+      </sc-if>
+
+      <sc-if value="{{ isTwoFaStepVerify }}" hint-placeholder-val="{{ false }}">
+        <p style="margin:0 0 22px; font-size:13px; line-height:1.55; color:{{ pageTextMuted }};">Digite o código de 6 dígitos gerado pelo seu app autenticador.</p>
+        <label style="display:block; font-size:12.5px; font-weight:600; color:{{ pageTextMuted }}; margin-bottom:6px;">Código de verificação</label>
+        <input type="text" value="{{ twoFaCode }}" onChange="{{ handleTwoFaCodeChange }}" placeholder="000000" maxlength="6" style="width:100%; box-sizing:border-box; background:{{ cardHeaderBg }}; border:1.5px solid transparent; border-radius:9px; padding:13px 12px; font-size:20px; font-weight:700; font-family:monospace; letter-spacing:0.3em; text-align:center; color:{{ pageText }}; margin-bottom:12px;" style-focus="border-color:#5A46C7; background:{{ cardBg }}; box-shadow:0 0 0 3px rgba(90,70,199,0.14); outline:none;" />
+        <sc-if value="{{ twoFaHasError }}" hint-placeholder-val="{{ false }}">
+          <div style="font-size:12.5px; color:#D6395B; margin-bottom:12px;">Digite os 6 dígitos do código.</div>
+        </sc-if>
+        <div style="flex:1;"></div>
+        <div style="display:flex; gap:10px;">
+          <button onClick="{{ goToTwoFaScan }}" style="flex:1; box-sizing:border-box; padding:11px; background:{{ cardBg }}; color:{{ pageText }}; border:1px solid {{ sidebarBorder }}; border-radius:9px; font-size:13.5px; font-weight:600; font-family:inherit; cursor:pointer;" style-hover="background:{{ cardHeaderBg }};">Voltar</button>
+          <button onClick="{{ verifyTwoFaCode }}" style="flex:1; box-sizing:border-box; padding:11px; background:#5A46C7; color:#FFFFFF; border:none; border-radius:9px; font-size:13.5px; font-weight:700; font-family:inherit; cursor:pointer;" style-hover="background:#4C3AAE;">Ativar</button>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{ isTwoFaStepSuccess }}" hint-placeholder-val="{{ false }}">
+        <div style="flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:16px; text-align:center;">
+          <div style="width:56px; height:56px; border-radius:999px; background:#E7F6EF; display:flex; align-items:center; justify-content:center;">
+            <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#1A9E6B" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+          </div>
+          <div style="font-size:16px; font-weight:700; color:{{ pageText }};">Autenticação em duas etapas ativada</div>
+          <div style="font-size:13px; color:{{ pageTextMuted }}; max-width:320px;">Você precisará de um código do seu app autenticador a cada novo login.</div>
+        </div>
+        <button onClick="{{ closeTwoFaDrawer }}" style="width:100%; box-sizing:border-box; padding:11px; background:#5A46C7; color:#FFFFFF; border:none; border-radius:9px; font-size:13.5px; font-weight:700; font-family:inherit; cursor:pointer; margin-top:16px;" style-hover="background:#4C3AAE;">Concluir</button>
+      </sc-if>
+    </div>
+  </sc-if>
+
+  <sc-if value="{{ endSessionOpen }}" hint-placeholder-val="{{ false }}">
+    <div onClick="{{ closeEndSessionConfirm }}" style="position:fixed; inset:0; background:rgba(28,21,38,0.4); z-index:70; display:flex; align-items:center; justify-content:center;">
+      <div onClick="{{ stopPropagationClick }}" style="width:360px; box-sizing:border-box; background:{{ cardBg }}; border-radius:16px; padding:24px; box-shadow:0 20px 48px rgba(28,21,38,0.22);">
+        <div style="width:40px; height:40px; border-radius:10px; background:#FBE9ED; color:#D6395B; display:flex; align-items:center; justify-content:center; margin-bottom:16px;">
+          <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="2" width="16" height="20" rx="2.5"></rect><line x1="10" y1="18" x2="14" y2="18"></line></svg>
+        </div>
+        <h3 style="margin:0 0 6px; font-size:16px; font-weight:700; color:{{ pageText }};">Encerrar sessão?</h3>
+        <p style="margin:0 0 22px; font-size:13px; line-height:1.5; color:{{ pageTextMuted }};">O dispositivo <strong>{{ endSessionDeviceLabel }}</strong> perderá o acesso imediatamente e precisará entrar novamente.</p>
+        <div style="display:flex; gap:10px;">
+          <button onClick="{{ closeEndSessionConfirm }}" style="flex:1; box-sizing:border-box; padding:10px; background:{{ cardBg }}; color:{{ pageText }}; border:1px solid {{ sidebarBorder }}; border-radius:9px; font-size:13px; font-weight:600; font-family:inherit; cursor:pointer;" style-hover="background:{{ cardHeaderBg }};">Cancelar</button>
+          <button onClick="{{ confirmEndSession }}" style="flex:1; box-sizing:border-box; padding:10px; background:#D6395B; color:#FFFFFF; border:none; border-radius:9px; font-size:13px; font-weight:700; font-family:inherit; cursor:pointer;" style-hover="background:#BC2E4C;">Encerrar</button>
+        </div>
+      </div>
+    </div>
+  </sc-if>
+
+  <sc-if value="{{ logoutConfirmOpen }}" hint-placeholder-val="{{ false }}">
+    <div onClick="{{ closeLogoutConfirm }}" style="position:fixed; inset:0; background:rgba(28,21,38,0.4); z-index:70; display:flex; align-items:center; justify-content:center;">
+      <div onClick="{{ stopPropagationClick }}" style="width:360px; box-sizing:border-box; background:{{ cardBg }}; border-radius:16px; padding:24px; box-shadow:0 20px 48px rgba(28,21,38,0.22);">
+        <div style="width:40px; height:40px; border-radius:10px; background:{{ cardHeaderBg }}; color:{{ pageTextMuted }}; display:flex; align-items:center; justify-content:center; margin-bottom:16px;">
+          <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line></svg>
+        </div>
+        <h3 style="margin:0 0 6px; font-size:16px; font-weight:700; color:{{ pageText }};">Sair da conta?</h3>
+        <p style="margin:0 0 22px; font-size:13px; line-height:1.5; color:{{ pageTextMuted }};">Você precisará entrar novamente para acessar o Vane.</p>
+        <div style="display:flex; gap:10px;">
+          <button onClick="{{ closeLogoutConfirm }}" style="flex:1; box-sizing:border-box; padding:10px; background:{{ cardBg }}; color:{{ pageText }}; border:1px solid {{ sidebarBorder }}; border-radius:9px; font-size:13px; font-weight:600; font-family:inherit; cursor:pointer;" style-hover="background:{{ cardHeaderBg }};">Cancelar</button>
+          <button onClick="{{ confirmLogout }}" style="flex:1; box-sizing:border-box; padding:10px; background:#1C1526; color:#FFFFFF; border:none; border-radius:9px; font-size:13px; font-weight:700; font-family:inherit; cursor:pointer;" style-hover="background:#332B44;">Sair</button>
+        </div>
+      </div>
+    </div>
+  </sc-if>
+
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{
+  &quot;$preview&quot;: {&quot;width&quot;: 1440, &quot;height&quot;: 900},
+  &quot;tenantMode&quot;: {&quot;editor&quot;: &quot;enum&quot;, &quot;default&quot;: &quot;multi&quot;, &quot;tsType&quot;: &quot;string&quot;, &quot;options&quot;: [&quot;single&quot;, &quot;multi&quot;], &quot;section&quot;: &quot;Estado&quot;}
+}">
+let DARK_MODE = false;
+function trackStyle(active) {
+  return `width:38px; height:22px; border-radius:999px; background:${active ? '#5A46C7' : (DARK_MODE ? '#2C2645' : '#ECE9F2')}; position:relative; cursor:pointer; transition:background 0.15s; flex-shrink:0;`;
+}
+function thumbStyle(active) {
+  return `position:absolute; top:2px; left:${active ? '18px' : '2px'}; width:18px; height:18px; border-radius:999px; background:#FFFFFF; box-shadow:0 1px 3px rgba(0,0,0,0.2); transition:left 0.15s;`;
+}
+
+const NOTIF_DEFS = [
+  { key: 'incidentOpened', label: 'Novo incidente', description: 'Quando um incidente é aberto em qualquer serviço.' },
+  { key: 'incidentResolved', label: 'Incidente resolvido', description: 'Quando um incidente que você acompanha é encerrado.' },
+  { key: 'weeklyDigest', label: 'Resumo semanal', description: 'Uptime e principais eventos da semana, toda segunda.' },
+];
+
+function generateSecret() {
+  const seg = () => Math.random().toString(36).slice(2, 6).toUpperCase();
+  return `${seg()} ${seg()} ${seg()} ${seg()}`;
+}
+function generateQrCells(seed) {
+  let h = 0;
+  for (let i = 0; i < seed.length; i++) h = (h * 31 + seed.charCodeAt(i)) >>> 0;
+  const cells = [];
+  for (let i = 0; i < 81; i++) {
+    h = (h * 1103515245 + 12345) >>> 0;
+    const col = i % 9, row = Math.floor(i / 9);
+    const isMarker = (row < 3 && col < 3) || (row < 3 && col > 5) || (row > 5 && col < 3);
+    const black = isMarker ? (row === 1 || col === 1 || row % 2 === col % 2) : ((h >> 3) % 2 === 0);
+    cells.push({ color: black ? '#1C1526' : '#FFFFFF' });
+  }
+  return cells;
+}
+
+const SESSIONS_SEED = [
+  { id: 's1', device: 'Chrome · macOS', location: 'São Paulo, BR', lastActive: 'Sessão atual', current: true },
+  { id: 's2', device: 'Safari · iPhone', location: 'São Paulo, BR', lastActive: 'há 2 dias', current: false },
+];
+
+class Component extends DCLogic {
+  state = {
+    pinned: false, hovered: false, tenantDropdownOpen: false, userMenuOpen: false, showSavedToast: false,
+    name: 'Ana Silva', email: 'ana.silva@empresa.com',
+    currentPassword: '', newPassword: '', confirmPassword: '',
+    twoFaEnabled: false, twoFaDrawerOpen: false, twoFaStep: 'scan', twoFaCode: '', twoFaSecret: '', twoFaHasError: false,
+    notifications: { incidentOpened: true, incidentResolved: true, weeklyDigest: false },
+    sessions: SESSIONS_SEED,
+  };
+
+  renderVals() {
+    DARK_MODE = this.state.darkMode;
+    const tenantMode = this.props.tenantMode ?? 'multi';
+    const isMultiTenant = tenantMode === 'multi';
+    const expanded = this.state.pinned || this.state.hovered;
+    const {
+      showSavedToast, name, email, currentPassword, newPassword, confirmPassword,
+      twoFaEnabled, notifications, sessions,
+    } = this.state;
+
+    return {
+      sidebarPinned: this.state.pinned,
+      sidebarNotPinned: !this.state.pinned,
+      sidebarExpanded: expanded,
+      sidebarWidthPx: expanded ? '240px' : '72px',
+      navJustify: expanded ? 'flex-start' : 'center',
+      sidebarMouseEnter: () => this.setState({ hovered: true }),
+      sidebarMouseLeave: () => this.setState({ hovered: false }),
+      toggleSidebarPin: () => this.setState(s => ({ pinned: !s.pinned })),
+      isMultiTenant,
+      tenantDropdownOpenAndMulti: this.state.tenantDropdownOpen && isMultiTenant,
+      toggleTenantDropdown: () => { if (isMultiTenant) this.setState(s => ({ tenantDropdownOpen: !s.tenantDropdownOpen })); },
+      userMenuOpen: this.state.userMenuOpen,
+      toggleUserMenu: () => this.setState(s => ({ userMenuOpen: !s.userMenuOpen })),
+      darkMode: this.state.darkMode,
+      darkModeOff: !this.state.darkMode,
+      toggleDarkMode: () => this.setState(s => ({ darkMode: !s.darkMode })),
+      pageBg: this.state.darkMode ? '#15111F' : '#FFFFFF',
+      pageText: this.state.darkMode ? '#EDEBF3' : '#1C1526',
+      sidebarBg: this.state.darkMode ? '#1B1730' : '#FAFAFC',
+      sidebarBorder: this.state.darkMode ? '#2C2645' : '#ECE9F2',
+      sidebarTextPrimary: this.state.darkMode ? '#F2F0F6' : '#1C1526',
+      sidebarTextMuted: this.state.darkMode ? '#9A93B0' : '#6E6779',
+      iconColor: this.state.darkMode ? '#B4AEC2' : '#6E6779',
+      pageTextMuted: this.state.darkMode ? '#9A93B0' : '#6E6779',
+      cardBg: this.state.darkMode ? '#1F1A35' : '#FFFFFF',
+      cardHeaderBg: this.state.darkMode ? '#241E3D' : '#FAFAFC',
+      sidebarHoverBg: this.state.darkMode ? 'rgba(255,255,255,0.06)' : '#F2F0F6',
+      planBadgeLabel: 'Free',
+      planBadgeBg: '#F2F0F6',
+      planBadgeColor: '#6E6779',
+
+      logoutConfirmOpen: this.state.logoutConfirmOpen,
+      openLogoutConfirm: () => this.setState({ logoutConfirmOpen: true, tenantDropdownOpen: false, userMenuOpen: false }),
+      closeLogoutConfirm: () => this.setState({ logoutConfirmOpen: false }),
+      confirmLogout: () => { window.location.href = 'Login Bootstrap.dc.html'; },
+      stopPropagationClick: (e) => e.stopPropagation(),
+
+      showSavedToast,
+      saveChanges: () => {
+        this.setState({ showSavedToast: true });
+        setTimeout(() => this.setState({ showSavedToast: false }), 2200);
+      },
+
+      name,
+      handleNameChange: (e) => this.setState({ name: e.target.value }),
+      email,
+      handleEmailChange: (e) => this.setState({ email: e.target.value }),
+
+      currentPassword,
+      handleCurrentPasswordChange: (e) => this.setState({ currentPassword: e.target.value }),
+      newPassword,
+      handleNewPasswordChange: (e) => this.setState({ newPassword: e.target.value }),
+      confirmPassword,
+      handleConfirmPasswordChange: (e) => this.setState({ confirmPassword: e.target.value }),
+      updatePassword: () => {
+        this.setState({ currentPassword: '', newPassword: '', confirmPassword: '', showSavedToast: true });
+        setTimeout(() => this.setState({ showSavedToast: false }), 2200);
+      },
+
+      twoFaBadgeLabel: twoFaEnabled ? 'Ativada' : 'Desativada',
+      twoFaBadgeBg: twoFaEnabled ? '#E7F6EF' : '#F2F0F6',
+      twoFaBadgeColor: twoFaEnabled ? '#1A9E6B' : '#6E6779',
+      twoFaButtonLabel: twoFaEnabled ? 'Desativar' : 'Ativar',
+      toggleTwoFa: () => this.setState(s => ({ twoFaEnabled: !s.twoFaEnabled })),
+      twoFaButtonAction: twoFaEnabled
+        ? () => this.setState(s => ({ twoFaEnabled: !s.twoFaEnabled }))
+        : () => this.setState({ twoFaDrawerOpen: true, twoFaStep: 'scan', twoFaCode: '', twoFaHasError: false, twoFaSecret: generateSecret() }),
+
+      twoFaDrawerOpen: this.state.twoFaDrawerOpen,
+      closeTwoFaDrawer: () => this.setState({ twoFaDrawerOpen: false }),
+      isTwoFaStepScan: this.state.twoFaStep === 'scan',
+      isTwoFaStepVerify: this.state.twoFaStep === 'verify',
+      isTwoFaStepSuccess: this.state.twoFaStep === 'success',
+      twoFaDrawerTitle: this.state.twoFaStep === 'success' ? 'Tudo certo!' : 'Ativar autenticação em duas etapas',
+      twoFaSecret: this.state.twoFaSecret,
+      qrCells: generateQrCells(this.state.twoFaSecret || 'vane'),
+      goToTwoFaVerify: () => this.setState({ twoFaStep: 'verify' }),
+      goToTwoFaScan: () => this.setState({ twoFaStep: 'scan' }),
+      twoFaCode: this.state.twoFaCode,
+      twoFaHasError: this.state.twoFaHasError,
+      handleTwoFaCodeChange: (e) => this.setState({ twoFaCode: e.target.value.replace(/\D/g, '').slice(0, 6), twoFaHasError: false }),
+      verifyTwoFaCode: () => {
+        if (this.state.twoFaCode.length !== 6) { this.setState({ twoFaHasError: true }); return; }
+        this.setState({ twoFaEnabled: true, twoFaStep: 'success' });
+      },
+
+      notificationToggles: NOTIF_DEFS.map(def => {
+        const active = notifications[def.key];
+        return {
+          ...def, active,
+          trackStyle: trackStyle(active),
+          thumbStyle: thumbStyle(active),
+          toggle: () => this.setState(s => ({ notifications: { ...s.notifications, [def.key]: !s.notifications[def.key] } })),
+        };
+      }),
+
+      sessions: sessions.map(s => ({
+        ...s,
+        canEnd: !s.current,
+        openEndConfirm: () => this.setState({ endSessionId: s.id }),
+      })),
+      endSessionOpen: !!this.state.endSessionId,
+      endSessionDeviceLabel: (sessions.find(s => s.id === this.state.endSessionId) || {}).device || '',
+      closeEndSessionConfirm: () => this.setState({ endSessionId: null }),
+      confirmEndSession: () => this.setState(st => ({ sessions: st.sessions.filter(x => x.id !== st.endSessionId), endSessionId: null })),
+    };
+  }
+}
+
+</script>
+</body>
+</html>
