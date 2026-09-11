@@ -503,7 +503,23 @@ func TestLogout_ExpiresCookie_SubsequentRequestRejected(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetByEmail() returned unexpected error: %v", err)
 	}
-	token, err := auth.IssueSession(admin.ID, auth.IssueTestSessionID, testSessionSecret)
+
+	// Use a dedicated per-test sid + backing row instead of the shared
+	// IssueTestSessionID fixture: Logout now also revokes the row
+	// (user-sessions spec SESS-11), so revoking the shared fixture
+	// would break every later test in this package that depends on it.
+	logoutSID := "11111111-1111-1111-1111-111111111111"
+	if _, err := pool.Exec(context.Background(),
+		`INSERT INTO sessions (id, user_id) VALUES ($1, $2)`,
+		logoutSID, admin.ID,
+	); err != nil {
+		t.Fatalf("inserting per-test session row returned unexpected error: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = pool.Exec(context.Background(), `DELETE FROM sessions WHERE id = $1`, logoutSID)
+	})
+
+	token, err := auth.IssueSession(admin.ID, logoutSID, testSessionSecret)
 	if err != nil {
 		t.Fatalf("IssueSession() returned unexpected error: %v", err)
 	}

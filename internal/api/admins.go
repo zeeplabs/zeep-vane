@@ -583,7 +583,17 @@ func (h *AdminsHandler) UpdateRole(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.users.RevokeSessions(ctx, targetID); err != nil {
+	// Per user-sessions decision #1 (context.md): admin events like
+	// UpdateRole revoke per-session rather than the global
+	// `users.sessions_revoked_at` timestamp, so the observable
+	// behavior (every session for this user becomes invalid) is the
+	// same, but the per-row revocation lets the middleware reject
+	// specific tokens via the sessions-table row's revoked_at instead of
+	// every token globally. AuthHandler.ChangePassword and
+	// PasswordReset.Confirm still use the global timestamp - those are
+	// user-initiated credential events where "kill everything" is the
+	// desired blast radius.
+	if err := h.sessions.RevokeAllForUser(ctx, targetID); err != nil {
 		h.logger.Error("admins: failed to revoke user sessions", zap.Error(err))
 		writeInternalError(w)
 		return
@@ -631,7 +641,12 @@ func (h *AdminsHandler) Delete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.users.RevokeSessions(ctx, targetID); err != nil && !errors.Is(err, db.ErrNotFound) {
+	// Per-session revocation (same rationale as UpdateRole above).
+	// RevokeAllForUser is a bulk UPDATE - it returns no error when the
+	// target user has no sessions to revoke (0 rows affected is a
+	// successful no-op), so the previous `!errors.Is(err, db.ErrNotFound)`
+	// guard from the global-timestamp era is no longer needed.
+	if err := h.sessions.RevokeAllForUser(ctx, targetID); err != nil {
 		h.logger.Error("admins: failed to revoke user sessions", zap.Error(err))
 		writeInternalError(w)
 		return

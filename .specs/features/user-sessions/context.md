@@ -120,3 +120,16 @@ Decisões de implementação triviais que não precisam de confirmação (regist
 - **TTL configurável por deployment** — hoje hardcoded em `SessionTTL`; mover pra config fica pra outra spec (decisão de infra, não de feature).
 - **TTL rolling** (renovar `exp` em cada request ativa) — quebraria o modelo "um row por sessão enquanto válida"; rejeitado.
 - **Notificação por email quando nova sessão é aberta em device novo** — out-of-scope do mock; vira feature de `notification-preferences` quando o disparo real de email entrar.
+
+---
+
+## Frontend Boundary (Batch 3 addendum, 2026-09-11)
+
+`new-layout-migration/spec.md:21` define explicitamente que a **página Meu Perfil inteira** é "feature futura própria" — não faz parte do escopo da migração de layout atual (que cobre só shell/tokens/navegação). Esta spec é independente.
+
+Consequência para Batch 3 (T11-T14):
+
+- `<SessionsSection />` é entregue como **feature module autocontido** em `web/src/features/sessions/`, sem acoplamento com nenhuma página host.
+- A página `Meu Perfil` (que vai hospedar essa seção, junto com 2FA / mudança de senha / preferências de notificação) é **responsabilidade de uma spec futura separada** e não é tocada aqui.
+- Os testes de Batch 3 verificam o componente isolado (com MSW, sem host). Verificação de "renderiza corretamente dentro do Meu Perfil real" é papel da spec futura.
+- Mudança futura de design tokens/layout do Meu Perfil pode exigir ajuste pontual no `<SessionsSection />` — fronteira explícita registrada aqui pra reviewer não confundir escopo.

@@ -132,3 +132,25 @@ export interface Page<T> {
   page: number;
   page_size: number;
 }
+
+// SessionView mirrors internal/api/sessions_handler.go's SessionView
+// (user-sessions spec). Returned by GET /api/auth/sessions as a flat
+// list (not wrapped in Page<T> - per-device sessions are bounded by a
+// single user's device count, typically 1-5 rows; pagination is not
+// useful at that scale and would just add noise to the contract).
+export interface SessionView {
+  id: string;
+  user_id: string;
+  user_agent: string | null;
+  ip: string | null;
+  created_at: string;
+  last_seen_at: string | null;
+  expires_at: string;
+  revoked_at: string | null;
+  // current is true when this row's id matches the JWT's sid claim
+  // (i.e. this is the session the request is being made from). The real
+  // backend sets it in sessionsHandler.List by comparing to the sid the
+  // RequireAuth middleware put in the request context; the field is not
+  // stored in the row.
+  current: boolean;
+}

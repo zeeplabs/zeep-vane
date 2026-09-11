@@ -94,6 +94,7 @@ func buildAdminRouter(pool *db.Pool, cfg config.Config, logger *zap.Logger, poll
 	incidentsHandler := api.NewIncidentsHandler(db.NewIncidentRepository(pool), logger)
 	statusPagesHandler := api.NewStatusPagesHandler(db.NewStatusPageRepository(pool), auditLog, cfg.PublicDNSTarget, logger)
 	pollerStatusHandler := api.NewPollerStatusHandler(db.NewIntegrationRepository(pool), db.NewPollerLeadershipRepository(pool), db.NewStatusIntervalRepository(pool), logger)
+	sessionsHandler := api.NewSessionsHandler(sessions, logger)
 	publicStatusHandler := api.NewPublicStatusHandler(db.NewServiceRepository(pool), db.NewStatusIntervalRepository(pool), db.NewIncidentRepository(pool), tenantsRepo, logger)
 	publicStatusPreviewHandler := api.NewPublicStatusPreviewHandler(db.NewStatusPageRepository(pool), publicStatusHandler, logger)
 	companySettingsHandler := api.NewCompanySettingsHandler(tenantsRepo, logger)
@@ -164,6 +165,13 @@ func buildAdminRouter(pool *db.Pool, cfg config.Config, logger *zap.Logger, poll
 		protected.Patch("/api/auth/me", authHandler.UpdateProfile)
 		protected.Post("/api/auth/logout", authHandler.Logout)
 		protected.Post("/api/auth/switch-tenant", authHandler.SwitchTenant)
+		// Per-device session management (user-sessions spec) - self-only,
+		// anyRole. The handler reads userID and sid from RequireAuth's
+		// context and never accepts an id matching ctx.sid (409), so even
+		// owner can't revoke their own current session this way - they
+		// must use POST /api/auth/logout instead.
+		protected.Get("/api/auth/sessions", sessionsHandler.List)
+		protected.Delete("/api/auth/sessions/{id}", sessionsHandler.Revoke)
 		// change-password additionally rides the shared credential-route
 		// limiter (profile-self-service, H10 class): a wrong-current-password
 		// guess is exactly the credential-guessing attempt that limiter

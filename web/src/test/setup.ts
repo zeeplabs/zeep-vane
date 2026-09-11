@@ -3,6 +3,7 @@ import { beforeAll, afterEach, afterAll } from "vitest";
 import { server } from "./msw/server";
 import {
   resetAuthSession,
+  resetSessions,
   resetDomainsAndStatusPages,
   resetServicesAndIntegration,
   resetIncidents,
@@ -19,6 +20,7 @@ beforeAll(() => server.listen({ onUnhandledRequest: "error" }));
 afterEach(() => {
   server.resetHandlers();
   resetAuthSession();
+  resetSessions();
   resetDomainsAndStatusPages();
   resetServicesAndIntegration();
   resetIncidents();

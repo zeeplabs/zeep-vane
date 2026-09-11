@@ -19,6 +19,7 @@ import type {
   IncidentUpdate,
   PollerStatusEntry,
   CompanySettings,
+  SessionView,
 } from "../types/api";
 
 interface AdminSeed extends Admin {
@@ -282,3 +283,53 @@ export function nextId(prefix: string): string {
   idCounter += 1;
   return `${prefix}-${idCounter}`;
 }
+
+// -- Sessões ativas (per-device, user-sessions spec) ---------------------------
+//
+// Seeding strategy (deterministic so tests can rely on it):
+//   - sess-1 + sess-2 belong to admin-1 (the most-used test user; lets
+//     list-filter + cross-session revoke tests run without seeding).
+//   - sess-3 belongs to admin-2 (lets the "DELETE another user's session
+//     returns 404" anti-enumeration case run without seeding).
+//   - admin-3 has no sessions (lets the "empty list" rendering case be
+//     asserted after a `server.use` override that removes the other two).
+// `current` is set to false in the seed; the MSW handler sets it true
+// at request time on the row whose id matches the current session id,
+// matching how the real backend's sessionsHandler.List derives it from
+// the JWT sid claim.
+
+export const sessions: SessionView[] = [
+  {
+    id: "sess-1",
+    user_id: "admin-1",
+    user_agent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+    ip: "10.0.0.42",
+    created_at: new Date(Date.now() - 1000 * 60 * 60 * 2).toISOString(),
+    last_seen_at: new Date(Date.now() - 1000 * 60 * 5).toISOString(),
+    expires_at: new Date(Date.now() + 1000 * 60 * 60 * 22).toISOString(),
+    revoked_at: null,
+    current: false,
+  },
+  {
+    id: "sess-2",
+    user_id: "admin-1",
+    user_agent: "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1",
+    ip: "10.0.0.99",
+    created_at: new Date(Date.now() - 1000 * 60 * 60 * 24).toISOString(),
+    last_seen_at: new Date(Date.now() - 1000 * 60 * 30).toISOString(),
+    expires_at: new Date(Date.now() + 1000 * 60 * 60).toISOString(),
+    revoked_at: null,
+    current: false,
+  },
+  {
+    id: "sess-3",
+    user_id: "admin-2",
+    user_agent: "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+    ip: "192.168.1.10",
+    created_at: new Date(Date.now() - 1000 * 60 * 60 * 6).toISOString(),
+    last_seen_at: new Date(Date.now() - 1000 * 60 * 60).toISOString(),
+    expires_at: new Date(Date.now() + 1000 * 60 * 60 * 18).toISOString(),
+    revoked_at: null,
+    current: false,
+  },
+];

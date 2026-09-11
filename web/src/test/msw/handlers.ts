@@ -12,6 +12,7 @@ import {
   datadogIntegration as seedDatadogIntegration,
   pollerStatus as seedPollerStatus,
   companySettings as seedCompanySettings,
+  sessions as seedSessions,
 } from "../../lib/mockData";
 import type {
   Admin,
@@ -24,6 +25,7 @@ import type {
   IncidentUpdate,
   IncidentStatus,
   CompanySettings,
+  SessionView,
   Page,
 } from "../../types/api";
 import type { LLMProviderName } from "../../lib/llmProviders";
@@ -36,7 +38,23 @@ let sessionAdminId: string | null = null;
 
 export function resetAuthSession(): void {
   sessionAdminId = null;
+  currentSessionId = null;
 }
+
+// In-memory sessions state (user-sessions spec). Seeded fresh from
+// mockData on every resetSessions() call (test/setup.ts afterEach).
+// currentSessionId stands in for the JWT's `sid` claim: the real
+// backend derives "is this the request's session?" by comparing the
+// row id against the sid RequireAuth put in the request context, and
+// we mirror that here so the list/revoke handlers can answer
+// current:true/409 without a real JWT parse.
+let sessionsState: SessionView[] = [];
+let currentSessionId: string | null = null;
+
+export function resetSessions(): void {
+  sessionsState = seedSessions.map((s) => ({ ...s }));
+}
+resetSessions();
 
 // In-memory domains/status-pages state, seeded fresh from mockData's
 // fixtures on every resetDomainsAndStatusPages() call (test/setup.ts
@@ -475,6 +493,14 @@ export const handlers = [
       return HttpResponse.json({ error: "invalid email or password" }, { status: 401 });
     }
     sessionAdminId = admin.id;
+    // Mirror AuthHandler.Login: a fresh login issues a new session row
+    // which becomes "current" for subsequent requests. The mock doesn't
+    // INSERT a new row (the seed is the universe of sessions) so we just
+    // pick the first non-revoked session for this admin as current.
+    // Users with no seeded sessions (e.g. admin-3) keep currentSessionId
+    // null and the list endpoint returns the empty set.
+    const userSession = sessionsState.find((s) => s.user_id === admin.id && !s.revoked_at);
+    currentSessionId = userSession?.id ?? null;
     return HttpResponse.json({ token: `msw-token-${admin.id}` });
   }),
 
@@ -495,7 +521,55 @@ export const handlers = [
 
   http.post("/api/auth/logout", () => {
     sessionAdminId = null;
+    currentSessionId = null;
     return new HttpResponse(null, { status: 200 });
+  }),
+
+  // GET /api/auth/sessions - mirrors internal/api/sessions_handler.go's
+  // SessionsHandler.List: returns the current user's active sessions
+  // (revoked_at IS NULL), newest first, with the row whose id matches
+  // currentSessionId (the JWT's sid claim in the real backend) tagged
+  // current:true. 401 when not logged in, matching the real handler's
+  // sessionAdminId gate via RequireAuth.
+  http.get("/api/auth/sessions", () => {
+    if (!sessionAdminId) {
+      return HttpResponse.json({ error: "unauthorized" }, { status: 401 });
+    }
+    const userSessions = sessionsState
+      .filter((s) => s.user_id === sessionAdminId && !s.revoked_at)
+      .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+      .map((s) => ({ ...s, current: s.id === currentSessionId }));
+    return HttpResponse.json(userSessions);
+  }),
+
+  // DELETE /api/auth/sessions/:id - mirrors
+  // internal/api/sessions_handler.go's SessionsHandler.Revoke:
+  //   401 when not logged in
+  //   409 when the target row is the current session (use /api/auth/logout
+  //      instead - the real handler returns the same status with a
+  //      "cannot revoke current session" body)
+  //   404 when the id doesn't exist, is malformed, or belongs to a
+  //      different user (anti-enumeration: byte-identical 404 to all
+  //      three, matching sessions_handler.go's isInvalidUUIDSyntax + the
+  //      ownership check at the same status)
+  //   204 on success, with revoked_at set to "now"
+  http.delete("/api/auth/sessions/:id", ({ params }) => {
+    if (!sessionAdminId) {
+      return HttpResponse.json({ error: "unauthorized" }, { status: 401 });
+    }
+    const id = String(params.id);
+    if (id === currentSessionId) {
+      return HttpResponse.json(
+        { error: "cannot revoke the current session; use /api/auth/logout instead" },
+        { status: 409 },
+      );
+    }
+    const target = sessionsState.find((s) => s.id === id && s.user_id === sessionAdminId);
+    if (!target) {
+      return HttpResponse.json({ error: "session not found" }, { status: 404 });
+    }
+    target.revoked_at = new Date().toISOString();
+    return new HttpResponse(null, { status: 204 });
   }),
 
   // POST /api/auth/switch-tenant - mirrors AuthHandler.SwitchTenant: 403 on

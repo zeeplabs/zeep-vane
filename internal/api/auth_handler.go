@@ -819,9 +819,31 @@ func (h *AuthHandler) Disable2FA(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write([]byte(`{"status":"ok"}`))
 }
 
-// Logout expires the vane_session cookie set at login. It requires no
-// role beyond being authenticated - any user can end their own session.
+// Logout expires the vane_session cookie set at login AND revokes the
+// backing sessions-table row (user-sessions spec SESS-11) - closing the
+// existing gap where a copied/leaked token remained valid until its 24h
+// SessionTTL expired even after the browser "logged out". The cookie
+// clear and the row revoke are independent: if the DB call fails (e.g.
+// transient connection error) the cookie is still cleared so the
+// user-visible state matches what they expect, and the row stays
+// revokable later. Revoke failures are logged but never fail the
+// request - matching the rate-limiter fail-open posture on infra errors.
+//
+// Logout requires no role beyond being authenticated - any user can end
+// their own session. The sid comes from the request context, placed
+// there by RequireAuth when the token was verified.
 func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
+	sid, ok := SessionIDFromContext(r.Context())
+	if !ok {
+		// RequireAuth placed the sid; if it's missing here, the middleware
+		// chain is misconfigured. Surface as 401 rather than silently
+		// leaving the row alive.
+		writeUnauthorized(w)
+		return
+	}
+	if err := h.sessions.Revoke(r.Context(), sid); err != nil {
+		h.logger.Warn("logout: revoke failed (cookie will still be cleared)", zap.Error(err), zap.String("session_id", sid))
+	}
 	http.SetCookie(w, sessionCookie("", -1, h.secureCookies))
 	w.WriteHeader(http.StatusOK)
 }

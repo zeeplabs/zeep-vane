@@ -1016,7 +1016,23 @@ func TestUpdateAdminRole_ValidChange_200_AppliesRoleRevokesSessionsAndAudits(t *
 	// A second owner besides actor, so this change can never trip the
 	// ADM-06 lockout guard.
 	target := createTenantMember(t, admins, db.RoleOwner)
-	targetOldToken, err := auth.IssueSessionWithTenant(target.ID, adminsTestTenant(t), auth.IssueTestSessionID, middlewareTestSecret)
+
+	// Per-test session row for target, so the per-session revocation
+	// path (sessions.RevokeAllForUser, replacing the old global
+	// users.sessions_revoked_at timestamp since user-sessions T8) has a
+	// matching row to set revoked_at on. Without this row the UPDATE is
+	// a no-op and the assertion below can't observe the new mechanism.
+	targetSID := "22222222-2222-2222-2222-222222222222"
+	if _, err := pool.Exec(ctx,
+		`INSERT INTO sessions (id, user_id) VALUES ($1, $2)`,
+		targetSID, target.ID,
+	); err != nil {
+		t.Fatalf("inserting per-test session row returned unexpected error: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = pool.Exec(context.Background(), `DELETE FROM sessions WHERE id = $1`, targetSID)
+	})
+	targetOldToken, err := auth.IssueSessionWithTenant(target.ID, adminsTestTenant(t), targetSID, middlewareTestSecret)
 	if err != nil {
 		t.Fatalf("auth.IssueSessionWithTenant() target returned unexpected error: %v", err)
 	}
@@ -1042,13 +1058,18 @@ func TestUpdateAdminRole_ValidChange_200_AppliesRoleRevokesSessionsAndAudits(t *
 	if gotRole := memberRole(t, pool, target.ID); gotRole != db.RoleViewer {
 		t.Errorf("stored membership role = %q, want %q", gotRole, db.RoleViewer)
 	}
+	// Per-session revocation (user-sessions spec, decision #1 in
+	// context.md) replaces the old global users.sessions_revoked_at
+	// timestamp for admin events. Sessions.RevokeAllForUser sets
+	// revoked_at on every active session for this user; middleware now
+	// rejects via the session row's revoked_at instead.
 	var revokedAt *time.Time
-	row := pool.QueryRow(ctx, "SELECT sessions_revoked_at FROM users WHERE id = $1", target.ID)
+	row := pool.QueryRow(ctx, `SELECT revoked_at FROM sessions WHERE id = $1`, targetSID)
 	if err := row.Scan(&revokedAt); err != nil {
-		t.Fatalf("querying target user returned unexpected error: %v", err)
+		t.Fatalf("querying target session row returned unexpected error: %v", err)
 	}
 	if revokedAt == nil || revokedAt.Before(targetOldClaims.IssuedAt) {
-		t.Errorf("sessions_revoked_at = %v, want a timestamp at or after the old token's issued-at %v", revokedAt, targetOldClaims.IssuedAt)
+		t.Errorf("sessions.revoked_at = %v, want a timestamp at or after the old token's issued-at %v", revokedAt, targetOldClaims.IssuedAt)
 	}
 
 	var gotActorID, gotAction string
