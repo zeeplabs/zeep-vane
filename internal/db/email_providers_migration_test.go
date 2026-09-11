@@ -95,16 +95,12 @@ func TestEmailProvidersMigration_StatusCheck_RejectsUnknownStatus(t *testing.T) 
 
 // TestEmailProvidersMigration_DownReversesCleanly asserts 0016's down.sql
 // drops both tables without error and the schema can be migrated back up
-// afterwards - mirrors TestStatusIntervalsMigration_DownReversesCleanly's
-// pattern for the same reason: stepping down exactly one migration (this
-// one, assuming it's the latest applied) rather than migrate.Down() (which
-// would tear down every migration in the project).
+// afterwards. It runs against its own scratch database and migrates up to
+// exactly 0016 before stepping it down - never on the shared
+// TEST_DATABASE_URL, where stepping a migration down would tear schema out
+// from under every other package whose tests run in parallel.
 func TestEmailProvidersMigration_DownReversesCleanly(t *testing.T) {
-	dsn := testDatabaseURL(t)
-
-	if err := MigrateUp(dsn, "migrations"); err != nil {
-		t.Fatalf("MigrateUp() returned unexpected error: %v", err)
-	}
+	dsn := newScratchDatabase(t)
 
 	sqlDB, err := sql.Open("pgx", dsn)
 	if err != nil {
@@ -122,11 +118,14 @@ func TestEmailProvidersMigration_DownReversesCleanly(t *testing.T) {
 		t.Fatalf("migrate.NewWithDatabaseInstance() returned unexpected error: %v", err)
 	}
 
+	const emailProvidersVersion = 16
+	if err := m.Migrate(emailProvidersVersion); err != nil {
+		t.Fatalf("m.Migrate(%d) returned unexpected error: %v", emailProvidersVersion, err)
+	}
 	if err := m.Steps(-1); err != nil {
 		t.Fatalf("m.Steps(-1) returned unexpected error: %v", err)
 	}
-
-	if err := MigrateUp(dsn, "migrations"); err != nil {
-		t.Fatalf("second MigrateUp() returned unexpected error: %v", err)
+	if err := m.Migrate(emailProvidersVersion); err != nil {
+		t.Fatalf("re-applying %d after down returned unexpected error: %v", emailProvidersVersion, err)
 	}
 }

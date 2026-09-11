@@ -5,7 +5,7 @@
     <a href="https://github.com/zeeplabs/zeep-vane/actions"><img src="https://github.com/zeeplabs/zeep-vane/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
     <a href="https://go.dev/doc/devel/release"><img src="https://img.shields.io/badge/go-1.26+-00ADD8?logo=go" alt="Go" /></a>
     <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache%202.0-blue.svg" alt="License" /></a>
-    <img src="https://img.shields.io/badge/single--tenant-one%20install%20%3D%20one%20company-informational" alt="Single-tenant" />
+    <img src="https://img.shields.io/badge/tenancy-self--hosted%20%7C%20SaaS%20multi--tenant-informational" alt="Self-hosted or SaaS multi-tenant" />
   </p>
 </div>
 
@@ -13,7 +13,12 @@
 
 **Vane** connects to your Datadog account, polls the SLOs behind the services you care about, and publishes a public status page on your own subdomain — automatic TLS included, no external reverse proxy required. One binary, your Postgres, your data.
 
-This repository is single-tenant by design: **one Vane installation serves exactly one company.** There is no `company_id`/tenant column anywhere in the schema (see `.specs/STATE.md`, AD-002). If you need to serve multiple companies, you run multiple installations.
+Vane supports two distribution models on the same codebase (see `.specs/STATE.md`, AD-022 — it supersedes the original single-tenant AD-002):
+
+- **Self-hosted** — one installation serves exactly one company. The first `/bootstrap` auto-provisions that company's tenant, and no tenant picker or billing ever appears.
+- **SaaS** — a real multi-tenant deployment: public signup, one global `user` identity (email) that can belong to many `tenants` via `tenant_memberships`, and a tenant switcher for users with more than one membership.
+
+Either way, tenant data is isolated in the database by **Postgres row-level security**, fail-closed: every tenant-scoped table carries a `tenant_id` and a policy keyed on `app.tenant_id`, so a query that forgets the tenant filter returns zero rows rather than another tenant's data. See [Tenancy model](#-tenancy-model).
 
 ```bash
 docker compose up -d
@@ -28,6 +33,7 @@ docker compose up -d
 - [Features](#-features)
 - [Quick start](#-quick-start)
 - [Architecture overview](#%EF%B8%8F-architecture-overview)
+- [Tenancy model](#-tenancy-model)
 - [Tech stack](#-tech-stack)
 - [Repository layout](#-repository-layout)
 - [Domain model](#-domain-model)
@@ -81,6 +87,8 @@ docker compose up -d
 
 | Feature | Description |
 | --- | --- |
+| **Multi-tenant with Postgres RLS** | Shared schema with a `tenant_id` on every domain table and a fail-closed row-level-security policy keyed on `app.tenant_id` — a query that forgets the tenant filter returns zero rows, never another tenant's data (AD-022) |
+| **Self-hosted or SaaS** | Self-hosted auto-provisions the single tenant at `/bootstrap`; SaaS adds public signup (`/api/signup`) with email verification and per-account tenant switching (`/api/auth/switch-tenant`) for users in more than one tenant (AD-022) |
 | **Single Go binary** | Embeds the compiled React admin SPA via `go:embed` — no Node.js/Go toolchain needed at runtime |
 | **Three fixed roles** | `owner` / `operator` / `viewer`, enforced per-route (`internal/api.RequireRole`) — no configurable permission matrix (AD-003) |
 | **Cookie-based sessions** | JWT in an `httpOnly`, `Secure`, `SameSite=Strict` cookie — never in `localStorage` (AD-004) |
@@ -191,6 +199,21 @@ TLS for custom domains is automatic and on-demand: `internal/tls` wraps [CertMag
 
 ---
 
+## 🏢 Tenancy model
+
+Vane ships two distribution models on one codebase, and the database is what keeps them honest (AD-022, which supersedes the original single-tenant AD-002):
+
+- **Self-hosted** — exactly one company per installation, and it never has to think about tenancy: the first `/bootstrap` creates that company's `tenants` row and an `owner` `tenant_membership` in the same transaction. No tenant picker ever appears, because the logged-in user has exactly one membership.
+- **SaaS** — real multi-tenancy. `POST /api/signup` creates a `tenants` row (`plan = free`), finds-or-creates the global `users` row by email, creates an `owner` `tenant_membership`, and sends an email-verification link; login is refused until `users.email_verified_at` is set. A `user` (email) is one global identity that can hold a `tenant_membership` in many tenants — someone invited to a second tenant accepts without setting a new password, and the dashboard offers a tenant switcher (`POST /api/auth/switch-tenant`).
+
+Isolation is enforced **in Postgres, not just in code**. Every tenant-scoped table (`tenants`, `tenant_memberships`, `tenant_invites`, `services`, `incidents`, `status_pages`, `domains`, `admin_audit_log`, `email_providers`/`email_settings`, `llm_providers`/`llm_settings`) has a `tenant_id` plus a `tenant_isolation` RLS policy that is both `ENABLE`d and `FORCE`d. Each request sets `app.tenant_id` per transaction via `SET LOCAL`, so a query that runs without it returns **zero rows** (fail-closed) rather than an error or another tenant's data. The background poller iterates tenants one at a time, setting `app.tenant_id` explicitly — it never uses a `BYPASSRLS` role.
+
+A few tables are deliberately **not** tenant-scoped: `users`, `password_reset_tokens`, `sessions`, and the installation-level Datadog `integrations` row.
+
+> If you're wiring a new tenant-scoped repository, run its queries through `db.Pool.BeginTenantTx` so `app.tenant_id` is set for the whole transaction — a plain pooled connection runs with no tenant context and would silently see nothing.
+
+---
+
 ## 🔧 Tech stack
 
 **Backend** — Go 1.26
@@ -259,27 +282,29 @@ web/
 
 ## 🗄️ Domain model
 
-Core tables (see `internal/db/migrations/` for exact schema and `internal/db/*_repository.go` for the Go side):
+Core tables (see `internal/db/migrations/` for exact schema and `internal/db/*_repository.go` for the Go side). Tenant-scoped tables carry `tenant_id` and a fail-closed RLS policy — see [Tenancy model](#-tenancy-model):
 
 | Table | Purpose |
 | --- | --- |
-| `admins` | Company staff accounts. `role` is one of `owner`, `operator`, `viewer` (fixed roles, no configurable permission matrix — see AD-003). |
-| `admin_invites` | Pending invitations (email + role) before an invited admin accepts and sets a password. |
+| `users` | Global staff identity (email + password hash). One `user` can belong to more than one tenant (AD-022). |
+| `tenants` | One row per company/workspace — display name, contact email, uploaded logo, `plan`, locale, theme colors (absorbs the old `company_settings` singleton). Self-hosted has exactly one. |
+| `tenant_memberships` | Joins a `user` to a `tenant` with a fixed role — `owner`, `operator`, or `viewer` (no configurable permission matrix, AD-003). |
+| `tenant_invites` | Pending invitations (email + role) scoped to a tenant, before the invitee accepts and sets a password. |
 | `admin_audit_log` | Append-only log of admin-management actions (invite, role change, removal). |
 | `password_reset_tokens` | Single-use tokens for the forgot-password flow. |
-| `integrations` | Stored (encrypted) Datadog API key + application key pair, one row per installation. |
+| `sessions` | One row per active login/device (AD-028) — backs the "active sessions" list and per-device revoke. Not tenant-scoped. |
+| `integrations` | Stored (encrypted) Datadog API key + application key pair, one row per installation. Not tenant-scoped. |
 | `services` | Logical services the company wants to expose, each mapped to a Datadog SLO. |
 | `status_intervals` | Poller-written status per service as open/closed intervals (an interval opens on a status change and stays open, `ends_at IS NULL`, until the next one; at most one open interval per service, enforced by a partial unique index) — what both the admin dashboard and public page actually read, and what the public page's hourly bars/uptime % are computed from. |
 | `domains` | Custom hostnames the operator has registered with Vane (validated ownership, DNS target). |
 | `status_pages` | A publishable page: a set of services + incidents to expose, an optional `domain_id`/`subdomain` (nullable — a page can exist and be previewed before any domain is attached, see AD-008), and a `state` (`draft`/`published`). |
 | `incidents` + updates | Incident timeline entries linked to one or more services, surfaced on the public page for 90 days after resolution. |
-| `company_settings` | Singleton row (`CHECK (id = 1)`) — company display name + uploaded logo, shown on the public status page. |
 
 ---
 
 ## 🔐 Authentication & authorization
 
-- Admin login (`POST /api/auth/login`) issues a **JWT session token stored in an `httpOnly`, `Secure`, `SameSite=Strict` cookie** — never in `localStorage`/`sessionStorage`, never read by frontend JavaScript (AD-004). The JWT carries only `sub`/`iat`; the current admin's role is always fetched fresh from `GET /api/auth/me`, not decoded client-side.
+- Admin login (`POST /api/auth/login`) issues a **JWT session token stored in an `httpOnly`, `Secure`, `SameSite=Strict` cookie** — never in `localStorage`/`sessionStorage`, never read by frontend JavaScript (AD-004). The JWT carries `sub`, `iat`, and `sid` (the `sessions` row backing this login, AD-028); the current admin's role is always fetched fresh from `GET /api/auth/me`, not decoded client-side.
 - Three fixed roles, enforced per-route in `internal/cli/routes.go` via `api.RequireRole(...)`:
 
   | Role | Access |
@@ -288,7 +313,7 @@ Core tables (see `internal/db/migrations/` for exact schema and `internal/db/*_r
   | **operator** | All `mvp-core` write routes (domains, services, integrations, incidents, status pages) and reads |
   | **viewer** | Read-only across `mvp-core` resources and poller status |
 
-- `POST /api/auth/logout` clears the cookie; an admin's `sessions_revoked_at` timestamp can invalidate all of that admin's existing sessions at once (used on role change/removal).
+- `POST /api/auth/logout` clears the cookie **and** revokes that device's `sessions` row; `GET /api/auth/sessions` lists a user's active sessions and `DELETE /api/auth/sessions/{id}` revokes one (AD-028). A `users.sessions_revoked_at` timestamp still invalidates all of a user's sessions at once for credential events (password change/reset).
 - Every path that sets a password — bootstrap, invite-accept, password-reset-confirm — requires 8–72 characters (`internal/auth.ValidatePassword`). No forced complexity rule (uppercase/digit/symbol): NIST SP 800-63B recommends length over complexity, since complexity rules push users toward predictable substitutions instead of real entropy. 72 is bcrypt's own hard input limit.
 - Login, password-reset (request + confirm), invite-accept, and bootstrap all share one per-client-IP rate limit (`internal/ratelimit`) — 10 requests/minute with a burst of 10, shared across all of them so spreading guesses across routes doesn't multiply the effective rate. The client IP is read from the connection (`net/http`'s `RemoteAddr`), never from `X-Forwarded-For`/`X-Real-IP` — if this instance sits behind a reverse proxy, make sure that proxy preserves the real client address in the connection it opens to Vane rather than relying on a spoofable header.
 
@@ -398,7 +423,7 @@ Once both services report healthy, visit `http://localhost:8080` to complete fir
 
 ### Creating the first admin (owner)
 
-A fresh, admin-less instance lands on an in-product **bootstrap screen** (`/bootstrap`) instead of the login screen — create the owner's email and password there directly in the browser, no SQL or throwaway script required. The screen is only reachable while the `admins` table is empty; once an owner exists, `/bootstrap` redirects to `/login` instead.
+A fresh, admin-less instance lands on an in-product **bootstrap screen** (`/bootstrap`) instead of the login screen — create the owner's email and password there directly in the browser, no SQL or throwaway script required. In the same transaction it creates the company's `tenants` row and an `owner` `tenant_membership` alongside the `users` row (AD-022), so a self-hosted install is tenant-ready without the operator ever seeing the concept. The screen is only reachable while no user exists; once an owner exists, `/bootstrap` redirects to `/login` instead.
 
 ---
 
@@ -420,10 +445,12 @@ Most backend test files carry `//go:build integration` and are skipped by a plai
 
 ```bash
 make dev-db
-TEST_DATABASE_URL="postgres://vane:vane@localhost:5432/vane?sslmode=disable" go test -tags=integration ./...
+TEST_DATABASE_URL="postgres://vane:vane@localhost:5432/vane?sslmode=disable" go test -tags=integration -p 1 ./...
 ```
 
 These apply every migration against that database on their own (`db.MigrateUp`) — no separate migration step needed first.
+
+> `-p 1` runs one package's test binary at a time. Every package shares the single `TEST_DATABASE_URL` database and several mutate the same singleton/shared tables, so parallel package binaries race each other — serializing them is the deterministic default for the gate (and what CI uses). `-p 1` only serializes *packages*, so still point it at a **disposable** database, and a **fresh** one per run: a few singleton tables (`email_settings`/`llm_settings` active provider) are not reset between successive runs against the same database.
 
 ---
 
@@ -455,7 +482,8 @@ Tracked in `.specs/STATE.md`. Not yet solved, not yet requested to be solved:
 
 - Admin invite **resend/cancel** — frontend hooks exist, backend endpoints don't.
 - No auto-discovery of Datadog services/SLOs/monitors (would have to be added as a connector feature).
-- An intermittent `pg_advisory_lock`/connection-pressure test flake under sustained back-to-back full-suite runs (`internal/dbtest`'s dedicated lock connections don't always get reaped by Postgres fast enough between rapid consecutive invocations) — doesn't reproduce on a normal single CI run against a rested database; recommended fix is still to pin `go test -p 1` (or reduce dbtest's dedicated-connection footprint), not yet applied.
+- Self-hosted **license enforcement** (Zeep license server) and SaaS **billing/plan limits** (`tenants.plan` is modeled but not enforced) — the subsystems after multi-tenancy (AD-022).
+- Integration-suite **test isolation** — all packages share one `TEST_DATABASE_URL` database, so the gate runs `-p 1` (above) and the migration down-tests run on per-test scratch databases (they used to step the *latest* migration down on the shared database). Remaining gap: a few singletons aren't reset between successive runs, so back-to-back runs need a fresh database; the durable fix is a scratch database per test binary, which would let the suite parallelize again.
 - Manual validation against a **real** Datadog account/API (current test coverage relies on MSW/mocks) hasn't been done.
 
 ---

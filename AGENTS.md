@@ -39,11 +39,11 @@ Don't report a task as complete without having actually run these.
 docker run -d --rm --name vane-test-pg -p 5433:5432 \
   -e POSTGRES_USER=vane -e POSTGRES_PASSWORD=vane -e POSTGRES_DB=vane \
   postgres:16-alpine -c max_connections=300
-TEST_DATABASE_URL="postgres://vane:vane@localhost:5433/vane?sslmode=disable" go test -tags=integration ./...
+TEST_DATABASE_URL="postgres://vane:vane@localhost:5433/vane?sslmode=disable" go test -tags=integration -p 1 ./...
 docker stop vane-test-pg
 ```
 
-`max_connections=300` matters — the default 100 gets exhausted under `go test ./...`'s package parallelism. This has caused real dev-database pollution once already; treat it as non-negotiable.
+`-p 1` matters — every integration package shares the one `TEST_DATABASE_URL` database and several mutate the same singleton/shared tables, so parallel package test binaries race each other (401s, count mismatches). Run the gate against a disposable container, **fresh per run**: a few singleton tables aren't reset between successive runs against the same database. `max_connections=300` is kept because the suite's dedicated advisory-lock connections are connection-heavy. Never run this against `vane-dev-pg` or any database holding real/dev data the user cares about. This has caused real dev-database pollution once already; treat it as non-negotiable.
 
 ## 4. Backend rules
 

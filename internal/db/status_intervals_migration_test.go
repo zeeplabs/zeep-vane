@@ -100,11 +100,11 @@ func TestStatusIntervalsMigration_AppliesClean_AndHasExpectedIndexes(t *testing.
 }
 
 func TestStatusIntervalsMigration_DownReversesCleanly(t *testing.T) {
-	dsn := testDatabaseURL(t)
-
-	if err := MigrateUp(dsn, "migrations"); err != nil {
-		t.Fatalf("MigrateUp() returned unexpected error: %v", err)
-	}
+	// Runs against its own scratch database: stepping a migration down
+	// mutates the schema, and doing that on the shared TEST_DATABASE_URL
+	// would tear the latest migration down out from under every other
+	// package whose tests run in parallel against the same database.
+	dsn := newScratchDatabase(t)
 
 	sqlDB, err := sql.Open("pgx", dsn)
 	if err != nil {
@@ -122,13 +122,18 @@ func TestStatusIntervalsMigration_DownReversesCleanly(t *testing.T) {
 		t.Fatalf("migrate.NewWithDatabaseInstance() returned unexpected error: %v", err)
 	}
 
-	// Step down exactly one migration (0014's .down.sql) rather than
-	// migrate.Down() (which would tear down every migration).
+	// Apply up to exactly 0014 (its own migration), then step that one
+	// down - rather than migrating the whole schema up and stepping down
+	// whatever is latest, which is no longer 0014 now that later
+	// migrations exist.
+	const statusIntervalsVersion = 14
+	if err := m.Migrate(statusIntervalsVersion); err != nil {
+		t.Fatalf("m.Migrate(%d) returned unexpected error: %v", statusIntervalsVersion, err)
+	}
 	if err := m.Steps(-1); err != nil {
 		t.Fatalf("m.Steps(-1) returned unexpected error: %v", err)
 	}
-
-	if err := MigrateUp(dsn, "migrations"); err != nil {
-		t.Fatalf("second MigrateUp() returned unexpected error: %v", err)
+	if err := m.Migrate(statusIntervalsVersion); err != nil {
+		t.Fatalf("re-applying %d after down returned unexpected error: %v", statusIntervalsVersion, err)
 	}
 }
