@@ -123,19 +123,19 @@ The redesigned Meu Perfil screen (`handoff-new-layout/Meu Perfil.dc.html`) shows
 
 | Requirement ID | Story | Phase | Status |
 | --- | --- | --- | --- |
-| SESS-01 | P1: Every login creates a session row | - | Pending |
-| SESS-02 | P1: SwitchTenant reuses the row | - | Pending |
-| SESS-03 | P1: RequireAuth rejects a revoked/missing sid | - | Pending |
-| SESS-04 | P1: last_seen_at throttled update | - | Pending |
-| SESS-05 | P1: List own sessions | - | Pending |
-| SESS-06 | P1: List marks exactly one as current | - | Pending |
-| SESS-07 | P1: Revoke one other session | - | Pending |
-| SESS-08 | P1: Revoked session rejected on next use | - | Pending |
-| SESS-09 | P1: Cannot revoke own current session (409) | - | Pending |
-| SESS-10 | P1: Revoke unknown/other-user session (404) | - | Pending |
-| SESS-11 | P2: Logout revokes current session server-side | - | Pending |
+| SESS-01 | P1: Every login creates a session row | - | ✅ Verified |
+| SESS-02 | P1: SwitchTenant reuses the row | - | ✅ Verified |
+| SESS-03 | P1: RequireAuth rejects a revoked/missing sid | - | ✅ Verified |
+| SESS-04 | P1: last_seen_at throttled update | - | ✅ Verified |
+| SESS-05 | P1: List own sessions | - | ✅ Verified |
+| SESS-06 | P1: List marks exactly one as current | - | ✅ Verified |
+| SESS-07 | P1: Revoke one other session | - | ✅ Verified |
+| SESS-08 | P1: Revoked session rejected on next use | - | ✅ Verified |
+| SESS-09 | P1: Cannot revoke own current session (409) | - | ✅ Verified |
+| SESS-10 | P1: Revoke unknown/other-user session (404) | - | ✅ Verified |
+| SESS-11 | P2: Logout revokes current session server-side | - | ✅ Verified |
 
-**Coverage:** 11 total, 0 mapped to tasks, 11 unmapped ⚠️ (Large scope — formal Design and Tasks phases run before Execute, not skipped)
+**Coverage:** 11 total, 11 verified ✅ (Verifier PASS: `.specs/features/user-sessions/validation.md`, 8/8 mutants killed)
 
 ---
 

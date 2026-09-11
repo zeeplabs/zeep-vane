@@ -11,7 +11,7 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Spec**: `.specs/features/user-sessions/spec.md`
 **Context**: `.specs/features/user-sessions/context.md`
 **Design**: `.specs/features/user-sessions/design.md`
-**Status**: Draft
+**Status**: Done (T1-T15 complete; Verifier PASS — see `validation.md`)
 
 > Decisões de design-phase já fixadas em `context.md` (híbrido `SessionsRevokedAt`, quebra de JWTs pré-deploy, helper de captura UA/IP, assinatura nova de `RequireAuth`, `Logout` lê `sid` do context, `SwitchTenant` reusa `sid`, TTL único 24h, race trivial, sem cleanup job). Tasks abaixo materializam essas decisões sem reabrir.
 
