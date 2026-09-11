@@ -411,13 +411,13 @@ T3 → T14
 - Skill: frontend-design
 
 **Done when**:
-- [ ] Every authenticated route renders inside `AppShell` (sidebar + topbar + content area)
-- [ ] `PollerBanner` still renders in the same position relative to routed content as before
-- [ ] Content area has its own scroll, `32px 40px` padding, `1200px` max-width centered
-- [ ] Topbar title derives from the current route (a simple pathname→label lookup in `AppShell`, per design.md's Risks & Concerns mitigation)
-- [ ] Every existing `App.test.tsx` assertion covering authenticated routing still passes
-- [ ] Gate check passes: `npx tsc -b --noEmit && npm run test`
-- [ ] Test count: existing suite updated + ≥2 new tests (title derivation, PollerBanner position preserved)
+- [x] Every authenticated route renders inside `AppShell` (sidebar + topbar + content area)
+- [x] `PollerBanner` still renders in the same position relative to routed content as before
+- [x] Content area has its own scroll, `32px 40px` padding, `1200px` max-width centered (arbitrary-value classes `overflow-auto`/`px-[40px] py-[32px]`/`max-w-[1200px] mx-auto` - build-gate/source-verified, same precedent as T4's token-literal work; jsdom doesn't compute layout pixels for a runtime assertion)
+- [x] Topbar title derives from the current route (a simple pathname→label lookup in `AppShell`, per design.md's Risks & Concerns mitigation)
+- [x] Every existing `App.test.tsx` assertion covering authenticated routing still passes
+- [x] Gate check passes: `npx tsc -b --noEmit && npm run test`
+- [x] Test count: existing suite (331 total, unmodified) + 3 new tests in `AppShell.test.tsx` (title derivation ×2, PollerBanner position preserved)
 
 **Tests**: unit
 **Gate**: build

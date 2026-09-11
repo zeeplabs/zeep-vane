@@ -4,7 +4,7 @@ import { Toaster } from "sonner";
 import { AuthProvider, useAuth } from "./auth/AuthProvider";
 import { SessionExpiredModal } from "./auth/SessionExpiredModal";
 import { RequireAuth, RequireRole } from "./routes/RequireRole";
-import { Sidebar } from "./layout/Sidebar";
+import { AppShell } from "./layout/AppShell";
 import { LoginPage } from "./features/auth/LoginPage";
 import { BootstrapPage } from "./features/auth/BootstrapPage";
 import { PasswordResetRequestPage } from "./features/auth/PasswordResetRequestPage";
@@ -21,7 +21,6 @@ import { StatusPageDetail } from "./features/status-pages/StatusPageDetail";
 import { IncidentsPage } from "./features/incidents/IncidentsPage";
 import { IncidentDetail } from "./features/incidents/IncidentDetail";
 import { AdminsPage } from "./features/admins/AdminsPage";
-import { PollerBanner } from "./features/poller/PollerBanner";
 import { PollerStatusPage } from "./features/poller/PollerStatusPage";
 import { SettingsPage } from "./features/settings/SettingsPage";
 import { PublicStatusPage } from "./features/public-status/PublicStatusPage";
@@ -108,18 +107,9 @@ function SelectTenantRoute() {
 
 function AuthenticatedLayout() {
   return (
-    <div className="flex h-screen w-full bg-bg">
-      <Sidebar />
-      <div className="flex min-w-0 flex-1 flex-col">
-        {/* Slot fixo acima do conteúdo, visível em qualquer rota autenticada (T34). */}
-        <div data-testid="global-banner-slot">
-          <PollerBanner />
-        </div>
-        <main className="flex-1 overflow-auto p-6">
-          <Outlet />
-        </main>
-      </div>
-    </div>
+    <AppShell>
+      <Outlet />
+    </AppShell>
   );
 }
 
