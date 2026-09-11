@@ -223,11 +223,11 @@ T3 → T14
 - Skill: NONE
 
 **Done when**:
-- [ ] `toggleTheme()` flips `theme`, updates `document.documentElement.dataset.theme`, and persists to `localStorage`
-- [ ] A component consuming the hook re-renders with the new theme after toggling
-- [ ] `localStorage` write failure (mocked throw) does not throw out of `toggleTheme()`
-- [ ] Gate check passes: `npm run test`
-- [ ] Test count: 4 new tests
+- [x] `toggleTheme()` flips `theme`, updates `document.documentElement.dataset.theme`, and persists to `localStorage`
+- [x] A component consuming the hook re-renders with the new theme after toggling
+- [x] `localStorage` write failure (mocked throw) does not throw out of `toggleTheme()`
+- [x] Gate check passes: `npm run test`
+- [x] Test count: 4 new tests
 
 **Tests**: unit
 **Gate**: build
