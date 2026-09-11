@@ -3,7 +3,7 @@
   "promote_threshold": 2,
   "window_days": 45,
   "quarantine_threshold": 2,
-  "next_id": 41,
+  "next_id": 43,
   "lessons": [
     {
       "id": "L-001",
@@ -724,6 +724,42 @@
       ],
       "created": "2026-09-11T14:37:01Z",
       "last_seen": "2026-09-11T14:37:01Z"
+    },
+    {
+      "id": "L-041",
+      "key": "spec_precision_gap::cover each spec md edge case at the same layer the user hits it component e2e not only at the hook layer",
+      "text": "Cover each spec.md edge case at the same layer the user hits it (component/e2e), not only at the hook layer.",
+      "signal": "spec_precision_gap",
+      "scope": "web/edge-cases",
+      "status": "candidate",
+      "features": [
+        "profile-page"
+      ],
+      "recurrence": 1,
+      "harmful": 0,
+      "evidence": [
+        "validation.md edge case: enroll 409 / name 422 (EnrollDrawer.test.tsx, PersonalInfoCard.test.tsx) (web/edge-cases)"
+      ],
+      "created": "2026-09-11T22:58:31Z",
+      "last_seen": "2026-09-11T22:58:31Z"
+    },
+    {
+      "id": "L-042",
+      "key": "spec_precision_gap::when a spec requires locale dependent copy add an explicit non default locale render test not just the default locale assertions",
+      "text": "When a spec requires locale-dependent copy, add an explicit non-default-locale render test, not just the default-locale assertions.",
+      "signal": "spec_precision_gap",
+      "scope": "web/i18n",
+      "status": "candidate",
+      "features": [
+        "profile-page"
+      ],
+      "recurrence": 1,
+      "harmful": 0,
+      "evidence": [
+        "validation.md edge case: browser locale English (ProfilePage.test.tsx) (web/i18n)"
+      ],
+      "created": "2026-09-11T22:58:32Z",
+      "last_seen": "2026-09-11T22:58:32Z"
     }
   ]
 }

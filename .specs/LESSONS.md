@@ -254,6 +254,18 @@ Seen once or not yet corroborated. Tracked, not trusted.
 - evidence: tasks.md T7,T9,T10,T11,T12,T13 Requirement fields (tasks-traceability)
 - last seen: 2026-09-11T14:37:01Z
 
+### L-041 - Cover each spec.md edge case at the same layer the user hits it (component/e2e), not only at the hook layer.
+- signal: `spec_precision_gap` · recurrence: 1 feature(s) · scope: `web/edge-cases` · harmful: 0
+- features: profile-page
+- evidence: validation.md edge case: enroll 409 / name 422 (EnrollDrawer.test.tsx, PersonalInfoCard.test.tsx) (web/edge-cases)
+- last seen: 2026-09-11T22:58:31Z
+
+### L-042 - When a spec requires locale-dependent copy, add an explicit non-default-locale render test, not just the default-locale assertions.
+- signal: `spec_precision_gap` · recurrence: 1 feature(s) · scope: `web/i18n` · harmful: 0
+- features: profile-page
+- evidence: validation.md edge case: browser locale English (ProfilePage.test.tsx) (web/i18n)
+- last seen: 2026-09-11T22:58:32Z
+
 ## Quarantined (failed when applied - ignore)
 
 A confirmed lesson that recurred alongside failure. Kept for the maintainer to review.
