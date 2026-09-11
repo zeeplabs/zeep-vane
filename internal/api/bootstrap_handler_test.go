@@ -15,6 +15,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"go.uber.org/zap"
 
+	"github.com/zeeplabs/zeep-vane/internal/auth"
 	"github.com/zeeplabs/zeep-vane/internal/db"
 	"github.com/zeeplabs/zeep-vane/internal/dbtest"
 )
@@ -388,5 +389,65 @@ func TestBootstrapHandler_Create_WeakPassword_Returns422NoAdminCreated(t *testin
 	}
 	if count != 0 {
 		t.Errorf("admins row count after a weak-password-rejected bootstrap = %d, want 0", count)
+	}
+}
+
+// TestBootstrapHandler_Create_PersistsSessionRow proves the user-sessions
+// SESS-01 contract at the row level for Bootstrap: the first owner's
+// authenticating cookie token maps (via its `sid` claim) to a real
+// sessions-table row carrying the request's User-Agent and the host portion
+// of its RemoteAddr as the persisted ip.
+func TestBootstrapHandler_Create_PersistsSessionRow(t *testing.T) {
+	r, _, pool := newBootstrapRouter(t)
+	restore := clearAdminsForBootstrapTest(t, pool)
+	t.Cleanup(restore)
+
+	const wantUA = "vane-bootstrap-agent/1.0"
+	email := bootstrapUniqueTestEmail(t)
+	raw, err := json.Marshal(bootstrapCreateRequest{Name: "Test Owner", Email: email, Password: "correct-horse-battery-staple"})
+	if err != nil {
+		t.Fatalf("json.Marshal() returned unexpected error: %v", err)
+	}
+	req := httptest.NewRequest(http.MethodPost, "/api/bootstrap", bytes.NewReader(raw))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("User-Agent", wantUA)
+	req.RemoteAddr = "203.0.113.9:61022"
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200, body = %s", rec.Code, rec.Body.String())
+	}
+
+	var sessionCookie *http.Cookie
+	for _, c := range rec.Result().Cookies() {
+		if c.Name == "vane_session" {
+			sessionCookie = c
+			break
+		}
+	}
+	if sessionCookie == nil {
+		t.Fatal("no vane_session cookie set on successful bootstrap")
+	}
+	claims, err := auth.VerifySessionClaims(sessionCookie.Value, testBootstrapSessionSecret)
+	if err != nil {
+		t.Fatalf("VerifySessionClaims() on the bootstrap cookie returned unexpected error: %v", err)
+	}
+	if claims.SessionID == "" {
+		t.Fatal("session token has no sid claim, want the sessions-table row id")
+	}
+	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), "DELETE FROM sessions WHERE id = $1", claims.SessionID) })
+
+	var storedUA, storedIP string
+	if err := pool.QueryRow(context.Background(),
+		`SELECT user_agent, ip FROM sessions WHERE id = $1`, claims.SessionID,
+	).Scan(&storedUA, &storedIP); err != nil {
+		t.Fatalf("querying persisted session row returned unexpected error: %v", err)
+	}
+	if storedUA != wantUA {
+		t.Errorf("sessions.user_agent = %q, want the request's User-Agent %q", storedUA, wantUA)
+	}
+	if storedIP != "203.0.113.9" {
+		t.Errorf("sessions.ip = %q, want the host portion of the request's RemoteAddr %q", storedIP, "203.0.113.9")
 	}
 }

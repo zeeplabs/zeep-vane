@@ -5,6 +5,7 @@ package api
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -1633,5 +1634,232 @@ func TestVerifyTwoFactor_DifferentUnusedRecoveryCode_StillWorks(t *testing.T) {
 	}
 	if vaneSessionCookie(second) == nil {
 		t.Error("no vane_session cookie set for a different, still-unused recovery code, want one")
+	}
+}
+
+// TestLogin_PersistsSessionRow_UserAgentIPAndSID proves the user-sessions
+// SESS-01 contract at the row level for Login: every issued token is backed
+// by a real sessions-table row whose id equals the token's `sid` claim,
+// carrying the request's User-Agent and the host portion of its RemoteAddr
+// as the persisted ip.
+func TestLogin_PersistsSessionRow_UserAgentIPAndSID(t *testing.T) {
+	r, repo, pool := newLoginRouter(t)
+	email := uniqueTestEmail(t)
+	createTestAdmin(t, repo, pool, email, "correct-horse-battery-staple")
+
+	const wantUA = "vane-session-test-agent/1.0"
+	body, err := json.Marshal(loginRequest{Email: email, Password: "correct-horse-battery-staple"})
+	if err != nil {
+		t.Fatalf("json.Marshal() returned unexpected error: %v", err)
+	}
+	req := httptest.NewRequest(http.MethodPost, "/api/auth/login", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("User-Agent", wantUA)
+	req.RemoteAddr = "203.0.113.7:44217"
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	var resp loginResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+	claims, err := auth.VerifySessionClaims(resp.Token, testSessionSecret)
+	if err != nil {
+		t.Fatalf("VerifySessionClaims() returned unexpected error: %v", err)
+	}
+	if claims.SessionID == "" {
+		t.Fatal("token has no sid claim, want the sessions-table row id")
+	}
+	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), "DELETE FROM sessions WHERE id = $1", claims.SessionID) })
+
+	var storedUA, storedIP string
+	if err := pool.QueryRow(context.Background(),
+		`SELECT user_agent, ip FROM sessions WHERE id = $1`, claims.SessionID,
+	).Scan(&storedUA, &storedIP); err != nil {
+		t.Fatalf("querying persisted session row returned unexpected error: %v", err)
+	}
+	if storedUA != wantUA {
+		t.Errorf("sessions.user_agent = %q, want the request's User-Agent %q", storedUA, wantUA)
+	}
+	if storedIP != "203.0.113.7" {
+		t.Errorf("sessions.ip = %q, want the host portion of the request's RemoteAddr %q", storedIP, "203.0.113.7")
+	}
+}
+
+// TestSwitchTenant_PreservesSessionRowAndSID proves the user-sessions
+// SESS-02 contract: switching tenants reuses the same sessions-table row -
+// the session row count for the user is unchanged and the new token's `sid`
+// claim equals the pre-switch token's, so the "Sessões ativas" list shows
+// this device once, not once per tenant switch.
+func TestSwitchTenant_PreservesSessionRowAndSID(t *testing.T) {
+	r, repo, pool := newMeRouter(t)
+	email := uniqueTestEmail(t)
+	createTestAdmin(t, repo, pool, email, "correct-horse-battery-staple")
+
+	admin, err := repo.GetByEmail(context.Background(), email)
+	if err != nil {
+		t.Fatalf("GetByEmail() returned unexpected error: %v", err)
+	}
+	secondTenantID := seedSoleTenantMembership(t, pool, admin.ID, email+"-second")
+
+	// Dedicated per-test sid + row (not the shared IssueTestSessionID
+	// fixture) so the row-count assertion covers exactly this switch.
+	switchSID := "22222222-2222-2222-2222-222222222222"
+	if _, err := pool.Exec(context.Background(),
+		`INSERT INTO sessions (id, user_id) VALUES ($1, $2)`, switchSID, admin.ID,
+	); err != nil {
+		t.Fatalf("inserting per-test session row returned unexpected error: %v", err)
+	}
+	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), `DELETE FROM sessions WHERE id = $1`, switchSID) })
+
+	preToken, err := auth.IssueSession(admin.ID, switchSID, testSessionSecret)
+	if err != nil {
+		t.Fatalf("IssueSession() returned unexpected error: %v", err)
+	}
+	preClaims, err := auth.VerifySessionClaims(preToken, testSessionSecret)
+	if err != nil {
+		t.Fatalf("VerifySessionClaims() returned unexpected error: %v", err)
+	}
+	if preClaims.SessionID != switchSID {
+		t.Fatalf("pre-switch sid = %q, want %q", preClaims.SessionID, switchSID)
+	}
+
+	var preCount int
+	if err := pool.QueryRow(context.Background(),
+		"SELECT COUNT(*) FROM sessions WHERE user_id = $1", admin.ID).Scan(&preCount); err != nil {
+		t.Fatalf("counting pre-switch sessions returned unexpected error: %v", err)
+	}
+
+	rec := postSwitchTenant(t, r, preToken, secondTenantID)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d (body=%q)", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	var body loginResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+	if body.Token == "" {
+		t.Fatal("response has no token, want a new session token")
+	}
+	postClaims, err := auth.VerifySessionClaims(body.Token, testSessionSecret)
+	if err != nil {
+		t.Fatalf("VerifySessionClaims() on the post-switch token returned unexpected error: %v", err)
+	}
+	if postClaims.SessionID != preClaims.SessionID {
+		t.Errorf("post-switch sid = %q, want unchanged %q", postClaims.SessionID, preClaims.SessionID)
+	}
+
+	var postCount int
+	if err := pool.QueryRow(context.Background(),
+		"SELECT COUNT(*) FROM sessions WHERE user_id = $1", admin.ID).Scan(&postCount); err != nil {
+		t.Fatalf("counting post-switch sessions returned unexpected error: %v", err)
+	}
+	if postCount != preCount {
+		t.Errorf("sessions row count after switch = %d, want unchanged %d (no second row created)", postCount, preCount)
+	}
+}
+
+// TestLogout_RevokesSessionRow proves the user-sessions SESS-11 contract at
+// the row level: Logout sets revoked_at on the sessions-table row matching
+// the token's `sid`, so the token can never authenticate again.
+func TestLogout_RevokesSessionRow(t *testing.T) {
+	r, repo, pool := newLogoutRouter(t)
+	email := uniqueTestEmail(t)
+	createTestAdmin(t, repo, pool, email, "correct-horse-battery-staple")
+	admin, err := repo.GetByEmail(context.Background(), email)
+	if err != nil {
+		t.Fatalf("GetByEmail() returned unexpected error: %v", err)
+	}
+
+	logoutSID := "44444444-4444-4444-4444-444444444444"
+	if _, err := pool.Exec(context.Background(),
+		`INSERT INTO sessions (id, user_id) VALUES ($1, $2)`, logoutSID, admin.ID,
+	); err != nil {
+		t.Fatalf("inserting per-test session row returned unexpected error: %v", err)
+	}
+	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), `DELETE FROM sessions WHERE id = $1`, logoutSID) })
+
+	token, err := auth.IssueSession(admin.ID, logoutSID, testSessionSecret)
+	if err != nil {
+		t.Fatalf("IssueSession() returned unexpected error: %v", err)
+	}
+
+	logoutReq := httptest.NewRequest(http.MethodPost, "/api/auth/logout", nil)
+	logoutReq.Header.Set("Authorization", "Bearer "+token)
+	logoutRec := httptest.NewRecorder()
+	r.ServeHTTP(logoutRec, logoutReq)
+	if logoutRec.Code != http.StatusOK {
+		t.Fatalf("logout status = %d, want %d", logoutRec.Code, http.StatusOK)
+	}
+
+	var revokedAt sql.NullTime
+	if err := pool.QueryRow(context.Background(),
+		"SELECT revoked_at FROM sessions WHERE id = $1", logoutSID).Scan(&revokedAt); err != nil {
+		t.Fatalf("reading revoked_at returned unexpected error: %v", err)
+	}
+	if !revokedAt.Valid {
+		t.Error("sessions.revoked_at still NULL after logout, want it set")
+	}
+}
+
+// TestLogout_ReplayedRawToken_401RevokedRow proves the user-sessions
+// SESS-11 contract end-to-end at the HTTP layer: after logout, replaying
+// the SAME raw token via the Authorization header (bypassing the cleared
+// cookie entirely) is rejected with 401, and the rejection is caused by the
+// row-level revocation - the row's revoked_at is set - not by the
+// missing-cookie gate.
+func TestLogout_ReplayedRawToken_401RevokedRow(t *testing.T) {
+	r, repo, pool := newLogoutRouter(t)
+	email := uniqueTestEmail(t)
+	createTestAdmin(t, repo, pool, email, "correct-horse-battery-staple")
+	admin, err := repo.GetByEmail(context.Background(), email)
+	if err != nil {
+		t.Fatalf("GetByEmail() returned unexpected error: %v", err)
+	}
+
+	logoutSID := "55555555-5555-5555-5555-555555555555"
+	if _, err := pool.Exec(context.Background(),
+		`INSERT INTO sessions (id, user_id) VALUES ($1, $2)`, logoutSID, admin.ID,
+	); err != nil {
+		t.Fatalf("inserting per-test session row returned unexpected error: %v", err)
+	}
+	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), `DELETE FROM sessions WHERE id = $1`, logoutSID) })
+
+	token, err := auth.IssueSession(admin.ID, logoutSID, testSessionSecret)
+	if err != nil {
+		t.Fatalf("IssueSession() returned unexpected error: %v", err)
+	}
+
+	// Logout via the Authorization header - the same raw token a browser
+	// holds in the (soon-to-be-cleared) cookie.
+	logoutReq := httptest.NewRequest(http.MethodPost, "/api/auth/logout", nil)
+	logoutReq.Header.Set("Authorization", "Bearer "+token)
+	logoutRec := httptest.NewRecorder()
+	r.ServeHTTP(logoutRec, logoutReq)
+	if logoutRec.Code != http.StatusOK {
+		t.Fatalf("logout status = %d, want %d", logoutRec.Code, http.StatusOK)
+	}
+
+	// Replay the exact same raw token - the cookie is never involved, so
+	// the only thing that can reject this request is the revoked row.
+	meReq := httptest.NewRequest(http.MethodGet, "/api/auth/me", nil)
+	meReq.Header.Set("Authorization", "Bearer "+token)
+	meRec := httptest.NewRecorder()
+	r.ServeHTTP(meRec, meReq)
+	if meRec.Code != http.StatusUnauthorized {
+		t.Fatalf("replayed token status = %d, want %d", meRec.Code, http.StatusUnauthorized)
+	}
+
+	var revokedAt sql.NullTime
+	if err := pool.QueryRow(context.Background(),
+		"SELECT revoked_at FROM sessions WHERE id = $1", logoutSID).Scan(&revokedAt); err != nil {
+		t.Fatalf("reading revoked_at returned unexpected error: %v", err)
+	}
+	if !revokedAt.Valid {
+		t.Fatal("sessions.revoked_at still NULL after logout, want set - the 401 above must come from row revocation, not the cookie gate")
 	}
 }

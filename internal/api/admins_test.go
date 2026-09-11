@@ -1939,3 +1939,69 @@ func TestInviteAdmin_SameEmailPendingInOtherTenant_NotInvalidated(t *testing.T) 
 		t.Error("tenant A's pending invite was invalidated by a same-email invite created in a different tenant, want unaffected")
 	}
 }
+
+// TestAcceptInvite_ValidToken_PersistsSessionRow proves the user-sessions
+// SESS-01 contract at the row level for AcceptInvite: the authenticating
+// cookie's token maps (via its `sid` claim) to a real sessions-table row
+// carrying the request's User-Agent and the host portion of its RemoteAddr
+// as the persisted ip.
+func TestAcceptInvite_ValidToken_PersistsSessionRow(t *testing.T) {
+	r, pool, admins, invites := newAdminsRouter(t)
+	inviterAdmin := &db.User{Email: uniqueTestEmail(t), PasswordHash: "hash"}
+	if err := admins.Create(context.Background(), inviterAdmin); err != nil {
+		t.Fatalf("admins.Create() returned unexpected error: %v", err)
+	}
+	t.Cleanup(func() { _ = admins.Delete(context.Background(), inviterAdmin.ID) })
+
+	email := uniqueTestEmail(t)
+	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), "DELETE FROM users WHERE email = $1", email) })
+	rawToken := createTestInvite(t, invites, inviterAdmin.ID, email, db.RoleOperator, 1*time.Hour)
+
+	const wantUA = "vane-accept-invite-agent/1.0"
+	body, err := json.Marshal(acceptAdminInviteRequest{Password: "a-strong-password"})
+	if err != nil {
+		t.Fatalf("json.Marshal() returned unexpected error: %v", err)
+	}
+	req := httptest.NewRequest(http.MethodPost, "/api/admins/invite/"+rawToken+"/accept", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("User-Agent", wantUA)
+	req.RemoteAddr = "203.0.113.8:51034"
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusCreated, rec.Body.String())
+	}
+
+	var sessionCookie *http.Cookie
+	for _, c := range rec.Result().Cookies() {
+		if c.Name == sessionCookieName {
+			sessionCookie = c
+			break
+		}
+	}
+	if sessionCookie == nil {
+		t.Fatal("no vane_session cookie in accept-invite response, want one set")
+	}
+	claims, err := auth.VerifySessionClaims(sessionCookie.Value, middlewareTestSecret)
+	if err != nil {
+		t.Fatalf("VerifySessionClaims() on the accept-invite cookie returned unexpected error: %v", err)
+	}
+	if claims.SessionID == "" {
+		t.Fatal("session token has no sid claim, want the sessions-table row id")
+	}
+	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), "DELETE FROM sessions WHERE id = $1", claims.SessionID) })
+
+	var storedUA, storedIP string
+	if err := pool.QueryRow(context.Background(),
+		`SELECT user_agent, ip FROM sessions WHERE id = $1`, claims.SessionID,
+	).Scan(&storedUA, &storedIP); err != nil {
+		t.Fatalf("querying persisted session row returned unexpected error: %v", err)
+	}
+	if storedUA != wantUA {
+		t.Errorf("sessions.user_agent = %q, want the request's User-Agent %q", storedUA, wantUA)
+	}
+	if storedIP != "203.0.113.8" {
+		t.Errorf("sessions.ip = %q, want the host portion of the request's RemoteAddr %q", storedIP, "203.0.113.8")
+	}
+}
