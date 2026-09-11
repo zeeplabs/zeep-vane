@@ -37,6 +37,9 @@ const resources = {
       avatarMenu: {
         trigger: "Menu do usuário",
       },
+      topbar: {
+        toggleTheme: "Alternar tema",
+      },
       sessionExpired: {
         title: "Sessão expirada",
         body: "Sua sessão expirou. Faça login novamente para continuar.",
@@ -200,6 +203,9 @@ const resources = {
       },
       avatarMenu: {
         trigger: "User menu",
+      },
+      topbar: {
+        toggleTheme: "Toggle theme",
       },
       sessionExpired: {
         title: "Session expired",

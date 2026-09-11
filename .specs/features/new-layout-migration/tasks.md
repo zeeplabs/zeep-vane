@@ -353,12 +353,12 @@ T3 → T14
 - Skill: frontend-design
 
 **Done when**:
-- [ ] Renders the `title` prop
-- [ ] Theme toggle button calls `toggleTheme()`
-- [ ] Bell icon renders with no `href`/`onClick` (static, per Assumptions)
-- [ ] `AvatarMenu` rendered
-- [ ] Gate check passes: `npm run test`
-- [ ] Test count: 3 new tests
+- [x] Renders the `title` prop
+- [x] Theme toggle button calls `toggleTheme()`
+- [x] Bell icon renders with no `href`/`onClick` (static, per Assumptions)
+- [x] `AvatarMenu` rendered
+- [x] Gate check passes: `npm run test`
+- [x] Test count: 4 new tests (3 planned + 1 extra covering the static-bell criterion explicitly)
 
 **Tests**: unit
 **Gate**: build
