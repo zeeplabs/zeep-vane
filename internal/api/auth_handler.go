@@ -477,6 +477,10 @@ type meResponse struct {
 	// memberships outright), used by the tenant-selection screen (P2) to
 	// decide whether one exists to show.
 	Memberships []meMembership `json:"memberships"`
+	// TwoFactorEnabled reports whether the user has a confirmed TOTP
+	// enrollment (profile-page PROFPAGE-23) - sourced from
+	// two_factor_secrets.enabled_at, never a client-supplied value.
+	TwoFactorEnabled bool `json:"two_factor_enabled"`
 }
 
 // Me returns the authenticated user's identity, as loaded into context by
@@ -500,6 +504,17 @@ func (h *AuthHandler) Me(w http.ResponseWriter, r *http.Request) {
 	activeTenantID, _ := ActiveTenantIDFromContext(r.Context())
 	role, _ := RoleFromContext(r.Context())
 
+	// A missing secret is the normal "not enrolled" case; any other error
+	// degrades to false rather than failing the whole identity payload
+	// (profile-page PROFPAGE-23).
+	twoFactorEnabled := false
+	secret, err := h.twoFactor.GetSecret(r.Context(), user.ID)
+	if err != nil && !errors.Is(err, db.ErrNotFound) {
+		h.logger.Error("auth: failed to load two-factor state for me", zap.Error(err))
+	} else if secret != nil && secret.EnabledAt != nil {
+		twoFactorEnabled = true
+	}
+
 	out := make([]meMembership, len(memberships))
 	for i, m := range memberships {
 		out[i] = meMembership{TenantID: m.TenantID, Role: m.Role, Name: m.Name, PlanTier: m.Plan}
@@ -509,7 +524,7 @@ func (h *AuthHandler) Me(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 	_ = json.NewEncoder(w).Encode(meResponse{
 		ID: user.ID, Email: user.Email, Name: user.Name, Phone: user.Phone, Role: role,
-		ActiveTenantID: activeTenantID, Memberships: out,
+		ActiveTenantID: activeTenantID, Memberships: out, TwoFactorEnabled: twoFactorEnabled,
 	})
 }
 

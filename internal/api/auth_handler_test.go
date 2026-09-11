@@ -377,6 +377,78 @@ func TestMe_ValidSession_200WithIdentity(t *testing.T) {
 	}
 }
 
+// TestMe_TwoFactorDisabled_ReturnsFalseAndFieldPresent covers PROFPAGE-23:
+// a user with no confirmed TOTP enrollment reports two_factor_enabled=false,
+// and the key is always serialized (never omitted).
+func TestMe_TwoFactorDisabled_ReturnsFalseAndFieldPresent(t *testing.T) {
+	r, repo, pool := newMeRouter(t)
+	email := uniqueTestEmail(t)
+	tenantID := createTestAdmin(t, repo, pool, email, "correct-horse-battery-staple")
+
+	admin, err := repo.GetByEmail(context.Background(), email)
+	if err != nil {
+		t.Fatalf("GetByEmail() returned unexpected error: %v", err)
+	}
+	token := issueTestTokenFor(t, admin, tenantID)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/auth/me", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(rec.Body.Bytes(), &raw); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+	if _, ok := raw["two_factor_enabled"]; !ok {
+		t.Fatalf("response missing two_factor_enabled key: %s", rec.Body.String())
+	}
+
+	var body meResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+	if body.TwoFactorEnabled {
+		t.Errorf("TwoFactorEnabled = true, want false for a user with no confirmed enrollment")
+	}
+}
+
+// TestMe_TwoFactorEnabled_ReturnsTrue covers PROFPAGE-23's positive state:
+// after a confirmed TOTP enrollment, GET /api/auth/me reports
+// two_factor_enabled=true.
+func TestMe_TwoFactorEnabled_ReturnsTrue(t *testing.T) {
+	r, repo, pool := newMeRouter(t)
+	email := uniqueTestEmail(t)
+	tenantID := createTestAdmin(t, repo, pool, email, "correct-horse-battery-staple")
+
+	admin, err := repo.GetByEmail(context.Background(), email)
+	if err != nil {
+		t.Fatalf("GetByEmail() returned unexpected error: %v", err)
+	}
+	enableTwoFactorForUser(t, db.NewTwoFactorRepository(pool), admin.ID, email)
+	token := issueTestTokenFor(t, admin, tenantID)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/auth/me", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	var body meResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+	if !body.TwoFactorEnabled {
+		t.Errorf("TwoFactorEnabled = false, want true after a confirmed enrollment")
+	}
+}
+
 // TestMe_ReturnsMembershipNamePlanTier covers SHELL-20/21: the caller's
 // membership entry carries the tenant's real name and plan_tier, not the
 // zero value ListForUser used to return before it joined tenants.
