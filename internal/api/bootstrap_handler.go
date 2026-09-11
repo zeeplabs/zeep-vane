@@ -40,6 +40,7 @@ type BootstrapHandler struct {
 	users         bootstrapCreator
 	tenants       bootstrapTenantCreator
 	memberships   bootstrapMembershipCreator
+	sessions      *db.SessionRepository
 	logger        *zap.Logger
 	sessionSecret string
 	secureCookies bool
@@ -52,11 +53,14 @@ type BootstrapHandler struct {
 // and memberships provision that user's single auto-created tenant
 // (TENANT-05/06/07) - self-hosted's "zero new friction" contract: no
 // tenant-selection UI, ever, for an account with exactly one membership.
+// sessions is the per-device session row repository (user-sessions):
+// Create creates a row for the freshly-bootstrapped owner so the same
+// per-device revocation that covers Login also covers bootstrap.
 // sessionSecret signs the session token Create issues on success, same as
 // AuthHandler. secureCookies controls the vane_session cookie's Secure
 // attribute (H9), same as AuthHandler.
-func NewBootstrapHandler(pool *db.Pool, users bootstrapCreator, tenants bootstrapTenantCreator, memberships bootstrapMembershipCreator, logger *zap.Logger, sessionSecret string, secureCookies bool) *BootstrapHandler {
-	return &BootstrapHandler{pool: pool, users: users, tenants: tenants, memberships: memberships, logger: logger, sessionSecret: sessionSecret, secureCookies: secureCookies}
+func NewBootstrapHandler(pool *db.Pool, users bootstrapCreator, tenants bootstrapTenantCreator, memberships bootstrapMembershipCreator, sessions *db.SessionRepository, logger *zap.Logger, sessionSecret string, secureCookies bool) *BootstrapHandler {
+	return &BootstrapHandler{pool: pool, users: users, tenants: tenants, memberships: memberships, sessions: sessions, logger: logger, sessionSecret: sessionSecret, secureCookies: secureCookies}
 }
 
 type bootstrapStatusResponse struct {
@@ -181,7 +185,17 @@ func (h *BootstrapHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	token, err := auth.IssueSessionWithTenant(user.ID, tenantID, h.sessionSecret)
+	// Per user-sessions spec SESS-01: every issued session token has a
+	// backing sessions-table row, so the same per-device revocation that
+	// covers Login also covers Bootstrap.
+	userAgent, ip := captureSessionContext(r)
+	sid, err := h.sessions.Create(r.Context(), user.ID, userAgent, ip)
+	if err != nil {
+		h.logger.Error("bootstrap: failed to create session row for first owner", zap.Error(err))
+		writeInternalError(w)
+		return
+	}
+	token, err := auth.IssueSessionWithTenant(user.ID, tenantID, sid, h.sessionSecret)
 	if err != nil {
 		h.logger.Error("bootstrap: failed to issue session token", zap.Error(err))
 		writeInternalError(w)

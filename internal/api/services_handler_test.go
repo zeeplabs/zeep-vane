@@ -29,7 +29,7 @@ func newServicesRouter(t *testing.T) (http.Handler, *db.Pool, *db.UserRepository
 
 	r := chi.NewRouter()
 	r.Group(func(protected chi.Router) {
-		protected.Use(RequireAuth(middlewareTestSecret, admins))
+		protected.Use(RequireAuth(middlewareTestSecret, admins, db.NewSessionRepository(pool), zap.NewNop()))
 		// Mirrors buildAdminRouter: TenantContext runs right after
 		// RequireAuth and is what resolves the caller's role in the active
 		// tenant for RequireRole (multi-tenancy-core, AD-022).

@@ -174,11 +174,11 @@ func newAdminsRouterWithEmail(t *testing.T, emailSvc *email.Service) (http.Handl
 	auditLog := audit.NewLog(pool)
 	companySettings := db.NewTenantRepository(pool)
 	memberships := db.NewTenantMembershipRepository(pool)
-	handler := NewAdminsHandler(pool, admins, memberships, invites, emailSvc, companySettings, auditLog, zap.NewNop(), false, testAdminBaseURL, middlewareTestSecret, true)
+	handler := NewAdminsHandler(pool, admins, memberships, invites, emailSvc, companySettings, db.NewSessionRepository(pool), auditLog, zap.NewNop(), false, testAdminBaseURL, middlewareTestSecret, true)
 
 	r := chi.NewRouter()
 	r.Group(func(protected chi.Router) {
-		protected.Use(RequireAuth(middlewareTestSecret, admins))
+		protected.Use(RequireAuth(middlewareTestSecret, admins, db.NewSessionRepository(pool), zap.NewNop()))
 		// Mirrors buildAdminRouter: TenantContext runs right after
 		// RequireAuth and is what resolves the caller's role in the active
 		// tenant for RequireRole (multi-tenancy-core, AD-022).
@@ -299,7 +299,7 @@ func TestInviteAdmin_Owner_201_CreatesInviteAndAuditEntry(t *testing.T) {
 	svc, provider := newTestEmailService(t)
 	r, pool, admins, _ := newAdminsRouterWithEmail(t, svc)
 	inviter := createTenantMember(t, admins, db.RoleOwner)
-	token, err := auth.IssueSessionWithTenant(inviter.ID, adminsTestTenant(t), middlewareTestSecret)
+	token, err := auth.IssueSessionWithTenant(inviter.ID, adminsTestTenant(t), auth.IssueTestSessionID, middlewareTestSecret)
 	if err != nil {
 		t.Fatalf("auth.IssueSessionWithTenant() returned unexpected error: %v", err)
 	}
@@ -1008,7 +1008,7 @@ func TestUpdateAdminRole_ValidChange_200_AppliesRoleRevokesSessionsAndAudits(t *
 	ctx := context.Background()
 
 	actor := createTenantMember(t, admins, db.RoleOwner)
-	actorToken, err := auth.IssueSessionWithTenant(actor.ID, adminsTestTenant(t), middlewareTestSecret)
+	actorToken, err := auth.IssueSessionWithTenant(actor.ID, adminsTestTenant(t), auth.IssueTestSessionID, middlewareTestSecret)
 	if err != nil {
 		t.Fatalf("auth.IssueSessionWithTenant() actor returned unexpected error: %v", err)
 	}
@@ -1016,7 +1016,7 @@ func TestUpdateAdminRole_ValidChange_200_AppliesRoleRevokesSessionsAndAudits(t *
 	// A second owner besides actor, so this change can never trip the
 	// ADM-06 lockout guard.
 	target := createTenantMember(t, admins, db.RoleOwner)
-	targetOldToken, err := auth.IssueSessionWithTenant(target.ID, adminsTestTenant(t), middlewareTestSecret)
+	targetOldToken, err := auth.IssueSessionWithTenant(target.ID, adminsTestTenant(t), auth.IssueTestSessionID, middlewareTestSecret)
 	if err != nil {
 		t.Fatalf("auth.IssueSessionWithTenant() target returned unexpected error: %v", err)
 	}
@@ -1074,7 +1074,7 @@ func TestUpdateAdminRole_SelfDemotionAsLastOwner_409(t *testing.T) {
 	ctx := context.Background()
 
 	owner := createTenantMember(t, admins, db.RoleOwner)
-	token, err := auth.IssueSessionWithTenant(owner.ID, adminsTestTenant(t), middlewareTestSecret)
+	token, err := auth.IssueSessionWithTenant(owner.ID, adminsTestTenant(t), auth.IssueTestSessionID, middlewareTestSecret)
 	if err != nil {
 		t.Fatalf("auth.IssueSessionWithTenant() returned unexpected error: %v", err)
 	}
@@ -1135,7 +1135,7 @@ func TestDeleteAdmin_ValidRemoval_200_RevokesSessionsDeletesAndAudits(t *testing
 	ctx := context.Background()
 
 	actor := createTenantMember(t, admins, db.RoleOwner)
-	actorToken, err := auth.IssueSessionWithTenant(actor.ID, adminsTestTenant(t), middlewareTestSecret)
+	actorToken, err := auth.IssueSessionWithTenant(actor.ID, adminsTestTenant(t), auth.IssueTestSessionID, middlewareTestSecret)
 	if err != nil {
 		t.Fatalf("auth.IssueSessionWithTenant() actor returned unexpected error: %v", err)
 	}
@@ -1173,10 +1173,10 @@ func TestDeleteAdmin_ValidRemoval_200_RevokesSessionsDeletesAndAudits(t *testing
 // front of every protected route) after the removal and confirms it is
 // rejected with 401, not just that the row no longer exists.
 func TestDeleteAdmin_ValidRemoval_OldJWTRejected_401(t *testing.T) {
-	r, _, admins, _ := newAdminsRouter(t)
+	r, pool, admins, _ := newAdminsRouter(t)
 
 	actor := createTenantMember(t, admins, db.RoleOwner)
-	actorToken, err := auth.IssueSessionWithTenant(actor.ID, adminsTestTenant(t), middlewareTestSecret)
+	actorToken, err := auth.IssueSessionWithTenant(actor.ID, adminsTestTenant(t), auth.IssueTestSessionID, middlewareTestSecret)
 	if err != nil {
 		t.Fatalf("auth.IssueSessionWithTenant() actor returned unexpected error: %v", err)
 	}
@@ -1184,7 +1184,7 @@ func TestDeleteAdmin_ValidRemoval_OldJWTRejected_401(t *testing.T) {
 	// A second owner besides actor, so this removal can never trip the
 	// ADM-06 lockout guard.
 	target := createTenantMember(t, admins, db.RoleOwner)
-	targetToken, err := auth.IssueSessionWithTenant(target.ID, adminsTestTenant(t), middlewareTestSecret)
+	targetToken, err := auth.IssueSessionWithTenant(target.ID, adminsTestTenant(t), auth.IssueTestSessionID, middlewareTestSecret)
 	if err != nil {
 		t.Fatalf("auth.IssueSessionWithTenant() target returned unexpected error: %v", err)
 	}
@@ -1198,7 +1198,7 @@ func TestDeleteAdmin_ValidRemoval_OldJWTRejected_401(t *testing.T) {
 	// lookup must treat "not found" as unauthenticated (401), not crash or
 	// pass the request through.
 	var gotAdmin *db.User
-	handler := newProtectedHandler(admins, &gotAdmin)
+	handler := newProtectedHandler(admins, pool, &gotAdmin)
 
 	req := httptest.NewRequest(http.MethodGet, "/protected", nil)
 	req.Header.Set("Authorization", "Bearer "+targetToken)
@@ -1218,7 +1218,7 @@ func TestDeleteAdmin_SelfRemovalAsLastOwner_409(t *testing.T) {
 	ctx := context.Background()
 
 	owner := createTenantMember(t, admins, db.RoleOwner)
-	token, err := auth.IssueSessionWithTenant(owner.ID, adminsTestTenant(t), middlewareTestSecret)
+	token, err := auth.IssueSessionWithTenant(owner.ID, adminsTestTenant(t), auth.IssueTestSessionID, middlewareTestSecret)
 	if err != nil {
 		t.Fatalf("auth.IssueSessionWithTenant() returned unexpected error: %v", err)
 	}
@@ -1382,7 +1382,7 @@ func TestResendInvite_Owner_200_NewTokenWorksOldTokenRejected(t *testing.T) {
 	svc, provider := newTestEmailService(t)
 	r, pool, admins, invites := newAdminsRouterWithEmail(t, svc)
 	inviter := createTenantMember(t, admins, db.RoleOwner)
-	token, err := auth.IssueSessionWithTenant(inviter.ID, adminsTestTenant(t), middlewareTestSecret)
+	token, err := auth.IssueSessionWithTenant(inviter.ID, adminsTestTenant(t), auth.IssueTestSessionID, middlewareTestSecret)
 	if err != nil {
 		t.Fatalf("auth.IssueSessionWithTenant() returned unexpected error: %v", err)
 	}
@@ -1548,7 +1548,7 @@ func TestResendInvite_AlreadyAccepted_404(t *testing.T) {
 func TestResendInvite_Concurrent_NoCorruption(t *testing.T) {
 	r, pool, admins, invites := newAdminsRouter(t)
 	inviter := createTenantMember(t, admins, db.RoleOwner)
-	token, err := auth.IssueSessionWithTenant(inviter.ID, adminsTestTenant(t), middlewareTestSecret)
+	token, err := auth.IssueSessionWithTenant(inviter.ID, adminsTestTenant(t), auth.IssueTestSessionID, middlewareTestSecret)
 	if err != nil {
 		t.Fatalf("auth.IssueSessionWithTenant() returned unexpected error: %v", err)
 	}
@@ -1600,7 +1600,7 @@ func deleteCancelInvite(t *testing.T, r http.Handler, token, id string) *httptes
 func TestCancelInvite_Owner_200_TokenRejectedAfterCancel(t *testing.T) {
 	r, pool, admins, invites := newAdminsRouter(t)
 	inviter := createTenantMember(t, admins, db.RoleOwner)
-	token, err := auth.IssueSessionWithTenant(inviter.ID, adminsTestTenant(t), middlewareTestSecret)
+	token, err := auth.IssueSessionWithTenant(inviter.ID, adminsTestTenant(t), auth.IssueTestSessionID, middlewareTestSecret)
 	if err != nil {
 		t.Fatalf("auth.IssueSessionWithTenant() returned unexpected error: %v", err)
 	}
@@ -1663,7 +1663,7 @@ func TestCancelInvite_UnknownID_404(t *testing.T) {
 func TestCancelInvite_AlreadyCanceled_404NoDuplicateAuditEntry(t *testing.T) {
 	r, pool, admins, invites := newAdminsRouter(t)
 	inviter := createTenantMember(t, admins, db.RoleOwner)
-	token, err := auth.IssueSessionWithTenant(inviter.ID, adminsTestTenant(t), middlewareTestSecret)
+	token, err := auth.IssueSessionWithTenant(inviter.ID, adminsTestTenant(t), auth.IssueTestSessionID, middlewareTestSecret)
 	if err != nil {
 		t.Fatalf("auth.IssueSessionWithTenant() returned unexpected error: %v", err)
 	}
@@ -1794,7 +1794,7 @@ func seedOtherTenantOwnerToken(t *testing.T, pool *db.Pool, admins *db.UserRepos
 	t.Cleanup(func() { _ = admins.Delete(context.Background(), user.ID) })
 	seedMembership(t, user.ID, tenantID, db.RoleOwner)
 
-	tok, err := auth.IssueSessionWithTenant(user.ID, tenantID, middlewareTestSecret)
+	tok, err := auth.IssueSessionWithTenant(user.ID, tenantID, auth.IssueTestSessionID, middlewareTestSecret)
 	if err != nil {
 		t.Fatalf("auth.IssueSessionWithTenant() returned unexpected error: %v", err)
 	}

@@ -34,11 +34,11 @@ func newTwoFactorRouter(t *testing.T) (http.Handler, *db.UserRepository, *db.Two
 	users := db.NewUserRepository(pool)
 	memberships := db.NewTenantMembershipRepository(pool)
 	twoFactor := db.NewTwoFactorRepository(pool)
-	handler := NewAuthHandler(users, memberships, twoFactor, db.NewTwoFactorChallengeRepository(pool), pool, zap.NewNop(), testSessionSecret, true, testMasterKey)
+	handler := NewAuthHandler(users, memberships, twoFactor, db.NewTwoFactorChallengeRepository(pool), db.NewSessionRepository(pool), pool, zap.NewNop(), testSessionSecret, true, testMasterKey)
 
 	r := chi.NewRouter()
 	r.Group(func(protected chi.Router) {
-		protected.Use(RequireAuth(testSessionSecret, users))
+		protected.Use(RequireAuth(testSessionSecret, users, db.NewSessionRepository(pool), zap.NewNop()))
 		protected.Post("/api/auth/2fa/enroll", handler.Enroll)
 		protected.Post("/api/auth/2fa/confirm", handler.Confirm2FA)
 		protected.Post("/api/auth/2fa/disable", handler.Disable2FA)
@@ -52,7 +52,7 @@ func newTwoFactorRouter(t *testing.T) (http.Handler, *db.UserRepository, *db.Two
 // or a bearer token - see middleware.go).
 func authedRequest(t *testing.T, method, target string, body []byte, userID string) *http.Request {
 	t.Helper()
-	token, err := auth.IssueSession(userID, testSessionSecret)
+	token, err := auth.IssueSession(userID, auth.IssueTestSessionID, testSessionSecret)
 	if err != nil {
 		t.Fatalf("IssueSession() returned unexpected error: %v", err)
 	}

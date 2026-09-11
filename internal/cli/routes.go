@@ -75,11 +75,19 @@ func buildAdminRouter(pool *db.Pool, cfg config.Config, logger *zap.Logger, poll
 	llmService := llm.NewService(db.NewLLMProviderStore(db.NewLLMProviderRepository(pool)), llmProviderFactory, cfg.MasterKey, logger)
 	llmProvidersHandler := api.NewLLMProvidersHandler(llmService, logger)
 
-	authHandler := api.NewAuthHandler(users, tenantMembershipsRepo, db.NewTwoFactorRepository(pool), db.NewTwoFactorChallengeRepository(pool), pool, logger, cfg.SessionSecret, cfg.SecureCookies, cfg.MasterKey)
-	bootstrapHandler := api.NewBootstrapHandler(pool, users, tenantsRepo, tenantMembershipsRepo, logger, cfg.SessionSecret, cfg.SecureCookies)
+	// Per-device session row repository (user-sessions): every issued
+	// session token corresponds to a real sessions-table row, looked up
+	// on every authenticated request by RequireAuth (which carries it as
+	// the sessionLoader interface) and revoked by Logout, the "Encerrar"
+	// button on the redesigned Meu Perfil screen, and admin events
+	// UpdateRole/Delete (per decision #1 of context.md).
+	sessions := db.NewSessionRepository(pool)
+
+	authHandler := api.NewAuthHandler(users, tenantMembershipsRepo, db.NewTwoFactorRepository(pool), db.NewTwoFactorChallengeRepository(pool), sessions, pool, logger, cfg.SessionSecret, cfg.SecureCookies, cfg.MasterKey)
+	bootstrapHandler := api.NewBootstrapHandler(pool, users, tenantsRepo, tenantMembershipsRepo, sessions, logger, cfg.SessionSecret, cfg.SecureCookies)
 	signupHandler := api.NewSignupHandler(pool, users, tenantsRepo, tenantMembershipsRepo, db.NewEmailVerificationRepository(pool), emailService, logger, cfg.DevTokenLogging, cfg.AdminBaseURL)
 	passwordResetHandler := api.NewPasswordResetHandler(users, db.NewPasswordResetRepository(pool), emailService, tenantsRepo, logger, cfg.DevTokenLogging, cfg.AdminBaseURL)
-	adminsHandler := api.NewAdminsHandler(pool, users, tenantMembershipsRepo, invites, emailService, tenantsRepo, auditLog, logger, cfg.DevTokenLogging, cfg.AdminBaseURL, cfg.SessionSecret, cfg.SecureCookies)
+	adminsHandler := api.NewAdminsHandler(pool, users, tenantMembershipsRepo, invites, emailService, tenantsRepo, sessions, auditLog, logger, cfg.DevTokenLogging, cfg.AdminBaseURL, cfg.SessionSecret, cfg.SecureCookies)
 	domainsHandler := api.NewDomainsHandler(db.NewDomainRepository(pool), auditLog, cfg.PublicDNSTarget, logger)
 	servicesHandler := api.NewServicesHandler(db.NewServiceRepository(pool), logger)
 	integrationsHandler := api.NewIntegrationsHandler(db.NewIntegrationRepository(pool), validateDatadogCredentials, searchDatadogSLOs, pollerManager, cfg.MasterKey, logger)
@@ -92,7 +100,7 @@ func buildAdminRouter(pool *db.Pool, cfg config.Config, logger *zap.Logger, poll
 	logoFileHandler := api.NewLogoFileHandler(tenantsRepo)
 	instanceConfigHandler := api.NewInstanceConfigHandler(cfg.PublicDNSTarget, tenantsRepo, logger)
 
-	requireAuth := api.RequireAuth(cfg.SessionSecret, users)
+	requireAuth := api.RequireAuth(cfg.SessionSecret, users, sessions, logger)
 	writeRoles := api.RequireRole(db.RoleOwner, db.RoleOperator)
 	anyRole := api.RequireRole(db.RoleOwner, db.RoleOperator, db.RoleViewer)
 	ownerOnly := api.RequireRole(db.RoleOwner)

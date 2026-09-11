@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
+	"go.uber.org/zap"
 
 	"github.com/zeeplabs/zeep-vane/internal/auth"
 	"github.com/zeeplabs/zeep-vane/internal/db"
@@ -55,12 +56,12 @@ func createMiddlewareTestAdmin(t *testing.T, repo *db.UserRepository, pool *db.P
 	return admin
 }
 
-func newProtectedHandler(admins *db.UserRepository, gotAdmin **db.User) http.Handler {
+func newProtectedHandler(admins *db.UserRepository, pool *db.Pool, gotAdmin **db.User) http.Handler {
 	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		*gotAdmin, _ = UserFromContext(r.Context())
 		w.WriteHeader(http.StatusOK)
 	})
-	return RequireAuth(middlewareTestSecret, admins)(next)
+	return RequireAuth(middlewareTestSecret, admins, db.NewSessionRepository(pool), zap.NewNop())(next)
 }
 
 // expiredToken signs a token whose expiry is already in the past, using the
@@ -85,13 +86,13 @@ func TestRequireAuth_ValidToken_PassesThrough(t *testing.T) {
 	repo, pool := newMiddlewareTestAdmins(t)
 	admin := createMiddlewareTestAdmin(t, repo, pool)
 
-	token, err := auth.IssueSession(admin.ID, middlewareTestSecret)
+	token, err := auth.IssueSession(admin.ID, auth.IssueTestSessionID, middlewareTestSecret)
 	if err != nil {
 		t.Fatalf("IssueSession() returned unexpected error: %v", err)
 	}
 
 	var gotAdmin *db.User
-	handler := newProtectedHandler(repo, &gotAdmin)
+	handler := newProtectedHandler(repo, pool, &gotAdmin)
 
 	req := httptest.NewRequest(http.MethodGet, "/protected", nil)
 	req.Header.Set("Authorization", "Bearer "+token)
@@ -114,13 +115,13 @@ func TestRequireAuth_CookieOnly_PassesThrough(t *testing.T) {
 	repo, pool := newMiddlewareTestAdmins(t)
 	admin := createMiddlewareTestAdmin(t, repo, pool)
 
-	token, err := auth.IssueSession(admin.ID, middlewareTestSecret)
+	token, err := auth.IssueSession(admin.ID, auth.IssueTestSessionID, middlewareTestSecret)
 	if err != nil {
 		t.Fatalf("IssueSession() returned unexpected error: %v", err)
 	}
 
 	var gotAdmin *db.User
-	handler := newProtectedHandler(repo, &gotAdmin)
+	handler := newProtectedHandler(repo, pool, &gotAdmin)
 
 	req := httptest.NewRequest(http.MethodGet, "/protected", nil)
 	req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: token})
@@ -141,17 +142,17 @@ func TestRequireAuth_HeaderTakesPriorityOverCookie(t *testing.T) {
 	headerAdmin := createMiddlewareTestAdmin(t, repo, pool)
 	cookieAdmin := createMiddlewareTestAdmin(t, repo, pool)
 
-	headerToken, err := auth.IssueSession(headerAdmin.ID, middlewareTestSecret)
+	headerToken, err := auth.IssueSession(headerAdmin.ID, auth.IssueTestSessionID, middlewareTestSecret)
 	if err != nil {
 		t.Fatalf("IssueSession() returned unexpected error: %v", err)
 	}
-	cookieToken, err := auth.IssueSession(cookieAdmin.ID, middlewareTestSecret)
+	cookieToken, err := auth.IssueSession(cookieAdmin.ID, auth.IssueTestSessionID, middlewareTestSecret)
 	if err != nil {
 		t.Fatalf("IssueSession() returned unexpected error: %v", err)
 	}
 
 	var gotAdmin *db.User
-	handler := newProtectedHandler(repo, &gotAdmin)
+	handler := newProtectedHandler(repo, pool, &gotAdmin)
 
 	req := httptest.NewRequest(http.MethodGet, "/protected", nil)
 	req.Header.Set("Authorization", "Bearer "+headerToken)
@@ -169,9 +170,9 @@ func TestRequireAuth_HeaderTakesPriorityOverCookie(t *testing.T) {
 }
 
 func TestRequireAuth_MissingToken_401(t *testing.T) {
-	repo, _ := newMiddlewareTestAdmins(t)
+	repo, pool := newMiddlewareTestAdmins(t)
 	var gotAdmin *db.User
-	handler := newProtectedHandler(repo, &gotAdmin)
+	handler := newProtectedHandler(repo, pool, &gotAdmin)
 
 	req := httptest.NewRequest(http.MethodGet, "/protected", nil)
 	rec := httptest.NewRecorder()
@@ -184,9 +185,9 @@ func TestRequireAuth_MissingToken_401(t *testing.T) {
 }
 
 func TestRequireAuth_InvalidToken_401(t *testing.T) {
-	repo, _ := newMiddlewareTestAdmins(t)
+	repo, pool := newMiddlewareTestAdmins(t)
 	var gotAdmin *db.User
-	handler := newProtectedHandler(repo, &gotAdmin)
+	handler := newProtectedHandler(repo, pool, &gotAdmin)
 
 	req := httptest.NewRequest(http.MethodGet, "/protected", nil)
 	req.Header.Set("Authorization", "Bearer not-a-valid-jwt")
@@ -203,7 +204,7 @@ func TestRequireAuth_ExpiredToken_401(t *testing.T) {
 	repo, pool := newMiddlewareTestAdmins(t)
 	admin := createMiddlewareTestAdmin(t, repo, pool)
 	var gotAdmin *db.User
-	handler := newProtectedHandler(repo, &gotAdmin)
+	handler := newProtectedHandler(repo, pool, &gotAdmin)
 
 	token := expiredToken(t, admin.ID, middlewareTestSecret)
 
@@ -222,7 +223,7 @@ func TestRequireAuth_TokenIssuedBeforeRevocation_401(t *testing.T) {
 	repo, pool := newMiddlewareTestAdmins(t)
 	admin := createMiddlewareTestAdmin(t, repo, pool)
 
-	token, err := auth.IssueSession(admin.ID, middlewareTestSecret)
+	token, err := auth.IssueSession(admin.ID, auth.IssueTestSessionID, middlewareTestSecret)
 	if err != nil {
 		t.Fatalf("IssueSession() returned unexpected error: %v", err)
 	}
@@ -235,7 +236,7 @@ func TestRequireAuth_TokenIssuedBeforeRevocation_401(t *testing.T) {
 	}
 
 	var gotAdmin *db.User
-	handler := newProtectedHandler(repo, &gotAdmin)
+	handler := newProtectedHandler(repo, pool, &gotAdmin)
 
 	req := httptest.NewRequest(http.MethodGet, "/protected", nil)
 	req.Header.Set("Authorization", "Bearer "+token)
@@ -261,13 +262,13 @@ func TestRequireAuth_TokenIssuedAfterRevocation_PassesThrough(t *testing.T) {
 	// claim truncates to whole seconds (jwt/v5 default TimePrecision), so
 	// the gap must cross a full second boundary, not just a few ms.
 	time.Sleep(1100 * time.Millisecond)
-	token, err := auth.IssueSession(admin.ID, middlewareTestSecret)
+	token, err := auth.IssueSession(admin.ID, auth.IssueTestSessionID, middlewareTestSecret)
 	if err != nil {
 		t.Fatalf("IssueSession() returned unexpected error: %v", err)
 	}
 
 	var gotAdmin *db.User
-	handler := newProtectedHandler(repo, &gotAdmin)
+	handler := newProtectedHandler(repo, pool, &gotAdmin)
 
 	req := httptest.NewRequest(http.MethodGet, "/protected", nil)
 	req.Header.Set("Authorization", "Bearer "+token)

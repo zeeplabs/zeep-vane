@@ -44,11 +44,11 @@ func TestTenantContext_AuthenticatedRequest_AppIsSystemNeverSet(t *testing.T) {
 		}
 		w.WriteHeader(http.StatusOK)
 	})
-	r := RequireAuth(middlewareTestSecret, db.NewUserRepository(pool))(
+	r := RequireAuth(middlewareTestSecret, db.NewUserRepository(pool), db.NewSessionRepository(pool), zap.NewNop())(
 		TenantContext(pool, db.NewTenantMembershipRepository(pool), zap.NewNop())(probe),
 	)
 
-	token, err := auth.IssueSessionWithTenant(admin.ID, tenantID, middlewareTestSecret)
+	token, err := auth.IssueSessionWithTenant(admin.ID, tenantID, auth.IssueTestSessionID, middlewareTestSecret)
 	if err != nil {
 		t.Fatalf("IssueSessionWithTenant() returned unexpected error: %v", err)
 	}

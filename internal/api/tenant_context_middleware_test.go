@@ -41,7 +41,7 @@ func newTenantContextTestRouter(pool *db.Pool, gotUserID, gotTenantID *string) h
 		w.WriteHeader(http.StatusOK)
 	})
 
-	return RequireAuth(middlewareTestSecret, db.NewUserRepository(pool))(
+	return RequireAuth(middlewareTestSecret, db.NewUserRepository(pool), db.NewSessionRepository(pool), zap.NewNop())(
 		TenantContext(pool, db.NewTenantMembershipRepository(pool), zap.NewNop())(probe),
 	)
 }
@@ -64,7 +64,7 @@ func TestTenantContext_ActiveTenantClaim_SetsAppTenantID(t *testing.T) {
 	var gotUserID, gotTenantID string
 	r := newTenantContextTestRouter(pool, &gotUserID, &gotTenantID)
 
-	token, err := auth.IssueSessionWithTenant(admin.ID, tenantID, middlewareTestSecret)
+	token, err := auth.IssueSessionWithTenant(admin.ID, tenantID, auth.IssueTestSessionID, middlewareTestSecret)
 	if err != nil {
 		t.Fatalf("IssueSessionWithTenant() returned unexpected error: %v", err)
 	}
@@ -101,7 +101,7 @@ func TestTenantContext_NoActiveTenant_AppTenantIDUnset(t *testing.T) {
 	var gotUserID, gotTenantID string
 	r := newTenantContextTestRouter(pool, &gotUserID, &gotTenantID)
 
-	token, err := auth.IssueSession(admin.ID, middlewareTestSecret)
+	token, err := auth.IssueSession(admin.ID, auth.IssueTestSessionID, middlewareTestSecret)
 	if err != nil {
 		t.Fatalf("IssueSession() returned unexpected error: %v", err)
 	}

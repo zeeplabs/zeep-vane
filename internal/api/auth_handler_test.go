@@ -69,7 +69,7 @@ func newLoginRouterWith2FA(t *testing.T) (r http.Handler, repo *db.UserRepositor
 	// secureCookies=true: this file's cookie assertions expect the default,
 	// Secure-only behavior. The off case is covered separately by
 	// TestLogin_SecureCookiesDisabled_CookieNotSecure.
-	handler := NewAuthHandler(repo, memberships, twoFactor, challenges, pool, zap.NewNop(), testSessionSecret, true, testMasterKey)
+	handler := NewAuthHandler(repo, memberships, twoFactor, challenges, db.NewSessionRepository(pool), pool, zap.NewNop(), testSessionSecret, true, testMasterKey)
 
 	router := chi.NewRouter()
 	router.Post("/api/auth/login", handler.Login)
@@ -249,7 +249,7 @@ func TestLogin_SecureCookiesDisabled_CookieNotSecure(t *testing.T) {
 
 	repo := db.NewUserRepository(pool)
 	memberships := db.NewTenantMembershipRepository(pool)
-	handler := NewAuthHandler(repo, memberships, db.NewTwoFactorRepository(pool), db.NewTwoFactorChallengeRepository(pool), pool, zap.NewNop(), testSessionSecret, false, testMasterKey)
+	handler := NewAuthHandler(repo, memberships, db.NewTwoFactorRepository(pool), db.NewTwoFactorChallengeRepository(pool), db.NewSessionRepository(pool), pool, zap.NewNop(), testSessionSecret, false, testMasterKey)
 	r := chi.NewRouter()
 	r.Post("/api/auth/login", handler.Login)
 
@@ -308,11 +308,11 @@ func newMeRouter(t *testing.T) (http.Handler, *db.UserRepository, *db.Pool) {
 
 	repo := db.NewUserRepository(pool)
 	memberships := db.NewTenantMembershipRepository(pool)
-	handler := NewAuthHandler(repo, memberships, db.NewTwoFactorRepository(pool), db.NewTwoFactorChallengeRepository(pool), pool, zap.NewNop(), testSessionSecret, true, testMasterKey)
+	handler := NewAuthHandler(repo, memberships, db.NewTwoFactorRepository(pool), db.NewTwoFactorChallengeRepository(pool), db.NewSessionRepository(pool), pool, zap.NewNop(), testSessionSecret, true, testMasterKey)
 
 	r := chi.NewRouter()
 	r.Group(func(protected chi.Router) {
-		protected.Use(RequireAuth(testSessionSecret, repo), TenantContext(pool, db.NewTenantMembershipRepository(pool), zap.NewNop()))
+		protected.Use(RequireAuth(testSessionSecret, repo, db.NewSessionRepository(pool), zap.NewNop()), TenantContext(pool, db.NewTenantMembershipRepository(pool), zap.NewNop()))
 		protected.Get("/api/auth/me", handler.Me)
 		protected.Patch("/api/auth/me", handler.UpdateProfile)
 		protected.Post("/api/auth/switch-tenant", handler.SwitchTenant)
@@ -347,7 +347,7 @@ func TestMe_ValidSession_200WithIdentity(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetByEmail() returned unexpected error: %v", err)
 	}
-	token, err := auth.IssueSessionWithTenant(admin.ID, tenantID, testSessionSecret)
+	token, err := auth.IssueSessionWithTenant(admin.ID, tenantID, auth.IssueTestSessionID, testSessionSecret)
 	if err != nil {
 		t.Fatalf("IssueSessionWithTenant() returned unexpected error: %v", err)
 	}
@@ -482,11 +482,11 @@ func newLogoutRouter(t *testing.T) (http.Handler, *db.UserRepository, *db.Pool) 
 
 	repo := db.NewUserRepository(pool)
 	memberships := db.NewTenantMembershipRepository(pool)
-	handler := NewAuthHandler(repo, memberships, db.NewTwoFactorRepository(pool), db.NewTwoFactorChallengeRepository(pool), pool, zap.NewNop(), testSessionSecret, true, testMasterKey)
+	handler := NewAuthHandler(repo, memberships, db.NewTwoFactorRepository(pool), db.NewTwoFactorChallengeRepository(pool), db.NewSessionRepository(pool), pool, zap.NewNop(), testSessionSecret, true, testMasterKey)
 
 	r := chi.NewRouter()
 	protected := chi.NewRouter()
-	protected.Use(RequireAuth(testSessionSecret, repo))
+	protected.Use(RequireAuth(testSessionSecret, repo, db.NewSessionRepository(pool), zap.NewNop()))
 	protected.Use(TenantContext(pool, db.NewTenantMembershipRepository(pool), zap.NewNop()))
 	protected.Get("/api/auth/me", handler.Me)
 	protected.Post("/api/auth/logout", handler.Logout)
@@ -503,7 +503,7 @@ func TestLogout_ExpiresCookie_SubsequentRequestRejected(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetByEmail() returned unexpected error: %v", err)
 	}
-	token, err := auth.IssueSession(admin.ID, testSessionSecret)
+	token, err := auth.IssueSession(admin.ID, auth.IssueTestSessionID, testSessionSecret)
 	if err != nil {
 		t.Fatalf("IssueSession() returned unexpected error: %v", err)
 	}
@@ -651,7 +651,7 @@ func TestMe_MultipleMemberships_ListsAllWithNoActiveTenant(t *testing.T) {
 
 	// IssueSession (no tenant claim) mirrors what Login would have issued
 	// for this admin (>1 membership, active tenant left unset).
-	token, err := auth.IssueSession(admin.ID, testSessionSecret)
+	token, err := auth.IssueSession(admin.ID, auth.IssueTestSessionID, testSessionSecret)
 	if err != nil {
 		t.Fatalf("IssueSession() returned unexpected error: %v", err)
 	}
@@ -700,7 +700,7 @@ func TestSwitchTenant_ValidMembership_UpdatesCookieNoReloginRequired(t *testing.
 	}
 	secondTenantID := seedSoleTenantMembership(t, pool, admin.ID, email+"-second")
 
-	token, err := auth.IssueSession(admin.ID, testSessionSecret)
+	token, err := auth.IssueSession(admin.ID, auth.IssueTestSessionID, testSessionSecret)
 	if err != nil {
 		t.Fatalf("IssueSession() returned unexpected error: %v", err)
 	}
@@ -779,7 +779,7 @@ func TestSwitchTenant_NoMembership_403SessionUnchanged(t *testing.T) {
 	}
 	foreignTenantID := othersOnly[0].TenantID
 
-	token, err := auth.IssueSession(admin.ID, testSessionSecret)
+	token, err := auth.IssueSession(admin.ID, auth.IssueTestSessionID, testSessionSecret)
 	if err != nil {
 		t.Fatalf("IssueSession() returned unexpected error: %v", err)
 	}
@@ -823,7 +823,7 @@ func patchProfile(t *testing.T, r http.Handler, token string, body []byte) *http
 
 func issueTestTokenFor(t *testing.T, admin *db.User, tenantID string) string {
 	t.Helper()
-	token, err := auth.IssueSessionWithTenant(admin.ID, tenantID, testSessionSecret)
+	token, err := auth.IssueSessionWithTenant(admin.ID, tenantID, auth.IssueTestSessionID, testSessionSecret)
 	if err != nil {
 		t.Fatalf("IssueSessionWithTenant() returned unexpected error: %v", err)
 	}

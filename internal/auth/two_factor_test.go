@@ -139,7 +139,7 @@ func TestVerifyTwoFactorChallenge_MissingAudience_ErrInvalidToken(t *testing.T) 
 	// A session token (no Audience claim ever set) must never verify as a
 	// 2FA challenge, mirroring the reverse guarantee T3 adds to
 	// VerifySessionClaims.
-	sessionToken, err := IssueSession("user-123", testSecret)
+	sessionToken, err := IssueSession("user-123", testSessionID, testSecret)
 	if err != nil {
 		t.Fatalf("IssueSession() returned unexpected error: %v", err)
 	}

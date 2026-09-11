@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"time"
 
@@ -67,6 +68,7 @@ type AuthHandler struct {
 	memberships   authMembershipLister
 	twoFactor     twoFactorStore
 	challenges    twoFactorChallengeStore
+	sessions      *db.SessionRepository
 	pool          *db.Pool
 	logger        *zap.Logger
 	sessionSecret string
@@ -75,20 +77,24 @@ type AuthHandler struct {
 }
 
 // NewAuthHandler builds an AuthHandler backed by users, memberships,
-// twoFactor, and challenges. pool backs Login's own tenant-membership lookup
-// (a public route, ahead of the tenant-context middleware - it manages its
-// own short-lived transaction with app.user_id set to resolve which
-// tenant(s) the authenticating user belongs to). sessionSecret signs issued
-// session tokens (see internal/auth.IssueSession) and 2FA challenge tokens
-// (internal/auth.IssueTwoFactorChallenge) - the same HMAC secret backs both,
-// distinguished only by claim shape (auth-2fa-totp design.md). secureCookies
-// controls the vane_session cookie's Secure attribute (H9) - false only for
-// an operator who has explicitly accepted plaintext-network session risk via
-// VANE_SECURE_COOKIES=false. masterKey encrypts/decrypts TOTP secrets at
-// rest (internal/crypto.Encrypt, same primitive email_provider_repository.go
-// uses for provider API keys).
-func NewAuthHandler(users userGetter, memberships authMembershipLister, twoFactor twoFactorStore, challenges twoFactorChallengeStore, pool *db.Pool, logger *zap.Logger, sessionSecret string, secureCookies bool, masterKey string) *AuthHandler {
-	return &AuthHandler{users: users, memberships: memberships, twoFactor: twoFactor, challenges: challenges, pool: pool, logger: logger, sessionSecret: sessionSecret, secureCookies: secureCookies, masterKey: masterKey}
+// twoFactor, challenges, and sessions. pool backs Login's own tenant-
+// membership lookup (a public route, ahead of the tenant-context
+// middleware - it manages its own short-lived transaction with
+// app.user_id set to resolve which tenant(s) the authenticating user
+// belongs to). sessions is the per-device session row repository
+// (user-sessions) - issueSessionForUser creates a row here for every
+// issued token, SwitchTenant reuses the current session's row id, and
+// Logout revokes the current session's row. sessionSecret signs issued
+// session tokens (see internal/auth.IssueSession) and 2FA challenge
+// tokens (internal/auth.IssueTwoFactorChallenge) - the same HMAC secret
+// backs both, distinguished only by claim shape (auth-2fa-totp
+// design.md). secureCookies controls the vane_session cookie's Secure
+// attribute (H9) - false only for an operator who has explicitly
+// accepted plaintext-network session risk via VANE_SECURE_COOKIES=false.
+// masterKey encrypts/decrypts TOTP secrets at rest (internal/crypto.Encrypt,
+// same primitive email_provider_repository.go uses for provider API keys).
+func NewAuthHandler(users userGetter, memberships authMembershipLister, twoFactor twoFactorStore, challenges twoFactorChallengeStore, sessions *db.SessionRepository, pool *db.Pool, logger *zap.Logger, sessionSecret string, secureCookies bool, masterKey string) *AuthHandler {
+	return &AuthHandler{users: users, memberships: memberships, twoFactor: twoFactor, challenges: challenges, sessions: sessions, pool: pool, logger: logger, sessionSecret: sessionSecret, secureCookies: secureCookies, masterKey: masterKey}
 }
 
 type loginRequest struct {
@@ -333,6 +339,13 @@ func (h *AuthHandler) VerifyTwoFactor(w http.ResponseWriter, r *http.Request) {
 // tenant-resolution + session-issuance sequence once a challenge's second
 // factor validates, instead of duplicating this security-sensitive logic at
 // a second call site.
+//
+// On success it also creates a new row in the `sessions` table (user-
+// sessions spec SESS-01) and embeds that row's id as the JWT's `sid`
+// claim. RequireAuth then looks the row up on every authenticated
+// request so per-device revocation (Logout, the "Encerrar" button on
+// the redesigned Meu Perfil screen) can reject a single session without
+// disturbing any other.
 func (h *AuthHandler) issueSessionForUser(w http.ResponseWriter, r *http.Request, user *db.User) {
 	// Called ahead of the tenant-context middleware (from both Login and
 	// VerifyTwoFactor, both public routes) - it manages its own transaction
@@ -367,7 +380,20 @@ func (h *AuthHandler) issueSessionForUser(w http.ResponseWriter, r *http.Request
 		activeTenantID = memberships[0].TenantID
 	}
 
-	token, err := auth.IssueSessionWithTenant(user.ID, activeTenantID, h.sessionSecret)
+	// Capture the request's identifying signals (User-Agent, IP) so the
+	// "Sessões ativas" list can show the device that opened the session.
+	// Empty strings are stored as NULL by SessionRepository.Create, not as
+	// empty strings (matches the schema's nullable shape).
+	userAgent, ip := captureSessionContext(r)
+
+	sid, err := h.sessions.Create(r.Context(), user.ID, userAgent, ip)
+	if err != nil {
+		h.logger.Error("auth: failed to create session row", zap.Error(err))
+		writeInternalError(w)
+		return
+	}
+
+	token, err := auth.IssueSessionWithTenant(user.ID, activeTenantID, sid, h.sessionSecret)
 	if err != nil {
 		h.logger.Error("auth: failed to issue session token", zap.Error(err))
 		writeInternalError(w)
@@ -379,6 +405,27 @@ func (h *AuthHandler) issueSessionForUser(w http.ResponseWriter, r *http.Request
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	_ = json.NewEncoder(w).Encode(loginResponse{Token: token, TenantID: activeTenantID})
+}
+
+// captureSessionContext extracts the identifying signals the "Sessões
+// ativas" list needs to display each row's device: the raw User-Agent
+// header and the host portion of r.RemoteAddr. Both come back as
+// empty strings when not present, which SessionRepository.Create
+// translates to NULL at the row level - same posture as
+// tenant_memberships (nullable, never empty).
+//
+// IP sourcing deliberately ignores X-Forwarded-For/X-Real-IP,
+// matching AGENTS.md §4's rule and ratelimit.clientIP. A self-hosted
+// deploy terminating TLS behind its own reverse proxy should configure
+// the proxy to preserve the real client address in RemoteAddr.
+func captureSessionContext(r *http.Request) (userAgent, ip string) {
+	userAgent = r.UserAgent()
+	if host, _, err := net.SplitHostPort(r.RemoteAddr); err == nil {
+		ip = host
+	} else {
+		ip = r.RemoteAddr
+	}
+	return userAgent, ip
 }
 
 // sessionCookieName is the name of the session cookie set on login and
@@ -798,8 +845,19 @@ const noMembershipForTenantBody = `{"error":"no access to that tenant"}`
 // (TENANT-21), including for a syntactically valid but nonexistent
 // tenant_id - ListForUser simply won't return a match for one, the same
 // fail-closed shape as everywhere else in this feature.
+//
+// Switching tenants reuses the same sessions-table row (user-sessions
+// SESS-02): the new JWT carries the same sid as the old one, just with
+// a different tid claim and a fresh iat. No second row is created, so
+// the "Sessões ativas" list shows this device once (not once per
+// tenant switch).
 func (h *AuthHandler) SwitchTenant(w http.ResponseWriter, r *http.Request) {
 	user, ok := UserFromContext(r.Context())
+	if !ok {
+		writeUnauthorized(w)
+		return
+	}
+	sid, ok := SessionIDFromContext(r.Context())
 	if !ok {
 		writeUnauthorized(w)
 		return
@@ -830,7 +888,7 @@ func (h *AuthHandler) SwitchTenant(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	token, err := auth.IssueSessionWithTenant(user.ID, req.TenantID, h.sessionSecret)
+	token, err := auth.IssueSessionWithTenant(user.ID, req.TenantID, sid, h.sessionSecret)
 	if err != nil {
 		h.logger.Error("auth: failed to issue session token for switch-tenant", zap.Error(err))
 		writeInternalError(w)

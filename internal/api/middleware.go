@@ -5,6 +5,8 @@ import (
 	"net/http"
 	"strings"
 
+	"go.uber.org/zap"
+
 	"github.com/zeeplabs/zeep-vane/internal/auth"
 	"github.com/zeeplabs/zeep-vane/internal/db"
 )
@@ -20,6 +22,13 @@ const userIDContextKey contextKey = "userID"
 // the full *db.User it loaded, so downstream middleware and handlers can
 // read the identity without a second database round trip.
 const userContextKey contextKey = "user"
+
+// sessionIDContextKey is the request-context key under which RequireAuth
+// stores the session row id (the JWT's `sid` claim, resolved to the
+// sessions-table row that backs this token). Downstream middleware and
+// handlers - notably AuthHandler.Logout and AuthHandler.SwitchTenant -
+// read this via SessionIDFromContext to revoke or reissue the row.
+const sessionIDContextKey contextKey = "sessionID"
 
 // roleContextKey is the request-context key under which TenantContext
 // stores the caller's role in the session's active tenant. Since
@@ -71,20 +80,53 @@ func UserFromContext(ctx context.Context) (*db.User, bool) {
 	return user, ok
 }
 
+// SessionIDFromContext returns the session row id stored by RequireAuth,
+// and whether one was present. Empty string with ok=false means
+// RequireAuth was not in the middleware chain (or rejected the request
+// before reaching this point).
+func SessionIDFromContext(ctx context.Context) (string, bool) {
+	sid, ok := ctx.Value(sessionIDContextKey).(string)
+	return sid, ok
+}
+
 // userLoader is the subset of *db.UserRepository RequireAuth depends on.
 type userLoader interface {
 	GetByID(ctx context.Context, id string) (*db.User, error)
 }
 
+// sessionLoader is the subset of *db.SessionRepository RequireAuth depends
+// on. The session row it returns (or its absence - ErrNotFound) is what
+// backs every per-device revocation decision in this middleware.
+type sessionLoader interface {
+	GetByID(ctx context.Context, id string) (*db.Session, error)
+	TouchLastSeen(ctx context.Context, id string) error
+}
+
 // RequireAuth builds middleware that rejects requests without a valid
-// session token in the Authorization header ("Bearer <token>"). On success
-// it loads the token's user from users (the current SessionsRevokedAt, not
-// just what the JWT claims), rejects with 401 if the token was issued
-// before that user's sessions were revoked, and stores the loaded *db.User
-// (and its ID) in the request context. The caller's role is not resolved
-// here - it belongs to a tenant, so TenantContext resolves it once the
-// active tenant is known.
-func RequireAuth(secret string, users userLoader) func(http.Handler) http.Handler {
+// session token in the Authorization header ("Bearer <token>") or the
+// `vane_session` cookie (admin-frontend I2/I3). On success:
+//
+//  1. JWT is parsed and verified (claims.SessionID, claims.TenantID, etc.)
+//  2. users.GetByID(claims.AdminID) - rejects with 401 if the user is
+//     gone, or if their SessionsRevokedAt global timestamp is later than
+//     the token's IssuedAt (the existing admin-dashboard global-revoke
+//     flow).
+//  3. sessions.GetByID(claims.SessionID) - rejects with 401 if the row
+//     is missing (token pre-dates user-sessions, or sid was tampered
+//     with) or if the row's revoked_at is set (per-device revoke by
+//     Logout, the "Encerrar" button on the redesigned Meu Perfil
+//     screen, or RevokeAllForUser from admin events UpdateRole/Delete
+//     per decision #1 of context.md).
+//  4. sessions.TouchLastSeen(claims.SessionID) - fire-and-forget update
+//     of last_seen_at, throttled to at most once per 5 minutes by the
+//     repository. Failures are logged but never block the request (the
+//     UI's "last active" signal is best-effort, not correctness-critical).
+//
+// On success the loaded *db.User, user.ID, active tenant, and session id
+// are stored in the request context for downstream middleware/handlers.
+// The caller's role is not resolved here - it belongs to a tenant, so
+// TenantContext resolves it once the active tenant is known.
+func RequireAuth(secret string, users userLoader, sessions sessionLoader, logger *zap.Logger) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			token := bearerToken(r.Header.Get("Authorization"))
@@ -111,23 +153,55 @@ func RequireAuth(secret string, users userLoader) func(http.Handler) http.Handle
 			// claims.IssuedAt is a JWT NumericDate - second precision by
 			// spec (RFC 7519), always floor()'d from the real issue instant.
 			// SessionsRevokedAt is a Postgres timestamptz with microsecond
-			// precision (L22). This asymmetry is fail-closed, never
-			// fail-open: floor(issued) <= issued always, so this check can
-			// only ever treat a token as revoked earlier than the real
-			// comparison would (worst case, a token minted in the exact
-			// same wall-clock second as a revocation event, and genuinely
-			// after it, gets rejected once - it succeeds on retry a moment
-			// later). It can never accept a token that was truly issued
-			// before revocation, because floor(issued) can never round
-			// forward past the real issue instant.
+			// precision. This asymmetry is fail-closed, never fail-open:
+			// floor(issued) <= issued always, so this check can only ever
+			// treat a token as revoked earlier than the real comparison
+			// would (worst case, a token minted in the exact same wall-
+			// clock second as a revocation event, and genuinely after it,
+			// gets rejected once - it succeeds on retry a moment later).
+			// It can never accept a token that was truly issued before
+			// revocation, because floor(issued) can never round forward
+			// past the real issue instant.
 			if user.SessionsRevokedAt != nil && claims.IssuedAt.Before(*user.SessionsRevokedAt) {
 				writeUnauthorized(w)
 				return
 			}
 
+			// Per-device revocation check (user-sessions spec SESS-03).
+			// claims.SessionID is guaranteed non-empty by
+			// auth.VerifySessionClaims, so this lookup is by primary key
+			// - cheap, but it IS a write path through TouchLastSeen below
+			// (kept throttled so the write rate is bounded).
+			sess, err := sessions.GetByID(r.Context(), claims.SessionID)
+			if err != nil {
+				// ErrNotFound here means either: (a) the token pre-dates
+				// the user-sessions deploy and never had a real row, or
+				// (b) someone tampered with the sid to a UUID nobody
+				// owns. Both indistinguishable from RequireAuth's POV,
+				// both 401.
+				writeUnauthorized(w)
+				return
+			}
+			if sess.RevokedAt.Valid {
+				writeUnauthorized(w)
+				return
+			}
+
+			// Fire-and-forget: TouchLastSeen updates last_seen_at
+			// (throttled inside the repo to >=5min between writes).
+			// Failures logged but never block the request - the UI's
+			// "last active" signal is best-effort, not correctness-
+			// critical (matching rate-limiter fail-open posture).
+			if err := sessions.TouchLastSeen(r.Context(), sess.ID); err != nil {
+				if logger != nil {
+					logger.Warn("middleware: TouchLastSeen failed", zap.Error(err), zap.String("session_id", sess.ID))
+				}
+			}
+
 			ctx := context.WithValue(r.Context(), userIDContextKey, user.ID)
 			ctx = context.WithValue(ctx, userContextKey, user)
 			ctx = context.WithValue(ctx, activeTenantIDContextKey, claims.TenantID)
+			ctx = context.WithValue(ctx, sessionIDContextKey, sess.ID)
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}

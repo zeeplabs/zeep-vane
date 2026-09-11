@@ -85,7 +85,7 @@ func issueRoutesTestToken(t *testing.T, users *db.UserRepository, pool *db.Pool,
 		t.Fatalf("memberships.Create() returned unexpected error: %v", err)
 	}
 
-	token, err := auth.IssueSessionWithTenant(user.ID, tenantID, routesTestSessionSecret)
+	token, err := auth.IssueSessionWithTenant(user.ID, tenantID, auth.IssueTestSessionID, routesTestSessionSecret)
 	if err != nil {
 		t.Fatalf("auth.IssueSessionWithTenant() returned unexpected error: %v", err)
 	}

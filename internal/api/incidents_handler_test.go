@@ -30,7 +30,7 @@ func newIncidentsRouter(t *testing.T) (http.Handler, *db.Pool, *db.UserRepositor
 
 	r := chi.NewRouter()
 	r.Group(func(protected chi.Router) {
-		protected.Use(RequireAuth(middlewareTestSecret, admins))
+		protected.Use(RequireAuth(middlewareTestSecret, admins, db.NewSessionRepository(pool), zap.NewNop()))
 		// Mirrors buildAdminRouter: TenantContext runs right after
 		// RequireAuth and is what resolves the caller's role in the active
 		// tenant for RequireRole (multi-tenancy-core, AD-022).
@@ -946,7 +946,7 @@ func issueTestSessionTokenWithID(t *testing.T, admins *db.UserRepository) (token
 
 	seedMembership(t, user.ID, currentAPITestTenant, db.RoleOwner)
 
-	token, err := auth.IssueSessionWithTenant(user.ID, currentAPITestTenant, middlewareTestSecret)
+	token, err := auth.IssueSessionWithTenant(user.ID, currentAPITestTenant, auth.IssueTestSessionID, middlewareTestSecret)
 	if err != nil {
 		t.Fatalf("auth.IssueSessionWithTenant() returned unexpected error: %v", err)
 	}

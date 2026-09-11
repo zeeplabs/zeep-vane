@@ -39,6 +39,7 @@ type AdminsHandler struct {
 	invites         *db.TenantInviteRepository
 	emailSvc        *email.Service
 	tenants         *db.TenantRepository
+	sessions        *db.SessionRepository
 	audit           *audit.Log
 	logger          *zap.Logger
 	devTokenLogging bool
@@ -55,10 +56,13 @@ type AdminsHandler struct {
 // attacker-controlled (see adminBaseURL() in admin_base_url.go for why).
 // sessionSecret/secureCookies authenticate the admin created by
 // AcceptInvite, same pair AuthHandler/BootstrapHandler already take.
-func NewAdminsHandler(pool *db.Pool, users *db.UserRepository, memberships *db.TenantMembershipRepository, invites *db.TenantInviteRepository, emailSvc *email.Service, tenants *db.TenantRepository, auditLog *audit.Log, logger *zap.Logger, devTokenLogging bool, adminBaseURL string, sessionSecret string, secureCookies bool) *AdminsHandler {
+// sessions is the per-device session row repository (user-sessions):
+// AcceptInvite creates a row for the newly-accepted invitee so the
+// same revocation machinery that backs Login also covers this flow.
+func NewAdminsHandler(pool *db.Pool, users *db.UserRepository, memberships *db.TenantMembershipRepository, invites *db.TenantInviteRepository, emailSvc *email.Service, tenants *db.TenantRepository, sessions *db.SessionRepository, auditLog *audit.Log, logger *zap.Logger, devTokenLogging bool, adminBaseURL string, sessionSecret string, secureCookies bool) *AdminsHandler {
 	return &AdminsHandler{
 		pool: pool, users: users, memberships: memberships, invites: invites,
-		emailSvc: emailSvc, tenants: tenants,
+		emailSvc: emailSvc, tenants: tenants, sessions: sessions,
 		audit: auditLog, logger: logger,
 		devTokenLogging: devTokenLogging, adminBaseURL: adminBaseURL,
 		sessionSecret: sessionSecret, secureCookies: secureCookies,
@@ -373,7 +377,18 @@ func (h *AdminsHandler) acceptInviteForNewUser(w http.ResponseWriter, r *http.Re
 	// BootstrapHandler.Create already uses, so the invitee lands on an
 	// active session without a separate login step, already scoped to the
 	// tenant that invited them.
-	sessionToken, err := auth.IssueSessionWithTenant(user.ID, claimed.TenantID, h.sessionSecret)
+	//
+	// Per user-sessions spec SESS-01: every issued session token has a
+	// backing sessions-table row, so the same per-device revocation that
+	// covers Login also covers AcceptInvite.
+	userAgent, ip := captureSessionContext(r)
+	sid, err := h.sessions.Create(r.Context(), user.ID, userAgent, ip)
+	if err != nil {
+		h.logger.Error("admins: failed to create session row for accepted invite", zap.Error(err))
+		writeInternalError(w)
+		return
+	}
+	sessionToken, err := auth.IssueSessionWithTenant(user.ID, claimed.TenantID, sid, h.sessionSecret)
 	if err != nil {
 		h.logger.Error("admins: failed to issue session after invite acceptance", zap.Error(err))
 		writeInternalError(w)
