@@ -61,6 +61,23 @@ describe("AvatarMenu", () => {
     expect(screen.queryByRole("menuitem", { name: "Configurações" })).not.toBeInTheDocument();
   });
 
+  // PROFPAGE-02: o link "Meu Perfil" aponta para /profile para qualquer papel.
+  it("mostra 'Meu Perfil' linkando para /profile para owner", async () => {
+    await loginAs("owner@vane.app");
+    renderAvatarMenu();
+    await userEvent.click(await screen.findByRole("button", { name: "Menu do usuário" }));
+
+    expect(screen.getByRole("menuitem", { name: "Meu Perfil" })).toHaveAttribute("href", "/profile");
+  });
+
+  it("mostra 'Meu Perfil' para non-owner (qualquer papel)", async () => {
+    await loginAs("viewer@vane.app");
+    renderAvatarMenu();
+    await userEvent.click(await screen.findByRole("button", { name: "Menu do usuário" }));
+
+    expect(screen.getByRole("menuitem", { name: "Meu Perfil" })).toHaveAttribute("href", "/profile");
+  });
+
   it("'Sair' abre o LogoutConfirmDialog e confirmar chama logout", async () => {
     await loginAs("owner@vane.app");
     renderAvatarMenu();
