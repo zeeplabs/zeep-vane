@@ -29,6 +29,9 @@ export interface AuthenticatedAdmin {
   // session (Login refuses zero memberships outright, internal/api's
   // noTenantAccessBody).
   memberships: TenantMembership[];
+  // Whether the user has a confirmed TOTP enrollment (profile-page
+  // PROFPAGE-12) - mirrors GET /api/auth/me's two_factor_enabled.
+  two_factor_enabled: boolean;
 }
 
 interface State {
@@ -74,6 +77,12 @@ export interface AuthContextValue {
    * /api/auth/me - no new login required (TENANT-20). Throws ApiError on a
    * tenant_id the caller has no membership for (403, TENANT-21). */
   switchTenant: (tenantId: string) => Promise<void>;
+  /** Re-hydrates the authenticated admin from GET /api/auth/me, same path
+   * as the boot effect and switchTenant - lets a profile/2FA mutation
+   * reflect its new state without a reload (profile-page PROFPAGE-05/12).
+   * Never throws: on failure the previous identity is kept and callers
+   * proceed (design.md Error Handling). */
+  refreshAdmin: () => Promise<void>;
   hasRole: (roles: Role[]) => boolean;
   sessionExpired: boolean;
   dismissSessionExpired: () => void;
@@ -172,6 +181,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     dispatch({ type: "AUTHENTICATED", admin });
   }, []);
 
+  const refreshAdmin = useCallback(async () => {
+    try {
+      const admin = await apiFetch<AuthenticatedAdmin>("/api/auth/me");
+      dispatch({ type: "AUTHENTICATED", admin });
+    } catch {
+      // Best-effort: keep the previous identity rather than logging the
+      // user out for a transient refresh failure (design.md Error
+      // Handling - "New" identity may lag until next navigation).
+    }
+  }, []);
+
   const logout = useCallback(async () => {
     try {
       await apiFetch("/api/auth/logout", { method: "POST" });
@@ -202,6 +222,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           role: seed.role,
           active_tenant_id: "dev-tenant",
           memberships: [{ tenant_id: "dev-tenant", role: seed.role, name: "Dev Tenant", plan_tier: "free" }],
+          two_factor_enabled: false,
         },
       });
     });
@@ -222,6 +243,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         login,
         logout,
         switchTenant,
+        refreshAdmin,
         hasRole,
         sessionExpired,
         dismissSessionExpired,

@@ -3,6 +3,7 @@ import { render, screen, waitFor, act } from "@testing-library/react";
 import { http, HttpResponse } from "msw";
 import { server } from "../test/msw/server";
 import { AuthProvider, useAuth } from "./AuthProvider";
+import { setTwoFactorEnabled } from "../test/msw/handlers";
 
 function Probe() {
   const auth = useAuth();
@@ -19,6 +20,7 @@ function Probe() {
         login-fail
       </button>
       <button onClick={() => auth.logout()}>logout</button>
+      <button onClick={() => auth.refreshAdmin()}>refresh-admin</button>
       <button onClick={() => auth.setDevRole("viewer")}>dev-role-viewer</button>
     </div>
   );
@@ -173,5 +175,59 @@ describe("AuthProvider", () => {
 
     await waitFor(() => expect(screen.getByTestId("status")).toHaveTextContent("anonymous"));
     expect(screen.getByTestId("needs-bootstrap")).toHaveTextContent("false");
+  });
+
+  // PROFPAGE-12: o provider expõe two_factor_enabled de /me, e refreshAdmin
+  // re-hidrata a identidade sem reload (a mudança de estado feita nos
+  // handlers MSW chega ao componente via refreshAdmin).
+  it("expõe two_factor_enabled e refreshAdmin re-hidrata sem reload", async () => {
+    render(
+      <AuthProvider>
+        <Probe />
+      </AuthProvider>
+    );
+    await waitFor(() => expect(screen.getByTestId("status")).toHaveTextContent("anonymous"));
+
+    await act(async () => {
+      screen.getByText("login-ok").click();
+    });
+    await waitFor(() => expect(screen.getByTestId("status")).toHaveTextContent("authenticated"));
+    expect(JSON.parse(screen.getByTestId("admin").textContent ?? "{}").two_factor_enabled).toBe(false);
+
+    setTwoFactorEnabled(true);
+    await act(async () => {
+      screen.getByText("refresh-admin").click();
+    });
+
+    await waitFor(() =>
+      expect(JSON.parse(screen.getByTestId("admin").textContent ?? "{}").two_factor_enabled).toBe(true)
+    );
+  });
+
+  // design.md Error Handling: refreshAdmin nunca lança nem desloga; em falha
+  // mantém a identidade anterior.
+  it("refreshAdmin mantém a identidade anterior quando /me falha", async () => {
+    render(
+      <AuthProvider>
+        <Probe />
+      </AuthProvider>
+    );
+    await waitFor(() => expect(screen.getByTestId("status")).toHaveTextContent("anonymous"));
+
+    await act(async () => {
+      screen.getByText("login-ok").click();
+    });
+    await waitFor(() => expect(screen.getByTestId("status")).toHaveTextContent("authenticated"));
+    const before = screen.getByTestId("admin").textContent;
+
+    server.use(
+      http.get("/api/auth/me", () => HttpResponse.json({ error: "boom" }, { status: 500 }))
+    );
+    await act(async () => {
+      screen.getByText("refresh-admin").click();
+    });
+
+    expect(screen.getByTestId("status")).toHaveTextContent("authenticated");
+    expect(screen.getByTestId("admin").textContent).toBe(before);
   });
 });
