@@ -146,8 +146,8 @@ T3 → T14
 - Skill: NONE
 
 **Done when**:
-- [ ] `TenantMembership` exports `name`/`plan_tier` as required `string` fields
-- [ ] Gate check passes: `npx tsc -b --noEmit`
+- [x] `TenantMembership` exports `name`/`plan_tier` as required `string` fields
+- [x] Gate check passes: `npx tsc -b --noEmit`
 
 **Tests**: none
 **Gate**: build

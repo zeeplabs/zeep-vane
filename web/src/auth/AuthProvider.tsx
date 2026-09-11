@@ -201,7 +201,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           email: seed.email,
           role: seed.role,
           active_tenant_id: "dev-tenant",
-          memberships: [{ tenant_id: "dev-tenant", role: seed.role }],
+          memberships: [{ tenant_id: "dev-tenant", role: seed.role, name: "Dev Tenant", plan_tier: "free" }],
         },
       });
     });

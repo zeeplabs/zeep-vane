@@ -10,6 +10,8 @@ export type Role = "owner" | "operator" | "viewer";
 export interface TenantMembership {
   tenant_id: string;
   role: Role;
+  name: string; // tenant display name (new-layout-migration, SHELL-20)
+  plan_tier: string; // tenant plan, "" if unset (new-layout-migration, SHELL-21)
 }
 
 export interface Admin {
