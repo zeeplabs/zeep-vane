@@ -1,4 +1,4 @@
-import { describe, it, expect, afterEach } from "vitest";
+import { describe, it, expect, afterEach, vi } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
@@ -69,7 +69,7 @@ describe("SessionsSection", () => {
     expect(revokeButton).toHaveTextContent("Encerrar");
   });
 
-  it("clicar em Encerrar chama DELETE e a sessão sai da lista após o refetch", async () => {
+  it("clicar em Encerrar abre o diálogo e confirmar revoga a sessão", async () => {
     const user = userEvent.setup();
     await loginAsOwner();
     renderSection();
@@ -83,11 +83,59 @@ describe("SessionsSection", () => {
     ) as HTMLButtonElement;
     await user.click(revokeButton);
 
+    // Só o confirmar do diálogo dispara o DELETE; a lista ainda tem 2 linhas
+    // enquanto o diálogo está aberto.
+    await user.click(await screen.findByTestId("confirm-revoke-button"));
+
     // Mock: DELETE marca revoked_at em sess-2; onSuccess invalida a query
     // ["sessions"]; o refetch filtra a linha revogada e a UI re-renderiza
     // com apenas a sessão atual.
     await waitFor(() => expect(screen.getAllByTestId("session-row")).toHaveLength(1));
     expect(screen.getByTestId("session-row").dataset.current).toBe("true");
+  });
+
+  // PROFPAGE-20: abrir o diálogo não envia DELETE - a revogação só acontece
+  // no confirmar.
+  it("abrir o diálogo de encerrar não envia DELETE até confirmar", async () => {
+    const user = userEvent.setup();
+    await loginAsOwner();
+    const spy = vi.fn();
+    server.use(
+      http.delete("/api/auth/sessions/:id", () => {
+        spy();
+        return new HttpResponse(null, { status: 204 });
+      })
+    );
+    renderSection();
+
+    const rows = await screen.findAllByTestId("session-row");
+    const otherRow = rows.find((r) => r.dataset.current === "false")!;
+    await user.click(otherRow.querySelector('[data-testid="revoke-button"]') as HTMLButtonElement);
+
+    expect(await screen.findByTestId("confirm-revoke-button")).toBeInTheDocument();
+    expect(spy).not.toHaveBeenCalled();
+  });
+
+  // PROFPAGE-22: cancelar não envia DELETE e mantém a sessão listada.
+  it("cancelar o diálogo não envia DELETE e mantém a sessão", async () => {
+    const user = userEvent.setup();
+    await loginAsOwner();
+    const spy = vi.fn();
+    server.use(
+      http.delete("/api/auth/sessions/:id", () => {
+        spy();
+        return new HttpResponse(null, { status: 204 });
+      })
+    );
+    renderSection();
+
+    const rows = await screen.findAllByTestId("session-row");
+    const otherRow = rows.find((r) => r.dataset.current === "false")!;
+    await user.click(otherRow.querySelector('[data-testid="revoke-button"]') as HTMLButtonElement);
+    await user.click(await screen.findByTestId("cancel-revoke-button"));
+
+    expect(spy).not.toHaveBeenCalled();
+    await waitFor(() => expect(screen.getAllByTestId("session-row")).toHaveLength(2));
   });
 
   it("renderiza o estado vazio quando o backend não retorna nenhuma sessão", async () => {

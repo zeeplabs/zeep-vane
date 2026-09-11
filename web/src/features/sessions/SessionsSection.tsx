@@ -5,19 +5,20 @@
 // import this component and slot it into its layout. No host-page
 // assumptions are made here.
 //
-// Mutation UX: clicking "Encerrar" immediately calls
-// DELETE /api/auth/sessions/{id} - no confirmation dialog. The action
-// is reversible (the user just signs in again on that device) and
-// requires no destructive side effects on the local browser, so a
-// confirm step would just add friction. The mutation is disabled
-// while in-flight (revoke.isPending) so a double-click can't double-
-// fire; success/error feedback comes through a sonner toast.
+// Mutation UX: clicking "Encerrar" opens a confirmation dialog; only its
+// confirm action calls DELETE /api/auth/sessions/{id}. This supersedes the
+// component's earlier no-confirmation choice (user decision 2026-09-11,
+// profile-page PROFPAGE-20..22: matches the Meu Perfil mock). The mutation
+// is disabled while in-flight (revoke.isPending) so a double-click can't
+// double-fire; success/error feedback comes through a sonner toast.
 
+import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import { ApiError } from "../../lib/apiClient";
 import { Button } from "../../components/ui/Button";
 import { Card } from "../../components/ui/Card";
+import { Dialog } from "../../components/ui/Dialog";
 import { Tag } from "../../components/ui/Tag";
 import { useRevokeSession, useSessions } from "./hooks";
 
@@ -47,8 +48,12 @@ export function SessionsSection() {
   const { data, isLoading, isError } = useSessions();
   const revoke = useRevokeSession();
   const sessions = data ?? [];
+  const [pendingRevokeId, setPendingRevokeId] = useState<string | null>(null);
 
-  const handleRevoke = (id: string) => {
+  const handleConfirmRevoke = () => {
+    if (!pendingRevokeId) return;
+    const id = pendingRevokeId;
+    setPendingRevokeId(null);
     revoke.mutate(id, {
       onSuccess: () => {
         toast.success(t("sessions.revokeSuccess"));
@@ -117,7 +122,7 @@ export function SessionsSection() {
               {s.current ? null : (
                 <Button
                   variant="secondary"
-                  onClick={() => handleRevoke(s.id)}
+                  onClick={() => setPendingRevokeId(s.id)}
                   disabled={revoke.isPending}
                   data-testid="revoke-button"
                 >
@@ -128,6 +133,28 @@ export function SessionsSection() {
           ))
         )}
       </Card>
+      <Dialog
+        open={pendingRevokeId !== null}
+        onOpenChange={(open) => {
+          if (!open) setPendingRevokeId(null);
+        }}
+        title={t("profile.sessionsRevoke.title")}
+        description={t("profile.sessionsRevoke.body")}
+        footer={
+          <>
+            <Button
+              variant="secondary"
+              onClick={() => setPendingRevokeId(null)}
+              data-testid="cancel-revoke-button"
+            >
+              {t("profile.sessionsRevoke.cancel")}
+            </Button>
+            <Button onClick={handleConfirmRevoke} data-testid="confirm-revoke-button">
+              {t("profile.sessionsRevoke.confirm")}
+            </Button>
+          </>
+        }
+      />
     </div>
   );
 }
