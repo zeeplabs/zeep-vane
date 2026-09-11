@@ -300,12 +300,12 @@ T3 → T14
 - Skill: frontend-design
 
 **Done when**:
-- [ ] Renders `null` when `memberships.length <= 1`
-- [ ] Lists every membership (name, plan badge - `""`/falsy plan shows "Free") with the active tenant checked
-- [ ] Selecting a different tenant calls `switchTenant(tenantId)`
-- [ ] A membership missing `name` falls back to displaying `tenant_id` (Edge Case)
-- [ ] Gate check passes: `npm run test`
-- [ ] Test count: 5 new tests
+- [x] Renders `null` when `memberships.length <= 1`
+- [x] Lists every membership (name, plan badge - `""`/falsy plan shows "Free") with the active tenant checked
+- [x] Selecting a different tenant calls `switchTenant(tenantId)`
+- [x] A membership missing `name` falls back to displaying `tenant_id` (Edge Case)
+- [x] Gate check passes: `npm run test`
+- [x] Test count: 5 new tests
 
 **Tests**: unit
 **Gate**: build

@@ -30,6 +30,10 @@ const resources = {
         cancel: "Cancelar",
         confirm: "Sair",
       },
+      tenantSwitcher: {
+        label: "Trocar de organização",
+        freePlan: "Free",
+      },
       sessionExpired: {
         title: "Sessão expirada",
         body: "Sua sessão expirou. Faça login novamente para continuar.",
@@ -186,6 +190,10 @@ const resources = {
         body: "Are you sure you want to end your session?",
         cancel: "Cancel",
         confirm: "Sign out",
+      },
+      tenantSwitcher: {
+        label: "Switch organization",
+        freePlan: "Free",
       },
       sessionExpired: {
         title: "Session expired",
