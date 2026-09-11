@@ -128,6 +128,139 @@ func TestTenantMembershipRepository_ListForUser_ReturnsAllTenantsForUser(t *test
 	}
 }
 
+// TestTenantMembershipRepository_ListForUser_ReturnsTenantNamePlan covers
+// SHELL-20/21: each returned TenantMembership carries the owning tenant's
+// name/plan, joined in from the tenants table rather than left zero-valued.
+func TestTenantMembershipRepository_ListForUser_ReturnsTenantNamePlan(t *testing.T) {
+	memberships, tenants, admins, pool := newTenantMembershipRepoTestPool(t)
+	admin := createMembershipTestAdmin(t, admins, pool, "membership-nameplan@example.com")
+	tenant := createMembershipTestTenant(t, tenants, pool, "membership-nameplan")
+	if _, err := pool.Exec(context.Background(), "UPDATE tenants SET plan = $1 WHERE id = $2", "scale", tenant.ID); err != nil {
+		t.Fatalf("seeding tenant plan returned unexpected error: %v", err)
+	}
+
+	tx, err := pool.BeginTenantTx(context.Background(), "", tenant.ID)
+	if err != nil {
+		t.Fatalf("BeginTenantTx() returned unexpected error: %v", err)
+	}
+	defer func() { _ = tx.Rollback(context.Background()) }()
+	ctx := WithTenantTx(context.Background(), tx)
+
+	if err := memberships.Create(ctx, &TenantMembership{UserID: admin.ID, TenantID: tenant.ID, Role: RoleOwner}); err != nil {
+		t.Fatalf("Create() returned unexpected error: %v", err)
+	}
+	if err := tx.Commit(context.Background()); err != nil {
+		t.Fatalf("commit returned unexpected error: %v", err)
+	}
+
+	listTx, err := pool.BeginTenantTx(context.Background(), admin.ID, "")
+	if err != nil {
+		t.Fatalf("BeginTenantTx() returned unexpected error: %v", err)
+	}
+	defer func() { _ = listTx.Rollback(context.Background()) }()
+
+	got, err := memberships.ListForUser(WithTenantTx(context.Background(), listTx), admin.ID)
+	if err != nil {
+		t.Fatalf("ListForUser() returned unexpected error: %v", err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("len(ListForUser()) = %d, want 1", len(got))
+	}
+	if got[0].Name != "membership-nameplan" {
+		t.Errorf("ListForUser()[0].Name = %q, want %q", got[0].Name, "membership-nameplan")
+	}
+	if got[0].Plan != "scale" {
+		t.Errorf("ListForUser()[0].Plan = %q, want %q", got[0].Plan, "scale")
+	}
+}
+
+// TestTenantMembershipRepository_ListForUser_EmptyPlanPassthrough covers
+// SHELL-21's edge case: a tenant with plan = ” (explicitly cleared, distinct
+// from the schema's 'free' default) comes back with Plan: "" unchanged - no
+// default invented in the repository.
+func TestTenantMembershipRepository_ListForUser_EmptyPlanPassthrough(t *testing.T) {
+	memberships, tenants, admins, pool := newTenantMembershipRepoTestPool(t)
+	admin := createMembershipTestAdmin(t, admins, pool, "membership-emptyplan@example.com")
+	tenant := createMembershipTestTenant(t, tenants, pool, "membership-emptyplan")
+	if _, err := pool.Exec(context.Background(), "UPDATE tenants SET plan = '' WHERE id = $1", tenant.ID); err != nil {
+		t.Fatalf("seeding empty tenant plan returned unexpected error: %v", err)
+	}
+
+	tx, err := pool.BeginTenantTx(context.Background(), "", tenant.ID)
+	if err != nil {
+		t.Fatalf("BeginTenantTx() returned unexpected error: %v", err)
+	}
+	defer func() { _ = tx.Rollback(context.Background()) }()
+	ctx := WithTenantTx(context.Background(), tx)
+
+	if err := memberships.Create(ctx, &TenantMembership{UserID: admin.ID, TenantID: tenant.ID, Role: RoleOwner}); err != nil {
+		t.Fatalf("Create() returned unexpected error: %v", err)
+	}
+	if err := tx.Commit(context.Background()); err != nil {
+		t.Fatalf("commit returned unexpected error: %v", err)
+	}
+
+	listTx, err := pool.BeginTenantTx(context.Background(), admin.ID, "")
+	if err != nil {
+		t.Fatalf("BeginTenantTx() returned unexpected error: %v", err)
+	}
+	defer func() { _ = listTx.Rollback(context.Background()) }()
+
+	got, err := memberships.ListForUser(WithTenantTx(context.Background(), listTx), admin.ID)
+	if err != nil {
+		t.Fatalf("ListForUser() returned unexpected error: %v", err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("len(ListForUser()) = %d, want 1", len(got))
+	}
+	if got[0].Plan != "" {
+		t.Errorf("ListForUser()[0].Plan = %q, want empty string unchanged (no backend default invented)", got[0].Plan)
+	}
+}
+
+// TestTenantMembershipRepository_ListForUser_OrderingUnchangedWithJoin
+// re-asserts the pre-existing created_at ASC ordering guarantee still holds
+// once the query gained its JOIN tenants - the join must not perturb row
+// order.
+func TestTenantMembershipRepository_ListForUser_OrderingUnchangedWithJoin(t *testing.T) {
+	memberships, tenants, admins, pool := newTenantMembershipRepoTestPool(t)
+	admin := createMembershipTestAdmin(t, admins, pool, "membership-order@example.com")
+	tenantA := createMembershipTestTenant(t, tenants, pool, "membership-order-a")
+	tenantB := createMembershipTestTenant(t, tenants, pool, "membership-order-b")
+
+	for _, tenant := range []*Tenant{tenantA, tenantB} {
+		tx, err := pool.BeginTenantTx(context.Background(), "", tenant.ID)
+		if err != nil {
+			t.Fatalf("BeginTenantTx() returned unexpected error: %v", err)
+		}
+		if err := memberships.Create(WithTenantTx(context.Background(), tx), &TenantMembership{UserID: admin.ID, TenantID: tenant.ID, Role: RoleOwner}); err != nil {
+			_ = tx.Rollback(context.Background())
+			t.Fatalf("Create() returned unexpected error: %v", err)
+		}
+		if err := tx.Commit(context.Background()); err != nil {
+			t.Fatalf("commit returned unexpected error: %v", err)
+		}
+	}
+
+	tx, err := pool.BeginTenantTx(context.Background(), admin.ID, "")
+	if err != nil {
+		t.Fatalf("BeginTenantTx() returned unexpected error: %v", err)
+	}
+	defer func() { _ = tx.Rollback(context.Background()) }()
+	ctx := WithTenantTx(context.Background(), tx)
+
+	got, err := memberships.ListForUser(ctx, admin.ID)
+	if err != nil {
+		t.Fatalf("ListForUser() returned unexpected error: %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("len(ListForUser()) = %d, want 2", len(got))
+	}
+	if got[0].TenantID != tenantA.ID || got[1].TenantID != tenantB.ID {
+		t.Errorf("ListForUser() order = [%q, %q], want [%q, %q] (created_at ASC, tenantA created first)", got[0].TenantID, got[1].TenantID, tenantA.ID, tenantB.ID)
+	}
+}
+
 func TestTenantMembershipRepository_ListForTenant_ReturnsAllMembers(t *testing.T) {
 	memberships, tenants, admins, pool := newTenantMembershipRepoTestPool(t)
 	owner := createMembershipTestAdmin(t, admins, pool, "membership-listtenant-owner@example.com")

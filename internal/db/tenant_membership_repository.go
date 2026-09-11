@@ -19,6 +19,13 @@ type TenantMembership struct {
 	TenantID  string
 	Role      string
 	CreatedAt time.Time
+	// Name and Plan are the owning tenant's name/plan (tenants.name,
+	// tenants.plan), joined in by ListForUser (new-layout-migration,
+	// SHELL-20/21) so callers building meMembership/loginResponse's
+	// membership list don't need a second query per row. ListForTenant
+	// (below) does not join these - its callers don't need them yet.
+	Name string
+	Plan string
 }
 
 // ErrDuplicateMembership is returned when creating a membership that
@@ -74,7 +81,7 @@ func (r *TenantMembershipRepository) Create(ctx context.Context, m *TenantMember
 // first place).
 func (r *TenantMembershipRepository) ListForUser(ctx context.Context, userID string) ([]TenantMembership, error) {
 	rows, err := r.pool.Query(ctx,
-		"SELECT user_id, tenant_id, role, created_at FROM tenant_memberships WHERE user_id = $1 ORDER BY created_at ASC",
+		"SELECT tm.user_id, tm.tenant_id, tm.role, tm.created_at, t.name, t.plan FROM tenant_memberships tm JOIN tenants t ON t.id = tm.tenant_id WHERE tm.user_id = $1 ORDER BY tm.created_at ASC",
 		userID,
 	)
 	if err != nil {
@@ -85,7 +92,7 @@ func (r *TenantMembershipRepository) ListForUser(ctx context.Context, userID str
 	var memberships []TenantMembership
 	for rows.Next() {
 		var m TenantMembership
-		if err := rows.Scan(&m.UserID, &m.TenantID, &m.Role, &m.CreatedAt); err != nil {
+		if err := rows.Scan(&m.UserID, &m.TenantID, &m.Role, &m.CreatedAt, &m.Name, &m.Plan); err != nil {
 			return nil, fmt.Errorf("db: failed to scan tenant membership: %w", err)
 		}
 		memberships = append(memberships, m)
