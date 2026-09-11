@@ -64,7 +64,9 @@ export function TenantSelector() {
                 disabled={submittingId !== null}
                 onClick={() => handleSelect(m.tenant_id)}
               >
-                <span>{m.tenant_id}</span>
+                {/* Fallback to tenant_id for a legacy/edge-case row missing
+                    name (spec.md Edge Case, new-layout-migration SHELL-20). */}
+                <span>{m.name || m.tenant_id}</span>
                 <span className="text-neutral-400">{roleLabel[m.role]}</span>
               </Button>
             </li>

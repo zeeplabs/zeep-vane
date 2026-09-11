@@ -18,8 +18,22 @@ const multiMembershipMe = {
   name: "Ana Owner",
   role: "owner",
   memberships: [
-    { tenant_id: "tenant-1", role: "owner" },
-    { tenant_id: "tenant-2", role: "operator" },
+    { tenant_id: "tenant-1", role: "owner", name: "Acme Corp", plan_tier: "scale" },
+    { tenant_id: "tenant-2", role: "operator", name: "Beta Inc", plan_tier: "" },
+  ],
+};
+
+// Legacy/edge-case fixture (new-layout-migration, SHELL-20 Edge Case): a
+// membership row with no `name` set - the selector must fall back to
+// `tenant_id` instead of rendering a blank row.
+const legacyMembershipMe = {
+  id: "admin-1",
+  email: "owner@vane.app",
+  name: "Ana Owner",
+  role: "owner",
+  memberships: [
+    { tenant_id: "tenant-1", role: "owner", name: "Acme Corp", plan_tier: "scale" },
+    { tenant_id: "tenant-legacy", role: "operator", name: "", plan_tier: "" },
   ],
 };
 
@@ -86,8 +100,22 @@ describe("TenantSelector", () => {
     await login();
 
     expect(await screen.findByText("Selecione uma organização")).toBeInTheDocument();
-    expect(screen.getByText("tenant-1")).toBeInTheDocument();
-    expect(screen.getByText("tenant-2")).toBeInTheDocument();
+    expect(screen.getByText("Acme Corp")).toBeInTheDocument();
+    expect(screen.getByText("Beta Inc")).toBeInTheDocument();
+  });
+
+  it("membership sem name usa tenant_id como fallback de exibição (new-layout-migration, SHELL-20 Edge Case)", async () => {
+    server.use(
+      http.get("/api/auth/me", () =>
+        HttpResponse.json({ ...legacyMembershipMe, active_tenant_id: undefined })
+      )
+    );
+    renderAppAt("/login");
+    await login();
+
+    await screen.findByText("Selecione uma organização");
+    expect(screen.getByText("Acme Corp")).toBeInTheDocument();
+    expect(screen.getByText("tenant-legacy")).toBeInTheDocument();
   });
 
   it("selecionar uma organização chama switch-tenant e leva para o dashboard (T17, TENANT-20)", async () => {
@@ -96,7 +124,7 @@ describe("TenantSelector", () => {
     await login();
 
     await screen.findByText("Selecione uma organização");
-    await userEvent.click(screen.getByRole("button", { name: /tenant-2/ }));
+    await userEvent.click(screen.getByRole("button", { name: /Beta Inc/ }));
 
     await waitFor(() => expect(screen.queryByText("Selecione uma organização")).not.toBeInTheDocument());
   });
@@ -123,7 +151,7 @@ describe("TenantSelector", () => {
     await login();
 
     await screen.findByText("Selecione uma organização");
-    await userEvent.click(screen.getByRole("button", { name: /tenant-1/ }));
+    await userEvent.click(screen.getByRole("button", { name: /Acme Corp/ }));
 
     expect(await screen.findByRole("alert")).toHaveTextContent("no access to that tenant");
     expect(screen.getByText("Selecione uma organização")).toBeInTheDocument();

@@ -439,11 +439,11 @@ T3 → T14
 - Skill: frontend-design
 
 **Done when**:
-- [ ] Renders `membership.name` for each listed tenant
-- [ ] Falls back to `membership.tenant_id` when `name` is empty (Edge Case)
-- [ ] Existing `TenantSelector.test.tsx` assertions pass, updated where they asserted the old raw-ID display
-- [ ] Gate check passes: `npm run test`
-- [ ] Test count: existing suite updated, +1 new test (fallback case)
+- [x] Renders `membership.name` for each listed tenant
+- [x] Falls back to `membership.tenant_id` when `name` is empty (Edge Case)
+- [x] Existing `TenantSelector.test.tsx` assertions pass, updated where they asserted the old raw-ID display
+- [x] Gate check passes: `npm run test`
+- [x] Test count: existing suite (5 tests, rewritten) + 1 new test (fallback case) = 6 total
 
 **Tests**: unit
 **Gate**: build
