@@ -380,16 +380,16 @@ T3 → T14
 - Skill: frontend-design
 
 **Done when**:
-- [ ] Sidebar is `72px` wide by default, `240px` on hover
-- [ ] Hover-expand/collapse suppressed while `useSidebarPin().pinned` is true
-- [ ] "Fixar menu" toggle calls `togglePinned()`
-- [ ] Three nav groups render with the items listed in spec SHELL-05; "Planos & Faturamento" is absent
-- [ ] Role gates (Usuários, Configurações) match today's `hasRole(["owner"])` behavior exactly - proven for both an owner and a non-owner session
-- [ ] Current-route nav item gets the accent-tinted highlight
-- [ ] `TenantSwitcher` rendered at the top; logout button opens `LogoutConfirmDialog`
-- [ ] Every existing `Sidebar.test.tsx` assertion that still applies to the new layout passes (rewritten where the old assertions target removed markup)
-- [ ] Gate check passes: `npm run test`
-- [ ] Test count: existing suite (`Sidebar.test.tsx`) updated + ≥5 new tests (hover collapse/expand, pin persistence, group omission, role gate both ways)
+- [x] Sidebar is `72px` wide by default, `240px` on hover
+- [x] Hover-expand/collapse suppressed while `useSidebarPin().pinned` is true
+- [x] "Fixar menu" toggle calls `togglePinned()`
+- [x] Three nav groups render with the items listed in spec SHELL-05; "Planos & Faturamento" is absent
+- [x] Role gates (Usuários, Configurações) match today's `hasRole(["owner"])` behavior exactly - proven for both an owner and a non-owner session
+- [x] Current-route nav item gets the accent-tinted highlight
+- [x] `TenantSwitcher` rendered at the top; logout button opens `LogoutConfirmDialog`
+- [x] Every existing `Sidebar.test.tsx` assertion that still applies to the new layout passes (rewritten where the old assertions target removed markup - labels updated to match spec SHELL-05's exact copy: "Usuários", "Serviços monitorados", "Domínios & Status", "Poller Status")
+- [x] Gate check passes: `npm run test`
+- [x] Test count: existing suite (7 tests, rewritten) + 8 new tests (nav highlight, sidebar logout dialog, TenantSwitcher position, hover collapse/expand, pinned suppresses collapse, group omission, pin persistence, Configurações both ways) = 15 total in Sidebar.test.tsx
 
 **Tests**: unit
 **Gate**: build

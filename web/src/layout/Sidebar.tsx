@@ -2,9 +2,10 @@ import { useState } from "react";
 import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { useAuth } from "../auth/AuthProvider";
-import { Dialog } from "../components/ui/Dialog";
-import { Button } from "../components/ui/Button";
 import { useBrandLogoUrl } from "../lib/branding";
+import { useSidebarPin } from "../lib/useSidebarPin";
+import { LogoutConfirmDialog } from "./LogoutConfirmDialog";
+import { TenantSwitcher } from "./TenantSwitcher";
 import vaneLogo from "../assets/vane-logo.webp";
 import type { Role } from "../types/api";
 
@@ -81,9 +82,17 @@ function LogoutIcon() {
   );
 }
 
+function PinIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M12 2v6M8 8h8l1 4H7l1-4ZM12 12v10" />
+    </svg>
+  );
+}
+
 const navItemClass = ({ isActive }: { isActive: boolean }) =>
   "flex h-9 items-center gap-2.5 rounded-md px-3 text-sm transition-colors " +
-  (isActive ? "text-accent bg-accent-900" : "text-neutral-300 hover:text-text");
+  (isActive ? "text-accent bg-[rgba(90,70,199,0.08)]" : "text-text-muted hover:bg-sidebar-hover-bg");
 
 const DEV_ROLES: { value: Role; label: string }[] = [
   { value: "owner", label: "Owner" },
@@ -91,13 +100,21 @@ const DEV_ROLES: { value: Role; label: string }[] = [
   { value: "viewer", label: "Viewer" },
 ];
 
+// Sidebar: collapsible 72px/240px shell nav (new-layout-migration, SHELL-02
+// through SHELL-06). Expands on hover, stays expanded while pinned
+// (useSidebarPin, T7). TenantSwitcher (T9) sits at the top; LogoutConfirmDialog
+// (T8) replaces the modal this file used to inline.
 export function Sidebar() {
   const { admin, hasRole, logout, setDevRole } = useAuth();
+  const { pinned, togglePinned } = useSidebarPin();
   const logoUrl = useBrandLogoUrl();
   const { t } = useTranslation();
   const location = useLocation();
   const navigate = useNavigate();
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const [hovering, setHovering] = useState(false);
+
+  const expanded = pinned || hovering;
 
   async function handleConfirmLogout() {
     setConfirmOpen(false);
@@ -106,55 +123,67 @@ export function Sidebar() {
 
   const domainsActive = location.pathname.startsWith("/domains") || location.pathname.startsWith("/status-pages");
 
+  const labelClass = expanded ? "" : "sr-only";
+  const groupLabelClass = "px-3 pb-1 pt-3 text-[10.5px] font-semibold uppercase tracking-wider text-text-muted";
+
   return (
-    <aside className="flex h-full w-[236px] shrink-0 flex-col border-r border-divider bg-bg px-3 py-4">
-      <div className="flex items-center gap-2 px-2 pb-4 mb-4 text-accent">
-        <img
-          src={logoUrl ?? vaneLogo}
-          alt={t("sidebar.brand")}
-          className="w-26 flex-none object-contain"
-        />
+    <aside
+      data-testid="sidebar"
+      onMouseEnter={() => setHovering(true)}
+      onMouseLeave={() => setHovering(false)}
+      className={
+        "flex h-full shrink-0 flex-col overflow-hidden border-r border-divider bg-sidebar-bg px-3 py-4 transition-[width] duration-150 " +
+        (expanded ? "w-[240px]" : "w-[72px]")
+      }
+    >
+      <div className="flex items-center gap-2 px-2 pb-3 text-accent">
+        <img src={logoUrl ?? vaneLogo} alt={t("sidebar.brand")} className="w-26 flex-none object-contain" />
       </div>
 
-      <nav className="flex flex-col gap-0.5">
-        <NavLink to="/integrations" className={navItemClass}>
-          <IntegrationsIcon />
-          <span>{t("sidebar.integrations")}</span>
-        </NavLink>
+      <TenantSwitcher />
+
+      <div className="my-3 h-px bg-divider" />
+
+      <nav className="flex flex-col gap-0.5 overflow-y-auto">
+        <div className={groupLabelClass}>{t("sidebar.groupMonitoring")}</div>
         <NavLink to="/services" className={navItemClass}>
           <ServicesIcon />
-          <span>{t("sidebar.services")}</span>
+          <span className={labelClass}>{t("sidebar.services")}</span>
         </NavLink>
         <button
           type="button"
           onClick={() => navigate("/domains")}
           className={
             "flex h-9 cursor-pointer items-center gap-2.5 rounded-md px-3 text-left text-sm transition-colors " +
-            (domainsActive ? "text-accent bg-accent-900" : "text-neutral-300 hover:text-text")
+            (domainsActive ? "text-accent bg-[rgba(90,70,199,0.08)]" : "text-text-muted hover:bg-sidebar-hover-bg")
           }
         >
           <DomainsIcon />
-          <span>{t("sidebar.domainsStatusPages")}</span>
+          <span className={labelClass}>{t("sidebar.domainsStatusPages")}</span>
         </button>
         <NavLink to="/incidents" className={navItemClass}>
           <IncidentsIcon />
-          <span>{t("sidebar.incidents")}</span>
+          <span className={labelClass}>{t("sidebar.incidents")}</span>
         </NavLink>
-        {hasRole(["owner"]) ? (
-          <NavLink to="/admins" className={navItemClass}>
-            <AdminsIcon />
-            <span>{t("sidebar.admins")}</span>
-          </NavLink>
-        ) : null}
+
+        <div className={groupLabelClass}>{t("sidebar.groupPlatform")}</div>
+        <NavLink to="/integrations" className={navItemClass}>
+          <IntegrationsIcon />
+          <span className={labelClass}>{t("sidebar.integrations")}</span>
+        </NavLink>
         <NavLink to="/poller-status" className={navItemClass}>
           <PollerIcon />
-          <span>{t("sidebar.pollerStatus")}</span>
+          <span className={labelClass}>{t("sidebar.pollerStatus")}</span>
         </NavLink>
+
         {hasRole(["owner"]) ? (
-          <NavLink to="/settings" className={navItemClass}>
-            <SettingsIcon />
-            <span>{t("sidebar.settings")}</span>
-          </NavLink>
+          <>
+            <div className={groupLabelClass}>{t("sidebar.groupOrganization")}</div>
+            <NavLink to="/admins" className={navItemClass}>
+              <AdminsIcon />
+              <span className={labelClass}>{t("sidebar.admins")}</span>
+            </NavLink>
+          </>
         ) : null}
       </nav>
 
@@ -163,7 +192,7 @@ export function Sidebar() {
 
         {import.meta.env.DEV ? (
           <div className="px-2 py-0.5">
-            <div className="mb-1.5 text-[10px] uppercase tracking-wider text-neutral-400 opacity-70">
+            <div className={`mb-1.5 text-[10px] uppercase tracking-wider text-text-muted opacity-70 ${labelClass}`}>
               {t("sidebar.viewingAs")}
             </div>
             <div className="flex w-full rounded-md border border-divider bg-bg p-0.5" role="radiogroup" aria-label={t("sidebar.viewingAs")}>
@@ -178,7 +207,7 @@ export function Sidebar() {
                     onClick={() => setDevRole(r.value)}
                     className={
                       "flex-1 cursor-pointer rounded-sm px-1 py-1.5 text-[10.5px] transition-colors " +
-                      (active ? "text-accent ring-1 ring-inset ring-accent" : "text-neutral-400 hover:text-text")
+                      (active ? "text-accent ring-1 ring-inset ring-accent" : "text-text-muted hover:text-text")
                     }
                   >
                     {r.label}
@@ -189,10 +218,30 @@ export function Sidebar() {
           </div>
         ) : null}
 
+        {hasRole(["owner"]) ? (
+          <NavLink to="/settings" className={navItemClass}>
+            <SettingsIcon />
+            <span className={labelClass}>{t("sidebar.settings")}</span>
+          </NavLink>
+        ) : null}
+
+        <button
+          type="button"
+          onClick={togglePinned}
+          aria-pressed={pinned}
+          className={
+            "flex cursor-pointer items-center gap-2 rounded-md px-3 py-1.5 text-left text-[12.5px] transition-colors " +
+            (pinned ? "text-accent" : "text-text-muted hover:text-text")
+          }
+        >
+          <PinIcon />
+          <span className={labelClass}>{t("sidebar.pinMenu")}</span>
+        </button>
+
         {admin ? (
           <div className="px-2 py-1">
-            <div className="truncate text-[13px] font-medium text-text">{admin.name || admin.email}</div>
-            {admin.name ? <div className="truncate text-[11.5px] text-neutral-400">{admin.email}</div> : null}
+            <div className={`truncate text-[13px] font-medium text-text ${labelClass}`}>{admin.name || admin.email}</div>
+            {admin.name ? <div className={`truncate text-[11.5px] text-text-muted ${labelClass}`}>{admin.email}</div> : null}
           </div>
         ) : null}
 
@@ -202,25 +251,10 @@ export function Sidebar() {
           className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-left text-[12.5px] text-text opacity-55 transition-opacity hover:opacity-80"
         >
           <LogoutIcon />
-          {t("sidebar.logout")}
+          <span className={labelClass}>{t("sidebar.logout")}</span>
         </button>
 
-        <Dialog
-          open={confirmOpen}
-          onOpenChange={setConfirmOpen}
-          title={t("logoutDialog.title")}
-          description={t("logoutDialog.body")}
-          footer={
-            <>
-              <Button variant="secondary" onClick={() => setConfirmOpen(false)}>
-                {t("logoutDialog.cancel")}
-              </Button>
-              <Button variant="primary" onClick={handleConfirmLogout}>
-                {t("logoutDialog.confirm")}
-              </Button>
-            </>
-          }
-        />
+        <LogoutConfirmDialog open={confirmOpen} onOpenChange={setConfirmOpen} onConfirm={handleConfirmLogout} />
       </div>
     </aside>
   );
