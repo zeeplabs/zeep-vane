@@ -37,10 +37,37 @@ import type { LLMProviderName } from "../../lib/llmProviders";
 // "logged in or not" across requests within a test.
 let sessionAdminId: string | null = null;
 
+// In-memory profile/2FA overrides (profile-page), mirroring the fields GET
+// /api/auth/me reports for the logged-in admin. Tests toggle 2FA via
+// setTwoFactorEnabled (or the enroll/confirm/disable handlers); PATCH
+// /api/auth/me writes profileNameOverride and change-password writes
+// passwordOverride. resetAuthSession clears all of them
+// (test/setup.ts afterEach) so no test leaks identity state into the next -
+// importantly the seeded "demo1234" password stays valid after another test
+// rotates it.
+let twoFactorEnabledState = false;
+let profileNameOverride: Record<string, string> = {};
+let passwordOverride: Record<string, string> = {};
+
 export function resetAuthSession(): void {
   sessionAdminId = null;
   currentSessionId = null;
+  twoFactorEnabledState = false;
+  profileNameOverride = {};
+  passwordOverride = {};
 }
+
+// setTwoFactorEnabled lets a test drive the 2FA state GET /api/auth/me
+// reports without going through the enroll/confirm handlers.
+export function setTwoFactorEnabled(value: boolean): void {
+  twoFactorEnabledState = value;
+}
+
+// mswValidTotpCode is the code POST /api/auth/2fa/confirm accepts. The mock
+// has no real pending TOTP secret to validate against, so it accepts this
+// fixed code and 422s everything else, mirroring the backend's wrong-code
+// path (auth_handler.go Confirm2FA).
+export const mswValidTotpCode = "123456";
 
 // In-memory sessions state (user-sessions spec). Seeded fresh from
 // mockData on every resetSessions() call (test/setup.ts afterEach).
@@ -387,6 +414,28 @@ function defaultMembershipsFor(role: Role) {
   return [{ tenant_id: "tenant-1", role }];
 }
 
+// effectivePassword applies the in-memory rotation from change-password over
+// the seeded password, so login/change-password/disable all agree within a
+// test without mutating the shared seed fixture.
+function effectivePassword(admin: (typeof seedAdmins)[number]): string {
+  return passwordOverride[admin.id] ?? admin.password;
+}
+
+// buildMeResponse is the single source of the GET/PATCH /api/auth/me body,
+// so both handlers stay byte-identical in shape (the real backend shares one
+// meResponse struct).
+function buildMeResponse(admin: (typeof seedAdmins)[number]) {
+  return {
+    id: admin.id,
+    email: admin.email,
+    name: profileNameOverride[admin.id] ?? admin.name,
+    role: admin.role,
+    active_tenant_id: "tenant-1",
+    memberships: defaultMembershipsFor(admin.role),
+    two_factor_enabled: twoFactorEnabledState,
+  };
+}
+
 export const handlers = [
   // GET /api/public-status - mirrors the production public status page
   // endpoint (AD-018), only ever wired up on the public HTTPS listener in
@@ -489,7 +538,9 @@ export const handlers = [
 
   http.post("/api/auth/login", async ({ request }) => {
     const body = (await request.json()) as { email?: string; password?: string };
-    const admin = seedAdmins.find((a) => a.email === body.email && a.password === body.password);
+    const admin = seedAdmins.find(
+      (a) => a.email === body.email && effectivePassword(a) === body.password,
+    );
     if (!admin) {
       return HttpResponse.json({ error: "invalid email or password" }, { status: 401 });
     }
@@ -505,19 +556,116 @@ export const handlers = [
     return HttpResponse.json({ token: `msw-token-${admin.id}` });
   }),
 
+  // GET /api/auth/me - mirrors AuthHandler.Me. `two_factor_enabled` comes
+  // from the mock's in-memory state (setTwoFactorEnabled / the 2FA handlers)
+  // and `name` from a PATCH override, both reset after each test.
   http.get("/api/auth/me", () => {
     const admin = seedAdmins.find((a) => a.id === sessionAdminId);
     if (!admin) {
       return HttpResponse.json({ error: "unauthorized" }, { status: 401 });
     }
+    return HttpResponse.json(buildMeResponse(admin));
+  }),
+
+  // PATCH /api/auth/me (PROFPAGE-04/05) - mirrors AuthHandler.UpdateProfile:
+  // 401 without a session, 422 on an empty name, otherwise persists the new
+  // name (in the mock's override) and returns the same meResponse GET /me
+  // returns, so a subsequent refreshAdmin() sees it.
+  http.patch("/api/auth/me", async ({ request }) => {
+    const admin = seedAdmins.find((a) => a.id === sessionAdminId);
+    if (!admin) {
+      return HttpResponse.json({ error: "unauthorized" }, { status: 401 });
+    }
+    const body = (await request.json()) as { name?: string };
+    if (!body.name) {
+      return HttpResponse.json({ error: "name is required" }, { status: 422 });
+    }
+    profileNameOverride[admin.id] = body.name;
+    return HttpResponse.json(buildMeResponse(admin));
+  }),
+
+  // POST /api/auth/change-password (PROFPAGE-07..10) - mirrors
+  // AuthHandler.ChangePassword: 401 on a wrong current password (checked
+  // before the new-password policy, same order as the handler), 422 on a new
+  // password outside the 8-72 char range, otherwise 200 {"status":"ok"} and
+  // the in-memory password rotates (so a later login uses the new one within
+  // the same test).
+  http.post("/api/auth/change-password", async ({ request }) => {
+    const admin = seedAdmins.find((a) => a.id === sessionAdminId);
+    if (!admin) {
+      return HttpResponse.json({ error: "unauthorized" }, { status: 401 });
+    }
+    const body = (await request.json().catch(() => null)) as
+      | { current_password?: string; new_password?: string }
+      | null;
+    if (!body || effectivePassword(admin) !== body.current_password) {
+      return HttpResponse.json({ error: "current password is incorrect" }, { status: 401 });
+    }
+    const newPassword = body.new_password ?? "";
+    if (newPassword.length < 8 || newPassword.length > 72) {
+      return HttpResponse.json(
+        { error: "password must be between 8 and 72 characters" },
+        { status: 422 },
+      );
+    }
+    passwordOverride[admin.id] = newPassword;
+    return HttpResponse.json({ status: "ok" });
+  }),
+
+  // POST /api/auth/2fa/enroll (PROFPAGE-13) - mirrors AuthHandler.Enroll:
+  // 401 without a session, 409 when 2FA is already enabled, otherwise a
+  // canned {secret, otpauth_uri} pair.
+  http.post("/api/auth/2fa/enroll", () => {
+    const admin = seedAdmins.find((a) => a.id === sessionAdminId);
+    if (!admin) {
+      return HttpResponse.json({ error: "unauthorized" }, { status: 401 });
+    }
+    if (twoFactorEnabledState) {
+      return HttpResponse.json(
+        { error: "two-factor authentication is already enabled" },
+        { status: 409 },
+      );
+    }
+    const secret = "JBSWY3DPEHPK3PXP";
     return HttpResponse.json({
-      id: admin.id,
-      email: admin.email,
-      name: admin.name,
-      role: admin.role,
-      active_tenant_id: "tenant-1",
-      memberships: defaultMembershipsFor(admin.role),
+      secret,
+      otpauth_uri: `otpauth://totp/Vane:${admin.email}?secret=${secret}&issuer=Vane`,
     });
+  }),
+
+  // POST /api/auth/2fa/confirm (PROFPAGE-14/15) - mirrors
+  // AuthHandler.Confirm2FA: 401 without a session, 422 on any code other than
+  // mswValidTotpCode, otherwise enables 2FA and returns 10 recovery codes.
+  http.post("/api/auth/2fa/confirm", async ({ request }) => {
+    if (!seedAdmins.some((a) => a.id === sessionAdminId)) {
+      return HttpResponse.json({ error: "unauthorized" }, { status: 401 });
+    }
+    const body = (await request.json()) as { code?: string };
+    if (body.code !== mswValidTotpCode) {
+      return HttpResponse.json({ error: "invalid verification code" }, { status: 422 });
+    }
+    twoFactorEnabledState = true;
+    const recovery_codes = Array.from(
+      { length: 10 },
+      (_, i) => `REC-${String(i + 1).padStart(4, "0")}`,
+    );
+    return HttpResponse.json({ recovery_codes });
+  }),
+
+  // POST /api/auth/2fa/disable (PROFPAGE-17/18) - mirrors
+  // AuthHandler.Disable2FA: 401 without a session or on a wrong current
+  // password, otherwise 200 {"status":"ok"} (idempotent) and turns 2FA off.
+  http.post("/api/auth/2fa/disable", async ({ request }) => {
+    const admin = seedAdmins.find((a) => a.id === sessionAdminId);
+    if (!admin) {
+      return HttpResponse.json({ error: "unauthorized" }, { status: 401 });
+    }
+    const body = (await request.json().catch(() => null)) as { current_password?: string } | null;
+    if (!body || effectivePassword(admin) !== body.current_password) {
+      return HttpResponse.json({ error: "current password is incorrect" }, { status: 401 });
+    }
+    twoFactorEnabledState = false;
+    return HttpResponse.json({ status: "ok" });
   }),
 
   http.post("/api/auth/logout", () => {
