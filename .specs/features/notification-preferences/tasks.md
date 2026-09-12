@@ -353,10 +353,10 @@ T12 → T13
 - Skill: NONE
 
 **Done when**:
-- [ ] Renders `role="switch"` with `aria-checked` reflecting the `checked` prop; clicking or pressing Space/Enter toggles it
-- [ ] A `disabled` switch does not fire `onChange`
-- [ ] Gate check passes: `cd web && npx tsc -b --noEmit && npm run test`
-- [ ] Test count: ≥4 new tests
+- [x] Renders `role="switch"` with `aria-checked` reflecting the `checked` prop; clicking or pressing Space/Enter toggles it
+- [x] A `disabled` switch does not fire `onChange`
+- [x] Gate check passes: `cd web && npx tsc -b --noEmit && npm run test`
+- [x] Test count: ≥4 new tests
 
 **Tests**: unit
 **Gate**: frontend
