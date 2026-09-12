@@ -121,11 +121,11 @@ T12 → T13
 - Skill: NONE
 
 **Done when**:
-- [ ] `Get` returns stored rows only; no default-application inside the repository (defaults are a caller concern per `design.md`)
-- [ ] `Upsert` writes exactly the provided keys via `ON CONFLICT ... DO UPDATE`, leaves omitted types untouched
-- [ ] `ResolveEnabledForUsers` correctly applies the documented default (`true`/`true`/`false`) for users with no row, in one batched query
-- [ ] Gate check passes on disposable Postgres: `TEST_DATABASE_URL=... go test -tags=integration ./internal/db/...`
-- [ ] Test count: ≥8 new subtests
+- [x] `Get` returns stored rows only; no default-application inside the repository (defaults are a caller concern per `design.md`)
+- [x] `Upsert` writes exactly the provided keys via `ON CONFLICT ... DO UPDATE`, leaves omitted types untouched
+- [x] `ResolveEnabledForUsers` correctly applies the documented default (`true`/`true`/`false`) for users with no row, in one batched query
+- [x] Gate check passes on disposable Postgres: `TEST_DATABASE_URL=... go test -tags=integration ./internal/db/...`
+- [x] Test count: ≥8 new subtests
 
 **Tests**: integration
 **Gate**: full
