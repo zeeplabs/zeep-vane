@@ -284,6 +284,12 @@ Seen once or not yet corroborated. Tracked, not trusted.
 - evidence: M7 - internal/ratelimit/ip_limiter_test.go:337 (backend/ratelimit)
 - last seen: 2026-09-12T17:25:28Z
 
+### L-046 - When changing a function signature, grep every caller including integration-tagged test files; a plain go build/go test skips //go:build integration files and will not catch them, so run the integration build (or grep for the symbol) before committing the signature change.
+- signal: `gate_fail` · recurrence: 1 feature(s) · scope: `backend/testing` · harmful: 0
+- features: tls-key-encryption
+- evidence: T3 - internal/cli/serve_test.go:268 (6 call sites missed by the non-integration quick gate) (backend/testing)
+- last seen: 2026-09-12T18:19:41Z
+
 ## Quarantined (failed when applied - ignore)
 
 A confirmed lesson that recurred alongside failure. Kept for the maintainer to review.

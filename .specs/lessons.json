@@ -3,7 +3,7 @@
   "promote_threshold": 2,
   "window_days": 45,
   "quarantine_threshold": 2,
-  "next_id": 46,
+  "next_id": 47,
   "lessons": [
     {
       "id": "L-001",
@@ -814,6 +814,24 @@
       ],
       "created": "2026-09-12T17:25:28Z",
       "last_seen": "2026-09-12T17:25:28Z"
+    },
+    {
+      "id": "L-046",
+      "key": "gate_fail::when changing a function signature grep every caller including integration tagged test files a plain go build go test skips go build integration files and will not catch them so run the integration build or grep for the symbol before committing the signature change",
+      "text": "When changing a function signature, grep every caller including integration-tagged test files; a plain go build/go test skips //go:build integration files and will not catch them, so run the integration build (or grep for the symbol) before committing the signature change.",
+      "signal": "gate_fail",
+      "scope": "backend/testing",
+      "status": "candidate",
+      "features": [
+        "tls-key-encryption"
+      ],
+      "recurrence": 1,
+      "harmful": 0,
+      "evidence": [
+        "T3 - internal/cli/serve_test.go:268 (6 call sites missed by the non-integration quick gate) (backend/testing)"
+      ],
+      "created": "2026-09-12T18:19:41Z",
+      "last_seen": "2026-09-12T18:19:41Z"
     }
   ]
 }
