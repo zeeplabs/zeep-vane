@@ -127,24 +127,24 @@ Every ambiguity is resolved or recorded here - nothing is left silently unclear.
 
 | Requirement ID | Story | Phase | Status |
 | --- | --- | --- | --- |
-| LOGIN2FA-01 | P1: verification step shown, no session | Design | Pending |
-| LOGIN2FA-02 | P1: valid code signs in | Design | Pending |
-| LOGIN2FA-03 | P1: invalid code/expired inline, stay | Design | Pending |
-| LOGIN2FA-04 | P1: non-2FA login unchanged | Design | Pending |
-| LOGIN2FA-05 | P2: valid recovery code signs in | Design | Pending |
-| LOGIN2FA-06 | P2: invalid/used recovery inline, stay | Design | Pending |
-| LOGIN2FA-07 | P2: method switch clears input/error | Design | Pending |
-| LOGIN2FA-08 | P2: Voltar returns to credentials | Design | Pending |
-| LOGIN2FA-09 | P2: token in memory only | Design | Pending |
-| LOGIN2FA-10 | P2: login reports twoFactorRequired | Design | Pending |
-| LOGIN2FA-11 | P2: verifyTwoFactor hydrates admin | Design | Pending |
-| LOGIN2FA-12 | Edge: all new strings pt + en | Design | Pending |
+| LOGIN2FA-01 | P1: verification step shown, no session | Design | Done |
+| LOGIN2FA-02 | P1: valid code signs in | Design | Done |
+| LOGIN2FA-03 | P1: invalid code/expired inline, stay | Design | Done |
+| LOGIN2FA-04 | P1: non-2FA login unchanged | Design | Done |
+| LOGIN2FA-05 | P2: valid recovery code signs in | Design | Done |
+| LOGIN2FA-06 | P2: invalid/used recovery inline, stay | Design | Done |
+| LOGIN2FA-07 | P2: method switch clears input/error | Design | Done |
+| LOGIN2FA-08 | P2: Voltar returns to credentials | Design | Done |
+| LOGIN2FA-09 | P2: token in memory only | Design | Done |
+| LOGIN2FA-10 | P2: login reports twoFactorRequired | Design | Done |
+| LOGIN2FA-11 | P2: verifyTwoFactor hydrates admin | Design | Done |
+| LOGIN2FA-12 | Edge: all new strings pt + en | Design | Done |
 
 **ID format:** `[CATEGORY]-[NUMBER]` (e.g., `AUTH-01`, `CART-03`, `NOTIF-02`)
 
 **Status values:** Pending -> In Design -> In Tasks -> Implementing -> Verified
 
-**Coverage:** 12 total, 0 mapped to tasks, 12 unmapped (Design and Tasks phases follow before Execute)
+**Coverage:** 12 total, 12 mapped to tasks, 0 unmapped (all requirements delivered across T1-T5)
 
 ---
 

@@ -185,14 +185,14 @@ T4 -> T5
 
 **Done when**:
 
-- [ ] Correct 2FA-enabled credentials show the step and establish no session
-- [ ] A valid code (or valid recovery code) signs in and navigates
-- [ ] An invalid code/recovery shows the inline error and keeps the step
-- [ ] "Voltar" returns to credentials; the token is never in URL/storage
-- [ ] A non-2FA login is unchanged
-- [ ] `LoginPage.test.tsx` covers all the above
-- [ ] Gate check passes: `cd web && npx tsc -b --noEmit && npm run test`
-- [ ] Test count: ≥5 new tests pass (no silent deletions)
+- [x] Correct 2FA-enabled credentials show the step and establish no session
+- [x] A valid code (or valid recovery code) signs in and navigates
+- [x] An invalid code/recovery shows the inline error and keeps the step
+- [x] "Voltar" returns to credentials; the token is never in URL/storage
+- [x] A non-2FA login is unchanged
+- [x] `LoginPage.test.tsx` covers all the above
+- [x] Gate check passes: `cd web && npx tsc -b --noEmit && npm run test`
+- [x] Test count: ≥5 new tests pass (no silent deletions)
 
 **Tests**: unit
 **Gate**: build

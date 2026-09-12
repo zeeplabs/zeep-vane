@@ -3,7 +3,8 @@ import { useNavigate, Link } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { Field } from "../../components/ui/Field";
 import { Button } from "../../components/ui/Button";
-import { useAuth } from "../../auth/AuthProvider";
+import { useAuth, type TwoFactorFactor } from "../../auth/AuthProvider";
+import { LoginTwoFactorStep } from "./LoginTwoFactorStep";
 import { ApiError } from "../../lib/apiClient";
 import { useBrandLogoUrl } from "../../lib/branding";
 import vaneLogo from "../../assets/vane-logo.webp";
@@ -24,10 +25,14 @@ function EyeIcon({ crossed }: { crossed: boolean }) {
 
 export function LoginPage() {
   const { t } = useTranslation();
-  const { login } = useAuth();
+  const { login, verifyTwoFactor } = useAuth();
   const navigate = useNavigate();
   const logoUrl = useBrandLogoUrl();
 
+  const [step, setStep] = useState<"credentials" | "twoFactor">("credentials");
+  // The challenge token lives only here, in component memory - never in the
+  // URL or browser storage (LOGIN2FA-09). "Voltar" discards it.
+  const [challengeToken, setChallengeToken] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -39,7 +44,14 @@ export function LoginPage() {
     setError(null);
     setSubmitting(true);
     try {
-      await login(email, password);
+      const outcome = await login(email, password);
+      if (outcome.kind === "twoFactorRequired") {
+        // No session exists yet - switch to the verification step instead of
+        // navigating (LOGIN2FA-01).
+        setChallengeToken(outcome.challengeToken);
+        setStep("twoFactor");
+        return;
+      }
       navigate("/");
     } catch (err) {
       if (err instanceof ApiError) {
@@ -50,6 +62,30 @@ export function LoginPage() {
     } finally {
       setSubmitting(false);
     }
+  }
+
+  async function handleVerify(factor: TwoFactorFactor) {
+    setError(null);
+    setSubmitting(true);
+    try {
+      await verifyTwoFactor(challengeToken, factor);
+      navigate("/");
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 401) {
+        setError(t("login.twoFactor.invalid"));
+      } else {
+        setError(t("login.twoFactor.generic"));
+      }
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  function handleBackToCredentials() {
+    setStep("credentials");
+    setChallengeToken("");
+    setError(null);
+    setPassword("");
   }
 
   return (
@@ -104,6 +140,16 @@ export function LoginPage() {
             </div>
           </div>
 
+          {step === "twoFactor" ? (
+            <LoginTwoFactorStep
+              submitting={submitting}
+              error={error}
+              onSubmit={handleVerify}
+              onBack={handleBackToCredentials}
+              onMethodChange={() => setError(null)}
+            />
+          ) : (
+            <>
           <div className="mb-7">
             <h3 className="text-text">{t("login.title")}</h3>
             <p className="mt-1 text-[13.5px] text-neutral-400">
@@ -153,6 +199,8 @@ export function LoginPage() {
               {t("login.submit")}
             </Button>
           </form>
+            </>
+          )}
         </div>
       </div>
     </div>
