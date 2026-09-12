@@ -272,6 +272,12 @@ Seen once or not yet corroborated. Tracked, not trusted.
 - evidence: LOGIN2FA-12 (web/src/features/auth)
 - last seen: 2026-09-12T01:14:20Z
 
+### L-044 - Optimistic-rollback tests must hold the failing request behind a gate, assert the intermediate optimistic value, then assert the rolled-back value; asserting only the post-failure value (equal to the pre-mutation value) does not detect a removed rollback.
+- signal: `surviving_mutant` · recurrence: 1 feature(s) · scope: `frontend/react-query/optimistic-update` · harmful: 0
+- features: notification-preferences
+- evidence: web/src/features/notifications/hooks.ts onError rollback (mutant M8) (frontend/react-query/optimistic-update)
+- last seen: 2026-09-12T16:34:48Z
+
 ## Quarantined (failed when applied - ignore)
 
 A confirmed lesson that recurred alongside failure. Kept for the maintainer to review.

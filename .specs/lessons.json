@@ -3,7 +3,7 @@
   "promote_threshold": 2,
   "window_days": 45,
   "quarantine_threshold": 2,
-  "next_id": 44,
+  "next_id": 45,
   "lessons": [
     {
       "id": "L-001",
@@ -778,6 +778,24 @@
       ],
       "created": "2026-09-12T01:14:20Z",
       "last_seen": "2026-09-12T01:14:20Z"
+    },
+    {
+      "id": "L-044",
+      "key": "surviving_mutant::optimistic rollback tests must hold the failing request behind a gate assert the intermediate optimistic value then assert the rolled back value asserting only the post failure value equal to the pre mutation value does not detect a removed rollback",
+      "text": "Optimistic-rollback tests must hold the failing request behind a gate, assert the intermediate optimistic value, then assert the rolled-back value; asserting only the post-failure value (equal to the pre-mutation value) does not detect a removed rollback.",
+      "signal": "surviving_mutant",
+      "scope": "frontend/react-query/optimistic-update",
+      "status": "candidate",
+      "features": [
+        "notification-preferences"
+      ],
+      "recurrence": 1,
+      "harmful": 0,
+      "evidence": [
+        "web/src/features/notifications/hooks.ts onError rollback (mutant M8) (frontend/react-query/optimistic-update)"
+      ],
+      "created": "2026-09-12T16:34:48Z",
+      "last_seen": "2026-09-12T16:34:48Z"
     }
   ]
 }

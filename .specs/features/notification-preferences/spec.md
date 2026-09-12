@@ -145,22 +145,22 @@ The redesigned Meu Perfil screen (`handoff-new-layout/Meu Perfil.dc.html`) shows
 
 | Requirement ID | Story | Phase | Status |
 | --- | --- | --- | --- |
-| NOTIFPREF-01 | P1: Manage own preferences (read with defaults) | T1, T2, T3 | Implementing |
-| NOTIFPREF-02 | P1: Manage own preferences (partial update) | T2, T3 | Implementing |
-| NOTIFPREF-03 | P1: Manage own preferences (self-scoped) | T2, T3 | Implementing |
-| NOTIFPREF-04 | P1: Emailed on incident opened | T4, T5, T6 | Implementing |
-| NOTIFPREF-05 | P1: Opened email non-fatal on send failure | T4, T5, T6 | Implementing |
-| NOTIFPREF-06 | P1: Opened email respects preference/role | T5, T6 | Implementing |
-| NOTIFPREF-07 | P1: Emailed on incident resolved (Transition) | T4, T5, T6 | Implementing |
-| NOTIFPREF-08 | P1: Emailed on incident resolved (ConfirmClose) | T4, T5, T6 | Implementing |
-| NOTIFPREF-09 | P1: No email on non-resolving transition | T5, T6 | Implementing |
-| NOTIFPREF-10 | P2: Weekly digest sent per tenant | T7, T8, T9 | Implementing |
-| NOTIFPREF-11 | P2: Weekly digest deduped across replicas | T8 | Implementing |
-| NOTIFPREF-12 | P2: No digest email when nobody opted in | T7, T8 | Implementing |
-| NOTIFPREF-13 | P1: Notifications section reflects stored preferences | T10, T12, T13 | Pending |
-| NOTIFPREF-14 | P1: Single-key optimistic toggle with revert on failure | T10, T12 | Pending |
-| NOTIFPREF-15 | P1: Loading state while preferences load | T12 | Pending |
-| NOTIFPREF-16 | P1: Inline error state does not break the page | T12 | Pending |
+| NOTIFPREF-01 | P1: Manage own preferences (read with defaults) | T1, T2, T3 | Verified |
+| NOTIFPREF-02 | P1: Manage own preferences (partial update) | T2, T3 | Verified |
+| NOTIFPREF-03 | P1: Manage own preferences (self-scoped) | T2, T3 | Verified |
+| NOTIFPREF-04 | P1: Emailed on incident opened | T4, T5, T6 | Verified |
+| NOTIFPREF-05 | P1: Opened email non-fatal on send failure | T4, T5, T6 | Verified |
+| NOTIFPREF-06 | P1: Opened email respects preference/role | T5, T6 | Verified |
+| NOTIFPREF-07 | P1: Emailed on incident resolved (Transition) | T4, T5, T6 | Verified |
+| NOTIFPREF-08 | P1: Emailed on incident resolved (ConfirmClose) | T4, T5, T6 | Verified |
+| NOTIFPREF-09 | P1: No email on non-resolving transition | T5, T6 | Verified |
+| NOTIFPREF-10 | P2: Weekly digest sent per tenant | T7, T8, T9 | Verified |
+| NOTIFPREF-11 | P2: Weekly digest deduped across replicas | T8 | Verified |
+| NOTIFPREF-12 | P2: No digest email when nobody opted in | T7, T8 | Verified |
+| NOTIFPREF-13 | P1: Notifications section reflects stored preferences | T10, T12, T13 | Verified |
+| NOTIFPREF-14 | P1: Single-key optimistic toggle with revert on failure | T10, T12 | Verified |
+| NOTIFPREF-15 | P1: Loading state while preferences load | T12 | Verified |
+| NOTIFPREF-16 | P1: Inline error state does not break the page | T12 | Verified |
 
 **Coverage:** 16 total, 16 mapped to tasks, 0 unmapped
 
