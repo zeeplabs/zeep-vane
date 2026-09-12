@@ -90,14 +90,14 @@ T3 → T5
 - Skill: NONE
 
 **Done when**:
-- [ ] `NewEncryptedStorage(inner, masterKey)` + `var _ certmagic.Storage = (*EncryptedStorage)(nil)`
-- [ ] `Store` seals only `.key` values; non-`.key` stored byte-for-byte
-- [ ] `Load` decrypts sealed `.key`; returns legacy plaintext `.key` unchanged; passes other keys through
-- [ ] Decrypt failure → error wrapping `crypto.ErrDecryptionFailed`, never `fs.ErrNotExist`, never ciphertext
-- [ ] Envelope is `vane:tls-secret:v1:` + `crypto.Encrypt` output; `isSecretKey` matches real CertMagic `.key` shapes
-- [ ] `Delete`/`Exists`/`List`/`Stat`/`Lock`/`Unlock` delegate unchanged (incl. `.key` `Stat` without decryption)
-- [ ] Gate check passes: `go build ./... && go vet ./... && gofmt -l internal/tls/encrypted_storage.go && go test ./internal/tls/...`
-- [ ] Test count: ≥8 new subtests
+- [x] `NewEncryptedStorage(inner, masterKey)` + `var _ certmagic.Storage = (*EncryptedStorage)(nil)`
+- [x] `Store` seals only `.key` values; non-`.key` stored byte-for-byte
+- [x] `Load` decrypts sealed `.key`; returns legacy plaintext `.key` unchanged; passes other keys through
+- [x] Decrypt failure → error wrapping `crypto.ErrDecryptionFailed`, never `fs.ErrNotExist`, never ciphertext
+- [x] Envelope is `vane:tls-secret:v1:` + `crypto.Encrypt` output; `isSecretKey` matches real CertMagic `.key` shapes
+- [x] `Delete`/`Exists`/`List`/`Stat`/`Lock`/`Unlock` delegate unchanged (incl. `.key` `Stat` without decryption)
+- [x] Gate check passes: `go build ./... && go vet ./... && gofmt -l internal/tls/encrypted_storage.go && go test ./internal/tls/...`
+- [x] Test count: ≥8 new subtests
 
 **Tests**: unit
 **Gate**: quick
