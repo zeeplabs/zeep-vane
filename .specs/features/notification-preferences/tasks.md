@@ -303,9 +303,9 @@ T12 → T13
 - Skill: NONE
 
 **Done when**:
-- [ ] `vane serve` starts the digest scheduler goroutine and stops it cleanly on context cancellation, matching `PollerManager`'s existing shutdown behavior
-- [ ] Gate check passes on disposable Postgres: `TEST_DATABASE_URL=... go test -tags=integration ./...`
-- [ ] Test count: +1 new test (or existing `serve`-level test extended) confirming the scheduler is constructed and started
+- [x] `vane serve` starts the digest scheduler goroutine and stops it cleanly on context cancellation, matching `PollerManager`'s existing shutdown behavior
+- [x] Gate check passes on disposable Postgres: `TEST_DATABASE_URL=... go test -tags=integration -count=1 ./...`
+- [x] Test count: +1 new test (or existing `serve`-level test extended) confirming the scheduler is constructed and started
 
 **Tests**: integration
 **Gate**: full

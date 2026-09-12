@@ -110,6 +110,16 @@ func NewServeCmd() *cobra.Command {
 			pruner := retention.NewPruner(db.NewStatusIntervalRepository(pool), pruneTick, pruneRetention, logger)
 			go pruner.Run(ctx)
 
+			// The weekly digest scheduler runs on its own Monday-00:00-UTC
+			// timer, gated by a second advisory lock so only one replica sends
+			// (notification-preferences NOTIFPREF-10/11). It is stopped by the
+			// same ctx cancellation as the poller and pruner.
+			digestScheduler, err := newDigestScheduler(pool, cfg, logger)
+			if err != nil {
+				return err
+			}
+			go digestScheduler.Run(ctx)
+
 			addr := fmt.Sprintf(":%d", cfg.Port)
 			srv := &http.Server{Addr: addr, Handler: buildAdminRouter(pool, cfg, logger, pollerManager)}
 
@@ -272,11 +282,11 @@ func newPollerFromStoredIntegration(ctx context.Context, pool *db.Pool, cfg conf
 	// Auto-created outage incidents bypass the HTTP handler, so the analyzer
 	// needs its own notifier to fire the incident-opened email
 	// (notification-preferences NOTIFPREF-04, spec edge case).
-	emailService, err := email.NewService(db.NewEmailProviderRepository(pool), emailProviderFactory, cfg.MasterKey, logger)
+	notifier, err := newNotifyService(pool, cfg, logger)
 	if err != nil {
-		return nil, false, fmt.Errorf("serve: failed to build email service for notifications: %w", err)
+		return nil, false, err
 	}
-	analyzer.SetNotifier(notify.NewService(db.NewTenantMembershipRepository(pool), db.NewNotificationPreferenceRepository(pool), emailService, cfg.AdminBaseURL, logger))
+	analyzer.SetNotifier(notifier)
 
 	p = poller.NewPoller(services, services, intervals, integrations, client, interval, analyzer, logger)
 
@@ -309,4 +319,34 @@ func poolTenantTx(pool *db.Pool) poller.TenantTxFunc {
 			func(rollbackCtx context.Context) { _ = tx.Rollback(rollbackCtx) },
 			nil
 	}
+}
+
+// newNotifyService builds the notification service shared by the incident
+// lifecycle (HTTP handler and poller's auto-created incidents) and the weekly
+// digest scheduler.
+func newNotifyService(pool *db.Pool, cfg config.Config, logger *zap.Logger) (*notify.Service, error) {
+	emailService, err := email.NewService(db.NewEmailProviderRepository(pool), emailProviderFactory, cfg.MasterKey, logger)
+	if err != nil {
+		return nil, fmt.Errorf("serve: failed to build email service for notifications: %w", err)
+	}
+	return notify.NewService(db.NewTenantMembershipRepository(pool), db.NewNotificationPreferenceRepository(pool), emailService, cfg.AdminBaseURL, logger), nil
+}
+
+// newDigestScheduler builds the weekly digest scheduler with its production
+// dependencies.
+func newDigestScheduler(pool *db.Pool, cfg config.Config, logger *zap.Logger) (*DigestScheduler, error) {
+	notifier, err := newNotifyService(pool, cfg, logger)
+	if err != nil {
+		return nil, err
+	}
+	return NewDigestScheduler(
+		cfg.DatabaseURL,
+		pool,
+		db.NewSystemTenantLister(pool),
+		db.NewServiceRepository(pool),
+		db.NewStatusIntervalRepository(pool),
+		db.NewIncidentRepository(pool),
+		notifier,
+		logger,
+	), nil
 }

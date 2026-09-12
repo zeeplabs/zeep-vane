@@ -10,6 +10,7 @@ import (
 
 	"go.uber.org/zap"
 
+	"github.com/zeeplabs/zeep-vane/internal/config"
 	"github.com/zeeplabs/zeep-vane/internal/db"
 	"github.com/zeeplabs/zeep-vane/internal/email"
 )
@@ -226,5 +227,31 @@ func TestNextDigestFire(t *testing.T) {
 				t.Errorf("nextDigestFire(%s) = %s, want %s", tc.now, got, tc.want)
 			}
 		})
+	}
+}
+
+// TestNewDigestScheduler_BootWiring_RunStopsOnContextCancel covers NOTIFPREF-10
+// wiring: the scheduler the boot path constructs starts and stops cleanly when
+// the serve context is canceled.
+func TestNewDigestScheduler_BootWiring_RunStopsOnContextCancel(t *testing.T) {
+	pool := newServeTestPool(t)
+
+	s, err := newDigestScheduler(pool, config.Config{DatabaseURL: testDatabaseURL(t), MasterKey: "cli-digest-test-master-key"}, zap.NewNop())
+	if err != nil {
+		t.Fatalf("newDigestScheduler() returned unexpected error: %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() {
+		s.Run(ctx)
+		close(done)
+	}()
+
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("DigestScheduler.Run did not stop on context cancellation")
 	}
 }
