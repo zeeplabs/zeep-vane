@@ -166,10 +166,10 @@ T2 → T5
 - Skill: NONE
 
 **Done when**:
-- [ ] With the pool unusable (canceled context / closed pool), burst `1` yields pass-then-`429` via the fallback
-- [ ] After the pool is usable again and the cooldown elapses, the primary store is used (asserted via `rate_limit_buckets` row state or a spy)
-- [ ] Gate check passes on disposable Postgres: `TEST_DATABASE_URL=... go test -tags=integration -count=1 -p 1 ./internal/ratelimit/...`
-- [ ] Test count: ≥2 new integration tests
+- [x] With the pool unusable (canceled context / closed pool), burst `1` yields pass-then-`429` via the fallback
+- [x] After the pool is usable again and the cooldown elapses, the primary store is used (asserted via `rate_limit_buckets` row state or a spy)
+- [x] Gate check passes on disposable Postgres: `TEST_DATABASE_URL=... go test -tags=integration -count=1 -p 1 ./internal/ratelimit/...`
+- [x] Test count: ≥2 new integration tests
 
 **Tests**: integration
 **Gate**: full
