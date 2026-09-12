@@ -5,6 +5,7 @@ package cli
 import (
 	"context"
 	"net/url"
+	"sync"
 	"testing"
 	"time"
 
@@ -452,5 +453,133 @@ func TestPollerManager_RunLeaderLoop_LeaderBackendKilled_FailoverAndAbort(t *tes
 	// interval of the leader's session dying.
 	if !waitUntil(3*time.Second, func() bool { return isLeading(standby) }) {
 		t.Fatal("standby did not acquire leadership and start polling after the leader's session died (HA-04)")
+	}
+}
+
+// TestPollerManager_ConcurrentRestarts_NeverLeavesTwoPollers covers the Edge
+// Cases' "two pollers never run concurrently" guarantee under contention:
+// N goroutines racing Restart behind a start barrier must all return, and the
+// manager must end tracking a consistent cancel/done pair - never two
+// independently-tracked pollers. Run under -race, this also proves Restart's
+// m.mu critical section has no data race.
+func TestPollerManager_ConcurrentRestarts_NeverLeavesTwoPollers(t *testing.T) {
+	pool := newServeTestPool(t)
+	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), "DELETE FROM integrations WHERE provider = 'datadog'") })
+	storeTestDatadogIntegration(t, pool)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	mgr := NewPollerManager(ctx, pool, pollerManagerTestConfig(), zap.NewNop(), testDatabaseURL(t))
+	t.Cleanup(mgr.Stop)
+	mgr.leading.Store(true)
+
+	const workers = 8
+	start := make(chan struct{})
+	var wg sync.WaitGroup
+	wg.Add(workers)
+	for i := 0; i < workers; i++ {
+		go func() {
+			defer wg.Done()
+			<-start
+			if _, err := mgr.Restart(context.Background()); err != nil {
+				t.Errorf("concurrent Restart() returned unexpected error: %v", err)
+			}
+		}()
+	}
+	close(start)
+
+	done := make(chan struct{})
+	go func() { wg.Wait(); close(done) }()
+	select {
+	case <-done:
+	case <-time.After(10 * time.Second):
+		t.Fatal("concurrent Restarts did not all return within 10s, want no deadlock")
+	}
+
+	mgr.mu.Lock()
+	cancelSet, doneSet := mgr.cancel != nil, mgr.done != nil
+	mgr.mu.Unlock()
+	if cancelSet != doneSet {
+		t.Errorf("cancel/done inconsistent after concurrent Restarts: cancel=%v done=%v", cancelSet, doneSet)
+	}
+
+	stopped := make(chan struct{})
+	go func() { mgr.Stop(); close(stopped) }()
+	select {
+	case <-stopped:
+	case <-time.After(5 * time.Second):
+		t.Fatal("Stop() after concurrent Restarts did not return within 5s")
+	}
+	mgr.mu.Lock()
+	cleared := mgr.cancel == nil && mgr.done == nil
+	mgr.mu.Unlock()
+	if !cleared {
+		t.Error("manager still tracks a poller after Stop(), want cancel/done cleared")
+	}
+}
+
+// TestPollerManager_ConcurrentRestartAndStop_NoDeadlockOrInconsistentState
+// races Restart against Stop, the two paths that share m.mu and the
+// stopLocked helper. Every goroutine must return (no deadlock), the tracked
+// cancel/done pair must stay consistent, and a final Stop must clear it.
+func TestPollerManager_ConcurrentRestartAndStop_NoDeadlockOrInconsistentState(t *testing.T) {
+	pool := newServeTestPool(t)
+	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), "DELETE FROM integrations WHERE provider = 'datadog'") })
+	storeTestDatadogIntegration(t, pool)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	mgr := NewPollerManager(ctx, pool, pollerManagerTestConfig(), zap.NewNop(), testDatabaseURL(t))
+	t.Cleanup(mgr.Stop)
+	mgr.leading.Store(true)
+
+	const workers = 8
+	start := make(chan struct{})
+	var wg sync.WaitGroup
+	wg.Add(workers)
+	for i := 0; i < workers; i++ {
+		go func(i int) {
+			defer wg.Done()
+			<-start
+			if i%2 == 0 {
+				if _, err := mgr.Restart(context.Background()); err != nil {
+					t.Errorf("concurrent Restart() returned unexpected error: %v", err)
+				}
+				return
+			}
+			mgr.Stop()
+		}(i)
+	}
+	close(start)
+
+	done := make(chan struct{})
+	go func() { wg.Wait(); close(done) }()
+	select {
+	case <-done:
+	case <-time.After(10 * time.Second):
+		t.Fatal("concurrent Restart/Stop did not all return within 10s, want no deadlock")
+	}
+
+	mgr.mu.Lock()
+	cancelSet, doneSet := mgr.cancel != nil, mgr.done != nil
+	mgr.mu.Unlock()
+	if cancelSet != doneSet {
+		t.Errorf("cancel/done inconsistent after concurrent Restart/Stop: cancel=%v done=%v", cancelSet, doneSet)
+	}
+
+	stopped := make(chan struct{})
+	go func() { mgr.Stop(); close(stopped) }()
+	select {
+	case <-stopped:
+	case <-time.After(5 * time.Second):
+		t.Fatal("final Stop() did not return within 5s")
+	}
+	mgr.mu.Lock()
+	cleared := mgr.cancel == nil && mgr.done == nil
+	mgr.mu.Unlock()
+	if !cleared {
+		t.Error("manager still tracks a poller after the final Stop(), want cancel/done cleared")
 	}
 }
