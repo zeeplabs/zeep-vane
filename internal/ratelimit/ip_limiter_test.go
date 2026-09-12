@@ -98,7 +98,7 @@ func newTestHandler() http.Handler {
 // rely on inferring single-replica correctness from the cross-replica test
 // in ip_limiter_integration_test.go.
 func TestIPLimiter_SingleInstance_BurstThenReject_UnchangedFromBeforeHA(t *testing.T) {
-	limiter := newIPLimiterWithStore(newFakeBucketStore(), 60, 3, time.Minute)
+	limiter := newIPLimiterWithStore(newFakeBucketStore(), newFakeBucketStore(), 60, 3, time.Minute)
 	handler := limiter.Middleware(newTestHandler())
 
 	const ip = "203.0.113.210:1"
@@ -126,7 +126,7 @@ func TestIPLimiter_SingleInstance_BurstThenReject_UnchangedFromBeforeHA(t *testi
 }
 
 func TestIPLimiter_WithinBurst_AllRequestsPass(t *testing.T) {
-	limiter := newIPLimiterWithStore(newFakeBucketStore(), 60, 3, time.Minute)
+	limiter := newIPLimiterWithStore(newFakeBucketStore(), newFakeBucketStore(), 60, 3, time.Minute)
 	handler := limiter.Middleware(newTestHandler())
 
 	for i := 0; i < 3; i++ {
@@ -142,7 +142,7 @@ func TestIPLimiter_WithinBurst_AllRequestsPass(t *testing.T) {
 }
 
 func TestIPLimiter_ExceedsBurst_429TooManyRequests(t *testing.T) {
-	limiter := newIPLimiterWithStore(newFakeBucketStore(), 60, 2, time.Minute)
+	limiter := newIPLimiterWithStore(newFakeBucketStore(), newFakeBucketStore(), 60, 2, time.Minute)
 	handler := limiter.Middleware(newTestHandler())
 
 	for i := 0; i < 2; i++ {
@@ -172,7 +172,7 @@ func TestIPLimiter_ExceedsBurst_429TooManyRequests(t *testing.T) {
 // hammering the endpoint never exhausts another client's budget - each IP
 // gets its own bucket.
 func TestIPLimiter_DifferentIPs_TrackedIndependently(t *testing.T) {
-	limiter := newIPLimiterWithStore(newFakeBucketStore(), 60, 1, time.Minute)
+	limiter := newIPLimiterWithStore(newFakeBucketStore(), newFakeBucketStore(), 60, 1, time.Minute)
 	handler := limiter.Middleware(newTestHandler())
 
 	req1 := httptest.NewRequest(http.MethodPost, "/", nil)
@@ -212,7 +212,7 @@ func TestClientIP_RemoteAddrWithoutPort_ReturnsAsIs(t *testing.T) {
 
 func TestIPLimiter_IdleEntrySwept_BucketResetsAfterThresholdExceeded(t *testing.T) {
 	store := newFakeBucketStore()
-	limiter := newIPLimiterWithStore(store, 60, 1, time.Millisecond)
+	limiter := newIPLimiterWithStore(store, newFakeBucketStore(), 60, 1, time.Millisecond)
 	ctx := context.Background()
 
 	// Exhausts the one-IP bucket, then forces it stale enough to be swept
@@ -240,21 +240,229 @@ func TestIPLimiter_IdleEntrySwept_BucketResetsAfterThresholdExceeded(t *testing.
 	}
 }
 
-// TestIPLimiter_StoreError_FailsOpen covers HA-10: a bucketStore error
-// (simulating a Postgres outage/timeout) must let the request through
-// rather than block legitimate traffic.
-func TestIPLimiter_StoreError_FailsOpen(t *testing.T) {
-	store := newFakeBucketStore()
-	store.err = errors.New("simulated postgres outage")
-	limiter := newIPLimiterWithStore(store, 60, 1, time.Minute)
+// spyBucketStore counts allow() calls and can be made to error and/or block,
+// so tests observe circuit-breaker routing (how often the primary is really
+// called) deterministically.
+type spyBucketStore struct {
+	mu         sync.Mutex
+	calls      int
+	err        error
+	block      chan struct{}
+	allowValue bool
+}
+
+func (s *spyBucketStore) allow(_ context.Context, _ string, _ int, _ float64) (bool, error) {
+	s.mu.Lock()
+	s.calls++
+	err := s.err
+	allowValue := s.allowValue
+	block := s.block
+	s.mu.Unlock()
+
+	if block != nil {
+		<-block
+	}
+	if err != nil {
+		return false, err
+	}
+	return allowValue, nil
+}
+
+func (s *spyBucketStore) cleanup(_ context.Context, _ time.Duration) error { return nil }
+
+func (s *spyBucketStore) callCount() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.calls
+}
+
+func waitForCalls(t *testing.T, s *spyBucketStore, want int) {
+	t.Helper()
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		if s.callCount() >= want {
+			return
+		}
+		time.Sleep(time.Millisecond)
+	}
+	t.Fatalf("primary calls = %d, want >= %d within deadline", s.callCount(), want)
+}
+
+// TestIPLimiter_PrimaryError_UsesFallback covers RLF-01/RLF-02: a primary
+// store error routes the request to the in-memory fallback, which enforces
+// the same limit (a 429 once its burst is exhausted) instead of failing open.
+func TestIPLimiter_PrimaryError_UsesFallback(t *testing.T) {
+	primary := newFakeBucketStore()
+	primary.err = errors.New("simulated postgres outage")
+	fallback := newFakeBucketStore()
+	limiter := newIPLimiterWithStore(primary, fallback, 60, 1, time.Minute)
 	handler := limiter.Middleware(newTestHandler())
 
 	req := httptest.NewRequest(http.MethodPost, "/", nil)
 	req.RemoteAddr = "203.0.113.6:1"
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
-
 	if rec.Code != http.StatusOK {
-		t.Errorf("status = %d, want %d (fail-open on store error, HA-10)", rec.Code, http.StatusOK)
+		t.Fatalf("first request: status = %d, want %d (fresh fallback bucket)", rec.Code, http.StatusOK)
+	}
+
+	req = httptest.NewRequest(http.MethodPost, "/", nil)
+	req.RemoteAddr = "203.0.113.6:1"
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusTooManyRequests {
+		t.Errorf("second request: status = %d, want %d (fallback enforces the limit, not fail-open)", rec.Code, http.StatusTooManyRequests)
+	}
+	if got := rec.Body.String(); got != rateLimitedBody {
+		t.Errorf("429 body = %q, want %q", got, rateLimitedBody)
+	}
+}
+
+// TestIPLimiter_FallbackError_LastResortAllows covers RLF-03: the only
+// unconditional-allow path left is when both stores error.
+func TestIPLimiter_FallbackError_LastResortAllows(t *testing.T) {
+	primary := newFakeBucketStore()
+	primary.err = errors.New("primary down")
+	fallback := newFakeBucketStore()
+	fallback.err = errors.New("fallback down")
+	limiter := newIPLimiterWithStore(primary, fallback, 60, 1, time.Minute)
+
+	if !limiter.allow(context.Background(), "203.0.113.7") {
+		t.Error("allow() = false, want true (last-resort fail-open when both stores error)")
+	}
+}
+
+// TestIPLimiter_CircuitOpen_SkipsPrimary covers RLF-04: within the cooldown,
+// a failing primary is not called again.
+func TestIPLimiter_CircuitOpen_SkipsPrimary(t *testing.T) {
+	primary := &spyBucketStore{err: errors.New("primary down")}
+	fallback := newFakeBucketStore()
+	limiter := newIPLimiterWithStore(primary, fallback, 60, 10, time.Minute)
+	ctx := context.Background()
+
+	if !limiter.allow(ctx, "203.0.113.8") {
+		t.Fatal("first allow() = false, want true (fallback)")
+	}
+	if got := primary.callCount(); got != 1 {
+		t.Fatalf("primary calls = %d, want 1 (first error)", got)
+	}
+
+	for i := 0; i < 3; i++ {
+		if !limiter.allow(ctx, "203.0.113.8") {
+			t.Fatalf("call %d: allow() = false, want true (fallback)", i)
+		}
+	}
+	if got := primary.callCount(); got != 1 {
+		t.Errorf("primary calls = %d, want 1 (circuit open, primary skipped)", got)
+	}
+}
+
+// TestIPLimiter_HalfOpen_OnlyOneProbe covers RLF-05: after the cooldown,
+// exactly one request probes the primary; concurrent requests use the
+// fallback until the probe resolves.
+func TestIPLimiter_HalfOpen_OnlyOneProbe(t *testing.T) {
+	primary := &spyBucketStore{err: errors.New("primary down")}
+	fallback := newFakeBucketStore()
+	limiter := newIPLimiterWithStore(primary, fallback, 60, 10, time.Minute)
+	ctx := context.Background()
+
+	if !limiter.allow(ctx, "probe") {
+		t.Fatal("opening call: allow() = false, want true")
+	}
+
+	probeRelease := make(chan struct{})
+	primary.mu.Lock()
+	primary.block = probeRelease
+	primary.err = nil
+	primary.allowValue = true
+	primary.mu.Unlock()
+
+	limiter.mu.Lock()
+	limiter.breakerOpenUntil = time.Now().Add(-time.Second)
+	limiter.mu.Unlock()
+
+	probeDone := make(chan bool, 1)
+	go func() { probeDone <- limiter.allow(ctx, "probe") }()
+	waitForCalls(t, primary, 2)
+
+	otherDone := make(chan bool, 1)
+	go func() { otherDone <- limiter.allow(ctx, "other") }()
+
+	select {
+	case <-otherDone:
+	case <-time.After(time.Second):
+		t.Fatal("concurrent request did not return while the probe was in flight; want it to use the fallback")
+	}
+	if got := primary.callCount(); got != 2 {
+		t.Errorf("primary calls = %d, want 2 (only the single probe)", got)
+	}
+
+	close(probeRelease)
+	<-probeDone
+}
+
+// TestIPLimiter_HalfOpenProbeSuccess_ClosesCircuit covers RLF-06.
+func TestIPLimiter_HalfOpenProbeSuccess_ClosesCircuit(t *testing.T) {
+	primary := &spyBucketStore{err: errors.New("primary down"), allowValue: true}
+	fallback := newFakeBucketStore()
+	limiter := newIPLimiterWithStore(primary, fallback, 60, 10, time.Minute)
+	ctx := context.Background()
+
+	if !limiter.allow(ctx, "ip") {
+		t.Fatal("opening call: allow() = false, want true")
+	}
+	primary.mu.Lock()
+	primary.err = nil
+	primary.mu.Unlock()
+	limiter.mu.Lock()
+	limiter.breakerOpenUntil = time.Now().Add(-time.Second)
+	limiter.mu.Unlock()
+
+	if !limiter.allow(ctx, "ip") {
+		t.Fatal("probe: allow() = false, want true")
+	}
+	if !limiter.allow(ctx, "ip") {
+		t.Fatal("post-recovery: allow() = false, want true")
+	}
+	if got := primary.callCount(); got != 3 {
+		t.Errorf("primary calls = %d, want 3 (probe success resumed the primary)", got)
+	}
+
+	limiter.mu.Lock()
+	openUntil := limiter.breakerOpenUntil
+	probing := limiter.breakerProbing
+	limiter.mu.Unlock()
+	if !openUntil.IsZero() || probing {
+		t.Errorf("breaker state after success = (openUntil=%v, probing=%v), want closed", openUntil, probing)
+	}
+}
+
+// TestIPLimiter_HalfOpenProbeFailure_RearmsCooldown covers RLF-07.
+func TestIPLimiter_HalfOpenProbeFailure_RearmsCooldown(t *testing.T) {
+	primary := &spyBucketStore{err: errors.New("primary down")}
+	fallback := newFakeBucketStore()
+	limiter := newIPLimiterWithStore(primary, fallback, 60, 10, time.Minute)
+	ctx := context.Background()
+
+	limiter.allow(ctx, "ip")
+	limiter.mu.Lock()
+	limiter.breakerOpenUntil = time.Now().Add(-time.Second)
+	limiter.mu.Unlock()
+
+	limiter.allow(ctx, "ip")
+	if got := primary.callCount(); got != 2 {
+		t.Fatalf("primary calls = %d, want 2 (probe attempted)", got)
+	}
+
+	limiter.allow(ctx, "ip")
+	if got := primary.callCount(); got != 2 {
+		t.Errorf("primary calls = %d, want 2 (cooldown re-armed, primary skipped)", got)
+	}
+
+	limiter.mu.Lock()
+	openUntil := limiter.breakerOpenUntil
+	limiter.mu.Unlock()
+	if !openUntil.After(time.Now()) {
+		t.Errorf("breakerOpenUntil = %v, want in the future (re-armed)", openUntil)
 	}
 }

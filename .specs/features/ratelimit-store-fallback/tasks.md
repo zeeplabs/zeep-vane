@@ -110,15 +110,15 @@ T2 → T5
 - Skill: NONE
 
 **Done when**:
-- [ ] Primary error ⇒ fallback evaluated; fallback denial ⇒ `429` with the existing body/headers
-- [ ] Circuit opens on primary error; requests within `breakerCooldown` do not call the primary
-- [ ] After cooldown, exactly one probe reaches the primary; concurrent callers use the fallback
-- [ ] Probe success closes the circuit; probe failure re-opens it
-- [ ] Fallback error ⇒ last-resort allow + log (RLF-03)
-- [ ] `TestIPLimiter_StoreError_FailsOpen` rewritten to assert fallback enforcement (was unconditional allow)
-- [ ] Spy-store tests assert primary call counts for open/half-open/recovery
-- [ ] Gate check passes: `go build ./... && go vet ./... && gofmt -l internal/ratelimit/ip_limiter.go && go test ./internal/ratelimit/...`
-- [ ] Test count: ≥7 new/rewritten tests
+- [x] Primary error ⇒ fallback evaluated; fallback denial ⇒ `429` with the existing body/headers
+- [x] Circuit opens on primary error; requests within `breakerCooldown` do not call the primary
+- [x] After cooldown, exactly one probe reaches the primary; concurrent callers use the fallback
+- [x] Probe success closes the circuit; probe failure re-opens it
+- [x] Fallback error ⇒ last-resort allow + log (RLF-03)
+- [x] `TestIPLimiter_StoreError_FailsOpen` rewritten to assert fallback enforcement (was unconditional allow)
+- [x] Spy-store tests assert primary call counts for open/half-open/recovery
+- [x] Gate check passes: `go build ./... && go vet ./... && gofmt -l internal/ratelimit/ip_limiter.go && go test ./internal/ratelimit/...`
+- [x] Test count: ≥7 new/rewritten tests
 
 **Tests**: unit
 **Gate**: quick
@@ -129,10 +129,10 @@ T2 → T5
 
 ### T3: Sweep the in-use store
 
-**What**: Make the `sweepThreshold` cleanup run against the store that handled the request (primary or fallback), decided in the same locked section as routing.
-**Where**: `internal/ratelimit/ip_limiter.go`
+**What**: Add tests proving the `sweepThreshold` cleanup runs against the store in use (primary or fallback). The in-use selection itself landed with T2's routing (RLF-08); this task pins it.
+**Where**: `internal/ratelimit/ip_limiter_test.go`
 **Depends on**: T2
-**Reuses**: Existing `callCount`/`sweepThreshold`/`idleTTL` mechanics.
+**Reuses**: Existing `callCount`/`sweepThreshold`/`idleTTL` mechanics and `spyBucketStore`.
 **Requirement**: RLF-08
 
 **Tools**:
@@ -140,7 +140,7 @@ T2 → T5
 - Skill: NONE
 
 **Done when**:
-- [ ] Crossing `sweepThreshold` on the fallback path sweeps the fallback store
+- [ ] Crossing `sweepThreshold` on the fallback path sweeps the fallback store (stale entry evicted)
 - [ ] Crossing `sweepThreshold` on the primary path sweeps the primary store (behavior unchanged)
 - [ ] Cleanup error stays best-effort (logged, never on the request path)
 - [ ] Gate check passes: `go test ./internal/ratelimit/...`
@@ -149,7 +149,7 @@ T2 → T5
 **Tests**: unit
 **Gate**: quick
 
-**Commit**: `refactor(ratelimit): sweep the store used for each request`
+**Commit**: `test(ratelimit): cover sweep targeting the in-use store`
 
 ---
 

@@ -40,18 +40,37 @@ type bucketStore interface {
 // underlying store forever.
 const sweepThreshold = 10_000
 
+// breakerCooldown bounds how long the circuit stays open after the primary
+// store errors, before a single half-open probe is allowed to test it again
+// (AD-029). 5s sits just above the store's own 3s lock_timeout, the shortest
+// error it masks. A package constant, matching this package's existing
+// tuned-constant convention - no new environment variable.
+const breakerCooldown = 5 * time.Second
+
 // IPLimiter rate-limits requests per client IP using a token-bucket per IP,
 // backed by store (Postgres in production - see NewIPLimiter - or a fake in
-// unit tests). allow() opportunistically triggers a cleanup sweep once
-// every sweepThreshold calls, evicting buckets idle longer than idleTTL.
+// unit tests). When store errors, requests are evaluated against fallback
+// (an in-process bucket store) rather than allowed unconditionally, and a
+// circuit breaker quarantines a failing store so it is not called on every
+// request (AD-029, supersedes HA-10's fail-open). allow() opportunistically
+// triggers a cleanup sweep once every sweepThreshold calls, evicting buckets
+// idle longer than idleTTL from the store in use.
 type IPLimiter struct {
-	store   bucketStore
-	r       float64 // refill rate, tokens/second
-	b       int     // bucket capacity (burst)
-	idleTTL time.Duration
+	store    bucketStore
+	fallback bucketStore
+	r        float64 // refill rate, tokens/second
+	b        int     // bucket capacity (burst)
+	idleTTL  time.Duration
 
 	mu        sync.Mutex
 	callCount int
+
+	// Circuit breaker state, guarded by mu. breakerOpenUntil zero means
+	// closed; non-zero in the future means open; non-zero in the past means
+	// half-open. breakerProbing is true only while the single half-open
+	// probe is in flight.
+	breakerOpenUntil time.Time
+	breakerProbing   bool
 }
 
 // NewIPLimiter builds an IPLimiter allowing perMinute requests sustained,
@@ -61,48 +80,116 @@ type IPLimiter struct {
 // idleTTL controls how long an IP's bucket is kept once it stops sending
 // requests.
 func NewIPLimiter(pool *db.Pool, perMinute, burst int, idleTTL time.Duration) *IPLimiter {
-	return newIPLimiterWithStore(newPostgresBucketStore(pool), perMinute, burst, idleTTL)
+	return newIPLimiterWithStore(newPostgresBucketStore(pool), newMemoryBucketStore(), perMinute, burst, idleTTL)
 }
 
-// newIPLimiterWithStore builds an IPLimiter against an arbitrary
-// bucketStore - used by NewIPLimiter (Postgres) and by this package's own
-// unit tests (a fake, in-memory store) to exercise the exact same
-// token-bucket logic without a real database.
-func newIPLimiterWithStore(store bucketStore, perMinute, burst int, idleTTL time.Duration) *IPLimiter {
+// newIPLimiterWithStore builds an IPLimiter against arbitrary bucket stores
+// (a primary and a fallback) - used by NewIPLimiter (Postgres primary +
+// in-memory fallback) and by this package's own unit tests to exercise the
+// exact same token-bucket logic without a real database.
+func newIPLimiterWithStore(store, fallback bucketStore, perMinute, burst int, idleTTL time.Duration) *IPLimiter {
 	return &IPLimiter{
-		store:   store,
-		r:       float64(perMinute) / 60,
-		b:       burst,
-		idleTTL: idleTTL,
+		store:    store,
+		fallback: fallback,
+		r:        float64(perMinute) / 60,
+		b:        burst,
+		idleTTL:  idleTTL,
 	}
 }
 
+// allow applies the per-IP limit, selecting between the shared primary store
+// and the in-process fallback. On a primary error it opens the circuit for
+// breakerCooldown and evaluates the request against the fallback instead of
+// allowing it unconditionally (AD-029, superseding HA-10's fail-open).
 func (l *IPLimiter) allow(ctx context.Context, ip string) bool {
-	l.mu.Lock()
-	l.callCount++
-	shouldSweep := l.callCount > sweepThreshold
-	if shouldSweep {
-		l.callCount = 0
-	}
-	l.mu.Unlock()
+	now := time.Now()
+	store, usePrimary, sweep := l.pickStore(now)
 
-	if shouldSweep {
+	if sweep {
 		// Best-effort (spec.md Edge Cases): a cleanup failure is logged
 		// and skipped for this cycle, never blocks the request path.
-		if err := l.store.cleanup(ctx, l.idleTTL); err != nil {
+		if err := store.cleanup(ctx, l.idleTTL); err != nil {
 			log.Printf("ratelimit: cleanup sweep failed, skipping this cycle: %v", err)
 		}
 	}
 
-	allowed, err := l.store.allow(ctx, ip, l.b, l.r)
-	if err != nil {
-		// Fail-open (HA-10): a rate-limit backend outage must not become
-		// an extra availability failure on top of an already-degraded
-		// instance - the request proceeds as if under the limit.
-		log.Printf("ratelimit: store error, failing open for ip=%s: %v", ip, err)
+	allowed, err := store.allow(ctx, ip, l.b, l.r)
+	if err == nil {
+		if usePrimary {
+			l.onPrimarySuccess()
+		}
+		return allowed
+	}
+
+	if !usePrimary {
+		// The fallback itself failed. This should not happen
+		// (memoryBucketStore never errors); allow as a last resort rather
+		// than turn an impossible failure into a self-inflicted 429.
+		log.Printf("ratelimit: fallback store error, failing open for ip=%s: %v", ip, err)
+		return true
+	}
+
+	l.onPrimaryError(ip, now, err)
+	allowed, ferr := l.fallback.allow(ctx, ip, l.b, l.r)
+	if ferr != nil {
+		log.Printf("ratelimit: fallback store error, failing open for ip=%s: %v (primary error: %v)", ip, ferr, err)
 		return true
 	}
 	return allowed
+}
+
+// pickStore decides which store handles this request and returns it, along
+// with whether the primary was chosen and whether this call is the periodic
+// cleanup sweep. All breaker state is read and advanced under l.mu, so the
+// single half-open probe is race-free: once a probe is in flight, concurrent
+// calls see l.breakerProbing and take the fallback.
+func (l *IPLimiter) pickStore(now time.Time) (store bucketStore, usePrimary, sweep bool) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	l.callCount++
+	if l.callCount > sweepThreshold {
+		l.callCount = 0
+		sweep = true
+	}
+
+	if !l.breakerOpenUntil.IsZero() && now.Before(l.breakerOpenUntil) {
+		return l.fallback, false, sweep
+	}
+	if l.breakerProbing {
+		return l.fallback, false, sweep
+	}
+
+	if !l.breakerOpenUntil.IsZero() {
+		// Half-open: this call becomes the single probe.
+		l.breakerProbing = true
+	}
+	return l.store, true, sweep
+}
+
+// onPrimarySuccess closes the circuit after a successful primary call,
+// logging recovery when it was previously open.
+func (l *IPLimiter) onPrimarySuccess() {
+	l.mu.Lock()
+	wasOpen := !l.breakerOpenUntil.IsZero()
+	l.breakerOpenUntil = time.Time{}
+	l.breakerProbing = false
+	l.mu.Unlock()
+
+	if wasOpen {
+		log.Printf("ratelimit: primary store recovered, resuming shared limiter")
+	}
+}
+
+// onPrimaryError opens the circuit for breakerCooldown after a primary error
+// and logs that the in-process fallback now handles requests.
+func (l *IPLimiter) onPrimaryError(ip string, now time.Time, err error) {
+	l.mu.Lock()
+	l.breakerOpenUntil = now.Add(breakerCooldown)
+	l.breakerProbing = false
+	l.mu.Unlock()
+
+	log.Printf("ratelimit: store error, using in-memory fallback for ip=%s: %v", ip, err)
 }
 
 // rateLimitedBody is returned byte-for-byte on every 429, matching the
