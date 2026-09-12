@@ -113,8 +113,8 @@
 | TLSKEY-04 | P1: Versioned self-describing envelope | T1 | Done |
 | TLSKEY-05 | P1: Decrypt failure is explicit, not "missing" | T1, T4 | Done (unit; T4 pending) |
 | TLSKEY-06 | P1: Legacy plaintext `.key` pass-through | T1 | Done |
-| TLSKEY-07 | P1: Idempotent backfill seals legacy keys | T2, T4 | Pending |
-| TLSKEY-08 | P1: Backfill advisory-locked, preserves `modified_at`, best-effort | T2, T4 | Pending |
+| TLSKEY-07 | P1: Idempotent backfill seals legacy keys | T2, T4 | Done (integration; T4 pending) |
+| TLSKEY-08 | P1: Backfill advisory-locked, preserves `modified_at`, best-effort | T2, T4 | Done (integration; T4 pending) |
 | TLSKEY-09 | P2: Full `certmagic.Storage` delegation | T1 | Done |
 | TLSKEY-10 | P2: HTTPS wiring seals and backfills before serving | T3 | Pending |
 | TLSKEY-11 | P2: No new config; decision recorded as `AD-030` | T5 | Pending |

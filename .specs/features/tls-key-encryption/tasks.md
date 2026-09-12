@@ -119,13 +119,13 @@ T3 → T5
 - Skill: NONE
 
 **Done when**:
-- [ ] Selects only `key LIKE '%.key'`; skips values already carrying the marker
-- [ ] `UPDATE ... SET value = $2 WHERE key = $1 AND value = $3` — never touches `modified_at`, never clobbers a concurrent write
-- [ ] Guarded by `pg_try_advisory_xact_lock`; a replica that misses the lock skips without error
-- [ ] Returns the count of rows sealed (or is log-only) and never panics on zero rows
-- [ ] Integration test: legacy `.key` sealed + decrypts to original; sibling `.crt` byte-identical; `modified_at` unchanged; second run is a no-op
-- [ ] Gate check passes on disposable Postgres: `TEST_DATABASE_URL=... go test -tags=integration -count=1 -p 1 ./internal/tls/...`
-- [ ] Test count: ≥3 new integration tests
+- [x] Selects only `key LIKE '%.key'`; skips values already carrying the marker
+- [x] `UPDATE ... SET value = $2 WHERE key = $1 AND value = $3` — never touches `modified_at`, never clobbers a concurrent write
+- [x] Guarded by `pg_try_advisory_xact_lock`; a replica that misses the lock skips without error
+- [x] Returns the count of rows sealed (or is log-only) and never panics on zero rows
+- [x] Integration test: legacy `.key` sealed + decrypts to original; sibling `.crt` byte-identical; `modified_at` unchanged; second run is a no-op
+- [x] Gate check passes on disposable Postgres: `TEST_DATABASE_URL=... go test -tags=integration -count=1 -p 1 ./internal/tls/...`
+- [x] Test count: ≥3 new integration tests
 
 **Tests**: integration
 **Gate**: full
