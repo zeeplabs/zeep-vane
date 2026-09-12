@@ -127,12 +127,12 @@ T4 -> T5
 
 **Done when**:
 
-- [ ] `login` returns `twoFactorRequired` with the token and leaves `admin` null on a challenge response
-- [ ] `login` still returns `authenticated` and hydrates for a non-2FA user
-- [ ] `verifyTwoFactor` hydrates the admin on success and propagates `ApiError` on 401
-- [ ] `AuthProvider.test.tsx` covers all three branches
-- [ ] Gate check passes: `cd web && npx tsc -b --noEmit && npm run test`
-- [ ] Test count: ≥4 new tests pass (no silent deletions)
+- [x] `login` returns `twoFactorRequired` with the token and leaves `admin` null on a challenge response
+- [x] `login` still returns `authenticated` and hydrates for a non-2FA user
+- [x] `verifyTwoFactor` hydrates the admin on success and propagates `ApiError` on 401
+- [x] `AuthProvider.test.tsx` covers all three branches
+- [x] Gate check passes: `cd web && npx tsc -b --noEmit && npm run test`
+- [x] Test count: ≥4 new tests pass (no silent deletions)
 
 **Tests**: unit
 **Gate**: quick

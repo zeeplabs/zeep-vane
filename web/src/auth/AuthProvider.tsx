@@ -12,6 +12,20 @@ import type { Role, TenantMembership } from "../types/api";
 
 type Status = "loading" | "authenticated" | "anonymous";
 
+// LoginOutcome is what a password login yields (login-2fa): either a full
+// authenticated session, or a 2FA challenge the caller must complete with
+// verifyTwoFactor before any session exists (auth-2fa-totp TOTP-05). The
+// challenge token lives only in this return value and the caller's memory -
+// never in URL or browser storage (LOGIN2FA-09).
+export type LoginOutcome =
+  | { kind: "authenticated" }
+  | { kind: "twoFactorRequired"; challengeToken: string };
+
+// TwoFactorFactor is the second factor verifyTwoFactor submits: a TOTP code or
+// the device-loss recovery-code fallback (LOGIN2FA-05). Mirrors
+// verifyTwoFactorRequest's code/recovery_code fields.
+export type TwoFactorFactor = { code: string } | { recoveryCode: string };
+
 // Shape of GET /api/auth/me's real response body (AF-34) - flat, no
 // wrapper. Deliberately narrower than mockData's full Admin (no `status`):
 // the session only needs the caller's own identity, not the admin-list
@@ -70,7 +84,12 @@ export interface AuthContextValue {
    * (T17, TENANT-19/20/21). Always false for the every-day self-hosted
    * case (exactly 1 membership). */
   needsTenantSelection: boolean;
-  login: (email: string, password: string) => Promise<void>;
+  login: (email: string, password: string) => Promise<LoginOutcome>;
+  /** Completes the login Login deferred when it returned a challenge token
+   * (login-2fa LOGIN2FA-11): POSTs the code or recovery code, then hydrates
+   * the authenticated admin from /api/auth/me exactly like login. Throws
+   * ApiError on an invalid/expired code (401). */
+  verifyTwoFactor: (challengeToken: string, factor: TwoFactorFactor) => Promise<void>;
   logout: () => Promise<void>;
   /** Sets tenantId as the session's active tenant (POST
    * /api/auth/switch-tenant) and re-hydrates the authenticated admin from
@@ -151,7 +170,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => setUnauthorizedHandler(null);
   }, []);
 
-  const login = useCallback(async (email: string, password: string) => {
+  const login = useCallback(async (email: string, password: string): Promise<LoginOutcome> => {
     // O corpo de /api/auth/login traz só {token} - descartado
     // deliberadamente, nunca guardado em estado. A sessão real vem do
     // cookie httpOnly que o login também seta (AD-004); a identidade é
@@ -159,14 +178,42 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // skipUnauthorizedHandler: a wrong-credentials 401 here is a normal
     // login failure (LoginPage shows its own inline error), never a
     // session that expired.
-    await apiFetch<{ token: string }>("/api/auth/login", {
+    const body = await apiFetch<{ token?: string; challenge_token?: string }>("/api/auth/login", {
       method: "POST",
       body: JSON.stringify({ email, password }),
       skipUnauthorizedHandler: true,
     });
+    // 2FA-enabled user (TOTP-05): no session/cookie exists yet - hand the
+    // challenge token back and hydrate nothing (LOGIN2FA-10).
+    if (body.challenge_token) {
+      return { kind: "twoFactorRequired", challengeToken: body.challenge_token };
+    }
     const admin = await apiFetch<AuthenticatedAdmin>("/api/auth/me");
     dispatch({ type: "AUTHENTICATED", admin });
+    return { kind: "authenticated" };
   }, []);
+
+  const verifyTwoFactor = useCallback(
+    async (challengeToken: string, factor: TwoFactorFactor) => {
+      // A 401 here (wrong/expired code) is a normal verify failure the page
+      // renders inline, so it must not trip the session-expired handler -
+      // same reasoning as login's skipUnauthorizedHandler.
+      const payload =
+        "recoveryCode" in factor
+          ? { challenge_token: challengeToken, recovery_code: factor.recoveryCode }
+          : { challenge_token: challengeToken, code: factor.code };
+      await apiFetch<{ token: string }>("/api/auth/login/verify-2fa", {
+        method: "POST",
+        body: JSON.stringify(payload),
+        skipUnauthorizedHandler: true,
+      });
+      // Same hydrate path as login/switchTenant: one identity source, so the
+      // resolved tenant state can't diverge (LOGIN2FA-11).
+      const admin = await apiFetch<AuthenticatedAdmin>("/api/auth/me");
+      dispatch({ type: "AUTHENTICATED", admin });
+    },
+    []
+  );
 
   const switchTenant = useCallback(async (tenantId: string) => {
     // Body's own {token, tenant_id} is discarded, same reasoning as
@@ -241,6 +288,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         needsBootstrap,
         needsTenantSelection,
         login,
+        verifyTwoFactor,
         logout,
         switchTenant,
         refreshAdmin,

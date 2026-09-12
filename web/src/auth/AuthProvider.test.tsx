@@ -1,12 +1,15 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, waitFor, act } from "@testing-library/react";
+import { useState } from "react";
 import { http, HttpResponse } from "msw";
 import { server } from "../test/msw/server";
 import { AuthProvider, useAuth } from "./AuthProvider";
-import { setTwoFactorEnabled } from "../test/msw/handlers";
+import { setTwoFactorEnabled, seedRecoveryCode, mswValidTotpCode } from "../test/msw/handlers";
 
 function Probe() {
   const auth = useAuth();
+  const [outcome, setOutcome] = useState("");
+  const [challenge, setChallenge] = useState("");
   return (
     <div>
       <span data-testid="status">{auth.status}</span>
@@ -15,9 +18,55 @@ function Probe() {
       <span data-testid="has-owner">{String(auth.hasRole(["owner"]))}</span>
       <span data-testid="has-operator">{String(auth.hasRole(["operator"]))}</span>
       <span data-testid="has-viewer">{String(auth.hasRole(["viewer"]))}</span>
+      <span data-testid="outcome">{outcome}</span>
       <button onClick={() => auth.login("owner@vane.app", "demo1234")}>login-ok</button>
       <button onClick={() => auth.login("owner@vane.app", "wrong").catch(() => {})}>
         login-fail
+      </button>
+      <button
+        onClick={async () => {
+          const result = await auth.login("owner@vane.app", "demo1234");
+          setOutcome(result.kind);
+          if (result.kind === "twoFactorRequired") setChallenge(result.challengeToken);
+        }}
+      >
+        login-capture
+      </button>
+      <button
+        onClick={async () => {
+          try {
+            await auth.verifyTwoFactor(challenge, { code: mswValidTotpCode });
+            setOutcome("verified");
+          } catch {
+            setOutcome("verify-failed");
+          }
+        }}
+      >
+        verify-code-ok
+      </button>
+      <button
+        onClick={async () => {
+          try {
+            await auth.verifyTwoFactor(challenge, { code: "000000" });
+            setOutcome("verified");
+          } catch {
+            setOutcome("verify-failed");
+          }
+        }}
+      >
+        verify-code-bad
+      </button>
+      <button
+        onClick={async () => {
+          try {
+            await auth.verifyTwoFactor(challenge, { recoveryCode: "RECOVERY-OK" });
+            setOutcome("verified");
+          } catch {
+            setOutcome("verify-failed");
+          }
+        }}
+      >
+        verify-recovery
       </button>
       <button onClick={() => auth.logout()}>logout</button>
       <button onClick={() => auth.refreshAdmin()}>refresh-admin</button>
@@ -229,5 +278,109 @@ describe("AuthProvider", () => {
 
     expect(screen.getByTestId("status")).toHaveTextContent("authenticated");
     expect(screen.getByTestId("admin").textContent).toBe(before);
+  });
+
+  // LOGIN2FA-10: o provider reporta twoFactorRequired e não hidrata admin
+  // quando /api/auth/login responde com challenge_token.
+  it("login com 2FA ativa retorna twoFactorRequired sem autenticar", async () => {
+    setTwoFactorEnabled(true);
+    render(
+      <AuthProvider>
+        <Probe />
+      </AuthProvider>
+    );
+    await waitFor(() => expect(screen.getByTestId("status")).toHaveTextContent("anonymous"));
+
+    await act(async () => {
+      screen.getByText("login-capture").click();
+    });
+
+    await waitFor(() => expect(screen.getByTestId("outcome")).toHaveTextContent("twoFactorRequired"));
+    expect(screen.getByTestId("status")).toHaveTextContent("anonymous");
+    expect(screen.getByTestId("admin")).toHaveTextContent("null");
+  });
+
+  // LOGIN2FA-04: login sem 2FA continua autenticando.
+  it("login sem 2FA retorna authenticated", async () => {
+    render(
+      <AuthProvider>
+        <Probe />
+      </AuthProvider>
+    );
+    await waitFor(() => expect(screen.getByTestId("status")).toHaveTextContent("anonymous"));
+
+    await act(async () => {
+      screen.getByText("login-capture").click();
+    });
+
+    await waitFor(() => expect(screen.getByTestId("outcome")).toHaveTextContent("authenticated"));
+    expect(screen.getByTestId("status")).toHaveTextContent("authenticated");
+  });
+
+  // LOGIN2FA-11: verifyTwoFactor com código válido hidrata o admin via /me.
+  it("verifyTwoFactor com código válido hidrata o admin", async () => {
+    setTwoFactorEnabled(true);
+    render(
+      <AuthProvider>
+        <Probe />
+      </AuthProvider>
+    );
+    await waitFor(() => expect(screen.getByTestId("status")).toHaveTextContent("anonymous"));
+    await act(async () => {
+      screen.getByText("login-capture").click();
+    });
+    await waitFor(() => expect(screen.getByTestId("outcome")).toHaveTextContent("twoFactorRequired"));
+
+    await act(async () => {
+      screen.getByText("verify-code-ok").click();
+    });
+
+    await waitFor(() => expect(screen.getByTestId("status")).toHaveTextContent("authenticated"));
+    expect(JSON.parse(screen.getByTestId("admin").textContent ?? "{}").email).toBe("owner@vane.app");
+  });
+
+  // LOGIN2FA-11: código inválido rejeita e mantém anonymous (sem sessão).
+  it("verifyTwoFactor com código inválido rejeita e permanece anonymous", async () => {
+    setTwoFactorEnabled(true);
+    render(
+      <AuthProvider>
+        <Probe />
+      </AuthProvider>
+    );
+    await waitFor(() => expect(screen.getByTestId("status")).toHaveTextContent("anonymous"));
+    await act(async () => {
+      screen.getByText("login-capture").click();
+    });
+    await waitFor(() => expect(screen.getByTestId("outcome")).toHaveTextContent("twoFactorRequired"));
+
+    await act(async () => {
+      screen.getByText("verify-code-bad").click();
+    });
+
+    await waitFor(() => expect(screen.getByTestId("outcome")).toHaveTextContent("verify-failed"));
+    expect(screen.getByTestId("status")).toHaveTextContent("anonymous");
+    expect(screen.getByTestId("admin")).toHaveTextContent("null");
+  });
+
+  // LOGIN2FA-10: o fallback por código de recuperação autentica no provider.
+  it("verifyTwoFactor com código de recuperação válido autentica", async () => {
+    seedRecoveryCode("RECOVERY-OK");
+    setTwoFactorEnabled(true);
+    render(
+      <AuthProvider>
+        <Probe />
+      </AuthProvider>
+    );
+    await waitFor(() => expect(screen.getByTestId("status")).toHaveTextContent("anonymous"));
+    await act(async () => {
+      screen.getByText("login-capture").click();
+    });
+    await waitFor(() => expect(screen.getByTestId("outcome")).toHaveTextContent("twoFactorRequired"));
+
+    await act(async () => {
+      screen.getByText("verify-recovery").click();
+    });
+
+    await waitFor(() => expect(screen.getByTestId("status")).toHaveTextContent("authenticated"));
   });
 });
