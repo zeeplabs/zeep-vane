@@ -49,6 +49,32 @@ let twoFactorEnabledState = false;
 let profileNameOverride: Record<string, string> = {};
 let passwordOverride: Record<string, string> = {};
 
+// In-memory notification preference state (notification-preferences
+// NOTIFPREF-13/14). A missing key resolves to the documented backend default
+// (the two incident types on, the digest off), mirroring
+// db.NotificationDefaultEnabled.
+let notificationPreferencesState: Record<string, boolean> = {};
+
+const notificationPreferenceDefaults: Record<string, boolean> = {
+  incident_opened: true,
+  incident_resolved: true,
+  weekly_digest: false,
+};
+
+function resolveNotificationPreferences(): Record<string, boolean> {
+  return {
+    incident_opened:
+      notificationPreferencesState.incident_opened ??
+      notificationPreferenceDefaults.incident_opened,
+    incident_resolved:
+      notificationPreferencesState.incident_resolved ??
+      notificationPreferenceDefaults.incident_resolved,
+    weekly_digest:
+      notificationPreferencesState.weekly_digest ??
+      notificationPreferenceDefaults.weekly_digest,
+  };
+}
+
 // Login-2FA challenge state (login-2fa): twoFactorChallengesState maps an
 // issued challenge token to the admin id it was issued for. The real backend
 // signs a JWT carrying the user id (auth.IssueTwoFactorChallenge); the mock
@@ -66,6 +92,7 @@ export function resetAuthSession(): void {
   twoFactorEnabledState = false;
   profileNameOverride = {};
   passwordOverride = {};
+  notificationPreferencesState = {};
   twoFactorChallengesState = {};
   recoveryCodesState = [];
   twoFactorChallengeCounter = 0;
@@ -674,6 +701,34 @@ export const handlers = [
     }
     passwordOverride[admin.id] = newPassword;
     return HttpResponse.json({ status: "ok" });
+  }),
+
+  // GET/PATCH /api/auth/notification-preferences (NOTIFPREF-13/14) - mirrors
+  // AuthHandler's self-service endpoints: 401 without a session, defaults
+  // applied for any type with no stored row, and a partial PATCH that only
+  // touches the provided keys.
+  http.get("/api/auth/notification-preferences", () => {
+    if (!seedAdmins.find((a) => a.id === sessionAdminId)) {
+      return HttpResponse.json({ error: "unauthorized" }, { status: 401 });
+    }
+    return HttpResponse.json(resolveNotificationPreferences());
+  }),
+  http.patch("/api/auth/notification-preferences", async ({ request }) => {
+    if (!seedAdmins.find((a) => a.id === sessionAdminId)) {
+      return HttpResponse.json({ error: "unauthorized" }, { status: 401 });
+    }
+    const body = (await request.json().catch(() => null)) as Partial<
+      Record<string, boolean>
+    > | null;
+    if (!body) {
+      return HttpResponse.json({ error: "invalid request body" }, { status: 422 });
+    }
+    for (const key of ["incident_opened", "incident_resolved", "weekly_digest"]) {
+      if (typeof body[key] === "boolean") {
+        notificationPreferencesState[key] = body[key];
+      }
+    }
+    return HttpResponse.json(resolveNotificationPreferences());
   }),
 
   // POST /api/auth/2fa/enroll (PROFPAGE-13) - mirrors AuthHandler.Enroll:

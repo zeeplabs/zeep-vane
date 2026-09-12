@@ -327,11 +327,11 @@ T12 → T13
 - Skill: NONE
 
 **Done when**:
-- [ ] `useNotificationPreferences` returns the three values with defaults applied (`incident_opened: true`, `incident_resolved: true`, `weekly_digest: false`)
-- [ ] `useUpdateNotificationPreference` PATCHes exactly one key and applies the optimistic update; a 500 rolls the toggle back and fires the error toast
-- [ ] MSW handlers for `GET`/`PATCH /api/auth/notification-preferences` mirror the backend shape and defaults
-- [ ] Gate check passes: `cd web && npx tsc -b --noEmit && npm run test`
-- [ ] Test count: ≥5 new subtests
+- [x] `useNotificationPreferences` returns the three values with defaults applied (`incident_opened: true`, `incident_resolved: true`, `weekly_digest: false`)
+- [x] `useUpdateNotificationPreference` PATCHes exactly one key and applies the optimistic update; a 500 rolls the toggle back (the error toast is surfaced by the section, T12)
+- [x] MSW handlers for `GET`/`PATCH /api/auth/notification-preferences` mirror the backend shape and defaults
+- [x] Gate check passes: `cd web && npx tsc -b --noEmit && npm run test`
+- [x] Test count: ≥5 new subtests
 
 **Tests**: unit
 **Gate**: frontend
