@@ -49,12 +49,34 @@ let twoFactorEnabledState = false;
 let profileNameOverride: Record<string, string> = {};
 let passwordOverride: Record<string, string> = {};
 
+// Login-2FA challenge state (login-2fa): twoFactorChallengesState maps an
+// issued challenge token to the admin id it was issued for. The real backend
+// signs a JWT carrying the user id (auth.IssueTwoFactorChallenge); the mock
+// keeps an opaque per-test id -> adminId map instead. recoveryCodesState holds
+// the valid, not-yet-consumed recovery codes a test seeded via
+// seedRecoveryCode - POST verify-2fa consumes (removes) one on success,
+// mirroring the real single-use invariant (TwoFactorService.ConsumeRecoveryCode).
+let twoFactorChallengesState: Record<string, string> = {};
+let recoveryCodesState: string[] = [];
+let twoFactorChallengeCounter = 0;
+
 export function resetAuthSession(): void {
   sessionAdminId = null;
   currentSessionId = null;
   twoFactorEnabledState = false;
   profileNameOverride = {};
   passwordOverride = {};
+  twoFactorChallengesState = {};
+  recoveryCodesState = [];
+  twoFactorChallengeCounter = 0;
+}
+
+// seedRecoveryCode registers code as a valid, unused recovery code for
+// POST /api/auth/login/verify-2fa (login-2fa). The real codes are minted at
+// confirm time and only ever shown once; the mock exposes this seed helper so
+// a test can drive the device-loss fallback without re-running enrollment.
+export function seedRecoveryCode(code: string): void {
+  recoveryCodesState.push(code);
 }
 
 // setTwoFactorEnabled lets a test drive the 2FA state GET /api/auth/me
@@ -544,6 +566,15 @@ export const handlers = [
     if (!admin) {
       return HttpResponse.json({ error: "invalid email or password" }, { status: 401 });
     }
+    // Mirrors AuthHandler.Login's TOTP-05 branch: a 2FA-enabled user gets a
+    // short-lived challenge token and no session - the mock sets no
+    // sessionAdminId/currentSessionId until verify-2fa succeeds.
+    if (twoFactorEnabledState) {
+      twoFactorChallengeCounter += 1;
+      const challengeToken = `msw-2fa-challenge-${twoFactorChallengeCounter}`;
+      twoFactorChallengesState[challengeToken] = admin.id;
+      return HttpResponse.json({ challenge_token: challengeToken });
+    }
     sessionAdminId = admin.id;
     // Mirror AuthHandler.Login: a fresh login issues a new session row
     // which becomes "current" for subsequent requests. The mock doesn't
@@ -554,6 +585,39 @@ export const handlers = [
     const userSession = sessionsState.find((s) => s.user_id === admin.id && !s.revoked_at);
     currentSessionId = userSession?.id ?? null;
     return HttpResponse.json({ token: `msw-token-${admin.id}` });
+  }),
+
+  // POST /api/auth/login/verify-2fa (login-2fa) - mirrors
+  // AuthHandler.VerifyTwoFactor: 401 on an unknown/consumed challenge token, a
+  // wrong code, or an unknown/used recovery code; on success consumes the
+  // challenge (single-use), establishes the session exactly like login, and
+  // returns {token}. A non-empty recovery_code is checked instead of code,
+  // matching verifyTwoFactorRequest's precedence.
+  http.post("/api/auth/login/verify-2fa", async ({ request }) => {
+    const invalid = () =>
+      HttpResponse.json({ error: "invalid or expired verification" }, { status: 401 });
+    const body = (await request.json().catch(() => null)) as
+      | { challenge_token?: string; code?: string; recovery_code?: string }
+      | null;
+    const challengeToken = body?.challenge_token;
+    const adminId = challengeToken ? twoFactorChallengesState[challengeToken] : undefined;
+    if (!adminId || !challengeToken) {
+      return invalid();
+    }
+    if (body?.recovery_code) {
+      const idx = recoveryCodesState.indexOf(body.recovery_code);
+      if (idx === -1) {
+        return invalid();
+      }
+      recoveryCodesState.splice(idx, 1);
+    } else if (body?.code !== mswValidTotpCode) {
+      return invalid();
+    }
+    delete twoFactorChallengesState[challengeToken];
+    sessionAdminId = adminId;
+    const userSession = sessionsState.find((s) => s.user_id === adminId && !s.revoked_at);
+    currentSessionId = userSession?.id ?? null;
+    return HttpResponse.json({ token: `msw-token-${adminId}` });
   }),
 
   // GET /api/auth/me - mirrors AuthHandler.Me. `two_factor_enabled` comes
