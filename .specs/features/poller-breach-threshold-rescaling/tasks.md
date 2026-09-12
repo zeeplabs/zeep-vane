@@ -125,7 +125,7 @@ T2 → T3
 
 ---
 
-### T3: Record AD-019 addendum 4
+### T3: Record AD-019 addendum 4 ✅ Complete
 
 **What**: Append `AD-019 addendum 4` to `.specs/STATE.md`'s `## Decisions` section documenting the root fix (SLI vs window-rescaled bound replaces the `overall.state`-based breach), and mark addendum 3's `Status` as superseded by it (the stopgap is replaced, the hysteresis it introduced is retained).
 **Where**: `.specs/STATE.md`
@@ -138,12 +138,12 @@ T2 → T3
 - Skill: NONE
 
 **Done when**:
-- [ ] `AD-019 addendum 4` added with Decision/Reason/Trade-off/Scope/Date/Status fields, matching the existing addenda's format
-- [ ] Decision names `internal/poller/breach_threshold.go` (`breachBound`, `breachThresholdSigmas`) and the classification order in `pollService`
-- [ ] `breachThresholdSigmas` explicitly recorded as uncalibrated (no real-traffic pass this session), with the calibration as the documented follow-up
-- [ ] Addendum 3's `Status` updated to reflect it is superseded by addendum 4 (hysteresis retained)
-- [ ] No other section of `STATE.md` edited by this task (Handoff/feature-completion entry is a separate, later step after the Verifier runs)
-- [ ] Gate check passes: `go build ./... && go vet ./... && go test ./... && gofmt -l internal/poller/breach_threshold.go internal/poller/poller.go internal/poller/breach_threshold_test.go internal/poller/poller_recent_window_test.go`
+- [x] `AD-019 addendum 4` added with Decision/Reason/Trade-off/Scope/Date/Status fields, matching the existing addenda's format
+- [x] Decision names `internal/poller/breach_threshold.go` (`breachBound`, `breachThresholdSigmas`) and the classification order in `pollService`
+- [x] `breachThresholdSigmas` explicitly recorded as uncalibrated (no real-traffic pass this session), with the calibration as the documented follow-up
+- [x] Addendum 3's `Status` updated to reflect it is superseded by addendum 4 (hysteresis retained)
+- [x] No other section of `STATE.md` edited by this task (Handoff/feature-completion entry is a separate, later step after the Verifier runs)
+- [x] Gate check passes: `go build ./... && go vet ./... && go test ./... && gofmt -l internal/poller/breach_threshold.go internal/poller/poller.go internal/poller/breach_threshold_test.go internal/poller/poller_recent_window_test.go`
 
 **Tests**: none (docs-only change)
 **Gate**: build
