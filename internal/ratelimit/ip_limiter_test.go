@@ -330,17 +330,26 @@ func TestIPLimiter_PrimaryError_UsesFallback(t *testing.T) {
 	}
 }
 
-// TestIPLimiter_FallbackError_LastResortAllows covers RLF-03: the only
-// unconditional-allow path left is when both stores error.
+// TestIPLimiter_FallbackError_LastResortAllows covers RLF-03 on both
+// fallback-error paths: the primary-error path (fallback error right after a
+// primary failure) and the open-circuit path (fallback is the chosen store
+// and errors on its own).
 func TestIPLimiter_FallbackError_LastResortAllows(t *testing.T) {
 	primary := newFakeBucketStore()
 	primary.err = errors.New("primary down")
 	fallback := newFakeBucketStore()
 	fallback.err = errors.New("fallback down")
 	limiter := newIPLimiterWithStore(primary, fallback, 60, 1, time.Minute)
+	ctx := context.Background()
 
-	if !limiter.allow(context.Background(), "203.0.113.7") {
-		t.Error("allow() = false, want true (last-resort fail-open when both stores error)")
+	// First call: primary errors, then the fallback errors (post-primary path).
+	if !limiter.allow(ctx, "203.0.113.7") {
+		t.Error("first allow() = false, want true (last-resort fail-open after a primary error)")
+	}
+	// Second call: the circuit is now open, so the fallback is the chosen
+	// store; its error must fail open through the !usePrimary branch.
+	if !limiter.allow(ctx, "203.0.113.7") {
+		t.Error("second allow() = false, want true (last-resort fail-open when the chosen fallback errors)")
 	}
 }
 
