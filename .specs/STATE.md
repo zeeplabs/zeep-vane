@@ -322,6 +322,14 @@
 - **Date**: 2026-09-12
 - **Status**: active
 
+### AD-031
+- **Decision**: O `retention.Pruner` passa a ser leader-gated por tick. Nova chave de advisory lock `pruneLeaderLockKey = 727200003` (dentro do bloco reservado `727200000-727299999` do `pglock`, distinta de `db.PollerLeaderLockKey` 727200001 e do digest 727200002). O `Pruner` ganha um campo `dsn`; `NewPruner(intervals, dsn, tick, retention, logger)`. Novo `runCycle(ctx)` faz `pglock.TryAcquire` e só então chama `prune`; se outra réplica detém o lock, pula o tick (estado esperado, sem erro); se o acquire falha (DB inacessível), loga e pula; `Run` chama `runCycle` a cada tick. `serve.go` passa `cfg.DatabaseURL`. Mesmo padrão do `PollerManager.RunLeaderLoop` e do `DigestScheduler` (`notification-preferences`).
+- **Reason**: em HA o pruner rodava em **toda** réplica, então todas podavam os mesmos `status_intervals` fechados a cada hora. A API admin e os jobs rodam em toda réplica, mas retenção é um job single-writer; o poller e o digest já eram gated e o pruner era o último job sem gate. A corrida é idempotente no resultado, mas desperdiça trabalho e é exatamente o tipo de escrita concorrente que os outros dois jobs já evitam.
+- **Trade-off**: uma conexão dedicada por tick (1h por default) - custo desprezível. Com o DB inacessível, o tick é pulado em vez de podar sem ter provado single-writer; o próximo tick retenta. Nenhuma mudança na semântica de delete (fechados antes de `now-retention`; abertos nunca) nem migration/env var nova.
+- **Scope**: `internal/retention/pruner.go`, `internal/retention/pruner_test.go`, novo `internal/retention/pruner_leader_test.go`, `internal/cli/serve.go`. Sem feature spec (fix pequeno, `AGENTS.md` §1).
+- **Date**: 2026-09-12
+- **Status**: active
+
 ## Handoff
 
 **Feature**: `user-sessions` (per-device sessions) — **status: PASS ✅** (Verifier independente, passada única sem rodada de fix). Relatório: `.specs/features/user-sessions/validation.md`. 11/11 ACs (SESS-01 a SESS-11), sensor de discriminação P0 **8/8 mutantes mortos**. Entrada de decisão de arquitetura: `AD-028` acima.

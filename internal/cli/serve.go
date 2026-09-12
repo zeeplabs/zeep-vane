@@ -107,7 +107,7 @@ func NewServeCmd() *cobra.Command {
 			// the poller's (design.md: polling and pruning are unrelated
 			// responsibilities) - canceled by the same ctx/stop() as the
 			// poller and the HTTP/HTTPS listeners below (SHU-16..20).
-			pruner := retention.NewPruner(db.NewStatusIntervalRepository(pool), pruneTick, pruneRetention, logger)
+			pruner := retention.NewPruner(db.NewStatusIntervalRepository(pool), cfg.DatabaseURL, pruneTick, pruneRetention, logger)
 			go pruner.Run(ctx)
 
 			// The weekly digest scheduler runs on its own Monday-00:00-UTC

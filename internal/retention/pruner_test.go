@@ -107,7 +107,7 @@ func TestPruner_Run_TickDeletesClosedIntervalsOlderThan35Days(t *testing.T) {
 	}
 
 	intervals := db.NewStatusIntervalRepository(pool)
-	pruner := NewPruner(intervals, 20*time.Millisecond, 35*24*time.Hour, zap.NewNop())
+	pruner := NewPruner(intervals, testDatabaseURL(t), 20*time.Millisecond, 35*24*time.Hour, zap.NewNop())
 
 	runCtx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
@@ -176,7 +176,7 @@ func TestPruner_Run_TickKeepsClosedIntervalWithin95DayRetention(t *testing.T) {
 	})
 
 	intervals := db.NewStatusIntervalRepository(pool)
-	pruner := NewPruner(intervals, 20*time.Millisecond, 95*24*time.Hour, zap.NewNop())
+	pruner := NewPruner(intervals, testDatabaseURL(t), 20*time.Millisecond, 95*24*time.Hour, zap.NewNop())
 
 	runCtx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
 	done := make(chan struct{})
@@ -203,7 +203,7 @@ func TestPruner_Run_TickKeepsClosedIntervalWithin95DayRetention(t *testing.T) {
 func TestPruner_Run_ReturnsPromptlyOnContextCancel(t *testing.T) {
 	pool := newTestPool(t)
 	intervals := db.NewStatusIntervalRepository(pool)
-	pruner := NewPruner(intervals, time.Hour, 35*24*time.Hour, zap.NewNop())
+	pruner := NewPruner(intervals, testDatabaseURL(t), time.Hour, 35*24*time.Hour, zap.NewNop())
 
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
@@ -244,7 +244,7 @@ func (f *fakeFailingDeleter) DeleteClosedBefore(ctx context.Context, cutoff time
 // a later tick still calls DeleteClosedBefore again (SHU-20).
 func TestPruner_Run_DeleteErrorIsLoggedAndLoopContinues(t *testing.T) {
 	deleter := &fakeFailingDeleter{failTimes: 1}
-	pruner := NewPruner(deleter, 20*time.Millisecond, 35*24*time.Hour, zap.NewNop())
+	pruner := NewPruner(deleter, testDatabaseURL(t), 20*time.Millisecond, 35*24*time.Hour, zap.NewNop())
 
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
