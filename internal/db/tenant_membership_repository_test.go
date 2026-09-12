@@ -5,7 +5,9 @@ package db
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
+	"time"
 )
 
 func newTenantMembershipRepoTestPool(t *testing.T) (*TenantMembershipRepository, *TenantRepository, *UserRepository, *Pool) {
@@ -429,5 +431,57 @@ func TestTenantMembershipRepository_Delete_LastOwner_ErrLastOwnerNoRowRemoved(t 
 	}
 	if len(got) != 1 {
 		t.Errorf("len(ListForTenant()) after blocked delete = %d, want 1 (no row removed)", len(got))
+	}
+}
+
+// TestTenantMembershipRepository_ListMembersWithEmail_ExcludesRemoved covers
+// the notification fan-out's recipient source (notification-preferences
+// NOTIFPREF-04/07 edge case): members are returned with their email, and a
+// member removed from the tenant no longer appears - so the next event never
+// emails them.
+func TestTenantMembershipRepository_ListMembersWithEmail_ExcludesRemoved(t *testing.T) {
+	repo, tenants, admins, pool := newTenantMembershipRepoTestPool(t)
+	ctx := context.Background()
+
+	tenant := createMembershipTestTenant(t, tenants, pool, fmt.Sprintf("members-email-%d", time.Now().UnixNano()))
+	owner := createMembershipTestAdmin(t, admins, pool, fmt.Sprintf("members-email-owner-%d@example.com", time.Now().UnixNano()))
+	viewer := createMembershipTestAdmin(t, admins, pool, fmt.Sprintf("members-email-viewer-%d@example.com", time.Now().UnixNano()))
+
+	if err := repo.Create(ctx, &TenantMembership{UserID: owner.ID, TenantID: tenant.ID, Role: RoleOwner}); err != nil {
+		t.Fatalf("Create(owner) returned unexpected error: %v", err)
+	}
+	if err := repo.Create(ctx, &TenantMembership{UserID: viewer.ID, TenantID: tenant.ID, Role: RoleViewer}); err != nil {
+		t.Fatalf("Create(viewer) returned unexpected error: %v", err)
+	}
+
+	members, err := repo.ListMembersWithEmail(ctx, tenant.ID)
+	if err != nil {
+		t.Fatalf("ListMembersWithEmail() returned unexpected error: %v", err)
+	}
+	emails := map[string]bool{}
+	for _, m := range members {
+		emails[m.Email] = true
+	}
+	if !emails[owner.Email] || !emails[viewer.Email] {
+		t.Fatalf("members = %v, want both the owner and the viewer with emails", members)
+	}
+
+	if err := repo.Delete(ctx, viewer.ID, tenant.ID); err != nil {
+		t.Fatalf("Delete(viewer) returned unexpected error: %v", err)
+	}
+
+	members, err = repo.ListMembersWithEmail(ctx, tenant.ID)
+	if err != nil {
+		t.Fatalf("ListMembersWithEmail() after delete returned unexpected error: %v", err)
+	}
+	emails = map[string]bool{}
+	for _, m := range members {
+		emails[m.Email] = true
+	}
+	if emails[viewer.Email] {
+		t.Errorf("removed viewer still returned by ListMembersWithEmail, want excluded")
+	}
+	if !emails[owner.Email] {
+		t.Errorf("owner missing after the viewer was removed (members=%v)", members)
 	}
 }
