@@ -115,29 +115,29 @@ Explicitamente excluído. Documentado para prevenir scope creep.
 
 | Requirement ID | Story | Phase | Status |
 | --- | --- | --- | --- |
-| SHELL-01 | P1: Tokens novos | Design | Pending |
-| SHELL-02 | P1: Tokens novos | Design | Pending |
-| SHELL-03 | P1: Tokens novos | Design | Pending |
-| SHELL-04 | P1: Tokens novos | Design | Pending |
-| SHELL-05 | P1: Tokens novos | Design | Pending |
-| SHELL-06 | P1: Tokens novos | Design | Pending |
-| SHELL-07 | P1: Tokens novos | Design | Pending |
-| SHELL-08 | P2: Shell novo | Design | Pending |
-| SHELL-09 | P2: Shell novo | Design | Pending |
-| SHELL-10 | P2: Shell novo | Design | Pending |
-| SHELL-11 | P2: Shell novo | Design | Pending |
-| SHELL-12 | P2: Shell novo | Design | Pending |
-| SHELL-13 | P2: Shell novo | Design | Pending |
-| SHELL-14 | P2: Shell novo | Design | Pending |
-| SHELL-15 | P2: Shell novo | Design | Pending |
-| SHELL-16 | P2: Shell novo | Design | Pending |
-| SHELL-17 | P2: Shell novo | Design | Pending |
-| SHELL-18 | P2: Shell novo | Design | Pending |
-| SHELL-19 | P2: Shell novo | Design | Pending |
-| SHELL-20 | P3: /api/auth/me | Design | Pending |
-| SHELL-21 | P3: /api/auth/me | Design | Pending |
+| SHELL-01 | P1: Tokens novos | Design | Verified |
+| SHELL-02 | P1: Tokens novos | Design | Verified |
+| SHELL-03 | P1: Tokens novos | Design | Verified |
+| SHELL-04 | P1: Tokens novos | Design | Verified |
+| SHELL-05 | P1: Tokens novos | Design | Verified |
+| SHELL-06 | P1: Tokens novos | Design | Verified |
+| SHELL-07 | P1: Tokens novos | Design | Verified |
+| SHELL-08 | P2: Shell novo | Design | Verified |
+| SHELL-09 | P2: Shell novo | Design | Verified |
+| SHELL-10 | P2: Shell novo | Design | Verified |
+| SHELL-11 | P2: Shell novo | Design | Verified |
+| SHELL-12 | P2: Shell novo | Design | Verified |
+| SHELL-13 | P2: Shell novo | Design | Verified |
+| SHELL-14 | P2: Shell novo | Design | Verified |
+| SHELL-15 | P2: Shell novo | Design | Verified |
+| SHELL-16 | P2: Shell novo | Design | Verified |
+| SHELL-17 | P2: Shell novo | Design | Verified |
+| SHELL-18 | P2: Shell novo | Design | Verified |
+| SHELL-19 | P2: Shell novo | Design | Verified |
+| SHELL-20 | P3: /api/auth/me | Design | Verified |
+| SHELL-21 | P3: /api/auth/me | Design | Verified |
 
-**Coverage:** 21 total, 21 pendentes de Design.
+**Coverage:** 21 total, 21 verified (`validation.md`). SHELL-01/02/03/07/19 were spec-precision gaps (exact literals untested) closed by the 2026-09-12 hygiene pass; the rest were already test-backed.
 
 ---
 

@@ -33,7 +33,7 @@ Don't report a task as complete without having actually run these.
 
 ### Integration test database — hard rule
 
-**Never run the integration test gate against `vane-dev-pg`** (or any database holding real/dev data the user cares about). Always spin up a disposable Postgres container for the gate and destroy it afterward:
+**Never run the integration test gate against `vane-dev-pg`** (or any database holding real/dev data the user cares about). Always spin up a disposable Postgres container for the gate and destroy it afterward. `make test-integration` runs exactly the block below against a fresh disposable container, so prefer it over hand-rolling the commands:
 
 ```bash
 docker run -d --rm --name vane-test-pg -p 5433:5432 \

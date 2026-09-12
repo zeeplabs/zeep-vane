@@ -123,7 +123,7 @@ Real-tree isolation confirmed: `git status --porcelain` after cleanup matches th
 
 ## Fix Plans
 
-None required — no failing AC, no surviving mutant. The spec-precision gaps (SHELL-01/02/03/07/19) are config/CSS/layout literals with no test asserting the exact value; they reflect `tasks.md`'s own documented `Tests: none` scoping for these files (config, not branching logic) rather than an overlooked defect, and jsdom's inability to resolve `@theme`/compute layout pixels is a known, previously-encountered limitation (same rationale `tokens.test.tsx`'s own header comment gives). No fix task created; noting for the lessons layer instead (see below).
+**Resolved in the hygiene pass (2026-09-12).** The spec-precision gaps (SHELL-01/02/03/07/19) were config/CSS/layout literals with no test asserting the exact value. Following lessons L-037/L-038/L-039, three test types were added so a future regression to one of these literals now fails the suite: exact light/dark token hexes + Manrope weights + accent values in `tokens.test.tsx` (SHELL-01/02/03), an isolated evaluation of `index.html`'s inline theme-boot script in `themeBoot.test.ts` (SHELL-07), and a DOM assertion of the literal Tailwind arbitrary-value classes on `AppShell`'s content area in `AppShell.test.tsx` (SHELL-19). No production code changed — all 5 were already source-correct; only the coverage hole was closed.
 
 ---
 
@@ -131,13 +131,13 @@ None required — no failing AC, no surviving mutant. The spec-precision gaps (S
 
 | Requirement | Previous Status | New Status |
 | --- | --- | --- |
-| SHELL-01 | Pending | ⚠️ Verified (spec-precision gap: value untested) |
-| SHELL-02 | Pending | ⚠️ Verified (spec-precision gap: value untested) |
-| SHELL-03 | Pending | ⚠️ Verified (spec-precision gap: value untested) |
+| SHELL-01 | Pending | ✅ Verified (test-backed) |
+| SHELL-02 | Pending | ✅ Verified (test-backed) |
+| SHELL-03 | Pending | ✅ Verified (test-backed) |
 | SHELL-04 | Pending | ✅ Verified |
 | SHELL-05 | Pending | ✅ Verified |
 | SHELL-06 | Pending | ✅ Verified |
-| SHELL-07 | Pending | ⚠️ Verified (spec-precision gap: value untested) |
+| SHELL-07 | Pending | ✅ Verified (test-backed) |
 | SHELL-08 | Pending | ✅ Verified |
 | SHELL-09 | Pending | ✅ Verified |
 | SHELL-10 | Pending | ✅ Verified |
@@ -149,7 +149,7 @@ None required — no failing AC, no surviving mutant. The spec-precision gaps (S
 | SHELL-16 | Pending | ✅ Verified |
 | SHELL-17 | Pending | ✅ Verified |
 | SHELL-18 | Pending | ✅ Verified |
-| SHELL-19 | Pending | ⚠️ Verified (spec-precision gap: value untested) |
+| SHELL-19 | Pending | ✅ Verified (test-backed) |
 | SHELL-20 | Pending | ✅ Verified |
 | SHELL-21 | Pending | ✅ Verified |
 
@@ -159,7 +159,7 @@ None required — no failing AC, no surviving mutant. The spec-precision gaps (S
 
 **Overall**: ✅ Ready
 
-**Spec-anchored check**: 17/21 ACs matched spec outcome with a precise test assertion; 5 spec-precision gaps flagged (SHELL-01, SHELL-02, SHELL-03, SHELL-07, SHELL-19 — config/CSS literals and jsdom-unobservable layout/pre-mount behavior, all source-verified against the handoff/spec values)
+**Spec-anchored check**: 21/21 ACs matched spec outcome with a precise test assertion (17 originally + the 5 spec-precision gaps now closed with test-backed literals — SHELL-01/02/03/07/19)
 **Sensor**: 5/5 mutations killed
 **Gate**: frontend 332/332 passed, backend `db`/`api` integration suites passed, build/vet/gofmt clean
 
@@ -167,6 +167,6 @@ None required — no failing AC, no surviving mutant. The spec-precision gaps (S
 
 **Issues found**: None blocking. Two documentation-only findings, not code defects:
 1. `tasks.md`'s per-task `Requirement:` fields misattribute several P2 SHELL IDs (T7→SHELL-14 instead of SHELL-11, T9→SHELL-10/11 instead of SHELL-17/18, T12→SHELL-02/03/04/06 instead of SHELL-09..14, T10/T11/T13 similarly off) — a traceability documentation bug, not a functional gap; the actual Done-when criteria and tests correctly implement the AC each task was meant for.
-2. 5 ACs (SHELL-01/02/03/07/19) pin exact values (hex colors, font weights, pixel spacing) that no test asserts — only source inspection confirms them. This is consistent with `tasks.md`'s own `Tests: none` scoping for config/CSS files and a documented jsdom limitation, not an oversight, but it means a future regression to one of these literals (e.g. a wrong hex typo) would not be caught by the test suite.
+2. ~~5 ACs (SHELL-01/02/03/07/19) pin exact values (hex colors, font weights, pixel spacing) that no test asserts~~ — **resolved in the hygiene pass (2026-09-12)**: exact-literal tests added (see "Resolved" above). A future regression to one of these literals is now caught by the suite.
 
-**Next steps**: No fix tasks required for this validation to close. If tightening test coverage for the config-literal ACs is wanted later, add a compiled-CSS regex assertion (following `tokens.test.tsx`'s own SHELL-04 pattern) for the remaining light/dark tokens, and consider a lightweight `getBoundingClientRect`-based smoke test for `AppShell`'s content-area padding/max-width if the project moves off jsdom for that suite.
+**Next steps**: No fix tasks required for this validation to close. The previously-noted config-literal coverage gap is closed.

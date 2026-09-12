@@ -290,6 +290,12 @@ Seen once or not yet corroborated. Tracked, not trusted.
 - evidence: T3 - internal/cli/serve_test.go:268 (6 call sites missed by the non-integration quick gate) (backend/testing)
 - last seen: 2026-09-12T18:19:41Z
 
+### L-047 - Before calling a feature done, reconcile every tasks.md Done-when checkbox and remove stale SPEC_DEVIATION comments - a feature with no validation.md shipped with PAG-07 (the incidents Pager) never implemented behind a comment claiming its dependency did not exist yet.
+- signal: `ac_gap` · recurrence: 1 feature(s) · scope: `web/incidents` · harmful: 0
+- features: list-pagination
+- evidence: .specs/features/list-pagination/tasks.md T5 (Done-when unchecked); IncidentsPage.tsx stale SPEC_DEVIATION (web/incidents)
+- last seen: 2026-09-12T21:44:56Z
+
 ## Quarantined (failed when applied - ignore)
 
 A confirmed lesson that recurred alongside failure. Kept for the maintainer to review.

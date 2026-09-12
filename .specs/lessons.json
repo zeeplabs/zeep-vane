@@ -3,7 +3,7 @@
   "promote_threshold": 2,
   "window_days": 45,
   "quarantine_threshold": 2,
-  "next_id": 47,
+  "next_id": 48,
   "lessons": [
     {
       "id": "L-001",
@@ -832,6 +832,24 @@
       ],
       "created": "2026-09-12T18:19:41Z",
       "last_seen": "2026-09-12T18:19:41Z"
+    },
+    {
+      "id": "L-047",
+      "key": "ac_gap::before calling a feature done reconcile every tasks md done when checkbox and remove stale spec deviation comments a feature with no validation md shipped with pag 07 the incidents pager never implemented behind a comment claiming its dependency did not exist yet",
+      "text": "Before calling a feature done, reconcile every tasks.md Done-when checkbox and remove stale SPEC_DEVIATION comments - a feature with no validation.md shipped with PAG-07 (the incidents Pager) never implemented behind a comment claiming its dependency did not exist yet.",
+      "signal": "ac_gap",
+      "scope": "web/incidents",
+      "status": "candidate",
+      "features": [
+        "list-pagination"
+      ],
+      "recurrence": 1,
+      "harmful": 0,
+      "evidence": [
+        ".specs/features/list-pagination/tasks.md T5 (Done-when unchecked); IncidentsPage.tsx stale SPEC_DEVIATION (web/incidents)"
+      ],
+      "created": "2026-09-12T21:44:56Z",
+      "last_seen": "2026-09-12T21:44:56Z"
     }
   ]
 }

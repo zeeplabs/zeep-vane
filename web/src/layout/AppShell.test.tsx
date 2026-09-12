@@ -59,4 +59,25 @@ describe("AppShell", () => {
     expect(bannerSlot).not.toBeNull();
     expect(bannerSlot!.compareDocumentPosition(routedContent) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
+
+  // SHELL-19: the spec pins exact layout literals (own scroll, `32px 40px`
+  // padding, `1200px` max-width centered). jsdom doesn't compute layout
+  // pixels, so this asserts the literal Tailwind arbitrary-value classes in
+  // the DOM instead of the resolved geometry (lessons L-038).
+  it("área de conteúdo tem scroll próprio e os literais de layout do handoff (SHELL-19)", async () => {
+    await loginAs("owner@vane.app");
+    const { container } = renderShellAt("/services");
+    await screen.findByTestId("routed-content");
+
+    const main = container.querySelector("main");
+    expect(main).not.toBeNull();
+    expect(main!.className).toContain("overflow-auto");
+
+    const wrapper = main!.querySelector("div");
+    expect(wrapper).not.toBeNull();
+    expect(wrapper!.className).toContain("max-w-[1200px]");
+    expect(wrapper!.className).toContain("px-[40px]");
+    expect(wrapper!.className).toContain("py-[32px]");
+    expect(wrapper!.className).toContain("mx-auto");
+  });
 });

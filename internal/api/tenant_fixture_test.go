@@ -95,27 +95,11 @@ func newAPITenantScopedPool(t *testing.T) (*db.Pool, string) {
 
 	// Insert the fixture user + session row backing auth.IssueTestSessionID
 	// (a fixed UUID sentinel that integration tests pass to
-	// IssueSessionWithTenant in place of a real sessions-table row).
-	// RequireAuth's lookup checks row existence + revoked_at only, never
-	// user_id-vs-sub, so one shared row is enough for every test that
-	// issues a token this way. ON CONFLICT DO NOTHING makes the INSERT
-	// idempotent across tests that share the same TEST_DATABASE_URL.
-	if _, err := bootstrapPool.Exec(ctx,
-		`INSERT INTO users (id, email, password_hash) VALUES ($1, $2, $3)
-		 ON CONFLICT (email) DO NOTHING`,
-		auth.IssueTestSessionUserID, "issue-test-session-fixture@test.local", "fixture-hash",
-	); err != nil {
-		bootstrapPool.Close()
-		t.Fatalf("seeding fixture user for IssueTestSessionID returned unexpected error: %v", err)
-	}
-	if _, err := bootstrapPool.Exec(ctx,
-		`INSERT INTO sessions (id, user_id) VALUES ($1, $2)
-		 ON CONFLICT (id) DO NOTHING`,
-		auth.IssueTestSessionID, auth.IssueTestSessionUserID,
-	); err != nil {
-		bootstrapPool.Close()
-		t.Fatalf("seeding fixture session row for IssueTestSessionID returned unexpected error: %v", err)
-	}
+	// IssueSessionWithTenant in place of a real sessions-table row). Shared
+	// with internal/cli's fixture via dbtest so each package's suite passes
+	// in isolation instead of depending on the other package's fixture
+	// having run first in a shared TEST_DATABASE_URL.
+	dbtest.SeedIssueTestSession(t, dsn)
 
 	var tenantID string
 	if err := bootstrapPool.QueryRow(ctx, "INSERT INTO tenants (name) VALUES ($1) RETURNING id",

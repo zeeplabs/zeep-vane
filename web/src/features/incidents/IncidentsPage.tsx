@@ -6,6 +6,7 @@ import { Button } from "../../components/ui/Button";
 import { Field } from "../../components/ui/Field";
 import { Input } from "../../components/ui/Input";
 import { Drawer } from "../../components/ui/Drawer";
+import { Pager } from "../../components/ui/Pager";
 import { EmptyState } from "../../layout/EmptyState";
 import { useAuth } from "../../auth/AuthProvider";
 import { ApiError } from "../../lib/apiClient";
@@ -193,13 +194,14 @@ export function IncidentsPage() {
   const { hasRole } = useAuth();
   const canManage = hasRole(["owner", "operator"]);
   const [tab, setTab] = useState<"active" | "resolved">("active");
-  // SPEC_DEVIATION: task T5 (IncidentsPage renders Pager) depends on T14
-  // (Pager component), which is a later phase not yet built - this reads
-  // fixed page 1 for now (25 incidents), matching what "all incidents"
-  // meant before pagination for any installation with 25 or fewer. Real
-  // page navigation (Pager wired to page state) is T5's job once T14 exists.
-  const { data: incidentsPage, isLoading } = useIncidents(1);
+  // PAG-07/PAG-11: the incidents list is the one endpoint with unbounded
+  // growth, so it is paginated (page_size 25) with a Pager below the list.
+  // The Ativos/Resolvidos tabs keep filtering the currently-loaded page's
+  // items, exactly as before pagination.
+  const [page, setPage] = useState(1);
+  const { data: incidentsPage, isLoading } = useIncidents(page);
   const incidents = incidentsPage?.items;
+  const totalPages = Math.max(1, Math.ceil((incidentsPage?.total ?? 0) / (incidentsPage?.page_size ?? 25)));
   // SPEC_DEVIATION: fixed page 1 for now - Pager UI for the services
   // dropdown/lookup is out of scope here; T14/T16 (Pager) is a later
   // phase not yet built. Mirrors the same deviation in ServicesSection.tsx.
@@ -312,6 +314,8 @@ export function IncidentsPage() {
           ))}
         </div>
       )}
+
+      <Pager page={page} totalPages={totalPages} onChange={setPage} />
 
       <Drawer
         open={dialogOpen}

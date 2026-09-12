@@ -67,4 +67,56 @@ describe("tokens.css", () => {
       expect(tokensSource).toContain(`--color-accent-${step}:`);
     }
   });
+
+  // SHELL-01/02/03: the spec pins exact literals (handoff-new-layout/
+  // README.md's Dark mode + Design tokens tables). jsdom can't resolve
+  // @theme or the [data-theme="dark"] cascade, so these assert the authored
+  // declarations in the raw source, scoped to the block that owns them -
+  // a wrong hex/font typo now fails the suite instead of only being caught
+  // by eye (lessons L-037).
+  function cssBlock(selector: string): string {
+    const start = tokensSource.indexOf(selector);
+    if (start === -1) throw new Error(`tokens.css: selector ${selector} not found`);
+    const open = tokensSource.indexOf("{", start);
+    const close = tokensSource.indexOf("}", open);
+    if (open === -1 || close === -1) throw new Error(`tokens.css: unbalanced block for ${selector}`);
+    return tokensSource.slice(open + 1, close);
+  }
+
+  it("SHELL-01: tokens do shell com os hex exatos do handoff, claros e escuros", () => {
+    const light = cssBlock("@theme");
+    const dark = cssBlock('[data-theme="dark"]');
+    const shellTokens: { token: string; light: RegExp; dark: RegExp }[] = [
+      { token: "--color-bg", light: /--color-bg:\s*#ffffff/i, dark: /--color-bg:\s*#15111f/i },
+      { token: "--color-text", light: /--color-text:\s*#1c1526/i, dark: /--color-text:\s*#edebf3/i },
+      { token: "--color-divider", light: /--color-divider:\s*#ece9f2/i, dark: /--color-divider:\s*#2c2645/i },
+      { token: "--color-sidebar-bg", light: /--color-sidebar-bg:\s*#fafafc/i, dark: /--color-sidebar-bg:\s*#1b1730/i },
+      { token: "--color-card-header-bg", light: /--color-card-header-bg:\s*#fafafc/i, dark: /--color-card-header-bg:\s*#241e3d/i },
+      {
+        token: "--color-sidebar-hover-bg",
+        light: /--color-sidebar-hover-bg:\s*#f2f0f6/i,
+        dark: /--color-sidebar-hover-bg:\s*rgba\(255,\s*255,\s*255,\s*0\.06\)/i,
+      },
+      { token: "--color-topbar-icon", light: /--color-topbar-icon:\s*#6e6779/i, dark: /--color-topbar-icon:\s*#b4aec2/i },
+    ];
+    for (const { token, light: lightRe, dark: darkRe } of shellTokens) {
+      expect(light, `${token} (light)`).toMatch(lightRe);
+      expect(dark, `${token} (dark)`).toMatch(darkRe);
+    }
+  });
+
+  it("SHELL-02: carrega Manrope 400/500/600/700 e a usa em heading/body", () => {
+    expect(tokensSource).toMatch(/Manrope:wght@400;500;600;700/);
+    expect(tokensSource).toMatch(/--font-heading:\s*"Manrope"/);
+    expect(tokensSource).toMatch(/--font-body:\s*"Manrope"/);
+  });
+
+  it("SHELL-03: accent #5a46c7 / hover #4c3aae, sem override no tema escuro", () => {
+    const light = cssBlock("@theme");
+    const dark = cssBlock('[data-theme="dark"]');
+    expect(light).toMatch(/--color-accent:\s*#5a46c7/i);
+    expect(light).toMatch(/--color-accent-hover:\s*#4c3aae/i);
+    expect(dark).not.toMatch(/--color-accent:/);
+    expect(dark).not.toMatch(/--color-accent-hover:/);
+  });
 });

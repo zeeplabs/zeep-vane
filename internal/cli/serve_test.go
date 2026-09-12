@@ -58,6 +58,12 @@ func newServeTestPoolWithTenant(t *testing.T) (*db.Pool, string) {
 		t.Fatalf("MigrateUp() returned unexpected error: %v", err)
 	}
 
+	// Seed the shared IssueTestSessionID fixture row so tokens minted by
+	// issueRoutesTestToken resolve under RequireAuth even when this package
+	// runs in isolation - it used to depend on internal/api's fixture having
+	// run first in the shared TEST_DATABASE_URL.
+	dbtest.SeedIssueTestSession(t, dsn)
+
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
