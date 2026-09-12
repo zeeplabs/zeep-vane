@@ -278,6 +278,12 @@ Seen once or not yet corroborated. Tracked, not trusted.
 - evidence: web/src/features/notifications/hooks.ts onError rollback (mutant M8) (frontend/react-query/optimistic-update)
 - last seen: 2026-09-12T16:34:48Z
 
+### L-045 - When sibling branches return the same observable value, drive each branch in a test explicitly; one call can cover only one branch and leave the other's mutant alive.
+- signal: `surviving_mutant` · recurrence: 1 feature(s) · scope: `backend/ratelimit` · harmful: 0
+- features: ratelimit-store-fallback
+- evidence: M7 - internal/ratelimit/ip_limiter_test.go:337 (backend/ratelimit)
+- last seen: 2026-09-12T17:25:28Z
+
 ## Quarantined (failed when applied - ignore)
 
 A confirmed lesson that recurred alongside failure. Kept for the maintainer to review.
