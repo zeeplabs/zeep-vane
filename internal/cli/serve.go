@@ -18,8 +18,10 @@ import (
 	"github.com/zeeplabs/zeep-vane/internal/connectors/datadog"
 	"github.com/zeeplabs/zeep-vane/internal/crypto"
 	"github.com/zeeplabs/zeep-vane/internal/db"
+	"github.com/zeeplabs/zeep-vane/internal/email"
 	"github.com/zeeplabs/zeep-vane/internal/llm"
 	"github.com/zeeplabs/zeep-vane/internal/logging"
+	"github.com/zeeplabs/zeep-vane/internal/notify"
 	"github.com/zeeplabs/zeep-vane/internal/poller"
 	"github.com/zeeplabs/zeep-vane/internal/retention"
 	"github.com/zeeplabs/zeep-vane/internal/router"
@@ -266,6 +268,15 @@ func newPollerFromStoredIntegration(ctx context.Context, pool *db.Pool, cfg conf
 	incidents := db.NewIncidentRepository(pool)
 	llmSvc := llm.NewService(db.NewLLMProviderStore(db.NewLLMProviderRepository(pool)), llmProviderFactory, cfg.MasterKey, logger)
 	analyzer := poller.NewSLOAnalyzer(incidents, services, llmSvc, poller.AnalysisTimeout, logger)
+
+	// Auto-created outage incidents bypass the HTTP handler, so the analyzer
+	// needs its own notifier to fire the incident-opened email
+	// (notification-preferences NOTIFPREF-04, spec edge case).
+	emailService, err := email.NewService(db.NewEmailProviderRepository(pool), emailProviderFactory, cfg.MasterKey, logger)
+	if err != nil {
+		return nil, false, fmt.Errorf("serve: failed to build email service for notifications: %w", err)
+	}
+	analyzer.SetNotifier(notify.NewService(db.NewTenantMembershipRepository(pool), db.NewNotificationPreferenceRepository(pool), emailService, cfg.AdminBaseURL, logger))
 
 	p = poller.NewPoller(services, services, intervals, integrations, client, interval, analyzer, logger)
 

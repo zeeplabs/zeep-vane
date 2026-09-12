@@ -1,7 +1,7 @@
 <!doctype html>
 <html>
   <body style="font-family: sans-serif; color: #1a1a1a;">
-    <p>An incident for <strong>{{.ServiceName}}</strong>{{if .TenantName}} in {{.TenantName}}{{end}} has been resolved.</p>
+    <p>An incident{{if .ServiceName}} for <strong>{{.ServiceName}}</strong>{{end}}{{if .TenantName}} in {{.TenantName}}{{end}} has been resolved.</p>
     <p><strong>{{.IncidentTitle}}</strong>{{if .Severity}} (severity: {{.Severity}}){{end}}</p>
     <p><a href="{{.DashboardURL}}">View the incident</a></p>
   </body>

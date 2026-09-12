@@ -240,6 +240,7 @@ func (p *Poller) pollCycle(ctx context.Context) {
 			continue
 		}
 		tenantCtx = tenantTxCtx
+		tenantCtx = withTenantID(tenantCtx, tenant.ID)
 
 		p.pollOnce(tenantCtx)
 

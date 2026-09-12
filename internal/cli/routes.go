@@ -19,6 +19,7 @@ import (
 	"github.com/zeeplabs/zeep-vane/internal/db"
 	"github.com/zeeplabs/zeep-vane/internal/email"
 	"github.com/zeeplabs/zeep-vane/internal/llm"
+	"github.com/zeeplabs/zeep-vane/internal/notify"
 	"github.com/zeeplabs/zeep-vane/internal/ratelimit"
 	"github.com/zeeplabs/zeep-vane/internal/router"
 	"github.com/zeeplabs/zeep-vane/web"
@@ -91,7 +92,11 @@ func buildAdminRouter(pool *db.Pool, cfg config.Config, logger *zap.Logger, poll
 	domainsHandler := api.NewDomainsHandler(db.NewDomainRepository(pool), auditLog, cfg.PublicDNSTarget, logger)
 	servicesHandler := api.NewServicesHandler(db.NewServiceRepository(pool), logger)
 	integrationsHandler := api.NewIntegrationsHandler(db.NewIntegrationRepository(pool), validateDatadogCredentials, searchDatadogSLOs, pollerManager, cfg.MasterKey, logger)
-	incidentsHandler := api.NewIncidentsHandler(db.NewIncidentRepository(pool), logger)
+	incidentsHandler := api.NewIncidentsHandler(
+		db.NewIncidentRepository(pool),
+		notify.NewService(db.NewTenantMembershipRepository(pool), db.NewNotificationPreferenceRepository(pool), emailService, cfg.AdminBaseURL, logger),
+		logger,
+	)
 	statusPagesHandler := api.NewStatusPagesHandler(db.NewStatusPageRepository(pool), auditLog, cfg.PublicDNSTarget, logger)
 	pollerStatusHandler := api.NewPollerStatusHandler(db.NewIntegrationRepository(pool), db.NewPollerLeadershipRepository(pool), db.NewStatusIntervalRepository(pool), logger)
 	sessionsHandler := api.NewSessionsHandler(sessions, logger)

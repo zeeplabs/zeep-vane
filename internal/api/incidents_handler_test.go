@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -17,16 +18,46 @@ import (
 	"github.com/zeeplabs/zeep-vane/internal/auth"
 	"github.com/zeeplabs/zeep-vane/internal/db"
 	"github.com/zeeplabs/zeep-vane/internal/dbtest"
+	"github.com/zeeplabs/zeep-vane/internal/notify"
 )
 
+// recordingIncidentNotifier is an incidentNotifier double recording the
+// lifecycle notifications the handler fires, with injectable errors.
+type recordingIncidentNotifier struct {
+	openedTenants     []string
+	resolvedTenants   []string
+	openedSummaries   []notify.IncidentSummary
+	resolvedSummaries []notify.IncidentSummary
+	openErr           error
+	resolveErr        error
+}
+
+func (n *recordingIncidentNotifier) NotifyIncidentOpened(_ context.Context, tenantID string, summary notify.IncidentSummary) error {
+	n.openedTenants = append(n.openedTenants, tenantID)
+	n.openedSummaries = append(n.openedSummaries, summary)
+	return n.openErr
+}
+
+func (n *recordingIncidentNotifier) NotifyIncidentResolved(_ context.Context, tenantID string, summary notify.IncidentSummary) error {
+	n.resolvedTenants = append(n.resolvedTenants, tenantID)
+	n.resolvedSummaries = append(n.resolvedSummaries, summary)
+	return n.resolveErr
+}
+
 func newIncidentsRouter(t *testing.T) (http.Handler, *db.Pool, *db.UserRepository) {
+	t.Helper()
+	r, pool, admins, _ := newIncidentsRouterWithNotifier(t, &recordingIncidentNotifier{})
+	return r, pool, admins
+}
+
+func newIncidentsRouterWithNotifier(t *testing.T, notifier incidentNotifier) (http.Handler, *db.Pool, *db.UserRepository, incidentNotifier) {
 	t.Helper()
 
 	pool, _ := newAPITenantScopedPool(t)
 
 	repo := db.NewIncidentRepository(pool)
 	admins := db.NewUserRepository(pool)
-	handler := NewIncidentsHandler(repo, zap.NewNop())
+	handler := NewIncidentsHandler(repo, notifier, zap.NewNop())
 
 	r := chi.NewRouter()
 	r.Group(func(protected chi.Router) {
@@ -45,7 +76,7 @@ func newIncidentsRouter(t *testing.T) (http.Handler, *db.Pool, *db.UserRepositor
 		protected.Patch("/api/incidents/{id}/severity", handler.SetSeverity)
 	})
 
-	return r, pool, admins
+	return r, pool, admins, notifier
 }
 
 // createIncidentTestService inserts a service to link an incident to,
@@ -1200,5 +1231,143 @@ func TestConfirmClose_TimelineEntry_NoAuthorIsAISummary(t *testing.T) {
 	}
 	if !page.Items[0].IsAISummary {
 		t.Error("IsAISummary = false, want true")
+	}
+}
+
+// TestCreateIncident_FiresIncidentOpenedNotification covers NOTIFPREF-04: a
+// successful create fires exactly one incident-opened notification carrying
+// the active tenant and the created incident's id/title/severity.
+func TestCreateIncident_FiresIncidentOpenedNotification(t *testing.T) {
+	notifier := &recordingIncidentNotifier{}
+	r, pool, admins, _ := newIncidentsRouterWithNotifier(t, notifier)
+	token := issueTestSessionToken(t, admins)
+	serviceID := createIncidentTestService(t, pool)
+
+	rec := postCreateIncident(t, r, token, "opened-notification test incident", []string{serviceID})
+	t.Cleanup(func() {
+		_, _ = pool.Exec(context.Background(), "DELETE FROM incidents WHERE title = $1", "opened-notification test incident")
+	})
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusCreated, rec.Body.String())
+	}
+
+	if len(notifier.openedTenants) != 1 {
+		t.Fatalf("opened notifications = %d, want exactly 1", len(notifier.openedTenants))
+	}
+	if notifier.openedTenants[0] == "" {
+		t.Error("notification tenant id is empty, want the active tenant from context")
+	}
+	var created incidentResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &created); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+	summary := notifier.openedSummaries[0]
+	if summary.IncidentID != created.ID {
+		t.Errorf("summary.IncidentID = %q, want %q", summary.IncidentID, created.ID)
+	}
+	if summary.Title != "opened-notification test incident" || summary.Severity != "moderate" {
+		t.Errorf("summary = %+v, want title and moderate severity from the created incident", summary)
+	}
+	if len(notifier.resolvedTenants) != 0 {
+		t.Errorf("resolved notifications = %d, want 0 on create", len(notifier.resolvedTenants))
+	}
+}
+
+// TestCreateIncident_NotificationError_StillReturns201 covers NOTIFPREF-05: a
+// notification failure never fails or rolls back the incident creation.
+func TestCreateIncident_NotificationError_StillReturns201(t *testing.T) {
+	notifier := &recordingIncidentNotifier{openErr: errors.New("notify boom")}
+	r, pool, admins, _ := newIncidentsRouterWithNotifier(t, notifier)
+	token := issueTestSessionToken(t, admins)
+	serviceID := createIncidentTestService(t, pool)
+
+	rec := postCreateIncident(t, r, token, "notify-failure test incident", []string{serviceID})
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want %d despite the notification error, body = %s", rec.Code, http.StatusCreated, rec.Body.String())
+	}
+
+	var created incidentResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &created); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = pool.Exec(context.Background(), "DELETE FROM incidents WHERE id = $1", created.ID)
+	})
+
+	var count int
+	if err := pool.QueryRow(context.Background(),
+		"SELECT COUNT(*) FROM incidents WHERE id = $1", created.ID).Scan(&count); err != nil {
+		t.Fatalf("Scan() returned unexpected error: %v", err)
+	}
+	if count != 1 {
+		t.Errorf("persisted incident rows for the created id = %d, want 1 (creation must not be rolled back)", count)
+	}
+}
+
+// TestTransitionToResolved_FiresIncidentResolvedNotification covers
+// NOTIFPREF-07: resolving via Transition fires exactly one resolved
+// notification.
+func TestTransitionToResolved_FiresIncidentResolvedNotification(t *testing.T) {
+	notifier := &recordingIncidentNotifier{}
+	r, pool, admins, _ := newIncidentsRouterWithNotifier(t, notifier)
+	token := issueTestSessionToken(t, admins)
+	incident := createTestIncident(t, r, pool, token, "resolved-notification test incident")
+
+	rec := patchIncidentStatus(t, r, token, incident.ID, "resolved")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	if len(notifier.resolvedSummaries) != 1 {
+		t.Fatalf("resolved notifications = %d, want exactly 1", len(notifier.resolvedSummaries))
+	}
+	if notifier.resolvedSummaries[0].IncidentID != incident.ID {
+		t.Errorf("summary.IncidentID = %q, want %q", notifier.resolvedSummaries[0].IncidentID, incident.ID)
+	}
+	if len(notifier.openedTenants) != 1 {
+		t.Errorf("opened notifications = %d, want exactly 1 from the setup create", len(notifier.openedTenants))
+	}
+}
+
+// TestTransitionToNonResolved_DoesNotNotify covers NOTIFPREF-09: a transition
+// to any status other than resolved sends no resolved notification.
+func TestTransitionToNonResolved_DoesNotNotify(t *testing.T) {
+	notifier := &recordingIncidentNotifier{}
+	r, pool, admins, _ := newIncidentsRouterWithNotifier(t, notifier)
+	token := issueTestSessionToken(t, admins)
+	incident := createTestIncident(t, r, pool, token, "non-resolved-transition test incident")
+
+	rec := patchIncidentStatus(t, r, token, incident.ID, "identified")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	if len(notifier.resolvedTenants) != 0 {
+		t.Errorf("resolved notifications = %d, want 0 for a non-resolving transition", len(notifier.resolvedTenants))
+	}
+}
+
+// TestConfirmClose_FiresIncidentResolvedNotification covers NOTIFPREF-08:
+// resolving through the AI-assisted ConfirmClose path fires the same resolved
+// notification.
+func TestConfirmClose_FiresIncidentResolvedNotification(t *testing.T) {
+	notifier := &recordingIncidentNotifier{}
+	r, pool, admins, _ := newIncidentsRouterWithNotifier(t, notifier)
+	token := issueTestSessionToken(t, admins)
+	incident := createTestIncident(t, r, pool, token, "confirm-close-notification test incident")
+
+	repo := db.NewIncidentRepository(pool)
+	if err := repo.SetPendingCloseComment(context.Background(), incident.ID, "recovered, closing out"); err != nil {
+		t.Fatalf("setup SetPendingCloseComment() returned unexpected error: %v", err)
+	}
+
+	rec := postConfirmClose(t, r, token, incident.ID, "recovered, closing out")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	if len(notifier.resolvedSummaries) != 1 {
+		t.Fatalf("resolved notifications = %d, want exactly 1", len(notifier.resolvedSummaries))
+	}
+	if notifier.resolvedSummaries[0].IncidentID != incident.ID {
+		t.Errorf("summary.IncidentID = %q, want %q", notifier.resolvedSummaries[0].IncidentID, incident.ID)
 	}
 }

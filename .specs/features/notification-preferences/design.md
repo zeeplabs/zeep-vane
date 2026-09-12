@@ -1,17 +1,18 @@
 # Notification Preferences and Incident Email Delivery Design
 
 **Spec**: `.specs/features/notification-preferences/spec.md`
-**Status**: Draft
+**Status**: Approved (2026-09-12) — backend design unchanged; the Meu Perfil `Notificações` frontend section was added to scope.
 
 ---
 
 ## Architecture Overview
 
-Three independent pieces, matched to the spec's own P1/P1/P2 split:
+Four independent pieces, matched to the spec's own P1/P1/P2/P1 split:
 
 1. **Preference storage + self-service endpoints** — plain CRUD, no architecture risk.
 2. **Event-driven sends** (incident opened/resolved) — synchronous calls added to 3 existing handler methods, reusing `internal/email/service.go`'s established send pattern.
 3. **Weekly digest** — the one piece needing real design: a new scheduler goroutine plus a **second**, distinct advisory-lock leader election, deliberately reusing `internal/pglock` (AD-013) rather than inventing a second HA mechanism.
+4. **Frontend `Notificações` section** — a new `web/src/features/notifications/` module (section + hooks + types) composed by `ProfilePage`, mirroring `features/sessions/` and `features/two-factor/`; purely client-side over the two self-service endpoints.
 
 ```mermaid
 graph TD
@@ -44,11 +45,13 @@ graph TD
 | Component | Location | How to Use |
 | --- | --- | --- |
 | `email.Service`'s active-provider-lookup-and-send pattern | `internal/email/service.go` (`SendSignupVerification` shape) | Two new methods, `SendIncidentOpened`/`SendIncidentResolved`/`SendWeeklyDigest`, follow the identical `GetActiveProvider` → `ErrNoActiveProvider` → render → send shape. |
-| `TenantMembershipRepository.ListForTenant` | `internal/db/tenant_membership_repository.go:103` | Already returns every membership row for a tenant — no new repository method needed for the membership side, only filtering in the notification layer. |
+| `TenantMembershipRepository.ListMembersWithEmail` | `internal/db/tenant_membership_repository.go` | Returns every member of a tenant with their email (joined from `users`) - the recipient list the fan-out needs. Role filtering (owner/operator) stays in the notification layer. `ListForTenant` itself returns no email, so this method was added during Execute. |
 | `internal/pglock` + `PollerManager`'s leader-loop shape | `internal/cli/poller_manager.go` (`RunLeaderLoop`, `defaultLeaderRetryInterval`/`defaultLeaderHeartbeatInterval`) | The digest scheduler's leader loop is structurally identical — a new, smaller `DigestScheduler` type copies the acquire/heartbeat/retry shape rather than generalizing `PollerManager` itself (see Tech Decisions for why not to share the type directly). |
 | `status_intervals` + `internal/history` | `internal/db/status_interval_repository.go`, `internal/history` | Digest's uptime summary reads the same data `poller-status-real-state` and the public status page already read — no new metrics computation invented. |
 | `incidents` table's `created_at`/`resolved_at` (from `incident-severity-and-timeline`) | `internal/db/incident_repository.go` | Digest's incident counts are a plain date-ranged `COUNT(*)` query, no new columns needed. |
 | `profile-self-service`'s self-scoped endpoint pattern | `internal/api/auth_handler.go` (`UpdateProfile`) | `GET`/`PATCH /api/auth/notification-preferences` follow the same self-only, partial-update shape. |
+| Separate feature module composed by `ProfilePage` | `web/src/features/sessions/`, `web/src/features/two-factor/` | New `web/src/features/notifications/` module follows the same "section component + hooks, imported by `ProfilePage`" shape, rather than adding a card inside `features/profile/`. |
+| Frontend query/mutation + test harness patterns | `web/src/features/profile/hooks.ts`, `web/src/test/msw/handlers.ts`, `web/src/lib/i18n.ts` | New hooks follow the existing query/mutation convention; the two endpoints get MSW handlers in the shared handlers file; strings land under `profile.notifications.*` in both locales. |
 
 ### Integration Points
 
@@ -57,6 +60,7 @@ graph TD
 | Postgres | New `notification_preferences` table; a second advisory-lock key (`digestLeaderLockKey`, new constant, distinct block from `pollerLeaderLockKey`). |
 | `internal/cli/serve.go` | Boots `DigestScheduler` alongside `PollerManager`, same lifecycle (start at boot, stop on shutdown). |
 | `IncidentsHandler` | `Create`, `Transition`, `ConfirmClose` each gain one call to the new notification layer after their existing success path — never before the DB commit, never blocking the response on send failure. |
+| `web/` (Meu Perfil) | New `features/notifications/` module rendered by `ProfilePage`; reads/writes the two self-service endpoints; MSW handlers stand in during tests. |
 
 ---
 
@@ -88,6 +92,7 @@ graph TD
 - **Purpose**: Fire the two event-driven notifications at the 3 confirmed hook points.
 - **Change**: `Create` calls `h.notify.NotifyIncidentOpened(ctx, tenantID, incident)` after `h.incidents.Create` succeeds, before writing the `201` response — failure is logged only (`h.logger.Error`), never changes the response. `Transition` calls `NotifyIncidentResolved` only when `req.Status == "resolved"`. `ConfirmClose` calls it unconditionally (it always resolves). Tenant ID comes from `ActiveTenantIDFromContext(r.Context())`, already available via the existing tenant-context middleware.
 - **Dependencies**: new `notify notificationNotifier` field (narrowed interface: `NotifyIncidentOpened`, `NotifyIncidentResolved`).
+- **Auto-created incidents**: incidents created by `SLOAnalyzer` (`internal/poller/analyzer.go`) bypass this handler entirely, so they get their own hook. The poller's per-tenant iteration stores the tenant id in the context (`internal/poller/tenant_context.go`, `withTenantID`); `handleOutageTransition` calls `NotifyIncidentOpened` for the tenant after a successful auto-incident create. `SLOAnalyzer.SetNotifier` is optional (nil disables it, as in most tests). This is required because a monitoring product's incidents are mostly auto-detected - hooking only manual creation would leave the toggle inert in the common case.
 
 ### `DigestScheduler` (`internal/cli/digest_scheduler.go`, new)
 
@@ -104,6 +109,18 @@ graph TD
 - **Purpose**: Three new send methods, one template each.
 - **Interfaces**: `SendIncidentOpened(ctx, to string, data IncidentOpenedEmailData) error`, `SendIncidentResolved(ctx, to string, data IncidentResolvedEmailData) error`, `SendWeeklyDigest(ctx, to string, data WeeklyDigestEmailData) error` — each mirrors `SendSignupVerification`'s body exactly (active-provider lookup, template render, send, typed error passthrough).
 - **Reuses**: `s.templates`, `s.repo.GetActiveProvider`/`Get`, the existing `ErrNoActiveProvider` sentinel.
+
+### `NotificationsSection` + hooks (`web/src/features/notifications/`, new module)
+
+- **Purpose**: The Meu Perfil `Notificações` UI — three toggles, one per preference type.
+- **Interfaces**:
+  - `hooks.ts` — `useNotificationPreferences()` (query key `["notification-preferences"]`) wrapping `GET /api/auth/notification-preferences`, and `useUpdateNotificationPreference()` wrapping the partial `PATCH` with an optimistic update of the single key and rollback plus error toast on failure.
+  - `types.ts` (or types co-located in `hooks.ts`) — `NotificationPreferences = { incident_opened: boolean; incident_resolved: boolean; weekly_digest: boolean }` and the `NotificationType` union.
+  - `NotificationsSection.tsx` — renders the three toggles from the hook, a loading state with toggles disabled while the initial request is in flight, and an inline error state on initial-load failure; calls the mutation per toggle.
+- **Dependencies**: the two self-service endpoints, `react-i18next` (`profile.notifications.*`), the shared toast utility.
+- **New primitive**: no switch control exists in `components/ui/` today (the mock renders a custom track/knob switch, not a native checkbox), so this introduces `web/src/components/ui/Switch.tsx` (`role="switch"`, keyboard-operable, `checked`/`disabled`/`onChange`) as a reusable primitive.
+- **Reuses**: the `features/sessions`/`features/two-factor` module shape; the existing query/mutation conventions.
+- **Why a separate module, not a card in `features/profile/`**: keeps `features/profile/` about the user's identity and security cards and gives the notification UI its own testable boundary, matching the existing separate-module precedent (user decision, 2026-09-12).
 
 ---
 
@@ -154,5 +171,7 @@ CREATE TABLE notification_preferences (
 | Digest advisory lock is acquired and released per-fire, not held continuously | `TryAcquire` + `Release` bracketing one `runOnce` call | Unlike poller leadership (which must persist between poll cycles so exactly one replica keeps running the loop), the digest only needs exclusivity for the few minutes it takes to iterate tenants once a week — holding a session-scoped advisory lock (and its dedicated connection) idle for 7 days between fires would be a wasted, leaked-looking resource for no benefit. |
 | Lock key value | A new named constant in a namespace block distinct from `pollerLeaderLockKey` (`internal/pglock`'s own doc comment reserves `727200000-727299999` for production locks generally — the new key is a specific value in that block, picked and documented at Execute time) | Matches `AD-013`'s established key-namespacing discipline — never invent a second ad-hoc numbering scheme. |
 | Tenant enumeration for the digest | Reuses `db.SystemTenantLister`, not a new RLS policy | Directly avoids re-deriving `AD-024`'s already-solved bootstrap paradox for a second system-internal background job — same trust shape (in-process, ticker-driven, never HTTP-reachable). |
+| Frontend module boundary | New `web/src/features/notifications/` module composed by `ProfilePage`, not a card inside `features/profile/` | Mirrors `features/sessions/` and `features/two-factor/`; the notification UI depends on a different resource (self preferences) than the identity/security cards, so a separate boundary keeps both independently testable. |
+| Toggle write model | One partial `PATCH` per toggle, optimistic single-key update with rollback on failure | Matches the mock's per-toggle behavior and the endpoints' partial-update contract; a form-save model was never requested. |
 
 > **New `AD-NNN` candidate**: if Execute confirms `SystemTenantLister` generalizes cleanly to a second caller, append a short addendum to `AD-024` noting it now serves two system-internal consumers (poller + digest scheduler), not one — not a new decision, just scope-widening the existing one's `Scope` line.

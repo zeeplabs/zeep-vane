@@ -1,4 +1,4 @@
-An incident was opened for {{.ServiceName}}{{if .TenantName}} in {{.TenantName}}{{end}}.
+An incident was opened{{if .ServiceName}} for {{.ServiceName}}{{end}}{{if .TenantName}} in {{.TenantName}}{{end}}.
 
 {{.IncidentTitle}}{{if .Severity}} (severity: {{.Severity}}){{end}}
 

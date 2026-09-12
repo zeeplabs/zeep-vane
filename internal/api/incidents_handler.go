@@ -11,6 +11,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/zeeplabs/zeep-vane/internal/db"
+	"github.com/zeeplabs/zeep-vane/internal/notify"
 )
 
 // incidentsPageSize is the fixed page size for both /api/incidents and
@@ -31,15 +32,57 @@ type incidentCreator interface {
 	SetSeverity(ctx context.Context, incidentID, severity string) (*db.Incident, error)
 }
 
+// incidentNotifier is the subset of *notify.Service the incidents handler
+// depends on for lifecycle email notifications (notification-preferences
+// NOTIFPREF-04/07).
+type incidentNotifier interface {
+	NotifyIncidentOpened(ctx context.Context, tenantID string, summary notify.IncidentSummary) error
+	NotifyIncidentResolved(ctx context.Context, tenantID string, summary notify.IncidentSummary) error
+}
+
 // IncidentsHandler serves the incident admin routes.
 type IncidentsHandler struct {
 	incidents incidentCreator
+	notify    incidentNotifier
 	logger    *zap.Logger
 }
 
 // NewIncidentsHandler builds an IncidentsHandler backed by incidents.
-func NewIncidentsHandler(incidents incidentCreator, logger *zap.Logger) *IncidentsHandler {
-	return &IncidentsHandler{incidents: incidents, logger: logger}
+func NewIncidentsHandler(incidents incidentCreator, notifier incidentNotifier, logger *zap.Logger) *IncidentsHandler {
+	return &IncidentsHandler{incidents: incidents, notify: notifier, logger: logger}
+}
+
+// notifyIncidentOpened fires the incident-opened notification for a
+// just-created incident. It is best-effort: a lookup or send failure is logged
+// and never changes the incident response (spec's non-fatal requirement).
+func (h *IncidentsHandler) notifyIncidentOpened(ctx context.Context, incident *db.Incident) {
+	h.notifyIncident(ctx, incident, false)
+}
+
+// notifyIncidentResolved fires the incident-resolved notification.
+func (h *IncidentsHandler) notifyIncidentResolved(ctx context.Context, incident *db.Incident) {
+	h.notifyIncident(ctx, incident, true)
+}
+
+func (h *IncidentsHandler) notifyIncident(ctx context.Context, incident *db.Incident, resolved bool) {
+	tenantID, ok := ActiveTenantIDFromContext(ctx)
+	if !ok || h.notify == nil {
+		return
+	}
+	summary := notify.IncidentSummary{
+		IncidentID: incident.ID,
+		Title:      incident.Title,
+		Severity:   incident.Severity,
+	}
+	var err error
+	if resolved {
+		err = h.notify.NotifyIncidentResolved(ctx, tenantID, summary)
+	} else {
+		err = h.notify.NotifyIncidentOpened(ctx, tenantID, summary)
+	}
+	if err != nil {
+		h.logger.Error("incidents: failed to send incident notification", zap.Error(err))
+	}
 }
 
 type createIncidentRequest struct {
@@ -106,6 +149,7 @@ func (h *IncidentsHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	incident.ServiceIDs = req.ServiceIDs
+	h.notifyIncidentOpened(r.Context(), incident)
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
@@ -273,6 +317,10 @@ func (h *IncidentsHandler) Transition(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if req.Status == "resolved" {
+		h.notifyIncidentResolved(r.Context(), incident)
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	_ = json.NewEncoder(w).Encode(toIncidentResponse(incident))
@@ -330,6 +378,8 @@ func (h *IncidentsHandler) ConfirmClose(w http.ResponseWriter, r *http.Request) 
 		writeInternalError(w)
 		return
 	}
+
+	h.notifyIncidentResolved(r.Context(), incident)
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)

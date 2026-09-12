@@ -225,12 +225,12 @@ T12 → T13
 - Skill: NONE
 
 **Done when**:
-- [ ] Creating an incident fires `NotifyIncidentOpened`; disconnecting the active provider still returns `201`
-- [ ] `Transition` to `resolved` fires `NotifyIncidentResolved`; transitioning to any other status does not
-- [ ] `ConfirmClose` fires `NotifyIncidentResolved` unconditionally
-- [ ] An auto-created incident (`AutoCreated = true`) still fires the opened notification (edge case)
-- [ ] Gate check passes on disposable Postgres: `TEST_DATABASE_URL=... go test -tags=integration ./internal/api/...`
-- [ ] Test count: ≥6 new tests
+- [x] Creating an incident fires `NotifyIncidentOpened`; a notification failure still returns `201`
+- [x] `Transition` to `resolved` fires `NotifyIncidentResolved`; transitioning to any other status does not
+- [x] `ConfirmClose` fires `NotifyIncidentResolved` unconditionally
+- [x] An auto-created incident (`AutoCreated = true`, from `SLOAnalyzer`) still fires the opened notification (edge case) - implemented via `SLOAnalyzer.SetNotifier` + per-tenant context
+- [x] Gate check passes on disposable Postgres: `TEST_DATABASE_URL=... go test -tags=integration ./internal/api/...` (plus `./internal/poller/...`, `./internal/cli/...` - all touched)
+- [x] Test count: ≥6 new tests (5 in `internal/api`, 4 in `internal/poller`)
 
 **Tests**: integration
 **Gate**: full
