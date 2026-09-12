@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@600;700&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    body { margin: 0; }
+    a { color: #9C8CE8; }
+    a:hover { color: #B9AEDD; }
+  </style>
+</helmet>
+
+<div style="min-height:100vh; width:100%; box-sizing:border-box; background:#0F0B1A; font-family:'Manrope',sans-serif; color:#EDEBF3; padding:56px 24px 80px;">
+  <div style="max-width:720px; margin:0 auto;">
+
+    <div style="display:flex; align-items:center; justify-content:space-between; gap:16px; margin-bottom:32px; flex-wrap:wrap;">
+      <div style="display:flex; align-items:center; gap:9px;">
+        <div style="width:30px; height:30px; border-radius:9px; background:#5A46C7; display:flex; align-items:center; justify-content:center; flex-shrink:0;">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 12 8 12 10 6 14 18 16 12 21 12"></polyline></svg>
+        </div>
+        <span style="font-family:'Space Grotesk',sans-serif; font-size:19px; font-weight:700; color:#FFFFFF; letter-spacing:-0.01em;">vane</span>
+      </div>
+      <div style="font-size:12.5px; color:#9A93B0;">Atualizado há {{ updatedMinutes }} minutos</div>
+    </div>
+
+    <div style="display:flex; align-items:center; gap:12px; padding:18px 22px; border-radius:12px; background:{{ overallBg }}; margin-bottom:32px;">
+      <span style="width:10px; height:10px; border-radius:999px; background:{{ overallDot }}; flex-shrink:0;"></span>
+      <span style="font-size:16px; font-weight:700; color:#FFFFFF;">{{ overallLabel }}</span>
+    </div>
+
+    <sc-if value="{{ hasIncident }}" hint-placeholder-val="{{ true }}">
+      <div style="font-size:11px; font-weight:700; letter-spacing:0.08em; text-transform:uppercase; color:#9A93B0; margin-bottom:10px;">Incidente em andamento</div>
+      <div style="border:1px solid #4A2A38; background:rgba(214,57,91,0.08); border-radius:12px; padding:18px 20px; margin-bottom:32px;">
+        <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:12px; margin-bottom:10px;">
+          <div style="font-size:15px; font-weight:700; color:#FFFFFF;">{{ incident.title }}</div>
+          <span style="flex-shrink:0; padding:4px 10px; border-radius:999px; background:rgba(214,57,91,0.16); color:#F17E9A; font-size:11.5px; font-weight:700; white-space:nowrap;">{{ incident.statusLabel }}</span>
+        </div>
+        <p style="margin:0 0 12px; font-size:13px; line-height:1.6; color:#C9C3D6;">{{ incident.description }}</p>
+        <a onClick="{{ toggleTimeline }}" style="font-size:12.5px; font-weight:600; cursor:pointer; text-decoration:none;">{{ timelineToggleLabel }}</a>
+
+        <sc-if value="{{ timelineOpen }}" hint-placeholder-val="{{ false }}">
+          <div style="border-left:2px solid #322A47; margin:16px 0 2px 4px; padding-left:16px; display:flex; flex-direction:column; gap:14px;">
+            <sc-for list="{{ incident.updates }}" as="upd" hint-placeholder-count="3">
+              <div style="position:relative;">
+                <div style="position:absolute; left:-21px; top:3px; width:8px; height:8px; border-radius:999px; background:#9C8CE8;"></div>
+                <div style="font-size:11px; color:#8B84A0; margin-bottom:2px; font-weight:600;">{{ upd.time }}</div>
+                <div style="font-size:12.5px; color:#DAD5E6; line-height:1.5;">{{ upd.text }}</div>
+              </div>
+            </sc-for>
+          </div>
+        </sc-if>
+      </div>
+    </sc-if>
+
+    <div style="display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:18px; flex-wrap:wrap;">
+      <div style="font-size:11px; font-weight:700; letter-spacing:0.08em; text-transform:uppercase; color:#9A93B0;">Serviços</div>
+      <div style="display:inline-flex; border:1px solid #2C2645; border-radius:9px; overflow:hidden;">
+        <div onClick="{{ setRange24h }}" style="{{ range24hStyle }}">24h</div>
+        <div onClick="{{ setRange7d }}" style="{{ range7dStyle }}">7d</div>
+        <div onClick="{{ setRange30d }}" style="{{ range30dStyle }}">30d</div>
+        <div onClick="{{ setRange90d }}" style="{{ range90dStyle }}">90d</div>
+      </div>
+    </div>
+
+    <div style="display:flex; flex-direction:column; gap:10px;">
+      <sc-for list="{{ services }}" as="svc" hint-placeholder-count="6">
+        <div style="border:1px solid #241E38; background:#151024; border-radius:12px; padding:16px 20px;">
+          <div style="display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:10px;">
+            <div style="display:flex; align-items:center; gap:10px; min-width:0;">
+              <span style="width:7px; height:7px; border-radius:999px; background:{{ svc.dot }}; flex-shrink:0;"></span>
+              <span style="font-size:14px; font-weight:700; color:#FFFFFF; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">{{ svc.name }}</span>
+            </div>
+            <div style="display:flex; align-items:center; gap:10px; flex-shrink:0;">
+              <span style="font-size:12px; color:#9A93B0;">{{ svc.uptime }} uptime</span>
+              <span style="padding:3px 10px; border-radius:999px; background:{{ svc.badgeBg }}; color:{{ svc.badgeColor }}; font-size:11.5px; font-weight:700; white-space:nowrap;">{{ svc.statusLabel }}</span>
+            </div>
+          </div>
+          <div style="display:flex; gap:2px;">
+            <sc-for list="{{ svc.bars }}" as="bar" hint-placeholder-count="24">
+              <div style="flex:1; height:24px; border-radius:2px; background:{{ bar.color }};"></div>
+            </sc-for>
+          </div>
+          <div style="display:flex; justify-content:space-between; margin-top:6px;">
+            <span style="font-size:10.5px; color:#6E6779;">{{ rangeLabel }} atrás</span>
+            <span style="font-size:10.5px; color:#6E6779;">agora</span>
+          </div>
+        </div>
+      </sc-for>
+    </div>
+
+    <div style="text-align:center; margin-top:48px; font-size:12px; color:#6E6779;">Powered by <span style="color:#9A93B0; font-weight:600;">Vane</span></div>
+
+  </div>
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;: {&quot;width&quot;: 900, &quot;height&quot;: 1000}}">
+const STATUS_META = {
+  ok: { label: 'Operacional', dot: '#3DBE7E', badgeBg: 'rgba(61,190,126,0.14)', badgeColor: '#5FD198' },
+  warn: { label: 'Degradado', dot: '#E0A23B', badgeBg: 'rgba(224,162,59,0.14)', badgeColor: '#EAB65E' },
+  down: { label: 'Interrupção', dot: '#E15C7A', badgeBg: 'rgba(225,92,122,0.16)', badgeColor: '#F17E9A' },
+};
+
+const SERVICES_SEED = [
+  { name: 'API Gateway', status: 'ok', uptime: '99.98%', pattern: () => 'ok' },
+  { name: 'Auth Service', status: 'ok', uptime: '99.95%', pattern: (i, n) => (i === Math.floor(n * 0.4) ? 'warn' : 'ok') },
+  { name: 'Billing Worker', status: 'warn', uptime: '98.20%', pattern: (i, n) => (i > n - 8 ? 'warn' : 'ok') },
+  { name: 'Notification Queue', status: 'ok', uptime: '99.99%', pattern: () => 'ok' },
+  { name: 'Webhook Receiver', status: 'down', uptime: '92.40%', pattern: (i, n) => (i > n - 7 ? 'down' : (i > n - 10 ? 'warn' : 'ok')) },
+  { name: 'Postgres Primary', status: 'ok', uptime: '99.999%', pattern: () => 'ok' },
+];
+
+const RANGE_COUNTS = { '24h': 24, '7d': 7, '30d': 30, '90d': 48 };
+const RANGE_LABELS = { '24h': '24h', '7d': '7 dias', '30d': '30 dias', '90d': '90 dias' };
+
+const INCIDENT = {
+  title: 'Webhook Receiver fora do ar',
+  statusLabel: 'Investigando',
+  description: 'Estamos com falhas consecutivas no recebimento de webhooks e investigando a causa. Novas atualizações serão publicadas aqui.',
+  updates: [
+    { time: '16:02', text: '6 falhas consecutivas de verificação em hooks.acme.health.' },
+    { time: '16:10', text: 'Confirmado — serviço não está respondendo. Reiniciando pods.' },
+  ],
+};
+
+function tabStyle(active) {
+  return active
+    ? 'padding:6px 12px; font-size:12px; font-weight:700; color:#FFFFFF; background:#5A46C7; cursor:pointer;'
+    : 'padding:6px 12px; font-size:12px; font-weight:600; color:#9A93B0; background:transparent; cursor:pointer;';
+}
+
+class Component extends DCLogic {
+  state = { range: '24h', timelineOpen: false };
+
+  renderVals() {
+    const { range, timelineOpen } = this.state;
+    const n = RANGE_COUNTS[range];
+
+    const services = SERVICES_SEED.map(s => {
+      const meta = STATUS_META[s.status];
+      const bars = Array.from({ length: n }, (_, i) => ({ color: STATUS_META[s.pattern(i, n)].dot }));
+      return { ...s, statusLabel: meta.label, dot: meta.dot, badgeBg: meta.badgeBg, badgeColor: meta.badgeColor, bars };
+    });
+
+    const worst = SERVICES_SEED.some(s => s.status === 'down') ? 'down' : (SERVICES_SEED.some(s => s.status === 'warn') ? 'warn' : 'ok');
+    const overallText = { ok: 'Todos os sistemas operacionais', warn: 'Alguns sistemas degradados', down: 'Sistemas com interrupção' };
+    const overallBgMap = { ok: 'rgba(61,190,126,0.14)', warn: 'rgba(224,162,59,0.14)', down: 'rgba(225,92,122,0.14)' };
+
+    return {
+      updatedMinutes: 2,
+      overallLabel: overallText[worst],
+      overallDot: STATUS_META[worst].dot,
+      overallBg: overallBgMap[worst],
+
+      hasIncident: true,
+      incident: INCIDENT,
+      timelineOpen,
+      timelineToggleLabel: timelineOpen ? 'Ocultar linha do tempo' : 'Ver linha do tempo',
+      toggleTimeline: () => this.setState(s => ({ timelineOpen: !s.timelineOpen })),
+
+      services,
+      rangeLabel: RANGE_LABELS[range],
+      range24hStyle: tabStyle(range === '24h'),
+      range7dStyle: tabStyle(range === '7d'),
+      range30dStyle: tabStyle(range === '30d'),
+      range90dStyle: tabStyle(range === '90d'),
+      setRange24h: () => this.setState({ range: '24h' }),
+      setRange7d: () => this.setState({ range: '7d' }),
+      setRange30d: () => this.setState({ range: '30d' }),
+      setRange90d: () => this.setState({ range: '90d' }),
+    };
+  }
+}
+
+</script>
+</body>
+</html>

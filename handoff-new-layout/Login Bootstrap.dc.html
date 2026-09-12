@@ -10,7 +10,6 @@
 <helmet>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet">
-  <script src="./image-slot.js"></script>
   <style>
     body { margin: 0; }
     a { color: #5A46C7; }
@@ -21,9 +20,83 @@
 
 <div style="min-height:100vh; width:100%; box-sizing:border-box; background:#FFFFFF; display:flex; flex-wrap:wrap; font-family:'Manrope',sans-serif; color:#1C1526;">
 
-  <div style="flex:1.6 1 460px; min-height:360px; background:#2A1F3D; position:relative; overflow:hidden;">
-    <image-slot id="login-illustration" shape="rect" placeholder="Ilustração da marca Vane" style="position:absolute; inset:0; width:100%; height:100%;"></image-slot>
-    <div style="position:absolute; left:40px; bottom:36px; z-index:2; pointer-events:none;">
+  <div style="flex:1.6 1 460px; min-height:360px; background:radial-gradient(circle at 18% 16%, rgba(122,92,230,0.38), transparent 55%), radial-gradient(circle at 84% 80%, rgba(214,57,145,0.14), transparent 50%), #241A38; position:relative; overflow:hidden;">
+
+    <div style="position:absolute; inset:0; background-image:radial-gradient(rgba(255,255,255,0.05) 1px, transparent 1px); background-size:26px 26px; opacity:0.6;"></div>
+
+    <svg viewBox="0 0 600 900" preserveAspectRatio="xMidYMid slice" style="position:absolute; inset:0; width:100%; height:100%;">
+      <defs>
+        <radialGradient id="nodeGlow" cx="50%" cy="50%" r="50%">
+          <stop offset="0%" stop-color="#C7B8FF" stop-opacity="0.9"></stop>
+          <stop offset="100%" stop-color="#C7B8FF" stop-opacity="0"></stop>
+        </radialGradient>
+        <linearGradient id="lineGrad" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%" stop-color="#A78BFA" stop-opacity="0.5"></stop>
+          <stop offset="100%" stop-color="#A78BFA" stop-opacity="0.05"></stop>
+        </linearGradient>
+      </defs>
+
+      <g stroke="url(#lineGrad)" stroke-width="1.4" fill="none">
+        <path d="M150,180 Q230,240 300,320"></path>
+        <path d="M420,140 Q365,225 300,320"></path>
+        <path d="M300,320 Q400,360 480,420"></path>
+        <path d="M300,320 Q235,395 180,480"></path>
+        <path d="M480,420 Q420,510 350,600"></path>
+        <path d="M180,480 Q145,565 120,650"></path>
+        <path d="M350,600 Q410,650 460,700"></path>
+        <path d="M350,600 Q310,690 280,780"></path>
+        <path d="M120,650 Q195,715 280,780"></path>
+      </g>
+
+      <circle cx="300" cy="320" r="10" fill="none" stroke="#C7B8FF" stroke-width="1.5" opacity="0.6">
+        <animate attributeName="r" values="10;34;10" dur="3.4s" repeatCount="indefinite"></animate>
+        <animate attributeName="opacity" values="0.6;0;0.6" dur="3.4s" repeatCount="indefinite"></animate>
+      </circle>
+      <circle cx="350" cy="600" r="10" fill="none" stroke="#C7B8FF" stroke-width="1.5" opacity="0.6">
+        <animate attributeName="r" values="10;30;10" dur="3.4s" begin="1.2s" repeatCount="indefinite"></animate>
+        <animate attributeName="opacity" values="0.6;0;0.6" dur="3.4s" begin="1.2s" repeatCount="indefinite"></animate>
+      </circle>
+
+      <g>
+        <circle cx="150" cy="180" r="18" fill="url(#nodeGlow)"></circle>
+        <circle cx="150" cy="180" r="4.5" fill="#E9E4FF"></circle>
+        <circle cx="420" cy="140" r="16" fill="url(#nodeGlow)"></circle>
+        <circle cx="420" cy="140" r="4" fill="#E9E4FF"></circle>
+        <circle cx="300" cy="320" r="24" fill="url(#nodeGlow)"></circle>
+        <circle cx="300" cy="320" r="6" fill="#FFFFFF"></circle>
+        <circle cx="480" cy="420" r="15" fill="url(#nodeGlow)"></circle>
+        <circle cx="480" cy="420" r="4" fill="#E9E4FF"></circle>
+        <circle cx="180" cy="480" r="15" fill="url(#nodeGlow)"></circle>
+        <circle cx="180" cy="480" r="4" fill="#E9E4FF"></circle>
+        <circle cx="350" cy="600" r="22" fill="url(#nodeGlow)"></circle>
+        <circle cx="350" cy="600" r="5.5" fill="#FFFFFF"></circle>
+        <circle cx="120" cy="650" r="14" fill="url(#nodeGlow)"></circle>
+        <circle cx="120" cy="650" r="4" fill="#E9E4FF"></circle>
+        <circle cx="460" cy="700" r="14" fill="url(#nodeGlow)"></circle>
+        <circle cx="460" cy="700" r="4" fill="#E9E4FF"></circle>
+        <circle cx="280" cy="780" r="15" fill="url(#nodeGlow)"></circle>
+        <circle cx="280" cy="780" r="4" fill="#E9E4FF"></circle>
+      </g>
+
+      <circle cx="309" cy="311" r="4" fill="#3DD68C" stroke="#241A38" stroke-width="2"></circle>
+      <circle cx="359" cy="591" r="4" fill="#3DD68C" stroke="#241A38" stroke-width="2"></circle>
+      <circle cx="429" cy="131" r="4" fill="#F5A623" stroke="#241A38" stroke-width="2"></circle>
+    </svg>
+
+    <div style="position:absolute; top:64px; left:44px; right:44px; z-index:2;">
+      <div style="font-size:11px; font-weight:700; letter-spacing:0.14em; text-transform:uppercase; color:#B7A8F0; margin-bottom:14px;">Monitoramento em tempo real</div>
+      <h2 style="margin:0; font-family:'Space Grotesk',sans-serif; font-size:28px; font-weight:600; line-height:1.35; letter-spacing:-0.01em; color:#FFFFFF; max-width:360px;">Clareza total sobre a saúde da sua infraestrutura.</h2>
+    </div>
+
+    <div style="position:absolute; left:44px; bottom:104px; z-index:2; background:rgba(255,255,255,0.07); border:1px solid rgba(255,255,255,0.14); border-radius:14px; padding:14px 18px; backdrop-filter:blur(14px); box-shadow:0 12px 30px rgba(0,0,0,0.25); min-width:220px;">
+      <div style="display:flex; align-items:center; gap:8px; margin-bottom:6px;">
+        <span style="width:8px; height:8px; border-radius:50%; background:#3DD68C; box-shadow:0 0 0 3px rgba(61,214,140,0.25);"></span>
+        <span style="font-size:13px; font-weight:600; color:#FFFFFF;">Todos os sistemas operacionais</span>
+      </div>
+      <div style="font-size:12px; color:#B7AEC9;">99.98% uptime · últimos 30 dias</div>
+    </div>
+
+    <div style="position:absolute; left:44px; bottom:36px; z-index:2; pointer-events:none;">
       <img src="assets/vane-lockup.png" alt="Vane" style="height:36px; width:auto; display:block;" />
     </div>
   </div>

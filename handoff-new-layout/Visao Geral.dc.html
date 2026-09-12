@@ -14,6 +14,7 @@
     body { margin: 0; }
     a { color: #5A46C7; }
     a:hover { color: #4C3AAE; }
+    ::placeholder { color: #B4AEC2; }
   </style>
 </helmet>
 
@@ -22,7 +23,7 @@
   <div onMouseEnter="{{ sidebarMouseEnter }}" onMouseLeave="{{ sidebarMouseLeave }}" style="width:{{ sidebarWidthPx }}; flex-shrink:0; background:{{ sidebarBg }}; border-right:1px solid {{ sidebarBorder }}; display:flex; flex-direction:column; transition:width 0.16s ease; overflow:visible; position:relative; z-index:20;">
 
     <div style="padding:14px 12px; position:relative;">
-      <div onClick="{{ toggleTenantDropdown }}" style="display:flex; align-items:center; justify-content:{{ navJustify }}; gap:10px; padding:8px; border-radius:10px; cursor:pointer; white-space:nowrap;" style-hover="background:{{ cardHeaderBg }};">
+      <div onClick="{{ toggleTenantDropdown }}" style="display:flex; align-items:center; justify-content:{{ navJustify }}; gap:10px; padding:8px; border-radius:10px; cursor:pointer; white-space:nowrap;" style-hover="background:{{ sidebarHoverBg }};">
         <div style="width:28px; height:28px; border-radius:8px; background:#5A46C7; color:#FFFFFF; font-size:11.5px; font-weight:700; display:flex; align-items:center; justify-content:center; flex-shrink:0;">AH</div>
         <sc-if value="{{ sidebarExpanded }}" hint-placeholder-val="{{ false }}">
           <div style="min-width:0; flex:1;">
@@ -40,21 +41,21 @@
       <sc-if value="{{ tenantDropdownOpenAndMulti }}" hint-placeholder-val="{{ false }}">
         <div style="position:absolute; top:64px; left:12px; width:240px; background:{{ cardBg }}; border:1px solid {{ sidebarBorder }}; border-radius:12px; box-shadow:0 8px 24px rgba(28,21,38,0.12); padding:6px; z-index:30;">
           <div style="padding:8px 10px; font-size:10.5px; font-weight:700; letter-spacing:0.06em; text-transform:uppercase; color:#9A93A8;">Suas contas</div>
-          <div style="display:flex; align-items:center; gap:10px; padding:8px 10px; border-radius:8px; background:{{ cardHeaderBg }};">
+          <div style="display:flex; align-items:center; gap:10px; padding:8px 10px; border-radius:8px; background:{{ sidebarHoverBg }};">
             <div style="width:24px; height:24px; border-radius:7px; background:#5A46C7; color:#fff; font-size:10px; font-weight:700; display:flex; align-items:center; justify-content:center;">AH</div>
             <span style="font-size:13px; font-weight:600; flex:1;">Acme Health</span>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#5A46C7" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
           </div>
-          <div style="display:flex; align-items:center; gap:10px; padding:8px 10px; border-radius:8px; cursor:pointer;" style-hover="background:{{ cardHeaderBg }};">
+          <div style="display:flex; align-items:center; gap:10px; padding:8px 10px; border-radius:8px; cursor:pointer;" style-hover="background:{{ sidebarHoverBg }};">
             <div style="width:24px; height:24px; border-radius:7px; background:#E8A73B; color:#fff; font-size:10px; font-weight:700; display:flex; align-items:center; justify-content:center;">BC</div>
             <span style="font-size:13px; font-weight:600; flex:1;">Beta Clinic</span>
           </div>
-          <div style="display:flex; align-items:center; gap:10px; padding:8px 10px; border-radius:8px; cursor:pointer;" style-hover="background:{{ cardHeaderBg }};">
+          <div style="display:flex; align-items:center; gap:10px; padding:8px 10px; border-radius:8px; cursor:pointer;" style-hover="background:{{ sidebarHoverBg }};">
             <div style="width:24px; height:24px; border-radius:7px; background:#3B9EE8; color:#fff; font-size:10px; font-weight:700; display:flex; align-items:center; justify-content:center;">NL</div>
             <span style="font-size:13px; font-weight:600; flex:1;">Northwind Labs</span>
           </div>
           <div style="height:1px; background:{{ sidebarBorder }}; margin:6px 4px;"></div>
-          <div onClick="{{ openLogoutConfirm }}" style="display:flex; align-items:center; gap:10px; padding:8px 10px; border-radius:8px; cursor:pointer; color:{{ pageTextMuted }}; font-size:13px; font-weight:600;" style-hover="background:{{ cardHeaderBg }};">
+          <div onClick="{{ openLogoutConfirm }}" style="display:flex; align-items:center; gap:10px; padding:8px 10px; border-radius:8px; cursor:pointer; color:{{ pageTextMuted }}; font-size:13px; font-weight:600;" style-hover="background:{{ sidebarHoverBg }};">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line></svg>
             Sair
           </div>
@@ -67,10 +68,10 @@
     <div style="flex:1; padding:0 8px; display:flex; flex-direction:column; overflow-y:auto;">
 
       <div style="display:flex; flex-direction:column; gap:2px; margin-bottom:14px;">
-        <a href="Visao Geral.dc.html" style="display:flex; align-items:center; justify-content:{{ navJustify }}; gap:12px; padding:9px 10px; border-radius:8px; color:{{ sidebarTextMuted }}; white-space:nowrap; cursor:pointer; text-decoration:none;" style-hover="background:{{ sidebarHoverBg }};">
+        <div style="display:flex; align-items:center; justify-content:{{ navJustify }}; gap:12px; padding:9px 10px; border-radius:8px; background:rgba(90,70,199,0.08); color:#5A46C7; white-space:nowrap; cursor:pointer;">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><rect x="3" y="3" width="7" height="7" rx="1.5"></rect><rect x="14" y="3" width="7" height="7" rx="1.5"></rect><rect x="3" y="14" width="7" height="7" rx="1.5"></rect><rect x="14" y="14" width="7" height="7" rx="1.5"></rect></svg>
           <sc-if value="{{ sidebarExpanded }}" hint-placeholder-val="{{ false }}"><span style="font-size:13.5px; font-weight:600;">Visão geral</span></sc-if>
-        </a>
+        </div>
       </div>
 
       <sc-if value="{{ sidebarExpanded }}" hint-placeholder-val="{{ false }}">
@@ -95,10 +96,10 @@
         <div style="padding:10px 10px 6px; font-size:10.5px; font-weight:700; letter-spacing:0.06em; text-transform:uppercase; color:{{ sidebarTextMuted }}; white-space:nowrap;">Plataforma</div>
       </sc-if>
       <div style="display:flex; flex-direction:column; gap:2px; margin-bottom:14px;">
-        <div style="display:flex; align-items:center; justify-content:{{ navJustify }}; gap:12px; padding:9px 10px; border-radius:8px; background:rgba(90,70,199,0.08); color:#5A46C7; white-space:nowrap; cursor:pointer;">
+        <a href="Dashboard Integracoes.dc.html" style="display:flex; align-items:center; justify-content:{{ navJustify }}; gap:12px; padding:9px 10px; border-radius:8px; color:{{ sidebarTextMuted }}; white-space:nowrap; cursor:pointer; text-decoration:none;" style-hover="background:{{ sidebarHoverBg }};">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><path d="M10 13a5 5 0 0 0 7.07 0l1.93-1.93a5 5 0 0 0-7.07-7.07L10.5 5.5"></path><path d="M14 11a5 5 0 0 0-7.07 0L4.99 12.93a5 5 0 0 0 7.07 7.07L13.5 18.5"></path></svg>
           <sc-if value="{{ sidebarExpanded }}" hint-placeholder-val="{{ false }}"><span style="font-size:13.5px; font-weight:600;">Integrações</span></sc-if>
-        </div>
+        </a>
         <a href="Poller Status.dc.html" style="display:flex; align-items:center; justify-content:{{ navJustify }}; gap:12px; padding:9px 10px; border-radius:8px; color:{{ sidebarTextMuted }}; white-space:nowrap; cursor:pointer; text-decoration:none;" style-hover="background:{{ sidebarHoverBg }};">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><rect x="3" y="4" width="18" height="6" rx="1.5"></rect><rect x="3" y="14" width="18" height="6" rx="1.5"></rect><circle cx="7" cy="7" r="0.6" fill="currentColor" stroke="none"></circle><circle cx="7" cy="17" r="0.6" fill="currentColor" stroke="none"></circle></svg>
           <sc-if value="{{ sidebarExpanded }}" hint-placeholder-val="{{ false }}"><span style="font-size:13.5px; font-weight:600;">Poller Status</span></sc-if>
@@ -137,10 +138,10 @@
     </div>
   </div>
 
-  <div style="flex:1; display:flex; flex-direction:column; min-width:0;">
+  <div style="flex:1; display:flex; flex-direction:column; min-width:0; position:relative;">
 
     <div style="height:60px; flex-shrink:0; border-bottom:1px solid {{ sidebarBorder }}; display:flex; align-items:center; justify-content:space-between; padding:0 28px;">
-      <div style="font-size:15px; font-weight:700; color:{{ pageText }};">Integrações</div>
+      <div style="font-size:15px; font-weight:700; color:{{ pageText }};">Visão geral</div>
       <div style="display:flex; align-items:center; gap:16px;">
         <div onClick="{{ toggleDarkMode }}" style="color:{{ iconColor }}; cursor:pointer; display:flex;">
           <sc-if value="{{ darkMode }}" hint-placeholder-val="{{ false }}">
@@ -158,12 +159,12 @@
           <div style="width:32px; height:32px; border-radius:9px; background:rgba(90,70,199,0.1); color:#5A46C7; font-size:12.5px; font-weight:700; display:flex; align-items:center; justify-content:center; cursor:pointer;">AS</div>
           <sc-if value="{{ userMenuOpen }}" hint-placeholder-val="{{ false }}">
             <div style="position:absolute; top:42px; right:0; width:200px; background:{{ cardBg }}; border:1px solid {{ sidebarBorder }}; border-radius:12px; box-shadow:0 8px 24px rgba(28,21,38,0.12); padding:6px; z-index:30;">
-              <div style="padding:10px 10px 8px; border-bottom:1px solid #ECE9F2; margin-bottom:4px;">
+              <div style="padding:10px 10px 8px; border-bottom:1px solid {{ sidebarBorder }}; margin-bottom:4px;">
                 <div style="font-size:13px; font-weight:700; color:{{ pageText }};">Ana Silva</div>
                 <div style="font-size:12px; color:{{ pageTextMuted }};">ana.silva@empresa.com</div>
               </div>
-              <a href="Meu Perfil.dc.html" style="display:block; padding:8px 10px; border-radius:8px; font-size:13px; font-weight:600; color:{{ pageTextMuted }}; cursor:pointer; text-decoration:none;" style-hover="background:{{ cardHeaderBg }};">Meu perfil</a>
-              <div style="padding:8px 10px; border-radius:8px; font-size:13px; font-weight:600; color:{{ pageTextMuted }}; cursor:pointer;" style-hover="background:{{ cardHeaderBg }};">Configurações</div>
+              <a href="Meu Perfil.dc.html" style="display:block; padding:8px 10px; border-radius:8px; font-size:13px; font-weight:600; color:{{ pageTextMuted }}; cursor:pointer; text-decoration:none;" style-hover="background:{{ sidebarHoverBg }};">Meu perfil</a>
+              <a href="Configuracoes.dc.html" style="display:block; padding:8px 10px; border-radius:8px; font-size:13px; font-weight:600; color:{{ pageTextMuted }}; cursor:pointer; text-decoration:none;" style-hover="background:{{ sidebarHoverBg }};">Configurações</a>
               <div onClick="{{ openLogoutConfirm }}" style="padding:8px 10px; border-radius:8px; font-size:13px; font-weight:600; color:#D6395B; cursor:pointer;" style-hover="background:#FBE9ED;">Sair</div>
             </div>
           </sc-if>
@@ -174,141 +175,102 @@
     <div style="flex:1; overflow-y:auto; padding:32px 40px;">
       <div style="max-width:1200px; margin:0 auto;">
 
-        <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:16px; margin-bottom:28px;">
-          <div>
-            <h1 style="margin:0 0 6px; font-size:20px; font-weight:700; letter-spacing:-0.01em; color:{{ pageText }};">Integrações</h1>
-            <p style="margin:0; font-size:13.5px; line-height:1.55; color:{{ pageTextMuted }}; max-width:520px;">Conecte o Vane às ferramentas que alimentam o monitoramento e a análise de incidentes.</p>
-          </div>
-          <button style="flex-shrink:0; box-sizing:border-box; padding:9px 14px; background:{{ cardBg }}; color:{{ pageText }}; border:1px solid {{ sidebarBorder }}; border-radius:9px; font-size:13px; font-weight:600; font-family:inherit; cursor:pointer; display:flex; align-items:center; gap:7px;" style-hover="background:{{ cardHeaderBg }};">
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>
-            Testar conexões
-          </button>
+        <div style="margin-bottom:22px;">
+          <h1 style="margin:0 0 6px; font-size:20px; font-weight:700; letter-spacing:-0.01em; color:{{ pageText }};">Visão geral</h1>
+          <p style="margin:0; font-size:13.5px; line-height:1.55; color:{{ pageTextMuted }}; max-width:560px;">Um resumo do que está acontecendo na sua conta agora.</p>
         </div>
 
-        <div style="margin-bottom:32px;">
-          <div style="display:flex; align-items:baseline; gap:8px; margin-bottom:14px;">
-            <span style="font-size:13px; font-weight:700; color:{{ pageText }};">APM &amp; Observabilidade</span>
-            <span style="font-size:12px; color:{{ pageTextMuted }};">2 integrações</span>
+        <sc-if value="{{ isFree }}" hint-placeholder-val="{{ true }}">
+          <div style="display:flex; align-items:center; gap:10px; padding:12px 14px; border-radius:10px; background:#FEF9F0; border:1px solid #F7E4BE; margin-bottom:22px;">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#B45309" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><path d="M13 2 3 14h7l-1 8 10-12h-7z"></path></svg>
+            <div style="font-size:12.5px; line-height:1.5; color:#4A4553; flex:1;">Você está no plano Free — 2/3 usuários, sem fechamento de incidentes por IA e sem domínios próprios. Faça upgrade para desbloquear mais recursos.</div>
+            <a href="Planos e Faturamento.dc.html" style="flex-shrink:0; box-sizing:border-box; padding:7px 12px; background:#5A46C7; color:#FFFFFF; border:none; border-radius:8px; font-size:12.5px; font-weight:700; font-family:inherit; text-decoration:none;" style-hover="background:#4C3AAE;">Fazer upgrade</a>
           </div>
-          <div style="display:grid; grid-template-columns:repeat(3, minmax(0,1fr)); gap:20px;">
-            <div style="display:flex; flex-direction:column; background:{{ cardBg }}; border:1px solid {{ sidebarBorder }}; border-radius:16px; overflow:hidden;" style-hover="box-shadow:0 6px 20px rgba(28,21,38,0.07); border-color:#E0DCEC;">
-              <div style="position:relative; height:112px; background:#F3F1FB; display:flex; align-items:center; justify-content:center;">
-                <div style="width:52px; height:52px; border-radius:14px; background:{{ cardBg }}; box-shadow:0 2px 8px rgba(28,21,38,0.06); display:flex; align-items:center; justify-content:center;">
-                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#5A46C7" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"></path><path d="M7 15l4-4 3 3 5-6"></path></svg>
-                </div>
-                <span style="position:absolute; top:12px; right:12px; display:inline-flex; align-items:center; gap:6px; padding:4px 10px; border-radius:999px; background:#E7F6EF; color:#1A9E6B; font-size:11.5px; font-weight:700;">
-                  <span style="width:6px; height:6px; border-radius:999px; background:#1A9E6B;"></span> Conectado
-                </span>
-              </div>
-              <div style="padding:20px; display:flex; flex-direction:column; flex:1;">
-                <div style="font-size:15px; font-weight:700; color:{{ pageText }}; margin-bottom:6px;">Datadog</div>
-                <p style="margin:0 0 14px; font-size:13px; line-height:1.55; color:{{ pageTextMuted }}; flex:1;">Métricas e logs dos serviços monitorados, com alertas sincronizados em tempo real.</p>
-                <div style="font-size:12px; color:{{ pageTextMuted }}; margin-bottom:14px;">Sincronizado há 12 min</div>
-                <button style="width:100%; box-sizing:border-box; padding:10px; background:{{ cardBg }}; color:{{ pageText }}; border:1px solid {{ sidebarBorder }}; border-radius:9px; font-size:13px; font-weight:600; font-family:inherit; cursor:pointer;" style-hover="background:{{ cardHeaderBg }};">Editar conexão</button>
-              </div>
-            </div>
-
-            <div style="display:flex; flex-direction:column; background:{{ cardBg }}; border:1px solid {{ sidebarBorder }}; border-radius:16px; overflow:hidden;" style-hover="box-shadow:0 6px 20px rgba(28,21,38,0.07); border-color:#E0DCEC;">
-              <div style="position:relative; height:112px; background:{{ cardHeaderBg }}; display:flex; align-items:center; justify-content:center;">
-                <div style="width:52px; height:52px; border-radius:14px; background:{{ cardBg }}; box-shadow:0 2px 8px rgba(28,21,38,0.06); display:flex; align-items:center; justify-content:center;">
-                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="{{ pageTextMuted }}" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="20" x2="4" y2="10"></line><line x1="10" y1="20" x2="10" y2="4"></line><line x1="16" y1="20" x2="16" y2="14"></line><line x1="20" y1="20" x2="20" y2="8"></line></svg>
-                </div>
-                <span style="position:absolute; top:12px; right:12px; display:inline-flex; align-items:center; gap:6px; padding:4px 10px; border-radius:999px; background:{{ cardHeaderBg }}; color:{{ pageTextMuted }}; font-size:11.5px; font-weight:700;">
-                  <span style="width:6px; height:6px; border-radius:999px; background:#9A93A8;"></span> Não conectado
-                </span>
-              </div>
-              <div style="padding:20px; display:flex; flex-direction:column; flex:1;">
-                <div style="font-size:15px; font-weight:700; color:{{ pageText }}; margin-bottom:6px;">New Relic</div>
-                <p style="margin:0 0 14px; font-size:13px; line-height:1.55; color:{{ pageTextMuted }}; flex:1;">Monitoramento de performance de aplicações (APM) e infraestrutura.</p>
-                <div style="font-size:12px; color:{{ pageTextMuted }}; margin-bottom:14px;">Não configurado</div>
-                <button style="width:100%; box-sizing:border-box; padding:10px; background:{{ cardBg }}; color:#5A46C7; border:1.5px solid #5A46C7; border-radius:9px; font-size:13px; font-weight:700; font-family:inherit; cursor:pointer;" style-hover="background:rgba(90,70,199,0.06);">Conectar</button>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div style="margin-bottom:32px;">
-          <div style="display:flex; align-items:baseline; gap:8px; margin-bottom:14px;">
-            <span style="font-size:13px; font-weight:700; color:{{ pageText }};">IA</span>
-            <span style="font-size:12px; color:{{ pageTextMuted }};">1 integração</span>
-          </div>
-          <div style="display:grid; grid-template-columns:repeat(3, minmax(0,1fr)); gap:20px;">
-            <div style="display:flex; flex-direction:column; background:{{ cardBg }}; border:1px solid {{ sidebarBorder }}; border-radius:16px; overflow:hidden;" style-hover="box-shadow:0 6px 20px rgba(28,21,38,0.07); border-color:#E0DCEC;">
-              <div style="position:relative; height:112px; background:#FBF4E9; display:flex; align-items:center; justify-content:center;">
-                <div style="width:52px; height:52px; border-radius:14px; background:{{ cardBg }}; box-shadow:0 2px 8px rgba(28,21,38,0.06); display:flex; align-items:center; justify-content:center;">
-                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#B45309" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="6" width="12" height="12" rx="2.5"></rect><path d="M9 2v3M15 2v3M9 19v3M15 19v3M2 9h3M2 15h3M19 9h3M19 15h3"></path></svg>
-                </div>
-                <sc-if value="{{ isFree }}" hint-placeholder-val="{{ true }}">
-                  <span style="position:absolute; top:12px; right:12px; display:inline-flex; align-items:center; gap:6px; padding:4px 10px; border-radius:999px; background:#FEF3E2; color:#B45309; font-size:11.5px; font-weight:700;">
-                    <span style="width:6px; height:6px; border-radius:999px; background:#B45309;"></span> Plano Free
-                  </span>
-                </sc-if>
-                <sc-if value="{{ isPro }}" hint-placeholder-val="{{ false }}">
-                  <span style="position:absolute; top:12px; right:12px; display:inline-flex; align-items:center; gap:6px; padding:4px 10px; border-radius:999px; background:#E7F6EF; color:#1A9E6B; font-size:11.5px; font-weight:700;">
-                    <span style="width:6px; height:6px; border-radius:999px; background:#1A9E6B;"></span> Conectado
-                  </span>
-                </sc-if>
-              </div>
-              <div style="padding:20px; display:flex; flex-direction:column; flex:1;">
-                <div style="font-size:15px; font-weight:700; color:{{ pageText }}; margin-bottom:6px;">LLM Provider</div>
-                <p style="margin:0 0 14px; font-size:13px; line-height:1.55; color:{{ pageTextMuted }}; flex:1;">Geração de resumos e fechamento assistido de incidentes com IA.</p>
-
-                <sc-if value="{{ isFree }}" hint-placeholder-val="{{ true }}">
-                  <div style="padding:10px 12px; background:#FEF9F0; border:1px solid #F7E4BE; border-radius:9px; font-size:12px; line-height:1.5; color:{{ pageTextMuted }}; margin-bottom:14px;">Disponível no plano Pro: escolha OpenAI, Anthropic ou Azure e defina limites de uso.</div>
-                  <a href="Planos e Faturamento.dc.html" style="width:100%; box-sizing:border-box; padding:10px; background:#5A46C7; color:#FFFFFF; border:none; border-radius:9px; font-size:13px; font-weight:700; font-family:inherit; cursor:pointer; text-decoration:none; display:block; text-align:center;" style-hover="background:#4C3AAE;">Fazer upgrade</a>
-                </sc-if>
-                <sc-if value="{{ isPro }}" hint-placeholder-val="{{ false }}">
-                  <div style="font-size:12px; color:{{ pageTextMuted }}; margin-bottom:14px;">OpenAI · GPT-4o</div>
-                  <button style="width:100%; box-sizing:border-box; padding:10px; background:{{ cardBg }}; color:{{ pageText }}; border:1px solid {{ sidebarBorder }}; border-radius:9px; font-size:13px; font-weight:600; font-family:inherit; cursor:pointer;" style-hover="background:{{ cardHeaderBg }};">Editar conexão</button>
-                </sc-if>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <sc-if value="{{ isSelfHosted }}" hint-placeholder-val="{{ false }}">
-        <div>
-          <div style="display:flex; align-items:baseline; gap:8px; margin-bottom:14px;">
-            <span style="font-size:13px; font-weight:700; color:{{ pageText }};">E-mail</span>
-            <span style="font-size:12px; color:{{ pageTextMuted }};">2 integrações</span>
-          </div>
-          <div style="display:grid; grid-template-columns:repeat(3, minmax(0,1fr)); gap:20px;">
-            <div style="display:flex; flex-direction:column; background:{{ cardBg }}; border:1px solid {{ sidebarBorder }}; border-radius:16px; overflow:hidden;" style-hover="box-shadow:0 6px 20px rgba(28,21,38,0.07); border-color:#E0DCEC;">
-              <div style="position:relative; height:112px; background:#EEF6F1; display:flex; align-items:center; justify-content:center;">
-                <div style="width:52px; height:52px; border-radius:14px; background:{{ cardBg }}; box-shadow:0 2px 8px rgba(28,21,38,0.06); display:flex; align-items:center; justify-content:center;">
-                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#1A9E6B" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"></rect><path d="M3 7l9 6 9-6"></path></svg>
-                </div>
-                <span style="position:absolute; top:12px; right:12px; display:inline-flex; align-items:center; gap:6px; padding:4px 10px; border-radius:999px; background:#E7F6EF; color:#1A9E6B; font-size:11.5px; font-weight:700;">
-                  <span style="width:6px; height:6px; border-radius:999px; background:#1A9E6B;"></span> Conectado
-                </span>
-              </div>
-              <div style="padding:20px; display:flex; flex-direction:column; flex:1;">
-                <div style="font-size:15px; font-weight:700; color:{{ pageText }}; margin-bottom:6px;">Resend</div>
-                <p style="margin:0 0 14px; font-size:13px; line-height:1.55; color:{{ pageTextMuted }}; flex:1;">Envio de alertas e notificações de incidentes para o time de plantão.</p>
-                <div style="font-size:12px; color:{{ pageTextMuted }}; margin-bottom:14px;">Verificado</div>
-                <button style="width:100%; box-sizing:border-box; padding:10px; background:{{ cardBg }}; color:{{ pageText }}; border:1px solid {{ sidebarBorder }}; border-radius:9px; font-size:13px; font-weight:600; font-family:inherit; cursor:pointer;" style-hover="background:{{ cardHeaderBg }};">Editar conexão</button>
-              </div>
-            </div>
-
-            <div style="display:flex; flex-direction:column; background:{{ cardBg }}; border:1px solid {{ sidebarBorder }}; border-radius:16px; overflow:hidden;" style-hover="box-shadow:0 6px 20px rgba(28,21,38,0.07); border-color:#E0DCEC;">
-              <div style="position:relative; height:112px; background:{{ cardHeaderBg }}; display:flex; align-items:center; justify-content:center;">
-                <div style="width:52px; height:52px; border-radius:14px; background:{{ cardBg }}; box-shadow:0 2px 8px rgba(28,21,38,0.06); display:flex; align-items:center; justify-content:center;">
-                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="{{ pageTextMuted }}" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2 11 13"></path><path d="M22 2 15 22l-4-9-9-4 20-7z"></path></svg>
-                </div>
-                <span style="position:absolute; top:12px; right:12px; display:inline-flex; align-items:center; gap:6px; padding:4px 10px; border-radius:999px; background:{{ cardHeaderBg }}; color:{{ pageTextMuted }}; font-size:11.5px; font-weight:700;">
-                  <span style="width:6px; height:6px; border-radius:999px; background:#9A93A8;"></span> Não conectado
-                </span>
-              </div>
-              <div style="padding:20px; display:flex; flex-direction:column; flex:1;">
-                <div style="font-size:15px; font-weight:700; color:{{ pageText }}; margin-bottom:6px;">SendGrid</div>
-                <p style="margin:0 0 14px; font-size:13px; line-height:1.55; color:{{ pageTextMuted }}; flex:1;">Envio de alertas e notificações de incidentes por email.</p>
-                <div style="font-size:12px; color:{{ pageTextMuted }}; margin-bottom:14px;">Não configurado</div>
-                <button style="width:100%; box-sizing:border-box; padding:10px; background:{{ cardBg }}; color:#5A46C7; border:1.5px solid #5A46C7; border-radius:9px; font-size:13px; font-weight:700; font-family:inherit; cursor:pointer;" style-hover="background:rgba(90,70,199,0.06);">Conectar</button>
-              </div>
-            </div>
-          </div>
-        </div>
         </sc-if>
+
+        <div style="display:grid; grid-template-columns:repeat(4, 1fr); gap:14px; margin-bottom:24px;">
+          <sc-for list="{{ summaryCards }}" as="card" hint-placeholder-count="4">
+            <div style="border:1px solid {{ sidebarBorder }}; border-radius:12px; padding:16px 18px; background:{{ cardBg }};">
+              <div style="font-size:10.5px; font-weight:700; letter-spacing:0.05em; text-transform:uppercase; color:{{ pageTextMuted }}; margin-bottom:8px;">{{ card.label }}</div>
+              <div style="font-size:22px; font-weight:700; color:{{ card.color }};">{{ card.value }}</div>
+              <div style="font-size:11.5px; color:{{ pageTextMuted }}; margin-top:4px;">{{ card.note }}</div>
+            </div>
+          </sc-for>
+        </div>
+
+        <div style="display:grid; grid-template-columns:1.4fr 1fr; gap:18px; margin-bottom:24px; align-items:stretch;">
+          <div style="display:flex; flex-direction:column; border:1px solid {{ sidebarBorder }}; border-radius:12px; padding:20px; background:{{ cardBg }};">
+            <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:16px;">
+              <div style="font-size:13.5px; font-weight:700; color:{{ pageText }};">Uptime agregado — últimos 14 dias</div>
+              <div style="font-size:12px; color:{{ pageTextMuted }};">Média {{ avgUptimeLabel }}</div>
+            </div>
+            <div style="display:flex; align-items:flex-end; gap:6px; flex:1;">
+              <sc-for list="{{ chartBars }}" as="bar" hint-placeholder-count="14">
+                <div style="flex:1; display:flex; flex-direction:column; align-items:center; gap:6px; height:100%; justify-content:flex-end;">
+                  <div style="width:100%; border-radius:3px; background:{{ bar.color }}; height:{{ bar.heightPct }}%;"></div>
+                </div>
+              </sc-for>
+            </div>
+            <div style="display:flex; justify-content:space-between; margin-top:8px;">
+              <span style="font-size:10.5px; color:{{ pageTextMuted }};">14 dias atrás</span>
+              <span style="font-size:10.5px; color:{{ pageTextMuted }};">hoje</span>
+            </div>
+          </div>
+
+          <div style="display:flex; flex-direction:column; border:1px solid {{ sidebarBorder }}; border-radius:12px; padding:20px; background:{{ cardBg }};">
+            <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:14px;">
+              <div style="font-size:13.5px; font-weight:700; color:{{ pageText }};">Incidentes recentes</div>
+              <a href="Incidentes.dc.html" style="font-size:12px; font-weight:600; text-decoration:none;">Ver todos</a>
+            </div>
+            <div style="display:flex; flex-direction:column; gap:12px;">
+              <sc-for list="{{ recentIncidents }}" as="inc" hint-placeholder-count="3">
+                <div style="display:flex; align-items:flex-start; gap:10px;">
+                  <span style="width:7px; height:7px; border-radius:999px; background:{{ inc.dot }}; margin-top:5px; flex-shrink:0;"></span>
+                  <div style="min-width:0;">
+                    <div style="font-size:12.5px; font-weight:600; color:{{ pageText }}; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">{{ inc.title }}</div>
+                    <div style="font-size:11.5px; color:{{ pageTextMuted }};">{{ inc.statusLabel }} · {{ inc.time }}</div>
+                  </div>
+                </div>
+              </sc-for>
+            </div>
+          </div>
+        </div>
+
+        <div style="margin-bottom:12px; font-size:13.5px; font-weight:700; color:{{ pageText }};">Atalhos rápidos</div>
+        <div style="display:grid; grid-template-columns:repeat(4, 1fr); gap:14px; margin-bottom:24px;">
+          <a href="Servicos Monitorados.dc.html" style="display:flex; flex-direction:column; gap:10px; border:1px solid {{ sidebarBorder }}; border-radius:12px; padding:16px; background:{{ cardBg }}; text-decoration:none; color:inherit;" style-hover="background:{{ cardHeaderBg }};">
+            <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="#5A46C7" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+            <span style="font-size:13px; font-weight:600; color:{{ pageText }};">Adicionar serviço</span>
+          </a>
+          <a href="Dominios e Status Pages.dc.html" style="display:flex; flex-direction:column; gap:10px; border:1px solid {{ sidebarBorder }}; border-radius:12px; padding:16px; background:{{ cardBg }}; text-decoration:none; color:inherit;" style-hover="background:{{ cardHeaderBg }};">
+            <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="#5A46C7" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle><line x1="3" y1="12" x2="21" y2="12"></line><path d="M12 3a15 15 0 0 1 0 18a15 15 0 0 1 0-18z"></path></svg>
+            <span style="font-size:13px; font-weight:600; color:{{ pageText }};">Criar status page</span>
+          </a>
+          <a href="Usuarios.dc.html" style="display:flex; flex-direction:column; gap:10px; border:1px solid {{ sidebarBorder }}; border-radius:12px; padding:16px; background:{{ cardBg }}; text-decoration:none; color:inherit;" style-hover="background:{{ cardHeaderBg }};">
+            <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="#5A46C7" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3"></circle><path d="M2 20c0-3.5 3-6 7-6s7 2.5 7 6"></path><circle cx="17" cy="8" r="2.3"></circle><path d="M22 20c0-2.5-1.8-4.5-4-5.3"></path></svg>
+            <span style="font-size:13px; font-weight:600; color:{{ pageText }};">Convidar usuário</span>
+          </a>
+          <a href="Dominios e Status Pages.dc.html" style="display:flex; flex-direction:column; gap:10px; border:1px solid {{ sidebarBorder }}; border-radius:12px; padding:16px; background:{{ cardBg }}; text-decoration:none; color:inherit;" style-hover="background:{{ cardHeaderBg }};">
+            <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="#5A46C7" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="5" width="20" height="14" rx="2.5"></rect><line x1="2" y1="10" x2="22" y2="10"></line></svg>
+            <span style="font-size:13px; font-weight:600; color:{{ pageText }};">Ver domínios</span>
+          </a>
+        </div>
+
+        <div style="border:1px solid {{ sidebarBorder }}; border-radius:12px; padding:20px; margin-bottom:32px; background:{{ cardBg }};">
+          <div style="font-size:13.5px; font-weight:700; color:{{ pageText }}; margin-bottom:14px;">Atividade recente do time</div>
+          <div style="display:flex; flex-direction:column; gap:14px;">
+            <sc-for list="{{ activity }}" as="act" hint-placeholder-count="4">
+              <div style="display:flex; align-items:flex-start; gap:12px;">
+                <div style="width:28px; height:28px; border-radius:8px; background:rgba(90,70,199,0.1); color:#5A46C7; font-size:11px; font-weight:700; display:flex; align-items:center; justify-content:center; flex-shrink:0;">{{ act.initials }}</div>
+                <div style="min-width:0;">
+                  <div style="font-size:12.5px; color:{{ pageText }};"><strong>{{ act.name }}</strong> {{ act.action }}</div>
+                  <div style="font-size:11.5px; color:{{ pageTextMuted }}; margin-top:2px;">{{ act.time }}</div>
+                </div>
+              </div>
+            </sc-for>
+          </div>
+        </div>
+
       </div>
     </div>
   </div>
@@ -337,6 +299,26 @@
   &quot;planTier&quot;: {&quot;editor&quot;: &quot;enum&quot;, &quot;default&quot;: &quot;free&quot;, &quot;tsType&quot;: &quot;string&quot;, &quot;options&quot;: [&quot;free&quot;, &quot;pro&quot;], &quot;section&quot;: &quot;Estado&quot;},
   &quot;tenantMode&quot;: {&quot;editor&quot;: &quot;enum&quot;, &quot;default&quot;: &quot;multi&quot;, &quot;tsType&quot;: &quot;string&quot;, &quot;options&quot;: [&quot;single&quot;, &quot;multi&quot;], &quot;section&quot;: &quot;Estado&quot;}
 }">
+const UPTIME_PATTERN = [99.9, 99.95, 100, 98.2, 99.8, 100, 100, 99.5, 97.8, 99.9, 100, 100, 99.6, 99.98];
+
+const RECENT_INCIDENTS = [
+  { title: 'Webhook Receiver fora do ar', status: 'investigating', time: 'há 12 min' },
+  { title: 'Latência elevada no Billing Worker', status: 'monitoring', time: 'há 2 horas' },
+  { title: 'Timeout no Auth Service durante deploy', status: 'resolved', time: 'há 5 dias' },
+];
+const INC_STATUS_META = {
+  investigating: { label: 'Investigando', dot: '#D6395B' },
+  monitoring: { label: 'Monitorando', dot: '#B45309' },
+  resolved: { label: 'Resolvido', dot: '#1A9E6B' },
+};
+
+const ACTIVITY = [
+  { initials: 'AS', name: 'Ana Silva', action: 'resolveu o incidente "Timeout no Auth Service"', time: 'há 5 dias' },
+  { initials: 'RN', name: 'Rafael Nunes', action: 'foi convidado como Membro', time: 'ontem' },
+  { initials: 'DR', name: 'Diego Rocha', action: 'adicionou o domínio painel.acme.health', time: 'há 5 dias' },
+  { initials: 'AS', name: 'Ana Silva', action: 'atualizou o plano para Free', time: 'há 1 semana' },
+];
+
 class Component extends DCLogic {
   state = { pinned: false, hovered: false, tenantDropdownOpen: false, userMenuOpen: false };
 
@@ -346,6 +328,17 @@ class Component extends DCLogic {
     const isMultiTenant = tenantMode === 'multi';
     const expanded = this.state.pinned || this.state.hovered;
     const isFree = planTier === 'free';
+    const dark = this.state.darkMode;
+
+    const maxUptime = 100, minUptime = 96;
+    const chartBars = UPTIME_PATTERN.map(v => ({
+      heightPct: Math.max(8, Math.round(((v - minUptime) / (maxUptime - minUptime)) * 100)),
+      color: v < 98.5 ? '#B45309' : (v < 99.5 ? '#5A46C7' : '#1A9E6B'),
+    }));
+    const avg = (UPTIME_PATTERN.reduce((a, b) => a + b, 0) / UPTIME_PATTERN.length).toFixed(2);
+
+    const recentIncidents = RECENT_INCIDENTS.map(i => ({ ...i, statusLabel: INC_STATUS_META[i.status].label, dot: INC_STATUS_META[i.status].dot }));
+
     return {
       sidebarPinned: this.state.pinned,
       sidebarNotPinned: !this.state.pinned,
@@ -356,35 +349,46 @@ class Component extends DCLogic {
       sidebarMouseLeave: () => this.setState({ hovered: false }),
       toggleSidebarPin: () => this.setState(s => ({ pinned: !s.pinned })),
       isMultiTenant,
-      isSelfHosted: tenantMode === 'single',
       tenantDropdownOpenAndMulti: this.state.tenantDropdownOpen && isMultiTenant,
       toggleTenantDropdown: () => { if (isMultiTenant) this.setState(s => ({ tenantDropdownOpen: !s.tenantDropdownOpen })); },
       userMenuOpen: this.state.userMenuOpen,
       toggleUserMenu: () => this.setState(s => ({ userMenuOpen: !s.userMenuOpen })),
+      isFree,
+      planBadgeLabel: isFree ? 'Free' : 'Pro',
+      planBadgeBg: isFree ? '#F2F0F6' : 'rgba(90,70,199,0.1)',
+      planBadgeColor: isFree ? '#6E6779' : '#5A46C7',
+
       darkMode: this.state.darkMode,
       darkModeOff: !this.state.darkMode,
       toggleDarkMode: () => this.setState(s => ({ darkMode: !s.darkMode })),
-      pageBg: this.state.darkMode ? '#15111F' : '#FFFFFF',
-      pageText: this.state.darkMode ? '#EDEBF3' : '#1C1526',
-      sidebarBg: this.state.darkMode ? '#1B1730' : '#FAFAFC',
-      sidebarBorder: this.state.darkMode ? '#2C2645' : '#ECE9F2',
-      sidebarTextPrimary: this.state.darkMode ? '#F2F0F6' : '#1C1526',
-      sidebarTextMuted: this.state.darkMode ? '#9A93B0' : '#6E6779',
-      iconColor: this.state.darkMode ? '#B4AEC2' : '#6E6779',
-      pageTextMuted: this.state.darkMode ? '#9A93B0' : '#6E6779',
-      cardBg: this.state.darkMode ? '#1F1A35' : '#FFFFFF',
-      cardHeaderBg: this.state.darkMode ? '#241E3D' : '#FAFAFC',
-      sidebarHoverBg: this.state.darkMode ? 'rgba(255,255,255,0.06)' : '#F2F0F6',
+      pageBg: dark ? '#15111F' : '#FFFFFF',
+      pageText: dark ? '#EDEBF3' : '#1C1526',
+      sidebarBg: dark ? '#1B1730' : '#FAFAFC',
+      sidebarBorder: dark ? '#2C2645' : '#ECE9F2',
+      sidebarTextPrimary: dark ? '#F2F0F6' : '#1C1526',
+      sidebarTextMuted: dark ? '#9A93B0' : '#6E6779',
+      iconColor: dark ? '#B4AEC2' : '#6E6779',
+      pageTextMuted: dark ? '#9A93B0' : '#6E6779',
+      cardBg: dark ? '#1F1A35' : '#FFFFFF',
+      cardHeaderBg: dark ? '#241E3D' : '#FAFAFC',
+      sidebarHoverBg: dark ? 'rgba(255,255,255,0.06)' : '#F2F0F6',
+
       logoutConfirmOpen: this.state.logoutConfirmOpen,
       openLogoutConfirm: () => this.setState({ logoutConfirmOpen: true, tenantDropdownOpen: false, userMenuOpen: false }),
       closeLogoutConfirm: () => this.setState({ logoutConfirmOpen: false }),
       confirmLogout: () => { window.location.href = 'Login Bootstrap.dc.html'; },
       stopPropagationClick: (e) => e.stopPropagation(),
-      isFree,
-      isPro: !isFree,
-      planBadgeLabel: isFree ? 'Free' : 'Pro',
-      planBadgeBg: isFree ? '#F2F0F6' : 'rgba(90,70,199,0.1)',
-      planBadgeColor: isFree ? '#6E6779' : '#5A46C7',
+
+      summaryCards: [
+        { label: 'Uptime médio (30d)', value: '99.8%', color: '#1A9E6B', note: '+0.1% vs mês anterior' },
+        { label: 'Incidentes abertos', value: '2', color: '#D6395B', note: '1 crítico, 1 monitorando' },
+        { label: 'Serviços com problema', value: '1', color: '#B45309', note: 'de 6 serviços monitorados' },
+        { label: 'Domínios verificados', value: '3/4', color: '#5A46C7', note: '1 pendente de verificação' },
+      ],
+      avgUptimeLabel: `${avg}%`,
+      chartBars,
+      recentIncidents,
+      activity: ACTIVITY,
     };
   }
 }
