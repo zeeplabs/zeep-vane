@@ -69,13 +69,21 @@ describe("notification preference hooks", () => {
     );
   });
 
-  // NOTIFPREF-14: a failed PATCH rolls the optimistic change back.
+  // NOTIFPREF-14: a failed PATCH rolls the optimistic change back. The failure
+  // is held behind a gate so the optimistic state is deterministic to observe;
+  // without holding it, a removed rollback is indistinguishable from the
+  // pre-mutation value (the assertion below would pass either way).
   it("rolls the optimistic toggle back when the PATCH fails", async () => {
     await loginAsOwner();
+    let releaseFailure: (() => void) | undefined;
+    const failureGate = new Promise<void>((resolve) => {
+      releaseFailure = resolve;
+    });
     server.use(
-      http.patch("/api/auth/notification-preferences", () =>
-        HttpResponse.json({ error: "boom" }, { status: 500 }),
-      ),
+      http.patch("/api/auth/notification-preferences", async () => {
+        await failureGate;
+        return HttpResponse.json({ error: "boom" }, { status: 500 });
+      }),
     );
 
     const { result } = renderHook(
@@ -88,10 +96,15 @@ describe("notification preference hooks", () => {
     await waitFor(() => expect(result.current.prefs.isSuccess).toBe(true));
     expect(result.current.prefs.data?.weekly_digest).toBe(false);
 
-    await act(async () => {
-      await result.current.update.mutateAsync({ weekly_digest: true }).catch(() => undefined);
+    act(() => {
+      result.current.update.mutate({ weekly_digest: true });
     });
 
+    // The optimistic update applies while the request is still pending...
+    await waitFor(() => expect(result.current.prefs.data?.weekly_digest).toBe(true));
+
+    // ...and the failure then rolls it back.
+    releaseFailure?.();
     await waitFor(() => expect(result.current.prefs.data?.weekly_digest).toBe(false));
   });
 
