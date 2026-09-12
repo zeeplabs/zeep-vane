@@ -114,23 +114,23 @@ Explicitly excluded. Documented to prevent scope creep.
 | Requirement ID | Story | Phase | Status |
 | --- | --- | --- | --- |
 | BTR-01 | P1: Breach decision from rescaled bound | Specify | Implementing |
-| BTR-02 | P1: Breach decision from rescaled bound | Specify | Pending |
-| BTR-03 | P1: Breach decision from rescaled bound | Specify | Pending |
-| BTR-04 | P1: Breach decision from rescaled bound | Specify | Pending |
-| BTR-05 | P1: Breach decision from rescaled bound | Specify | Pending |
-| BTR-06 | P1: Genuine outages still surface | Specify | Pending |
-| BTR-07 | P1: Genuine outages still surface | Specify | Pending |
-| BTR-08 | P1: Genuine outages still surface | Specify | Pending |
-| BTR-09 | P2: Fallbacks and failure contract | Specify | Pending |
-| BTR-10 | P2: Fallbacks and failure contract | Specify | Pending |
-| BTR-11 | P2: Fallbacks and failure contract | Specify | Pending |
-| BTR-12 | P2: Fallbacks and failure contract | Specify | Pending |
+| BTR-02 | P1: Breach decision from rescaled bound | Specify | Implementing |
+| BTR-03 | P1: Breach decision from rescaled bound | Specify | Implementing |
+| BTR-04 | P1: Breach decision from rescaled bound | Specify | Implementing |
+| BTR-05 | P1: Breach decision from rescaled bound | Specify | Implementing |
+| BTR-06 | P1: Genuine outages still surface | Specify | Implementing |
+| BTR-07 | P1: Genuine outages still surface | Specify | Implementing |
+| BTR-08 | P1: Genuine outages still surface | Specify | Implementing |
+| BTR-09 | P2: Fallbacks and failure contract | Specify | Implementing |
+| BTR-10 | P2: Fallbacks and failure contract | Specify | Implementing |
+| BTR-11 | P2: Fallbacks and failure contract | Specify | Implementing |
+| BTR-12 | P2: Fallbacks and failure contract | Specify | Implementing |
 
 **ID format:** `BTR-[NUMBER]` (Breach Threshold Rescaling)
 
 **Status values:** Pending → In Design → In Tasks → Implementing → Verified
 
-**Coverage:** 12 total, 0 mapped to tasks, 12 unmapped ⚠️ (expected - Design/Tasks phases not run yet)
+**Coverage:** 12 total, 12 mapped to tasks, 0 unmapped
 
 ---
 

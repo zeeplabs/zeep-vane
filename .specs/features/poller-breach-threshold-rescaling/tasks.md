@@ -91,7 +91,7 @@ T2 → T3
 
 ---
 
-### T2: Classify `pollService` from the bound instead of `state`
+### T2: Classify `pollService` from the bound instead of `state` ✅ Complete
 
 **What**: Rewrite the classification `switch` in `pollService`: keep the low-volume carry-forward first; add the `Target <= 0` state-based fallback (factored into a small helper so it is provably the old behavior); add the `SLI < breachBound(...)` breach branch feeding the existing hysteresis; add the below-target-within-band branch (`state == "warning" || state == "breached" || SLI < Target`) mapping to `"degraded"`; keep `normalizeStatus(state)` as the final default. Add the new unit tests to the existing recent-window test file.
 **Where**: `internal/poller/poller.go`
@@ -104,19 +104,19 @@ T2 → T3
 - Skill: NONE
 
 **Done when**:
-- [ ] `Target > 0` and `RequestCount >= minRecentWindowRequests`: breach is decided by `SLI < breachBound(...)`, never by `state == "breached"` alone
-- [ ] New test: `Target=99.5`, `RequestCount=10000`, `State="breached"`, `SLI=99.4` -> first cycle yields `"degraded"`, not `"outage"` (BTR-03)
-- [ ] New test: `Target=99.5`, `RequestCount=10000`, `State="ok"`, `SLI=99.4` -> `"degraded"` (SLI below target, inside band) (BTR-03)
-- [ ] New test: `Target=99.5`, `RequestCount=10000`, `SLI=50`, two consecutive cycles -> first carries forward, second yields `"outage"` (BTR-02, BTR-06, BTR-07)
-- [ ] New test: a breach followed by a within-band window resets the streak, so a later breach does not flip on its own (BTR-08)
-- [ ] New test: `Target=0`, `State="breached"`, `RequestCount=5000` -> fallback path; two cycles yield `"outage"` (BTR-09)
-- [ ] Existing low-volume tests (`TestPollService_LowVolumeNoisyBreach_CarriesForwardPreviousStatus`, `...LowVolumeCarryForward_StillInvokesWriters`, `...FirstPollLowVolume_StaysNotConfigured`) pass unmodified (BTR-10)
-- [ ] Existing failure-path tests pass unmodified; no interval/status write on an exhausted fetch (BTR-11)
-- [ ] No environment variable, migration, or schema file is added or changed (BTR-12) - confirmed by the task's diff scope
-- [ ] Existing hysteresis tests that use `Target=0` still pass via the fallback branch (no test silently deleted)
-- [ ] Test count stated explicitly in the commit/task summary
-- [ ] Gate check passes: `go build ./... && go vet ./... && go test ./internal/poller/...`
-- [ ] `gofmt -l internal/poller/poller.go internal/poller/poller_recent_window_test.go` produces no output
+- [x] `Target > 0` and `RequestCount >= minRecentWindowRequests`: breach is decided by `SLI < breachBound(...)`, never by `state == "breached"` alone
+- [x] New test: `Target=99.5`, `RequestCount=10000`, `State="breached"`, `SLI=99.4` -> first cycle yields `"degraded"`, not `"outage"` (BTR-03)
+- [x] New test: `Target=99.5`, `RequestCount=10000`, `State="ok"`, `SLI=99.4` -> `"degraded"` (SLI below target, inside band) (BTR-03)
+- [x] New test: `Target=99.5`, `RequestCount=10000`, `SLI=50`, two consecutive cycles -> first carries forward, second yields `"outage"` (BTR-02, BTR-06, BTR-07)
+- [x] New test: a breach followed by a within-band window resets the streak, so a later breach does not flip on its own (BTR-08)
+- [x] New test: `Target=0`, `State="breached"`, `RequestCount=5000` -> fallback path; two cycles yield `"outage"` (BTR-09)
+- [x] Existing low-volume tests (`TestPollService_LowVolumeNoisyBreach_CarriesForwardPreviousStatus`, `...LowVolumeCarryForward_StillInvokesWriters`, `...FirstPollLowVolume_StaysNotConfigured`) pass unmodified (BTR-10)
+- [x] Existing failure-path tests pass unmodified; no interval/status write on an exhausted fetch (BTR-11)
+- [x] No environment variable, migration, or schema file is added or changed (BTR-12) - confirmed by the task's diff scope
+- [x] Existing hysteresis tests that use `Target=0` still pass via the fallback branch (no test silently deleted)
+- [x] Test count stated explicitly in the commit/task summary
+- [x] Gate check passes: `go build ./... && go vet ./... && go test ./internal/poller/...`
+- [x] `gofmt -l internal/poller/poller.go internal/poller/poller_recent_window_test.go` produces no output
 
 **Tests**: unit
 **Gate**: quick

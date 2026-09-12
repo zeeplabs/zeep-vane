@@ -233,3 +233,144 @@ func TestPollService_FirstPollLowVolume_StaysNotConfigured(t *testing.T) {
 		t.Errorf("UpdateStatus calls = %+v, want carry-forward of %q, no special-cased default", statuses.calls, "not_configured")
 	}
 }
+
+// TestPollService_HighVolumeBreachedStateButSLIWithinBand_DegradesNotOutage
+// is the root-fix test (spec BTR-03): Datadog reports "breached" against the
+// SLO's 30-day target, but the window's SLI (99.4) sits above the
+// window-rescaled bound (~99.29), so it must be "degraded", never "outage".
+func TestPollService_HighVolumeBreachedStateButSLIWithinBand_DegradesNotOutage(t *testing.T) {
+	provider := &fakeProvider{
+		errs:   []error{nil},
+		status: datadog.SLOStatus{State: "breached", SLI: 99.4, Target: 99.5, RequestCount: 10000},
+	}
+	intervals := &fakeIntervalWriter{}
+	statuses := &fakeStatusUpdater{}
+	p := newTestPoller(provider, time.Hour, intervals, statuses)
+
+	if err := p.pollService(t.Context(), db.Service{ID: "svc-1", SLOID: "slo-1", CurrentStatus: "operational"}); err != nil {
+		t.Fatalf("pollService() returned unexpected error: %v", err)
+	}
+
+	if len(statuses.calls) != 1 || statuses.calls[0].status != "degraded" {
+		t.Errorf("UpdateStatus calls = %+v, want %q (below target but inside the sampling band)", statuses.calls, "degraded")
+	}
+}
+
+// TestPollService_HighVolumeOKStateButSLIBelowTarget_Degrades covers the
+// SLI<Target half of the below-target-within-band branch (spec BTR-03) even
+// when Datadog's own state says "ok".
+func TestPollService_HighVolumeOKStateButSLIBelowTarget_Degrades(t *testing.T) {
+	provider := &fakeProvider{
+		errs:   []error{nil},
+		status: datadog.SLOStatus{State: "ok", SLI: 99.4, Target: 99.5, RequestCount: 10000},
+	}
+	intervals := &fakeIntervalWriter{}
+	statuses := &fakeStatusUpdater{}
+	p := newTestPoller(provider, time.Hour, intervals, statuses)
+
+	if err := p.pollService(t.Context(), db.Service{ID: "svc-1", SLOID: "slo-1", CurrentStatus: "operational"}); err != nil {
+		t.Fatalf("pollService() returned unexpected error: %v", err)
+	}
+
+	if len(statuses.calls) != 1 || statuses.calls[0].status != "degraded" {
+		t.Errorf("UpdateStatus calls = %+v, want %q (SLI below the SLO target)", statuses.calls, "degraded")
+	}
+}
+
+// TestPollService_HighVolumeHealthyWindow_StaysOperational covers the
+// bound-path operational case (spec BTR-04): SLI at/above target, state ok.
+func TestPollService_HighVolumeHealthyWindow_StaysOperational(t *testing.T) {
+	provider := &fakeProvider{
+		errs:   []error{nil},
+		status: datadog.SLOStatus{State: "ok", SLI: 99.9, Target: 99.5, RequestCount: 10000},
+	}
+	intervals := &fakeIntervalWriter{}
+	statuses := &fakeStatusUpdater{}
+	p := newTestPoller(provider, time.Hour, intervals, statuses)
+
+	if err := p.pollService(t.Context(), db.Service{ID: "svc-1", SLOID: "slo-1", CurrentStatus: "outage"}); err != nil {
+		t.Fatalf("pollService() returned unexpected error: %v", err)
+	}
+
+	if len(statuses.calls) != 1 || statuses.calls[0].status != "operational" {
+		t.Errorf("UpdateStatus calls = %+v, want %q", statuses.calls, "operational")
+	}
+}
+
+// TestPollService_HighVolumeRealBreach_HysteresisThenOutage covers the
+// bound-driven breach feeding the retained hysteresis (spec BTR-02, BTR-06,
+// BTR-07): SLI far below the bound carries forward once, then flips.
+func TestPollService_HighVolumeRealBreach_HysteresisThenOutage(t *testing.T) {
+	provider := &fakeProvider{
+		errs:   []error{nil, nil},
+		status: datadog.SLOStatus{State: "breached", SLI: 50, Target: 99.5, RequestCount: 10000},
+	}
+	intervals := &fakeIntervalWriter{}
+	statuses := &fakeStatusUpdater{}
+	p := newTestPoller(provider, time.Hour, intervals, statuses)
+	svc := db.Service{ID: "svc-1", SLOID: "slo-1", CurrentStatus: "operational"}
+
+	if err := p.pollService(t.Context(), svc); err != nil {
+		t.Fatalf("pollService() call 1 returned unexpected error: %v", err)
+	}
+	if err := p.pollService(t.Context(), svc); err != nil {
+		t.Fatalf("pollService() call 2 returned unexpected error: %v", err)
+	}
+
+	if len(statuses.calls) != 2 || statuses.calls[0].status != "operational" || statuses.calls[1].status != "outage" {
+		t.Errorf("UpdateStatus calls = %+v, want first cycle carry-forward %q then %q", statuses.calls, "operational", "outage")
+	}
+}
+
+// TestPollService_WithinBandWindowResetsBreachStreak covers spec BTR-08: a
+// window that is below target but inside the band must reset the streak, so
+// a later breach does not flip on its own.
+func TestPollService_WithinBandWindowResetsBreachStreak(t *testing.T) {
+	provider := &fakeProvider{
+		errs: []error{nil, nil, nil},
+		statuses: []datadog.SLOStatus{
+			{State: "breached", SLI: 50, Target: 99.5, RequestCount: 10000},
+			{State: "breached", SLI: 99.4, Target: 99.5, RequestCount: 10000},
+			{State: "breached", SLI: 50, Target: 99.5, RequestCount: 10000},
+		},
+	}
+	intervals := &fakeIntervalWriter{}
+	statuses := &fakeStatusUpdater{}
+	p := newTestPoller(provider, time.Hour, intervals, statuses)
+	svc := db.Service{ID: "svc-1", SLOID: "slo-1", CurrentStatus: "operational"}
+
+	for i := 0; i < 3; i++ {
+		if err := p.pollService(t.Context(), svc); err != nil {
+			t.Fatalf("pollService() call %d returned unexpected error: %v", i+1, err)
+		}
+	}
+
+	if len(statuses.calls) != 3 || statuses.calls[1].status != "degraded" || statuses.calls[2].status != "operational" {
+		t.Errorf("UpdateStatus calls = %+v, want call 2 %q and call 3 carry-forward %q (streak reset)", statuses.calls, "degraded", "operational")
+	}
+}
+
+// TestPollService_NoTarget_FallsBackToStateClassification covers spec
+// BTR-09: with no usable target the old state-based classification is
+// preserved, including its hysteresis.
+func TestPollService_NoTarget_FallsBackToStateClassification(t *testing.T) {
+	provider := &fakeProvider{
+		errs:   []error{nil, nil},
+		status: datadog.SLOStatus{State: "breached", SLI: 50, Target: 0, RequestCount: 5000},
+	}
+	intervals := &fakeIntervalWriter{}
+	statuses := &fakeStatusUpdater{}
+	p := newTestPoller(provider, time.Hour, intervals, statuses)
+	svc := db.Service{ID: "svc-1", SLOID: "slo-1", CurrentStatus: "operational"}
+
+	if err := p.pollService(t.Context(), svc); err != nil {
+		t.Fatalf("pollService() call 1 returned unexpected error: %v", err)
+	}
+	if err := p.pollService(t.Context(), svc); err != nil {
+		t.Fatalf("pollService() call 2 returned unexpected error: %v", err)
+	}
+
+	if len(statuses.calls) != 2 || statuses.calls[0].status != "operational" || statuses.calls[1].status != "outage" {
+		t.Errorf("UpdateStatus calls = %+v, want fallback carry-forward %q then %q", statuses.calls, "operational", "outage")
+	}
+}

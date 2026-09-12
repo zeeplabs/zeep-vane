@@ -316,10 +316,16 @@ func (p *Poller) pollService(ctx context.Context, svc db.Service) error {
 		// previous status forward rather than let a handful of requests
 		// flip the public page (AD-019).
 		current = svc.CurrentStatus
-	case status.State == "breached":
-		// Hysteresis (AD-019 addendum, breachHysteresisCycles): a single
-		// breached window is not enough to commit to "outage" - see the
-		// constant's doc comment for why. Carry the previous status forward
+	case status.Target <= 0:
+		// The response carried no usable threshold, so no honest
+		// window-rescaled bound can be computed - fall back to the
+		// pre-AD-019-addendum-4 state-based classification, unchanged.
+		current = p.classifyByState(status, svc)
+	case status.SLI < breachBound(status.Target, status.RequestCount, breachThresholdSigmas):
+		// Breach decided by the window's own SLI against a bound rescaled
+		// to its width, never by Datadog's fixed-timeframe overall.state
+		// (AD-019 addendum 4). Hysteresis (breachHysteresisCycles) still
+		// absorbs single-window noise: carry the previous status forward
 		// until the streak clears the threshold, then latch to "outage".
 		p.breachStreak[svc.ID]++
 		if p.breachStreak[svc.ID] >= breachHysteresisCycles {
@@ -327,6 +333,11 @@ func (p *Poller) pollService(ctx context.Context, svc db.Service) error {
 		} else {
 			current = svc.CurrentStatus
 		}
+	case status.State == "warning" || status.State == "breached" || status.SLI < status.Target:
+		// Below the SLO's own target but inside the sampling band: a real
+		// signal of degradation, not enough evidence for "outage".
+		p.breachStreak[svc.ID] = 0
+		current = "degraded"
 	default:
 		p.breachStreak[svc.ID] = 0
 		current = normalizeStatus(status.State)
@@ -364,10 +375,31 @@ func (p *Poller) pollService(ctx context.Context, svc db.Service) error {
 	return nil
 }
 
+// classifyByState is the pre-AD-019-addendum-4 classification, used only
+// when the SLO response carries no usable target (Target <= 0) and a
+// window-rescaled bound therefore cannot be computed. It preserves the old
+// behavior exactly: a single breached window carries the previous status
+// forward, breachHysteresisCycles consecutive breaches flip to "outage",
+// and anything else maps through normalizeStatus. Factored out so the
+// fallback is demonstrably the old logic rather than a near-copy.
+func (p *Poller) classifyByState(status datadog.SLOStatus, svc db.Service) string {
+	if status.State != "breached" {
+		p.breachStreak[svc.ID] = 0
+		return normalizeStatus(status.State)
+	}
+
+	p.breachStreak[svc.ID]++
+	if p.breachStreak[svc.ID] >= breachHysteresisCycles {
+		return "outage"
+	}
+	return svc.CurrentStatus
+}
+
 // normalizeStatus maps a Datadog SLO state to vane's Service.CurrentStatus
 // values (SP-06/SP-07). Documents the full mapping for every state Datadog
 // can report, but pollService itself never reaches the "breached" case
-// below: it intercepts status.State == "breached" earlier to apply
+// below: it intercepts breached windows earlier (via breachBound, or via
+// classifyByState when the response carries no target) to apply
 // breachHysteresisCycles, so this function only ever actually sees "ok"/
 // "warning"/anything else in production. Kept here (not deleted) so the
 // mapping stays complete and self-documenting, and so a future caller that
