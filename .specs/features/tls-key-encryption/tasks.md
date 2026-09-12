@@ -173,10 +173,10 @@ T3 → T5
 - Skill: NONE
 
 **Done when**:
-- [ ] `Store` a PEM under a `.key` key → row is sealed (marker present, no `-----BEGIN` in the raw column) → `Load` returns the exact PEM
-- [ ] A decorator built with a different master key → `Load` error `Is(crypto.ErrDecryptionFailed)` and **not** `Is(fs.ErrNotExist)`
-- [ ] Gate check passes on disposable Postgres: `TEST_DATABASE_URL=... go test -tags=integration -count=1 -p 1 ./internal/tls/...`
-- [ ] Test count: ≥3 new integration tests
+- [x] `Store` a PEM under a `.key` key → row is sealed (marker present, no `-----BEGIN` in the raw column) → `Load` returns the exact PEM
+- [x] A decorator built with a different master key → `Load` error `Is(crypto.ErrDecryptionFailed)` and **not** `Is(fs.ErrNotExist)`
+- [x] Gate check passes on disposable Postgres: `TEST_DATABASE_URL=... go test -tags=integration -count=1 -p 1 ./internal/tls/...`
+- [x] Test count: ≥3 new integration tests
 
 **Tests**: integration
 **Gate**: full
