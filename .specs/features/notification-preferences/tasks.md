@@ -277,11 +277,11 @@ T12 → T13
 - Skill: NONE
 
 **Done when**:
-- [ ] Two scheduler instances against the same database: exactly one instance's `runOnce` executes per triggered cycle, proven via real advisory-lock contention (not a same-process sequential call)
-- [ ] A tenant with zero enabled `weekly_digest` recipients sends no email and builds no content for that tenant
-- [ ] `TenantRepository.List`-under-RLS returns the real tenant set when called through `SystemTenantLister` (not zero rows, confirming `AD-024`'s mechanism generalizes correctly to this second caller)
-- [ ] Gate check passes on disposable Postgres: `TEST_DATABASE_URL=... go test -tags=integration ./internal/cli/...`
-- [ ] Test count: ≥6 new tests
+- [x] Two scheduler instances against the same database: exactly one instance's `runOnce` executes per triggered cycle, proven via real advisory-lock contention (not a same-process sequential call)
+- [x] A tenant with zero enabled `weekly_digest` recipients sends no email and builds no content for that tenant
+- [x] `TenantRepository.List`-under-RLS returns the real tenant set when called through `SystemTenantLister` (not zero rows, confirming `AD-024`'s mechanism generalizes correctly to this second caller)
+- [x] Gate check passes on disposable Postgres: `TEST_DATABASE_URL=... go test -tags=integration ./internal/cli/...`
+- [x] Test count: ≥6 new tests (5 in `internal/cli`, 1 in `internal/db`)
 
 **Tests**: integration
 **Gate**: full

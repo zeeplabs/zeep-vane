@@ -446,3 +446,47 @@ func TestIncidentRepository_ConfirmPendingClose_AppendsUpdate_NoAuthorIsAISummar
 		t.Error("IsAISummary = false, want true")
 	}
 }
+
+// TestIncidentRepository_CountOpenedResolvedBetween covers the digest's
+// incident counts (notification-preferences NOTIFPREF-10): empty tenant -> 0/0,
+// then 2 opened / 1 resolved inside the window, and 0/0 for a window that
+// precedes everything.
+func TestIncidentRepository_CountOpenedResolvedBetween(t *testing.T) {
+	repo, pool := newIncidentRepoTestPool(t)
+	ctx := context.Background()
+
+	// The shared test database already holds incidents from other tests (the
+	// test role does not fail-close on RLS), so the window is anchored to this
+	// test's own fixtures' created_at rather than assumed-empty.
+	first := createIncidentFixture(t, repo, pool, "count-window-first")
+	_ = createIncidentFixture(t, repo, pool, "count-window-second")
+
+	var anchor time.Time
+	if err := pool.QueryRow(ctx, "SELECT created_at FROM incidents WHERE id = $1", first.ID).Scan(&anchor); err != nil {
+		t.Fatalf("reading fixture created_at returned unexpected error: %v", err)
+	}
+
+	if _, err := repo.Transition(ctx, first.ID, "resolved"); err != nil {
+		t.Fatalf("setup Transition() returned unexpected error: %v", err)
+	}
+
+	windowStart := anchor
+	windowEnd := time.Now().Add(time.Minute)
+	opened, resolved, err := repo.CountOpenedResolvedBetween(ctx, windowStart, windowEnd)
+	if err != nil {
+		t.Fatalf("CountOpenedResolvedBetween() returned unexpected error: %v", err)
+	}
+	if opened != 2 || resolved != 1 {
+		t.Errorf("counts = %d/%d, want 2 opened / 1 resolved", opened, resolved)
+	}
+
+	// A window entirely before any seeded row is empty.
+	pastOpened, pastResolved, err := repo.CountOpenedResolvedBetween(ctx,
+		time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC), time.Date(2000, 1, 2, 0, 0, 0, 0, time.UTC))
+	if err != nil {
+		t.Fatalf("CountOpenedResolvedBetween() (past window) returned unexpected error: %v", err)
+	}
+	if pastOpened != 0 || pastResolved != 0 {
+		t.Errorf("past-window counts = %d/%d, want 0/0", pastOpened, pastResolved)
+	}
+}

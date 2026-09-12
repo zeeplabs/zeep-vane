@@ -39,9 +39,20 @@ func (f *fakePreferences) ResolveEnabledForUsers(_ context.Context, _ []string, 
 type recordingSender struct {
 	openedTo     []string
 	resolvedTo   []string
+	digestTo     []string
 	lastOpened   email.IncidentOpenedEmailData
 	lastResolved email.IncidentResolvedEmailData
+	lastDigest   email.WeeklyDigestEmailData
 	sendErrFor   map[string]error
+}
+
+func (s *recordingSender) SendWeeklyDigest(_ context.Context, to string, data email.WeeklyDigestEmailData) error {
+	if err := s.sendErrFor[to]; err != nil {
+		return err
+	}
+	s.digestTo = append(s.digestTo, to)
+	s.lastDigest = data
+	return nil
 }
 
 func (s *recordingSender) SendIncidentOpened(_ context.Context, to string, data email.IncidentOpenedEmailData) error {
@@ -62,7 +73,7 @@ func (s *recordingSender) SendIncidentResolved(_ context.Context, to string, dat
 	return nil
 }
 
-func newTestService(members memberLister, prefs preferenceResolver, sender incidentEmailSender, baseURL string) *Service {
+func newTestService(members memberLister, prefs preferenceResolver, sender emailSender, baseURL string) *Service {
 	return NewService(members, prefs, sender, baseURL, zap.NewNop())
 }
 
@@ -260,5 +271,50 @@ func TestNotifyIncidentOpened_EmptyAdminBaseURL_NoDashboardLink(t *testing.T) {
 	}
 	if sender.lastOpened.DashboardURL != "" {
 		t.Errorf("DashboardURL = %q, want empty when no admin base URL is configured", sender.lastOpened.DashboardURL)
+	}
+}
+
+// TestWeeklyDigestRecipients_OnlyEnabledOwnerOperator covers NOTIFPREF-10: the
+// recipient list is owner/operator members with weekly_digest enabled - never a
+// viewer, never an opted-out owner.
+func TestWeeklyDigestRecipients_OnlyEnabledOwnerOperator(t *testing.T) {
+	members := &fakeMembers{members: []db.TenantMember{
+		{UserID: "owner-on", Email: "owner-on@example.com", Role: "owner"},
+		{UserID: "operator-off", Email: "operator-off@example.com", Role: "operator"},
+		{UserID: "viewer-on", Email: "viewer-on@example.com", Role: "viewer"},
+	}}
+	prefs := &fakePreferences{enabled: map[string]bool{
+		"owner-on": true, "operator-off": false, "viewer-on": true,
+	}}
+	svc := newTestService(members, prefs, &recordingSender{}, "")
+
+	recipients, err := svc.WeeklyDigestRecipients(context.Background(), "tenant-1")
+	if err != nil {
+		t.Fatalf("WeeklyDigestRecipients() returned unexpected error: %v", err)
+	}
+	if len(recipients) != 1 || recipients[0].Email != "owner-on@example.com" {
+		t.Errorf("recipients = %+v, want exactly [owner-on@example.com]", recipients)
+	}
+	if prefs.lastType != db.NotificationTypeWeeklyDigest {
+		t.Errorf("resolved notification type = %q, want %q", prefs.lastType, db.NotificationTypeWeeklyDigest)
+	}
+}
+
+// TestWeeklyDigestRecipients_NoEligible_EmptyList covers NOTIFPREF-12: a tenant
+// with no owner/operator opted into the digest yields an empty list (the
+// scheduler then sends nothing for that tenant).
+func TestWeeklyDigestRecipients_NoEligible_EmptyList(t *testing.T) {
+	members := &fakeMembers{members: []db.TenantMember{
+		{UserID: "owner-off", Email: "owner-off@example.com", Role: "owner"},
+	}}
+	prefs := &fakePreferences{enabled: map[string]bool{"owner-off": false}}
+	svc := newTestService(members, prefs, &recordingSender{}, "")
+
+	recipients, err := svc.WeeklyDigestRecipients(context.Background(), "tenant-1")
+	if err != nil {
+		t.Fatalf("WeeklyDigestRecipients() returned unexpected error: %v", err)
+	}
+	if len(recipients) != 0 {
+		t.Errorf("recipients = %+v, want empty when nobody opted in", recipients)
 	}
 }

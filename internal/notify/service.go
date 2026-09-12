@@ -38,25 +38,25 @@ type preferenceResolver interface {
 	ResolveEnabledForUsers(ctx context.Context, userIDs []string, notificationType string) (map[string]bool, error)
 }
 
-// incidentEmailSender is the subset of *email.Service incident notifications
-// need.
-type incidentEmailSender interface {
+// emailSender is the subset of *email.Service notifications need.
+type emailSender interface {
 	SendIncidentOpened(ctx context.Context, to string, data email.IncidentOpenedEmailData) error
 	SendIncidentResolved(ctx context.Context, to string, data email.IncidentResolvedEmailData) error
+	SendWeeklyDigest(ctx context.Context, to string, data email.WeeklyDigestEmailData) error
 }
 
-// Service resolves recipients and sends incident notification emails.
+// Service resolves recipients and sends notification emails.
 type Service struct {
 	members      memberLister
 	preferences  preferenceResolver
-	sender       incidentEmailSender
+	sender       emailSender
 	adminBaseURL string
 	logger       *zap.Logger
 }
 
 // NewService builds a Service. adminBaseURL is the dashboard base used to build
 // the incident link; an empty value simply omits the link.
-func NewService(members memberLister, preferences preferenceResolver, sender incidentEmailSender, adminBaseURL string, logger *zap.Logger) *Service {
+func NewService(members memberLister, preferences preferenceResolver, sender emailSender, adminBaseURL string, logger *zap.Logger) *Service {
 	return &Service{members: members, preferences: preferences, sender: sender, adminBaseURL: adminBaseURL, logger: logger}
 }
 
@@ -112,6 +112,47 @@ func (s *Service) notifyIncident(ctx context.Context, tenantID, notificationType
 		}
 	}
 	return nil
+}
+
+// WeeklyDigestRecipients returns the tenant's owner/operator members whose
+// weekly_digest preference resolves true - the recipient list the digest
+// scheduler sends one email to per member.
+func (s *Service) WeeklyDigestRecipients(ctx context.Context, tenantID string) ([]db.TenantMember, error) {
+	members, err := s.members.ListMembersWithEmail(ctx, tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("notify: failed to list tenant members: %w", err)
+	}
+
+	candidates := make([]db.TenantMember, 0, len(members))
+	userIDs := make([]string, 0, len(members))
+	for _, m := range members {
+		if m.Role != "owner" && m.Role != "operator" {
+			continue
+		}
+		candidates = append(candidates, m)
+		userIDs = append(userIDs, m.UserID)
+	}
+	if len(candidates) == 0 {
+		return candidates, nil
+	}
+
+	enabled, err := s.preferences.ResolveEnabledForUsers(ctx, userIDs, db.NotificationTypeWeeklyDigest)
+	if err != nil {
+		return nil, fmt.Errorf("notify: failed to resolve notification preferences: %w", err)
+	}
+
+	recipients := make([]db.TenantMember, 0, len(candidates))
+	for _, m := range candidates {
+		if enabled[m.UserID] {
+			recipients = append(recipients, m)
+		}
+	}
+	return recipients, nil
+}
+
+// SendWeeklyDigest sends the assembled digest to one recipient.
+func (s *Service) SendWeeklyDigest(ctx context.Context, to string, data email.WeeklyDigestEmailData) error {
+	return s.sender.SendWeeklyDigest(ctx, to, data)
 }
 
 func (s *Service) send(ctx context.Context, to, notificationType string, summary IncidentSummary, dashboardURL string) error {

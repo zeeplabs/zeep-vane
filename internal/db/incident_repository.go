@@ -203,6 +203,24 @@ func (r *IncidentRepository) countIncidents(ctx context.Context) (int, error) {
 	return total, nil
 }
 
+// CountOpenedResolvedBetween returns how many incidents opened (created_at) and
+// resolved (resolved_at) in [from, to) for the active tenant. It is what the
+// weekly digest summarizes (notification-preferences NOTIFPREF-10). Requires
+// app.tenant_id set, so RLS scopes the counts to one tenant.
+func (r *IncidentRepository) CountOpenedResolvedBetween(ctx context.Context, from, to time.Time) (opened, resolved int, err error) {
+	row := r.pool.QueryRow(ctx,
+		`SELECT
+		   COUNT(*) FILTER (WHERE created_at >= $1 AND created_at < $2),
+		   COUNT(*) FILTER (WHERE resolved_at >= $1 AND resolved_at < $2)
+		 FROM incidents`,
+		from, to,
+	)
+	if err := row.Scan(&opened, &resolved); err != nil {
+		return 0, 0, fmt.Errorf("db: failed to count incidents between %s and %s: %w", from, to, err)
+	}
+	return opened, resolved, nil
+}
+
 // listServiceIDs returns the service IDs linked to incidentID via
 // incident_services.
 func (r *IncidentRepository) listServiceIDs(ctx context.Context, incidentID string) ([]string, error) {

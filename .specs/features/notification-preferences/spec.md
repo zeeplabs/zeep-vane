@@ -154,9 +154,9 @@ The redesigned Meu Perfil screen (`handoff-new-layout/Meu Perfil.dc.html`) shows
 | NOTIFPREF-07 | P1: Emailed on incident resolved (Transition) | T4, T5, T6 | Implementing |
 | NOTIFPREF-08 | P1: Emailed on incident resolved (ConfirmClose) | T4, T5, T6 | Implementing |
 | NOTIFPREF-09 | P1: No email on non-resolving transition | T5, T6 | Implementing |
-| NOTIFPREF-10 | P2: Weekly digest sent per tenant | T7, T8, T9 | Pending |
-| NOTIFPREF-11 | P2: Weekly digest deduped across replicas | T8 | Pending |
-| NOTIFPREF-12 | P2: No digest email when nobody opted in | T7, T8 | Pending |
+| NOTIFPREF-10 | P2: Weekly digest sent per tenant | T7, T8, T9 | Implementing |
+| NOTIFPREF-11 | P2: Weekly digest deduped across replicas | T8 | Implementing |
+| NOTIFPREF-12 | P2: No digest email when nobody opted in | T7, T8 | Implementing |
 | NOTIFPREF-13 | P1: Notifications section reflects stored preferences | T10, T12, T13 | Pending |
 | NOTIFPREF-14 | P1: Single-key optimistic toggle with revert on failure | T10, T12 | Pending |
 | NOTIFPREF-15 | P1: Loading state while preferences load | T12 | Pending |
