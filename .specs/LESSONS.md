@@ -266,6 +266,12 @@ Seen once or not yet corroborated. Tracked, not trusted.
 - evidence: validation.md edge case: browser locale English (ProfilePage.test.tsx) (web/i18n)
 - last seen: 2026-09-11T22:58:32Z
 
+### L-043 - When a spec AC requires behavior under a non-default locale, add an explicit locale-switch test for every new string set; the pt-BR default passing does not prove the en tree exists.
+- signal: `ac_gap` · recurrence: 1 feature(s) · scope: `web/src/features/auth` · harmful: 0
+- features: login-2fa
+- evidence: LOGIN2FA-12 (web/src/features/auth)
+- last seen: 2026-09-12T01:14:20Z
+
 ## Quarantined (failed when applied - ignore)
 
 A confirmed lesson that recurred alongside failure. Kept for the maintainer to review.
