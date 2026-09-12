@@ -424,3 +424,57 @@ func (s *Service) SendIncidentResolved(ctx context.Context, to string, data Inci
 
 	return provider.Send(ctx, msg)
 }
+
+// SendWeeklyDigest renders the weekly digest template and sends it through
+// whichever provider is currently active (notification-preferences
+// NOTIFPREF-10). Same active-provider and send-failure handling as
+// SendAdminInvite - no retry, no queue; the caller (DigestScheduler) logs a
+// failure and moves on to the next recipient.
+func (s *Service) SendWeeklyDigest(ctx context.Context, to string, data WeeklyDigestEmailData) error {
+	active, err := s.repo.GetActiveProvider(ctx)
+	if err != nil {
+		return fmt.Errorf("email: failed to get active provider: %w", err)
+	}
+	if active == "" {
+		return ErrNoActiveProvider
+	}
+
+	ep, err := s.repo.Get(ctx, active)
+	if err != nil {
+		if errors.Is(err, db.ErrNotFound) {
+			return ErrNoActiveProvider
+		}
+		return fmt.Errorf("email: failed to get active provider row: %w", err)
+	}
+
+	apiKey, err := crypto.Decrypt(s.masterKey, ep.EncryptedAPIKey)
+	if err != nil {
+		return fmt.Errorf("email: failed to decrypt active provider api key: %w", err)
+	}
+
+	provider, err := s.factory(active, string(apiKey))
+	if err != nil {
+		return fmt.Errorf("email: failed to build active provider client: %w", err)
+	}
+
+	htmlBody, textBody, err := s.templates.renderWeeklyDigest(data)
+	if err != nil {
+		return err
+	}
+
+	subject := "Weekly digest"
+	if data.TenantName != "" {
+		subject = fmt.Sprintf("Weekly digest for %s", data.TenantName)
+	}
+
+	msg := Message{
+		To:        to,
+		FromEmail: ep.FromEmail,
+		FromName:  ep.FromName,
+		Subject:   subject,
+		HTMLBody:  htmlBody,
+		TextBody:  textBody,
+	}
+
+	return provider.Send(ctx, msg)
+}

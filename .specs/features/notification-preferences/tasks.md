@@ -252,10 +252,10 @@ T12 → T13
 - Skill: NONE
 
 **Done when**:
-- [ ] `SendWeeklyDigest` sends a rendered summary through the active provider
-- [ ] Content assembly correctly aggregates a tenant's uptime and incident counts for the prior 7 days from existing data, no new metric invented
-- [ ] Gate check passes: `go build ./... && go vet ./... && gofmt -l internal/email/service.go && go test ./internal/email/...`
-- [ ] Test count: ≥5 new tests
+- [x] `SendWeeklyDigest` sends a rendered summary through the active provider
+- [x] Content assembly correctly aggregates a tenant's uptime and incident counts for the prior 7 days from existing data, no new metric invented (pure `notify.BuildWeeklyDigestData` reusing `internal/history.UptimePercent`; the DB reads that feed it land in T8)
+- [x] Gate check passes: `go build ./... && go vet ./... && gofmt -l internal/email/service.go && go test ./internal/email/...`
+- [x] Test count: ≥5 new tests (5 in `internal/email`, 3 in `internal/notify`)
 
 **Tests**: unit
 **Gate**: quick

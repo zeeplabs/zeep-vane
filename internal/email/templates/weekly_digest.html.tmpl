@@ -1,0 +1,12 @@
+<!doctype html>
+<html>
+  <body style="font-family: sans-serif; color: #1a1a1a;">
+    <p>{{if .TenantName}}Weekly digest for <strong>{{.TenantName}}</strong>{{else}}Your weekly digest{{end}}</p>
+    <p>Period: {{.PeriodStart}} to {{.PeriodEnd}}</p>
+    <ul>
+      <li>Uptime: {{printf "%.2f" .UptimePercent}}%</li>
+      <li>Incidents opened: {{.IncidentsOpened}}</li>
+      <li>Incidents resolved: {{.IncidentsResolved}}</li>
+    </ul>
+  </body>
+</html>

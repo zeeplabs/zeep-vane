@@ -8,7 +8,7 @@ import (
 	texttemplate "text/template"
 )
 
-//go:embed templates/admin_invite.html.tmpl templates/admin_invite.txt.tmpl templates/password_reset.html.tmpl templates/password_reset.txt.tmpl templates/signup_verification.html.tmpl templates/signup_verification.txt.tmpl templates/incident_opened.html.tmpl templates/incident_opened.txt.tmpl templates/incident_resolved.html.tmpl templates/incident_resolved.txt.tmpl
+//go:embed templates/admin_invite.html.tmpl templates/admin_invite.txt.tmpl templates/password_reset.html.tmpl templates/password_reset.txt.tmpl templates/signup_verification.html.tmpl templates/signup_verification.txt.tmpl templates/incident_opened.html.tmpl templates/incident_opened.txt.tmpl templates/incident_resolved.html.tmpl templates/incident_resolved.txt.tmpl templates/weekly_digest.html.tmpl templates/weekly_digest.txt.tmpl
 var templateFS embed.FS
 
 const (
@@ -22,6 +22,8 @@ const (
 	incidentOpenedTextTemplatePath     = "templates/incident_opened.txt.tmpl"
 	incidentResolvedHTMLTemplatePath   = "templates/incident_resolved.html.tmpl"
 	incidentResolvedTextTemplatePath   = "templates/incident_resolved.txt.tmpl"
+	weeklyDigestHTMLTemplatePath       = "templates/weekly_digest.html.tmpl"
+	weeklyDigestTextTemplatePath       = "templates/weekly_digest.txt.tmpl"
 )
 
 // templates holds every parsed template this package renders. Parsed once
@@ -39,6 +41,8 @@ type templates struct {
 	incidentOpenedText     *texttemplate.Template
 	incidentResolvedHTML   *htmltemplate.Template
 	incidentResolvedText   *texttemplate.Template
+	weeklyDigestHTML       *htmltemplate.Template
+	weeklyDigestText       *texttemplate.Template
 }
 
 // parseTemplates parses every embedded email template, returning an error
@@ -94,6 +98,16 @@ func parseTemplates() (*templates, error) {
 		return nil, fmt.Errorf("email: failed to parse incident resolved text template: %w", err)
 	}
 
+	weeklyDigestHTML, err := htmltemplate.ParseFS(templateFS, weeklyDigestHTMLTemplatePath)
+	if err != nil {
+		return nil, fmt.Errorf("email: failed to parse weekly digest html template: %w", err)
+	}
+
+	weeklyDigestText, err := texttemplate.ParseFS(templateFS, weeklyDigestTextTemplatePath)
+	if err != nil {
+		return nil, fmt.Errorf("email: failed to parse weekly digest text template: %w", err)
+	}
+
 	return &templates{
 		adminInviteHTML:        adminInviteHTML,
 		adminInviteText:        adminInviteText,
@@ -105,6 +119,8 @@ func parseTemplates() (*templates, error) {
 		incidentOpenedText:     incidentOpenedText,
 		incidentResolvedHTML:   incidentResolvedHTML,
 		incidentResolvedText:   incidentResolvedText,
+		weeklyDigestHTML:       weeklyDigestHTML,
+		weeklyDigestText:       weeklyDigestText,
 	}, nil
 }
 
@@ -183,6 +199,22 @@ func (t *templates) renderIncidentResolved(data IncidentResolvedEmailData) (html
 	var textBuf bytes.Buffer
 	if err := t.incidentResolvedText.Execute(&textBuf, data); err != nil {
 		return "", "", fmt.Errorf("email: failed to render incident resolved text template: %w", err)
+	}
+
+	return htmlBuf.String(), textBuf.String(), nil
+}
+
+// renderWeeklyDigest renders both the HTML and plain-text weekly-digest bodies
+// from data.
+func (t *templates) renderWeeklyDigest(data WeeklyDigestEmailData) (htmlBody, textBody string, err error) {
+	var htmlBuf bytes.Buffer
+	if err := t.weeklyDigestHTML.Execute(&htmlBuf, data); err != nil {
+		return "", "", fmt.Errorf("email: failed to render weekly digest html template: %w", err)
+	}
+
+	var textBuf bytes.Buffer
+	if err := t.weeklyDigestText.Execute(&textBuf, data); err != nil {
+		return "", "", fmt.Errorf("email: failed to render weekly digest text template: %w", err)
 	}
 
 	return htmlBuf.String(), textBuf.String(), nil

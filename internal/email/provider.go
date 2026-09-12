@@ -46,6 +46,7 @@ type Sender interface {
 	SendSignupVerification(ctx context.Context, to string, data SignupVerificationEmailData) error
 	SendIncidentOpened(ctx context.Context, to string, data IncidentOpenedEmailData) error
 	SendIncidentResolved(ctx context.Context, to string, data IncidentResolvedEmailData) error
+	SendWeeklyDigest(ctx context.Context, to string, data WeeklyDigestEmailData) error
 }
 
 // AdminInviteEmailData is the data the admin-invite template renders.
@@ -104,6 +105,25 @@ type IncidentResolvedEmailData struct {
 	Severity string
 	// DashboardURL links to the incident in the admin dashboard.
 	DashboardURL string
+}
+
+// WeeklyDigestEmailData is the data the weekly digest template renders
+// (notification-preferences NOTIFPREF-10). The aggregates are computed by the
+// caller (DigestScheduler) from existing data; this struct only carries the
+// values.
+type WeeklyDigestEmailData struct {
+	// TenantName is the tenant the digest summarizes.
+	TenantName string
+	// UptimePercent is the tenant's uptime over the period, 0-100.
+	UptimePercent float64
+	// IncidentsOpened is how many incidents opened during the period.
+	IncidentsOpened int
+	// IncidentsResolved is how many incidents resolved during the period.
+	IncidentsResolved int
+	// PeriodStart and PeriodEnd are preformatted date strings for the period
+	// the digest covers.
+	PeriodStart string
+	PeriodEnd   string
 }
 
 // Typed errors shared by both connectors, since the HTTP-behavior

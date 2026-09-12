@@ -723,3 +723,148 @@ func TestSendIncidentResolved_ProviderSendFails_ReturnsErrorUnmodified_ExactlyOn
 		t.Errorf("Provider.Send call count = %d, want exactly 1 (no retry)", sentProvider.sendCalls)
 	}
 }
+
+// The five tests below cover SendWeeklyDigest (notification-preferences
+// NOTIFPREF-10/12): no active provider, the happy path, a send failure, the
+// zero-activity rendering, and the generic subject when the tenant name is
+// empty.
+
+func TestSendWeeklyDigest_NoActiveProvider_ReturnsErrNoActiveProvider_NeverCallsSend(t *testing.T) {
+	store := newFakeStore()
+	sentProvider := &fakeProvider{}
+	svc := newTestService(t, store, func(provider, apiKey string) (Provider, error) { return sentProvider, nil })
+
+	err := svc.SendWeeklyDigest(t.Context(), "owner@example.com", WeeklyDigestEmailData{
+		TenantName: "Acme", UptimePercent: 99.9, IncidentsOpened: 2, IncidentsResolved: 1,
+		PeriodStart: "2026-09-01", PeriodEnd: "2026-09-08",
+	})
+	if !errors.Is(err, ErrNoActiveProvider) {
+		t.Fatalf("SendWeeklyDigest() error = %v, want ErrNoActiveProvider", err)
+	}
+	if sentProvider.sendCalls != 0 {
+		t.Errorf("Provider.Send call count = %d, want 0 (zero network calls with no active provider)", sentProvider.sendCalls)
+	}
+}
+
+func TestSendWeeklyDigest_ActiveProvider_RendersTemplateAndSendsWithDecryptedKeyAndStoredSender(t *testing.T) {
+	store := newFakeStore()
+	sentProvider := &fakeProvider{}
+	var factoryProvider, factoryAPIKey string
+	factory := func(provider, apiKey string) (Provider, error) {
+		factoryProvider = provider
+		factoryAPIKey = apiKey
+		return sentProvider, nil
+	}
+	svc := newTestService(t, store, factory)
+
+	if err := svc.Connect(t.Context(), "sendgrid", "decrypted-api-key", "digest@acme.example.com", "Acme Digest"); err != nil {
+		t.Fatalf("Connect() returned unexpected error: %v", err)
+	}
+	if err := svc.Activate(t.Context(), "sendgrid"); err != nil {
+		t.Fatalf("Activate() returned unexpected error: %v", err)
+	}
+
+	data := WeeklyDigestEmailData{
+		TenantName: "Acme Inc.", UptimePercent: 99.95, IncidentsOpened: 3, IncidentsResolved: 2,
+		PeriodStart: "2026-09-01", PeriodEnd: "2026-09-08",
+	}
+	if err := svc.SendWeeklyDigest(t.Context(), "owner@example.com", data); err != nil {
+		t.Fatalf("SendWeeklyDigest() returned unexpected error: %v", err)
+	}
+
+	if sentProvider.sendCalls != 1 {
+		t.Fatalf("Provider.Send call count = %d, want 1", sentProvider.sendCalls)
+	}
+	if factoryProvider != "sendgrid" {
+		t.Errorf("factory provider = %q, want %q", factoryProvider, "sendgrid")
+	}
+	if factoryAPIKey != "decrypted-api-key" {
+		t.Errorf("factory apiKey = %q, want decrypted value %q", factoryAPIKey, "decrypted-api-key")
+	}
+
+	msg := sentProvider.lastMessage
+	if msg.To != "owner@example.com" {
+		t.Errorf("Message.To = %q, want %q", msg.To, "owner@example.com")
+	}
+	if msg.FromEmail != "digest@acme.example.com" || msg.FromName != "Acme Digest" {
+		t.Errorf("Message.FromEmail/FromName = %q/%q, want stored %q/%q", msg.FromEmail, msg.FromName, "digest@acme.example.com", "Acme Digest")
+	}
+	if msg.Subject != "Weekly digest for Acme Inc." {
+		t.Errorf("Message.Subject = %q, want %q", msg.Subject, "Weekly digest for Acme Inc.")
+	}
+	for field, body := range map[string]string{"HTMLBody": msg.HTMLBody, "TextBody": msg.TextBody} {
+		if !strings.Contains(body, "99.95%") || !strings.Contains(body, "Incidents opened: 3") || !strings.Contains(body, "Incidents resolved: 2") {
+			t.Errorf("%s = %q, want uptime 99.95%% and incident counts 3/2", field, body)
+		}
+		if !strings.Contains(body, data.PeriodStart) || !strings.Contains(body, data.PeriodEnd) {
+			t.Errorf("%s = %q, want the period %q..%q", field, body, data.PeriodStart, data.PeriodEnd)
+		}
+	}
+}
+
+func TestSendWeeklyDigest_ProviderSendFails_ReturnsErrorUnmodified_ExactlyOneCall(t *testing.T) {
+	store := newFakeStore()
+	sendFailure := errors.New("sendgrid: server error")
+	sentProvider := &fakeProvider{sendErr: sendFailure}
+	svc := newTestService(t, store, func(provider, apiKey string) (Provider, error) { return sentProvider, nil })
+
+	if err := svc.Connect(t.Context(), "sendgrid", "api-key", "owner@example.com", "Owner"); err != nil {
+		t.Fatalf("Connect() returned unexpected error: %v", err)
+	}
+	if err := svc.Activate(t.Context(), "sendgrid"); err != nil {
+		t.Fatalf("Activate() returned unexpected error: %v", err)
+	}
+
+	err := svc.SendWeeklyDigest(t.Context(), "owner@example.com", WeeklyDigestEmailData{TenantName: "Acme", UptimePercent: 100})
+	if !errors.Is(err, sendFailure) {
+		t.Fatalf("SendWeeklyDigest() error = %v, want the underlying send failure %v unmodified", err, sendFailure)
+	}
+	if sentProvider.sendCalls != 1 {
+		t.Errorf("Provider.Send call count = %d, want exactly 1 (no retry)", sentProvider.sendCalls)
+	}
+}
+
+func TestSendWeeklyDigest_ZeroIncidents_RendersZeroCounts(t *testing.T) {
+	store := newFakeStore()
+	sentProvider := &fakeProvider{}
+	svc := newTestService(t, store, func(provider, apiKey string) (Provider, error) { return sentProvider, nil })
+	if err := svc.Connect(t.Context(), "sendgrid", "api-key", "digest@acme.example.com", "Acme"); err != nil {
+		t.Fatalf("Connect() returned unexpected error: %v", err)
+	}
+	if err := svc.Activate(t.Context(), "sendgrid"); err != nil {
+		t.Fatalf("Activate() returned unexpected error: %v", err)
+	}
+
+	if err := svc.SendWeeklyDigest(t.Context(), "owner@example.com", WeeklyDigestEmailData{
+		TenantName: "Acme", UptimePercent: 100, IncidentsOpened: 0, IncidentsResolved: 0,
+		PeriodStart: "2026-09-01", PeriodEnd: "2026-09-08",
+	}); err != nil {
+		t.Fatalf("SendWeeklyDigest() returned unexpected error: %v", err)
+	}
+
+	if !strings.Contains(sentProvider.lastMessage.TextBody, "Incidents opened: 0") {
+		t.Errorf("TextBody = %q, want a zero-incident digest to still render count 0", sentProvider.lastMessage.TextBody)
+	}
+	if !strings.Contains(sentProvider.lastMessage.TextBody, "100.00%") {
+		t.Errorf("TextBody = %q, want 100.00%% uptime", sentProvider.lastMessage.TextBody)
+	}
+}
+
+func TestSendWeeklyDigest_EmptyTenantName_SubjectIsGeneric(t *testing.T) {
+	store := newFakeStore()
+	sentProvider := &fakeProvider{}
+	svc := newTestService(t, store, func(provider, apiKey string) (Provider, error) { return sentProvider, nil })
+	if err := svc.Connect(t.Context(), "sendgrid", "api-key", "digest@acme.example.com", "Acme"); err != nil {
+		t.Fatalf("Connect() returned unexpected error: %v", err)
+	}
+	if err := svc.Activate(t.Context(), "sendgrid"); err != nil {
+		t.Fatalf("Activate() returned unexpected error: %v", err)
+	}
+
+	if err := svc.SendWeeklyDigest(t.Context(), "owner@example.com", WeeklyDigestEmailData{UptimePercent: 100}); err != nil {
+		t.Fatalf("SendWeeklyDigest() returned unexpected error: %v", err)
+	}
+	if sentProvider.lastMessage.Subject != "Weekly digest" {
+		t.Errorf("Message.Subject = %q, want %q for an empty tenant name", sentProvider.lastMessage.Subject, "Weekly digest")
+	}
+}
