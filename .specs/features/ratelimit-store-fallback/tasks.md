@@ -140,11 +140,11 @@ T2 → T5
 - Skill: NONE
 
 **Done when**:
-- [ ] Crossing `sweepThreshold` on the fallback path sweeps the fallback store (stale entry evicted)
-- [ ] Crossing `sweepThreshold` on the primary path sweeps the primary store (behavior unchanged)
-- [ ] Cleanup error stays best-effort (logged, never on the request path)
-- [ ] Gate check passes: `go test ./internal/ratelimit/...`
-- [ ] Test count: ≥2 new subtests
+- [x] Crossing `sweepThreshold` on the fallback path sweeps the fallback store (stale entry evicted)
+- [x] Crossing `sweepThreshold` on the primary path sweeps the primary store (behavior unchanged)
+- [x] Cleanup error stays best-effort (logged, never on the request path)
+- [x] Gate check passes: `go test ./internal/ratelimit/...`
+- [x] Test count: ≥2 new subtests
 
 **Tests**: unit
 **Gate**: quick

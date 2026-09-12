@@ -246,6 +246,7 @@ func TestIPLimiter_IdleEntrySwept_BucketResetsAfterThresholdExceeded(t *testing.
 type spyBucketStore struct {
 	mu         sync.Mutex
 	calls      int
+	cleanups   int
 	err        error
 	block      chan struct{}
 	allowValue bool
@@ -268,12 +269,23 @@ func (s *spyBucketStore) allow(_ context.Context, _ string, _ int, _ float64) (b
 	return allowValue, nil
 }
 
-func (s *spyBucketStore) cleanup(_ context.Context, _ time.Duration) error { return nil }
+func (s *spyBucketStore) cleanup(_ context.Context, _ time.Duration) error {
+	s.mu.Lock()
+	s.cleanups++
+	s.mu.Unlock()
+	return nil
+}
 
 func (s *spyBucketStore) callCount() int {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.calls
+}
+
+func (s *spyBucketStore) cleanupCount() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.cleanups
 }
 
 func waitForCalls(t *testing.T, s *spyBucketStore, want int) {
@@ -464,5 +476,64 @@ func TestIPLimiter_HalfOpenProbeFailure_RearmsCooldown(t *testing.T) {
 	limiter.mu.Unlock()
 	if !openUntil.After(time.Now()) {
 		t.Errorf("breakerOpenUntil = %v, want in the future (re-armed)", openUntil)
+	}
+}
+
+// TestIPLimiter_Sweep_FallbackPathSweepsFallback covers RLF-08: when the
+// circuit routes the sweep call to the fallback, the fallback's idle buckets
+// are the ones evicted.
+func TestIPLimiter_Sweep_FallbackPathSweepsFallback(t *testing.T) {
+	primary := newFakeBucketStore()
+	primary.err = errors.New("primary down")
+	fallback := newFakeBucketStore()
+	limiter := newIPLimiterWithStore(primary, fallback, 60, 1, time.Minute)
+	ctx := context.Background()
+
+	// First call opens the circuit and creates a fallback bucket.
+	if !limiter.allow(ctx, "stale") {
+		t.Fatal("first allow() = false, want true (fallback)")
+	}
+
+	fallback.mu.Lock()
+	fallback.buckets["stale"].lastRefill = time.Now().Add(-2 * time.Hour)
+	fallback.mu.Unlock()
+
+	limiter.mu.Lock()
+	limiter.callCount = sweepThreshold
+	limiter.mu.Unlock()
+
+	if !limiter.allow(ctx, "other") {
+		t.Fatal("sweep call: allow() = false, want true (fallback)")
+	}
+
+	fallback.mu.Lock()
+	_, kept := fallback.buckets["stale"]
+	fallback.mu.Unlock()
+	if kept {
+		t.Error("stale fallback bucket still present, want evicted (sweep targeted the fallback)")
+	}
+}
+
+// TestIPLimiter_Sweep_PrimaryPathSweepsPrimary covers RLF-08: with the
+// circuit closed the sweep call cleans up the primary store, not the
+// fallback.
+func TestIPLimiter_Sweep_PrimaryPathSweepsPrimary(t *testing.T) {
+	primary := &spyBucketStore{allowValue: true}
+	fallback := &spyBucketStore{allowValue: true}
+	limiter := newIPLimiterWithStore(primary, fallback, 60, 1, time.Minute)
+
+	limiter.mu.Lock()
+	limiter.callCount = sweepThreshold
+	limiter.mu.Unlock()
+
+	if !limiter.allow(context.Background(), "ip") {
+		t.Fatal("sweep call: allow() = false, want true")
+	}
+
+	if got := primary.cleanupCount(); got != 1 {
+		t.Errorf("primary cleanups = %d, want 1 (sweep targeted the primary)", got)
+	}
+	if got := fallback.cleanupCount(); got != 0 {
+		t.Errorf("fallback cleanups = %d, want 0 (circuit closed)", got)
 	}
 }
