@@ -4,7 +4,7 @@
 
 ## Problem Statement
 
-The redesigned Meu Perfil screen (`handoff-new-layout/Meu Perfil.dc.html`) shows three notification toggles: "Novo incidente", "Incidente resolvido", and "Resumo semanal". Today no `NotificationPreference` model exists, and — more importantly — nothing in this codebase ever sends an email when an incident opens or resolves (`internal/email/service.go` has exactly three fixed-purpose methods: `SendAdminInvite`, `SendSignupVerification`, `SendPasswordReset`). A preference toggle with no real send behind it would be decorative UI. This spec adds the preference model, wires real email delivery into the two incident lifecycle events, and adds a weekly digest as a new scheduled job.
+The redesigned Meu Perfil screen (`handoff-new-layout/Meu Perfil.dc.html`) shows three notification toggles: "Novo incidente", "Incidente resolvido", and "Resumo semanal". Today no `NotificationPreference` model exists, and — more importantly — nothing in this codebase ever sends an email when an incident opens or resolves (`internal/email/service.go` has exactly three fixed-purpose methods: `SendAdminInvite`, `SendSignupVerification`, `SendPasswordReset`). A preference toggle with no real send behind it would be decorative UI. This spec adds the preference model, wires real email delivery into the two incident lifecycle events, and adds a weekly digest as a new scheduled job. It also builds the `Notificações` section of Meu Perfil itself (the three toggles), which `profile-page` deferred on purpose — without it the endpoints have no UI to drive them.
 
 ## Goals
 
@@ -13,6 +13,7 @@ The redesigned Meu Perfil screen (`handoff-new-layout/Meu Perfil.dc.html`) shows
 - [ ] When any incident's status becomes `resolved` (via either `Transition` or `ConfirmClose`), every `owner`/`operator` member with `incident_resolved` enabled receives a real email.
 - [ ] Once a week, every `owner`/`operator` member with `weekly_digest` enabled receives a real email summarizing uptime and incident activity for their tenant — sent exactly once per tenant per week, even with multiple running replicas.
 - [ ] A failed email send never blocks or fails the incident action itself (matches the existing non-fatal send pattern already used elsewhere).
+- [ ] The Meu Perfil screen has a working `Notificações` section whose three toggles read and write the calling user's preferences (`GET`/`PATCH /api/auth/notification-preferences`), shipped in pt-BR and English.
 
 ## Out of Scope
 
@@ -39,6 +40,10 @@ The redesigned Meu Perfil screen (`handoff-new-layout/Meu Perfil.dc.html`) shows
 | Weekly digest content | Per tenant: uptime summary (derived from `status_intervals`, same data `poller-status-real-state` reads) and count of incidents opened/resolved in the last 7 days (`incidents` filtered by `created_at`/`resolved_at`) | Directly answers "uptime and principais eventos da semana" from the mock's own toggle description, using only data that already exists — no new metric invented. | y — agent default, no objection raised |
 | Read/write endpoints | `GET /api/auth/notification-preferences` (self, returns all 3 types with resolved values, defaults applied) and `PATCH /api/auth/notification-preferences` (self, body `{incident_opened?, incident_resolved?, weekly_digest?}`, partial update — omitted keys unchanged) | Matches `profile-self-service`'s self-scoped pattern; partial-update body matches how the mock's individual toggles fire one change at a time, not a full-form submit. | y — agent default, no objection raised |
 | RBAC | `anyRole`, self only, on both endpoints | Personal preference, same posture as every other Meu Perfil endpoint this cycle. | y — agent default, no objection raised |
+| Frontend placement | New `web/src/features/notifications/` module (`NotificationsSection` + hooks + types), consumed by `ProfilePage`, mirroring `features/sessions/` and `features/two-factor/` | User decision (2026-09-12): keeps `features/profile/` focused on its own cards and gives the notification UI an independently testable boundary; the alternative (a card inside `features/profile/`) grows that module for no benefit. | y (user) |
+| Toggle interaction | Each toggle fires its own optimistic `PATCH` of a single key; on failure the toggle reverts and shows an error toast, leaving the other toggles untouched | Matches the mock's per-toggle behavior and this spec's partial-update contract; a full-form save would contradict the individual toggle model. | y (user) |
+| Frontend testing | Component + hook tests via vitest; MSW handlers for `GET`/`PATCH /api/auth/notification-preferences` mirroring the backend response shape (defaults applied) | `AGENTS.md` §5 requires MSW mocks to mirror the real backend shape; hooks own the network call so tests intercept at MSW, consistent with every other feature this cycle. | y — agent default, no objection raised |
+| i18n | All new user-facing strings under `profile.notifications.*` in both pt-BR and en | `AGENTS.md` §5: no hardcoded strings; the app ships both locales. | y — agent default, no objection raised |
 
 **Open questions:** none — all resolved or logged above.
 
@@ -59,6 +64,23 @@ The redesigned Meu Perfil screen (`handoff-new-layout/Meu Perfil.dc.html`) shows
 3. The system SHALL scope both endpoints to the caller's own preferences — no request body or parameter can target another user's rows.
 
 **Independent Test**: `GET` for a brand-new user with no rows, confirm the documented defaults; `PATCH {weekly_digest: true}`, `GET` again and confirm only `weekly_digest` changed.
+
+---
+
+### P1: Notification preferences are edited from Meu Perfil ⭐ MVP
+
+**User Story**: As an authenticated user, I want a `Notificações` section on the Meu Perfil screen with the three toggles, so I can manage my preferences without leaving the dashboard or touching an API.
+
+**Why P1**: The endpoints only have value with a UI to drive them; `profile-page` deliberately deferred this section, and this feature closes that gap in the same cycle.
+
+**Acceptance Criteria**:
+
+1. WHEN an authenticated user opens Meu Perfil THEN the system SHALL render a `Notificações` section with three toggles (novo incidente, incidente resolvido, resumo semanal) reflecting the values returned by `GET /api/auth/notification-preferences`. <!-- event-driven -->
+2. WHEN the user flips one toggle THEN the system SHALL send a `PATCH` for that single key and reflect the new state immediately, reverting the toggle and surfacing an error toast if the request fails. <!-- event-driven -->
+3. WHILE the initial preferences request is in flight THEN the section SHALL show a loading state with its toggles disabled. <!-- state-driven -->
+4. IF the initial preferences request fails THEN the section SHALL show an inline error state without affecting the other Meu Perfil cards. <!-- unwanted-behavior -->
+
+**Independent Test**: Render Meu Perfil against MSW with a user at defaults; confirm the three toggles match, flip "resumo semanal" and confirm exactly one PATCH carrying `{weekly_digest: true}`, then make MSW return 500 and confirm the toggle reverts with a toast.
 
 ---
 
@@ -123,20 +145,24 @@ The redesigned Meu Perfil screen (`handoff-new-layout/Meu Perfil.dc.html`) shows
 
 | Requirement ID | Story | Phase | Status |
 | --- | --- | --- | --- |
-| NOTIFPREF-01 | P1: Manage own preferences (read with defaults) | - | Pending |
-| NOTIFPREF-02 | P1: Manage own preferences (partial update) | - | Pending |
-| NOTIFPREF-03 | P1: Manage own preferences (self-scoped) | - | Pending |
-| NOTIFPREF-04 | P1: Emailed on incident opened | - | Pending |
-| NOTIFPREF-05 | P1: Opened email non-fatal on send failure | - | Pending |
-| NOTIFPREF-06 | P1: Opened email respects preference/role | - | Pending |
-| NOTIFPREF-07 | P1: Emailed on incident resolved (Transition) | - | Pending |
-| NOTIFPREF-08 | P1: Emailed on incident resolved (ConfirmClose) | - | Pending |
-| NOTIFPREF-09 | P1: No email on non-resolving transition | - | Pending |
-| NOTIFPREF-10 | P2: Weekly digest sent per tenant | - | Pending |
-| NOTIFPREF-11 | P2: Weekly digest deduped across replicas | - | Pending |
-| NOTIFPREF-12 | P2: No digest email when nobody opted in | - | Pending |
+| NOTIFPREF-01 | P1: Manage own preferences (read with defaults) | T1, T2, T3 | Implementing |
+| NOTIFPREF-02 | P1: Manage own preferences (partial update) | T2, T3 | Implementing |
+| NOTIFPREF-03 | P1: Manage own preferences (self-scoped) | T2, T3 | Implementing |
+| NOTIFPREF-04 | P1: Emailed on incident opened | T4, T5, T6 | Pending |
+| NOTIFPREF-05 | P1: Opened email non-fatal on send failure | T4, T5, T6 | Pending |
+| NOTIFPREF-06 | P1: Opened email respects preference/role | T5, T6 | Pending |
+| NOTIFPREF-07 | P1: Emailed on incident resolved (Transition) | T4, T5, T6 | Pending |
+| NOTIFPREF-08 | P1: Emailed on incident resolved (ConfirmClose) | T4, T5, T6 | Pending |
+| NOTIFPREF-09 | P1: No email on non-resolving transition | T5, T6 | Pending |
+| NOTIFPREF-10 | P2: Weekly digest sent per tenant | T7, T8, T9 | Pending |
+| NOTIFPREF-11 | P2: Weekly digest deduped across replicas | T8 | Pending |
+| NOTIFPREF-12 | P2: No digest email when nobody opted in | T7, T8 | Pending |
+| NOTIFPREF-13 | P1: Notifications section reflects stored preferences | T10, T12, T13 | Pending |
+| NOTIFPREF-14 | P1: Single-key optimistic toggle with revert on failure | T10, T12 | Pending |
+| NOTIFPREF-15 | P1: Loading state while preferences load | T12 | Pending |
+| NOTIFPREF-16 | P1: Inline error state does not break the page | T12 | Pending |
 
-**Coverage:** 12 total, 0 mapped to tasks, 12 unmapped ⚠️ (Large scope — Design phase covers the weekly digest scheduler before Execute)
+**Coverage:** 16 total, 16 mapped to tasks, 0 unmapped
 
 ---
 
@@ -146,3 +172,4 @@ The redesigned Meu Perfil screen (`handoff-new-layout/Meu Perfil.dc.html`) shows
 - [ ] Incident-opened and incident-resolved emails reach every opted-in owner/operator, never a viewer, and never block the triggering action on send failure.
 - [ ] The weekly digest fires exactly once per tenant per week even with multiple replicas running.
 - [ ] No new queue/worker infrastructure is introduced for the two event-driven sends.
+- [ ] The `Notificações` section on Meu Perfil reads and writes the caller's preferences with per-toggle optimistic updates, and is localized in pt-BR and English.

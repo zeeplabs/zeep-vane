@@ -22,6 +22,13 @@ var notificationDefaultEnabled = map[string]bool{
 	NotificationTypeWeeklyDigest:     false,
 }
 
+// NotificationDefaultEnabled reports the documented default for
+// notificationType when a user has no stored row: the two incident types
+// default on, the weekly digest defaults off.
+func NotificationDefaultEnabled(notificationType string) bool {
+	return notificationDefaultEnabled[notificationType]
+}
+
 // NotificationPreferenceRepository owns the `notification_preferences` table
 // (migration 0032): one narrow row per (user, notification type). Like
 // `sessions`, this is personal data, not tenant-scoped - it has no tenant_id

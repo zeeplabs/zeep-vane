@@ -163,6 +163,10 @@ func buildAdminRouter(pool *db.Pool, cfg config.Config, logger *zap.Logger, poll
 		// switch-tenant are for.
 		protected.Get("/api/auth/me", authHandler.Me)
 		protected.Patch("/api/auth/me", authHandler.UpdateProfile)
+		// Personal notification toggles (notification-preferences NOTIFPREF-01/02/03) -
+		// self only, anyRole, same posture as /api/auth/me above.
+		protected.Get("/api/auth/notification-preferences", authHandler.GetNotificationPreferences)
+		protected.Patch("/api/auth/notification-preferences", authHandler.UpdateNotificationPreferences)
 		protected.Post("/api/auth/logout", authHandler.Logout)
 		protected.Post("/api/auth/switch-tenant", authHandler.SwitchTenant)
 		// Per-device session management (user-sessions spec) - self-only,

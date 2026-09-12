@@ -316,6 +316,8 @@ func newMeRouter(t *testing.T) (http.Handler, *db.UserRepository, *db.Pool) {
 		protected.Use(RequireAuth(testSessionSecret, repo, db.NewSessionRepository(pool), zap.NewNop()), TenantContext(pool, db.NewTenantMembershipRepository(pool), zap.NewNop()))
 		protected.Get("/api/auth/me", handler.Me)
 		protected.Patch("/api/auth/me", handler.UpdateProfile)
+		protected.Get("/api/auth/notification-preferences", handler.GetNotificationPreferences)
+		protected.Patch("/api/auth/notification-preferences", handler.UpdateNotificationPreferences)
 		protected.Post("/api/auth/switch-tenant", handler.SwitchTenant)
 		protected.Post("/api/auth/change-password", handler.ChangePassword)
 	})
@@ -1933,5 +1935,231 @@ func TestLogout_ReplayedRawToken_401RevokedRow(t *testing.T) {
 	}
 	if !revokedAt.Valid {
 		t.Fatal("sessions.revoked_at still NULL after logout, want set - the 401 above must come from row revocation, not the cookie gate")
+	}
+}
+
+func getNotificationPreferences(t *testing.T, r http.Handler, token string) *httptest.ResponseRecorder {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodGet, "/api/auth/notification-preferences", nil)
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+	return rec
+}
+
+func patchNotificationPreferences(t *testing.T, r http.Handler, token string, body []byte) *httptest.ResponseRecorder {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodPatch, "/api/auth/notification-preferences", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+	return rec
+}
+
+func decodeNotificationPreferences(t *testing.T, rec *httptest.ResponseRecorder) notificationPreferencesResponse {
+	t.Helper()
+	var resp notificationPreferencesResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v (body %s)", err, rec.Body.String())
+	}
+	return resp
+}
+
+// TestGetNotificationPreferences_NoRows_ReturnsDefaults covers NOTIFPREF-01:
+// a user with no stored rows gets the documented defaults (incident opened and
+// resolved on, weekly digest off).
+func TestGetNotificationPreferences_NoRows_ReturnsDefaults(t *testing.T) {
+	r, repo, pool := newMeRouter(t)
+	email := uniqueTestEmail(t)
+	tenantID := createTestAdmin(t, repo, pool, email, "correct-horse-battery-staple")
+	admin, err := repo.GetByEmail(context.Background(), email)
+	if err != nil {
+		t.Fatalf("GetByEmail() returned unexpected error: %v", err)
+	}
+	token := issueTestTokenFor(t, admin, tenantID)
+
+	rec := getNotificationPreferences(t, r, token)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	resp := decodeNotificationPreferences(t, rec)
+	if !resp.IncidentOpened {
+		t.Errorf("incident_opened = false, want default true")
+	}
+	if !resp.IncidentResolved {
+		t.Errorf("incident_resolved = false, want default true")
+	}
+	if resp.WeeklyDigest {
+		t.Errorf("weekly_digest = true, want default false")
+	}
+}
+
+// TestGetNotificationPreferences_StoredValue_Returned covers NOTIFPREF-01: a
+// stored row overrides the default for that type.
+func TestGetNotificationPreferences_StoredValue_Returned(t *testing.T) {
+	r, repo, pool := newMeRouter(t)
+	ctx := context.Background()
+	email := uniqueTestEmail(t)
+	tenantID := createTestAdmin(t, repo, pool, email, "correct-horse-battery-staple")
+	admin, err := repo.GetByEmail(ctx, email)
+	if err != nil {
+		t.Fatalf("GetByEmail() returned unexpected error: %v", err)
+	}
+	token := issueTestTokenFor(t, admin, tenantID)
+
+	if err := db.NewNotificationPreferenceRepository(pool).Upsert(ctx, admin.ID, map[string]bool{
+		db.NotificationTypeWeeklyDigest: true,
+	}); err != nil {
+		t.Fatalf("Upsert() returned unexpected error: %v", err)
+	}
+
+	rec := getNotificationPreferences(t, r, token)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
+	}
+	resp := decodeNotificationPreferences(t, rec)
+	if !resp.WeeklyDigest {
+		t.Errorf("weekly_digest = false, want stored true")
+	}
+}
+
+// TestUpdateNotificationPreferences_PartialUpdate_ChangesOnlyProvidedKey
+// covers NOTIFPREF-02: PATCH changes the provided key and leaves stored keys
+// omitted from the body untouched.
+func TestUpdateNotificationPreferences_PartialUpdate_ChangesOnlyProvidedKey(t *testing.T) {
+	r, repo, pool := newMeRouter(t)
+	ctx := context.Background()
+	email := uniqueTestEmail(t)
+	tenantID := createTestAdmin(t, repo, pool, email, "correct-horse-battery-staple")
+	admin, err := repo.GetByEmail(ctx, email)
+	if err != nil {
+		t.Fatalf("GetByEmail() returned unexpected error: %v", err)
+	}
+	token := issueTestTokenFor(t, admin, tenantID)
+
+	if err := db.NewNotificationPreferenceRepository(pool).Upsert(ctx, admin.ID, map[string]bool{
+		db.NotificationTypeIncidentOpened: false,
+	}); err != nil {
+		t.Fatalf("Upsert() returned unexpected error: %v", err)
+	}
+
+	rec := patchNotificationPreferences(t, r, token, []byte(`{"weekly_digest":true}`))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	resp := decodeNotificationPreferences(t, rec)
+	if !resp.WeeklyDigest {
+		t.Errorf("weekly_digest = false, want true after PATCH")
+	}
+	if resp.IncidentOpened {
+		t.Errorf("incident_opened = true, want stored false left untouched by the omitted key")
+	}
+
+	// A fresh GET confirms persistence, not just the response echo.
+	got := decodeNotificationPreferences(t, getNotificationPreferences(t, r, token))
+	if !got.WeeklyDigest || got.IncidentOpened {
+		t.Errorf("GET after PATCH = %+v, want weekly_digest true and incident_opened false", got)
+	}
+}
+
+// TestUpdateNotificationPreferences_MultipleKeys_AllUpdated covers NOTIFPREF-02
+// for a body carrying more than one key.
+func TestUpdateNotificationPreferences_MultipleKeys_AllUpdated(t *testing.T) {
+	r, repo, pool := newMeRouter(t)
+	email := uniqueTestEmail(t)
+	tenantID := createTestAdmin(t, repo, pool, email, "correct-horse-battery-staple")
+	admin, err := repo.GetByEmail(context.Background(), email)
+	if err != nil {
+		t.Fatalf("GetByEmail() returned unexpected error: %v", err)
+	}
+	token := issueTestTokenFor(t, admin, tenantID)
+
+	rec := patchNotificationPreferences(t, r, token, []byte(`{"incident_opened":false,"incident_resolved":false}`))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	resp := decodeNotificationPreferences(t, rec)
+	if resp.IncidentOpened || resp.IncidentResolved {
+		t.Errorf("response = %+v, want both incident toggles false", resp)
+	}
+}
+
+// TestUpdateNotificationPreferences_ScopedToCaller_OtherUserUntouched covers
+// NOTIFPREF-03: the endpoint writes only the caller's own rows - no field in
+// the body can reach another user.
+func TestUpdateNotificationPreferences_ScopedToCaller_OtherUserUntouched(t *testing.T) {
+	r, repo, pool := newMeRouter(t)
+	ctx := context.Background()
+
+	emailA := uniqueTestEmail(t)
+	tenantA := createTestAdmin(t, repo, pool, emailA, "correct-horse-battery-staple")
+	adminA, err := repo.GetByEmail(ctx, emailA)
+	if err != nil {
+		t.Fatalf("GetByEmail(A) returned unexpected error: %v", err)
+	}
+	tokenA := issueTestTokenFor(t, adminA, tenantA)
+
+	emailB := uniqueTestEmail(t)
+	tenantB := createTestAdmin(t, repo, pool, emailB, "correct-horse-battery-staple")
+	adminB, err := repo.GetByEmail(ctx, emailB)
+	if err != nil {
+		t.Fatalf("GetByEmail(B) returned unexpected error: %v", err)
+	}
+	tokenB := issueTestTokenFor(t, adminB, tenantB)
+
+	rec := patchNotificationPreferences(t, r, tokenA, []byte(`{"weekly_digest":true}`))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("PATCH as A status = %d, want %d", rec.Code, http.StatusOK)
+	}
+
+	gotB := decodeNotificationPreferences(t, getNotificationPreferences(t, r, tokenB))
+	if gotB.WeeklyDigest {
+		t.Errorf("user B weekly_digest = true after A's PATCH, want false - endpoint is not self-scoped")
+	}
+}
+
+// TestGetNotificationPreferences_NoSession_401 covers the auth requirement.
+func TestGetNotificationPreferences_NoSession_401(t *testing.T) {
+	r, _, _ := newMeRouter(t)
+
+	rec := getNotificationPreferences(t, r, "")
+	if rec.Code != http.StatusUnauthorized {
+		t.Errorf("status = %d, want %d", rec.Code, http.StatusUnauthorized)
+	}
+}
+
+// TestUpdateNotificationPreferences_NoSession_401 covers the auth requirement.
+func TestUpdateNotificationPreferences_NoSession_401(t *testing.T) {
+	r, _, _ := newMeRouter(t)
+
+	rec := patchNotificationPreferences(t, r, "", []byte(`{"weekly_digest":true}`))
+	if rec.Code != http.StatusUnauthorized {
+		t.Errorf("status = %d, want %d", rec.Code, http.StatusUnauthorized)
+	}
+}
+
+// TestUpdateNotificationPreferences_InvalidBody_422 covers the malformed-body
+// failure path: nothing is persisted and the client gets a validation error.
+func TestUpdateNotificationPreferences_InvalidBody_422(t *testing.T) {
+	r, repo, pool := newMeRouter(t)
+	email := uniqueTestEmail(t)
+	tenantID := createTestAdmin(t, repo, pool, email, "correct-horse-battery-staple")
+	admin, err := repo.GetByEmail(context.Background(), email)
+	if err != nil {
+		t.Fatalf("GetByEmail() returned unexpected error: %v", err)
+	}
+	token := issueTestTokenFor(t, admin, tenantID)
+
+	rec := patchNotificationPreferences(t, r, token, []byte(`{not json`))
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusUnprocessableEntity)
+	}
+	if rec.Body.String() != invalidNotificationPreferencesBody {
+		t.Errorf("body = %q, want %q", rec.Body.String(), invalidNotificationPreferencesBody)
 	}
 }

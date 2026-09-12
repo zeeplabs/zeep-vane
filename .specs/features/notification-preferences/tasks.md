@@ -147,12 +147,12 @@ T12 → T13
 - Skill: NONE
 
 **Done when**:
-- [ ] `GET` for a brand-new user with no rows returns the documented defaults
-- [ ] `PATCH {weekly_digest: true}` changes only that key; a subsequent `GET` confirms the other two are unchanged
-- [ ] Both endpoints are scoped to the caller - no request field can target another user
-- [ ] Routes registered in `internal/cli/routes.go` behind `RequireAuth` only (`anyRole`, self)
-- [ ] Gate check passes on disposable Postgres: `TEST_DATABASE_URL=... go test -tags=integration ./internal/api/...`
-- [ ] Test count: ≥5 new tests
+- [x] `GET` for a brand-new user with no rows returns the documented defaults
+- [x] `PATCH {weekly_digest: true}` changes only that key; a subsequent `GET` confirms the other two are unchanged
+- [x] Both endpoints are scoped to the caller - no request field can target another user
+- [x] Routes registered in `internal/cli/routes.go` behind `RequireAuth` only (`anyRole`, self)
+- [x] Gate check passes on disposable Postgres: `TEST_DATABASE_URL=... go test -tags=integration ./internal/api/...`
+- [x] Test count: ≥5 new tests
 
 **Tests**: integration
 **Gate**: full

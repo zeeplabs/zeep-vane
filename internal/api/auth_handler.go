@@ -64,16 +64,17 @@ const twoFactorIssuer = "Vane"
 
 // AuthHandler serves the auth-related admin routes.
 type AuthHandler struct {
-	users         userGetter
-	memberships   authMembershipLister
-	twoFactor     twoFactorStore
-	challenges    twoFactorChallengeStore
-	sessions      *db.SessionRepository
-	pool          *db.Pool
-	logger        *zap.Logger
-	sessionSecret string
-	secureCookies bool
-	masterKey     string
+	users             userGetter
+	memberships       authMembershipLister
+	twoFactor         twoFactorStore
+	challenges        twoFactorChallengeStore
+	sessions          *db.SessionRepository
+	notificationPrefs *db.NotificationPreferenceRepository
+	pool              *db.Pool
+	logger            *zap.Logger
+	sessionSecret     string
+	secureCookies     bool
+	masterKey         string
 }
 
 // NewAuthHandler builds an AuthHandler backed by users, memberships,
@@ -94,7 +95,7 @@ type AuthHandler struct {
 // masterKey encrypts/decrypts TOTP secrets at rest (internal/crypto.Encrypt,
 // same primitive email_provider_repository.go uses for provider API keys).
 func NewAuthHandler(users userGetter, memberships authMembershipLister, twoFactor twoFactorStore, challenges twoFactorChallengeStore, sessions *db.SessionRepository, pool *db.Pool, logger *zap.Logger, sessionSecret string, secureCookies bool, masterKey string) *AuthHandler {
-	return &AuthHandler{users: users, memberships: memberships, twoFactor: twoFactor, challenges: challenges, sessions: sessions, pool: pool, logger: logger, sessionSecret: sessionSecret, secureCookies: secureCookies, masterKey: masterKey}
+	return &AuthHandler{users: users, memberships: memberships, twoFactor: twoFactor, challenges: challenges, sessions: sessions, notificationPrefs: db.NewNotificationPreferenceRepository(pool), pool: pool, logger: logger, sessionSecret: sessionSecret, secureCookies: secureCookies, masterKey: masterKey}
 }
 
 type loginRequest struct {
@@ -579,6 +580,109 @@ func (h *AuthHandler) UpdateProfile(w http.ResponseWriter, r *http.Request) {
 		ID: user.ID, Email: user.Email, Name: user.Name, Phone: user.Phone, Role: role,
 		ActiveTenantID: activeTenantID, Memberships: out,
 	})
+}
+
+type notificationPreferencesResponse struct {
+	IncidentOpened   bool `json:"incident_opened"`
+	IncidentResolved bool `json:"incident_resolved"`
+	WeeklyDigest     bool `json:"weekly_digest"`
+}
+
+// resolveNotificationPreferences fills in the documented default for any type
+// the caller has no stored row for.
+func resolveNotificationPreferences(stored map[string]bool) notificationPreferencesResponse {
+	resolve := func(notificationType string) bool {
+		if enabled, ok := stored[notificationType]; ok {
+			return enabled
+		}
+		return db.NotificationDefaultEnabled(notificationType)
+	}
+	return notificationPreferencesResponse{
+		IncidentOpened:   resolve(db.NotificationTypeIncidentOpened),
+		IncidentResolved: resolve(db.NotificationTypeIncidentResolved),
+		WeeklyDigest:     resolve(db.NotificationTypeWeeklyDigest),
+	}
+}
+
+// GetNotificationPreferences handles GET /api/auth/notification-preferences
+// (notification-preferences NOTIFPREF-01): it returns the caller's own three
+// toggles with the documented defaults applied to any type that has no stored
+// row. Self-only, anyRole: the user id comes from RequireAuth's context, so no
+// request field can target another user.
+func (h *AuthHandler) GetNotificationPreferences(w http.ResponseWriter, r *http.Request) {
+	user, ok := UserFromContext(r.Context())
+	if !ok {
+		writeUnauthorized(w)
+		return
+	}
+
+	stored, err := h.notificationPrefs.Get(r.Context(), user.ID)
+	if err != nil {
+		h.logger.Error("auth: failed to load notification preferences", zap.Error(err))
+		writeInternalError(w)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(resolveNotificationPreferences(stored))
+}
+
+type updateNotificationPreferencesRequest struct {
+	IncidentOpened   *bool `json:"incident_opened"`
+	IncidentResolved *bool `json:"incident_resolved"`
+	WeeklyDigest     *bool `json:"weekly_digest"`
+}
+
+const invalidNotificationPreferencesBody = `{"error":"invalid request body"}`
+
+// UpdateNotificationPreferences handles PATCH
+// /api/auth/notification-preferences (notification-preferences NOTIFPREF-02):
+// it upserts exactly the keys present in the body and leaves every omitted
+// type unchanged, then returns the resolved preferences. Pointer fields let an
+// explicit `false` be distinguished from an omitted key. Self-only, anyRole.
+func (h *AuthHandler) UpdateNotificationPreferences(w http.ResponseWriter, r *http.Request) {
+	user, ok := UserFromContext(r.Context())
+	if !ok {
+		writeUnauthorized(w)
+		return
+	}
+
+	var req updateNotificationPreferencesRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeAdminError(w, http.StatusUnprocessableEntity, invalidNotificationPreferencesBody)
+		return
+	}
+
+	values := make(map[string]bool)
+	if req.IncidentOpened != nil {
+		values[db.NotificationTypeIncidentOpened] = *req.IncidentOpened
+	}
+	if req.IncidentResolved != nil {
+		values[db.NotificationTypeIncidentResolved] = *req.IncidentResolved
+	}
+	if req.WeeklyDigest != nil {
+		values[db.NotificationTypeWeeklyDigest] = *req.WeeklyDigest
+	}
+
+	if len(values) > 0 {
+		if err := h.notificationPrefs.Upsert(r.Context(), user.ID, values); err != nil {
+			h.logger.Error("auth: failed to update notification preferences", zap.Error(err))
+			writeInternalError(w)
+			return
+		}
+	}
+
+	stored, err := h.notificationPrefs.Get(r.Context(), user.ID)
+	if err != nil {
+		h.logger.Error("auth: failed to reload notification preferences", zap.Error(err))
+		writeInternalError(w)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(resolveNotificationPreferences(stored))
 }
 
 type changePasswordRequest struct {
