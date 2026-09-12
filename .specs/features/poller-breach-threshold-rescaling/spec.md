@@ -113,18 +113,18 @@ Explicitly excluded. Documented to prevent scope creep.
 
 | Requirement ID | Story | Phase | Status |
 | --- | --- | --- | --- |
-| BTR-01 | P1: Breach decision from rescaled bound | Specify | Implementing |
-| BTR-02 | P1: Breach decision from rescaled bound | Specify | Implementing |
-| BTR-03 | P1: Breach decision from rescaled bound | Specify | Implementing |
-| BTR-04 | P1: Breach decision from rescaled bound | Specify | Implementing |
-| BTR-05 | P1: Breach decision from rescaled bound | Specify | Implementing |
-| BTR-06 | P1: Genuine outages still surface | Specify | Implementing |
-| BTR-07 | P1: Genuine outages still surface | Specify | Implementing |
-| BTR-08 | P1: Genuine outages still surface | Specify | Implementing |
-| BTR-09 | P2: Fallbacks and failure contract | Specify | Implementing |
-| BTR-10 | P2: Fallbacks and failure contract | Specify | Implementing |
-| BTR-11 | P2: Fallbacks and failure contract | Specify | Implementing |
-| BTR-12 | P2: Fallbacks and failure contract | Specify | Implementing |
+| BTR-01 | P1: Breach decision from rescaled bound | Specify | Verified |
+| BTR-02 | P1: Breach decision from rescaled bound | Specify | Verified |
+| BTR-03 | P1: Breach decision from rescaled bound | Specify | Verified |
+| BTR-04 | P1: Breach decision from rescaled bound | Specify | Verified |
+| BTR-05 | P1: Breach decision from rescaled bound | Specify | Verified |
+| BTR-06 | P1: Genuine outages still surface | Specify | Verified |
+| BTR-07 | P1: Genuine outages still surface | Specify | Verified |
+| BTR-08 | P1: Genuine outages still surface | Specify | Verified |
+| BTR-09 | P2: Fallbacks and failure contract | Specify | Verified |
+| BTR-10 | P2: Fallbacks and failure contract | Specify | Verified |
+| BTR-11 | P2: Fallbacks and failure contract | Specify | Verified |
+| BTR-12 | P2: Fallbacks and failure contract | Specify | Verified |
 
 **ID format:** `BTR-[NUMBER]` (Breach Threshold Rescaling)
 
