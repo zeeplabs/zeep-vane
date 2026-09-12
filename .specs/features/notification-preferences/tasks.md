@@ -378,12 +378,12 @@ T12 → T13
 - Skill: NONE
 
 **Done when**:
-- [ ] Renders three labeled switches matching the values returned by the hook
-- [ ] While loading, the switches are disabled; if the initial GET fails, the section shows an inline error without breaking the page
-- [ ] Flipping a switch calls the single-key mutation; a failure reverts it and shows the toast
-- [ ] Strings exist in pt-BR and en, with a test asserting the en rendering (`L-043`)
-- [ ] Gate check passes: `cd web && npx tsc -b --noEmit && npm run test`
-- [ ] Test count: ≥6 new tests
+- [x] Renders three labeled switches matching the values returned by the hook
+- [x] While loading, the switches are disabled; if the initial GET fails, the section shows an inline error without breaking the page
+- [x] Flipping a switch calls the single-key mutation; a failure reverts it and shows the toast
+- [x] Strings exist in pt-BR and en, with a test asserting the en rendering (`L-043`)
+- [x] Gate check passes: `cd web && npx tsc -b --noEmit && npm run test`
+- [x] Test count: ≥6 new tests
 
 **Tests**: unit
 **Gate**: frontend
