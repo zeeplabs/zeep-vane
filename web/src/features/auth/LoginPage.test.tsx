@@ -1,8 +1,9 @@
 import { describe, it, expect, afterEach } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, act } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Routes, Route, useLocation } from "react-router-dom";
 import "../../lib/i18n";
+import i18n from "../../lib/i18n";
 import { AuthProvider } from "../../auth/AuthProvider";
 import { LoginPage } from "./LoginPage";
 import { apiFetch } from "../../lib/apiClient";
@@ -14,6 +15,9 @@ import {
 } from "../../test/msw/handlers";
 
 afterEach(async () => {
+  await act(async () => {
+    await i18n.changeLanguage("pt");
+  });
   try {
     await apiFetch("/api/auth/logout", { method: "POST" });
   } catch {
@@ -193,5 +197,25 @@ describe("LoginPage", () => {
 
     expect(await screen.findByText("home page")).toBeInTheDocument();
     expect(screen.queryByLabelText("Código de verificação")).not.toBeInTheDocument();
+  });
+
+  // LOGIN2FA-12: todas as strings novas renderizam em inglês com locale en.
+  it("renderiza o passo de 2FA em inglês quando o locale é en", async () => {
+    setTwoFactorEnabled(true);
+    await act(async () => {
+      await i18n.changeLanguage("en");
+    });
+    render(<App />);
+
+    await userEvent.type(screen.getByLabelText("Email"), "owner@vane.app");
+    await userEvent.type(screen.getByLabelText("Password"), "demo1234");
+    await userEvent.click(screen.getByRole("button", { name: "Sign in" }));
+
+    expect(await screen.findByLabelText("Verification code")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Verify" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Back" })).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "Use a recovery code" }));
+    expect(screen.getByLabelText("Recovery code")).toBeInTheDocument();
   });
 });
