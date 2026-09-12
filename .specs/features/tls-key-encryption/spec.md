@@ -107,17 +107,17 @@
 
 | Requirement ID | Story | Phase | Status |
 | --- | --- | --- | --- |
-| TLSKEY-01 | P1: Store `.key` sealed | T1 | Done |
-| TLSKEY-02 | P1: Load `.key` decrypted | T1 | Done |
-| TLSKEY-03 | P1: Non-`.key` byte-for-byte passthrough | T1 | Done |
-| TLSKEY-04 | P1: Versioned self-describing envelope | T1 | Done |
-| TLSKEY-05 | P1: Decrypt failure is explicit, not "missing" | T1, T4 | Done |
-| TLSKEY-06 | P1: Legacy plaintext `.key` pass-through | T1 | Done |
-| TLSKEY-07 | P1: Idempotent backfill seals legacy keys | T2, T4 | Done |
-| TLSKEY-08 | P1: Backfill advisory-locked, preserves `modified_at`, best-effort | T2, T4 | Done |
-| TLSKEY-09 | P2: Full `certmagic.Storage` delegation | T1 | Done |
-| TLSKEY-10 | P2: HTTPS wiring seals and backfills before serving | T3 | Done |
-| TLSKEY-11 | P2: No new config; decision recorded as `AD-030` | T5 | Done |
+| TLSKEY-01 | P1: Store `.key` sealed | T1 | Verified |
+| TLSKEY-02 | P1: Load `.key` decrypted | T1 | Verified |
+| TLSKEY-03 | P1: Non-`.key` byte-for-byte passthrough | T1 | Verified |
+| TLSKEY-04 | P1: Versioned self-describing envelope | T1 | Verified |
+| TLSKEY-05 | P1: Decrypt failure is explicit, not "missing" | T1, T4 | Verified |
+| TLSKEY-06 | P1: Legacy plaintext `.key` pass-through | T1 | Verified |
+| TLSKEY-07 | P1: Idempotent backfill seals legacy keys | T2, T4 | Verified |
+| TLSKEY-08 | P1: Backfill advisory-locked, preserves `modified_at`, best-effort | T2, T4 | Verified (best-effort branch inspection-only) |
+| TLSKEY-09 | P2: Full `certmagic.Storage` delegation | T1 | Verified |
+| TLSKEY-10 | P2: HTTPS wiring seals and backfills before serving | T3 | Verified (wiring; no automated assertion) |
+| TLSKEY-11 | P2: No new config; decision recorded as `AD-030` | T5 | Verified |
 
 **Coverage:** 11 total, 11 mapped to tasks, 0 unmapped
 
