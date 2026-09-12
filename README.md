@@ -334,7 +334,7 @@ Loaded by `internal/config.Load()` (`internal/config/config.go`). A `.env` file 
 | Variable | Required | Default | Notes |
 | --- | --- | --- | --- |
 | `DATABASE_URL` | Yes | — | Postgres connection string, e.g. `postgres://user:pass@host:5432/dbname?sslmode=disable` |
-| `VANE_MASTER_KEY` | Yes | — | Symmetric key used to encrypt stored Datadog credentials at rest. Stretched into the actual AES-256 key via PBKDF2-HMAC-SHA256 (210,000 iterations, `internal/crypto`) rather than a single unsalted hash, so a weak-but-long key still costs real compute per guess |
+| `VANE_MASTER_KEY` | Yes | — | Symmetric key used to encrypt stored secrets at rest: Datadog credentials, email-provider and LLM provider credentials, TOTP secrets, and the TLS/ACME private keys CertMagic persists in `certmagic_storage` (AD-030). Stretched into the actual AES-256 key via PBKDF2-HMAC-SHA256 (210,000 iterations, `internal/crypto`) rather than a single unsalted hash, so a weak-but-long key still costs real compute per guess. Losing or changing it makes every encrypted secret, including the TLS private keys, unreadable |
 | `VANE_SESSION_SECRET` | Yes | — | Signing secret for session JWTs |
 | `PORT` | Yes | — | Port the admin HTTP API (and SPA) listens on |
 | `POLL_INTERVAL_SECONDS` | Yes | — | How often the poller queries Datadog for SLO status. Controls poll cadence only — each fetch always requests a fixed 5-minute window of recent SLO history, lagged 60s behind "now" to avoid Datadog's not-yet-aggregated freshest minute (AD-019) |

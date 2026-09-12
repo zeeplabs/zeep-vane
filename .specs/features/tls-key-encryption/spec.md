@@ -117,7 +117,7 @@
 | TLSKEY-08 | P1: Backfill advisory-locked, preserves `modified_at`, best-effort | T2, T4 | Done |
 | TLSKEY-09 | P2: Full `certmagic.Storage` delegation | T1 | Done |
 | TLSKEY-10 | P2: HTTPS wiring seals and backfills before serving | T3 | Done |
-| TLSKEY-11 | P2: No new config; decision recorded as `AD-030` | T5 | Pending |
+| TLSKEY-11 | P2: No new config; decision recorded as `AD-030` | T5 | Done |
 
 **Coverage:** 11 total, 11 mapped to tasks, 0 unmapped
 

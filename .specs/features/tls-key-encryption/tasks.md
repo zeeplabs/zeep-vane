@@ -198,10 +198,10 @@ T3 → T5
 - Skill: NONE
 
 **Done when**:
-- [ ] `AD-030` recorded: decorator + envelope + backfill; trade-off (TLS availability depends on master-key stability; no automatic reissue); status active
-- [ ] `README.md` `VANE_MASTER_KEY` line mentions TLS/ACME private keys
-- [ ] No new env var documented (none added)
-- [ ] Gate check passes: `go build ./...`
+- [x] `AD-030` recorded: decorator + envelope + backfill; trade-off (TLS availability depends on master-key stability; no automatic reissue); status active
+- [x] `README.md` `VANE_MASTER_KEY` line mentions TLS/ACME private keys
+- [x] No new env var documented (none added)
+- [x] Gate check passes: `go build ./...`
 
 **Tests**: none
 **Gate**: build
