@@ -1,6 +1,6 @@
 # Public Status Time-Range Selector — Validation
 
-**Verdict: PASS** (with 4 non-blocking findings, ranked below — none of them a failed AC or a surviving mutant)
+**Result**: PASS (with 4 non-blocking findings, ranked below — none of them a failed AC or a surviving mutant)
 
 **Verifier**: independent agent (author ≠ verifier — every claim below was re-derived from the code and from freshly executed commands, not from the implementing agent's report).
 **Date**: 2026-09-08
