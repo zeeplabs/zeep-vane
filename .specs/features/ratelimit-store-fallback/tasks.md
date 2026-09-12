@@ -191,11 +191,11 @@ T2 → T5
 - Skill: NONE
 
 **Done when**:
-- [ ] `AD-029` entry recorded with decision, reason, trade-off, scope, date, status
-- [ ] The historical `ha-multi-replica/spec.md` is left unchanged
-- [ ] Gate check passes: `go build ./...`
+- [x] `AD-029` entry recorded with decision, reason, trade-off, scope, date, status
+- [x] The historical `ha-multi-replica/spec.md` is left unchanged
+- [x] Gate check passes: `go build ./...`
 
 **Tests**: none
 **Gate**: build
 
-**Commit**: `docs(state): record AD-029 rate limiter store fallback`
+**Commit**: `docs(ratelimit): add store fallback spec, design, and AD-029` (landed as `9d7f2a8`, bundled with the design artifacts rather than a separate commit)
