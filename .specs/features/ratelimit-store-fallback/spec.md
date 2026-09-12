@@ -98,15 +98,15 @@
 
 | Requirement ID | Story | Phase | Status |
 | --- | --- | --- | --- |
-| RLF-01 | P1: Fallback on store error | T2, T4 | Pending |
-| RLF-02 | P1: Fallback denial returns 429 | T2 | Pending |
-| RLF-03 | P1: Last-resort fail-open if fallback errors | T2 | Pending |
-| RLF-04 | P1: Circuit opens on store error | T2 | Pending |
-| RLF-05 | P1: Single half-open probe | T2 | Pending |
-| RLF-06 | P1: Probe success closes circuit | T2 | Pending |
-| RLF-07 | P1: Probe failure re-opens circuit | T2 | Pending |
-| RLF-08 | P2: Sweep applies to the in-use store | T1, T3 | Pending |
-| RLF-09 | P1: Fallback token-bucket parity | T1 | Pending |
+| RLF-01 | P1: Fallback on store error | T2, T4 | Verified |
+| RLF-02 | P1: Fallback denial returns 429 | T2 | Verified |
+| RLF-03 | P1: Last-resort fail-open if fallback errors | T2 | Verified |
+| RLF-04 | P1: Circuit opens on store error | T2 | Verified |
+| RLF-05 | P1: Single half-open probe | T2 | Verified |
+| RLF-06 | P1: Probe success closes circuit | T2 | Verified |
+| RLF-07 | P1: Probe failure re-opens circuit | T2 | Verified |
+| RLF-08 | P2: Sweep applies to the in-use store | T1, T3 | Verified |
+| RLF-09 | P1: Fallback token-bucket parity | T1 | Verified |
 
 **Coverage:** 9 total, 9 mapped to tasks, 0 unmapped
 
