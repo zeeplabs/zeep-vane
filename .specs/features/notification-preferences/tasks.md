@@ -199,11 +199,11 @@ T12 → T13
 - Skill: NONE
 
 **Done when**:
-- [ ] Given a tenant with an opted-in owner, an opted-out operator, and an opted-in viewer, `NotifyIncidentOpened` sends exactly once (to the owner) - viewer never emailed regardless of preference
-- [ ] A send failure for one recipient is logged and does not prevent or fail the call for the caller
-- [ ] `NotifyIncidentResolved` uses the same recipient-resolution logic
-- [ ] Gate check passes: `go build ./... && go vet ./... && gofmt -l internal/notify/service.go && go test ./internal/notify/...`
-- [ ] Test count: ≥8 new tests (mocked membership/preference/email dependencies, per unit-test convention for this layer)
+- [x] Given a tenant with an opted-in owner, an opted-out operator, and an opted-in viewer, `NotifyIncidentOpened` sends exactly once (to the owner) - viewer never emailed regardless of preference
+- [x] A send failure for one recipient is logged and does not prevent or fail the call for the caller
+- [x] `NotifyIncidentResolved` uses the same recipient-resolution logic
+- [x] Gate check passes: `go build ./... && go vet ./... && gofmt -l internal/notify/service.go && go test ./internal/notify/...`
+- [x] Test count: ≥8 new tests (mocked membership/preference/email dependencies, per unit-test convention for this layer)
 
 **Tests**: unit
 **Gate**: quick

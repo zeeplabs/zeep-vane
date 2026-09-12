@@ -33,6 +33,16 @@ type TenantMembership struct {
 // primary key).
 var ErrDuplicateMembership = errors.New("db: membership already exists for this user and tenant")
 
+// TenantMember is one member of a tenant together with the email a
+// notification is addressed to (users.email) - the recipient shape the
+// notification fan-out needs (notification-preferences NOTIFPREF-04/07).
+// Role filtering (owner/operator) is the caller's policy, not this query's.
+type TenantMember struct {
+	UserID string
+	Email  string
+	Role   string
+}
+
 // ErrLastOwner is returned by Delete when removing the given membership
 // would leave its tenant with zero owners.
 var ErrLastOwner = errors.New("db: cannot remove the last owner of a tenant")
@@ -130,6 +140,37 @@ func (r *TenantMembershipRepository) ListForTenant(ctx context.Context, tenantID
 	}
 
 	return memberships, nil
+}
+
+// ListMembersWithEmail returns every member of tenantID with their email
+// (joined from users), for the notification fan-out. Requires app.tenant_id
+// set to tenantID. Role filtering is left to the caller.
+func (r *TenantMembershipRepository) ListMembersWithEmail(ctx context.Context, tenantID string) ([]TenantMember, error) {
+	rows, err := r.pool.Query(ctx,
+		`SELECT tm.user_id, u.email, tm.role
+		   FROM tenant_memberships tm
+		   JOIN users u ON u.id = tm.user_id
+		  WHERE tm.tenant_id = $1
+		  ORDER BY tm.created_at ASC`,
+		tenantID,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("db: failed to list tenant members with email: %w", err)
+	}
+	defer rows.Close()
+
+	var members []TenantMember
+	for rows.Next() {
+		var m TenantMember
+		if err := rows.Scan(&m.UserID, &m.Email, &m.Role); err != nil {
+			return nil, fmt.Errorf("db: failed to scan tenant member: %w", err)
+		}
+		members = append(members, m)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("db: error iterating tenant members: %w", err)
+	}
+	return members, nil
 }
 
 // GetRole returns the role userID holds in tenantID, or ErrNotFound if
