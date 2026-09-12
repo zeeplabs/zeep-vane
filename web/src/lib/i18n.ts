@@ -11,6 +11,20 @@ const resources = {
         submit: "Entrar",
         forgotPassword: "Esqueci minha senha",
         invalidCredentials: "E-mail ou senha inválidos.",
+        twoFactor: {
+          title: "Verificação em duas etapas",
+          subtitle: "Digite o código de 6 dígitos do seu aplicativo autenticador.",
+          codeLabel: "Código de verificação",
+          submit: "Verificar",
+          back: "Voltar",
+          useRecovery: "Usar um código de recuperação",
+          useCode: "Usar o código do aplicativo",
+          recoveryLabel: "Código de recuperação",
+          recoveryHint:
+            "Digite um dos códigos de recuperação gerados ao ativar a autenticação em duas etapas.",
+          invalid: "Código inválido ou expirado. Tente novamente.",
+          generic: "Não foi possível concluir a verificação. Tente novamente.",
+        },
       },
       sidebar: {
         brand: "Vane",
@@ -279,6 +293,20 @@ const resources = {
         submit: "Sign in",
         forgotPassword: "Forgot my password",
         invalidCredentials: "Invalid email or password.",
+        twoFactor: {
+          title: "Two-factor verification",
+          subtitle: "Enter the 6-digit code from your authenticator app.",
+          codeLabel: "Verification code",
+          submit: "Verify",
+          back: "Back",
+          useRecovery: "Use a recovery code",
+          useCode: "Use the app code",
+          recoveryLabel: "Recovery code",
+          recoveryHint:
+            "Enter one of the recovery codes generated when you enabled two-factor authentication.",
+          invalid: "Invalid or expired code. Try again.",
+          generic: "Could not complete verification. Try again.",
+        },
       },
       sidebar: {
         brand: "Vane",

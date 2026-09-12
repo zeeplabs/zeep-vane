@@ -101,9 +101,9 @@ T4 -> T5
 
 **Done when**:
 
-- [ ] Every new string exists in both `pt` and `en`
-- [ ] No component in T4/T5 hardcodes user-facing copy
-- [ ] Gate check passes: `cd web && npx tsc -b --noEmit`
+- [x] Every new string exists in both `pt` and `en`
+- [x] No component in T4/T5 hardcodes user-facing copy
+- [x] Gate check passes: `cd web && npx tsc -b --noEmit`
 
 **Tests**: none
 **Gate**: build
