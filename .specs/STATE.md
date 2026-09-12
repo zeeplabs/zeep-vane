@@ -305,6 +305,14 @@
 - **Date**: 2026-09-12
 - **Status**: active — supersede a política do `HA-10` (a spec histórica de `ha-multi-replica` não é reescrita).
 
+### AD-030
+- **Decision**: Criptografia em repouso das chaves privadas TLS/ACME. Novo decorator `EncryptedStorage` (`internal/tls/encrypted_storage.go`) embrulha o `PostgresStorage` e sela apenas valores cuja key termina em `.key` (chave de domínio e chave da conta ACME) com `crypto.Encrypt` sob `VANE_MASTER_KEY`, num envelope versionado `vane:tls-secret:v1:` embutido no `value` existente; `.crt`/`.json` (públicos) e todos os outros métodos (`Delete`/`Exists`/`List`/`Stat`/`Lock`/`Unlock`) passam direto. `Load` devolve plaintext legado sem prefixo como está (pass-through) e o backfill idempotente `EncryptLegacyKeys` (advisory lock transacional `pg_try_advisory_xact_lock`, `UPDATE ... WHERE key = $1 AND value = $2`, preserva `modified_at`, best-effort) roda no boot antes de o listener HTTPS servir. Falha de decrypt → erro explícito (wrap de `crypto.ErrDecryptionFailed`), nunca `fs.ErrNotExist`, sem reemissão automática. Sem migration e sem env var nova.
+- **Reason**: as chaves privadas eram a última exceção de segredo persistido em plaintext — todos os outros (Datadog, email, LLM, TOTP) já passam pelo `internal/crypto`. Quem lê o banco (backup vazado, réplica, SQLi, operador com `psql`) obtinha uma chave válida para um hostname público. Cifrar só o material privado mantém o blast radius mínimo e evita custo de cripto em artefatos que são públicos por design.
+- **Trade-off**: a disponibilidade do TLS passa a depender da estabilidade do `VANE_MASTER_KEY` (perder/trocar → chaves ilegíveis → handshakes daquele hostname falham), sem reemissão automática — decisão deliberada para não arriscar rate limit da Let's Encrypt numa reemissão em massa. `Stat.Size` de `.key` reporta o tamanho do ciphertext (não usado para decisão de renovação). O predicado é o sufixo `.key`; um artefato secreto futuro do CertMagic com outro nome passaria batido (bounded: os públicos já são plaintext por design, e o read é guiado pelo marcador). PBKDF2 (210k) por `Store`/`Load` de `.key` é custo aceitável no caminho frio (o CertMagic cacheia certificados em memória); cachear a derived key fica fora do escopo até haver medição.
+- **Scope**: novo `internal/tls/encrypted_storage.go`, novo `internal/tls/key_backfill.go`, `internal/cli/serve.go` (`newHTTPSServer`), `README.md`. Spec: `.specs/features/tls-key-encryption/`. `PostgresStorage` (`AD-013`) intocado.
+- **Date**: 2026-09-12
+- **Status**: active
+
 ## Handoff
 
 **Feature**: `user-sessions` (per-device sessions) — **status: PASS ✅** (Verifier independente, passada única sem rodada de fix). Relatório: `.specs/features/user-sessions/validation.md`. 11/11 ACs (SESS-01 a SESS-11), sensor de discriminação P0 **8/8 mutantes mortos**. Entrada de decisão de arquitetura: `AD-028` acima.
