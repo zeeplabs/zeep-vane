@@ -297,6 +297,14 @@
 - **Date**: 2026-09-11
 - **Status**: active
 
+### AD-029
+- **Decision**: `internal/ratelimit.IPLimiter` deixa de fazer fail-open quando o store Postgres falha. Passa a manter um `bucketStore` in-memory por processo (`memoryBucketStore`, mesma fórmula refill-then-consume do `postgresBucketStore`) e a avaliar a request contra ele; um circuit breaker (`breakerCooldown = 5s`, probe half-open único via flag `breakerProbing`) isola um primary que falha, de modo que ele é chamado no máximo uma vez por cooldown. Allow incondicional agora só acontece se **os dois** stores falharem (último recurso, logado). Supersede o `HA-10` de `ha-multi-replica` (spec histórica mantida sem alteração).
+- **Reason**: o fail-open do `HA-10` era justificável para uma queda real do Postgres, mas o caminho de erro é induzível pelo atacante: a request espera no lock da **própria linha do IP do cliente** sob `SET LOCAL lock_timeout = '3s'`, então um único cliente pode saturar o próprio bucket e empurrar a espera além do timeout, transformando o limiter num caminho ilimitado justamente para o tráfego que ele existe para conter. Além disso, uma queda real do Postgres já derruba os handlers de credencial (login precisa do DB), então preservar disponibilidade não exige liberar incondicionalmente — um fallback por processo mantém um limite real sem bloquear cliente legítimo.
+- **Trade-off**: enquanto degradado o limite efetivo é ~N× com N réplicas (estado de fallback por réplica); buckets primário e de fallback são independentes, então cruzar a fronteira de erro concede no máximo um burst extra (~2× momentâneo); um store que recupera no meio do cooldown não é usado por até `breakerCooldown`; o breaker é compartilhado entre IPs (o lock-timeout de um IP abre o circuito brevemente para todos os IPs daquela réplica). Todos aceitos em troca de não manter estado de breaker por IP nem fallback distribuído (que exigiria a dependência que acabou de falhar). Sem config nova; o cooldown é constante de pacote.
+- **Scope**: `internal/ratelimit/ip_limiter.go`, novo `internal/ratelimit/memory_bucket_store.go`, `internal/ratelimit/ip_limiter_test.go` (teste `HA-10` reescrito), `internal/ratelimit/ip_limiter_integration_test.go`. Spec: `.specs/features/ratelimit-store-fallback/`.
+- **Date**: 2026-09-12
+- **Status**: active — supersede a política do `HA-10` (a spec histórica de `ha-multi-replica` não é reescrita).
+
 ## Handoff
 
 **Feature**: `user-sessions` (per-device sessions) — **status: PASS ✅** (Verifier independente, passada única sem rodada de fix). Relatório: `.specs/features/user-sessions/validation.md`. 11/11 ACs (SESS-01 a SESS-11), sensor de discriminação P0 **8/8 mutantes mortos**. Entrada de decisão de arquitetura: `AD-028` acima.
