@@ -405,10 +405,10 @@ T12 → T13
 - Skill: NONE
 
 **Done when**:
-- [ ] `ProfilePage` renders `NotificationsSection` with the other cards, with no data dependency between them
-- [ ] Page test asserts the section is present
-- [ ] Gate check passes: `cd web && npx tsc -b --noEmit && npm run test`
-- [ ] Test count: +1 test (page test extended)
+- [x] `ProfilePage` renders `NotificationsSection` with the other cards, with no data dependency between them
+- [x] Page test asserts the section is present
+- [x] Gate check passes: `cd web && npx tsc -b --noEmit && npm run test`
+- [x] Test count: +1 test (page test extended)
 
 **Tests**: unit
 **Gate**: frontend

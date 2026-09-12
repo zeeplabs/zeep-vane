@@ -43,6 +43,7 @@ describe("ProfilePage", () => {
     expect(await screen.findByText("Informações pessoais")).toBeInTheDocument();
     expect(await screen.findByText("Segurança")).toBeInTheDocument();
     expect(await screen.findByText("Sessões ativas")).toBeInTheDocument();
+    expect(await screen.findByText("Notificações")).toBeInTheDocument();
   });
 
   // spec.md edge case: com locale en, todas as strings novas renderizam em
@@ -58,5 +59,6 @@ describe("ProfilePage", () => {
     expect(await screen.findByText("Personal information")).toBeInTheDocument();
     expect(await screen.findByText("Security")).toBeInTheDocument();
     expect(await screen.findByText("Active sessions")).toBeInTheDocument();
+    expect(await screen.findByText("Notifications")).toBeInTheDocument();
   });
 });
