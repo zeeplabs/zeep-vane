@@ -147,11 +147,11 @@ T3 → T5
 - Skill: NONE
 
 **Done when**:
-- [ ] `newHTTPSServer` signature updated; the storage handed to `vanetls.NewManager` is the decorator
-- [ ] Backfill called before `NewManager` with a timeout; on error logs a warning and continues
-- [ ] No new environment variable or config surface
-- [ ] Gate check passes: `go build ./... && go vet ./... && gofmt -l internal/cli/serve.go`
-- [ ] Callers updated (`RunE`)
+- [x] `newHTTPSServer` signature updated; the storage handed to `vanetls.NewManager` is the decorator
+- [x] Backfill called before `NewManager` with a timeout; on error logs a warning and continues
+- [x] No new environment variable or config surface
+- [x] Gate check passes: `go build ./... && go vet ./... && gofmt -l internal/cli/serve.go`
+- [x] Callers updated (`RunE`)
 
 **Tests**: none (compile/wiring)
 **Gate**: quick

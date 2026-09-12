@@ -134,7 +134,7 @@ func NewServeCmd() *cobra.Command {
 				serverErrs <- nil
 			}()
 			if cfg.HTTPSEnabled {
-				httpsSrv = newHTTPSServer(pool, cfg.DatabaseURL, logger)
+				httpsSrv = newHTTPSServer(pool, cfg.DatabaseURL, cfg.MasterKey, logger)
 				go func() {
 					logger.Info("serve: https listening (on-demand tls)", zap.String("addr", httpsSrv.Addr))
 					if err := httpsSrv.ListenAndServeTLS("", ""); err != nil && !errors.Is(err, http.ErrServerClosed) {
@@ -178,7 +178,8 @@ func NewServeCmd() *cobra.Command {
 // their custom domains, with on-demand TLS via CertMagic (SP-11, SP-12,
 // SP-13). Its port is configurable via HTTPS_PORT, falling back to 443
 // when unset. Certificate storage is always Postgres-backed
-// (tls.PostgresStorage, ha-multi-replica HA-13) - dsn is needed only for
+// (tls.PostgresStorage, ha-multi-replica HA-13), wrapped in
+// tls.EncryptedStorage so private key material is sealed at rest (AD-030) - dsn is needed only for
 // PostgresStorage's Lock/Unlock, which require dedicated (non-pooled)
 // connections for session-scoped advisory locks; every other storage
 // method goes through pool. HostPolicy (internal/tls) gates every
@@ -209,7 +210,7 @@ func NewServeCmd() *cobra.Command {
 // routes above. The admin API/SPA is served on the separate HTTP
 // listener built in RunE (router.New) - HostRouter here never touches it
 // (design.md placeholder).
-func newHTTPSServer(pool *db.Pool, dsn string, logger *zap.Logger) *http.Server {
+func newHTTPSServer(pool *db.Pool, dsn, masterKey string, logger *zap.Logger) *http.Server {
 	httpsPort := os.Getenv("HTTPS_PORT")
 	if httpsPort == "" {
 		httpsPort = defaultHTTPSPort
@@ -217,7 +218,18 @@ func newHTTPSServer(pool *db.Pool, dsn string, logger *zap.Logger) *http.Server 
 
 	statusPages := db.NewStatusPageRepository(pool)
 	storage := vanetls.NewPostgresStorage(pool, dsn)
-	manager := vanetls.NewManager(statusPages, storage)
+	encryptedStorage := vanetls.NewEncryptedStorage(storage, masterKey)
+
+	// Seal any private key left in plaintext by a pre-AD-030 database before
+	// the listener serves. Best-effort: legacy plaintext keys still load, so
+	// a failure here is a warning, never a boot blocker.
+	backfillCtx, cancelBackfill := context.WithTimeout(context.Background(), 30*time.Second)
+	if _, err := vanetls.EncryptLegacyKeys(backfillCtx, pool, masterKey, logger); err != nil {
+		logger.Warn("serve: legacy private-key encryption backfill failed; plaintext keys remain readable in the database", zap.Error(err))
+	}
+	cancelBackfill()
+
+	manager := vanetls.NewManager(statusPages, encryptedStorage)
 
 	services := db.NewServiceRepository(pool)
 	intervals := db.NewStatusIntervalRepository(pool)
