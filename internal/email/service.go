@@ -328,3 +328,99 @@ func (s *Service) SendPasswordReset(ctx context.Context, to string, data Passwor
 
 	return provider.Send(ctx, msg)
 }
+
+// SendIncidentOpened renders the incident-opened template and sends it through
+// whichever provider is currently active (notification-preferences
+// NOTIFPREF-04). Same active-provider and send-failure handling as
+// SendAdminInvite - no retry, no queue; the caller (NotificationService)
+// treats a failure here as non-fatal to the incident action.
+func (s *Service) SendIncidentOpened(ctx context.Context, to string, data IncidentOpenedEmailData) error {
+	active, err := s.repo.GetActiveProvider(ctx)
+	if err != nil {
+		return fmt.Errorf("email: failed to get active provider: %w", err)
+	}
+	if active == "" {
+		return ErrNoActiveProvider
+	}
+
+	ep, err := s.repo.Get(ctx, active)
+	if err != nil {
+		if errors.Is(err, db.ErrNotFound) {
+			return ErrNoActiveProvider
+		}
+		return fmt.Errorf("email: failed to get active provider row: %w", err)
+	}
+
+	apiKey, err := crypto.Decrypt(s.masterKey, ep.EncryptedAPIKey)
+	if err != nil {
+		return fmt.Errorf("email: failed to decrypt active provider api key: %w", err)
+	}
+
+	provider, err := s.factory(active, string(apiKey))
+	if err != nil {
+		return fmt.Errorf("email: failed to build active provider client: %w", err)
+	}
+
+	htmlBody, textBody, err := s.templates.renderIncidentOpened(data)
+	if err != nil {
+		return err
+	}
+
+	msg := Message{
+		To:        to,
+		FromEmail: ep.FromEmail,
+		FromName:  ep.FromName,
+		Subject:   fmt.Sprintf("Incident opened: %s", data.IncidentTitle),
+		HTMLBody:  htmlBody,
+		TextBody:  textBody,
+	}
+
+	return provider.Send(ctx, msg)
+}
+
+// SendIncidentResolved renders the incident-resolved template and sends it
+// through whichever provider is currently active (notification-preferences
+// NOTIFPREF-07). Same handling as SendIncidentOpened.
+func (s *Service) SendIncidentResolved(ctx context.Context, to string, data IncidentResolvedEmailData) error {
+	active, err := s.repo.GetActiveProvider(ctx)
+	if err != nil {
+		return fmt.Errorf("email: failed to get active provider: %w", err)
+	}
+	if active == "" {
+		return ErrNoActiveProvider
+	}
+
+	ep, err := s.repo.Get(ctx, active)
+	if err != nil {
+		if errors.Is(err, db.ErrNotFound) {
+			return ErrNoActiveProvider
+		}
+		return fmt.Errorf("email: failed to get active provider row: %w", err)
+	}
+
+	apiKey, err := crypto.Decrypt(s.masterKey, ep.EncryptedAPIKey)
+	if err != nil {
+		return fmt.Errorf("email: failed to decrypt active provider api key: %w", err)
+	}
+
+	provider, err := s.factory(active, string(apiKey))
+	if err != nil {
+		return fmt.Errorf("email: failed to build active provider client: %w", err)
+	}
+
+	htmlBody, textBody, err := s.templates.renderIncidentResolved(data)
+	if err != nil {
+		return err
+	}
+
+	msg := Message{
+		To:        to,
+		FromEmail: ep.FromEmail,
+		FromName:  ep.FromName,
+		Subject:   fmt.Sprintf("Incident resolved: %s", data.IncidentTitle),
+		HTMLBody:  htmlBody,
+		TextBody:  textBody,
+	}
+
+	return provider.Send(ctx, msg)
+}

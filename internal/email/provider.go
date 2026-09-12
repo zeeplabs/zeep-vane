@@ -44,6 +44,8 @@ type Sender interface {
 	SendAdminInvite(ctx context.Context, to string, data AdminInviteEmailData) error
 	SendPasswordReset(ctx context.Context, to string, data PasswordResetEmailData) error
 	SendSignupVerification(ctx context.Context, to string, data SignupVerificationEmailData) error
+	SendIncidentOpened(ctx context.Context, to string, data IncidentOpenedEmailData) error
+	SendIncidentResolved(ctx context.Context, to string, data IncidentResolvedEmailData) error
 }
 
 // AdminInviteEmailData is the data the admin-invite template renders.
@@ -72,6 +74,36 @@ type SignupVerificationEmailData struct {
 	TenantName string
 	// VerifyURL is the email-verification link, built by the caller.
 	VerifyURL string
+}
+
+// IncidentOpenedEmailData is the data the incident-opened template renders
+// (notification-preferences NOTIFPREF-04).
+type IncidentOpenedEmailData struct {
+	// TenantName is the tenant the incident belongs to, for context.
+	TenantName string
+	// ServiceName is the monitored service the incident affects.
+	ServiceName string
+	// IncidentTitle is the incident's title.
+	IncidentTitle string
+	// Severity is the incident's severity (e.g. critical/major/minor).
+	Severity string
+	// DashboardURL links to the incident in the admin dashboard.
+	DashboardURL string
+}
+
+// IncidentResolvedEmailData is the data the incident-resolved template renders
+// (notification-preferences NOTIFPREF-07).
+type IncidentResolvedEmailData struct {
+	// TenantName is the tenant the incident belongs to, for context.
+	TenantName string
+	// ServiceName is the monitored service the incident affected.
+	ServiceName string
+	// IncidentTitle is the incident's title.
+	IncidentTitle string
+	// Severity is the incident's severity (e.g. critical/major/minor).
+	Severity string
+	// DashboardURL links to the incident in the admin dashboard.
+	DashboardURL string
 }
 
 // Typed errors shared by both connectors, since the HTTP-behavior

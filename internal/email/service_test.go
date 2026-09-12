@@ -541,3 +541,185 @@ func TestSendPasswordReset_ProviderSendFails_ReturnsErrorUnmodified_ExactlyOneCa
 		t.Errorf("Provider.Send call count = %d, want exactly 1 (no retry)", sentProvider.sendCalls)
 	}
 }
+
+// The six tests below mirror the SendAdminInvite/SendPasswordReset triple for
+// the two incident lifecycle notifications (notification-preferences
+// NOTIFPREF-04/05/07/08): no active provider, the happy path (render + send
+// through the active provider with the decrypted key), and a send failure.
+
+func TestSendIncidentOpened_NoActiveProvider_ReturnsErrNoActiveProvider_NeverCallsSend(t *testing.T) {
+	store := newFakeStore()
+	sentProvider := &fakeProvider{}
+	svc := newTestService(t, store, func(provider, apiKey string) (Provider, error) { return sentProvider, nil })
+
+	err := svc.SendIncidentOpened(t.Context(), "owner@example.com", IncidentOpenedEmailData{
+		TenantName: "Acme", ServiceName: "api", IncidentTitle: "API down", Severity: "critical",
+		DashboardURL: "https://vane.example.com/incidents/abc",
+	})
+	if !errors.Is(err, ErrNoActiveProvider) {
+		t.Fatalf("SendIncidentOpened() error = %v, want ErrNoActiveProvider", err)
+	}
+	if sentProvider.sendCalls != 0 {
+		t.Errorf("Provider.Send call count = %d, want 0 (zero network calls with no active provider)", sentProvider.sendCalls)
+	}
+}
+
+func TestSendIncidentOpened_ActiveProvider_RendersTemplateAndSendsWithDecryptedKeyAndStoredSender(t *testing.T) {
+	store := newFakeStore()
+	sentProvider := &fakeProvider{}
+	var factoryProvider, factoryAPIKey string
+	factory := func(provider, apiKey string) (Provider, error) {
+		factoryProvider = provider
+		factoryAPIKey = apiKey
+		return sentProvider, nil
+	}
+	svc := newTestService(t, store, factory)
+
+	if err := svc.Connect(t.Context(), "sendgrid", "decrypted-api-key", "alerts@acme.example.com", "Acme Alerts"); err != nil {
+		t.Fatalf("Connect() returned unexpected error: %v", err)
+	}
+	if err := svc.Activate(t.Context(), "sendgrid"); err != nil {
+		t.Fatalf("Activate() returned unexpected error: %v", err)
+	}
+
+	data := IncidentOpenedEmailData{
+		TenantName:    "Acme Inc.",
+		ServiceName:   "conversations-service",
+		IncidentTitle: "Elevated error rate",
+		Severity:      "critical",
+		DashboardURL:  "https://vane.example.com/incidents/abc123",
+	}
+	if err := svc.SendIncidentOpened(t.Context(), "owner@example.com", data); err != nil {
+		t.Fatalf("SendIncidentOpened() returned unexpected error: %v", err)
+	}
+
+	if sentProvider.sendCalls != 1 {
+		t.Fatalf("Provider.Send call count = %d, want 1", sentProvider.sendCalls)
+	}
+	if factoryProvider != "sendgrid" {
+		t.Errorf("factory provider = %q, want %q", factoryProvider, "sendgrid")
+	}
+	if factoryAPIKey != "decrypted-api-key" {
+		t.Errorf("factory apiKey = %q, want decrypted value %q", factoryAPIKey, "decrypted-api-key")
+	}
+
+	msg := sentProvider.lastMessage
+	if msg.To != "owner@example.com" {
+		t.Errorf("Message.To = %q, want %q", msg.To, "owner@example.com")
+	}
+	if msg.FromEmail != "alerts@acme.example.com" || msg.FromName != "Acme Alerts" {
+		t.Errorf("Message.FromEmail/FromName = %q/%q, want stored %q/%q", msg.FromEmail, msg.FromName, "alerts@acme.example.com", "Acme Alerts")
+	}
+	if msg.Subject != "Incident opened: Elevated error rate" {
+		t.Errorf("Message.Subject = %q, want %q", msg.Subject, "Incident opened: Elevated error rate")
+	}
+	for field, body := range map[string]string{"HTMLBody": msg.HTMLBody, "TextBody": msg.TextBody} {
+		if !strings.Contains(body, data.ServiceName) || !strings.Contains(body, data.IncidentTitle) || !strings.Contains(body, data.Severity) || !strings.Contains(body, data.DashboardURL) {
+			t.Errorf("%s = %q, want it to contain ServiceName=%q, IncidentTitle=%q, Severity=%q, DashboardURL=%q", field, body, data.ServiceName, data.IncidentTitle, data.Severity, data.DashboardURL)
+		}
+	}
+}
+
+func TestSendIncidentOpened_ProviderSendFails_ReturnsErrorUnmodified_ExactlyOneCall(t *testing.T) {
+	store := newFakeStore()
+	sendFailure := errors.New("sendgrid: server error")
+	sentProvider := &fakeProvider{sendErr: sendFailure}
+	svc := newTestService(t, store, func(provider, apiKey string) (Provider, error) { return sentProvider, nil })
+
+	if err := svc.Connect(t.Context(), "sendgrid", "api-key", "owner@example.com", "Owner"); err != nil {
+		t.Fatalf("Connect() returned unexpected error: %v", err)
+	}
+	if err := svc.Activate(t.Context(), "sendgrid"); err != nil {
+		t.Fatalf("Activate() returned unexpected error: %v", err)
+	}
+
+	err := svc.SendIncidentOpened(t.Context(), "owner@example.com", IncidentOpenedEmailData{
+		ServiceName: "api", IncidentTitle: "API down", DashboardURL: "https://vane.example.com/incidents/abc",
+	})
+	if !errors.Is(err, sendFailure) {
+		t.Fatalf("SendIncidentOpened() error = %v, want the underlying send failure %v unmodified", err, sendFailure)
+	}
+	if sentProvider.sendCalls != 1 {
+		t.Errorf("Provider.Send call count = %d, want exactly 1 (no retry)", sentProvider.sendCalls)
+	}
+}
+
+func TestSendIncidentResolved_NoActiveProvider_ReturnsErrNoActiveProvider_NeverCallsSend(t *testing.T) {
+	store := newFakeStore()
+	sentProvider := &fakeProvider{}
+	svc := newTestService(t, store, func(provider, apiKey string) (Provider, error) { return sentProvider, nil })
+
+	err := svc.SendIncidentResolved(t.Context(), "owner@example.com", IncidentResolvedEmailData{
+		TenantName: "Acme", ServiceName: "api", IncidentTitle: "API down", Severity: "critical",
+		DashboardURL: "https://vane.example.com/incidents/abc",
+	})
+	if !errors.Is(err, ErrNoActiveProvider) {
+		t.Fatalf("SendIncidentResolved() error = %v, want ErrNoActiveProvider", err)
+	}
+	if sentProvider.sendCalls != 0 {
+		t.Errorf("Provider.Send call count = %d, want 0 (zero network calls with no active provider)", sentProvider.sendCalls)
+	}
+}
+
+func TestSendIncidentResolved_ActiveProvider_RendersTemplateAndSendsWithDecryptedKeyAndStoredSender(t *testing.T) {
+	store := newFakeStore()
+	sentProvider := &fakeProvider{}
+	svc := newTestService(t, store, func(provider, apiKey string) (Provider, error) { return sentProvider, nil })
+
+	if err := svc.Connect(t.Context(), "sendgrid", "decrypted-api-key", "alerts@acme.example.com", "Acme Alerts"); err != nil {
+		t.Fatalf("Connect() returned unexpected error: %v", err)
+	}
+	if err := svc.Activate(t.Context(), "sendgrid"); err != nil {
+		t.Fatalf("Activate() returned unexpected error: %v", err)
+	}
+
+	data := IncidentResolvedEmailData{
+		TenantName:    "Acme Inc.",
+		ServiceName:   "conversations-service",
+		IncidentTitle: "Elevated error rate",
+		Severity:      "critical",
+		DashboardURL:  "https://vane.example.com/incidents/abc123",
+	}
+	if err := svc.SendIncidentResolved(t.Context(), "owner@example.com", data); err != nil {
+		t.Fatalf("SendIncidentResolved() returned unexpected error: %v", err)
+	}
+
+	if sentProvider.sendCalls != 1 {
+		t.Fatalf("Provider.Send call count = %d, want 1", sentProvider.sendCalls)
+	}
+	if sentProvider.lastMessage.Subject != "Incident resolved: Elevated error rate" {
+		t.Errorf("Message.Subject = %q, want %q", sentProvider.lastMessage.Subject, "Incident resolved: Elevated error rate")
+	}
+	if sentProvider.lastMessage.To != "owner@example.com" {
+		t.Errorf("Message.To = %q, want %q", sentProvider.lastMessage.To, "owner@example.com")
+	}
+	for field, body := range map[string]string{"HTMLBody": sentProvider.lastMessage.HTMLBody, "TextBody": sentProvider.lastMessage.TextBody} {
+		if !strings.Contains(body, data.ServiceName) || !strings.Contains(body, data.IncidentTitle) || !strings.Contains(body, data.Severity) || !strings.Contains(body, data.DashboardURL) {
+			t.Errorf("%s = %q, want it to contain ServiceName=%q, IncidentTitle=%q, Severity=%q, DashboardURL=%q", field, body, data.ServiceName, data.IncidentTitle, data.Severity, data.DashboardURL)
+		}
+	}
+}
+
+func TestSendIncidentResolved_ProviderSendFails_ReturnsErrorUnmodified_ExactlyOneCall(t *testing.T) {
+	store := newFakeStore()
+	sendFailure := errors.New("sendgrid: server error")
+	sentProvider := &fakeProvider{sendErr: sendFailure}
+	svc := newTestService(t, store, func(provider, apiKey string) (Provider, error) { return sentProvider, nil })
+
+	if err := svc.Connect(t.Context(), "sendgrid", "api-key", "owner@example.com", "Owner"); err != nil {
+		t.Fatalf("Connect() returned unexpected error: %v", err)
+	}
+	if err := svc.Activate(t.Context(), "sendgrid"); err != nil {
+		t.Fatalf("Activate() returned unexpected error: %v", err)
+	}
+
+	err := svc.SendIncidentResolved(t.Context(), "owner@example.com", IncidentResolvedEmailData{
+		ServiceName: "api", IncidentTitle: "API down", DashboardURL: "https://vane.example.com/incidents/abc",
+	})
+	if !errors.Is(err, sendFailure) {
+		t.Fatalf("SendIncidentResolved() error = %v, want the underlying send failure %v unmodified", err, sendFailure)
+	}
+	if sentProvider.sendCalls != 1 {
+		t.Errorf("Provider.Send call count = %d, want exactly 1 (no retry)", sentProvider.sendCalls)
+	}
+}

@@ -8,7 +8,7 @@ import (
 	texttemplate "text/template"
 )
 
-//go:embed templates/admin_invite.html.tmpl templates/admin_invite.txt.tmpl templates/password_reset.html.tmpl templates/password_reset.txt.tmpl templates/signup_verification.html.tmpl templates/signup_verification.txt.tmpl
+//go:embed templates/admin_invite.html.tmpl templates/admin_invite.txt.tmpl templates/password_reset.html.tmpl templates/password_reset.txt.tmpl templates/signup_verification.html.tmpl templates/signup_verification.txt.tmpl templates/incident_opened.html.tmpl templates/incident_opened.txt.tmpl templates/incident_resolved.html.tmpl templates/incident_resolved.txt.tmpl
 var templateFS embed.FS
 
 const (
@@ -18,6 +18,10 @@ const (
 	passwordResetTextTemplatePath      = "templates/password_reset.txt.tmpl"
 	signupVerificationHTMLTemplatePath = "templates/signup_verification.html.tmpl"
 	signupVerificationTextTemplatePath = "templates/signup_verification.txt.tmpl"
+	incidentOpenedHTMLTemplatePath     = "templates/incident_opened.html.tmpl"
+	incidentOpenedTextTemplatePath     = "templates/incident_opened.txt.tmpl"
+	incidentResolvedHTMLTemplatePath   = "templates/incident_resolved.html.tmpl"
+	incidentResolvedTextTemplatePath   = "templates/incident_resolved.txt.tmpl"
 )
 
 // templates holds every parsed template this package renders. Parsed once
@@ -31,6 +35,10 @@ type templates struct {
 	passwordResetText      *texttemplate.Template
 	signupVerificationHTML *htmltemplate.Template
 	signupVerificationText *texttemplate.Template
+	incidentOpenedHTML     *htmltemplate.Template
+	incidentOpenedText     *texttemplate.Template
+	incidentResolvedHTML   *htmltemplate.Template
+	incidentResolvedText   *texttemplate.Template
 }
 
 // parseTemplates parses every embedded email template, returning an error
@@ -66,6 +74,26 @@ func parseTemplates() (*templates, error) {
 		return nil, fmt.Errorf("email: failed to parse signup verification text template: %w", err)
 	}
 
+	incidentOpenedHTML, err := htmltemplate.ParseFS(templateFS, incidentOpenedHTMLTemplatePath)
+	if err != nil {
+		return nil, fmt.Errorf("email: failed to parse incident opened html template: %w", err)
+	}
+
+	incidentOpenedText, err := texttemplate.ParseFS(templateFS, incidentOpenedTextTemplatePath)
+	if err != nil {
+		return nil, fmt.Errorf("email: failed to parse incident opened text template: %w", err)
+	}
+
+	incidentResolvedHTML, err := htmltemplate.ParseFS(templateFS, incidentResolvedHTMLTemplatePath)
+	if err != nil {
+		return nil, fmt.Errorf("email: failed to parse incident resolved html template: %w", err)
+	}
+
+	incidentResolvedText, err := texttemplate.ParseFS(templateFS, incidentResolvedTextTemplatePath)
+	if err != nil {
+		return nil, fmt.Errorf("email: failed to parse incident resolved text template: %w", err)
+	}
+
 	return &templates{
 		adminInviteHTML:        adminInviteHTML,
 		adminInviteText:        adminInviteText,
@@ -73,6 +101,10 @@ func parseTemplates() (*templates, error) {
 		passwordResetText:      passwordResetText,
 		signupVerificationHTML: signupVerificationHTML,
 		signupVerificationText: signupVerificationText,
+		incidentOpenedHTML:     incidentOpenedHTML,
+		incidentOpenedText:     incidentOpenedText,
+		incidentResolvedHTML:   incidentResolvedHTML,
+		incidentResolvedText:   incidentResolvedText,
 	}, nil
 }
 
@@ -119,6 +151,38 @@ func (t *templates) renderSignupVerification(data SignupVerificationEmailData) (
 	var textBuf bytes.Buffer
 	if err := t.signupVerificationText.Execute(&textBuf, data); err != nil {
 		return "", "", fmt.Errorf("email: failed to render signup verification text template: %w", err)
+	}
+
+	return htmlBuf.String(), textBuf.String(), nil
+}
+
+// renderIncidentOpened renders both the HTML and plain-text incident-opened
+// bodies from data.
+func (t *templates) renderIncidentOpened(data IncidentOpenedEmailData) (htmlBody, textBody string, err error) {
+	var htmlBuf bytes.Buffer
+	if err := t.incidentOpenedHTML.Execute(&htmlBuf, data); err != nil {
+		return "", "", fmt.Errorf("email: failed to render incident opened html template: %w", err)
+	}
+
+	var textBuf bytes.Buffer
+	if err := t.incidentOpenedText.Execute(&textBuf, data); err != nil {
+		return "", "", fmt.Errorf("email: failed to render incident opened text template: %w", err)
+	}
+
+	return htmlBuf.String(), textBuf.String(), nil
+}
+
+// renderIncidentResolved renders both the HTML and plain-text incident-resolved
+// bodies from data.
+func (t *templates) renderIncidentResolved(data IncidentResolvedEmailData) (htmlBody, textBody string, err error) {
+	var htmlBuf bytes.Buffer
+	if err := t.incidentResolvedHTML.Execute(&htmlBuf, data); err != nil {
+		return "", "", fmt.Errorf("email: failed to render incident resolved html template: %w", err)
+	}
+
+	var textBuf bytes.Buffer
+	if err := t.incidentResolvedText.Execute(&textBuf, data); err != nil {
+		return "", "", fmt.Errorf("email: failed to render incident resolved text template: %w", err)
 	}
 
 	return htmlBuf.String(), textBuf.String(), nil

@@ -174,10 +174,10 @@ T12 → T13
 - Skill: NONE
 
 **Done when**:
-- [ ] Both methods render and send through the active provider, matching `SendSignupVerification`'s error-passthrough shape
-- [ ] Both return `ErrNoActiveProvider` with no provider connected, without calling any send API
-- [ ] Gate check passes: `go build ./... && go vet ./... && gofmt -l internal/email/service.go && go test ./internal/email/...`
-- [ ] Test count: ≥6 new tests
+- [x] Both methods render and send through the active provider, matching `SendSignupVerification`'s error-passthrough shape
+- [x] Both return `ErrNoActiveProvider` with no provider connected, without calling any send API
+- [x] Gate check passes: `go build ./... && go vet ./... && gofmt -l internal/email/service.go && go test ./internal/email/...`
+- [x] Test count: ≥6 new tests
 
 **Tests**: unit
 **Gate**: quick
