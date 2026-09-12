@@ -156,12 +156,12 @@ T4 -> T5
 
 **Done when**:
 
-- [ ] Renders the code field, toggle, submit and back button
-- [ ] Switching to recovery clears the code input and the error (and vice versa)
-- [ ] Submitting calls `onSubmit` with the active method's factor; "Voltar" calls `onBack`
-- [ ] `LoginTwoFactorStep.test.tsx` covers toggle-clear, submit payload and back
-- [ ] Gate check passes: `cd web && npx tsc -b --noEmit && npm run test`
-- [ ] Test count: ≥3 new tests pass (no silent deletions)
+- [x] Renders the code field, toggle, submit and back button
+- [x] Switching to recovery clears the code input and the error (and vice versa)
+- [x] Submitting calls `onSubmit` with the active method's factor; "Voltar" calls `onBack`
+- [x] `LoginTwoFactorStep.test.tsx` covers toggle-clear, submit payload and back
+- [x] Gate check passes: `cd web && npx tsc -b --noEmit && npm run test`
+- [x] Test count: ≥3 new tests pass (no silent deletions)
 
 **Tests**: unit
 **Gate**: quick
