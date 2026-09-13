@@ -332,6 +332,10 @@
 
 ## Handoff
 
+**Latest snapshot (2026-09-12)**: quatro pendencias independentes entregues em `develop` (8 commits locais, sem push). Item 1: `poller-breach-threshold-rescaling` - fix raiz da histerese (`AD-019 addendum 4`), breach por `SLI < breachBound(target, requestCount, z)` em vez de `overall.state`; spec/design/tasks/validation PASS, sensor 3/3; `breachThresholdSigmas = 3` **nao-calibrado** (sem credencial Datadog no ambiente - calibracao real pendente). Item 2: leader gate do retention pruner (`AD-031`, `pruneLeaderLockKey=727200003`). Item 3: teste deterministico de `Restart`/`Stop` concorrentes do `PollerManager` (`-race`). Item 7: veredito da `validation.md` do `public-status-time-range-selector` corrigido (`**Result**: PASS`), `validate_state.py` global 0 erros nos 31 features. Gate: build/vet/gofmt, unit, `make test-integration` 25 pacotes, `-race` em retention+cli. O conteudo abaixo e historico (sessoes anteriores).
+
+---
+
 **Feature**: `user-sessions` (per-device sessions) — **status: PASS ✅** (Verifier independente, passada única sem rodada de fix). Relatório: `.specs/features/user-sessions/validation.md`. 11/11 ACs (SESS-01 a SESS-11), sensor de discriminação P0 **8/8 mutantes mortos**. Entrada de decisão de arquitetura: `AD-028` acima.
 
 **Completo**: nova tabela `sessions` (0031) + claim `sid` obrigatório no JWT; `RequireAuth` valida a row por `sid` (401 se ausente/revogada) e faz `TouchLastSeen` throttled (5min); toda emissão cria row (Login/VerifyTwoFactor/AcceptInvite/Bootstrap), `SwitchTenant` reusa o `sid`; `Logout` revoga a row; `GET /api/auth/sessions` + `DELETE /api/auth/sessions/{id}` (409 para a própria atual, 404 anti-enumeração); eventos admin migrados para `RevokeAllForUser`. 15 tasks (T1-T15), 3 commits de feature (`324cc6d`, `dbeaedc`, `a48312a`) + este commit de validação. Frontend entregue como módulo autocontido `web/src/features/sessions/` (a página "Meu Perfil" que o hospeda é spec futura própria — fronteira registrada em `context.md`).
