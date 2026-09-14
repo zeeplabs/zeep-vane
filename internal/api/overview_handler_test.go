@@ -164,6 +164,14 @@ func TestOverviewHandler_Get_RealData_ReturnsAllAggregates(t *testing.T) {
 		t.Fatalf("OpenOrExtend() returned unexpected error: %v", err)
 	}
 
+	// svcDegraded: no intervals, status degraded - exists so the unhealthy
+	// count (2) is distinguishable from an operational count (1); with only
+	// one of each, flipping OVW-05's `!=` to `==` would yield the same value.
+	svcDegraded := createOverviewService(t, pool, "overview-degraded")
+	if err := services.UpdateStatus(ctx, svcDegraded.ID, "degraded"); err != nil {
+		t.Fatalf("UpdateStatus() returned unexpected error: %v", err)
+	}
+
 	// Two domains, one verified.
 	verified := &db.Domain{Hostname: "overview-verified.example.com"}
 	if err := domains.Create(ctx, verified); err != nil {
@@ -208,8 +216,8 @@ func TestOverviewHandler_Get_RealData_ReturnsAllAggregates(t *testing.T) {
 	if resp.OpenIncidents != 2 {
 		t.Errorf("OpenIncidents = %d, want 2", resp.OpenIncidents)
 	}
-	if resp.UnhealthyServices != 1 {
-		t.Errorf("UnhealthyServices = %d, want 1", resp.UnhealthyServices)
+	if resp.UnhealthyServices != 2 {
+		t.Errorf("UnhealthyServices = %d, want 2 (outage + degraded)", resp.UnhealthyServices)
 	}
 	if resp.VerifiedDomains != 1 {
 		t.Errorf("VerifiedDomains = %d, want 1", resp.VerifiedDomains)
@@ -246,8 +254,8 @@ func TestOverviewHandler_Get_ZeroTenant_ReturnsDocumentedEmptyState(t *testing.T
 	if resp.VerifiedDomains != 0 {
 		t.Errorf("VerifiedDomains = %d, want 0", resp.VerifiedDomains)
 	}
-	if len(resp.UptimeSeries) != overviewUptimeSeriesDays {
-		t.Errorf("len(UptimeSeries) = %d, want %d", len(resp.UptimeSeries), overviewUptimeSeriesDays)
+	if len(resp.UptimeSeries) != 14 {
+		t.Errorf("len(UptimeSeries) = %d, want 14", len(resp.UptimeSeries))
 	}
 	for i, bucket := range resp.UptimeSeries {
 		if bucket.UptimePercent != nil {
@@ -302,8 +310,8 @@ func TestOverviewHandler_Get_UptimeSeries_IsFourteenConsecutiveLocalDays(t *test
 	nowLocal := time.Now().In(loc)
 	todayStart := time.Date(nowLocal.Year(), nowLocal.Month(), nowLocal.Day(), 0, 0, 0, 0, loc)
 
-	if len(resp.UptimeSeries) != overviewUptimeSeriesDays {
-		t.Fatalf("len(UptimeSeries) = %d, want %d", len(resp.UptimeSeries), overviewUptimeSeriesDays)
+	if len(resp.UptimeSeries) != 14 {
+		t.Fatalf("len(UptimeSeries) = %d, want 14", len(resp.UptimeSeries))
 	}
 	for i, bucket := range resp.UptimeSeries {
 		wantDate := todayStart.AddDate(0, 0, -(overviewUptimeSeriesDays - 1 - i)).Format("2006-01-02")
