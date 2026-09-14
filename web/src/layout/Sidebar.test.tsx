@@ -183,4 +183,27 @@ describe("Sidebar", () => {
     const sidebar = await screen.findByTestId("sidebar");
     expect(sidebar.className).toContain("w-[240px]");
   });
+
+  it("mostra 'Visão geral' como primeiro item, acima dos grupos de nav (OVW-15)", async () => {
+    await loginAs("owner@vane.app");
+    renderSidebar();
+
+    const overviewLink = await screen.findByRole("link", { name: "Visão geral" });
+    const servicesLink = screen.getByRole("link", { name: "Serviços monitorados" });
+    expect(overviewLink).toHaveAttribute("href", "/overview");
+    // DOM order: the standalone overview item precedes the first grouped item.
+    expect(overviewLink.compareDocumentPosition(servicesLink) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it("'Visão geral' fica ativo tanto em / quanto em /overview (OVW-16)", async () => {
+    await loginAs("owner@vane.app");
+    const { unmount } = renderSidebar("/");
+    const atRoot = await screen.findByRole("link", { name: "Visão geral" });
+    expect(atRoot.className).toContain("text-accent");
+    unmount();
+
+    renderSidebar("/overview");
+    const atOverview = await screen.findByRole("link", { name: "Visão geral" });
+    expect(atOverview.className).toContain("text-accent");
+  });
 });

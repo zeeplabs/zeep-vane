@@ -300,10 +300,10 @@ T7 → T8 → T9
 - Skill: `frontend-design` (same convention as T7)
 
 **Done when**:
-- [ ] "Visão geral" renders as the first item, above all 3 nav groups
-- [ ] Active state applies on both `/` and `/overview`
-- [ ] Gate check passes: `npx tsc -b --noEmit && npm run test`
-- [ ] Test count: +2 new tests (renders first, above groups; active-state assertion on both routes)
+- [x] "Visão geral" renders as the first item, above all 3 nav groups
+- [x] Active state applies on both `/` and `/overview`
+- [x] Gate check passes: `npx tsc -b --noEmit && npm run test`
+- [x] Test count: +2 new tests (renders first, above groups; active-state assertion on both routes)
 
 **Tests**: unit
 **Gate**: build+test

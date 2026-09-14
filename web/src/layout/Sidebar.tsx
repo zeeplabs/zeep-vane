@@ -65,6 +65,17 @@ function PollerIcon() {
   );
 }
 
+function OverviewIcon() {
+  return (
+    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <rect x="3" y="3" width="7" height="9" rx="1.5" />
+      <rect x="14" y="3" width="7" height="5" rx="1.5" />
+      <rect x="14" y="12" width="7" height="9" rx="1.5" />
+      <rect x="3" y="16" width="7" height="5" rx="1.5" />
+    </svg>
+  );
+}
+
 function SettingsIcon() {
   return (
     <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -122,6 +133,9 @@ export function Sidebar() {
   }
 
   const domainsActive = location.pathname.startsWith("/domains") || location.pathname.startsWith("/status-pages");
+  // OVW-15/16: the standalone "Visão geral" item is active on both "/"
+  // (which redirects to /overview) and /overview itself.
+  const overviewActive = location.pathname === "/" || location.pathname.startsWith("/overview");
 
   const labelClass = expanded ? "" : "sr-only";
   const groupLabelClass = "px-3 pb-1 pt-3 text-[10.5px] font-semibold uppercase tracking-wider text-text-muted";
@@ -145,6 +159,16 @@ export function Sidebar() {
       <div className="my-3 h-px bg-divider" />
 
       <nav className="flex flex-col gap-0.5 overflow-y-auto">
+        <NavLink
+          to="/overview"
+          className={
+            "flex h-9 items-center gap-2.5 rounded-md px-3 text-sm transition-colors " +
+            (overviewActive ? "text-accent bg-[rgba(90,70,199,0.08)]" : "text-text-muted hover:bg-sidebar-hover-bg")
+          }
+        >
+          <OverviewIcon />
+          <span className={labelClass}>{t("sidebar.overview")}</span>
+        </NavLink>
         <div className={groupLabelClass}>{t("sidebar.groupMonitoring")}</div>
         <NavLink to="/services" className={navItemClass}>
           <ServicesIcon />

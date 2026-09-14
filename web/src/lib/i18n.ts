@@ -28,6 +28,7 @@ const resources = {
       },
       sidebar: {
         brand: "Vane",
+        overview: "Visão geral",
         groupMonitoring: "Monitoramento",
         groupPlatform: "Plataforma",
         groupOrganization: "Organização",
@@ -362,6 +363,7 @@ const resources = {
         groupMonitoring: "Monitoring",
         groupPlatform: "Platform",
         groupOrganization: "Organization",
+        overview: "Overview",
         domainsStatusPages: "Domains & Status",
         incidents: "Incidents",
         integrations: "Integrations",
