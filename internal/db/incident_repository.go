@@ -218,6 +218,25 @@ func (r *IncidentRepository) CountOpen(ctx context.Context) (int, error) {
 	return total, nil
 }
 
+// CountOpenBreakdown returns, among currently-open incidents (status <>
+// 'resolved'), how many have severity 'critical' and how many have status
+// 'monitoring' - the two figures the Overview page's incidents card
+// summarizes alongside the open total (OVW-04). The two counts are not
+// mutually exclusive (an incident can be both critical and monitoring) and
+// don't have to sum to the open total; each is its own independent filter.
+func (r *IncidentRepository) CountOpenBreakdown(ctx context.Context) (criticalCount, monitoringCount int, err error) {
+	row := r.pool.QueryRow(ctx,
+		`SELECT
+		   COUNT(*) FILTER (WHERE severity = 'critical'),
+		   COUNT(*) FILTER (WHERE status = 'monitoring')
+		 FROM incidents WHERE status <> 'resolved'`,
+	)
+	if err := row.Scan(&criticalCount, &monitoringCount); err != nil {
+		return 0, 0, fmt.Errorf("db: failed to count open incident breakdown: %w", err)
+	}
+	return criticalCount, monitoringCount, nil
+}
+
 // CountOpenedResolvedBetween returns how many incidents opened (created_at) and
 // resolved (resolved_at) in [from, to) for the active tenant. It is what the
 // weekly digest summarizes (notification-preferences NOTIFPREF-10). Requires

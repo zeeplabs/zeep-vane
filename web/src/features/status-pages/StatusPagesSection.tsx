@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from "react";
 import { Link } from "react-router-dom";
+import { MdOutlineWeb, MdOutlineDeleteOutline, MdOutlineAdd } from "react-icons/md";
 import { Card } from "../../components/ui/Card";
 import { Dialog } from "../../components/ui/Dialog";
 import { Drawer } from "../../components/ui/Drawer";
@@ -16,20 +17,11 @@ import { useServices } from "../services/hooks";
 import { useCreateStatusPage, useDeleteStatusPage, useStatusPages } from "./hooks";
 
 function LayoutIcon() {
-  return (
-    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <rect x="3" y="4" width="18" height="16" rx="2" />
-      <path d="M3 9h18" />
-    </svg>
-  );
+  return <MdOutlineWeb size={17} aria-hidden="true" />;
 }
 
 function TrashIcon() {
-  return (
-    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13" />
-    </svg>
-  );
+  return <MdOutlineDeleteOutline size={15} aria-hidden="true" />;
 }
 
 // publicUrl only composes a URL once both domain_id/subdomain are set
@@ -176,9 +168,7 @@ export function StatusPagesSection() {
               setDialogOpen(true);
             }}
           >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
-              <path d="M12 5v14M5 12h14" />
-            </svg>
+            <MdOutlineAdd size={14} aria-hidden="true" />
             Criar status page
           </Button>
         ) : null}

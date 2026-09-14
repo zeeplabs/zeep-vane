@@ -1,0 +1,120 @@
+[     307ms] [INFO] %cDownload the React DevTools for a better development experience: https://reactjs.org/link/react-devtools font-weight:bold @ http://localhost:5173/node_modules/.vite/deps/chunk-SXRIVT2P.js?v=49430687:21608
+[     329ms] [WARNING] ⚠️ React Router Future Flag Warning: React Router will begin wrapping state updates in `React.startTransition` in v7. You can use the `v7_startTransition` future flag to opt-in early. For more information, see https://reactrouter.com/v6/upgrading/future#v7_starttransition. @ http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=49430687:4416
+[     330ms] [WARNING] ⚠️ React Router Future Flag Warning: Relative route resolution within Splat routes is changing in v7. You can use the `v7_relativeSplatPath` future flag to opt-in early. For more information, see https://reactrouter.com/v6/upgrading/future#v7_relativesplatpath. @ http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=49430687:4416
+[  273185ms] ReferenceError: PinIcon is not defined
+    at Sidebar (http://localhost:5173/src/layout/Sidebar.tsx?t=1789410579957:395:40)
+    at renderWithHooks (http://localhost:5173/node_modules/.vite/deps/chunk-SXRIVT2P.js?v=49430687:11596:26)
+    at updateFunctionComponent (http://localhost:5173/node_modules/.vite/deps/chunk-SXRIVT2P.js?v=49430687:14630:28)
+    at beginWork (http://localhost:5173/node_modules/.vite/deps/chunk-SXRIVT2P.js?v=49430687:15972:22)
+    at HTMLUnknownElement.callCallback2 (http://localhost:5173/node_modules/.vite/deps/chunk-SXRIVT2P.js?v=49430687:3680:22)
+    at Object.invokeGuardedCallbackDev (http://localhost:5173/node_modules/.vite/deps/chunk-SXRIVT2P.js?v=49430687:3705:24)
+    at invokeGuardedCallback (http://localhost:5173/node_modules/.vite/deps/chunk-SXRIVT2P.js?v=49430687:3739:39)
+    at beginWork$1 (http://localhost:5173/node_modules/.vite/deps/chunk-SXRIVT2P.js?v=49430687:19818:15)
+    at performUnitOfWork (http://localhost:5173/node_modules/.vite/deps/chunk-SXRIVT2P.js?v=49430687:19251:20)
+    at workLoopSync (http://localhost:5173/node_modules/.vite/deps/chunk-SXRIVT2P.js?v=49430687:19190:13)
+[  273189ms] ReferenceError: PinIcon is not defined
+    at Sidebar (http://localhost:5173/src/layout/Sidebar.tsx?t=1789410579957:395:40)
+    at renderWithHooks (http://localhost:5173/node_modules/.vite/deps/chunk-SXRIVT2P.js?v=49430687:11596:26)
+    at updateFunctionComponent (http://localhost:5173/node_modules/.vite/deps/chunk-SXRIVT2P.js?v=49430687:14630:28)
+    at beginWork (http://localhost:5173/node_modules/.vite/deps/chunk-SXRIVT2P.js?v=49430687:15972:22)
+    at HTMLUnknownElement.callCallback2 (http://localhost:5173/node_modules/.vite/deps/chunk-SXRIVT2P.js?v=49430687:3680:22)
+    at Object.invokeGuardedCallbackDev (http://localhost:5173/node_modules/.vite/deps/chunk-SXRIVT2P.js?v=49430687:3705:24)
+    at invokeGuardedCallback (http://localhost:5173/node_modules/.vite/deps/chunk-SXRIVT2P.js?v=49430687:3739:39)
+    at beginWork$1 (http://localhost:5173/node_modules/.vite/deps/chunk-SXRIVT2P.js?v=49430687:19818:15)
+    at performUnitOfWork (http://localhost:5173/node_modules/.vite/deps/chunk-SXRIVT2P.js?v=49430687:19251:20)
+    at workLoopSync (http://localhost:5173/node_modules/.vite/deps/chunk-SXRIVT2P.js?v=49430687:19190:13)
+[  273197ms] [ERROR] The above error occurred in the <Sidebar> component:
+
+    at Sidebar (http://localhost:5173/src/layout/Sidebar.tsx?t=1789410579957:122:50)
+    at div
+    at AppShell (http://localhost:5173/src/layout/AppShell.tsx?t=1789409802446:37:28)
+    at AuthenticatedLayout
+    at RequireAuth (http://localhost:5173/src/routes/RequireRole.tsx:20:31)
+    at RedirectToBootstrapIfNeeded (http://localhost:5173/src/App.tsx?t=1789410289527:47:40)
+    at RenderedRoute (http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=49430687:4112:5)
+    at Routes (http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=49430687:4582:5)
+    at AuthProvider (http://localhost:5173/src/auth/AuthProvider.tsx:40:32)
+    at App
+    at Router (http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=49430687:4525:15)
+    at BrowserRouter (http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=49430687:5263:5)
+    at QueryClientProvider (http://localhost:5173/node_modules/.vite/deps/@tanstack_react-query.js?v=49430687:3253:3)
+
+Consider adding an error boundary to your tree to customize error handling behavior.
+Visit https://reactjs.org/link/error-boundaries to learn more about error boundaries. @ http://localhost:5173/node_modules/.vite/deps/chunk-SXRIVT2P.js?v=49430687:14079
+[  273200ms] ReferenceError: PinIcon is not defined
+    at Sidebar (http://localhost:5173/src/layout/Sidebar.tsx?t=1789410579957:395:40)
+    at renderWithHooks (http://localhost:5173/node_modules/.vite/deps/chunk-SXRIVT2P.js?v=49430687:11596:26)
+    at updateFunctionComponent (http://localhost:5173/node_modules/.vite/deps/chunk-SXRIVT2P.js?v=49430687:14630:28)
+    at beginWork (http://localhost:5173/node_modules/.vite/deps/chunk-SXRIVT2P.js?v=49430687:15972:22)
+    at beginWork$1 (http://localhost:5173/node_modules/.vite/deps/chunk-SXRIVT2P.js?v=49430687:19806:22)
+    at performUnitOfWork (http://localhost:5173/node_modules/.vite/deps/chunk-SXRIVT2P.js?v=49430687:19251:20)
+    at workLoopSync (http://localhost:5173/node_modules/.vite/deps/chunk-SXRIVT2P.js?v=49430687:19190:13)
+    at renderRootSync (http://localhost:5173/node_modules/.vite/deps/chunk-SXRIVT2P.js?v=49430687:19169:15)
+    at recoverFromConcurrentError (http://localhost:5173/node_modules/.vite/deps/chunk-SXRIVT2P.js?v=49430687:18786:28)
+    at performSyncWorkOnRoot (http://localhost:5173/node_modules/.vite/deps/chunk-SXRIVT2P.js?v=49430687:18932:28)
+[  281992ms] ReferenceError: PinIcon is not defined
+    at Sidebar (http://localhost:5173/src/layout/Sidebar.tsx?t=1789410588792:390:40)
+    at renderWithHooks (http://localhost:5173/node_modules/.vite/deps/chunk-SXRIVT2P.js?v=49430687:11596:26)
+    at mountIndeterminateComponent (http://localhost:5173/node_modules/.vite/deps/chunk-SXRIVT2P.js?v=49430687:14974:21)
+    at beginWork (http://localhost:5173/node_modules/.vite/deps/chunk-SXRIVT2P.js?v=49430687:15962:22)
+    at HTMLUnknownElement.callCallback2 (http://localhost:5173/node_modules/.vite/deps/chunk-SXRIVT2P.js?v=49430687:3680:22)
+    at Object.invokeGuardedCallbackDev (http://localhost:5173/node_modules/.vite/deps/chunk-SXRIVT2P.js?v=49430687:3705:24)
+    at invokeGuardedCallback (http://localhost:5173/node_modules/.vite/deps/chunk-SXRIVT2P.js?v=49430687:3739:39)
+    at beginWork$1 (http://localhost:5173/node_modules/.vite/deps/chunk-SXRIVT2P.js?v=49430687:19818:15)
+    at performUnitOfWork (http://localhost:5173/node_modules/.vite/deps/chunk-SXRIVT2P.js?v=49430687:19251:20)
+    at workLoopSync (http://localhost:5173/node_modules/.vite/deps/chunk-SXRIVT2P.js?v=49430687:19190:13)
+[  282007ms] ReferenceError: PinIcon is not defined
+    at Sidebar (http://localhost:5173/src/layout/Sidebar.tsx?t=1789410588792:390:40)
+    at renderWithHooks (http://localhost:5173/node_modules/.vite/deps/chunk-SXRIVT2P.js?v=49430687:11596:26)
+    at mountIndeterminateComponent (http://localhost:5173/node_modules/.vite/deps/chunk-SXRIVT2P.js?v=49430687:14974:21)
+    at beginWork (http://localhost:5173/node_modules/.vite/deps/chunk-SXRIVT2P.js?v=49430687:15962:22)
+    at HTMLUnknownElement.callCallback2 (http://localhost:5173/node_modules/.vite/deps/chunk-SXRIVT2P.js?v=49430687:3680:22)
+    at Object.invokeGuardedCallbackDev (http://localhost:5173/node_modules/.vite/deps/chunk-SXRIVT2P.js?v=49430687:3705:24)
+    at invokeGuardedCallback (http://localhost:5173/node_modules/.vite/deps/chunk-SXRIVT2P.js?v=49430687:3739:39)
+    at beginWork$1 (http://localhost:5173/node_modules/.vite/deps/chunk-SXRIVT2P.js?v=49430687:19818:15)
+    at performUnitOfWork (http://localhost:5173/node_modules/.vite/deps/chunk-SXRIVT2P.js?v=49430687:19251:20)
+    at workLoopSync (http://localhost:5173/node_modules/.vite/deps/chunk-SXRIVT2P.js?v=49430687:19190:13)
+[  282009ms] [ERROR] The above error occurred in the <Sidebar> component:
+
+    at Sidebar (http://localhost:5173/src/layout/Sidebar.tsx?t=1789410588792:122:42)
+    at div
+    at AppShell (http://localhost:5173/src/layout/AppShell.tsx?t=1789409802446:37:28)
+    at AuthenticatedLayout
+    at RequireAuth (http://localhost:5173/src/routes/RequireRole.tsx:20:31)
+    at RedirectToBootstrapIfNeeded (http://localhost:5173/src/App.tsx?t=1789410289527:47:40)
+    at RenderedRoute (http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=49430687:4112:5)
+    at Routes (http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=49430687:4582:5)
+    at AuthProvider (http://localhost:5173/src/auth/AuthProvider.tsx:40:32)
+    at App
+    at Router (http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=49430687:4525:15)
+    at BrowserRouter (http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=49430687:5263:5)
+    at QueryClientProvider (http://localhost:5173/node_modules/.vite/deps/@tanstack_react-query.js?v=49430687:3253:3)
+
+Consider adding an error boundary to your tree to customize error handling behavior.
+Visit https://reactjs.org/link/error-boundaries to learn more about error boundaries. @ http://localhost:5173/node_modules/.vite/deps/chunk-SXRIVT2P.js?v=49430687:14079
+[  282010ms] ReferenceError: PinIcon is not defined
+    at Sidebar (http://localhost:5173/src/layout/Sidebar.tsx?t=1789410588792:390:40)
+    at renderWithHooks (http://localhost:5173/node_modules/.vite/deps/chunk-SXRIVT2P.js?v=49430687:11596:26)
+    at mountIndeterminateComponent (http://localhost:5173/node_modules/.vite/deps/chunk-SXRIVT2P.js?v=49430687:14974:21)
+    at beginWork (http://localhost:5173/node_modules/.vite/deps/chunk-SXRIVT2P.js?v=49430687:15962:22)
+    at beginWork$1 (http://localhost:5173/node_modules/.vite/deps/chunk-SXRIVT2P.js?v=49430687:19806:22)
+    at performUnitOfWork (http://localhost:5173/node_modules/.vite/deps/chunk-SXRIVT2P.js?v=49430687:19251:20)
+    at workLoopSync (http://localhost:5173/node_modules/.vite/deps/chunk-SXRIVT2P.js?v=49430687:19190:13)
+    at renderRootSync (http://localhost:5173/node_modules/.vite/deps/chunk-SXRIVT2P.js?v=49430687:19169:15)
+    at recoverFromConcurrentError (http://localhost:5173/node_modules/.vite/deps/chunk-SXRIVT2P.js?v=49430687:18786:28)
+    at performConcurrentWorkOnRoot (http://localhost:5173/node_modules/.vite/deps/chunk-SXRIVT2P.js?v=49430687:18734:30)
+[  303070ms] [INFO] %cDownload the React DevTools for a better development experience: https://reactjs.org/link/react-devtools font-weight:bold @ http://localhost:5173/node_modules/.vite/deps/chunk-SXRIVT2P.js?v=49430687:21608
+[  303099ms] [WARNING] ⚠️ React Router Future Flag Warning: React Router will begin wrapping state updates in `React.startTransition` in v7. You can use the `v7_startTransition` future flag to opt-in early. For more information, see https://reactrouter.com/v6/upgrading/future#v7_starttransition. @ http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=49430687:4416
+[  303099ms] [WARNING] ⚠️ React Router Future Flag Warning: Relative route resolution within Splat routes is changing in v7. You can use the `v7_relativeSplatPath` future flag to opt-in early. For more information, see https://reactrouter.com/v6/upgrading/future#v7_relativesplatpath. @ http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=49430687:4416
+[  306816ms] [INFO] %cDownload the React DevTools for a better development experience: https://reactjs.org/link/react-devtools font-weight:bold @ http://localhost:5173/node_modules/.vite/deps/chunk-SXRIVT2P.js?v=49430687:21608
+[  306825ms] [WARNING] ⚠️ React Router Future Flag Warning: React Router will begin wrapping state updates in `React.startTransition` in v7. You can use the `v7_startTransition` future flag to opt-in early. For more information, see https://reactrouter.com/v6/upgrading/future#v7_starttransition. @ http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=49430687:4416
+[  306825ms] [WARNING] ⚠️ React Router Future Flag Warning: Relative route resolution within Splat routes is changing in v7. You can use the `v7_relativeSplatPath` future flag to opt-in early. For more information, see https://reactrouter.com/v6/upgrading/future#v7_relativesplatpath. @ http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=49430687:4416
+[  312084ms] [INFO] %cDownload the React DevTools for a better development experience: https://reactjs.org/link/react-devtools font-weight:bold @ http://localhost:5173/node_modules/.vite/deps/chunk-SXRIVT2P.js?v=49430687:21608
+[  312094ms] [WARNING] ⚠️ React Router Future Flag Warning: React Router will begin wrapping state updates in `React.startTransition` in v7. You can use the `v7_startTransition` future flag to opt-in early. For more information, see https://reactrouter.com/v6/upgrading/future#v7_starttransition. @ http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=49430687:4416
+[  312094ms] [WARNING] ⚠️ React Router Future Flag Warning: Relative route resolution within Splat routes is changing in v7. You can use the `v7_relativeSplatPath` future flag to opt-in early. For more information, see https://reactrouter.com/v6/upgrading/future#v7_relativesplatpath. @ http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=49430687:4416
+[  318685ms] [INFO] %cDownload the React DevTools for a better development experience: https://reactjs.org/link/react-devtools font-weight:bold @ http://localhost:5173/node_modules/.vite/deps/chunk-SXRIVT2P.js?v=49430687:21608
+[  318693ms] [WARNING] ⚠️ React Router Future Flag Warning: React Router will begin wrapping state updates in `React.startTransition` in v7. You can use the `v7_startTransition` future flag to opt-in early. For more information, see https://reactrouter.com/v6/upgrading/future#v7_starttransition. @ http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=49430687:4416
+[  318693ms] [WARNING] ⚠️ React Router Future Flag Warning: Relative route resolution within Splat routes is changing in v7. You can use the `v7_relativeSplatPath` future flag to opt-in early. For more information, see https://reactrouter.com/v6/upgrading/future#v7_relativesplatpath. @ http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=49430687:4416
+[  330542ms] [INFO] %cDownload the React DevTools for a better development experience: https://reactjs.org/link/react-devtools font-weight:bold @ http://localhost:5173/node_modules/.vite/deps/chunk-SXRIVT2P.js?v=49430687:21608
+[  330551ms] [WARNING] ⚠️ React Router Future Flag Warning: React Router will begin wrapping state updates in `React.startTransition` in v7. You can use the `v7_startTransition` future flag to opt-in early. For more information, see https://reactrouter.com/v6/upgrading/future#v7_starttransition. @ http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=49430687:4416
+[  330551ms] [WARNING] ⚠️ React Router Future Flag Warning: Relative route resolution within Splat routes is changing in v7. You can use the `v7_relativeSplatPath` future flag to opt-in early. For more information, see https://reactrouter.com/v6/upgrading/future#v7_relativesplatpath. @ http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=49430687:4416

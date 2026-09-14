@@ -56,7 +56,8 @@ export function AvatarMenu() {
         aria-haspopup="menu"
         aria-expanded={open}
         aria-label={t("avatarMenu.trigger")}
-        className="flex h-8 w-8 cursor-pointer items-center justify-center rounded-md bg-accent-900 text-[12px] font-semibold text-accent"
+        className="flex h-[32px] w-[32px] cursor-pointer items-center justify-center rounded-[9px] text-[12.5px] font-bold text-accent"
+        style={{ background: "color-mix(in srgb, var(--color-accent) 10%, transparent)" }}
       >
         {initialsFor(label)}
       </button>
@@ -64,18 +65,17 @@ export function AvatarMenu() {
       {open ? (
         <div
           role="menu"
-          className="absolute right-0 top-full z-10 mt-1 w-56 rounded-md border border-divider bg-surface py-1 shadow-sm"
+          className="absolute right-0 top-full z-10 mt-1 w-[200px] rounded-md border border-divider bg-surface p-1.5 shadow-sm"
         >
-          <div className="px-3 py-2">
-            <div className="truncate text-[13px] font-medium text-text">{label}</div>
-            <div className="truncate text-[11.5px] text-text-muted">{admin.email}</div>
+          <div className="mb-1 border-b border-divider px-[10px] pb-2 pt-[10px]">
+            <div className="truncate text-[13px] font-bold text-text">{label}</div>
+            <div className="truncate text-xs text-text-muted">{admin.email}</div>
           </div>
-          <div className="h-px bg-divider" />
           <Link
             to="/profile"
             role="menuitem"
             onClick={() => setOpen(false)}
-            className="block px-3 py-1.5 text-[13px] text-text hover:bg-sidebar-hover-bg"
+            className="block rounded-[8px] px-[10px] py-2 text-[13px] font-semibold text-text-muted hover:bg-sidebar-hover-bg"
           >
             {t("profile.menuItem")}
           </Link>
@@ -84,7 +84,7 @@ export function AvatarMenu() {
               to="/settings"
               role="menuitem"
               onClick={() => setOpen(false)}
-              className="block px-3 py-1.5 text-[13px] text-text hover:bg-sidebar-hover-bg"
+              className="block rounded-[8px] px-[10px] py-2 text-[13px] font-semibold text-text-muted hover:bg-sidebar-hover-bg"
             >
               {t("sidebar.settings")}
             </Link>
@@ -93,7 +93,7 @@ export function AvatarMenu() {
             type="button"
             role="menuitem"
             onClick={() => setConfirmOpen(true)}
-            className="block w-full cursor-pointer px-3 py-1.5 text-left text-[13px] text-text hover:bg-sidebar-hover-bg"
+            className="block w-full cursor-pointer rounded-[8px] px-[10px] py-2 text-left text-[13px] font-semibold text-critical hover:bg-critical/10"
           >
             {t("sidebar.logout")}
           </button>

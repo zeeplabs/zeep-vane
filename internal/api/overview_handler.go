@@ -38,6 +38,7 @@ type overviewServiceLister interface {
 // most-recent-first list already implemented by ListPaginated (OVW-08).
 type overviewIncidentReader interface {
 	CountOpen(ctx context.Context) (int, error)
+	CountOpenBreakdown(ctx context.Context) (criticalCount, monitoringCount int, err error)
 	ListPaginated(ctx context.Context, page, pageSize int) ([]db.Incident, int, error)
 }
 
@@ -45,6 +46,7 @@ type overviewIncidentReader interface {
 // handler depends on (OVW-06).
 type overviewDomainCounter interface {
 	CountVerified(ctx context.Context) (int, error)
+	CountAll(ctx context.Context) (int, error)
 }
 
 // OverviewResponse is the GET /api/overview JSON contract (design.md). It is
@@ -52,12 +54,17 @@ type overviewDomainCounter interface {
 // aggregate, not a paginated list. UptimeAvg30d is nil when no service has
 // any data in the window (OVW-03, rendered as "—").
 type OverviewResponse struct {
-	UptimeAvg30d      *float64                                       `json:"uptime_avg_30d"`
-	OpenIncidents     int                                            `json:"open_incidents"`
-	UnhealthyServices int                                            `json:"unhealthy_services"`
-	VerifiedDomains   int                                            `json:"verified_domains"`
-	UptimeSeries      [overviewUptimeSeriesDays]OverviewUptimeBucket `json:"uptime_series"`
-	RecentIncidents   []OverviewIncident                             `json:"recent_incidents"`
+	UptimeAvg30d            *float64                                       `json:"uptime_avg_30d"`
+	UptimeAvg30dPrior       *float64                                       `json:"uptime_avg_30d_prior"`
+	OpenIncidents           int                                            `json:"open_incidents"`
+	OpenIncidentsCritical   int                                            `json:"open_incidents_critical"`
+	OpenIncidentsMonitoring int                                            `json:"open_incidents_monitoring"`
+	UnhealthyServices       int                                            `json:"unhealthy_services"`
+	TotalServices           int                                            `json:"total_services"`
+	VerifiedDomains         int                                            `json:"verified_domains"`
+	TotalDomains            int                                            `json:"total_domains"`
+	UptimeSeries            [overviewUptimeSeriesDays]OverviewUptimeBucket `json:"uptime_series"`
+	RecentIncidents         []OverviewIncident                             `json:"recent_incidents"`
 }
 
 // OverviewUptimeBucket is one day of the 14-day chart. Date is the bucket's
@@ -122,6 +129,7 @@ func (h *OverviewHandler) Get(w http.ResponseWriter, r *http.Request) {
 
 	now := time.Now()
 	windowStart := now.AddDate(0, 0, -overviewUptimeWindowDays)
+	priorWindowStart := windowStart.AddDate(0, 0, -overviewUptimeWindowDays)
 	overlapping, err := h.intervals.ListOverlapping(ctx, serviceIDs, windowStart, now)
 	if err != nil {
 		h.logger.Error("overview: failed to list overlapping status intervals", zap.Error(err))
@@ -133,9 +141,31 @@ func (h *OverviewHandler) Get(w http.ResponseWriter, r *http.Request) {
 		intervalsByService[interval.ServiceID] = append(intervalsByService[interval.ServiceID], interval)
 	}
 
+	// Prior period (60d-30d ago) for the uptime card's "vs mês anterior"
+	// trend. Queried separately from the current window's intervals -
+	// ListOverlapping's range is exclusive of what happened before
+	// windowStart, so the prior period needs its own overlap query.
+	priorOverlapping, err := h.intervals.ListOverlapping(ctx, serviceIDs, priorWindowStart, windowStart)
+	if err != nil {
+		h.logger.Error("overview: failed to list prior overlapping status intervals", zap.Error(err))
+		writeInternalError(w)
+		return
+	}
+	priorIntervalsByService := map[string][]db.StatusInterval{}
+	for _, interval := range priorOverlapping {
+		priorIntervalsByService[interval.ServiceID] = append(priorIntervalsByService[interval.ServiceID], interval)
+	}
+
 	openIncidents, err := h.incidents.CountOpen(ctx)
 	if err != nil {
 		h.logger.Error("overview: failed to count open incidents", zap.Error(err))
+		writeInternalError(w)
+		return
+	}
+
+	criticalOpen, monitoringOpen, err := h.incidents.CountOpenBreakdown(ctx)
+	if err != nil {
+		h.logger.Error("overview: failed to count open incident breakdown", zap.Error(err))
 		writeInternalError(w)
 		return
 	}
@@ -154,6 +184,13 @@ func (h *OverviewHandler) Get(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	totalDomains, err := h.domains.CountAll(ctx)
+	if err != nil {
+		h.logger.Error("overview: failed to count all domains", zap.Error(err))
+		writeInternalError(w)
+		return
+	}
+
 	// OVW-05 counts every service whose current status is not
 	// "operational" (degraded or outage). A not-yet-polled service is
 	// "not_configured", which also satisfies "!= operational" - the AC's
@@ -166,12 +203,17 @@ func (h *OverviewHandler) Get(w http.ResponseWriter, r *http.Request) {
 	}
 
 	resp := OverviewResponse{
-		UptimeAvg30d:      averageUptime(intervalsByService, serviceIDs, windowStart, now),
-		OpenIncidents:     openIncidents,
-		UnhealthyServices: unhealthy,
-		VerifiedDomains:   verifiedDomains,
-		UptimeSeries:      h.buildUptimeSeries(intervalsByService, serviceIDs, now),
-		RecentIncidents:   toOverviewIncidents(recent),
+		UptimeAvg30d:            averageUptime(intervalsByService, serviceIDs, windowStart, now),
+		UptimeAvg30dPrior:       averageUptime(priorIntervalsByService, serviceIDs, priorWindowStart, windowStart),
+		OpenIncidents:           openIncidents,
+		OpenIncidentsCritical:   criticalOpen,
+		OpenIncidentsMonitoring: monitoringOpen,
+		UnhealthyServices:       unhealthy,
+		TotalServices:           len(services),
+		VerifiedDomains:         verifiedDomains,
+		TotalDomains:            totalDomains,
+		UptimeSeries:            h.buildUptimeSeries(intervalsByService, serviceIDs, now),
+		RecentIncidents:         toOverviewIncidents(recent),
 	}
 
 	w.Header().Set("Content-Type", "application/json")

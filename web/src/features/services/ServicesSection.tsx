@@ -1,4 +1,5 @@
 import { useState, type FormEvent } from "react";
+import { MdOutlineSchedule, MdOutlineAdd } from "react-icons/md";
 import { Card } from "../../components/ui/Card";
 import { Dialog } from "../../components/ui/Dialog";
 import { Button } from "../../components/ui/Button";
@@ -37,12 +38,7 @@ function formatTimestamp(iso: string): string {
 }
 
 function ClockIcon() {
-  return (
-    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <circle cx="12" cy="12" r="9" />
-      <path d="M12 7v5l3.5 2" />
-    </svg>
-  );
+  return <MdOutlineSchedule size={12} aria-hidden="true" />;
 }
 
 /** Tabela + dialog de vínculo de serviço a SLO. Compartilhada entre `IntegrationsPage` (handoff mostra as duas seções na mesma tela) e `ServicesPage` (rota própria, decisão registrada em design.md). */
@@ -107,9 +103,7 @@ export function ServicesSection() {
               setDialogOpen(true);
             }}
           >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
-              <path d="M12 5v14M5 12h14" />
-            </svg>
+            <MdOutlineAdd size={14} aria-hidden="true" />
             Vincular serviço
           </Button>
         ) : null}

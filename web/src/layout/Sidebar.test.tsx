@@ -1,5 +1,5 @@
-import { describe, it, expect, afterEach, vi } from "vitest";
-import { render, screen, waitFor, fireEvent, within } from "@testing-library/react";
+import { describe, it, expect, afterEach } from "vitest";
+import { render, screen, waitFor, fireEvent } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { http, HttpResponse } from "msw";
@@ -72,28 +72,6 @@ describe("Sidebar", () => {
     expect(link).toHaveAttribute("href", "/services");
   });
 
-  it("mostra o controle 'Visualizando como' em DEV", async () => {
-    await loginAs("owner@vane.app");
-    renderSidebar();
-    await waitFor(() => expect(screen.getByRole("radiogroup")).toBeInTheDocument());
-  });
-
-  it("esconde o controle 'Visualizando como' fora de DEV", async () => {
-    vi.stubEnv("DEV", false);
-    await loginAs("owner@vane.app");
-    renderSidebar();
-    await waitFor(() => expect(screen.getByText("Domínios & Status")).toBeInTheDocument());
-    expect(screen.queryByRole("radiogroup")).not.toBeInTheDocument();
-    vi.unstubAllEnvs();
-  });
-
-  it("mostra nome e e-mail do admin logado acima do botão Sair", async () => {
-    await loginAs("owner@vane.app");
-    renderSidebar();
-    expect(await screen.findByText("Ana Owner")).toBeInTheDocument();
-    expect(screen.getByText("owner@vane.app")).toBeInTheDocument();
-  });
-
   it("omite 'Planos & Faturamento' do grupo Organização (fora de escopo)", async () => {
     await loginAs("owner@vane.app");
     renderSidebar();
@@ -133,17 +111,6 @@ describe("Sidebar", () => {
     const link = await screen.findByRole("link", { name: "Serviços monitorados" });
     expect(link.className).toContain("text-accent");
     expect(link.className).toContain("bg-[rgba(90,70,199,0.08)]");
-  });
-
-  it("botão de logout da sidebar abre o LogoutConfirmDialog e confirmar chama logout", async () => {
-    await loginAs("owner@vane.app");
-    renderSidebar();
-    await userEvent.click(await screen.findByRole("button", { name: "Sair" }));
-    expect(await screen.findByText("Sair do painel")).toBeInTheDocument();
-
-    const dialog = screen.getByRole("dialog");
-    await userEvent.click(within(dialog).getByRole("button", { name: "Sair" }));
-    await waitFor(() => expect(screen.queryByText("Ana Owner")).not.toBeInTheDocument());
   });
 
   it("TenantSwitcher (>1 membership) renderiza no topo da sidebar, acima dos grupos de nav", async () => {

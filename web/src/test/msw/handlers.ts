@@ -499,9 +499,14 @@ function overviewSeed() {
   });
   return {
     uptime_avg_30d: 99.9,
+    uptime_avg_30d_prior: 99.8,
     open_incidents: 1,
+    open_incidents_critical: 1,
+    open_incidents_monitoring: 0,
     unhealthy_services: 2,
+    total_services: 6,
     verified_domains: 1,
+    total_domains: 2,
     uptime_series: series,
     recent_incidents: [
       {

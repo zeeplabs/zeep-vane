@@ -29,9 +29,14 @@ function renderPage() {
 function emptyOverview(): OverviewResponse {
   return {
     uptime_avg_30d: null,
+    uptime_avg_30d_prior: null,
     open_incidents: 0,
+    open_incidents_critical: 0,
+    open_incidents_monitoring: 0,
     unhealthy_services: 0,
+    total_services: 0,
     verified_domains: 0,
+    total_domains: 0,
     uptime_series: Array.from({ length: 14 }, (_, i) => ({
       date: `2026-01-${String(i + 1).padStart(2, "0")}`,
       uptime_percent: null,
@@ -49,10 +54,11 @@ describe("OverviewPage", () => {
     expect(screen.getByTestId("overview-card-uptime")).toHaveTextContent("99.9%");
     expect(screen.getByTestId("overview-card-open-incidents")).toHaveTextContent("1");
     expect(screen.getByTestId("overview-card-unhealthy")).toHaveTextContent("2");
-    expect(screen.getByTestId("overview-card-domains")).toHaveTextContent("1");
-    // Out of Scope: no upsell banner, no activity-feed card.
-    expect(screen.queryByText(/Atividade recente/i)).not.toBeInTheDocument();
-    expect(screen.queryByText(/Free/i)).not.toBeInTheDocument();
+    expect(screen.getByTestId("overview-card-domains")).toHaveTextContent("1/2");
+    // 2026-09-14 decision: banner and activity feed are static placeholders
+    // (no Tenant.Plan/billing or ActivityEvent model yet), always rendered.
+    expect(screen.getByText(/Atividade recente do time/i)).toBeInTheDocument();
+    expect(screen.getByText(/plano Free/i)).toBeInTheDocument();
   });
 
   it("tenant vazio mostra '—' no uptime, 0 nos counts e o estado vazio de incidentes", async () => {
@@ -64,7 +70,7 @@ describe("OverviewPage", () => {
     expect(screen.getByTestId("overview-card-uptime")).toHaveTextContent("—");
     expect(screen.getByTestId("overview-card-open-incidents")).toHaveTextContent("0");
     expect(screen.getByTestId("overview-card-unhealthy")).toHaveTextContent("0");
-    expect(screen.getByTestId("overview-card-domains")).toHaveTextContent("0");
+    expect(screen.getByTestId("overview-card-domains")).toHaveTextContent("0/0");
     expect(screen.getByText("Nenhum incidente recente.")).toBeInTheDocument();
   });
 

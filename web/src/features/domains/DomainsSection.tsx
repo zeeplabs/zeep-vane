@@ -1,4 +1,5 @@
 import { useState, type FormEvent } from "react";
+import { MdOutlinePublic, MdOutlineDeleteOutline, MdOutlineAdd } from "react-icons/md";
 import { Button } from "../../components/ui/Button";
 import { Field } from "../../components/ui/Field";
 import { Card } from "../../components/ui/Card";
@@ -15,20 +16,11 @@ function formatTimestamp(iso: string): string {
 }
 
 function GlobeIcon() {
-  return (
-    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <circle cx="12" cy="12" r="9" />
-      <path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18" />
-    </svg>
-  );
+  return <MdOutlinePublic size={17} aria-hidden="true" />;
 }
 
 function TrashIcon() {
-  return (
-    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13" />
-    </svg>
-  );
+  return <MdOutlineDeleteOutline size={15} aria-hidden="true" />;
 }
 
 /** Tabela + form de domínios. Compartilhada entre `DomainsStatusPagesPage` (handoff mostra as duas seções na mesma tela) e `DomainsPage` (rota própria, mesmo padrão de `ServicesSection`). */
@@ -80,9 +72,7 @@ export function DomainsSection() {
         <h4 className="text-text">Domínios cadastrados</h4>
         {canManage ? (
           <Button variant="primary" onClick={() => setFormOpen((v) => !v)}>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
-              <path d="M12 5v14M5 12h14" />
-            </svg>
+            <MdOutlineAdd size={14} aria-hidden="true" />
             Adicionar domínio
           </Button>
         ) : null}

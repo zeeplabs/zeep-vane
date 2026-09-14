@@ -1,4 +1,5 @@
 import { useState, type FormEvent } from "react";
+import { MdOutlineAdd, MdOutlineCheckCircleOutline, MdOutlineRefresh } from "react-icons/md";
 import { Seg } from "../../components/ui/Seg";
 import { Card } from "../../components/ui/Card";
 import { Tag } from "../../components/ui/Tag";
@@ -33,34 +34,15 @@ const transitionOptions: { value: IncidentStatus; label: string }[] = [
 ];
 
 function PlusIcon() {
-  return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
-      <path d="M12 5v14M5 12h14" />
-    </svg>
-  );
+  return <MdOutlineAdd size={14} aria-hidden="true" />;
 }
 
 function CheckCircleIcon() {
-  return (
-    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="1.5" />
-      <path d="M8 12l2.5 2.5L16 9" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-    </svg>
-  );
+  return <MdOutlineCheckCircleOutline size={28} aria-hidden="true" />;
 }
 
 function ReloadIcon() {
-  return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <path
-        d="M20 12a8 8 0 10-2.7 6M20 6v6h-6"
-        stroke="currentColor"
-        strokeWidth="1.5"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
-  );
+  return <MdOutlineRefresh size={14} aria-hidden="true" />;
 }
 
 function ReopenButton({ incident }: { incident: Incident }) {

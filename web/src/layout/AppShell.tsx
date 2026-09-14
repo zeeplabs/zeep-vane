@@ -11,6 +11,7 @@ import { PollerBanner } from "../features/poller/PollerBanner";
 // Longest/most-specific prefixes are irrelevant here since every entry is
 // mutually exclusive by leading path segment.
 const routeTitleKeys: Array<[prefix: string, i18nKey: string]> = [
+  ["/overview", "sidebar.overview"],
   ["/domains", "sidebar.domainsStatusPages"],
   ["/status-pages", "sidebar.domainsStatusPages"],
   ["/incidents", "sidebar.incidents"],

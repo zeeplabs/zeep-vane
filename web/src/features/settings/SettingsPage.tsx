@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { useTranslation } from "react-i18next";
+import { MdOutlineFileUpload, MdOutlineImage } from "react-icons/md";
 import { Card } from "../../components/ui/Card";
 import { Field } from "../../components/ui/Field";
 import { Seg } from "../../components/ui/Seg";
@@ -14,21 +15,11 @@ import type { TaxIDType } from "../../types/api";
 const taxIDTypeValues: Array<TaxIDType | ""> = ["", "cpf", "cnpj"];
 
 function UploadIcon() {
-  return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d="M12 15V3M7 8l5-5 5 5M4 17v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3" />
-    </svg>
-  );
+  return <MdOutlineFileUpload size={14} aria-hidden="true" />;
 }
 
 function ImagePlaceholderIcon() {
-  return (
-    <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <rect x="3" y="4" width="18" height="16" rx="2" />
-      <circle cx="9" cy="10" r="1.5" />
-      <path d="M21 16l-5-5-4 4-3-3-6 6" />
-    </svg>
-  );
+  return <MdOutlineImage size={32} aria-hidden="true" />;
 }
 
 export function SettingsPage() {

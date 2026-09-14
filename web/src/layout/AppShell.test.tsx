@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import "../lib/i18n";
 import { AuthProvider } from "../auth/AuthProvider";
@@ -37,16 +37,30 @@ function renderShellAt(pathname: string) {
 }
 
 describe("AppShell", () => {
+  // Topbar's title is a plain styled <p>, not an <h1> - matching the
+  // handoff (the topbar title there is a plain div; only the routed page's
+  // own content has a real h1). A second <h1> with the same text was also
+  // an a11y bug (two h1s per page). So these assert the header's text
+  // directly instead of a heading role.
   it("deriva o título do Topbar a partir da rota atual (SHELL-08)", async () => {
     await loginAs("owner@vane.app");
-    renderShellAt("/incidents");
-    expect(await screen.findByRole("heading", { level: 1, name: "Incidentes" })).toBeInTheDocument();
+    const { container } = renderShellAt("/incidents");
+    const header = container.querySelector("header")!;
+    expect(await within(header).findByText("Incidentes")).toBeInTheDocument();
   });
 
   it("deriva um título diferente para outra rota", async () => {
     await loginAs("owner@vane.app");
-    renderShellAt("/settings");
-    expect(await screen.findByRole("heading", { level: 1, name: "Configurações" })).toBeInTheDocument();
+    const { container } = renderShellAt("/settings");
+    const header = container.querySelector("header")!;
+    expect(await within(header).findByText("Configurações")).toBeInTheDocument();
+  });
+
+  it("mostra 'Visão geral' (não o nome do app) como título em /overview", async () => {
+    await loginAs("owner@vane.app");
+    const { container } = renderShellAt("/overview");
+    const header = container.querySelector("header")!;
+    expect(await within(header).findByText("Visão geral")).toBeInTheDocument();
   });
 
   it("PollerBanner mantém a mesma posição relativa ao conteúdo roteado (antes do main)", async () => {

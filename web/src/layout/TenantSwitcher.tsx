@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { MdOutlineExpandMore } from "react-icons/md";
 import { useAuth } from "../auth/AuthProvider";
-import { Tag } from "../components/ui/Tag";
 import type { TenantMembership } from "../types/api";
 
 function initialsFor(label: string): string {
@@ -18,10 +18,33 @@ function displayNameFor(membership: TenantMembership): string {
   return membership.name || membership.tenant_id;
 }
 
-// TenantSwitcher is the sidebar's tenant-switcher popover (new-layout-
+// PlanBadge mirrors the handoff's flat (borderless) plan pill exactly -
+// free is a neutral tint, any paid tier is an accent tint. Not the shared
+// <Tag> component: Tag's variants are all outlined/dark-filled chips, none
+// of which match this specific flat style.
+function PlanBadge({ planTier, t }: { planTier: string; t: (key: string) => string }) {
+  const isFree = !planTier;
+  return (
+    <span
+      className="shrink-0 rounded-[5px] px-1.5 py-0.5 text-[10.5px] font-bold tracking-wide"
+      style={{
+        background: isFree ? "var(--color-sidebar-hover-bg)" : "color-mix(in srgb, var(--color-accent) 10%, transparent)",
+        color: isFree ? "var(--color-text-muted)" : "var(--color-accent)",
+      }}
+    >
+      {planLabel(planTier, t)}
+    </span>
+  );
+}
+
+// TenantSwitcher is the sidebar's tenant identity block (new-layout-
 // migration, SHELL-10/SHELL-11) - distinct from TenantSelector.tsx's
 // full-page picker, which only ever shows before an active tenant is
-// chosen. Renders null outright for the every-day single-membership case.
+// chosen. Always renders the active tenant's identity (avatar, name, plan
+// badge), matching handoff-new-layout/Visao Geral.dc.html; only the
+// dropdown/chevron are gated on having more than one membership - the
+// every-day single-membership case still shows the identity row, just not
+// interactive.
 export function TenantSwitcher() {
   const { t } = useTranslation();
   const { admin, switchTenant } = useAuth();
@@ -47,14 +70,40 @@ export function TenantSwitcher() {
   }, [open]);
 
   const memberships = admin?.memberships ?? [];
-  if (memberships.length <= 1) return null;
+  if (memberships.length === 0) return null;
 
+  const isMulti = memberships.length > 1;
   const active = memberships.find((m) => m.tenant_id === admin?.active_tenant_id) ?? memberships[0];
 
   async function handleSelect(tenantId: string) {
     setOpen(false);
     if (tenantId === active.tenant_id) return;
     await switchTenant(tenantId);
+  }
+
+  const identity = (
+    <>
+      <span className="flex h-[28px] w-[28px] shrink-0 items-center justify-center rounded-[8px] bg-accent text-[11px] font-semibold text-white">
+        {initialsFor(displayNameFor(active))}
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="block truncate text-[13px] font-medium text-text">{displayNameFor(active)}</span>
+      </span>
+      <PlanBadge planTier={active.plan_tier} t={t} />
+      {isMulti ? (
+        <span aria-hidden="true" className="shrink-0 text-text-muted">
+          <MdOutlineExpandMore size={14} />
+        </span>
+      ) : null}
+    </>
+  );
+
+  if (!isMulti) {
+    return (
+      <div className="flex w-full items-center gap-2 rounded-[10px] px-2 py-1.5">
+        {identity}
+      </div>
+    );
   }
 
   return (
@@ -64,17 +113,9 @@ export function TenantSwitcher() {
         onClick={() => setOpen((v) => !v)}
         aria-haspopup="listbox"
         aria-expanded={open}
-        className="flex w-full cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-left hover:bg-sidebar-hover-bg"
+        className="flex w-full cursor-pointer items-center gap-2 rounded-[10px] px-2 py-1.5 text-left hover:bg-sidebar-hover-bg"
       >
-        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-accent text-[11px] font-semibold text-white">
-          {initialsFor(displayNameFor(active))}
-        </span>
-        <span className="min-w-0 flex-1">
-          <span className="block truncate text-[13px] font-medium text-text">{displayNameFor(active)}</span>
-        </span>
-        <Tag variant={active.plan_tier ? "accent-outline" : "neutral-outline"}>
-          {planLabel(active.plan_tier, t)}
-        </Tag>
+        {identity}
       </button>
 
       {open ? (
@@ -94,13 +135,11 @@ export function TenantSwitcher() {
                   onClick={() => handleSelect(m.tenant_id)}
                   className="flex w-full cursor-pointer items-center gap-2 px-3 py-1.5 text-left text-[13px] text-text hover:bg-sidebar-hover-bg"
                 >
-                  <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-accent text-[10px] font-semibold text-white">
+                  <span className="flex h-[24px] w-[24px] shrink-0 items-center justify-center rounded-[7px] bg-accent text-[10px] font-semibold text-white">
                     {initialsFor(displayNameFor(m))}
                   </span>
                   <span className="min-w-0 flex-1 truncate">{displayNameFor(m)}</span>
-                  <Tag variant={m.plan_tier ? "accent-outline" : "neutral-outline"}>
-                    {planLabel(m.plan_tier, t)}
-                  </Tag>
+                  <PlanBadge planTier={m.plan_tier} t={t} />
                   {isActive ? <span aria-hidden="true">✓</span> : null}
                 </button>
               </li>

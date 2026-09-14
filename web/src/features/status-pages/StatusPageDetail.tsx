@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
+import { MdOutlineOpenInNew } from "react-icons/md";
 import { Tag } from "../../components/ui/Tag";
 import { Button, buttonBaseClasses, buttonVariantClasses } from "../../components/ui/Button";
 import { Card } from "../../components/ui/Card";
@@ -355,23 +356,7 @@ function VerificationRow({ ok, label }: VerificationRowProps) {
 }
 
 function ExternalLinkIcon() {
-  return (
-    <svg
-      width="14"
-      height="14"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
-      <path d="M15 3h6v6" />
-      <path d="M10 14 21 3" />
-    </svg>
-  );
+  return <MdOutlineOpenInNew size={14} aria-hidden="true" />;
 }
 
 interface ServiceGroupProps {

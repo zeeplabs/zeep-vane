@@ -69,7 +69,7 @@ function AdminEmailProbe() {
 }
 
 describe("TenantSwitcher", () => {
-  it("renderiza null para usuário com 1 único membership (SHELL-10)", async () => {
+  it("mostra a identidade do tenant sem dropdown pra usuário com 1 único membership (SHELL-10)", async () => {
     await loginAs("owner@vane.app");
     const { container } = render(
       <TestQueryProvider>
@@ -83,6 +83,9 @@ describe("TenantSwitcher", () => {
     );
 
     await screen.findByTestId("admin-email");
+    // Identity (name + plan badge) always renders, matching the handoff -
+    // only the dropdown affordance is gated on having >1 membership.
+    expect(await screen.findByText("tenant-1")).toBeInTheDocument();
     expect(container.querySelector("[aria-haspopup]")).not.toBeInTheDocument();
   });
 

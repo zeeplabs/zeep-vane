@@ -1,4 +1,5 @@
 import { useState, type FormEvent } from "react";
+import { MdOutlineCable } from "react-icons/md";
 import { Card } from "../../components/ui/Card";
 import { Field } from "../../components/ui/Field";
 import { Button } from "../../components/ui/Button";
@@ -10,11 +11,7 @@ import { AISettings } from "../settings/AISettings";
 import { useConnectDatadog, useIntegrationStatus } from "./hooks";
 
 function DatadogIcon() {
-  return (
-    <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d="M9 2v4M15 2v4M7 8h2v4a3 3 0 0 0 3 3 3 3 0 0 0 3-3V8h2M12 15v4M9 22h6" />
-    </svg>
-  );
+  return <MdOutlineCable size={19} aria-hidden="true" />;
 }
 
 function formatTimestamp(iso: string | null | undefined): string {

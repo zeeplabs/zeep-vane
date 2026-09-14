@@ -166,9 +166,14 @@ export interface SessionView {
 // when no service has data in the window - the UI renders "—" for null.
 export interface OverviewResponse {
   uptime_avg_30d: number | null;
+  uptime_avg_30d_prior: number | null;
   open_incidents: number;
+  open_incidents_critical: number;
+  open_incidents_monitoring: number;
   unhealthy_services: number;
+  total_services: number;
   verified_domains: number;
+  total_domains: number;
   uptime_series: OverviewUptimeBucket[];
   recent_incidents: OverviewIncident[];
 }

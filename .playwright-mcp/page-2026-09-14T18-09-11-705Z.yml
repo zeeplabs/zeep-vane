@@ -1,0 +1,25 @@
+- generic [ref=f3e2]:
+  - region "Notifications alt+T"
+  - generic [ref=f3e3]:
+    - generic [ref=f3e4]:
+      - img "Company logo" [ref=f3e6]
+      - generic [ref=f3e7]:
+        - heading "Status e incidentes, sob controle." [level=1] [ref=f3e8]
+        - paragraph [ref=f3e9]: Monitore integrações, comunique incidentes e mantenha suas status pages sempre atualizadas — tudo em um painel só.
+      - paragraph [ref=f3e10]: © 2026 Vane. Todos os direitos reservados.
+    - generic [ref=f3e12]:
+      - generic [ref=f3e13]:
+        - heading "Entrar" [level=3] [ref=f3e14]
+        - paragraph [ref=f3e15]: Entre com suas credenciais para acessar o painel.
+      - generic [ref=f3e16]:
+        - generic [ref=f3e17]:
+          - generic [ref=f3e18]: E-mail
+          - textbox "E-mail" [ref=f3e19]
+        - generic [ref=f3e20]:
+          - generic [ref=f3e21]:
+            - generic [ref=f3e22]: Senha
+            - textbox "Senha" [ref=f3e23]
+          - button "Mostrar senha" [ref=f3e24] [cursor=pointer]
+        - link "Esqueci minha senha" [ref=f3e28] [cursor=pointer]:
+          - /url: /reset-password
+        - button "Entrar" [ref=f3e29] [cursor=pointer]

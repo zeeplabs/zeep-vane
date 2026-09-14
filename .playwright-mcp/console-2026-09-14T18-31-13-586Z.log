@@ -1,0 +1,268 @@
+[     159ms] [INFO] %cDownload the React DevTools for a better development experience: https://reactjs.org/link/react-devtools font-weight:bold @ http://localhost:5173/node_modules/.vite/deps/chunk-SXRIVT2P.js?v=49430687:21608
+[     178ms] [WARNING] ⚠️ React Router Future Flag Warning: React Router will begin wrapping state updates in `React.startTransition` in v7. You can use the `v7_startTransition` future flag to opt-in early. For more information, see https://reactrouter.com/v6/upgrading/future#v7_starttransition. @ http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=49430687:4416
+[     178ms] [WARNING] ⚠️ React Router Future Flag Warning: Relative route resolution within Splat routes is changing in v7. You can use the `v7_relativeSplatPath` future flag to opt-in early. For more information, see https://reactrouter.com/v6/upgrading/future#v7_relativesplatpath. @ http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=49430687:4416
+[  116600ms] ReferenceError: useBrandLogoUrl is not defined
+    at Sidebar (http://localhost:5173/src/layout/Sidebar.tsx?t=1789410790127:122:19)
+    at renderWithHooks (http://localhost:5173/node_modules/.vite/deps/chunk-SXRIVT2P.js?v=49430687:11596:26)
+    at mountIndeterminateComponent (http://localhost:5173/node_modules/.vite/deps/chunk-SXRIVT2P.js?v=49430687:14974:21)
+    at beginWork (http://localhost:5173/node_modules/.vite/deps/chunk-SXRIVT2P.js?v=49430687:15962:22)
+    at HTMLUnknownElement.callCallback2 (http://localhost:5173/node_modules/.vite/deps/chunk-SXRIVT2P.js?v=49430687:3680:22)
+    at Object.invokeGuardedCallbackDev (http://localhost:5173/node_modules/.vite/deps/chunk-SXRIVT2P.js?v=49430687:3705:24)
+    at invokeGuardedCallback (http://localhost:5173/node_modules/.vite/deps/chunk-SXRIVT2P.js?v=49430687:3739:39)
+    at beginWork$1 (http://localhost:5173/node_modules/.vite/deps/chunk-SXRIVT2P.js?v=49430687:19818:15)
+    at performUnitOfWork (http://localhost:5173/node_modules/.vite/deps/chunk-SXRIVT2P.js?v=49430687:19251:20)
+    at workLoopSync (http://localhost:5173/node_modules/.vite/deps/chunk-SXRIVT2P.js?v=49430687:19190:13)
+[  116601ms] ReferenceError: useBrandLogoUrl is not defined
+    at Sidebar (http://localhost:5173/src/layout/Sidebar.tsx?t=1789410790127:122:19)
+    at renderWithHooks (http://localhost:5173/node_modules/.vite/deps/chunk-SXRIVT2P.js?v=49430687:11596:26)
+    at mountIndeterminateComponent (http://localhost:5173/node_modules/.vite/deps/chunk-SXRIVT2P.js?v=49430687:14974:21)
+    at beginWork (http://localhost:5173/node_modules/.vite/deps/chunk-SXRIVT2P.js?v=49430687:15962:22)
+    at HTMLUnknownElement.callCallback2 (http://localhost:5173/node_modules/.vite/deps/chunk-SXRIVT2P.js?v=49430687:3680:22)
+    at Object.invokeGuardedCallbackDev (http://localhost:5173/node_modules/.vite/deps/chunk-SXRIVT2P.js?v=49430687:3705:24)
+    at invokeGuardedCallback (http://localhost:5173/node_modules/.vite/deps/chunk-SXRIVT2P.js?v=49430687:3739:39)
+    at beginWork$1 (http://localhost:5173/node_modules/.vite/deps/chunk-SXRIVT2P.js?v=49430687:19818:15)
+    at performUnitOfWork (http://localhost:5173/node_modules/.vite/deps/chunk-SXRIVT2P.js?v=49430687:19251:20)
+    at workLoopSync (http://localhost:5173/node_modules/.vite/deps/chunk-SXRIVT2P.js?v=49430687:19190:13)
+[  116603ms] [ERROR] The above error occurred in the <Sidebar> component:
+
+    at Sidebar (http://localhost:5173/src/layout/Sidebar.tsx?t=1789410790127:120:42)
+    at div
+    at AppShell (http://localhost:5173/src/layout/AppShell.tsx?t=1789410597721:37:28)
+    at AuthenticatedLayout
+    at RequireAuth (http://localhost:5173/src/routes/RequireRole.tsx:20:31)
+    at RedirectToBootstrapIfNeeded (http://localhost:5173/src/App.tsx?t=1789410597721:47:40)
+    at RenderedRoute (http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=49430687:4112:5)
+    at Routes (http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=49430687:4582:5)
+    at AuthProvider (http://localhost:5173/src/auth/AuthProvider.tsx:40:32)
+    at App
+    at Router (http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=49430687:4525:15)
+    at BrowserRouter (http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=49430687:5263:5)
+    at QueryClientProvider (http://localhost:5173/node_modules/.vite/deps/@tanstack_react-query.js?v=49430687:3253:3)
+
+Consider adding an error boundary to your tree to customize error handling behavior.
+Visit https://reactjs.org/link/error-boundaries to learn more about error boundaries. @ http://localhost:5173/node_modules/.vite/deps/chunk-SXRIVT2P.js?v=49430687:14079
+[  116604ms] ReferenceError: useBrandLogoUrl is not defined
+    at Sidebar (http://localhost:5173/src/layout/Sidebar.tsx?t=1789410790127:122:19)
+    at renderWithHooks (http://localhost:5173/node_modules/.vite/deps/chunk-SXRIVT2P.js?v=49430687:11596:26)
+    at mountIndeterminateComponent (http://localhost:5173/node_modules/.vite/deps/chunk-SXRIVT2P.js?v=49430687:14974:21)
+    at beginWork (http://localhost:5173/node_modules/.vite/deps/chunk-SXRIVT2P.js?v=49430687:15962:22)
+    at beginWork$1 (http://localhost:5173/node_modules/.vite/deps/chunk-SXRIVT2P.js?v=49430687:19806:22)
+    at performUnitOfWork (http://localhost:5173/node_modules/.vite/deps/chunk-SXRIVT2P.js?v=49430687:19251:20)
+    at workLoopSync (http://localhost:5173/node_modules/.vite/deps/chunk-SXRIVT2P.js?v=49430687:19190:13)
+    at renderRootSync (http://localhost:5173/node_modules/.vite/deps/chunk-SXRIVT2P.js?v=49430687:19169:15)
+    at recoverFromConcurrentError (http://localhost:5173/node_modules/.vite/deps/chunk-SXRIVT2P.js?v=49430687:18786:28)
+    at performSyncWorkOnRoot (http://localhost:5173/node_modules/.vite/deps/chunk-SXRIVT2P.js?v=49430687:18932:28)
+[  131068ms] ReferenceError: Tag is not defined
+    at TenantSwitcher (http://localhost:5173/src/layout/TenantSwitcher.tsx?t=1789410804612:78:28)
+    at renderWithHooks (http://localhost:5173/node_modules/.vite/deps/chunk-SXRIVT2P.js?v=49430687:11596:26)
+    at updateFunctionComponent (http://localhost:5173/node_modules/.vite/deps/chunk-SXRIVT2P.js?v=49430687:14630:28)
+    at beginWork (http://localhost:5173/node_modules/.vite/deps/chunk-SXRIVT2P.js?v=49430687:15972:22)
+    at HTMLUnknownElement.callCallback2 (http://localhost:5173/node_modules/.vite/deps/chunk-SXRIVT2P.js?v=49430687:3680:22)
+    at Object.invokeGuardedCallbackDev (http://localhost:5173/node_modules/.vite/deps/chunk-SXRIVT2P.js?v=49430687:3705:24)
+    at invokeGuardedCallback (http://localhost:5173/node_modules/.vite/deps/chunk-SXRIVT2P.js?v=49430687:3739:39)
+    at beginWork$1 (http://localhost:5173/node_modules/.vite/deps/chunk-SXRIVT2P.js?v=49430687:19818:15)
+    at performUnitOfWork (http://localhost:5173/node_modules/.vite/deps/chunk-SXRIVT2P.js?v=49430687:19251:20)
+    at workLoopSync (http://localhost:5173/node_modules/.vite/deps/chunk-SXRIVT2P.js?v=49430687:19190:13)
+[  131068ms] ReferenceError: Tag is not defined
+    at TenantSwitcher (http://localhost:5173/src/layout/TenantSwitcher.tsx?t=1789410804612:78:28)
+    at renderWithHooks (http://localhost:5173/node_modules/.vite/deps/chunk-SXRIVT2P.js?v=49430687:11596:26)
+    at updateFunctionComponent (http://localhost:5173/node_modules/.vite/deps/chunk-SXRIVT2P.js?v=49430687:14630:28)
+    at beginWork (http://localhost:5173/node_modules/.vite/deps/chunk-SXRIVT2P.js?v=49430687:15972:22)
+    at HTMLUnknownElement.callCallback2 (http://localhost:5173/node_modules/.vite/deps/chunk-SXRIVT2P.js?v=49430687:3680:22)
+    at Object.invokeGuardedCallbackDev (http://localhost:5173/node_modules/.vite/deps/chunk-SXRIVT2P.js?v=49430687:3705:24)
+    at invokeGuardedCallback (http://localhost:5173/node_modules/.vite/deps/chunk-SXRIVT2P.js?v=49430687:3739:39)
+    at beginWork$1 (http://localhost:5173/node_modules/.vite/deps/chunk-SXRIVT2P.js?v=49430687:19818:15)
+    at performUnitOfWork (http://localhost:5173/node_modules/.vite/deps/chunk-SXRIVT2P.js?v=49430687:19251:20)
+    at workLoopSync (http://localhost:5173/node_modules/.vite/deps/chunk-SXRIVT2P.js?v=49430687:19190:13)
+[  131070ms] [ERROR] The above error occurred in the <TenantSwitcher> component:
+
+    at TenantSwitcher (http://localhost:5173/src/layout/TenantSwitcher.tsx?t=1789410804612:33:17)
+    at aside
+    at Sidebar (http://localhost:5173/src/layout/Sidebar.tsx?t=1789410793382:120:42)
+    at div
+    at AppShell (http://localhost:5173/src/layout/AppShell.tsx?t=1789410597721:37:28)
+    at AuthenticatedLayout
+    at RequireAuth (http://localhost:5173/src/routes/RequireRole.tsx:20:31)
+    at RedirectToBootstrapIfNeeded (http://localhost:5173/src/App.tsx?t=1789410597721:47:40)
+    at RenderedRoute (http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=49430687:4112:5)
+    at Routes (http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=49430687:4582:5)
+    at AuthProvider (http://localhost:5173/src/auth/AuthProvider.tsx:40:32)
+    at App
+    at Router (http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=49430687:4525:15)
+    at BrowserRouter (http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=49430687:5263:5)
+    at QueryClientProvider (http://localhost:5173/node_modules/.vite/deps/@tanstack_react-query.js?v=49430687:3253:3)
+
+Consider adding an error boundary to your tree to customize error handling behavior.
+Visit https://reactjs.org/link/error-boundaries to learn more about error boundaries. @ http://localhost:5173/node_modules/.vite/deps/chunk-SXRIVT2P.js?v=49430687:14079
+[  131070ms] ReferenceError: Tag is not defined
+    at TenantSwitcher (http://localhost:5173/src/layout/TenantSwitcher.tsx?t=1789410804612:78:28)
+    at renderWithHooks (http://localhost:5173/node_modules/.vite/deps/chunk-SXRIVT2P.js?v=49430687:11596:26)
+    at updateFunctionComponent (http://localhost:5173/node_modules/.vite/deps/chunk-SXRIVT2P.js?v=49430687:14630:28)
+    at beginWork (http://localhost:5173/node_modules/.vite/deps/chunk-SXRIVT2P.js?v=49430687:15972:22)
+    at beginWork$1 (http://localhost:5173/node_modules/.vite/deps/chunk-SXRIVT2P.js?v=49430687:19806:22)
+    at performUnitOfWork (http://localhost:5173/node_modules/.vite/deps/chunk-SXRIVT2P.js?v=49430687:19251:20)
+    at workLoopSync (http://localhost:5173/node_modules/.vite/deps/chunk-SXRIVT2P.js?v=49430687:19190:13)
+    at renderRootSync (http://localhost:5173/node_modules/.vite/deps/chunk-SXRIVT2P.js?v=49430687:19169:15)
+    at recoverFromConcurrentError (http://localhost:5173/node_modules/.vite/deps/chunk-SXRIVT2P.js?v=49430687:18786:28)
+    at performSyncWorkOnRoot (http://localhost:5173/node_modules/.vite/deps/chunk-SXRIVT2P.js?v=49430687:18932:28)
+[  137051ms] ReferenceError: Tag is not defined
+    at TenantSwitcher (http://localhost:5173/src/layout/TenantSwitcher.tsx?t=1789410810576:101:28)
+    at renderWithHooks (http://localhost:5173/node_modules/.vite/deps/chunk-SXRIVT2P.js?v=49430687:11596:26)
+    at mountIndeterminateComponent (http://localhost:5173/node_modules/.vite/deps/chunk-SXRIVT2P.js?v=49430687:14974:21)
+    at beginWork (http://localhost:5173/node_modules/.vite/deps/chunk-SXRIVT2P.js?v=49430687:15962:22)
+    at HTMLUnknownElement.callCallback2 (http://localhost:5173/node_modules/.vite/deps/chunk-SXRIVT2P.js?v=49430687:3680:22)
+    at Object.invokeGuardedCallbackDev (http://localhost:5173/node_modules/.vite/deps/chunk-SXRIVT2P.js?v=49430687:3705:24)
+    at invokeGuardedCallback (http://localhost:5173/node_modules/.vite/deps/chunk-SXRIVT2P.js?v=49430687:3739:39)
+    at beginWork$1 (http://localhost:5173/node_modules/.vite/deps/chunk-SXRIVT2P.js?v=49430687:19818:15)
+    at performUnitOfWork (http://localhost:5173/node_modules/.vite/deps/chunk-SXRIVT2P.js?v=49430687:19251:20)
+    at workLoopSync (http://localhost:5173/node_modules/.vite/deps/chunk-SXRIVT2P.js?v=49430687:19190:13)
+[  137055ms] ReferenceError: Tag is not defined
+    at TenantSwitcher (http://localhost:5173/src/layout/TenantSwitcher.tsx?t=1789410810576:101:28)
+    at renderWithHooks (http://localhost:5173/node_modules/.vite/deps/chunk-SXRIVT2P.js?v=49430687:11596:26)
+    at mountIndeterminateComponent (http://localhost:5173/node_modules/.vite/deps/chunk-SXRIVT2P.js?v=49430687:14974:21)
+    at beginWork (http://localhost:5173/node_modules/.vite/deps/chunk-SXRIVT2P.js?v=49430687:15962:22)
+    at HTMLUnknownElement.callCallback2 (http://localhost:5173/node_modules/.vite/deps/chunk-SXRIVT2P.js?v=49430687:3680:22)
+    at Object.invokeGuardedCallbackDev (http://localhost:5173/node_modules/.vite/deps/chunk-SXRIVT2P.js?v=49430687:3705:24)
+    at invokeGuardedCallback (http://localhost:5173/node_modules/.vite/deps/chunk-SXRIVT2P.js?v=49430687:3739:39)
+    at beginWork$1 (http://localhost:5173/node_modules/.vite/deps/chunk-SXRIVT2P.js?v=49430687:19818:15)
+    at performUnitOfWork (http://localhost:5173/node_modules/.vite/deps/chunk-SXRIVT2P.js?v=49430687:19251:20)
+    at workLoopSync (http://localhost:5173/node_modules/.vite/deps/chunk-SXRIVT2P.js?v=49430687:19190:13)
+[  137058ms] [ERROR] The above error occurred in the <TenantSwitcher> component:
+
+    at TenantSwitcher (http://localhost:5173/src/layout/TenantSwitcher.tsx?t=1789410810576:56:17)
+    at aside
+    at Sidebar (http://localhost:5173/src/layout/Sidebar.tsx?t=1789410793382:120:42)
+    at div
+    at AppShell (http://localhost:5173/src/layout/AppShell.tsx?t=1789410597721:37:28)
+    at AuthenticatedLayout
+    at RequireAuth (http://localhost:5173/src/routes/RequireRole.tsx:20:31)
+    at RedirectToBootstrapIfNeeded (http://localhost:5173/src/App.tsx?t=1789410597721:47:40)
+    at RenderedRoute (http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=49430687:4112:5)
+    at Routes (http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=49430687:4582:5)
+    at AuthProvider (http://localhost:5173/src/auth/AuthProvider.tsx:40:32)
+    at App
+    at Router (http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=49430687:4525:15)
+    at BrowserRouter (http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=49430687:5263:5)
+    at QueryClientProvider (http://localhost:5173/node_modules/.vite/deps/@tanstack_react-query.js?v=49430687:3253:3)
+
+Consider adding an error boundary to your tree to customize error handling behavior.
+Visit https://reactjs.org/link/error-boundaries to learn more about error boundaries. @ http://localhost:5173/node_modules/.vite/deps/chunk-SXRIVT2P.js?v=49430687:14079
+[  137058ms] ReferenceError: Tag is not defined
+    at TenantSwitcher (http://localhost:5173/src/layout/TenantSwitcher.tsx?t=1789410810576:101:28)
+    at renderWithHooks (http://localhost:5173/node_modules/.vite/deps/chunk-SXRIVT2P.js?v=49430687:11596:26)
+    at mountIndeterminateComponent (http://localhost:5173/node_modules/.vite/deps/chunk-SXRIVT2P.js?v=49430687:14974:21)
+    at beginWork (http://localhost:5173/node_modules/.vite/deps/chunk-SXRIVT2P.js?v=49430687:15962:22)
+    at beginWork$1 (http://localhost:5173/node_modules/.vite/deps/chunk-SXRIVT2P.js?v=49430687:19806:22)
+    at performUnitOfWork (http://localhost:5173/node_modules/.vite/deps/chunk-SXRIVT2P.js?v=49430687:19251:20)
+    at workLoopSync (http://localhost:5173/node_modules/.vite/deps/chunk-SXRIVT2P.js?v=49430687:19190:13)
+    at renderRootSync (http://localhost:5173/node_modules/.vite/deps/chunk-SXRIVT2P.js?v=49430687:19169:15)
+    at recoverFromConcurrentError (http://localhost:5173/node_modules/.vite/deps/chunk-SXRIVT2P.js?v=49430687:18786:28)
+    at performConcurrentWorkOnRoot (http://localhost:5173/node_modules/.vite/deps/chunk-SXRIVT2P.js?v=49430687:18734:30)
+[  170716ms] ReferenceError: DEV_ROLES is not defined
+    at Sidebar (http://localhost:5173/src/layout/Sidebar.tsx?t=1789410844235:318:184)
+    at renderWithHooks (http://localhost:5173/node_modules/.vite/deps/chunk-SXRIVT2P.js?v=49430687:11596:26)
+    at updateFunctionComponent (http://localhost:5173/node_modules/.vite/deps/chunk-SXRIVT2P.js?v=49430687:14630:28)
+    at beginWork (http://localhost:5173/node_modules/.vite/deps/chunk-SXRIVT2P.js?v=49430687:15972:22)
+    at HTMLUnknownElement.callCallback2 (http://localhost:5173/node_modules/.vite/deps/chunk-SXRIVT2P.js?v=49430687:3680:22)
+    at Object.invokeGuardedCallbackDev (http://localhost:5173/node_modules/.vite/deps/chunk-SXRIVT2P.js?v=49430687:3705:24)
+    at invokeGuardedCallback (http://localhost:5173/node_modules/.vite/deps/chunk-SXRIVT2P.js?v=49430687:3739:39)
+    at beginWork$1 (http://localhost:5173/node_modules/.vite/deps/chunk-SXRIVT2P.js?v=49430687:19818:15)
+    at performUnitOfWork (http://localhost:5173/node_modules/.vite/deps/chunk-SXRIVT2P.js?v=49430687:19251:20)
+    at workLoopSync (http://localhost:5173/node_modules/.vite/deps/chunk-SXRIVT2P.js?v=49430687:19190:13)
+[  170716ms] ReferenceError: DEV_ROLES is not defined
+    at Sidebar (http://localhost:5173/src/layout/Sidebar.tsx?t=1789410844235:318:184)
+    at renderWithHooks (http://localhost:5173/node_modules/.vite/deps/chunk-SXRIVT2P.js?v=49430687:11596:26)
+    at updateFunctionComponent (http://localhost:5173/node_modules/.vite/deps/chunk-SXRIVT2P.js?v=49430687:14630:28)
+    at beginWork (http://localhost:5173/node_modules/.vite/deps/chunk-SXRIVT2P.js?v=49430687:15972:22)
+    at HTMLUnknownElement.callCallback2 (http://localhost:5173/node_modules/.vite/deps/chunk-SXRIVT2P.js?v=49430687:3680:22)
+    at Object.invokeGuardedCallbackDev (http://localhost:5173/node_modules/.vite/deps/chunk-SXRIVT2P.js?v=49430687:3705:24)
+    at invokeGuardedCallback (http://localhost:5173/node_modules/.vite/deps/chunk-SXRIVT2P.js?v=49430687:3739:39)
+    at beginWork$1 (http://localhost:5173/node_modules/.vite/deps/chunk-SXRIVT2P.js?v=49430687:19818:15)
+    at performUnitOfWork (http://localhost:5173/node_modules/.vite/deps/chunk-SXRIVT2P.js?v=49430687:19251:20)
+    at workLoopSync (http://localhost:5173/node_modules/.vite/deps/chunk-SXRIVT2P.js?v=49430687:19190:13)
+[  170717ms] [ERROR] The above error occurred in the <Sidebar> component:
+
+    at Sidebar (http://localhost:5173/src/layout/Sidebar.tsx?t=1789410844235:115:42)
+    at div
+    at AppShell (http://localhost:5173/src/layout/AppShell.tsx?t=1789410597721:37:28)
+    at AuthenticatedLayout
+    at RequireAuth (http://localhost:5173/src/routes/RequireRole.tsx:20:31)
+    at RedirectToBootstrapIfNeeded (http://localhost:5173/src/App.tsx?t=1789410597721:47:40)
+    at RenderedRoute (http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=49430687:4112:5)
+    at Routes (http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=49430687:4582:5)
+    at AuthProvider (http://localhost:5173/src/auth/AuthProvider.tsx:40:32)
+    at App
+    at Router (http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=49430687:4525:15)
+    at BrowserRouter (http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=49430687:5263:5)
+    at QueryClientProvider (http://localhost:5173/node_modules/.vite/deps/@tanstack_react-query.js?v=49430687:3253:3)
+
+Consider adding an error boundary to your tree to customize error handling behavior.
+Visit https://reactjs.org/link/error-boundaries to learn more about error boundaries. @ http://localhost:5173/node_modules/.vite/deps/chunk-SXRIVT2P.js?v=49430687:14079
+[  170718ms] ReferenceError: DEV_ROLES is not defined
+    at Sidebar (http://localhost:5173/src/layout/Sidebar.tsx?t=1789410844235:318:184)
+    at renderWithHooks (http://localhost:5173/node_modules/.vite/deps/chunk-SXRIVT2P.js?v=49430687:11596:26)
+    at updateFunctionComponent (http://localhost:5173/node_modules/.vite/deps/chunk-SXRIVT2P.js?v=49430687:14630:28)
+    at beginWork (http://localhost:5173/node_modules/.vite/deps/chunk-SXRIVT2P.js?v=49430687:15972:22)
+    at beginWork$1 (http://localhost:5173/node_modules/.vite/deps/chunk-SXRIVT2P.js?v=49430687:19806:22)
+    at performUnitOfWork (http://localhost:5173/node_modules/.vite/deps/chunk-SXRIVT2P.js?v=49430687:19251:20)
+    at workLoopSync (http://localhost:5173/node_modules/.vite/deps/chunk-SXRIVT2P.js?v=49430687:19190:13)
+    at renderRootSync (http://localhost:5173/node_modules/.vite/deps/chunk-SXRIVT2P.js?v=49430687:19169:15)
+    at recoverFromConcurrentError (http://localhost:5173/node_modules/.vite/deps/chunk-SXRIVT2P.js?v=49430687:18786:28)
+    at performSyncWorkOnRoot (http://localhost:5173/node_modules/.vite/deps/chunk-SXRIVT2P.js?v=49430687:18932:28)
+[  173216ms] ReferenceError: DEV_ROLES is not defined
+    at Sidebar (http://localhost:5173/src/layout/Sidebar.tsx?t=1789410846749:318:184)
+    at renderWithHooks (http://localhost:5173/node_modules/.vite/deps/chunk-SXRIVT2P.js?v=49430687:11596:26)
+    at mountIndeterminateComponent (http://localhost:5173/node_modules/.vite/deps/chunk-SXRIVT2P.js?v=49430687:14974:21)
+    at beginWork (http://localhost:5173/node_modules/.vite/deps/chunk-SXRIVT2P.js?v=49430687:15962:22)
+    at HTMLUnknownElement.callCallback2 (http://localhost:5173/node_modules/.vite/deps/chunk-SXRIVT2P.js?v=49430687:3680:22)
+    at Object.invokeGuardedCallbackDev (http://localhost:5173/node_modules/.vite/deps/chunk-SXRIVT2P.js?v=49430687:3705:24)
+    at invokeGuardedCallback (http://localhost:5173/node_modules/.vite/deps/chunk-SXRIVT2P.js?v=49430687:3739:39)
+    at beginWork$1 (http://localhost:5173/node_modules/.vite/deps/chunk-SXRIVT2P.js?v=49430687:19818:15)
+    at performUnitOfWork (http://localhost:5173/node_modules/.vite/deps/chunk-SXRIVT2P.js?v=49430687:19251:20)
+    at workLoopSync (http://localhost:5173/node_modules/.vite/deps/chunk-SXRIVT2P.js?v=49430687:19190:13)
+[  173219ms] ReferenceError: DEV_ROLES is not defined
+    at Sidebar (http://localhost:5173/src/layout/Sidebar.tsx?t=1789410846749:318:184)
+    at renderWithHooks (http://localhost:5173/node_modules/.vite/deps/chunk-SXRIVT2P.js?v=49430687:11596:26)
+    at mountIndeterminateComponent (http://localhost:5173/node_modules/.vite/deps/chunk-SXRIVT2P.js?v=49430687:14974:21)
+    at beginWork (http://localhost:5173/node_modules/.vite/deps/chunk-SXRIVT2P.js?v=49430687:15962:22)
+    at HTMLUnknownElement.callCallback2 (http://localhost:5173/node_modules/.vite/deps/chunk-SXRIVT2P.js?v=49430687:3680:22)
+    at Object.invokeGuardedCallbackDev (http://localhost:5173/node_modules/.vite/deps/chunk-SXRIVT2P.js?v=49430687:3705:24)
+    at invokeGuardedCallback (http://localhost:5173/node_modules/.vite/deps/chunk-SXRIVT2P.js?v=49430687:3739:39)
+    at beginWork$1 (http://localhost:5173/node_modules/.vite/deps/chunk-SXRIVT2P.js?v=49430687:19818:15)
+    at performUnitOfWork (http://localhost:5173/node_modules/.vite/deps/chunk-SXRIVT2P.js?v=49430687:19251:20)
+    at workLoopSync (http://localhost:5173/node_modules/.vite/deps/chunk-SXRIVT2P.js?v=49430687:19190:13)
+[  173221ms] [ERROR] The above error occurred in the <Sidebar> component:
+
+    at Sidebar (http://localhost:5173/src/layout/Sidebar.tsx?t=1789410846749:115:23)
+    at div
+    at AppShell (http://localhost:5173/src/layout/AppShell.tsx?t=1789410597721:37:28)
+    at AuthenticatedLayout
+    at RequireAuth (http://localhost:5173/src/routes/RequireRole.tsx:20:31)
+    at RedirectToBootstrapIfNeeded (http://localhost:5173/src/App.tsx?t=1789410597721:47:40)
+    at RenderedRoute (http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=49430687:4112:5)
+    at Routes (http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=49430687:4582:5)
+    at AuthProvider (http://localhost:5173/src/auth/AuthProvider.tsx:40:32)
+    at App
+    at Router (http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=49430687:4525:15)
+    at BrowserRouter (http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=49430687:5263:5)
+    at QueryClientProvider (http://localhost:5173/node_modules/.vite/deps/@tanstack_react-query.js?v=49430687:3253:3)
+
+Consider adding an error boundary to your tree to customize error handling behavior.
+Visit https://reactjs.org/link/error-boundaries to learn more about error boundaries. @ http://localhost:5173/node_modules/.vite/deps/chunk-SXRIVT2P.js?v=49430687:14079
+[  173221ms] ReferenceError: DEV_ROLES is not defined
+    at Sidebar (http://localhost:5173/src/layout/Sidebar.tsx?t=1789410846749:318:184)
+    at renderWithHooks (http://localhost:5173/node_modules/.vite/deps/chunk-SXRIVT2P.js?v=49430687:11596:26)
+    at mountIndeterminateComponent (http://localhost:5173/node_modules/.vite/deps/chunk-SXRIVT2P.js?v=49430687:14974:21)
+    at beginWork (http://localhost:5173/node_modules/.vite/deps/chunk-SXRIVT2P.js?v=49430687:15962:22)
+    at beginWork$1 (http://localhost:5173/node_modules/.vite/deps/chunk-SXRIVT2P.js?v=49430687:19806:22)
+    at performUnitOfWork (http://localhost:5173/node_modules/.vite/deps/chunk-SXRIVT2P.js?v=49430687:19251:20)
+    at workLoopSync (http://localhost:5173/node_modules/.vite/deps/chunk-SXRIVT2P.js?v=49430687:19190:13)
+    at renderRootSync (http://localhost:5173/node_modules/.vite/deps/chunk-SXRIVT2P.js?v=49430687:19169:15)
+    at recoverFromConcurrentError (http://localhost:5173/node_modules/.vite/deps/chunk-SXRIVT2P.js?v=49430687:18786:28)
+    at performConcurrentWorkOnRoot (http://localhost:5173/node_modules/.vite/deps/chunk-SXRIVT2P.js?v=49430687:18734:30)
+[  194057ms] [INFO] %cDownload the React DevTools for a better development experience: https://reactjs.org/link/react-devtools font-weight:bold @ http://localhost:5173/node_modules/.vite/deps/chunk-SXRIVT2P.js?v=49430687:21608
+[  194077ms] [WARNING] ⚠️ React Router Future Flag Warning: React Router will begin wrapping state updates in `React.startTransition` in v7. You can use the `v7_startTransition` future flag to opt-in early. For more information, see https://reactrouter.com/v6/upgrading/future#v7_starttransition. @ http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=49430687:4416
+[  194077ms] [WARNING] ⚠️ React Router Future Flag Warning: Relative route resolution within Splat routes is changing in v7. You can use the `v7_relativeSplatPath` future flag to opt-in early. For more information, see https://reactrouter.com/v6/upgrading/future#v7_relativesplatpath. @ http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=49430687:4416
+[  198830ms] [INFO] %cDownload the React DevTools for a better development experience: https://reactjs.org/link/react-devtools font-weight:bold @ http://localhost:5173/node_modules/.vite/deps/chunk-SXRIVT2P.js?v=49430687:21608
+[  198839ms] [WARNING] ⚠️ React Router Future Flag Warning: React Router will begin wrapping state updates in `React.startTransition` in v7. You can use the `v7_startTransition` future flag to opt-in early. For more information, see https://reactrouter.com/v6/upgrading/future#v7_starttransition. @ http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=49430687:4416
+[  198839ms] [WARNING] ⚠️ React Router Future Flag Warning: Relative route resolution within Splat routes is changing in v7. You can use the `v7_relativeSplatPath` future flag to opt-in early. For more information, see https://reactrouter.com/v6/upgrading/future#v7_relativesplatpath. @ http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=49430687:4416

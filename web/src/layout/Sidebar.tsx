@@ -1,136 +1,78 @@
 import { useState } from "react";
 import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
+import {
+  MdOutlineCable,
+  MdOutlineGridView,
+  MdOutlinePublic,
+  MdOutlineWarningAmber,
+  MdOutlineGroup,
+  MdOutlineMonitorHeart,
+  MdOutlineSpaceDashboard,
+  MdOutlineSettings,
+  MdOutlineChevronLeft,
+  MdOutlineChevronRight,
+} from "react-icons/md";
 import { useAuth } from "../auth/AuthProvider";
-import { useBrandLogoUrl } from "../lib/branding";
 import { useSidebarPin } from "../lib/useSidebarPin";
-import { LogoutConfirmDialog } from "./LogoutConfirmDialog";
 import { TenantSwitcher } from "./TenantSwitcher";
-import vaneLogo from "../assets/vane-logo.webp";
-import type { Role } from "../types/api";
 
 function IntegrationsIcon() {
-  return (
-    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d="M9 2v4M15 2v4M7 8h2v4a3 3 0 0 0 3 3 3 3 0 0 0 3-3V8h2M12 15v4M9 22h6" />
-    </svg>
-  );
+  return <MdOutlineCable size={18} aria-hidden="true" />;
 }
 
 function ServicesIcon() {
-  return (
-    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <rect x="3" y="3" width="7" height="7" rx="1.5" />
-      <rect x="14" y="3" width="7" height="7" rx="1.5" />
-      <rect x="3" y="14" width="7" height="7" rx="1.5" />
-      <rect x="14" y="14" width="7" height="7" rx="1.5" />
-    </svg>
-  );
+  return <MdOutlineGridView size={18} aria-hidden="true" />;
 }
 
 function DomainsIcon() {
-  return (
-    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <circle cx="12" cy="12" r="9" />
-      <path d="M3 12h18M12 3c2.5 2.7 4 6.1 4 9s-1.5 6.3-4 9c-2.5-2.7-4-6.1-4-9s1.5-6.3 4-9Z" />
-    </svg>
-  );
+  return <MdOutlinePublic size={18} aria-hidden="true" />;
 }
 
 function IncidentsIcon() {
-  return (
-    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d="M12 3 2 20h20L12 3Z" />
-      <path d="M12 10v4M12 17h.01" />
-    </svg>
-  );
+  return <MdOutlineWarningAmber size={18} aria-hidden="true" />;
 }
 
 function AdminsIcon() {
-  return (
-    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <circle cx="9" cy="8" r="3.2" />
-      <path d="M2.8 19c.7-3.4 3.2-5.5 6.2-5.5s5.5 2.1 6.2 5.5" />
-      <circle cx="17.5" cy="8.5" r="2.4" />
-      <path d="M16 13.8c2.2.4 3.9 2.1 4.4 4.4" />
-    </svg>
-  );
+  return <MdOutlineGroup size={18} aria-hidden="true" />;
 }
 
 function PollerIcon() {
-  return (
-    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d="M2 12h4l2 7 4-14 2 7h8" />
-    </svg>
-  );
+  return <MdOutlineMonitorHeart size={18} aria-hidden="true" />;
 }
 
 function OverviewIcon() {
-  return (
-    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <rect x="3" y="3" width="7" height="9" rx="1.5" />
-      <rect x="14" y="3" width="7" height="5" rx="1.5" />
-      <rect x="14" y="12" width="7" height="9" rx="1.5" />
-      <rect x="3" y="16" width="7" height="5" rx="1.5" />
-    </svg>
-  );
+  return <MdOutlineSpaceDashboard size={18} aria-hidden="true" />;
 }
 
 function SettingsIcon() {
-  return (
-    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <circle cx="12" cy="12" r="3" />
-      <path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1.04 1.56V21a2 2 0 1 1-4 0v-.09A1.7 1.7 0 0 0 9 19.4a1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-1.56-1.04H3a2 2 0 1 1 0-4h.09A1.7 1.7 0 0 0 4.6 9a1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.7 1.7 0 0 0 9 4.6a1.7 1.7 0 0 0 1.04-1.56V3a2 2 0 1 1 4 0v.09A1.7 1.7 0 0 0 15 4.6a1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.7 1.7 0 0 0 19.4 9a1.7 1.7 0 0 0 1.56 1.04H21a2 2 0 1 1 0 4h-.09A1.7 1.7 0 0 0 19.4 15Z" />
-    </svg>
-  );
+  return <MdOutlineSettings size={18} aria-hidden="true" />;
 }
 
-function LogoutIcon() {
-  return (
-    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9" />
-    </svg>
-  );
-}
-
-function PinIcon() {
-  return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d="M12 2v6M8 8h8l1 4H7l1-4ZM12 12v10" />
-    </svg>
-  );
+// PinToggleIcon mirrors the handoff's collapse-direction chevron: pinned
+// shows a left-pointing arrow (collapse), unpinned a right-pointing one
+// (expand) - not a thumbtack, and not the same icon both ways.
+function PinToggleIcon({ pinned }: { pinned: boolean }) {
+  return pinned ? <MdOutlineChevronLeft size={18} aria-hidden="true" /> : <MdOutlineChevronRight size={18} aria-hidden="true" />;
 }
 
 const navItemClass = ({ isActive }: { isActive: boolean }) =>
   "flex h-9 items-center gap-2.5 rounded-md px-3 text-sm transition-colors " +
   (isActive ? "text-accent bg-[rgba(90,70,199,0.08)]" : "text-text-muted hover:bg-sidebar-hover-bg");
 
-const DEV_ROLES: { value: Role; label: string }[] = [
-  { value: "owner", label: "Owner" },
-  { value: "operator", label: "Operator" },
-  { value: "viewer", label: "Viewer" },
-];
-
 // Sidebar: collapsible 72px/240px shell nav (new-layout-migration, SHELL-02
 // through SHELL-06). Expands on hover, stays expanded while pinned
 // (useSidebarPin, T7). TenantSwitcher (T9) sits at the top; LogoutConfirmDialog
 // (T8) replaces the modal this file used to inline.
 export function Sidebar() {
-  const { admin, hasRole, logout, setDevRole } = useAuth();
+  const { hasRole } = useAuth();
   const { pinned, togglePinned } = useSidebarPin();
-  const logoUrl = useBrandLogoUrl();
   const { t } = useTranslation();
   const location = useLocation();
   const navigate = useNavigate();
-  const [confirmOpen, setConfirmOpen] = useState(false);
   const [hovering, setHovering] = useState(false);
 
   const expanded = pinned || hovering;
-
-  async function handleConfirmLogout() {
-    setConfirmOpen(false);
-    await logout();
-  }
 
   const domainsActive = location.pathname.startsWith("/domains") || location.pathname.startsWith("/status-pages");
   // OVW-15/16: the standalone "Visão geral" item is active on both "/"
@@ -150,10 +92,6 @@ export function Sidebar() {
         (expanded ? "w-[240px]" : "w-[72px]")
       }
     >
-      <div className="flex items-center gap-2 px-2 pb-3 text-accent">
-        <img src={logoUrl ?? vaneLogo} alt={t("sidebar.brand")} className="w-26 flex-none object-contain" />
-      </div>
-
       <TenantSwitcher />
 
       <div className="my-3 h-px bg-divider" />
@@ -214,34 +152,6 @@ export function Sidebar() {
       <div className="mt-auto flex flex-col gap-2 pt-4">
         <div className="h-px bg-divider" />
 
-        {import.meta.env.DEV ? (
-          <div className="px-2 py-0.5">
-            <div className={`mb-1.5 text-[10px] uppercase tracking-wider text-text-muted opacity-70 ${labelClass}`}>
-              {t("sidebar.viewingAs")}
-            </div>
-            <div className="flex w-full rounded-md border border-divider bg-bg p-0.5" role="radiogroup" aria-label={t("sidebar.viewingAs")}>
-              {DEV_ROLES.map((r) => {
-                const active = admin?.role === r.value;
-                return (
-                  <button
-                    key={r.value}
-                    type="button"
-                    role="radio"
-                    aria-checked={active}
-                    onClick={() => setDevRole(r.value)}
-                    className={
-                      "flex-1 cursor-pointer rounded-sm px-1 py-1.5 text-[10.5px] transition-colors " +
-                      (active ? "text-accent ring-1 ring-inset ring-accent" : "text-text-muted hover:text-text")
-                    }
-                  >
-                    {r.label}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        ) : null}
-
         {hasRole(["owner"]) ? (
           <NavLink to="/settings" className={navItemClass}>
             <SettingsIcon />
@@ -258,27 +168,9 @@ export function Sidebar() {
             (pinned ? "text-accent" : "text-text-muted hover:text-text")
           }
         >
-          <PinIcon />
+          <PinToggleIcon pinned={pinned} />
           <span className={labelClass}>{t("sidebar.pinMenu")}</span>
         </button>
-
-        {admin ? (
-          <div className="px-2 py-1">
-            <div className={`truncate text-[13px] font-medium text-text ${labelClass}`}>{admin.name || admin.email}</div>
-            {admin.name ? <div className={`truncate text-[11.5px] text-text-muted ${labelClass}`}>{admin.email}</div> : null}
-          </div>
-        ) : null}
-
-        <button
-          type="button"
-          onClick={() => setConfirmOpen(true)}
-          className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-left text-[12.5px] text-text opacity-55 transition-opacity hover:opacity-80"
-        >
-          <LogoutIcon />
-          <span className={labelClass}>{t("sidebar.logout")}</span>
-        </button>
-
-        <LogoutConfirmDialog open={confirmOpen} onOpenChange={setConfirmOpen} onConfirm={handleConfirmLogout} />
       </div>
     </aside>
   );

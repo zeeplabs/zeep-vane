@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { useTranslation } from "react-i18next";
+import { MdOutlineVisibility, MdOutlineVisibilityOff } from "react-icons/md";
 import { Field } from "../../components/ui/Field";
 import { Button } from "../../components/ui/Button";
 import { useAuth, type TwoFactorFactor } from "../../auth/AuthProvider";
@@ -10,17 +11,7 @@ import { useBrandLogoUrl } from "../../lib/branding";
 import vaneLogo from "../../assets/vane-logo.webp";
 
 function EyeIcon({ crossed }: { crossed: boolean }) {
-  return (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <path
-        d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"
-        stroke="currentColor"
-        strokeWidth="1.5"
-      />
-      <circle cx="12" cy="12" r="3" stroke="currentColor" strokeWidth="1.5" />
-      {crossed ? <path d="M3 3l18 18" stroke="currentColor" strokeWidth="1.5" /> : null}
-    </svg>
-  );
+  return crossed ? <MdOutlineVisibilityOff size={18} aria-hidden="true" /> : <MdOutlineVisibility size={18} aria-hidden="true" />;
 }
 
 export function LoginPage() {

@@ -201,6 +201,13 @@ func (r *DomainRepository) CountVerified(ctx context.Context) (int, error) {
 	return total, nil
 }
 
+// CountAll returns the total number of domains for the active tenant,
+// verified or not - the denominator for the Overview page's "verified
+// domains" card (e.g. "3/4").
+func (r *DomainRepository) CountAll(ctx context.Context) (int, error) {
+	return r.countDomains(ctx)
+}
+
 // countDomains is the zero-row fallback for ListPaginated's total (PAG-08).
 func (r *DomainRepository) countDomains(ctx context.Context) (int, error) {
 	var total int

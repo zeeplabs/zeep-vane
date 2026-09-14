@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
+import { MdOutlineSchedule } from "react-icons/md";
 import { Card } from "../../components/ui/Card";
 import { Button } from "../../components/ui/Button";
 import { Tag } from "../../components/ui/Tag";
@@ -127,22 +128,7 @@ function worstServiceStatus(statuses: PublicServiceStatus[]): PublicServiceStatu
 }
 
 function ClockIcon() {
-  return (
-    <svg
-      width="13"
-      height="13"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="var(--color-warning)"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <circle cx="12" cy="12" r="9" />
-      <path d="M12 7v5l3 3" />
-    </svg>
-  );
+  return <MdOutlineSchedule size={13} style={{ color: "var(--color-warning)" }} aria-hidden="true" />;
 }
 
 function IncidentCard({ incident, tone }: { incident: PublicIncidentEntry; tone: "active" | "resolved" }) {
