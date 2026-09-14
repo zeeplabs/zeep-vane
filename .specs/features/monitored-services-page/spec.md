@@ -146,12 +146,12 @@
 | SVC-11 | P2 | Tasks (T9: filter + search AND) | In Progress (component done, pending T11 route wiring) |
 | SVC-12 | P2 | Tasks (T9: empty state) | In Progress (component done, pending T11 route wiring) |
 | SVC-13 | P2 | Tasks (T9: chip counts) | In Progress (component done, pending T11 route wiring) |
-| SVC-14 | P3 | Tasks (T2/T3/T5: repository + detail endpoint) | In Progress (backend done, pending frontend T10) |
-| SVC-15 | P3 | Tasks (T5: status_analysis pass-through) | In Progress (backend done, pending frontend T10) |
-| SVC-16 | P3 | Tasks (T5: status_analysis pass-through) | In Progress (backend done, pending frontend T10) |
-| SVC-17 | P3 | Tasks (T5: hourly_buckets, always 24) | In Progress (backend done, pending frontend T10) |
-| SVC-18 | P3 | Design | Pending (frontend-only, drawer close control) |
-| SVC-19 | P3 | Design | Pending (frontend-only, no drawer actions) |
+| SVC-14 | P3 | Tasks (T2/T3/T5/T10: repository + detail endpoint + `ServiceDetailDrawer`) | In Progress (component done, pending T11 route wiring) |
+| SVC-15 | P3 | Tasks (T5/T10: status_analysis pass-through + drawer note) | In Progress (component done, pending T11 route wiring) |
+| SVC-16 | P3 | Tasks (T5/T10: status_analysis pass-through + drawer note) | In Progress (component done, pending T11 route wiring) |
+| SVC-17 | P3 | Tasks (T5/T10: hourly_buckets, always 24 + drawer strip) | In Progress (component done, pending T11 route wiring) |
+| SVC-18 | P3 | Tasks (T10: `ServiceDetailDrawer` close control + backdrop) | In Progress (component done, pending T11 route wiring) |
+| SVC-19 | P3 | Tasks (T10: `ServiceDetailDrawer`, no drawer actions) | In Progress (component done, pending T11 route wiring) |
 | SVC-20 | P3 (add) | Tasks (T8: `AddServiceDrawer`) | In Progress (drawer done, pending T9/T11 "Adicionar serviço" trigger wiring) |
 | SVC-21 | P3 (add) | Tasks (T8: `AddServiceDrawer`) | Done |
 | SVC-22 | P3 (add) | Tasks (T8: `AddServiceDrawer`) | Done |

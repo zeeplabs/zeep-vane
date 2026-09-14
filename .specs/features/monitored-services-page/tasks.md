@@ -298,12 +298,12 @@ T7 → T8 → T9 → T10 → T11
 - Skill: NONE
 
 **Done when**:
-- [ ] Shows Uptime 30d, Última verificação, Incidentes (30d) from the detail response (SVC-14)
-- [ ] Renders the note when `current_status === "degraded"` and `status_analysis` is non-empty; does NOT render it otherwise - both branches tested (SVC-15/16, L-048)
-- [ ] Renders exactly 24 bars regardless of fixture size, asserted against the literal `24`, not against whatever constant the implementation uses (L-049)
-- [ ] Close control and backdrop click both close the drawer (SVC-18)
-- [ ] No "Pausar monitoramento"/"Editar configuração" text or control renders (SVC-19)
-- [ ] Gate check passes: `cd web && npx tsc -b --noEmit && npm run test`
+- [x] Shows Uptime 30d, Última verificação, Incidentes (30d) from the detail response (SVC-14)
+- [x] Renders the note when `current_status === "degraded"` and `status_analysis` is non-empty; does NOT render it otherwise - both branches tested (SVC-15/16, L-048)
+- [x] Renders exactly 24 bars regardless of fixture size, asserted against the literal `24`, not against whatever constant the implementation uses (L-049)
+- [x] Close control and backdrop click both close the drawer (SVC-18)
+- [x] No "Pausar monitoramento"/"Editar configuração" text or control renders (SVC-19)
+- [x] Gate check passes: `cd web && npx tsc -b --noEmit && npm run test`
 
 **Tests**: unit
 **Gate**: Quick
