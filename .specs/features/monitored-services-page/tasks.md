@@ -269,16 +269,16 @@ T7 → T8 → T9 → T10 → T11
 - Skill: NONE
 
 **Done when**:
-- [ ] Renders every column from SVC-01 for every service on the page, no Latência column/field anywhere (SVC-07)
-- [ ] Each `CurrentStatus` value renders its correct badge label (SVC-02..05, all 4 values covered in one test suite - not just `operational`)
-- [ ] A service with no open interval shows "—" for Uptime 30d and Última verificação (SVC-06)
-- [ ] Status chip click filters to that status only, "Todos" shows all page rows; chip counts reflect the current page (SVC-09, SVC-13)
-- [ ] Search narrows by name/SLO-name substring, case-insensitive (SVC-10)
-- [ ] Filter + search combine with AND, not OR (SVC-11)
-- [ ] No match renders "Nenhum serviço encontrado com esses filtros." (SVC-12)
-- [ ] Pager renders with `totalPages = Math.max(1, Math.ceil(total / page_size))` when more than one page exists (SVC-08)
-- [ ] All new user-facing strings go through `react-i18next` (AGENTS.md §5), pt-BR key added
-- [ ] Gate check passes: `cd web && npx tsc -b --noEmit && npm run test`
+- [x] Renders every column from SVC-01 for every service on the page, no Latência column/field anywhere (SVC-07)
+- [x] Each `CurrentStatus` value renders its correct badge label (SVC-02..05, all 4 values covered in one test suite - not just `operational`)
+- [x] A service with no open interval shows "—" for Uptime 30d and Última verificação (SVC-06)
+- [x] Status chip click filters to that status only, "Todos" shows all page rows; chip counts reflect the current page (SVC-09, SVC-13)
+- [x] Search narrows by name/SLO-name substring, case-insensitive (SVC-10)
+- [x] Filter + search combine with AND, not OR (SVC-11)
+- [x] No match renders "Nenhum serviço encontrado com esses filtros." (SVC-12)
+- [x] Pager renders with `totalPages = Math.max(1, Math.ceil(total / page_size))` when more than one page exists (SVC-08)
+- [x] All new user-facing strings go through `react-i18next` (AGENTS.md §5), pt-BR key added
+- [x] Gate check passes: `cd web && npx tsc -b --noEmit && npm run test`
 
 **Tests**: unit
 **Gate**: Quick

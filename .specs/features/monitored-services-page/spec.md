@@ -133,19 +133,19 @@
 
 | Requirement ID | Story | Phase | Status |
 | --- | --- | --- | --- |
-| SVC-01 | P1 | Tasks (T1/T2/T4: migration + repository + handler) | In Progress |
-| SVC-02 | P1 | Design | Pending |
-| SVC-03 | P1 | Design | Pending |
-| SVC-04 | P1 | Design | Pending |
-| SVC-05 | P1 | Design | Pending |
-| SVC-06 | P1 | Tasks (T4: handler uptime/last-seen) | In Progress (backend only, pending frontend T9) |
-| SVC-07 | P1 | Design | Pending |
-| SVC-08 | P1 | Design | Pending |
-| SVC-09 | P2 | Design | Pending |
-| SVC-10 | P2 | Design | Pending |
-| SVC-11 | P2 | Design | Pending |
-| SVC-12 | P2 | Design | Pending |
-| SVC-13 | P2 | Design | Pending |
+| SVC-01 | P1 | Tasks (T1/T2/T4/T9: migration + repository + handler + `ServiceListPage`) | In Progress (component done, pending T11 route wiring) |
+| SVC-02 | P1 | Tasks (T9: `ServiceListPage` status badges) | In Progress (component done, pending T11 route wiring) |
+| SVC-03 | P1 | Tasks (T9: `ServiceListPage` status badges) | In Progress (component done, pending T11 route wiring) |
+| SVC-04 | P1 | Tasks (T9: `ServiceListPage` status badges) | In Progress (component done, pending T11 route wiring) |
+| SVC-05 | P1 | Tasks (T9: `ServiceListPage` status badges) | In Progress (component done, pending T11 route wiring) |
+| SVC-06 | P1 | Tasks (T4/T9: handler uptime/last-seen + `ServiceListPage` "—" rendering) | In Progress (component done, pending T11 route wiring) |
+| SVC-07 | P1 | Tasks (T9: no Latência column) | In Progress (component done, pending T11 route wiring) |
+| SVC-08 | P1 | Tasks (T9: `Pager`) | In Progress (component done, pending T11 route wiring) |
+| SVC-09 | P2 | Tasks (T9: status filter chips) | In Progress (component done, pending T11 route wiring) |
+| SVC-10 | P2 | Tasks (T9: search box) | In Progress (component done, pending T11 route wiring) |
+| SVC-11 | P2 | Tasks (T9: filter + search AND) | In Progress (component done, pending T11 route wiring) |
+| SVC-12 | P2 | Tasks (T9: empty state) | In Progress (component done, pending T11 route wiring) |
+| SVC-13 | P2 | Tasks (T9: chip counts) | In Progress (component done, pending T11 route wiring) |
 | SVC-14 | P3 | Tasks (T2/T3/T5: repository + detail endpoint) | In Progress (backend done, pending frontend T10) |
 | SVC-15 | P3 | Tasks (T5: status_analysis pass-through) | In Progress (backend done, pending frontend T10) |
 | SVC-16 | P3 | Tasks (T5: status_analysis pass-through) | In Progress (backend done, pending frontend T10) |
