@@ -203,6 +203,21 @@ func (r *IncidentRepository) countIncidents(ctx context.Context) (int, error) {
 	return total, nil
 }
 
+// CountOpen returns how many incidents are currently open - status not
+// resolved - for the active tenant (OVW-04). "Open" uses the same
+// definition IncidentRepository applies everywhere else: an incident is
+// closed only by status "resolved" (Transition's resolved_at handling),
+// so every other status counts as open. Relies on app.tenant_id being set
+// so RLS scopes the count to one tenant.
+func (r *IncidentRepository) CountOpen(ctx context.Context) (int, error) {
+	var total int
+	row := r.pool.QueryRow(ctx, "SELECT COUNT(*) FROM incidents WHERE status <> 'resolved'")
+	if err := row.Scan(&total); err != nil {
+		return 0, fmt.Errorf("db: failed to count open incidents: %w", err)
+	}
+	return total, nil
+}
+
 // CountOpenedResolvedBetween returns how many incidents opened (created_at) and
 // resolved (resolved_at) in [from, to) for the active tenant. It is what the
 // weekly digest summarizes (notification-preferences NOTIFPREF-10). Requires

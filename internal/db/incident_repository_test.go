@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"testing"
 	"time"
+
+	"github.com/zeeplabs/zeep-vane/internal/dbtest"
 )
 
 // newIncidentRepoTestPool boots a migrated pool and a fresh
@@ -488,5 +490,88 @@ func TestIncidentRepository_CountOpenedResolvedBetween(t *testing.T) {
 	}
 	if pastOpened != 0 || pastResolved != 0 {
 		t.Errorf("past-window counts = %d/%d, want 0/0", pastOpened, pastResolved)
+	}
+}
+
+// newIncidentRepoScratchPool returns an IncidentRepository backed by a
+// pool on a fresh scratch database, so an unfiltered COUNT (which, unlike
+// CountOpenedResolvedBetween, has no time window to isolate this test's
+// fixtures) is deterministic instead of racing other suites that share
+// TEST_DATABASE_URL.
+func newIncidentRepoScratchPool(t *testing.T) (*IncidentRepository, *Pool) {
+	t.Helper()
+	dsn := newScratchDatabase(t)
+	if err := MigrateUp(dsn, "migrations"); err != nil {
+		t.Fatalf("MigrateUp() returned unexpected error: %v", err)
+	}
+
+	ctx := context.Background()
+	admin, err := NewPool(ctx, dsn)
+	if err != nil {
+		t.Fatalf("NewPool() (admin) returned unexpected error: %v", err)
+	}
+
+	var tenantID string
+	if err := admin.QueryRow(ctx, "INSERT INTO tenants (name) VALUES ($1) RETURNING id", "countopen-fixture-tenant").Scan(&tenantID); err != nil {
+		admin.Close()
+		t.Fatalf("seeding fixture tenant returned unexpected error: %v", err)
+	}
+	admin.Close()
+
+	pool, err := NewPool(ctx, dbtest.TenantScopedDSN(dsn, tenantID))
+	if err != nil {
+		t.Fatalf("NewPool() (tenant-scoped) returned unexpected error: %v", err)
+	}
+	t.Cleanup(pool.Close)
+
+	return NewIncidentRepository(pool), pool
+}
+
+func TestIncidentRepository_CountOpen_MixedOpenAndResolved_CountsOnlyOpen(t *testing.T) {
+	repo, _ := newIncidentRepoScratchPool(t)
+	ctx := context.Background()
+
+	baseline, err := repo.CountOpen(ctx)
+	if err != nil {
+		t.Fatalf("CountOpen() (baseline) returned unexpected error: %v", err)
+	}
+	if baseline != 0 {
+		t.Fatalf("baseline = %d, want 0 on a fresh scratch database", baseline)
+	}
+
+	openA := &Incident{Title: "countopen-open-a"}
+	if err := repo.Create(ctx, openA, nil); err != nil {
+		t.Fatalf("Create(openA) returned unexpected error: %v", err)
+	}
+	openB := &Incident{Title: "countopen-open-b"}
+	if err := repo.Create(ctx, openB, nil); err != nil {
+		t.Fatalf("Create(openB) returned unexpected error: %v", err)
+	}
+	resolvedC := &Incident{Title: "countopen-resolved-c"}
+	if err := repo.Create(ctx, resolvedC, nil); err != nil {
+		t.Fatalf("Create(resolvedC) returned unexpected error: %v", err)
+	}
+	if _, err := repo.Transition(ctx, resolvedC.ID, "resolved"); err != nil {
+		t.Fatalf("Transition(resolvedC, resolved) returned unexpected error: %v", err)
+	}
+
+	got, err := repo.CountOpen(ctx)
+	if err != nil {
+		t.Fatalf("CountOpen() returned unexpected error: %v", err)
+	}
+	if got != 2 {
+		t.Errorf("CountOpen() = %d, want 2 (two investigating, one resolved excluded)", got)
+	}
+}
+
+func TestIncidentRepository_CountOpen_NoIncidents_ReturnsZero(t *testing.T) {
+	repo, _ := newIncidentRepoScratchPool(t)
+
+	got, err := repo.CountOpen(context.Background())
+	if err != nil {
+		t.Fatalf("CountOpen() returned unexpected error: %v", err)
+	}
+	if got != 0 {
+		t.Errorf("CountOpen() = %d, want 0 for a tenant with no incidents", got)
 	}
 }
