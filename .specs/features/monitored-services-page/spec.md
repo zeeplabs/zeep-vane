@@ -146,12 +146,12 @@
 | SVC-11 | P2 | Design | Pending |
 | SVC-12 | P2 | Design | Pending |
 | SVC-13 | P2 | Design | Pending |
-| SVC-14 | P3 | Tasks (T2/T3: repository read support) | In Progress |
-| SVC-15 | P3 | Design | Pending |
-| SVC-16 | P3 | Design | Pending |
-| SVC-17 | P3 | Design | Pending |
-| SVC-18 | P3 | Design | Pending |
-| SVC-19 | P3 | Design | Pending |
+| SVC-14 | P3 | Tasks (T2/T3/T5: repository + detail endpoint) | In Progress (backend done, pending frontend T10) |
+| SVC-15 | P3 | Tasks (T5: status_analysis pass-through) | In Progress (backend done, pending frontend T10) |
+| SVC-16 | P3 | Tasks (T5: status_analysis pass-through) | In Progress (backend done, pending frontend T10) |
+| SVC-17 | P3 | Tasks (T5: hourly_buckets, always 24) | In Progress (backend done, pending frontend T10) |
+| SVC-18 | P3 | Design | Pending (frontend-only, drawer close control) |
+| SVC-19 | P3 | Design | Pending (frontend-only, no drawer actions) |
 | SVC-20 | P3 (add) | Design | Pending |
 | SVC-21 | P3 (add) | Design | Pending |
 | SVC-22 | P3 (add) | Design | Pending |

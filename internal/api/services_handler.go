@@ -3,9 +3,11 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"time"
 
+	"github.com/go-chi/chi/v5"
 	"go.uber.org/zap"
 
 	"github.com/zeeplabs/zeep-vane/internal/db"
@@ -22,24 +24,47 @@ const servicesPageSize = 20
 // OverviewHandler's uptime card uses.
 const servicesUptimeWindowDays = 30
 
+// servicesHourlyBucketCount/servicesHourlyBucketWidth are the detail
+// drawer's "24 status bars" strip (SVC-17): 24 one-hour buckets, the same
+// history.BuildBuckets call public-status-hourly-history already uses.
+const servicesHourlyBucketCount = 24
+
+const servicesHourlyBucketWidth = time.Hour
+
 // serviceCreatorLister is the subset of *db.ServiceRepository the services
 // handler depends on.
 type serviceCreatorLister interface {
 	Create(ctx context.Context, service *db.Service) error
 	ListPaginated(ctx context.Context, page, pageSize int) ([]db.Service, int, error)
+	Get(ctx context.Context, id string) (*db.Service, bool, error)
+}
+
+// serviceIncidentCounter is the subset of *db.IncidentRepository the
+// services handler depends on (SVC-14's "Incidentes (30d)" stat).
+type serviceIncidentCounter interface {
+	CountByServiceSince(ctx context.Context, serviceID string, since time.Time) (int, error)
 }
 
 // ServicesHandler serves the service admin routes.
 type ServicesHandler struct {
-	services  serviceCreatorLister
-	intervals statusIntervalReader
-	logger    *zap.Logger
+	services   serviceCreatorLister
+	intervals  statusIntervalReader
+	incidents  serviceIncidentCounter
+	logger     *zap.Logger
+	historyLoc *time.Location
 }
 
-// NewServicesHandler builds a ServicesHandler backed by services and
-// intervals.
-func NewServicesHandler(services serviceCreatorLister, intervals statusIntervalReader, logger *zap.Logger) *ServicesHandler {
-	return &ServicesHandler{services: services, intervals: intervals, logger: logger}
+// NewServicesHandler builds a ServicesHandler backed by services,
+// intervals, and incidents. It loads America/Sao_Paulo once here (same
+// tzdata assumption and load-once-panic-on-failure pattern as
+// NewOverviewHandler): a load failure is a build defect, so it panics at
+// construction rather than turning every request into a 500.
+func NewServicesHandler(services serviceCreatorLister, intervals statusIntervalReader, incidents serviceIncidentCounter, logger *zap.Logger) *ServicesHandler {
+	loc, err := time.LoadLocation("America/Sao_Paulo")
+	if err != nil {
+		panic(fmt.Sprintf("services: failed to load America/Sao_Paulo location: %v", err))
+	}
+	return &ServicesHandler{services: services, intervals: intervals, incidents: incidents, logger: logger, historyLoc: loc}
 }
 
 type createServiceRequest struct {
@@ -162,4 +187,98 @@ func toServiceResponse(service *db.Service, uptime30d *float64, lastSeenAt *time
 		Uptime30d:          uptime30d,
 		LastSeenAt:         lastSeenAt,
 	}
+}
+
+// serviceNotFoundBody is the fixed generic 404 body for GET
+// /api/services/{id} - never leaks err.Error() or reveals whether id is
+// merely malformed vs. genuinely absent (AGENTS.md §4).
+const serviceNotFoundBody = `{"error":"service not found"}`
+
+// hourlyBucketResponse is one bucket of the detail drawer's 24-hour status
+// history strip (SVC-17).
+type hourlyBucketResponse struct {
+	Start  time.Time `json:"start"`
+	Status string    `json:"status"`
+}
+
+// serviceDetailResponse is the GET /api/services/{id} contract
+// (design.md's ServiceDetail) - a flat DTO extending serviceResponse, not
+// Page[T]: a single-resource read, same precedent as OverviewResponse.
+type serviceDetailResponse struct {
+	serviceResponse
+	StatusAnalysis *string                `json:"status_analysis"`
+	Incidents30d   int                    `json:"incidents_30d"`
+	HourlyBuckets  []hourlyBucketResponse `json:"hourly_buckets"`
+}
+
+// Get handles GET /api/services/{id} (SVC-14..19), the monitored-services
+// detail drawer's read: the same uptime_30d/last_seen_at as List (scoped to
+// one service), incidents_30d via IncidentRepository.CountByServiceSince,
+// and hourly_buckets - always exactly servicesHourlyBucketCount entries,
+// built via history.BuildBuckets the same way public-status-hourly-history
+// does. status_analysis passes through Service.StatusAnalysis unchanged:
+// non-nil only while current_status is "degraded" and an analysis has been
+// stored (db.Service's own invariant), nil otherwise. Returns a fixed
+// generic 404 if id doesn't exist (AGENTS.md §4).
+func (h *ServicesHandler) Get(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	ctx := r.Context()
+
+	service, found, err := h.services.Get(ctx, id)
+	if err != nil {
+		h.logger.Error("services: failed to get service", zap.Error(err))
+		writeInternalError(w)
+		return
+	}
+	if !found {
+		writeAdminError(w, http.StatusNotFound, serviceNotFoundBody)
+		return
+	}
+
+	now := time.Now()
+	windowStart := now.AddDate(0, 0, -servicesUptimeWindowDays)
+	overlapping30d, err := h.intervals.ListOverlapping(ctx, []string{id}, windowStart, now)
+	if err != nil {
+		h.logger.Error("services: failed to list overlapping status intervals for detail", zap.Error(err))
+		writeInternalError(w)
+		return
+	}
+	uptime30d, lastSeenAt := uptimeAndLastSeen(overlapping30d, windowStart, now)
+
+	incidents30d, err := h.incidents.CountByServiceSince(ctx, id, windowStart)
+	if err != nil {
+		h.logger.Error("services: failed to count incidents for service", zap.Error(err))
+		writeInternalError(w)
+		return
+	}
+
+	hourlyWindowStart := now.Add(-servicesHourlyBucketCount * servicesHourlyBucketWidth)
+	overlapping24h, err := h.intervals.ListOverlapping(ctx, []string{id}, hourlyWindowStart, now)
+	if err != nil {
+		h.logger.Error("services: failed to list overlapping status intervals for hourly buckets", zap.Error(err))
+		writeInternalError(w)
+		return
+	}
+	buckets := history.BuildBuckets(overlapping24h, now, now, h.historyLoc, servicesHourlyBucketCount, servicesHourlyBucketWidth)
+
+	resp := serviceDetailResponse{
+		serviceResponse: toServiceResponse(service, uptime30d, lastSeenAt),
+		StatusAnalysis:  service.StatusAnalysis,
+		Incidents30d:    incidents30d,
+		HourlyBuckets:   toHourlyBucketResponses(buckets),
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(resp)
+}
+
+// toHourlyBucketResponses maps history.Bucket rows into the JSON response
+// shape, preserving order (oldest first, per history.BuildBuckets).
+func toHourlyBucketResponses(buckets []history.Bucket) []hourlyBucketResponse {
+	out := make([]hourlyBucketResponse, len(buckets))
+	for i, bucket := range buckets {
+		out[i] = hourlyBucketResponse{Start: bucket.Start, Status: bucket.Status}
+	}
+	return out
 }

@@ -25,7 +25,7 @@ func newServicesRouter(t *testing.T) (http.Handler, *db.Pool, *db.UserRepository
 
 	repo := db.NewServiceRepository(pool)
 	admins := db.NewUserRepository(pool)
-	handler := NewServicesHandler(repo, db.NewStatusIntervalRepository(pool), zap.NewNop())
+	handler := NewServicesHandler(repo, db.NewStatusIntervalRepository(pool), db.NewIncidentRepository(pool), zap.NewNop())
 
 	r := chi.NewRouter()
 	r.Group(func(protected chi.Router) {
@@ -40,6 +40,7 @@ func newServicesRouter(t *testing.T) (http.Handler, *db.Pool, *db.UserRepository
 		protected.Use(TenantContext(pool, db.NewTenantMembershipRepository(pool), zap.NewNop()))
 		protected.Post("/api/services", handler.Create)
 		protected.Get("/api/services", handler.List)
+		protected.Get("/api/services/{id}", handler.Get)
 	})
 
 	return r, pool, admins
@@ -114,6 +115,17 @@ func getServices(t *testing.T, r http.Handler, token string) *httptest.ResponseR
 func getServicesPage(t *testing.T, r http.Handler, token string, page int) *httptest.ResponseRecorder {
 	t.Helper()
 	req := httptest.NewRequest(http.MethodGet, fmt.Sprintf("/api/services?page=%d", page), nil)
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+	return rec
+}
+
+func getServiceDetail(t *testing.T, r http.Handler, token, id string) *httptest.ResponseRecorder {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodGet, "/api/services/"+id, nil)
 	if token != "" {
 		req.Header.Set("Authorization", "Bearer "+token)
 	}
@@ -415,5 +427,206 @@ func TestServicesRoutes_NoAuth_401(t *testing.T) {
 	listRec := getServices(t, r, "")
 	if listRec.Code != http.StatusUnauthorized {
 		t.Errorf("GET status = %d, want %d", listRec.Code, http.StatusUnauthorized)
+	}
+
+	// T5/SVC-14..19: the new detail route requires authentication exactly
+	// like List/Create, same anyRole posture.
+	detailRec := getServiceDetail(t, r, "", "any-id")
+	if detailRec.Code != http.StatusUnauthorized {
+		t.Errorf("GET /api/services/{id} status = %d, want %d", detailRec.Code, http.StatusUnauthorized)
+	}
+}
+
+// createServiceForDetail creates a service via POST /api/services and
+// returns its response for detail-endpoint tests.
+func createServiceForDetail(t *testing.T, r http.Handler, pool *db.Pool, token, name, sloID, sloName string) serviceResponse {
+	t.Helper()
+	rec := postCreateServiceWithSLOName(t, r, token, name, sloID, sloName)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("setup create status = %d, want %d, body = %s", rec.Code, http.StatusCreated, rec.Body.String())
+	}
+	var created serviceResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &created); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), "DELETE FROM services WHERE id = $1", created.ID) })
+	return created
+}
+
+// TestGetService_Found_ReturnsFullDetailDTO asserts SVC-14/SVC-17: an
+// existing, never-polled service returns the full detail DTO with
+// uptime_30d/last_seen_at nil, incidents_30d = 0, and exactly 24
+// hourly_buckets.
+func TestGetService_Found_ReturnsFullDetailDTO(t *testing.T) {
+	r, pool, admins := newServicesRouter(t)
+	token := issueTestSessionTokenWithTenant(t, admins, pool)
+	name := uniqueServiceName(t)
+	created := createServiceForDetail(t, r, pool, token, name, "slo-detail-found", "Detail Found SLO")
+
+	rec := getServiceDetail(t, r, token, created.ID)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	var detail serviceDetailResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &detail); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+
+	if detail.ID != created.ID {
+		t.Errorf("detail.ID = %q, want %q", detail.ID, created.ID)
+	}
+	if detail.SLOName != "Detail Found SLO" {
+		t.Errorf("detail.SLOName = %q, want %q", detail.SLOName, "Detail Found SLO")
+	}
+	if detail.Uptime30d != nil {
+		t.Errorf("detail.Uptime30d = %v, want nil for a never-polled service", *detail.Uptime30d)
+	}
+	if detail.LastSeenAt != nil {
+		t.Errorf("detail.LastSeenAt = %v, want nil for a never-polled service", *detail.LastSeenAt)
+	}
+	if detail.Incidents30d != 0 {
+		t.Errorf("detail.Incidents30d = %d, want 0", detail.Incidents30d)
+	}
+	if len(detail.HourlyBuckets) != 24 {
+		t.Errorf("len(detail.HourlyBuckets) = %d, want 24", len(detail.HourlyBuckets))
+	}
+	if detail.StatusAnalysis != nil {
+		t.Errorf("detail.StatusAnalysis = %v, want nil for a not_configured service", *detail.StatusAnalysis)
+	}
+}
+
+// TestGetService_UnknownID_404FixedBody asserts SVC-14: an unknown ID
+// returns 404 with the fixed generic body, never a leaked err.Error().
+func TestGetService_UnknownID_404FixedBody(t *testing.T) {
+	r, pool, admins := newServicesRouter(t)
+	token := issueTestSessionTokenWithTenant(t, admins, pool)
+
+	rec := getServiceDetail(t, r, token, "00000000-0000-0000-0000-000000000000")
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusNotFound, rec.Body.String())
+	}
+	if rec.Body.String() != serviceNotFoundBody {
+		t.Errorf("body = %q, want fixed generic body %q (no err.Error() leak)", rec.Body.String(), serviceNotFoundBody)
+	}
+}
+
+// TestGetService_ZeroHistory_Exactly24BucketsAllNoData asserts SVC-17:
+// hourly_buckets always has exactly 24 entries, even for a service with
+// zero StatusInterval rows - each bucket reporting "no_data".
+func TestGetService_ZeroHistory_Exactly24BucketsAllNoData(t *testing.T) {
+	r, pool, admins := newServicesRouter(t)
+	token := issueTestSessionTokenWithTenant(t, admins, pool)
+	name := uniqueServiceName(t)
+	created := createServiceForDetail(t, r, pool, token, name, "slo-detail-zero-history", "")
+
+	rec := getServiceDetail(t, r, token, created.ID)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	var detail serviceDetailResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &detail); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+
+	if len(detail.HourlyBuckets) != 24 {
+		t.Fatalf("len(detail.HourlyBuckets) = %d, want 24", len(detail.HourlyBuckets))
+	}
+	for i, bucket := range detail.HourlyBuckets {
+		if bucket.Status != "no_data" {
+			t.Errorf("HourlyBuckets[%d].Status = %q, want %q", i, bucket.Status, "no_data")
+		}
+	}
+}
+
+// TestGetService_Degraded_WithStatusAnalysis_ReturnsNote asserts SVC-15/16
+// (L-048): status_analysis is present when current_status is "degraded"
+// and an analysis has been stored.
+func TestGetService_Degraded_WithStatusAnalysis_ReturnsNote(t *testing.T) {
+	r, pool, admins := newServicesRouter(t)
+	token := issueTestSessionTokenWithTenant(t, admins, pool)
+	name := uniqueServiceName(t)
+	created := createServiceForDetail(t, r, pool, token, name, "slo-detail-degraded", "")
+
+	analysis := "SLI dropped below target"
+	if _, err := pool.Exec(context.Background(), "UPDATE services SET current_status = 'degraded', status_analysis = $1 WHERE id = $2", analysis, created.ID); err != nil {
+		t.Fatalf("setup UPDATE returned unexpected error: %v", err)
+	}
+
+	rec := getServiceDetail(t, r, token, created.ID)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	var detail serviceDetailResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &detail); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+
+	if detail.CurrentStatus != "degraded" {
+		t.Fatalf("detail.CurrentStatus = %q, want %q", detail.CurrentStatus, "degraded")
+	}
+	if detail.StatusAnalysis == nil || *detail.StatusAnalysis != analysis {
+		t.Errorf("detail.StatusAnalysis = %v, want %q", detail.StatusAnalysis, analysis)
+	}
+}
+
+// TestGetService_NotDegraded_StatusAnalysisNull asserts SVC-15/16 (L-048)'s
+// other branch: an operational service's status_analysis is null, even if
+// a stale value were somehow still stored (db.Service's own invariant is
+// that UpdateStatusAnalysis clears it on leaving "degraded", so this also
+// guards against the handler failing to pass that invariant through).
+func TestGetService_NotDegraded_StatusAnalysisNull(t *testing.T) {
+	r, pool, admins := newServicesRouter(t)
+	token := issueTestSessionTokenWithTenant(t, admins, pool)
+	name := uniqueServiceName(t)
+	created := createServiceForDetail(t, r, pool, token, name, "slo-detail-not-degraded", "")
+
+	rec := getServiceDetail(t, r, token, created.ID)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	var detail serviceDetailResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &detail); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+
+	if detail.CurrentStatus == "degraded" {
+		t.Fatalf("detail.CurrentStatus = %q, want not degraded (a fresh service is not_configured)", detail.CurrentStatus)
+	}
+	if detail.StatusAnalysis != nil {
+		t.Errorf("detail.StatusAnalysis = %v, want nil for a non-degraded service", *detail.StatusAnalysis)
+	}
+}
+
+// TestGetService_Incidents30d_ReflectsCount asserts SVC-14: incidents_30d
+// reflects IncidentRepository.CountByServiceSince's count for this service.
+func TestGetService_Incidents30d_ReflectsCount(t *testing.T) {
+	r, pool, admins := newServicesRouter(t)
+	token := issueTestSessionTokenWithTenant(t, admins, pool)
+	name := uniqueServiceName(t)
+	created := createServiceForDetail(t, r, pool, token, name, "slo-detail-incidents", "")
+
+	incidents := db.NewIncidentRepository(pool)
+	for i := 0; i < 2; i++ {
+		incident := &db.Incident{Title: fmt.Sprintf("%s-incident-%d", name, i)}
+		if err := incidents.Create(context.Background(), incident, []string{created.ID}); err != nil {
+			t.Fatalf("setup incident Create() returned unexpected error: %v", err)
+		}
+		t.Cleanup(func(id string) func() {
+			return func() { _, _ = pool.Exec(context.Background(), "DELETE FROM incidents WHERE id = $1", id) }
+		}(incident.ID))
+	}
+
+	rec := getServiceDetail(t, r, token, created.ID)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	var detail serviceDetailResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &detail); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+
+	if detail.Incidents30d != 2 {
+		t.Errorf("detail.Incidents30d = %d, want 2", detail.Incidents30d)
 	}
 }

@@ -171,13 +171,13 @@ T7 → T8 → T9 → T10 → T11
 - Skill: NONE
 
 **Done when**:
-- [ ] `GET /api/services/{id}` returns the full detail DTO (design.md `ServiceDetail`) for an existing service
-- [ ] Returns 404 (fixed generic body, no `err.Error()` leak) for an unknown ID
-- [ ] `hourly_buckets` always has exactly 24 entries regardless of how much history the service has (including zero)
-- [ ] `status_analysis` is present when `current_status == "degraded"` with a stored analysis, and `null` otherwise (both branches tested, not just the happy one - L-048)
-- [ ] `incidents_30d` reflects T3's count for that service
-- [ ] Route requires authentication (any role); unauthenticated request gets the existing `RequireAuth` 401
-- [ ] Gate check passes: `make test-integration`
+- [x] `GET /api/services/{id}` returns the full detail DTO (design.md `ServiceDetail`) for an existing service
+- [x] Returns 404 (fixed generic body, no `err.Error()` leak) for an unknown ID
+- [x] `hourly_buckets` always has exactly 24 entries regardless of how much history the service has (including zero)
+- [x] `status_analysis` is present when `current_status == "degraded"` with a stored analysis, and `null` otherwise (both branches tested, not just the happy one - L-048)
+- [x] `incidents_30d` reflects T3's count for that service
+- [x] Route requires authentication (any role); unauthenticated request gets the existing `RequireAuth` 401
+- [x] Gate check passes: `make test-integration`
 
 **Tests**: integration
 **Gate**: Full
