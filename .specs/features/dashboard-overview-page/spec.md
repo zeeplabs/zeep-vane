@@ -117,11 +117,11 @@ Vane has no post-login landing page. Today `/` redirects straight to `/domains` 
 | OVW-07 | P1 | Design | Verified |
 | OVW-08 | P1 | Design | Verified |
 | OVW-09 | P1 | Design | Verified |
-| OVW-10 | P2 | Design | Pending |
-| OVW-11 | P2 | Design | Pending |
-| OVW-12 | P2 | Design | Pending |
-| OVW-13 | P2 | Design | Pending |
-| OVW-14 | P2 | Design | Pending |
+| OVW-10 | P2 | Design | Verified |
+| OVW-11 | P2 | Design | Verified |
+| OVW-12 | P2 | Design | Verified |
+| OVW-13 | P2 | Design | Verified |
+| OVW-14 | P2 | Design | Verified |
 | OVW-15 | P3 | Design | Pending |
 | OVW-16 | P3 | Design | Pending |
 

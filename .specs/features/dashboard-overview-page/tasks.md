@@ -246,13 +246,13 @@ T7 → T8 → T9
 - Skill: `frontend-design` (adopted convention for every shell/screen component in this feature line per prior `new-layout-migration` tasks)
 
 **Done when**:
-- [ ] 4 cards render real hook values, including the AC3 "—" case and AC9's `0` cases
-- [ ] Chart renders exactly 14 bars with hover/focus tooltips; no-data buckets render distinctly (no fabricated value)
-- [ ] Incidents list renders ≤3 rows + "Ver todos" link; empty state when zero incidents
-- [ ] All 4 shortcut links resolve to their documented routes (OVW-10..13)
-- [ ] No upsell banner, no activity-feed card anywhere in the rendered output
-- [ ] Gate check passes: `npx tsc -b --noEmit && npm run test`
-- [ ] Test count: +7 new tests (4 cards' values incl. empty states; chart bucket count+tooltip; incidents list incl. empty state; each of the 4 shortcut links' target)
+- [x] 4 cards render real hook values, including the AC3 "—" case and AC9's `0` cases
+- [x] Chart renders exactly 14 bars with hover/focus tooltips; no-data buckets render distinctly (no fabricated value)
+- [x] Incidents list renders ≤3 rows + "Ver todos" link; empty state when zero incidents
+- [x] All 4 shortcut links resolve to their documented routes (OVW-10..13)
+- [x] No upsell banner, no activity-feed card anywhere in the rendered output
+- [x] Gate check passes: `npx tsc -b --noEmit && npm run test`
+- [x] Test count: +7 new tests (4 cards' values incl. empty states; chart bucket count+tooltip; incidents list incl. empty state; each of the 4 shortcut links' target)
 
 **Tests**: unit
 **Gate**: build+test
