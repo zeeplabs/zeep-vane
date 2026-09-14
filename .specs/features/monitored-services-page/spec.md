@@ -133,12 +133,12 @@
 
 | Requirement ID | Story | Phase | Status |
 | --- | --- | --- | --- |
-| SVC-01 | P1 | Tasks (T1/T2: migration + repository) | In Progress |
+| SVC-01 | P1 | Tasks (T1/T2/T4: migration + repository + handler) | In Progress |
 | SVC-02 | P1 | Design | Pending |
 | SVC-03 | P1 | Design | Pending |
 | SVC-04 | P1 | Design | Pending |
 | SVC-05 | P1 | Design | Pending |
-| SVC-06 | P1 | Design | Pending |
+| SVC-06 | P1 | Tasks (T4: handler uptime/last-seen) | In Progress (backend only, pending frontend T9) |
 | SVC-07 | P1 | Design | Pending |
 | SVC-08 | P1 | Design | Pending |
 | SVC-09 | P2 | Design | Pending |

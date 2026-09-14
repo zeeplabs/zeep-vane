@@ -25,7 +25,7 @@ func newServicesRouter(t *testing.T) (http.Handler, *db.Pool, *db.UserRepository
 
 	repo := db.NewServiceRepository(pool)
 	admins := db.NewUserRepository(pool)
-	handler := NewServicesHandler(repo, zap.NewNop())
+	handler := NewServicesHandler(repo, db.NewStatusIntervalRepository(pool), zap.NewNop())
 
 	r := chi.NewRouter()
 	r.Group(func(protected chi.Router) {
@@ -65,12 +65,32 @@ func issueTestSessionTokenWithTenant(t *testing.T, admins *db.UserRepository, po
 
 func postCreateService(t *testing.T, r http.Handler, token, name, sloID string) *httptest.ResponseRecorder {
 	t.Helper()
-	body, err := json.Marshal(createServiceRequest{Name: name, SLOID: sloID})
+	return postCreateServiceWithSLOName(t, r, token, name, sloID, "")
+}
+
+func postCreateServiceWithSLOName(t *testing.T, r http.Handler, token, name, sloID, sloName string) *httptest.ResponseRecorder {
+	t.Helper()
+	body, err := json.Marshal(createServiceRequest{Name: name, SLOID: sloID, SLOName: sloName})
 	if err != nil {
 		t.Fatalf("json.Marshal() returned unexpected error: %v", err)
 	}
 
 	req := httptest.NewRequest(http.MethodPost, "/api/services", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+	return rec
+}
+
+// postCreateServiceRaw posts an arbitrary raw JSON body to POST
+// /api/services, for validation tests that need to omit a field entirely
+// rather than send it as "".
+func postCreateServiceRaw(t *testing.T, r http.Handler, token, rawBody string) *httptest.ResponseRecorder {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodPost, "/api/services", bytes.NewReader([]byte(rawBody)))
 	req.Header.Set("Content-Type", "application/json")
 	if token != "" {
 		req.Header.Set("Authorization", "Bearer "+token)
@@ -228,6 +248,159 @@ func TestListServices_PageBeyondLast_EmptyItems200(t *testing.T) {
 	}
 	if len(page.Items) != 0 {
 		t.Errorf("len(page.Items) = %d, want 0 for a page far beyond the last", len(page.Items))
+	}
+}
+
+// TestCreateService_WithSLOName_PersistsAndReturnsIt asserts T4/SVC-01:
+// Create accepts slo_name in the request body, persists it, and returns it
+// in the response.
+func TestCreateService_WithSLOName_PersistsAndReturnsIt(t *testing.T) {
+	r, pool, admins := newServicesRouter(t)
+	token := issueTestSessionTokenWithTenant(t, admins, pool)
+	name := uniqueServiceName(t)
+	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), "DELETE FROM services WHERE name = $1", name) })
+
+	rec := postCreateServiceWithSLOName(t, r, token, name, "slo-name-test-1", "Checkout latency SLO")
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusCreated, rec.Body.String())
+	}
+
+	var created serviceResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &created); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+	if created.SLOName != "Checkout latency SLO" {
+		t.Errorf("response SLOName = %q, want %q", created.SLOName, "Checkout latency SLO")
+	}
+
+	var storedSLOName string
+	row := pool.QueryRow(context.Background(), "SELECT slo_name FROM services WHERE name = $1", name)
+	if err := row.Scan(&storedSLOName); err != nil {
+		t.Fatalf("Scan() returned unexpected error: %v", err)
+	}
+	if storedSLOName != "Checkout latency SLO" {
+		t.Errorf("stored slo_name = %q, want %q", storedSLOName, "Checkout latency SLO")
+	}
+}
+
+// TestCreateService_MissingName_422 asserts T4's "no relaxation of existing
+// validation" criterion: an omitted name still 422s exactly as before,
+// unaffected by slo_name becoming an accepted field.
+func TestCreateService_MissingName_422(t *testing.T) {
+	r, _, admins := newServicesRouter(t)
+	token := issueTestSessionToken(t, admins)
+
+	rec := postCreateServiceRaw(t, r, token, `{"slo_id":"slo-missing-name"}`)
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Errorf("status = %d, want %d, body = %s", rec.Code, http.StatusUnprocessableEntity, rec.Body.String())
+	}
+}
+
+// TestCreateService_MissingSLOID_422 asserts T4's "no relaxation of
+// existing validation" criterion: an omitted slo_id still 422s exactly as
+// before.
+func TestCreateService_MissingSLOID_422(t *testing.T) {
+	r, _, admins := newServicesRouter(t)
+	token := issueTestSessionToken(t, admins)
+
+	rec := postCreateServiceRaw(t, r, token, `{"name":"missing-slo-id"}`)
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Errorf("status = %d, want %d, body = %s", rec.Code, http.StatusUnprocessableEntity, rec.Body.String())
+	}
+}
+
+// TestListServices_NeverPolled_UptimeAndLastSeenNil asserts SVC-01/SVC-06:
+// a freshly created service with zero StatusInterval rows gets
+// uptime_30d/last_seen_at nil in the list response, and its slo_name
+// round-trips.
+func TestListServices_NeverPolled_UptimeAndLastSeenNil(t *testing.T) {
+	r, pool, admins := newServicesRouter(t)
+	token := issueTestSessionTokenWithTenant(t, admins, pool)
+	name := uniqueServiceName(t)
+	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), "DELETE FROM services WHERE name = $1", name) })
+
+	createRec := postCreateServiceWithSLOName(t, r, token, name, "slo-never-polled", "Never Polled SLO")
+	if createRec.Code != http.StatusCreated {
+		t.Fatalf("setup create status = %d, want %d", createRec.Code, http.StatusCreated)
+	}
+
+	found := findServiceAcrossPages(t, r, token, name)
+	if found == nil {
+		t.Fatalf("created service %q not present across any page of GET /api/services", name)
+	}
+	if found.SLOName != "Never Polled SLO" {
+		t.Errorf("SLOName = %q, want %q", found.SLOName, "Never Polled SLO")
+	}
+	if found.Uptime30d != nil {
+		t.Errorf("Uptime30d = %v, want nil for a service with no StatusInterval rows", *found.Uptime30d)
+	}
+	if found.LastSeenAt != nil {
+		t.Errorf("LastSeenAt = %v, want nil for a service with no StatusInterval rows", *found.LastSeenAt)
+	}
+}
+
+// TestListServices_MixedNotConfiguredAndPolled_SamePage asserts the
+// design.md Risks & Concerns row 3 regression: a not_configured service
+// (zero StatusInterval rows) and a polled service (an open interval with
+// real uptime data) in the SAME paginated response must each get their own
+// correct uptime_30d/last_seen_at - not both nil, and not the polled
+// service's data leaking onto the not_configured one.
+func TestListServices_MixedNotConfiguredAndPolled_SamePage(t *testing.T) {
+	r, pool, admins := newServicesRouter(t)
+	token := issueTestSessionTokenWithTenant(t, admins, pool)
+
+	notConfiguredName := uniqueServiceName(t) + "-not-configured"
+	polledName := uniqueServiceName(t) + "-polled"
+	t.Cleanup(func() {
+		_, _ = pool.Exec(context.Background(), "DELETE FROM services WHERE name IN ($1, $2)", notConfiguredName, polledName)
+	})
+
+	if rec := postCreateService(t, r, token, notConfiguredName, "slo-not-configured"); rec.Code != http.StatusCreated {
+		t.Fatalf("setup create (not_configured) status = %d, want %d, body = %s", rec.Code, http.StatusCreated, rec.Body.String())
+	}
+	polledRec := postCreateService(t, r, token, polledName, "slo-polled")
+	if polledRec.Code != http.StatusCreated {
+		t.Fatalf("setup create (polled) status = %d, want %d, body = %s", polledRec.Code, http.StatusCreated, polledRec.Body.String())
+	}
+	var polledCreated serviceResponse
+	if err := json.Unmarshal(polledRec.Body.Bytes(), &polledCreated); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+
+	intervals := db.NewStatusIntervalRepository(pool)
+	polledAt := time.Now().Add(-time.Hour)
+	if err := intervals.OpenOrExtend(context.Background(), polledCreated.ID, "operational", 100, polledAt); err != nil {
+		t.Fatalf("setup OpenOrExtend() returned unexpected error: %v", err)
+	}
+
+	gotNotConfigured := findServiceAcrossPages(t, r, token, notConfiguredName)
+	if gotNotConfigured == nil {
+		t.Fatalf("not_configured service %q not present across any page of GET /api/services", notConfiguredName)
+	}
+	if gotNotConfigured.Uptime30d != nil {
+		t.Errorf("not_configured Uptime30d = %v, want nil", *gotNotConfigured.Uptime30d)
+	}
+	if gotNotConfigured.LastSeenAt != nil {
+		t.Errorf("not_configured LastSeenAt = %v, want nil", *gotNotConfigured.LastSeenAt)
+	}
+
+	gotPolled := findServiceAcrossPages(t, r, token, polledName)
+	if gotPolled == nil {
+		t.Fatalf("polled service %q not present across any page of GET /api/services", polledName)
+	}
+	if gotPolled.Uptime30d == nil {
+		t.Fatalf("polled Uptime30d = nil, want a real percentage")
+	}
+	if *gotPolled.Uptime30d != 100 {
+		t.Errorf("polled Uptime30d = %v, want 100 (fully operational open interval)", *gotPolled.Uptime30d)
+	}
+	if gotPolled.LastSeenAt == nil {
+		t.Fatalf("polled LastSeenAt = nil, want the open interval's LastSeenAt")
+	}
+	// Allow for sub-second precision loss across the Postgres round-trip
+	// and JSON (de)serialization rather than requiring bit-exact equality.
+	if diff := gotPolled.LastSeenAt.Sub(polledAt); diff < -time.Second || diff > time.Second {
+		t.Errorf("polled LastSeenAt = %v, want ~%v (within 1s)", *gotPolled.LastSeenAt, polledAt)
 	}
 }
 

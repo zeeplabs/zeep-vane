@@ -148,10 +148,10 @@ T7 → T8 → T9 → T10 → T11
 - Skill: NONE
 
 **Done when**:
-- [ ] `List` response includes `slo_name`, `uptime_30d`, `last_seen_at` per item
-- [ ] A `not_configured` service (zero `StatusInterval` rows) gets `uptime_30d: null`, `last_seen_at: null` in the same page as a polled service that gets real numbers (mixed-fixture test, per design.md Risks & Concerns row 3 - this is the explicit regression this task must catch)
-- [ ] `Create` accepts and persists `slo_name`; omitting it still 422s the same way an omitted `slo_id`/`name` already does (no relaxation of existing validation)
-- [ ] Gate check passes: `make test-integration`
+- [x] `List` response includes `slo_name`, `uptime_30d`, `last_seen_at` per item
+- [x] A `not_configured` service (zero `StatusInterval` rows) gets `uptime_30d: null`, `last_seen_at: null` in the same page as a polled service that gets real numbers (mixed-fixture test, per design.md Risks & Concerns row 3 - this is the explicit regression this task must catch)
+- [x] `Create` accepts and persists `slo_name`; omitting it still 422s the same way an omitted `slo_id`/`name` already does (no relaxation of existing validation)
+- [x] Gate check passes: `make test-integration`
 
 **Tests**: integration
 **Gate**: Full
