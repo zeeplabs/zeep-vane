@@ -549,6 +549,37 @@ func TestAdminRouter_Viewer_PollerStatus_200(t *testing.T) {
 	}
 }
 
+// TestAdminRouter_Viewer_Overview_200 asserts OVW-02: viewer must be able to
+// read GET /api/overview through the real router (anyRole, the same gate as
+// the other tenant-wide read routes - validation.md's ADM-13 lesson).
+func TestAdminRouter_Viewer_Overview_200(t *testing.T) {
+	r, pool, admins, tenantID := newAdminRouterAndTenantForTest(t)
+	token := issueRoutesTestToken(t, admins, pool, tenantID, db.RoleViewer)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/overview", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Errorf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+}
+
+// TestAdminRouter_Overview_NoSession_401 confirms an unauthenticated request
+// to /api/overview is rejected before the handler runs.
+func TestAdminRouter_Overview_NoSession_401(t *testing.T) {
+	r, _, _, _ := newAdminRouterAndTenantForTest(t)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/overview", nil)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Errorf("status = %d, want %d, body = %s", rec.Code, http.StatusUnauthorized, rec.Body.String())
+	}
+}
+
 // TestAdminRouter_Viewer_EmailProvidersList_200 asserts EMAIL-06: viewer
 // must be able to read GET /api/integrations/email (anyRole), the same
 // read/write role split as the existing Datadog integration routes

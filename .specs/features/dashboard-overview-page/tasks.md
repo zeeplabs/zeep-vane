@@ -173,10 +173,10 @@ T7 → T8 → T9
 - Skill: NONE
 
 **Done when**:
-- [ ] `GET /api/overview` reachable on the real mounted router with a viewer-role session (per `admin-dashboard`'s lesson that a handler existing without router wiring is dead code)
-- [ ] Unauthenticated request returns 401
-- [ ] Gate check passes: `TEST_DATABASE_URL=... go test -tags=integration ./internal/cli/...`
-- [ ] Test count: +2 new tests (viewer-role 200 against real router; unauthenticated 401)
+- [x] `GET /api/overview` reachable on the real mounted router with a viewer-role session (per `admin-dashboard`'s lesson that a handler existing without router wiring is dead code)
+- [x] Unauthenticated request returns 401
+- [x] Gate check passes: `TEST_DATABASE_URL=... go test -tags=integration ./internal/cli/...`
+- [x] Test count: +2 new tests (viewer-role 200 against real router; unauthenticated 401)
 
 **Tests**: integration
 **Gate**: full

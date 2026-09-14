@@ -105,6 +105,7 @@ func buildAdminRouter(pool *db.Pool, cfg config.Config, logger *zap.Logger, poll
 	companySettingsHandler := api.NewCompanySettingsHandler(tenantsRepo, logger)
 	logoFileHandler := api.NewLogoFileHandler(tenantsRepo)
 	instanceConfigHandler := api.NewInstanceConfigHandler(cfg.PublicDNSTarget, tenantsRepo, logger)
+	overviewHandler := api.NewOverviewHandler(db.NewServiceRepository(pool), db.NewStatusIntervalRepository(pool), db.NewIncidentRepository(pool), db.NewDomainRepository(pool), logger)
 
 	requireAuth := api.RequireAuth(cfg.SessionSecret, users, sessions, logger)
 	writeRoles := api.RequireRole(db.RoleOwner, db.RoleOperator)
@@ -255,6 +256,10 @@ func buildAdminRouter(pool *db.Pool, cfg config.Config, logger *zap.Logger, poll
 		// status/list routes above which viewer can also reach.
 		protected.With(writeRoles).Get("/api/integrations/datadog/slos", integrationsHandler.SearchSLOs)
 		protected.With(anyRole).Get("/api/poller/status", pollerStatusHandler.List)
+		// Overview aggregation (dashboard-overview-page OVW-02) - same anyRole
+		// gate as the other tenant-wide read routes above; the page is the
+		// authenticated landing screen for every role (spec P2 AC5).
+		protected.With(anyRole).Get("/api/overview", overviewHandler.Get)
 	})
 
 	// Serves the embedded SPA (with client-route fallback) for any path
