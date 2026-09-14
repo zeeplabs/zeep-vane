@@ -113,7 +113,7 @@ Vane has no post-login landing page. Today `/` redirects straight to `/domains` 
 | OVW-03 | P1 | Design | Pending |
 | OVW-04 | P1 | Design | Verified |
 | OVW-05 | P1 | Design | Pending |
-| OVW-06 | P1 | Design | Pending |
+| OVW-06 | P1 | Design | Verified |
 | OVW-07 | P1 | Design | Pending |
 | OVW-08 | P1 | Design | Pending |
 | OVW-09 | P1 | Design | Pending |

@@ -187,6 +187,20 @@ func (r *DomainRepository) Delete(ctx context.Context, id string) error {
 	return nil
 }
 
+// CountVerified returns how many domains are currently verified for the
+// active tenant (OVW-06) - status "verified", the value
+// SetVerificationResult writes after a successful real DNS/TLS check. Like
+// every other tenant-scoped read, it relies on app.tenant_id being set so
+// RLS scopes the count to one tenant.
+func (r *DomainRepository) CountVerified(ctx context.Context) (int, error) {
+	var total int
+	row := r.pool.QueryRow(ctx, "SELECT COUNT(*) FROM domains WHERE status = 'verified'")
+	if err := row.Scan(&total); err != nil {
+		return 0, fmt.Errorf("db: failed to count verified domains: %w", err)
+	}
+	return total, nil
+}
+
 // countDomains is the zero-row fallback for ListPaginated's total (PAG-08).
 func (r *DomainRepository) countDomains(ctx context.Context) (int, error) {
 	var total int

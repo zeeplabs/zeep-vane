@@ -119,10 +119,10 @@ T7 → T8 → T9
 - Skill: NONE
 
 **Done when**:
-- [ ] `CountVerified` returns the count of domains whose `status = 'verified'`
-- [ ] Zero-rows tenant returns `0`, not an error
-- [ ] Gate check passes: `TEST_DATABASE_URL=... go test -tags=integration ./internal/db/...`
-- [ ] Test count: +2 new subtests (mixed pending/verified/error; zero domains)
+- [x] `CountVerified` returns the count of domains whose `status = 'verified'`
+- [x] Zero-rows tenant returns `0`, not an error
+- [x] Gate check passes: `TEST_DATABASE_URL=... go test -tags=integration ./internal/db/...`
+- [x] Test count: +2 new subtests (mixed pending/verified/error; zero domains)
 
 **Tests**: integration
 **Gate**: full

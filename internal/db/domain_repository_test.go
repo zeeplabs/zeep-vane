@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"testing"
 	"time"
+
+	"github.com/zeeplabs/zeep-vane/internal/dbtest"
 )
 
 // newDomainRepoTestPool boots a migrated pool and a fresh *DomainRepository
@@ -266,5 +268,89 @@ func TestDomainRepository_SetVerificationResult_Unknown_ErrNotFound(t *testing.T
 	_, err := repo.SetVerificationResult(context.Background(), "00000000-0000-0000-0000-000000000000", "verified", "active", nil, time.Now())
 	if !errors.Is(err, ErrNotFound) {
 		t.Fatalf("SetVerificationResult() error = %v, want ErrNotFound", err)
+	}
+}
+
+// newDomainRepoScratchPool returns a DomainRepository backed by a pool on a
+// fresh scratch database, so an unfiltered COUNT is deterministic instead of
+// racing other suites that share TEST_DATABASE_URL.
+func newDomainRepoScratchPool(t *testing.T) (*DomainRepository, *Pool) {
+	t.Helper()
+	dsn := newScratchDatabase(t)
+	if err := MigrateUp(dsn, "migrations"); err != nil {
+		t.Fatalf("MigrateUp() returned unexpected error: %v", err)
+	}
+
+	ctx := context.Background()
+	admin, err := NewPool(ctx, dsn)
+	if err != nil {
+		t.Fatalf("NewPool() (admin) returned unexpected error: %v", err)
+	}
+
+	var tenantID string
+	if err := admin.QueryRow(ctx, "INSERT INTO tenants (name) VALUES ($1) RETURNING id", "countverified-fixture-tenant").Scan(&tenantID); err != nil {
+		admin.Close()
+		t.Fatalf("seeding fixture tenant returned unexpected error: %v", err)
+	}
+	admin.Close()
+
+	pool, err := NewPool(ctx, dbtest.TenantScopedDSN(dsn, tenantID))
+	if err != nil {
+		t.Fatalf("NewPool() (tenant-scoped) returned unexpected error: %v", err)
+	}
+	t.Cleanup(pool.Close)
+
+	return NewDomainRepository(pool), pool
+}
+
+func TestDomainRepository_CountVerified_MixedStatuses_CountsOnlyVerified(t *testing.T) {
+	repo, _ := newDomainRepoScratchPool(t)
+	ctx := context.Background()
+
+	baseline, err := repo.CountVerified(ctx)
+	if err != nil {
+		t.Fatalf("CountVerified() (baseline) returned unexpected error: %v", err)
+	}
+	if baseline != 0 {
+		t.Fatalf("baseline = %d, want 0 on a fresh scratch database", baseline)
+	}
+
+	verifiedA := &Domain{Hostname: "countverified-a.example.com"}
+	if err := repo.Create(ctx, verifiedA); err != nil {
+		t.Fatalf("Create(verifiedA) returned unexpected error: %v", err)
+	}
+	verifiedB := &Domain{Hostname: "countverified-b.example.com"}
+	if err := repo.Create(ctx, verifiedB); err != nil {
+		t.Fatalf("Create(verifiedB) returned unexpected error: %v", err)
+	}
+	pendingC := &Domain{Hostname: "countverified-c.example.com"}
+	if err := repo.Create(ctx, pendingC); err != nil {
+		t.Fatalf("Create(pendingC) returned unexpected error: %v", err)
+	}
+	if _, err := repo.SetVerificationResult(ctx, verifiedA.ID, "verified", "active", nil, time.Now()); err != nil {
+		t.Fatalf("SetVerificationResult(verifiedA) returned unexpected error: %v", err)
+	}
+	if _, err := repo.SetVerificationResult(ctx, verifiedB.ID, "verified", "active", nil, time.Now()); err != nil {
+		t.Fatalf("SetVerificationResult(verifiedB) returned unexpected error: %v", err)
+	}
+
+	got, err := repo.CountVerified(ctx)
+	if err != nil {
+		t.Fatalf("CountVerified() returned unexpected error: %v", err)
+	}
+	if got != 2 {
+		t.Errorf("CountVerified() = %d, want 2 (one still pending)", got)
+	}
+}
+
+func TestDomainRepository_CountVerified_NoDomains_ReturnsZero(t *testing.T) {
+	repo, _ := newDomainRepoScratchPool(t)
+
+	got, err := repo.CountVerified(context.Background())
+	if err != nil {
+		t.Fatalf("CountVerified() returned unexpected error: %v", err)
+	}
+	if got != 0 {
+		t.Errorf("CountVerified() = %d, want 0 for a tenant with no domains", got)
 	}
 }
