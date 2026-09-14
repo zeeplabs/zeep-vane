@@ -296,6 +296,24 @@ Seen once or not yet corroborated. Tracked, not trusted.
 - evidence: .specs/features/list-pagination/tasks.md T5 (Done-when unchecked); IncidentsPage.tsx stale SPEC_DEVIATION (web/incidents)
 - last seen: 2026-09-12T21:44:56Z
 
+### L-048 - A test for a boolean count filter is only discriminating if the fixture makes the true/false branches yield different counts; one item per branch lets the flipped condition produce the same value and survive.
+- signal: `surviving_mutant` · recurrence: 1 feature(s) · scope: `api/test-discrimination` · harmful: 0
+- features: dashboard-overview-page
+- evidence: validation.md M3 - internal/api/overview_handler.go CurrentStatus != operational (api/test-discrimination)
+- last seen: 2026-09-14T17:38:24Z
+
+### L-049 - Assert a fixed-count contract (e.g. 14 buckets) against the literal, never against the same constant the implementation uses, or mutating the constant passes.
+- signal: `surviving_mutant` · recurrence: 1 feature(s) · scope: `api/test-discrimination` · harmful: 0
+- features: dashboard-overview-page
+- evidence: validation.md M4 - internal/api/overview_handler.go overviewUptimeSeriesDays=14 (api/test-discrimination)
+- last seen: 2026-09-14T17:38:24Z
+
+### L-050 - Rendering a page directly in RootRoute bypasses AuthenticatedLayout/AppShell; route landing pages through the shell-wrapped route (redirect) and assert the shell-rendered page, not just the component.
+- signal: `spec_deviation` · recurrence: 1 feature(s) · scope: `web/routing` · harmful: 0
+- features: dashboard-overview-page
+- evidence: validation.md T8 - web/src/App.tsx:88 RootRoute (web/routing)
+- last seen: 2026-09-14T17:38:24Z
+
 ## Quarantined (failed when applied - ignore)
 
 A confirmed lesson that recurred alongside failure. Kept for the maintainer to review.

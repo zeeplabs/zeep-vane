@@ -3,7 +3,7 @@
   "promote_threshold": 2,
   "window_days": 45,
   "quarantine_threshold": 2,
-  "next_id": 48,
+  "next_id": 51,
   "lessons": [
     {
       "id": "L-001",
@@ -850,6 +850,60 @@
       ],
       "created": "2026-09-12T21:44:56Z",
       "last_seen": "2026-09-12T21:44:56Z"
+    },
+    {
+      "id": "L-048",
+      "key": "surviving_mutant::a test for a boolean count filter is only discriminating if the fixture makes the true false branches yield different counts one item per branch lets the flipped condition produce the same value and survive",
+      "text": "A test for a boolean count filter is only discriminating if the fixture makes the true/false branches yield different counts; one item per branch lets the flipped condition produce the same value and survive.",
+      "signal": "surviving_mutant",
+      "scope": "api/test-discrimination",
+      "status": "candidate",
+      "features": [
+        "dashboard-overview-page"
+      ],
+      "recurrence": 1,
+      "harmful": 0,
+      "evidence": [
+        "validation.md M3 - internal/api/overview_handler.go CurrentStatus != operational (api/test-discrimination)"
+      ],
+      "created": "2026-09-14T17:38:24Z",
+      "last_seen": "2026-09-14T17:38:24Z"
+    },
+    {
+      "id": "L-049",
+      "key": "surviving_mutant::assert a fixed count contract e g 14 buckets against the literal never against the same constant the implementation uses or mutating the constant passes",
+      "text": "Assert a fixed-count contract (e.g. 14 buckets) against the literal, never against the same constant the implementation uses, or mutating the constant passes.",
+      "signal": "surviving_mutant",
+      "scope": "api/test-discrimination",
+      "status": "candidate",
+      "features": [
+        "dashboard-overview-page"
+      ],
+      "recurrence": 1,
+      "harmful": 0,
+      "evidence": [
+        "validation.md M4 - internal/api/overview_handler.go overviewUptimeSeriesDays=14 (api/test-discrimination)"
+      ],
+      "created": "2026-09-14T17:38:24Z",
+      "last_seen": "2026-09-14T17:38:24Z"
+    },
+    {
+      "id": "L-050",
+      "key": "spec_deviation::rendering a page directly in rootroute bypasses authenticatedlayout appshell route landing pages through the shell wrapped route redirect and assert the shell rendered page not just the component",
+      "text": "Rendering a page directly in RootRoute bypasses AuthenticatedLayout/AppShell; route landing pages through the shell-wrapped route (redirect) and assert the shell-rendered page, not just the component.",
+      "signal": "spec_deviation",
+      "scope": "web/routing",
+      "status": "candidate",
+      "features": [
+        "dashboard-overview-page"
+      ],
+      "recurrence": 1,
+      "harmful": 0,
+      "evidence": [
+        "validation.md T8 - web/src/App.tsx:88 RootRoute (web/routing)"
+      ],
+      "created": "2026-09-14T17:38:24Z",
+      "last_seen": "2026-09-14T17:38:24Z"
     }
   ]
 }
