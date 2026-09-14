@@ -314,6 +314,12 @@ Seen once or not yet corroborated. Tracked, not trusted.
 - evidence: validation.md T8 - web/src/App.tsx:88 RootRoute (web/routing)
 - last seen: 2026-09-14T17:38:24Z
 
+### L-051 - When a spec AC says 'debounced', write a test that asserts debounce timing (e.g. fake timers + call-count check) even if the underlying search hook already exists — reusing an untouched hook is not the same as testing the AC's own wording.
+- signal: `spec_precision_gap` · recurrence: 1 feature(s) · scope: `web/src/features/services` · harmful: 0
+- features: monitored-services-page
+- evidence: SVC-21 (web/src/features/services)
+- last seen: 2026-09-14T23:09:02Z
+
 ## Quarantined (failed when applied - ignore)
 
 A confirmed lesson that recurred alongside failure. Kept for the maintainer to review.

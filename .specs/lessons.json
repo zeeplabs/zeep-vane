@@ -3,7 +3,7 @@
   "promote_threshold": 2,
   "window_days": 45,
   "quarantine_threshold": 2,
-  "next_id": 51,
+  "next_id": 52,
   "lessons": [
     {
       "id": "L-001",
@@ -904,6 +904,24 @@
       ],
       "created": "2026-09-14T17:38:24Z",
       "last_seen": "2026-09-14T17:38:24Z"
+    },
+    {
+      "id": "L-051",
+      "key": "spec_precision_gap::when a spec ac says debounced write a test that asserts debounce timing e g fake timers call count check even if the underlying search hook already exists reusing an untouched hook is not the same as testing the ac s own wording",
+      "text": "When a spec AC says 'debounced', write a test that asserts debounce timing (e.g. fake timers + call-count check) even if the underlying search hook already exists — reusing an untouched hook is not the same as testing the AC's own wording.",
+      "signal": "spec_precision_gap",
+      "scope": "web/src/features/services",
+      "status": "candidate",
+      "features": [
+        "monitored-services-page"
+      ],
+      "recurrence": 1,
+      "harmful": 0,
+      "evidence": [
+        "SVC-21 (web/src/features/services)"
+      ],
+      "created": "2026-09-14T23:09:02Z",
+      "last_seen": "2026-09-14T23:09:02Z"
     }
   ]
 }
