@@ -124,3 +124,43 @@ Scratch: temporary `git worktree` at `/tmp/vane-sensor` (Go) + single-file backu
 **Issues found**: none blocking. Two non-blocking items surfaced above (OVW-05 precision; T8 SPEC_DEVIATION).
 
 **Next steps**: none required for PASS. Optional follow-up: tighten OVW-05 to degraded/outage (product decision).
+
+---
+
+## Addendum (2026-09-14): OVW-17..20 handoff visual-parity extension
+
+**Diff range**: `29f6e57..28ae93d` (chart/icon library migration, shell rework, and the 4 new card-subtext fields — all landed as part of the same handoff-parity session, single squashed commit `28ae93d`).
+
+**Trigger**: a literal, line-by-line comparison against `handoff-new-layout/Visao Geral.dc.html` (requested explicitly, as opposed to the earlier screenshot-only comparison) found the mock renders a second line under each of the 4 summary cards that the original Execute had not implemented and `spec.md` had explicitly called Out of Scope for the incidents card ("no severity split is rendered anywhere on this screen" — that line was wrong; corrected in `spec.md`'s Out of Scope table above). Asked via `AskUserQuestion` whether the 4 subtexts should be real data or hardcoded; user chose all-real.
+
+**Backend added**: `IncidentRepository.CountOpenBreakdown` (critical/monitoring, independent filters over `status <> 'resolved'`), `DomainRepository.CountAll`, a second `ListOverlapping` query over the prior 30d window (60d-30d ago) for the uptime trend. `OverviewResponse` gained `uptime_avg_30d_prior`, `open_incidents_critical`, `open_incidents_monitoring`, `total_services`, `total_domains`.
+
+**Gap found by this Verifier pass**: the original feature commit shipped these 5 fields and their frontend rendering with **zero test coverage** — no backend test exercised `CountOpenBreakdown`/`CountAll`/the prior-window query, and the frontend test only asserted the 4 cards' primary values, never their subtext lines. Closed by this addendum, not by the original author.
+
+### Spec-Anchored Acceptance Criteria (new)
+
+| Criterion | Spec-defined outcome | `file:line` + assertion | Result |
+| --- | --- | --- | --- |
+| OVW-17 uptime trend subtext, current vs. prior 30d window | `+0.1% vs mês anterior` for 99.9 vs 99.8; no line when delta rounds to 0 or either side is nil | `internal/api/overview_handler_test.go` `TestOverviewHandler_Get_UptimePrior_AveragesSixtyToThirtyDaysAgo` (100.0 current vs 0.0 prior, proves the prior figure reads the 60d-30d window, not the current one); `web/src/features/overview/OverviewPage.test.tsx:60` (`"+0.1% vs mês anterior"` present on real data), `:84` (absent on empty state) | ✅ PASS |
+| OVW-18 incident breakdown subtext, critical/monitoring independent counts | `{critical} crítico, {monitoring} monitorando`; resolved excluded; not required to sum to open total | `internal/db/incident_repository_test.go` `TestIncidentRepository_CountOpenBreakdown_MixedSeverityAndStatus_CountsIndependently` (1 critical among 2 open, 1 monitoring, resolved-critical excluded) + `_NoIncidents_ReturnsZero`; `internal/api/overview_handler_test.go:243-247` (handler wiring, 1/1 from mixed fixture); `OverviewPage.test.tsx:61` (`"1 crítico, 0 monitorando"` present), `:85` (absent when both 0) | ✅ PASS |
+| OVW-19 unhealthy-services denominator, always rendered | `de {total} serviços monitorados` | `internal/api/overview_handler_test.go:234-235` (`TotalServices == 3`, unhealthy 2 - distinguishable); `OverviewPage.test.tsx:62` (real data), `:86` (`"de 0 serviços monitorados"` still renders at zero - unconditional per spec) | ✅ PASS |
+| OVW-20 verified-domains pending subtext, only when >0 | `{pending} pendente de verificação` | `internal/db/domain_repository_test.go` `TestDomainRepository_CountAll_MixedStatuses_CountsRegardlessOfStatus` (2 total regardless of status) + `_NoDomains_ReturnsZero`; `internal/api/overview_handler_test.go:240-241` (`TotalDomains == 2`); `OverviewPage.test.tsx:63` (`"1 pendente de verificação"` present), `:87` (absent at 0 pending) | ✅ PASS |
+
+**Status**: ✅ 20/20 ACs covered (16 original + 4 added).
+
+### Discrimination check (new fields)
+
+Not run as a full isolated-worktree sensor pass (scope: 4 straightforward aggregation fields, not a new algorithm) — instead verified each new assertion actually discriminates by construction: `CountOpenBreakdown`'s test fixture includes a resolved-critical incident specifically to prove the `status <> 'resolved'` filter still applies to the severity count (a mutant dropping that filter would report 2, not 1); `CountAll`'s test includes one verified + one pending domain specifically so it's distinguishable from `CountVerified` (a mutant that aliased the two would report 1, not 2); the prior-window test uses opposite values (100% current, 0% prior) specifically so a mutant reading the wrong window is caught immediately, not masked by both windows coincidentally agreeing.
+
+### Gate Check (re-run after addendum)
+
+- **Backend**: `gofmt -l` clean on all 3 touched test files; `go build ./...`, `go vet ./...` clean; `make test-integration` (disposable `vane-test-pg` container, destroyed after) - all 21 packages ok, 0 failures.
+- **Frontend**: `npx tsc -b --noEmit` clean; `npm run test` - 433/433 passed (78 files) - test count unchanged from the original PASS report (new assertions added to existing `it()` blocks, no new frontend test cases).
+- **Backend test count**: `internal/db/domain_repository_test.go` 14 (+2), `internal/db/incident_repository_test.go` 21 (+2), `internal/api/overview_handler_test.go` 7 (+1).
+
+### Other findings from this pass, out of `dashboard-overview-page`'s own scope
+
+- **`new-layout-migration` SHELL-17 was validated PASS against the wrong outcome.** That feature's `spec.md` AC (P2 AC10) requires: for exactly 1 tenant membership, show avatar+tenant-name **without** a switcher popover. Its own `validation.md` documented the implementation as `if (memberships.length <= 1) return null` — rendering nothing at all, not "identity without popover". The AC's actual requirement (show identity) was never met, and the original Verifier's evidence citation (`TenantSwitcher.test.tsx:71-87`) tested the wrong outcome (null render) instead of the spec's real one. Fixed in this session as a byproduct of comparing `Sidebar.tsx` against the same handoff file; see `new-layout-migration/validation.md`'s own addendum for the corrected evidence. This is flagged here because it was found while validating this feature's diff, not because it's in `dashboard-overview-page`'s scope.
+- `.playwright-mcp/` debug artifacts (screenshots, DOM snapshot `.yml`, console `.log` — Playwright MCP session output, not project files) were committed alongside this feature's code in `28ae93d`. Removed from tracking and `.gitignore`d in a separate cleanup commit; unrelated to this feature's behavior.
+
+**Overall (addendum)**: ✅ Ready. `dashboard-overview-page` is now 20/20 ACs, fully test-covered, gates green.

@@ -170,3 +170,21 @@ Real-tree isolation confirmed: `git status --porcelain` after cleanup matches th
 2. ~~5 ACs (SHELL-01/02/03/07/19) pin exact values (hex colors, font weights, pixel spacing) that no test asserts~~ — **resolved in the hygiene pass (2026-09-12)**: exact-literal tests added (see "Resolved" above). A future regression to one of these literals is now caught by the suite.
 
 **Next steps**: No fix tasks required for this validation to close. The previously-noted config-literal coverage gap is closed.
+
+---
+
+## Addendum (2026-09-14): SHELL-17 spec-anchored check was wrong; corrected
+
+**Found while validating `dashboard-overview-page`'s handoff-parity pass** (a `Sidebar.tsx`/`TenantSwitcher.tsx` comparison against the same `handoff-new-layout/Visao Geral.dc.html`, done in the same session for an unrelated reason — this feature's own scope was not being re-audited).
+
+**The bug**: `spec.md`'s P2 AC10 (`SHELL-17`) requires: *"IF o usuário autenticado tem exatamente 1 tenant_membership THEN o system SHALL exibir avatar+nome do tenant sem popover de troca (sem seletor)"* — i.e. show the identity, just without the switcher. The row above (`SHELL-17: exactly 1 membership → no switcher popover`) cited `web/src/layout/TenantSwitcher.tsx:50` (`if (memberships.length <= 1) return null`) as evidence. That code renders **nothing at all** for the single-membership case — not "identity without popover". The AC's actual expected outcome (visible avatar+name) was never checked; the original spec-anchored check matched the AC's *label* ("no popover") but not its *literal requirement* (still show identity), and the cited test (`TenantSwitcher.test.tsx:71-87`) only asserted the null-render, reinforcing the wrong outcome instead of catching it.
+
+**Real-world impact**: every tenant with exactly one membership — the common case — had an invisible tenant identity in the sidebar since this feature's original Execute, undetected because the wrong behavior had a green test.
+
+**Fix** (2026-09-14, same commit as `dashboard-overview-page`'s OVW-17..20 addendum): `TenantSwitcher.tsx` now always renders the identity block (avatar + name + plan badge); only the popover/chevron are gated on `memberships.length > 1`. `TenantSwitcher.test.tsx`'s first test rewritten from asserting a null render to asserting the identity text (`tenant-1`, the MSW fixture's fallback display name) is present and no `[aria-haspopup]` element exists.
+
+**Corrected evidence for SHELL-17**: `web/src/layout/TenantSwitcher.tsx` (identity always rendered; `isMulti = memberships.length > 1` gates only the popover), `TenantSwitcher.test.tsx` — test `"mostra a identidade do tenant sem dropdown pra usuário com 1 único membership (SHELL-10)"` (`findByText("tenant-1")` + absence of `[aria-haspopup]`).
+
+**Status**: SHELL-17 remains ✅ Verified, now against the AC actually written in `spec.md` rather than a passing test of the wrong behavior.
+
+**Related, not a spec violation**: `design.md`'s Sidebar section (line ~43) said `useBrandLogoUrl` would be reused "for the logo at the top of the sidebar" — no `spec.md` AC requires a logo there, and the handoff mock never shows one. The logo row was removed during the same parity pass; this is a `design.md` implementation-detail correction, not a reopened AC. `design.md` not rewritten (out of scope for a validation addendum); noted here for anyone reading that section later.
