@@ -323,12 +323,12 @@ T7 → T8 → T9 → T10 → T11
 - Skill: NONE
 
 **Done when**:
-- [ ] `/services` (through the authenticated shell route, not a bare component render - L-050) shows `ServiceListPage`
-- [ ] Clicking a row opens `ServiceDetailDrawer` scoped to that service's ID
-- [ ] "Adicionar serviço" opens `AddServiceDrawer`; a successful add makes the new service appear in the list without a full page reload
-- [ ] Unauthenticated access to `/services` still redirects to `/login` (existing behavior, regression-checked)
-- [ ] Gate check passes: `cd web && npx tsc -b --noEmit && npm run test`
-- [ ] Whole-feature Build gate passes: `go build ./... && go vet ./... && go test ./... && gofmt -l $(git diff --name-only --diff-filter=ACM -- '*.go') && make test-integration && cd web && npx tsc -b --noEmit && npm run test`
+- [x] `/services` (through the authenticated shell route, not a bare component render - L-050) shows `ServiceListPage`
+- [x] Clicking a row opens `ServiceDetailDrawer` scoped to that service's ID
+- [x] "Adicionar serviço" opens `AddServiceDrawer`; a successful add makes the new service appear in the list without a full page reload
+- [x] Unauthenticated access to `/services` still redirects to `/login` (existing behavior, regression-checked)
+- [x] Gate check passes: `cd web && npx tsc -b --noEmit && npm run test`
+- [x] Whole-feature Build gate passes: `go build ./... && go vet ./... && go test ./... && gofmt -l $(git diff --name-only --diff-filter=ACM -- '*.go') && make test-integration && cd web && npx tsc -b --noEmit && npm run test`
 
 **Tests**: unit
 **Gate**: Build

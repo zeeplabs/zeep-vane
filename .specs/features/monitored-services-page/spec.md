@@ -133,26 +133,26 @@
 
 | Requirement ID | Story | Phase | Status |
 | --- | --- | --- | --- |
-| SVC-01 | P1 | Tasks (T1/T2/T4/T9: migration + repository + handler + `ServiceListPage`) | In Progress (component done, pending T11 route wiring) |
-| SVC-02 | P1 | Tasks (T9: `ServiceListPage` status badges) | In Progress (component done, pending T11 route wiring) |
-| SVC-03 | P1 | Tasks (T9: `ServiceListPage` status badges) | In Progress (component done, pending T11 route wiring) |
-| SVC-04 | P1 | Tasks (T9: `ServiceListPage` status badges) | In Progress (component done, pending T11 route wiring) |
-| SVC-05 | P1 | Tasks (T9: `ServiceListPage` status badges) | In Progress (component done, pending T11 route wiring) |
-| SVC-06 | P1 | Tasks (T4/T9: handler uptime/last-seen + `ServiceListPage` "—" rendering) | In Progress (component done, pending T11 route wiring) |
-| SVC-07 | P1 | Tasks (T9: no Latência column) | In Progress (component done, pending T11 route wiring) |
-| SVC-08 | P1 | Tasks (T9: `Pager`) | In Progress (component done, pending T11 route wiring) |
-| SVC-09 | P2 | Tasks (T9: status filter chips) | In Progress (component done, pending T11 route wiring) |
-| SVC-10 | P2 | Tasks (T9: search box) | In Progress (component done, pending T11 route wiring) |
-| SVC-11 | P2 | Tasks (T9: filter + search AND) | In Progress (component done, pending T11 route wiring) |
-| SVC-12 | P2 | Tasks (T9: empty state) | In Progress (component done, pending T11 route wiring) |
-| SVC-13 | P2 | Tasks (T9: chip counts) | In Progress (component done, pending T11 route wiring) |
-| SVC-14 | P3 | Tasks (T2/T3/T5/T10: repository + detail endpoint + `ServiceDetailDrawer`) | In Progress (component done, pending T11 route wiring) |
-| SVC-15 | P3 | Tasks (T5/T10: status_analysis pass-through + drawer note) | In Progress (component done, pending T11 route wiring) |
-| SVC-16 | P3 | Tasks (T5/T10: status_analysis pass-through + drawer note) | In Progress (component done, pending T11 route wiring) |
-| SVC-17 | P3 | Tasks (T5/T10: hourly_buckets, always 24 + drawer strip) | In Progress (component done, pending T11 route wiring) |
-| SVC-18 | P3 | Tasks (T10: `ServiceDetailDrawer` close control + backdrop) | In Progress (component done, pending T11 route wiring) |
-| SVC-19 | P3 | Tasks (T10: `ServiceDetailDrawer`, no drawer actions) | In Progress (component done, pending T11 route wiring) |
-| SVC-20 | P3 (add) | Tasks (T8: `AddServiceDrawer`) | In Progress (drawer done, pending T9/T11 "Adicionar serviço" trigger wiring) |
+| SVC-01 | P1 | Tasks (T1/T2/T4/T9: migration + repository + handler + `ServiceListPage`) | Done |
+| SVC-02 | P1 | Tasks (T9: `ServiceListPage` status badges) | Done |
+| SVC-03 | P1 | Tasks (T9: `ServiceListPage` status badges) | Done |
+| SVC-04 | P1 | Tasks (T9: `ServiceListPage` status badges) | Done |
+| SVC-05 | P1 | Tasks (T9: `ServiceListPage` status badges) | Done |
+| SVC-06 | P1 | Tasks (T4/T9: handler uptime/last-seen + `ServiceListPage` "—" rendering) | Done |
+| SVC-07 | P1 | Tasks (T9: no Latência column) | Done |
+| SVC-08 | P1 | Tasks (T9: `Pager`) | Done |
+| SVC-09 | P2 | Tasks (T9: status filter chips) | Done |
+| SVC-10 | P2 | Tasks (T9: search box) | Done |
+| SVC-11 | P2 | Tasks (T9: filter + search AND) | Done |
+| SVC-12 | P2 | Tasks (T9: empty state) | Done |
+| SVC-13 | P2 | Tasks (T9: chip counts) | Done |
+| SVC-14 | P3 | Tasks (T2/T3/T5/T10: repository + detail endpoint + `ServiceDetailDrawer`) | Done |
+| SVC-15 | P3 | Tasks (T5/T10: status_analysis pass-through + drawer note) | Done |
+| SVC-16 | P3 | Tasks (T5/T10: status_analysis pass-through + drawer note) | Done |
+| SVC-17 | P3 | Tasks (T5/T10: hourly_buckets, always 24 + drawer strip) | Done |
+| SVC-18 | P3 | Tasks (T10: `ServiceDetailDrawer` close control + backdrop) | Done |
+| SVC-19 | P3 | Tasks (T10: `ServiceDetailDrawer`, no drawer actions) | Done |
+| SVC-20 | P3 (add) | Tasks (T8/T9/T11: `AddServiceDrawer` + `ServiceListPage` trigger + wiring) | Done |
 | SVC-21 | P3 (add) | Tasks (T8: `AddServiceDrawer`) | Done |
 | SVC-22 | P3 (add) | Tasks (T8: `AddServiceDrawer`) | Done |
 | SVC-23 | P3 (add) | Tasks (T8: `AddServiceDrawer`) | Done |
@@ -161,13 +161,13 @@
 
 **ID format:** `SVC-[NUMBER]`, sequential across all stories in file order (P1 ACs 1-8 → SVC-01..08, P2 ACs 1-5 → SVC-09..13, P3 drawer ACs 1-6 → SVC-14..19, P3 add ACs 1-6 → SVC-20..25).
 
-**Coverage:** 25 total, 0 mapped to tasks yet, 25 unmapped ⚠️ (Design/Tasks not yet run).
+**Coverage:** 25 total, 25 mapped to tasks, 0 unmapped.
 
 ---
 
 ## Success Criteria
 
-- [ ] `/services` renders real service data (status, uptime, last-check) with no Latência anywhere.
-- [ ] Filter chips + search narrow the current page's rows correctly and in combination.
-- [ ] Clicking a row opens a read-only drawer with 30d stats, conditional note, and a real 24-hour history strip (no fabricated data).
-- [ ] A new Datadog-backed service can be added from this screen end-to-end without a page reload losing filter/search state unexpectedly.
+- [x] `/services` renders real service data (status, uptime, last-check) with no Latência anywhere.
+- [x] Filter chips + search narrow the current page's rows correctly and in combination.
+- [x] Clicking a row opens a read-only drawer with 30d stats, conditional note, and a real 24-hour history strip (no fabricated data).
+- [x] A new Datadog-backed service can be added from this screen end-to-end without a page reload losing filter/search state unexpectedly.

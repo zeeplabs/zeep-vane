@@ -35,12 +35,16 @@ export interface ServiceListPageProps {
   onSelectService?: (id: string) => void;
   /** Chamado ao clicar em "Adicionar serviço" (abre o AddServiceDrawer, T11). */
   onAddService?: () => void;
+  /** Controla a visibilidade do botão "Adicionar serviço" - mesma regra de
+   * papel que `ServicesSection` já aplicava (`owner`/`operator`). Default
+   * `true` para não exigir esse prop nos testes deste componente. */
+  canManage?: boolean;
 }
 
 /** Tela redesenhada de `/services` (monitored-services-page): tabela com
  * status/uptime/última verificação, chips de filtro por status e busca por
  * nome/SLO, todos escopados à página atual (SVC-01..13). */
-export function ServiceListPage({ onSelectService, onAddService }: ServiceListPageProps) {
+export function ServiceListPage({ onSelectService, onAddService, canManage = true }: ServiceListPageProps) {
   const { t } = useTranslation();
   const [page, setPage] = useState(1);
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
@@ -86,10 +90,12 @@ export function ServiceListPage({ onSelectService, onAddService }: ServiceListPa
           <h1 className="text-lg font-bold text-text">{t("services.title")}</h1>
           <p className="mt-1.5 max-w-lg text-sm text-neutral-400">{t("services.subtitle")}</p>
         </div>
-        <Button variant="primary" onClick={() => onAddService?.()}>
-          <MdOutlineAdd size={15} aria-hidden="true" />
-          {t("services.addButton")}
-        </Button>
+        {canManage ? (
+          <Button variant="primary" onClick={() => onAddService?.()}>
+            <MdOutlineAdd size={15} aria-hidden="true" />
+            {t("services.addButton")}
+          </Button>
+        ) : null}
       </div>
 
       <div className="flex flex-wrap items-center justify-between gap-4">
