@@ -24,6 +24,7 @@ import { AdminsPage } from "./features/admins/AdminsPage";
 import { PollerStatusPage } from "./features/poller/PollerStatusPage";
 import { SettingsPage } from "./features/settings/SettingsPage";
 import { ProfilePage } from "./features/profile/ProfilePage";
+import { OverviewPage } from "./features/overview/OverviewPage";
 import { PublicStatusPage } from "./features/public-status/PublicStatusPage";
 import "./lib/i18n";
 
@@ -87,7 +88,15 @@ function RootRoute() {
   return (
     <RedirectToBootstrapIfNeeded>
       <RequireAuth>
-        <Navigate to="/domains" replace />
+        {/* dashboard-overview-page OVW-01: "/" lands on the Overview page
+            instead of /domains. SPEC_DEVIATION from design.md's Integration
+            Points, which said to render <OverviewPage /> directly here:
+            RootRoute is NOT inside AuthenticatedLayout, so rendering the page
+            directly would drop the AppShell (sidebar/topbar). A replace
+            redirect to the shell-wrapped /overview route is the same single
+            hop the previous <Navigate to="/domains" /> was, and keeps the
+            shell. */}
+        <Navigate to="/overview" replace />
       </RequireAuth>
     </RedirectToBootstrapIfNeeded>
   );
@@ -162,6 +171,9 @@ export default function App() {
           }
         >
           <Route path="/domains" element={<DomainsStatusPagesPage />} />
+          {/* dashboard-overview-page OVW-01: explicit authenticated landing
+              route (the "/" RootRoute redirects here after login). */}
+          <Route path="/overview" element={<OverviewPage />} />
           <Route path="/status-pages" element={<StatusPagesPage />} />
           <Route path="/status-pages/:id" element={<StatusPageDetail />} />
           <Route path="/incidents" element={<IncidentsPage />} />

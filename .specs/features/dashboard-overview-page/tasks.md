@@ -274,11 +274,11 @@ T7 → T8 → T9
 - Skill: NONE
 
 **Done when**:
-- [ ] Authenticated user with a resolved tenant loading `/` sees the Overview page, not `/domains`
-- [ ] Direct visit to `/overview` also renders the Overview page
-- [ ] Every existing `RootRoute` test (public-status-page 200/404 branches) still passes unmodified
-- [ ] Gate check passes: `npx tsc -b --noEmit && npm run test`
-- [ ] Test count: +2 new tests (authenticated `/` renders Overview; direct `/overview` renders Overview) — 0 existing tests modified beyond what's needed to keep them passing
+- [x] Authenticated user with a resolved tenant loading `/` sees the Overview page, not `/domains`
+- [x] Direct visit to `/overview` also renders the Overview page
+- [x] Every existing `RootRoute` test (public-status-page 200/404 branches) still passes unmodified
+- [x] Gate check passes: `npx tsc -b --noEmit && npm run test`
+- [x] Test count: +2 new tests (authenticated `/` renders Overview; direct `/overview` renders Overview) — 0 existing tests modified beyond what's needed to keep them passing
 
 **Tests**: unit
 **Gate**: build+test

@@ -120,3 +120,33 @@ describe("App - rota /profile", () => {
     expect(screen.queryByRole("heading", { level: 1, name: "Meu Perfil" })).not.toBeInTheDocument();
   });
 });
+
+// OVW-01: "/" lands on the Overview page (not /domains) for an authenticated
+// user with a resolved tenant; /overview is also directly addressable.
+describe("App - rota Overview", () => {
+  it("autenticado carregando / renderiza a OverviewPage (OVW-01)", async () => {
+    setBootstrapped(true);
+    await apiFetch("/api/auth/login", {
+      method: "POST",
+      body: JSON.stringify({ email: "owner@vane.app", password: "demo1234" }),
+    });
+    renderAppAt("/");
+
+    await waitFor(() =>
+      expect(screen.getByRole("heading", { level: 1, name: "Visão geral" })).toBeInTheDocument()
+    );
+  });
+
+  it("visita direta a /overview renderiza a OverviewPage", async () => {
+    setBootstrapped(true);
+    await apiFetch("/api/auth/login", {
+      method: "POST",
+      body: JSON.stringify({ email: "owner@vane.app", password: "demo1234" }),
+    });
+    renderAppAt("/overview");
+
+    await waitFor(() =>
+      expect(screen.getByRole("heading", { level: 1, name: "Visão geral" })).toBeInTheDocument()
+    );
+  });
+});

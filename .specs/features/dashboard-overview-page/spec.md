@@ -108,7 +108,7 @@ Vane has no post-login landing page. Today `/` redirects straight to `/domains` 
 
 | Requirement ID | Story | Phase | Status |
 | --- | --- | --- | --- |
-| OVW-01 | P1 | Design | Pending |
+| OVW-01 | P1 | Design | Verified |
 | OVW-02 | P1 | Design | Verified |
 | OVW-03 | P1 | Design | Verified |
 | OVW-04 | P1 | Design | Verified |
