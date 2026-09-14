@@ -144,14 +144,14 @@ T7 → T8 → T9
 - Skill: NONE
 
 **Done when**:
-- [ ] Response includes all 6 fields per design's `OverviewResponse` shape
-- [ ] 30d uptime average is `nil` when zero services have `ok=true` (AC3)
-- [ ] Exactly 14 buckets returned, oldest first, local-midnight-aligned (AC7)
-- [ ] Recent incidents capped at 3, ordered `created_at DESC`, resolved incidents included (AC8)
-- [ ] Zero services/incidents/domains renders documented empty values, no 500 (AC9)
-- [ ] Any repository error returns a fixed generic message, real error only logged server-side
-- [ ] Gate check passes: `TEST_DATABASE_URL=... go test -tags=integration ./internal/api/...`
-- [ ] Test count: +6 new tests (happy path full data; zero-tenant empty state; 30d "—" case; 14-bucket count/order assertion; recent-incidents cap+order; repository-error → generic 500)
+- [x] Response includes all 6 fields per design's `OverviewResponse` shape
+- [x] 30d uptime average is `nil` when zero services have `ok=true` (AC3)
+- [x] Exactly 14 buckets returned, oldest first, local-midnight-aligned (AC7)
+- [x] Recent incidents capped at 3, ordered `created_at DESC`, resolved incidents included (AC8)
+- [x] Zero services/incidents/domains renders documented empty values, no 500 (AC9)
+- [x] Any repository error returns a fixed generic message, real error only logged server-side
+- [x] Gate check passes: `TEST_DATABASE_URL=... go test -tags=integration ./internal/api/...`
+- [x] Test count: +6 new tests (happy path full data; zero-tenant empty state; 30d "—" case; 14-bucket count/order assertion; recent-incidents cap+order; repository-error → generic 500)
 
 **Tests**: integration
 **Gate**: full

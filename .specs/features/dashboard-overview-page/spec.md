@@ -109,14 +109,14 @@ Vane has no post-login landing page. Today `/` redirects straight to `/domains` 
 | Requirement ID | Story | Phase | Status |
 | --- | --- | --- | --- |
 | OVW-01 | P1 | Design | Pending |
-| OVW-02 | P1 | Design | Pending |
-| OVW-03 | P1 | Design | Pending |
+| OVW-02 | P1 | Design | Verified |
+| OVW-03 | P1 | Design | Verified |
 | OVW-04 | P1 | Design | Verified |
-| OVW-05 | P1 | Design | Pending |
+| OVW-05 | P1 | Design | Verified |
 | OVW-06 | P1 | Design | Verified |
-| OVW-07 | P1 | Design | Pending |
-| OVW-08 | P1 | Design | Pending |
-| OVW-09 | P1 | Design | Pending |
+| OVW-07 | P1 | Design | Verified |
+| OVW-08 | P1 | Design | Verified |
+| OVW-09 | P1 | Design | Verified |
 | OVW-10 | P2 | Design | Pending |
 | OVW-11 | P2 | Design | Pending |
 | OVW-12 | P2 | Design | Pending |
