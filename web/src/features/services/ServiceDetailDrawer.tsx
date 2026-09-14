@@ -2,10 +2,9 @@ import { useTranslation } from "react-i18next";
 import { MdOutlineWarningAmber } from "react-icons/md";
 import { Drawer } from "../../components/ui/Drawer";
 import { Button } from "../../components/ui/Button";
-import { Tag } from "../../components/ui/Tag";
 import type { HourlyBucket } from "../../types/api";
 import { useServiceDetail } from "./hooks";
-import { statusLabel, statusVariant } from "./statusMeta";
+import { StatusTag } from "./StatusTag";
 
 export interface ServiceDetailDrawerProps {
   serviceId: string;
@@ -69,7 +68,7 @@ export function ServiceDetailDrawer({ serviceId, onClose }: ServiceDetailDrawerP
         <p className="text-neutral-400">{t("services.loading")}</p>
       ) : (
         <div className="flex flex-col gap-5">
-          <Tag variant={statusVariant[detail.current_status]}>{statusLabel[detail.current_status]}</Tag>
+          <StatusTag status={detail.current_status} />
 
           <div className="grid grid-cols-2 gap-4">
             <Stat label={t("services.detail.uptime")} value={formatUptime(detail.uptime_30d)} />

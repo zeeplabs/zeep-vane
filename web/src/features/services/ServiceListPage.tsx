@@ -5,10 +5,9 @@ import { Card } from "../../components/ui/Card";
 import { Button } from "../../components/ui/Button";
 import { Input } from "../../components/ui/Input";
 import { Pager } from "../../components/ui/Pager";
-import { Tag } from "../../components/ui/Tag";
 import type { ServiceStatus } from "../../types/api";
 import { useServices } from "./hooks";
-import { statusLabel, statusVariant } from "./statusMeta";
+import { StatusTag } from "./StatusTag";
 
 type StatusFilter = "all" | ServiceStatus;
 
@@ -167,9 +166,7 @@ export function ServiceListPage({ onSelectService, onAddService, canManage = tru
                   onClick={() => onSelectService?.(service.id)}
                   className="grid cursor-pointer grid-cols-[96px_1fr_96px_140px_20px] items-center gap-3 border-b border-divider px-5 py-3.5 last:border-b-0 hover:bg-bg"
                 >
-                  <Tag variant={statusVariant[service.current_status]}>
-                    {statusLabel[service.current_status]}
-                  </Tag>
+                  <StatusTag status={service.current_status} />
                   <div className="min-w-0">
                     <div className="truncate text-[13.5px] font-semibold text-text">{service.name}</div>
                     <div className="truncate text-xs text-neutral-400">
