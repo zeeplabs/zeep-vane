@@ -12,7 +12,11 @@ export interface StatusTagProps {
  * ServiceDetailDrawer's header so both match the mock identically. */
 export function StatusTag({ status }: StatusTagProps) {
   return (
-    <Tag variant={statusVariant[status]} className="gap-1.5">
+    // Tag's base class is rounded-sm (this app's custom 8px scale,
+    // tokens.css) - the mock's status pill is fully rounded (999px).
+    // Inline style forces it regardless of Tag's own class (same
+    // specificity conflict as any override-by-className would hit).
+    <Tag variant={statusVariant[status]} className="gap-1.5" style={{ borderRadius: "999px" }}>
       <span
         className="h-1.5 w-1.5 flex-none rounded-full"
         style={{ backgroundColor: statusDotColor[status] }}

@@ -67,6 +67,9 @@ export function AddServiceDrawer({ open, onOpenChange }: AddServiceDrawerProps) 
       onOpenChange={handleOpenChange}
       title="Adicionar serviço"
       description="Configure um novo alvo de monitoramento. O Vane começa a verificar assim que você salvar."
+      showCloseButton
+      closeLabel="Fechar"
+      headerBorder={false}
       footer={
         <>
           <Button type="button" variant="secondary" onClick={() => handleOpenChange(false)}>
@@ -75,7 +78,7 @@ export function AddServiceDrawer({ open, onOpenChange }: AddServiceDrawerProps) 
           <Button
             type="submit"
             form="add-service-form"
-            variant="primary"
+            variant="solid"
             disabled={createService.isPending || !canSubmit}
           >
             Adicionar serviço
@@ -85,6 +88,7 @@ export function AddServiceDrawer({ open, onOpenChange }: AddServiceDrawerProps) 
     >
       <form id="add-service-form" onSubmit={handleSubmit} className="flex flex-col gap-3">
         <Field
+          variant="filled"
           label="Nome do serviço"
           value={name}
           onChange={(e) => setName(e.target.value)}
@@ -92,6 +96,7 @@ export function AddServiceDrawer({ open, onOpenChange }: AddServiceDrawerProps) 
           required
         />
         <Field
+          variant="filled"
           label="Buscar SLO"
           value={query}
           onChange={(e) => {
