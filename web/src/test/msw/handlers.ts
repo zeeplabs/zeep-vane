@@ -380,18 +380,45 @@ function paginatedPage<T>(requestUrl: string, items: T[], pageSize: number): Pag
   };
 }
 
-// toServiceResponse strips slo_name - the real serviceResponse
-// (internal/api/services_handler.go) never returns it, only the opaque
-// slo_id (see services/hooks.ts's toService adapter, SPEC_DEVIATION I15).
+// serviceUptimeAndLastSeen fabricates a plausible uptime_30d/last_seen_at
+// pair for the fixture: a service with current_status "not_configured" has
+// no StatusInterval data yet (mirrors the real backend's nil-when-no-data
+// rule, SVC-06), any other status gets a real-looking value.
+function serviceUptimeAndLastSeen(service: Service): { uptime_30d: number | null; last_seen_at: string | null } {
+  if (service.current_status === "not_configured") {
+    return { uptime_30d: null, last_seen_at: null };
+  }
+  return { uptime_30d: 99.9, last_seen_at: new Date().toISOString() };
+}
+
+// toServiceResponse mirrors the real serviceResponse
+// (internal/api/services_handler.go): id, name, slo_id, slo_name,
+// current_status, last_status_change_at, uptime_30d, last_seen_at.
 function toServiceResponse(service: Service) {
+  const { uptime_30d, last_seen_at } = serviceUptimeAndLastSeen(service);
   return {
     id: service.id,
     name: service.name,
     slo_id: service.slo_id,
+    slo_name: service.slo_name,
     current_status: service.current_status,
     last_status_change_at: service.last_status_change_at,
+    uptime_30d,
+    last_seen_at,
   };
 }
+
+// serviceDegradedNotes/serviceIncidentCounts back the detail endpoint's
+// status_analysis/incidents_30d fixtures (SVC-14..17) - keyed by id rather
+// than added to the shared Service type, since no other endpoint needs
+// them.
+const serviceDegradedNotes: Record<string, string> = {
+  "svc-2": "Latência acima do normal nas últimas 2 horas.",
+};
+
+const serviceIncidentCounts: Record<string, number> = {
+  "svc-2": 2,
+};
 
 // toDomainResponse strips fields the real backend never returns.
 // toStatusPageResponse mirrors the real StatusPagesHandler response shape,
@@ -1355,7 +1382,7 @@ export const handlers = [
 
   http.post("/api/services", async ({ request }) => {
     if (!sessionAdminId) return HttpResponse.json({ error: "unauthorized" }, { status: 401 });
-    const body = (await request.json()) as { name?: string; slo_id?: string };
+    const body = (await request.json()) as { name?: string; slo_id?: string; slo_name?: string };
     if (!body.name || !body.slo_id) {
       return HttpResponse.json({ error: "name and slo_id are required" }, { status: 422 });
     }
@@ -1364,12 +1391,32 @@ export const handlers = [
       id: `svc-msw-${serviceIdCounter}`,
       name: body.name,
       slo_id: body.slo_id,
-      slo_name: sloCatalog.find((slo) => slo.id === body.slo_id)?.name ?? null,
+      slo_name: body.slo_name ?? sloCatalog.find((slo) => slo.id === body.slo_id)?.name ?? null,
       current_status: "not_configured",
       last_status_change_at: new Date().toISOString(),
+      uptime_30d: null,
+      last_seen_at: null,
     };
     servicesState.push(created);
     return HttpResponse.json(toServiceResponse(created), { status: 201 });
+  }),
+
+  // GET /api/services/:id (monitored-services-page SVC-14..19) - mirrors
+  // ServicesHandler.Get: 404 fixed body for an unknown id, else the detail
+  // DTO (same uptime_30d/last_seen_at as List, plus status_analysis,
+  // incidents_30d, and exactly 24 hourly_buckets).
+  http.get("/api/services/:id", ({ params }) => {
+    if (!sessionAdminId) return HttpResponse.json({ error: "unauthorized" }, { status: 401 });
+    const service = servicesState.find((s) => s.id === params.id);
+    if (!service) {
+      return HttpResponse.json({ error: "service not found" }, { status: 404 });
+    }
+    return HttpResponse.json({
+      ...toServiceResponse(service),
+      status_analysis: service.current_status === "degraded" ? (serviceDegradedNotes[service.id] ?? null) : null,
+      incidents_30d: serviceIncidentCounts[service.id] ?? 0,
+      hourly_buckets: buildFixtureHistory(service.current_status, 24),
+    });
   }),
 
   // GET /api/incidents (I16) - mirrors IncidentsHandler.List: most recently

@@ -53,6 +53,28 @@ export interface Service {
   slo_name: string | null;
   current_status: ServiceStatus;
   last_status_change_at: string;
+  // uptime_30d/last_seen_at (monitored-services-page SVC-01/SVC-06): null
+  // when the service has no StatusInterval data yet ("—" in the UI), a
+  // real value once the poller has run at least once.
+  uptime_30d: number | null;
+  last_seen_at: string | null;
+}
+
+// HourlyBucket is one bar of the detail drawer's 24-hour status history
+// strip (SVC-17), mirroring internal/api's hourlyBucketResponse -
+// "no_data" is a real per-bucket value distinct from the overall
+// ServiceStatus vocabulary (design.md § Data Models Relationships).
+export interface HourlyBucket {
+  start: string;
+  status: "operational" | "degraded" | "outage" | "no_data";
+}
+
+// ServiceDetail mirrors GET /api/services/{id} (design.md, flat DTO, not
+// Page<T>) - the monitored-services-page detail drawer's read.
+export interface ServiceDetail extends Service {
+  status_analysis: string | null;
+  incidents_30d: number;
+  hourly_buckets: HourlyBucket[];
 }
 
 export interface Domain {

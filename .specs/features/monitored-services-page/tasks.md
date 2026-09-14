@@ -219,11 +219,11 @@ T7 → T8 → T9 → T10 → T11
 - Skill: NONE
 
 **Done when**:
-- [ ] `useServices` returns `slo_name`/`uptime_30d`/`last_seen_at` per item, no network call beyond the single list request (the old per-row `fetchSLOName` call is gone - assert this via a mock call-count check, not just output correctness)
-- [ ] `useServiceDetail` fetches and returns the detail shape, including all 24 `hourly_buckets`
-- [ ] `useCreateService` sends `slo_name` in its request body
-- [ ] MSW handlers return the exact `Page<T>`/detail envelope shape the real backend now returns (AGENTS.md §5)
-- [ ] Gate check passes: `cd web && npx tsc -b --noEmit && npm run test`
+- [x] `useServices` returns `slo_name`/`uptime_30d`/`last_seen_at` per item, no network call beyond the single list request (the old per-row `fetchSLOName` call is gone - assert this via a mock call-count check, not just output correctness)
+- [x] `useServiceDetail` fetches and returns the detail shape, including all 24 `hourly_buckets`
+- [x] `useCreateService` sends `slo_name` in its request body
+- [x] MSW handlers return the exact `Page<T>`/detail envelope shape the real backend now returns (AGENTS.md §5)
+- [x] Gate check passes: `cd web && npx tsc -b --noEmit && npm run test`
 
 **Tests**: unit
 **Gate**: Quick

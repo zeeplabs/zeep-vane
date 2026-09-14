@@ -101,6 +101,10 @@ export const sloCatalog: SLOSummary[] = [
 
 // -- Serviços -------------------------------------------------------------------
 
+// uptime_30d/last_seen_at are always null in the seed rows below - the MSW
+// handler (toServiceResponse -> serviceUptimeAndLastSeen) computes the
+// actual response values dynamically from current_status, so these are
+// just placeholders satisfying the Service type.
 export const services: Service[] = [
   {
     id: "svc-1",
@@ -109,6 +113,8 @@ export const services: Service[] = [
     slo_name: "API disponibilidade 99.9%",
     current_status: "operational",
     last_status_change_at: new Date(Date.now() - 1000 * 60 * 60 * 6).toISOString(),
+    uptime_30d: null,
+    last_seen_at: null,
   },
   {
     id: "svc-2",
@@ -117,6 +123,8 @@ export const services: Service[] = [
     slo_name: "Checkout latência p95",
     current_status: "degraded",
     last_status_change_at: new Date(Date.now() - 1000 * 60 * 30).toISOString(),
+    uptime_30d: null,
+    last_seen_at: null,
   },
   {
     // slo_id/slo_name non-null (SPEC_DEVIATION, I15): the real services
@@ -129,6 +137,8 @@ export const services: Service[] = [
     slo_name: "Fila de notificações",
     current_status: "not_configured",
     last_status_change_at: new Date(Date.now() - 1000 * 60 * 60 * 24).toISOString(),
+    uptime_30d: null,
+    last_seen_at: null,
   },
   {
     id: "svc-4",
@@ -137,6 +147,8 @@ export const services: Service[] = [
     slo_name: "Autenticação disponibilidade",
     current_status: "operational",
     last_status_change_at: new Date(Date.now() - 1000 * 60 * 60 * 12).toISOString(),
+    uptime_30d: null,
+    last_seen_at: null,
   },
 ];
 

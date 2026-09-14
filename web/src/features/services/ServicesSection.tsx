@@ -58,7 +58,7 @@ export function ServicesSection() {
       return;
     }
     try {
-      await createService.mutateAsync({ name, slo_id: selectedSlo.id });
+      await createService.mutateAsync({ name, slo_id: selectedSlo.id, slo_name: selectedSlo.name });
       resetForm();
       setDialogOpen(false);
     } catch (err) {
