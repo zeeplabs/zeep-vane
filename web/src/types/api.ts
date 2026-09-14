@@ -158,3 +158,32 @@ export interface SessionView {
   // stored in the row.
   current: boolean;
 }
+
+// OverviewResponse mirrors internal/api/overview_handler.go's
+// OverviewResponse (dashboard-overview-page). Returned by GET /api/overview
+// as a flat summary DTO, not a Page<T> envelope (the endpoint is not a
+// paginated list). uptime_avg_30d and each bucket's uptime_percent are null
+// when no service has data in the window - the UI renders "—" for null.
+export interface OverviewResponse {
+  uptime_avg_30d: number | null;
+  open_incidents: number;
+  unhealthy_services: number;
+  verified_domains: number;
+  uptime_series: OverviewUptimeBucket[];
+  recent_incidents: OverviewIncident[];
+}
+
+// OverviewUptimeBucket is one day of the 14-day chart; date is the local
+// (America/Sao_Paulo) calendar day, YYYY-MM-DD.
+export interface OverviewUptimeBucket {
+  date: string;
+  uptime_percent: number | null;
+}
+
+// OverviewIncident is one row of the recent-incidents list (0-3 items).
+export interface OverviewIncident {
+  id: string;
+  title: string;
+  status: string;
+  created_at: string;
+}

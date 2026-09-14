@@ -198,8 +198,8 @@ T7 → T8 → T9
 - Skill: NONE
 
 **Done when**:
-- [ ] All 3 interfaces exported matching the backend JSON contract field-for-field
-- [ ] Gate check passes: `npx tsc -b --noEmit`
+- [x] All 3 interfaces exported matching the backend JSON contract field-for-field
+- [x] Gate check passes: `npx tsc -b --noEmit`
 
 **Tests**: none
 **Gate**: build
