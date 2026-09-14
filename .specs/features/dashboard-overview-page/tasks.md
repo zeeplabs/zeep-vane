@@ -221,10 +221,10 @@ T7 → T8 → T9
 - Skill: NONE
 
 **Done when**:
-- [ ] `useOverview` returns the seeded MSW response shape with all 6 fields present
-- [ ] A `server.use` override returning 500 surfaces `isError` on the hook
-- [ ] Gate check passes: `npm run test`
-- [ ] Test count: +2 new tests (happy path shape; error path)
+- [x] `useOverview` returns the seeded MSW response shape with all 6 fields present
+- [x] A `server.use` override returning 500 surfaces `isError` on the hook
+- [x] Gate check passes: `npm run test`
+- [x] Test count: +2 new tests (happy path shape; error path)
 
 **Tests**: unit
 **Gate**: build+test

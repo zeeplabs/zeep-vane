@@ -485,6 +485,41 @@ function buildMeResponse(admin: (typeof seedAdmins)[number]) {
   };
 }
 
+// overviewSeed returns a realistic GET /api/overview response
+// (dashboard-overview-page), mirroring internal/api/overview_handler.go's
+// OverviewResponse shape: a flat DTO, not a Page<T>. The 14 daily buckets
+// end today, oldest first; the first bucket is null ("—") so component tests
+// can assert the no-data rendering without an override.
+function overviewSeed() {
+  const series = Array.from({ length: 14 }, (_, i) => {
+    const d = new Date();
+    d.setDate(d.getDate() - (13 - i));
+    const date = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+    return { date, uptime_percent: i === 0 ? null : 99.9 };
+  });
+  return {
+    uptime_avg_30d: 99.9,
+    open_incidents: 1,
+    unhealthy_services: 2,
+    verified_domains: 1,
+    uptime_series: series,
+    recent_incidents: [
+      {
+        id: "inc-overview-1",
+        title: "Latência elevada no checkout",
+        status: "investigating",
+        created_at: new Date().toISOString(),
+      },
+      {
+        id: "inc-overview-2",
+        title: "Instabilidade no gateway",
+        status: "resolved",
+        created_at: new Date(Date.now() - 3_600_000).toISOString(),
+      },
+    ],
+  };
+}
+
 export const handlers = [
   // GET /api/public-status - mirrors the production public status page
   // endpoint (AD-018), only ever wired up on the public HTTPS listener in
@@ -1762,5 +1797,14 @@ export const handlers = [
     }
     companySettingsState = { ...companySettingsState, logo_url: "/uploads/logo" };
     return HttpResponse.json(companySettingsState);
+  }),
+
+  // GET /api/overview (dashboard-overview-page OVW-02) - mirrors
+  // OverviewHandler.Get: authenticated (anyRole), one flat aggregation DTO.
+  // Read-only, seeded once; a test needing edge values overrides it with
+  // server.use(...).
+  http.get("/api/overview", () => {
+    if (!sessionAdminId) return HttpResponse.json({ error: "unauthorized" }, { status: 401 });
+    return HttpResponse.json(overviewSeed());
   }),
 ];
