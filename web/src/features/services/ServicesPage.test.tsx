@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import "../../lib/i18n";
@@ -32,8 +32,8 @@ afterEach(async () => {
 // T11: /services now renders ServiceListPage (through the authenticated
 // shell route, not a bare component render - L-050) instead of
 // ServicesSection.
-describe("App - rota /services", () => {
-  it("autenticado carregando /services renderiza a ServiceListPage dentro do shell", async () => {
+describe("App - /services route", () => {
+  it("authenticated loading /services renders the ServiceListPage inside the shell", async () => {
     setBootstrapped(true);
     await loginAs("owner@vane.app");
     renderAppAt("/services");
@@ -41,12 +41,12 @@ describe("App - rota /services", () => {
     await waitFor(() =>
       expect(screen.getByRole("heading", { level: 1, name: "Serviços monitorados" })).toBeInTheDocument()
     );
-    // A navegação lateral (AuthenticatedLayout/shell) segue presente -
-    // prova que a página está dentro do shell, não um render isolado (L-050).
+    // The sidebar navigation (AuthenticatedLayout/shell) remains present -
+    // proof that the page is inside the shell, not an isolated render (L-050).
     expect(screen.getByText("Não configurado")).toBeInTheDocument();
   });
 
-  it("sem sessão redireciona para /login", async () => {
+  it("without a session redirects to /login", async () => {
     setBootstrapped(true);
     renderAppAt("/services");
 
@@ -56,7 +56,7 @@ describe("App - rota /services", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("viewer não vê o botão 'Adicionar serviço'", async () => {
+  it("viewer does not see the 'Adicionar serviço' button", async () => {
     setBootstrapped(true);
     await loginAs("viewer@vane.app");
     renderAppAt("/services");
@@ -67,7 +67,7 @@ describe("App - rota /services", () => {
     expect(screen.queryByRole("button", { name: "Adicionar serviço" })).not.toBeInTheDocument();
   });
 
-  it("clicar numa linha abre o ServiceDetailDrawer daquele serviço", async () => {
+  it("clicking a row opens that service's ServiceDetailDrawer", async () => {
     setBootstrapped(true);
     await loginAs("owner@vane.app");
     renderAppAt("/services");
@@ -78,18 +78,19 @@ describe("App - rota /services", () => {
     expect(await screen.findByRole("button", { name: "Fechar" })).toBeInTheDocument();
   });
 
-  it("'Adicionar serviço' abre o AddServiceDrawer e um cadastro bem-sucedido aparece na lista sem reload", async () => {
+  it("'Adicionar serviço' opens the AddServiceDrawer and a successful registration appears in the list without reload", async () => {
     setBootstrapped(true);
     await loginAs("owner@vane.app");
     renderAppAt("/services");
     await screen.findByText("Notificações");
 
     await userEvent.click(screen.getByRole("button", { name: "Adicionar serviço" }));
+    const dialog = screen.getByRole("dialog");
     await userEvent.type(screen.getByLabelText("Nome do serviço"), "Fila de pagamentos");
     await userEvent.type(screen.getByLabelText("Buscar SLO"), "checkout");
     const option = await screen.findByRole("button", { name: /Checkout/i });
     await userEvent.click(option);
-    await userEvent.click(screen.getByRole("button", { name: "Salvar" }));
+    await userEvent.click(within(dialog).getByRole("button", { name: "Adicionar serviço" }));
 
     await waitFor(() =>
       expect(screen.queryByLabelText("Nome do serviço")).not.toBeInTheDocument()

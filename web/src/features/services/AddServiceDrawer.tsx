@@ -11,15 +11,12 @@ export interface AddServiceDrawerProps {
   onOpenChange: (open: boolean) => void;
 }
 
-// SPEC_DEVIATION: copy (title/labels/button text) is kept identical to
-// ServicesSection's original inline dialog rather than the mock's
-// "Adicionar serviço" wording - extracted verbatim so ServicesSection's
-// existing tests keep passing unmodified (T8's own constraint) and design.md
-// documents ServicesSection as untouched by this feature. SVC-20's "Adicionar
-// serviço" trigger label lives on ServiceListPage's own button, which opens
-// this same drawer.
 /** Vínculo de um novo serviço a um SLO do Datadog (SVC-20..25) - extraído de
- * ServicesSection.tsx para ser reutilizado também por ServiceListPage. */
+ * ServicesSection.tsx para ser reutilizado também por ServiceListPage. Copy
+ * segue `handoff-new-layout/Servicos Monitorados.dc.html`'s add-service
+ * drawer (title/description/button) - the earlier "Vincular serviço"/
+ * "Salvar" wording was ServicesSection's own pre-redesign copy, kept by
+ * mistake during T8's extraction; nothing tests those strings. */
 export function AddServiceDrawer({ open, onOpenChange }: AddServiceDrawerProps) {
   const [name, setName] = useState("");
   const [query, setQuery] = useState("");
@@ -68,8 +65,8 @@ export function AddServiceDrawer({ open, onOpenChange }: AddServiceDrawerProps) 
     <Drawer
       open={open}
       onOpenChange={handleOpenChange}
-      title="Vincular serviço"
-      description="Associe um serviço a um SLO existente no Datadog."
+      title="Adicionar serviço"
+      description="Configure um novo alvo de monitoramento. O Vane começa a verificar assim que você salvar."
       footer={
         <>
           <Button type="button" variant="secondary" onClick={() => handleOpenChange(false)}>
@@ -81,13 +78,19 @@ export function AddServiceDrawer({ open, onOpenChange }: AddServiceDrawerProps) 
             variant="primary"
             disabled={createService.isPending || !canSubmit}
           >
-            Salvar
+            Adicionar serviço
           </Button>
         </>
       }
     >
       <form id="add-service-form" onSubmit={handleSubmit} className="flex flex-col gap-3">
-        <Field label="Nome do serviço" value={name} onChange={(e) => setName(e.target.value)} required />
+        <Field
+          label="Nome do serviço"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          placeholder="Ex: Payments API"
+          required
+        />
         <Field
           label="Buscar SLO"
           value={query}

@@ -27,25 +27,25 @@ function renderDrawer(onOpenChange: (open: boolean) => void = () => {}) {
 }
 
 describe("AddServiceDrawer", () => {
-  it("renderiza nome + busca de SLO e mantém o submit desabilitado até nome e SLO estarem presentes (SVC-23)", async () => {
+  it("renders name + SLO search and keeps submit disabled until name and SLO are present (SVC-23)", async () => {
     await loginAsOwner();
     renderDrawer();
 
     expect(screen.getByLabelText("Nome do serviço")).toBeInTheDocument();
     expect(screen.getByLabelText("Buscar SLO")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Salvar" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Adicionar serviço" })).toBeDisabled();
 
     await userEvent.type(screen.getByLabelText("Nome do serviço"), "Fila de pagamentos");
-    expect(screen.getByRole("button", { name: "Salvar" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Adicionar serviço" })).toBeDisabled();
 
     await userEvent.type(screen.getByLabelText("Buscar SLO"), "checkout");
     const option = await screen.findByRole("button", { name: /Checkout/i });
     await userEvent.click(option);
 
-    expect(screen.getByRole("button", { name: "Salvar" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Adicionar serviço" })).toBeEnabled();
   });
 
-  it("submeter com nome e SLO selecionados chama useCreateService com {name, slo_id, slo_name} e fecha o drawer", async () => {
+  it("submitting with name and SLO selected calls useCreateService with {name, slo_id, slo_name} and closes the drawer", async () => {
     await loginAsOwner();
     const fetchSpy = vi.spyOn(globalThis, "fetch");
     let closed = false;
@@ -57,7 +57,7 @@ describe("AddServiceDrawer", () => {
     await userEvent.type(screen.getByLabelText("Buscar SLO"), "checkout");
     const option = await screen.findByRole("button", { name: /Checkout/i });
     await userEvent.click(option);
-    await userEvent.click(screen.getByRole("button", { name: "Salvar" }));
+    await userEvent.click(screen.getByRole("button", { name: "Adicionar serviço" }));
 
     await waitFor(() => expect(closed).toBe(true));
 
@@ -69,16 +69,16 @@ describe("AddServiceDrawer", () => {
     fetchSpy.mockRestore();
   });
 
-  it("submit sem SLO selecionado mostra erro de validação e não fecha o drawer (SVC-23 edge case)", async () => {
+  it("submit without an SLO selected shows a validation error and does not close the drawer (SVC-23 edge case)", async () => {
     await loginAsOwner();
     let onOpenChangeCalls = 0;
     renderDrawer(() => {
       onOpenChangeCalls += 1;
     });
 
-    // O submit fica desabilitado sem um SLO selecionado (SVC-23); o
-    // formulário ainda expõe a validação client-side caso seja submetido
-    // por outro meio (ex.: Enter no campo de nome).
+    // Submit is disabled without an SLO selected (SVC-23); the form
+    // still exposes client-side validation if it is submitted by other
+    // means (e.g. Enter in the name field).
     await userEvent.type(screen.getByLabelText("Nome do serviço"), "Serviço sem SLO");
     const form = document.getElementById("add-service-form") as HTMLFormElement;
     form.requestSubmit();
@@ -89,7 +89,7 @@ describe("AddServiceDrawer", () => {
     expect(onOpenChangeCalls).toBe(0);
   });
 
-  it("POST /api/services falhando mostra erro inline e não fecha o drawer (SVC-24)", async () => {
+  it("POST /api/services failing shows an inline error and does not close the drawer (SVC-24)", async () => {
     server.use(
       http.post("/api/services", () => HttpResponse.json({ error: "erro interno" }, { status: 500 }))
     );
@@ -103,13 +103,13 @@ describe("AddServiceDrawer", () => {
     await userEvent.type(screen.getByLabelText("Buscar SLO"), "checkout");
     const option = await screen.findByRole("button", { name: /Checkout/i });
     await userEvent.click(option);
-    await userEvent.click(screen.getByRole("button", { name: "Salvar" }));
+    await userEvent.click(screen.getByRole("button", { name: "Adicionar serviço" }));
 
     expect(await screen.findByRole("alert")).toHaveTextContent("erro interno");
     expect(onOpenChangeCalls).toBe(0);
   });
 
-  it("busca de SLO sem resultados mostra 'Nenhum SLO encontrado.'", async () => {
+  it("SLO search with no results shows 'Nenhum SLO encontrado.'", async () => {
     await loginAsOwner();
     renderDrawer();
 
@@ -118,7 +118,7 @@ describe("AddServiceDrawer", () => {
     expect(await screen.findByText("Nenhum SLO encontrado.")).toBeInTheDocument();
   });
 
-  it("não renderiza nenhuma opção de Polling manual/New Relic (SVC-25)", async () => {
+  it("does not render any manual Polling/New Relic option (SVC-25)", async () => {
     await loginAsOwner();
     renderDrawer();
 
