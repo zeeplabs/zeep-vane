@@ -1,17 +1,14 @@
-import { useState, type FormEvent } from "react";
+import { useState } from "react";
 import { MdOutlineSchedule, MdOutlineAdd } from "react-icons/md";
 import { Card } from "../../components/ui/Card";
-import { Dialog } from "../../components/ui/Dialog";
 import { Button } from "../../components/ui/Button";
-import { Field } from "../../components/ui/Field";
 import { Pager } from "../../components/ui/Pager";
 import { Tag } from "../../components/ui/Tag";
 import { useAuth } from "../../auth/AuthProvider";
-import { ApiError } from "../../lib/apiClient";
 import type { Service } from "../../types/api";
-import { useSLOSearch } from "../integrations/hooks";
-import { useCreateService, useServices } from "./hooks";
+import { useServices } from "./hooks";
 import { statusLabel, statusVariant, statusDotColor } from "./statusMeta";
+import { AddServiceDrawer } from "./AddServiceDrawer";
 
 function formatTimestamp(iso: string): string {
   return new Date(iso).toLocaleString("pt-BR");
@@ -21,7 +18,7 @@ function ClockIcon() {
   return <MdOutlineSchedule size={12} aria-hidden="true" />;
 }
 
-/** Tabela + dialog de vínculo de serviço a SLO. Compartilhada entre `IntegrationsPage` (handoff mostra as duas seções na mesma tela) e `ServicesPage` (rota própria, decisão registrada em design.md). */
+/** Tabela + drawer de vínculo de serviço a SLO. Compartilhada entre `IntegrationsPage` (handoff mostra as duas seções na mesma tela) e `ServicesPage` (rota própria, decisão registrada em design.md). */
 export function ServicesSection() {
   const { hasRole } = useAuth();
   const canManage = hasRole(["owner", "operator"]);
@@ -29,43 +26,8 @@ export function ServicesSection() {
   const { data: servicesPage, isLoading } = useServices(page);
   const services = servicesPage?.items;
   const totalPages = Math.max(1, Math.ceil((servicesPage?.total ?? 0) / (servicesPage?.page_size ?? 20)));
-  const createService = useCreateService();
 
-  const [dialogOpen, setDialogOpen] = useState(false);
-  const [name, setName] = useState("");
-  const [query, setQuery] = useState("");
-  const [selectedSlo, setSelectedSlo] = useState<{ id: string; name: string } | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  const sloSearch = useSLOSearch(query);
-
-  function resetForm() {
-    setName("");
-    setQuery("");
-    setSelectedSlo(null);
-    setError(null);
-  }
-
-  async function handleSubmit(e: FormEvent) {
-    e.preventDefault();
-    setError(null);
-    if (!selectedSlo) {
-      // The real backend requires slo_id on creation (SPEC_DEVIATION, I15:
-      // the earlier mock allowed a service with no SLO at all) - validated
-      // client-side so the admin gets an immediate, specific message
-      // instead of a generic 422 from the API.
-      setError("Selecione um SLO da lista antes de salvar.");
-      return;
-    }
-    try {
-      await createService.mutateAsync({ name, slo_id: selectedSlo.id, slo_name: selectedSlo.name });
-      resetForm();
-      setDialogOpen(false);
-    } catch (err) {
-      if (err instanceof ApiError) setError(err.message);
-      else setError("Não foi possível vincular o serviço.");
-    }
-  }
+  const [drawerOpen, setDrawerOpen] = useState(false);
 
   function serviceLastChange(s: Service): string {
     return s.current_status === "not_configured" ? "—" : formatTimestamp(s.last_status_change_at);
@@ -76,13 +38,7 @@ export function ServicesSection() {
       <div className="flex items-center justify-between">
         <h2 className="text-text">Serviços monitorados</h2>
         {canManage ? (
-          <Button
-            variant="primary"
-            onClick={() => {
-              resetForm();
-              setDialogOpen(true);
-            }}
-          >
+          <Button variant="primary" onClick={() => setDrawerOpen(true)}>
             <MdOutlineAdd size={14} aria-hidden="true" />
             Vincular serviço
           </Button>
@@ -126,70 +82,7 @@ export function ServicesSection() {
         )}
       </div>
 
-      <Dialog
-        open={dialogOpen}
-        onOpenChange={setDialogOpen}
-        title="Vincular serviço"
-        description="Associe um serviço a um SLO existente no Datadog."
-        footer={
-          <>
-            <Button type="button" variant="secondary" onClick={() => setDialogOpen(false)}>
-              Cancelar
-            </Button>
-            <Button type="submit" form="link-service-form" variant="primary" disabled={createService.isPending}>
-              Salvar
-            </Button>
-          </>
-        }
-      >
-        <form id="link-service-form" onSubmit={handleSubmit} className="flex flex-col gap-3">
-          <Field
-            label="Nome do serviço"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            required
-          />
-          <Field
-            label="Buscar SLO"
-            value={query}
-            onChange={(e) => {
-              setQuery(e.target.value);
-              setSelectedSlo(null);
-            }}
-            placeholder="Digite o nome do SLO"
-          />
-          {query.trim() && sloSearch.data ? (
-            <ul className="flex flex-col gap-1 rounded-md border border-divider bg-bg p-1">
-              {sloSearch.data.length === 0 ? (
-                <li className="px-2 py-1.5 text-xs text-neutral-400">Nenhum SLO encontrado.</li>
-              ) : (
-                sloSearch.data.map((slo) => (
-                  <li key={slo.id}>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setSelectedSlo(slo);
-                        setQuery(slo.name);
-                      }}
-                      className={
-                        "w-full cursor-pointer rounded-sm px-2 py-1.5 text-left text-sm hover:bg-neutral-800 " +
-                        (selectedSlo?.id === slo.id ? "text-accent" : "text-text")
-                      }
-                    >
-                      {slo.name}
-                    </button>
-                  </li>
-                ))
-              )}
-            </ul>
-          ) : null}
-          {error ? (
-            <p role="alert" className="text-xs text-critical">
-              {error}
-            </p>
-          ) : null}
-        </form>
-      </Dialog>
+      <AddServiceDrawer open={drawerOpen} onOpenChange={setDrawerOpen} />
     </div>
   );
 }

@@ -152,12 +152,12 @@
 | SVC-17 | P3 | Tasks (T5: hourly_buckets, always 24) | In Progress (backend done, pending frontend T10) |
 | SVC-18 | P3 | Design | Pending (frontend-only, drawer close control) |
 | SVC-19 | P3 | Design | Pending (frontend-only, no drawer actions) |
-| SVC-20 | P3 (add) | Design | Pending |
-| SVC-21 | P3 (add) | Design | Pending |
-| SVC-22 | P3 (add) | Design | Pending |
-| SVC-23 | P3 (add) | Design | Pending |
-| SVC-24 | P3 (add) | Design | Pending |
-| SVC-25 | P3 (add) | Design | Pending |
+| SVC-20 | P3 (add) | Tasks (T8: `AddServiceDrawer`) | In Progress (drawer done, pending T9/T11 "Adicionar serviço" trigger wiring) |
+| SVC-21 | P3 (add) | Tasks (T8: `AddServiceDrawer`) | Done |
+| SVC-22 | P3 (add) | Tasks (T8: `AddServiceDrawer`) | Done |
+| SVC-23 | P3 (add) | Tasks (T8: `AddServiceDrawer`) | Done |
+| SVC-24 | P3 (add) | Tasks (T8: `AddServiceDrawer`) | Done |
+| SVC-25 | P3 (add) | Tasks (T8: `AddServiceDrawer`) | Done |
 
 **ID format:** `SVC-[NUMBER]`, sequential across all stories in file order (P1 ACs 1-8 → SVC-01..08, P2 ACs 1-5 → SVC-09..13, P3 drawer ACs 1-6 → SVC-14..19, P3 add ACs 1-6 → SVC-20..25).
 

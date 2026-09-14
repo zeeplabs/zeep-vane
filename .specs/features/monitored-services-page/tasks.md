@@ -243,13 +243,13 @@ T7 → T8 → T9 → T10 → T11
 - Skill: NONE
 
 **Done when**:
-- [ ] `AddServiceDrawer` renders the name field + SLO search + submit, disabled until a name and a selected SLO are both present (SVC-23)
-- [ ] Submitting calls `useCreateService` with `{name, slo_id, slo_name}` and closes on success
-- [ ] A failed submit shows an inline error and does not close the drawer (SVC-24)
-- [ ] An empty SLO search result shows "Nenhum SLO encontrado" (edge case)
-- [ ] No "Polling manual"/"New Relic" option renders anywhere (SVC-25)
-- [ ] `ServicesSection`'s existing tests still pass unmodified after the extraction
-- [ ] Gate check passes: `cd web && npx tsc -b --noEmit && npm run test`
+- [x] `AddServiceDrawer` renders the name field + SLO search + submit, disabled until a name and a selected SLO are both present (SVC-23)
+- [x] Submitting calls `useCreateService` with `{name, slo_id, slo_name}` and closes on success
+- [x] A failed submit shows an inline error and does not close the drawer (SVC-24)
+- [x] An empty SLO search result shows "Nenhum SLO encontrado" (edge case)
+- [x] No "Polling manual"/"New Relic" option renders anywhere (SVC-25)
+- [x] `ServicesSection`'s existing tests still pass unmodified after the extraction
+- [x] Gate check passes: `cd web && npx tsc -b --noEmit && npm run test`
 
 **Tests**: unit
 **Gate**: Quick
