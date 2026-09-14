@@ -354,3 +354,51 @@ func TestDomainRepository_CountVerified_NoDomains_ReturnsZero(t *testing.T) {
 		t.Errorf("CountVerified() = %d, want 0 for a tenant with no domains", got)
 	}
 }
+
+// TestDomainRepository_CountAll_MixedStatuses_CountsRegardlessOfStatus covers
+// OVW-20 (Overview's "verified/total domains" denominator): unlike
+// CountVerified, CountAll must not filter by verification status.
+func TestDomainRepository_CountAll_MixedStatuses_CountsRegardlessOfStatus(t *testing.T) {
+	repo, _ := newDomainRepoScratchPool(t)
+	ctx := context.Background()
+
+	baseline, err := repo.CountAll(ctx)
+	if err != nil {
+		t.Fatalf("CountAll() (baseline) returned unexpected error: %v", err)
+	}
+	if baseline != 0 {
+		t.Fatalf("baseline = %d, want 0 on a fresh scratch database", baseline)
+	}
+
+	verifiedA := &Domain{Hostname: "countall-a.example.com"}
+	if err := repo.Create(ctx, verifiedA); err != nil {
+		t.Fatalf("Create(verifiedA) returned unexpected error: %v", err)
+	}
+	pendingB := &Domain{Hostname: "countall-b.example.com"}
+	if err := repo.Create(ctx, pendingB); err != nil {
+		t.Fatalf("Create(pendingB) returned unexpected error: %v", err)
+	}
+	if _, err := repo.SetVerificationResult(ctx, verifiedA.ID, "verified", "active", nil, time.Now()); err != nil {
+		t.Fatalf("SetVerificationResult(verifiedA) returned unexpected error: %v", err)
+	}
+
+	got, err := repo.CountAll(ctx)
+	if err != nil {
+		t.Fatalf("CountAll() returned unexpected error: %v", err)
+	}
+	if got != 2 {
+		t.Errorf("CountAll() = %d, want 2 (one verified, one still pending - both counted)", got)
+	}
+}
+
+func TestDomainRepository_CountAll_NoDomains_ReturnsZero(t *testing.T) {
+	repo, _ := newDomainRepoScratchPool(t)
+
+	got, err := repo.CountAll(context.Background())
+	if err != nil {
+		t.Fatalf("CountAll() returned unexpected error: %v", err)
+	}
+	if got != 0 {
+		t.Errorf("CountAll() = %d, want 0 for a tenant with no domains", got)
+	}
+}

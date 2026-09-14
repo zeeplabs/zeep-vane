@@ -55,6 +55,12 @@ describe("OverviewPage", () => {
     expect(screen.getByTestId("overview-card-open-incidents")).toHaveTextContent("1");
     expect(screen.getByTestId("overview-card-unhealthy")).toHaveTextContent("2");
     expect(screen.getByTestId("overview-card-domains")).toHaveTextContent("1/2");
+    // OVW-17/18/19/20: card subtexts backed by real fields (2026-09-14
+    // reversal of spec.md's original "no severity breakdown" call).
+    expect(screen.getByText("+0.1% vs mês anterior")).toBeInTheDocument();
+    expect(screen.getByText("1 crítico, 0 monitorando")).toBeInTheDocument();
+    expect(screen.getByText("de 6 serviços monitorados")).toBeInTheDocument();
+    expect(screen.getByText("1 pendente de verificação")).toBeInTheDocument();
     // 2026-09-14 decision: banner and activity feed are static placeholders
     // (no Tenant.Plan/billing or ActivityEvent model yet), always rendered.
     expect(screen.getByText(/Atividade recente do time/i)).toBeInTheDocument();
@@ -72,6 +78,13 @@ describe("OverviewPage", () => {
     expect(screen.getByTestId("overview-card-unhealthy")).toHaveTextContent("0");
     expect(screen.getByTestId("overview-card-domains")).toHaveTextContent("0/0");
     expect(screen.getByText("Nenhum incidente recente.")).toBeInTheDocument();
+    // OVW-17/18/20: no trend/breakdown/pending subtext when there's nothing
+    // to compare or report - only the unconditional denominator (OVW-19)
+    // still renders.
+    expect(screen.queryByText(/vs mês anterior/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/crítico/i)).not.toBeInTheDocument();
+    expect(screen.getByText("de 0 serviços monitorados")).toBeInTheDocument();
+    expect(screen.queryByText(/pendente de verificação/i)).not.toBeInTheDocument();
   });
 
   it("renderiza exatamente 14 barras com tooltip acessível (null vira '—')", async () => {

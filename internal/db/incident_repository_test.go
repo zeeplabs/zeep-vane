@@ -564,6 +564,73 @@ func TestIncidentRepository_CountOpen_MixedOpenAndResolved_CountsOnlyOpen(t *tes
 	}
 }
 
+// TestIncidentRepository_CountOpenBreakdown_MixedSeverityAndStatus_CountsIndependently
+// covers OVW-18 (Overview's "incidentes abertos" breakdown subtext): critical
+// and monitoring are independent, non-mutually-exclusive filters, both scoped
+// to status <> 'resolved'.
+func TestIncidentRepository_CountOpenBreakdown_MixedSeverityAndStatus_CountsIndependently(t *testing.T) {
+	repo, _ := newIncidentRepoScratchPool(t)
+	ctx := context.Background()
+
+	baselineCritical, baselineMonitoring, err := repo.CountOpenBreakdown(ctx)
+	if err != nil {
+		t.Fatalf("CountOpenBreakdown() (baseline) returned unexpected error: %v", err)
+	}
+	if baselineCritical != 0 || baselineMonitoring != 0 {
+		t.Fatalf("baseline = (%d, %d), want (0, 0) on a fresh scratch database", baselineCritical, baselineMonitoring)
+	}
+
+	critical := &Incident{Title: "countopenbreakdown-critical"}
+	if err := repo.Create(ctx, critical, nil); err != nil {
+		t.Fatalf("Create(critical) returned unexpected error: %v", err)
+	}
+	if _, err := repo.SetSeverity(ctx, critical.ID, "critical"); err != nil {
+		t.Fatalf("SetSeverity(critical) returned unexpected error: %v", err)
+	}
+
+	monitoring := &Incident{Title: "countopenbreakdown-monitoring"}
+	if err := repo.Create(ctx, monitoring, nil); err != nil {
+		t.Fatalf("Create(monitoring) returned unexpected error: %v", err)
+	}
+	if _, err := repo.Transition(ctx, monitoring.ID, "monitoring"); err != nil {
+		t.Fatalf("Transition(monitoring) returned unexpected error: %v", err)
+	}
+
+	resolvedCritical := &Incident{Title: "countopenbreakdown-resolved-critical"}
+	if err := repo.Create(ctx, resolvedCritical, nil); err != nil {
+		t.Fatalf("Create(resolvedCritical) returned unexpected error: %v", err)
+	}
+	if _, err := repo.SetSeverity(ctx, resolvedCritical.ID, "critical"); err != nil {
+		t.Fatalf("SetSeverity(resolvedCritical) returned unexpected error: %v", err)
+	}
+	if _, err := repo.Transition(ctx, resolvedCritical.ID, "resolved"); err != nil {
+		t.Fatalf("Transition(resolvedCritical, resolved) returned unexpected error: %v", err)
+	}
+
+	gotCritical, gotMonitoring, err := repo.CountOpenBreakdown(ctx)
+	if err != nil {
+		t.Fatalf("CountOpenBreakdown() returned unexpected error: %v", err)
+	}
+	if gotCritical != 1 {
+		t.Errorf("CountOpenBreakdown() critical = %d, want 1 (resolved critical excluded)", gotCritical)
+	}
+	if gotMonitoring != 1 {
+		t.Errorf("CountOpenBreakdown() monitoring = %d, want 1", gotMonitoring)
+	}
+}
+
+func TestIncidentRepository_CountOpenBreakdown_NoIncidents_ReturnsZero(t *testing.T) {
+	repo, _ := newIncidentRepoScratchPool(t)
+
+	gotCritical, gotMonitoring, err := repo.CountOpenBreakdown(context.Background())
+	if err != nil {
+		t.Fatalf("CountOpenBreakdown() returned unexpected error: %v", err)
+	}
+	if gotCritical != 0 || gotMonitoring != 0 {
+		t.Errorf("CountOpenBreakdown() = (%d, %d), want (0, 0) for a tenant with no incidents", gotCritical, gotMonitoring)
+	}
+}
+
 func TestIncidentRepository_CountOpen_NoIncidents_ReturnsZero(t *testing.T) {
 	repo, _ := newIncidentRepoScratchPool(t)
 
