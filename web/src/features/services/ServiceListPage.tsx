@@ -111,7 +111,7 @@ export function ServiceListPage({ onSelectService, onAddService, canManage = tru
                 className={
                   "inline-flex cursor-pointer items-center gap-1.5 rounded-full border px-3.5 py-1.5 text-xs font-semibold transition-colors " +
                   (active
-                    ? "border-accent bg-accent-900 text-accent"
+                    ? "border-accent bg-accent-100 text-accent"
                     : "border-divider bg-surface text-neutral-400 hover:text-text")
                 }
               >
@@ -142,7 +142,7 @@ export function ServiceListPage({ onSelectService, onAddService, canManage = tru
       ) : (
         <>
           <Card elevation="elev-sm" className="overflow-hidden">
-            <div className="grid grid-cols-[96px_1fr_96px_140px_20px] items-center gap-3 border-b border-divider bg-bg px-5 py-2.5">
+            <div className="grid grid-cols-[96px_1fr_96px_140px_20px] items-center gap-3 border-b border-divider bg-card-header-bg px-5 py-2.5">
               <span className="text-[11px] font-bold uppercase tracking-wide text-neutral-400">
                 {t("services.columns.status")}
               </span>
