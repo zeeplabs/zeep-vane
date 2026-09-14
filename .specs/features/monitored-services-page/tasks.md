@@ -125,10 +125,10 @@ T7 → T8 → T9 → T10 → T11
 - Skill: NONE
 
 **Done when**:
-- [ ] Returns the correct count for a service with 0, 1, and 3+ incidents in the window
-- [ ] Excludes incidents outside the window (`created_at < since`)
-- [ ] Excludes incidents linked to a *different* service
-- [ ] Gate check passes: `make test-integration`
+- [x] Returns the correct count for a service with 0, 1, and 3+ incidents in the window
+- [x] Excludes incidents outside the window (`created_at < since`)
+- [x] Excludes incidents linked to a *different* service
+- [x] Gate check passes: `make test-integration`
 
 **Tests**: integration
 **Gate**: Full

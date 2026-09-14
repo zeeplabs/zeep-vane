@@ -146,7 +146,7 @@
 | SVC-11 | P2 | Design | Pending |
 | SVC-12 | P2 | Design | Pending |
 | SVC-13 | P2 | Design | Pending |
-| SVC-14 | P3 | Tasks (T2: repository read support) | In Progress |
+| SVC-14 | P3 | Tasks (T2/T3: repository read support) | In Progress |
 | SVC-15 | P3 | Design | Pending |
 | SVC-16 | P3 | Design | Pending |
 | SVC-17 | P3 | Design | Pending |

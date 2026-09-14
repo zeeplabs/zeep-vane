@@ -255,6 +255,26 @@ func (r *IncidentRepository) CountOpenedResolvedBetween(ctx context.Context, fro
 	return opened, resolved, nil
 }
 
+// CountByServiceSince returns how many incidents (any status) linked to
+// serviceID via incident_services were created at or after since - the
+// monitored-services-page detail drawer's "Incidentes (30d)" stat
+// (SVC-14). Requires app.tenant_id set, so RLS scopes the count to one
+// tenant (same as CountOpenedResolvedBetween).
+func (r *IncidentRepository) CountByServiceSince(ctx context.Context, serviceID string, since time.Time) (int, error) {
+	var total int
+	row := r.pool.QueryRow(ctx,
+		`SELECT COUNT(*)
+		 FROM incidents i
+		 JOIN incident_services isv ON isv.incident_id = i.id
+		 WHERE isv.service_id = $1 AND i.created_at >= $2`,
+		serviceID, since,
+	)
+	if err := row.Scan(&total); err != nil {
+		return 0, fmt.Errorf("db: failed to count incidents for service %s since %s: %w", serviceID, since, err)
+	}
+	return total, nil
+}
+
 // listServiceIDs returns the service IDs linked to incidentID via
 // incident_services.
 func (r *IncidentRepository) listServiceIDs(ctx context.Context, incidentID string) ([]string, error) {

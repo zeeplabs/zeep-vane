@@ -642,3 +642,133 @@ func TestIncidentRepository_CountOpen_NoIncidents_ReturnsZero(t *testing.T) {
 		t.Errorf("CountOpen() = %d, want 0 for a tenant with no incidents", got)
 	}
 }
+
+// createServiceFixture inserts a service (for CountByServiceSince's
+// incident_services join fixtures) and registers its cleanup.
+func createServiceFixture(t *testing.T, pool *Pool, name string) *Service {
+	t.Helper()
+	svc := &Service{Name: name, SLOID: "slo-" + name}
+	if err := NewServiceRepository(pool).Create(context.Background(), svc); err != nil {
+		t.Fatalf("setup Service Create() returned unexpected error: %v", err)
+	}
+	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), "DELETE FROM services WHERE id = $1", svc.ID) })
+	return svc
+}
+
+// setIncidentCreatedAt backdates incidentID's created_at directly - Create
+// doesn't accept a CreatedAt override, and CountByServiceSince's window
+// tests need incidents both inside and outside the window.
+func setIncidentCreatedAt(t *testing.T, pool *Pool, incidentID string, createdAt time.Time) {
+	t.Helper()
+	if _, err := pool.Exec(context.Background(), "UPDATE incidents SET created_at = $1 WHERE id = $2", createdAt, incidentID); err != nil {
+		t.Fatalf("setup UPDATE incidents.created_at returned unexpected error: %v", err)
+	}
+}
+
+func TestIncidentRepository_CountByServiceSince_NoIncidents_ReturnsZero(t *testing.T) {
+	repo, pool := newIncidentRepoTestPool(t)
+	svc := createServiceFixture(t, pool, fmt.Sprintf("count-by-service-zero-%d", time.Now().UnixNano()))
+
+	got, err := repo.CountByServiceSince(context.Background(), svc.ID, time.Now().Add(-30*24*time.Hour))
+	if err != nil {
+		t.Fatalf("CountByServiceSince() returned unexpected error: %v", err)
+	}
+	if got != 0 {
+		t.Errorf("CountByServiceSince() = %d, want 0 for a service with no linked incidents", got)
+	}
+}
+
+func TestIncidentRepository_CountByServiceSince_OneIncidentInWindow_ReturnsOne(t *testing.T) {
+	repo, pool := newIncidentRepoTestPool(t)
+	svc := createServiceFixture(t, pool, fmt.Sprintf("count-by-service-one-%d", time.Now().UnixNano()))
+	ctx := context.Background()
+
+	incident := &Incident{Title: "one-incident"}
+	if err := repo.Create(ctx, incident, []string{svc.ID}); err != nil {
+		t.Fatalf("setup Create() returned unexpected error: %v", err)
+	}
+	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), "DELETE FROM incidents WHERE id = $1", incident.ID) })
+
+	got, err := repo.CountByServiceSince(ctx, svc.ID, time.Now().Add(-30*24*time.Hour))
+	if err != nil {
+		t.Fatalf("CountByServiceSince() returned unexpected error: %v", err)
+	}
+	if got != 1 {
+		t.Errorf("CountByServiceSince() = %d, want 1", got)
+	}
+}
+
+func TestIncidentRepository_CountByServiceSince_ThreeIncidentsInWindow_ReturnsThree(t *testing.T) {
+	repo, pool := newIncidentRepoTestPool(t)
+	svc := createServiceFixture(t, pool, fmt.Sprintf("count-by-service-three-%d", time.Now().UnixNano()))
+	ctx := context.Background()
+
+	for i := 0; i < 3; i++ {
+		incident := &Incident{Title: fmt.Sprintf("three-incidents-%d", i)}
+		if err := repo.Create(ctx, incident, []string{svc.ID}); err != nil {
+			t.Fatalf("setup Create() returned unexpected error: %v", err)
+		}
+		t.Cleanup(func(id string) func() {
+			return func() { _, _ = pool.Exec(context.Background(), "DELETE FROM incidents WHERE id = $1", id) }
+		}(incident.ID))
+	}
+
+	got, err := repo.CountByServiceSince(ctx, svc.ID, time.Now().Add(-30*24*time.Hour))
+	if err != nil {
+		t.Fatalf("CountByServiceSince() returned unexpected error: %v", err)
+	}
+	if got != 3 {
+		t.Errorf("CountByServiceSince() = %d, want 3", got)
+	}
+}
+
+// TestIncidentRepository_CountByServiceSince_ExcludesIncidentOutsideWindow
+// asserts the "created_at < since" edge case: an incident created before
+// the window start is excluded from the count.
+func TestIncidentRepository_CountByServiceSince_ExcludesIncidentOutsideWindow(t *testing.T) {
+	repo, pool := newIncidentRepoTestPool(t)
+	svc := createServiceFixture(t, pool, fmt.Sprintf("count-by-service-outside-window-%d", time.Now().UnixNano()))
+	ctx := context.Background()
+	since := time.Now().Add(-30 * 24 * time.Hour)
+
+	oldIncident := &Incident{Title: "outside-window"}
+	if err := repo.Create(ctx, oldIncident, []string{svc.ID}); err != nil {
+		t.Fatalf("setup Create() returned unexpected error: %v", err)
+	}
+	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), "DELETE FROM incidents WHERE id = $1", oldIncident.ID) })
+	setIncidentCreatedAt(t, pool, oldIncident.ID, since.Add(-1*time.Hour))
+
+	got, err := repo.CountByServiceSince(ctx, svc.ID, since)
+	if err != nil {
+		t.Fatalf("CountByServiceSince() returned unexpected error: %v", err)
+	}
+	if got != 0 {
+		t.Errorf("CountByServiceSince() = %d, want 0 (incident created before the window start is excluded)", got)
+	}
+}
+
+// TestIncidentRepository_CountByServiceSince_ExcludesIncidentForDifferentService
+// asserts the "linked to a different service" edge case: an incident
+// linked to another service, but not this one, is excluded from the count.
+func TestIncidentRepository_CountByServiceSince_ExcludesIncidentForDifferentService(t *testing.T) {
+	repo, pool := newIncidentRepoTestPool(t)
+	svc := createServiceFixture(t, pool, fmt.Sprintf("count-by-service-this-%d", time.Now().UnixNano()))
+	otherSvc := createServiceFixture(t, pool, fmt.Sprintf("count-by-service-other-%d", time.Now().UnixNano()))
+	ctx := context.Background()
+
+	otherIncident := &Incident{Title: "other-service-incident"}
+	if err := repo.Create(ctx, otherIncident, []string{otherSvc.ID}); err != nil {
+		t.Fatalf("setup Create() returned unexpected error: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = pool.Exec(context.Background(), "DELETE FROM incidents WHERE id = $1", otherIncident.ID)
+	})
+
+	got, err := repo.CountByServiceSince(ctx, svc.ID, time.Now().Add(-30*24*time.Hour))
+	if err != nil {
+		t.Fatalf("CountByServiceSince() returned unexpected error: %v", err)
+	}
+	if got != 0 {
+		t.Errorf("CountByServiceSince() = %d, want 0 (incident linked to a different service is excluded)", got)
+	}
+}
