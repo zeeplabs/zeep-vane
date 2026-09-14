@@ -2,17 +2,25 @@ package db
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
+
+	"github.com/jackc/pgx/v5"
 )
 
 // Service is a monitored service, linked to a Datadog SLO by SLOID.
 // CurrentStatus defaults to "not_configured" until the poller (Phase 4) has
 // fetched a status for it at least once.
 type Service struct {
-	ID                 string
-	Name               string
-	SLOID              string
+	ID    string
+	Name  string
+	SLOID string
+	// SLOName is the linked SLO's human name, recorded at link time
+	// (monitored-services-page design.md) so no read path needs a live
+	// Datadog call to display it. '' for a row created before this field
+	// existed and never re-saved.
+	SLOName            string
 	CurrentStatus      string
 	LastStatusChangeAt time.Time
 	// StatusAnalysis is the LLM-generated degraded-tooltip text (AI-14),
@@ -39,8 +47,8 @@ func NewServiceRepository(pool *Pool) *ServiceRepository {
 // LastStatusChangeAt.
 func (r *ServiceRepository) Create(ctx context.Context, service *Service) error {
 	row := r.pool.QueryRow(ctx,
-		"INSERT INTO services (name, slo_id) VALUES ($1, $2) RETURNING id, current_status, last_status_change_at",
-		service.Name, service.SLOID,
+		"INSERT INTO services (name, slo_id, slo_name) VALUES ($1, $2, $3) RETURNING id, current_status, last_status_change_at",
+		service.Name, service.SLOID, service.SLOName,
 	)
 
 	if err := row.Scan(&service.ID, &service.CurrentStatus, &service.LastStatusChangeAt); err != nil {
@@ -48,6 +56,27 @@ func (r *ServiceRepository) Create(ctx context.Context, service *Service) error 
 	}
 
 	return nil
+}
+
+// Get returns the service identified by id, including SLOName,
+// CurrentStatus, and StatusAnalysis - the full row the monitored-services
+// detail drawer needs (SVC-14). Returns found=false (no error) if no
+// service matches id, the same not-found convention
+// IncidentRepository.HasOpenIncidentForService uses.
+func (r *ServiceRepository) Get(ctx context.Context, id string) (*Service, bool, error) {
+	var service Service
+	row := r.pool.QueryRow(ctx,
+		"SELECT id, name, slo_id, slo_name, current_status, last_status_change_at, status_analysis FROM services WHERE id = $1",
+		id,
+	)
+	if err := row.Scan(&service.ID, &service.Name, &service.SLOID, &service.SLOName, &service.CurrentStatus, &service.LastStatusChangeAt, &service.StatusAnalysis); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, false, nil
+		}
+		return nil, false, fmt.Errorf("db: failed to get service: %w", err)
+	}
+
+	return &service, true, nil
 }
 
 // ListPaginated returns one page of registered services, ordered by name,
@@ -58,7 +87,7 @@ func (r *ServiceRepository) ListPaginated(ctx context.Context, page, pageSize in
 	offset := (page - 1) * pageSize
 
 	rows, err := r.pool.Query(ctx,
-		`SELECT id, name, slo_id, current_status, last_status_change_at, COUNT(*) OVER() AS total
+		`SELECT id, name, slo_id, slo_name, current_status, last_status_change_at, COUNT(*) OVER() AS total
 		 FROM services
 		 ORDER BY name
 		 LIMIT $1 OFFSET $2`,
@@ -73,7 +102,7 @@ func (r *ServiceRepository) ListPaginated(ctx context.Context, page, pageSize in
 	total := 0
 	for rows.Next() {
 		var service Service
-		if err := rows.Scan(&service.ID, &service.Name, &service.SLOID, &service.CurrentStatus, &service.LastStatusChangeAt, &total); err != nil {
+		if err := rows.Scan(&service.ID, &service.Name, &service.SLOID, &service.SLOName, &service.CurrentStatus, &service.LastStatusChangeAt, &total); err != nil {
 			return nil, 0, fmt.Errorf("db: failed to scan service: %w", err)
 		}
 		services = append(services, service)

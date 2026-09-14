@@ -152,6 +152,145 @@ func TestServiceRepository_ListPaginated_OrderByNameUnchanged(t *testing.T) {
 	}
 }
 
+// TestServiceRepository_Create_PersistsAndReturnsSLOName asserts SVC-01:
+// Create persists SLOName and it round-trips on the returned *Service.
+func TestServiceRepository_Create_PersistsAndReturnsSLOName(t *testing.T) {
+	repo, pool := newServiceRepoTestPool(t)
+	tenantID := seedPlainTenant(t, pool)
+	name := fmt.Sprintf("create-slo-name-%d", time.Now().UnixNano())
+	service := &Service{Name: name, SLOID: "slo-create-1", SLOName: "Checkout latency SLO"}
+
+	withTenantTx(t, pool, tenantID, func(ctx context.Context) {
+		if err := repo.Create(ctx, service); err != nil {
+			t.Fatalf("Create() returned unexpected error: %v", err)
+		}
+	})
+	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), "DELETE FROM services WHERE id = $1", service.ID) })
+
+	if service.SLOName != "Checkout latency SLO" {
+		t.Errorf("service.SLOName = %q, want %q", service.SLOName, "Checkout latency SLO")
+	}
+
+	var storedSLOName string
+	row := pool.QueryRow(context.Background(), "SELECT slo_name FROM services WHERE id = $1", service.ID)
+	if err := row.Scan(&storedSLOName); err != nil {
+		t.Fatalf("Scan() returned unexpected error: %v", err)
+	}
+	if storedSLOName != "Checkout latency SLO" {
+		t.Errorf("stored slo_name = %q, want %q", storedSLOName, "Checkout latency SLO")
+	}
+}
+
+// TestServiceRepository_ListPaginated_ReturnsSLONameForMixOfPreAndPostMigrationRows
+// asserts SVC-01: ListPaginated returns SLOName for every row, including a
+// row created with an empty SLOName (simulating a pre-migration row never
+// re-saved) alongside one created with a real SLOName - neither errors, and
+// the empty one comes back as "" rather than some other zero value.
+func TestServiceRepository_ListPaginated_ReturnsSLONameForMixOfPreAndPostMigrationRows(t *testing.T) {
+	repo, pool := newServiceRepoTestPool(t)
+	tenantID := seedPlainTenant(t, pool)
+	prefix := fmt.Sprintf("mixed-slo-name-%d", time.Now().UnixNano())
+
+	withSLOName := &Service{Name: prefix + "-with-name", SLOID: "slo-mixed-1", SLOName: "Checkout latency SLO"}
+	withoutSLOName := &Service{Name: prefix + "-without-name", SLOID: "slo-mixed-2", SLOName: ""}
+	withTenantTx(t, pool, tenantID, func(ctx context.Context) {
+		if err := repo.Create(ctx, withSLOName); err != nil {
+			t.Fatalf("Create(withSLOName) returned unexpected error: %v", err)
+		}
+		if err := repo.Create(ctx, withoutSLOName); err != nil {
+			t.Fatalf("Create(withoutSLOName) returned unexpected error: %v", err)
+		}
+	})
+	t.Cleanup(func() {
+		_, _ = pool.Exec(context.Background(), "DELETE FROM services WHERE id IN ($1, $2)", withSLOName.ID, withoutSLOName.ID)
+	})
+
+	items, _, err := repo.ListPaginated(context.Background(), 1, 20)
+	if err != nil {
+		t.Fatalf("ListPaginated() returned unexpected error: %v", err)
+	}
+
+	var gotWithName, gotWithoutName *Service
+	for i := range items {
+		switch items[i].ID {
+		case withSLOName.ID:
+			gotWithName = &items[i]
+		case withoutSLOName.ID:
+			gotWithoutName = &items[i]
+		}
+	}
+
+	if gotWithName == nil {
+		t.Fatalf("service %s not found in ListPaginated()", withSLOName.ID)
+	}
+	if gotWithName.SLOName != "Checkout latency SLO" {
+		t.Errorf("gotWithName.SLOName = %q, want %q", gotWithName.SLOName, "Checkout latency SLO")
+	}
+
+	if gotWithoutName == nil {
+		t.Fatalf("service %s not found in ListPaginated()", withoutSLOName.ID)
+	}
+	if gotWithoutName.SLOName != "" {
+		t.Errorf("gotWithoutName.SLOName = %q, want %q (empty, not an error)", gotWithoutName.SLOName, "")
+	}
+}
+
+// TestServiceRepository_Get_Found_ReturnsFullRow asserts SVC-01/SVC-14:
+// Get returns the full row - including SLOName, CurrentStatus, and
+// StatusAnalysis - for an existing service.
+func TestServiceRepository_Get_Found_ReturnsFullRow(t *testing.T) {
+	repo, pool := newServiceRepoTestPool(t)
+	tenantID := seedPlainTenant(t, pool)
+	name := fmt.Sprintf("get-found-%d", time.Now().UnixNano())
+	service := &Service{Name: name, SLOID: "slo-get-1", SLOName: "Checkout latency SLO"}
+	withTenantTx(t, pool, tenantID, func(ctx context.Context) {
+		if err := repo.Create(ctx, service); err != nil {
+			t.Fatalf("setup Create() returned unexpected error: %v", err)
+		}
+	})
+	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), "DELETE FROM services WHERE id = $1", service.ID) })
+
+	analysis := "SLI dropped below target"
+	if _, err := pool.Exec(context.Background(), "UPDATE services SET current_status = 'degraded', status_analysis = $1 WHERE id = $2", analysis, service.ID); err != nil {
+		t.Fatalf("setup UPDATE returned unexpected error: %v", err)
+	}
+
+	got, found, err := repo.Get(context.Background(), service.ID)
+	if err != nil {
+		t.Fatalf("Get() returned unexpected error: %v", err)
+	}
+	if !found {
+		t.Fatalf("found = false, want true")
+	}
+	if got.SLOName != "Checkout latency SLO" {
+		t.Errorf("got.SLOName = %q, want %q", got.SLOName, "Checkout latency SLO")
+	}
+	if got.CurrentStatus != "degraded" {
+		t.Errorf("got.CurrentStatus = %q, want %q", got.CurrentStatus, "degraded")
+	}
+	if got.StatusAnalysis == nil || *got.StatusAnalysis != analysis {
+		t.Errorf("got.StatusAnalysis = %v, want %q", got.StatusAnalysis, analysis)
+	}
+}
+
+// TestServiceRepository_Get_NotFound_ReturnsFalseNoError asserts SVC-14:
+// an unknown ID returns found=false with a nil error, not ErrNotFound or a
+// scan error.
+func TestServiceRepository_Get_NotFound_ReturnsFalseNoError(t *testing.T) {
+	repo, _ := newServiceRepoTestPool(t)
+
+	got, found, err := repo.Get(context.Background(), "00000000-0000-0000-0000-000000000000")
+	if err != nil {
+		t.Fatalf("Get() returned unexpected error: %v, want nil", err)
+	}
+	if found {
+		t.Errorf("found = true, want false for an unknown ID")
+	}
+	if got != nil {
+		t.Errorf("got = %+v, want nil", got)
+	}
+}
+
 // TestServiceRepository_List_StillWorksForPoller confirms ServiceRepository.
 // List(ctx) - the poller's own unpaginated caller - is untouched: it must
 // keep returning every service, never just one page, so internal/poller

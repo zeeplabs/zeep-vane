@@ -133,7 +133,7 @@
 
 | Requirement ID | Story | Phase | Status |
 | --- | --- | --- | --- |
-| SVC-01 | P1 | Tasks (T1 partial: migration) | In Progress |
+| SVC-01 | P1 | Tasks (T1/T2: migration + repository) | In Progress |
 | SVC-02 | P1 | Design | Pending |
 | SVC-03 | P1 | Design | Pending |
 | SVC-04 | P1 | Design | Pending |
@@ -146,7 +146,7 @@
 | SVC-11 | P2 | Design | Pending |
 | SVC-12 | P2 | Design | Pending |
 | SVC-13 | P2 | Design | Pending |
-| SVC-14 | P3 | Design | Pending |
+| SVC-14 | P3 | Tasks (T2: repository read support) | In Progress |
 | SVC-15 | P3 | Design | Pending |
 | SVC-16 | P3 | Design | Pending |
 | SVC-17 | P3 | Design | Pending |

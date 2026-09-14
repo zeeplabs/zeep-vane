@@ -101,11 +101,11 @@ T7 → T8 → T9 → T10 → T11
 - Skill: NONE
 
 **Done when**:
-- [ ] `Create` persists and returns `SLOName`
-- [ ] `ListPaginated` returns `SLOName` for every row, including rows created before T1 (empty string, not an error)
-- [ ] `Get` returns the full row including `SLOName`, `CurrentStatus`, `StatusAnalysis`; returns `found=false` (no error) for an unknown ID
-- [ ] Integration tests cover: create-then-read round-trip of `SLOName`, `Get` found + not-found, `ListPaginated` with a mix of pre- and post-migration rows
-- [ ] Gate check passes: `make test-integration`
+- [x] `Create` persists and returns `SLOName`
+- [x] `ListPaginated` returns `SLOName` for every row, including rows created before T1 (empty string, not an error)
+- [x] `Get` returns the full row including `SLOName`, `CurrentStatus`, `StatusAnalysis`; returns `found=false` (no error) for an unknown ID
+- [x] Integration tests cover: create-then-read round-trip of `SLOName`, `Get` found + not-found, `ListPaginated` with a mix of pre- and post-migration rows
+- [x] Gate check passes: `make test-integration`
 
 **Tests**: integration
 **Gate**: Full
