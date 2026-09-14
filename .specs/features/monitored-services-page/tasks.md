@@ -197,9 +197,9 @@ T7 → T8 → T9 → T10 → T11
 - Skill: NONE
 
 **Done when**:
-- [ ] `statusMeta.ts` exports the 3 maps, one entry per `ServiceStatus` value (4 total each)
-- [ ] `ServicesSection.tsx` imports from `statusMeta.ts`; its existing test suite still passes unmodified (pure refactor, zero visible change)
-- [ ] Gate check passes: `cd web && npx tsc -b --noEmit && npm run test`
+- [x] `statusMeta.ts` exports the 3 maps, one entry per `ServiceStatus` value (4 total each)
+- [x] `ServicesSection.tsx` imports from `statusMeta.ts`; its existing test suite still passes unmodified (pure refactor, zero visible change)
+- [x] Gate check passes: `cd web && npx tsc -b --noEmit && npm run test`
 
 **Tests**: none (pure extraction; exercised transitively by `ServicesSection`'s existing tests)
 **Gate**: Quick

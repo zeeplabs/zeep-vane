@@ -5,33 +5,13 @@ import { Dialog } from "../../components/ui/Dialog";
 import { Button } from "../../components/ui/Button";
 import { Field } from "../../components/ui/Field";
 import { Pager } from "../../components/ui/Pager";
-import { Tag, type TagVariant } from "../../components/ui/Tag";
+import { Tag } from "../../components/ui/Tag";
 import { useAuth } from "../../auth/AuthProvider";
 import { ApiError } from "../../lib/apiClient";
-import type { Service, ServiceStatus } from "../../types/api";
+import type { Service } from "../../types/api";
 import { useSLOSearch } from "../integrations/hooks";
 import { useCreateService, useServices } from "./hooks";
-
-const statusLabel: Record<ServiceStatus, string> = {
-  operational: "Operacional",
-  degraded: "Degradado",
-  outage: "Inoperante",
-  not_configured: "Não configurado",
-};
-
-const statusVariant: Record<ServiceStatus, TagVariant> = {
-  operational: "success",
-  degraded: "warning",
-  outage: "critical",
-  not_configured: "neutral-outline",
-};
-
-const statusDotColor: Record<ServiceStatus, string> = {
-  operational: "var(--color-success)",
-  degraded: "var(--color-warning)",
-  outage: "var(--color-critical)",
-  not_configured: "var(--color-neutral-600)",
-};
+import { statusLabel, statusVariant, statusDotColor } from "./statusMeta";
 
 function formatTimestamp(iso: string): string {
   return new Date(iso).toLocaleString("pt-BR");
