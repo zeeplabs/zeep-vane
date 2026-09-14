@@ -38,12 +38,21 @@ export interface ServiceListPageProps {
    * papel que `ServicesSection` já aplicava (`owner`/`operator`). Default
    * `true` para não exigir esse prop nos testes deste componente. */
   canManage?: boolean;
+  /** ID do serviço com o drawer de detalhe aberto (`ServicesPage`'s
+   * `selectedServiceId`) - destaca a linha correspondente com o tint de
+   * seleção do mock (`svc.rowBg` quando `svc.id === selectedId`). */
+  selectedServiceId?: string | null;
 }
 
 /** Tela redesenhada de `/services` (monitored-services-page): tabela com
  * status/uptime/última verificação, chips de filtro por status e busca por
  * nome/SLO, todos escopados à página atual (SVC-01..13). */
-export function ServiceListPage({ onSelectService, onAddService, canManage = true }: ServiceListPageProps) {
+export function ServiceListPage({
+  onSelectService,
+  onAddService,
+  canManage = true,
+  selectedServiceId = null,
+}: ServiceListPageProps) {
   const { t } = useTranslation();
   const [page, setPage] = useState(1);
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
@@ -90,7 +99,7 @@ export function ServiceListPage({ onSelectService, onAddService, canManage = tru
           <p className="mt-1.5 max-w-lg text-sm text-neutral-400">{t("services.subtitle")}</p>
         </div>
         {canManage ? (
-          <Button variant="primary" onClick={() => onAddService?.()}>
+          <Button variant="solid" onClick={() => onAddService?.()}>
             <MdOutlineAdd size={15} aria-hidden="true" />
             {t("services.addButton")}
           </Button>
@@ -127,6 +136,7 @@ export function ServiceListPage({ onSelectService, onAddService, canManage = tru
             aria-hidden="true"
           />
           <Input
+            variant="filled"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder={t("services.searchPlaceholder")}
@@ -164,11 +174,14 @@ export function ServiceListPage({ onSelectService, onAddService, canManage = tru
                   key={service.id}
                   data-testid="service-row"
                   onClick={() => onSelectService?.(service.id)}
-                  className="grid cursor-pointer grid-cols-[96px_1fr_96px_140px_20px] items-center gap-3 border-b border-divider px-5 py-3.5 last:border-b-0 hover:bg-bg"
+                  className={
+                    "grid cursor-pointer grid-cols-[96px_1fr_96px_140px_20px] items-center gap-3 border-b border-divider px-5 py-3.5 last:border-b-0 hover:bg-card-header-bg " +
+                    (service.id === selectedServiceId ? "bg-accent-100" : "")
+                  }
                 >
                   <StatusTag status={service.current_status} />
                   <div className="min-w-0">
-                    <div className="truncate text-[13.5px] font-semibold text-text">{service.name}</div>
+                    <div className="truncate text-[13.5px] font-bold text-text">{service.name}</div>
                     <div className="truncate text-xs text-neutral-400">
                       {service.slo_name || service.slo_id}
                     </div>

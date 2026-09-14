@@ -16,6 +16,7 @@ export function ServicesPage() {
         onSelectService={setSelectedServiceId}
         onAddService={() => setAddDrawerOpen(true)}
         canManage={canManage}
+        selectedServiceId={selectedServiceId}
       />
       {selectedServiceId ? (
         <ServiceDetailDrawer serviceId={selectedServiceId} onClose={() => setSelectedServiceId(null)} />

@@ -1,6 +1,6 @@
 import { forwardRef, type ButtonHTMLAttributes } from "react";
 
-export type ButtonVariant = "primary" | "secondary" | "ghost" | "icon";
+export type ButtonVariant = "primary" | "solid" | "secondary" | "ghost" | "icon";
 
 export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: ButtonVariant;
@@ -18,6 +18,11 @@ export const buttonVariantClasses: Record<ButtonVariant, string> = {
   primary:
     "border border-accent text-accent bg-transparent px-4 h-9 " +
     "hover:bg-accent-900 active:bg-accent-800",
+  // Solid-filled CTA (handoff-new-layout's primary action button style,
+  // e.g. "Adicionar serviço") - distinct from "primary", which is this
+  // app's outlined default used everywhere pre-redesign. Reused across
+  // every new-layout-migration screen instead of a raw <button> per page.
+  solid: "border border-accent bg-accent text-white px-4 h-9 hover:bg-accent-hover active:bg-accent-hover",
   secondary:
     "border border-divider text-text bg-transparent px-4 h-9 " +
     "hover:bg-neutral-900 active:bg-neutral-800",
