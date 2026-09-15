@@ -7,7 +7,6 @@ import { Field } from "../../components/ui/Field";
 import { Textarea } from "../../components/ui/Textarea";
 import { Drawer, drawerFooterPrimaryStyle, drawerFooterSecondaryStyle } from "../../components/ui/Drawer";
 import { Pager } from "../../components/ui/Pager";
-import { Seg } from "../../components/ui/Seg";
 import { useAuth } from "../../auth/AuthProvider";
 import { ApiError } from "../../lib/apiClient";
 import type { IncidentSeverity, IncidentStatus } from "../../types/api";
@@ -260,12 +259,29 @@ export function IncidentsPage() {
           </div>
           <div className="flex flex-col gap-1">
             <span className="text-sm font-medium text-text">Severidade</span>
-            <Seg
-              aria-label="Severidade"
-              options={severityOptions}
-              value={severity}
-              onChange={(v) => setSeverity(v as IncidentSeverity)}
-            />
+            <div role="radiogroup" aria-label="Severidade" className="grid grid-cols-3 gap-2">
+              {severityOptions.map((opt) => {
+                const active = severity === opt.value;
+                const color = severityColor(opt.value);
+                return (
+                  <button
+                    key={opt.value}
+                    type="button"
+                    role="radio"
+                    aria-checked={active}
+                    onClick={() => setSeverity(opt.value)}
+                    className="cursor-pointer rounded-md border-[1.5px] px-3 py-2.5 text-center text-[12.5px] font-bold transition-colors"
+                    style={
+                      active
+                        ? { borderColor: color, backgroundColor: `color-mix(in oklch, ${color} 12%, transparent)`, color }
+                        : { borderColor: "var(--color-divider)", backgroundColor: "var(--color-surface)", color: "var(--color-text-muted)" }
+                    }
+                  >
+                    {opt.label}
+                  </button>
+                );
+              })}
+            </div>
           </div>
           <div className="flex flex-col gap-1">
             <label htmlFor="incident-description" className="text-sm font-medium text-text">

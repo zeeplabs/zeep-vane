@@ -295,11 +295,11 @@ describe("IncidentsPage", () => {
     renderPage();
 
     await userEvent.click(await screen.findByRole("button", { name: "Novo incidente" }));
-    expect(screen.getByRole("tab", { name: "Moderado" })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("radio", { name: "Moderado" })).toHaveAttribute("aria-checked", "true");
 
     await userEvent.type(screen.getByLabelText("Título"), "Falha crítica de teste");
     await userEvent.click(screen.getByRole("button", { name: "API pública" }));
-    await userEvent.click(screen.getByRole("tab", { name: "Crítico" }));
+    await userEvent.click(screen.getByRole("radio", { name: "Crítico" }));
     await userEvent.type(screen.getByLabelText("Descrição inicial"), "Impacto total no checkout");
     await userEvent.click(screen.getByRole("button", { name: "Criar" }));
 
@@ -309,7 +309,7 @@ describe("IncidentsPage", () => {
     );
 
     await userEvent.click(screen.getByRole("button", { name: "Novo incidente" }));
-    expect(screen.getByRole("tab", { name: "Moderado" })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("radio", { name: "Moderado" })).toHaveAttribute("aria-checked", "true");
     expect(screen.getByLabelText("Descrição inicial")).toHaveValue("");
   });
 
