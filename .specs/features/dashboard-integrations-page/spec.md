@@ -82,7 +82,7 @@ A tela de integrações atual (`IntegrationsPage.tsx`) empilha Datadog, provedor
 
 **Acceptance Criteria**:
 
-1. The system SHALL renderizar os cards com `Card` `elevation="none"` + `border border-divider` (convenção pós-remoção de shadow, AGENTS.md/sessão anterior), nunca com sombra.
+1. The system SHALL renderizar os cards sem sombra e com `border border-divider` — mesma convenção pós-remoção de shadow (`elevation="none"`). `IntegrationCard` usa uma `div` própria em vez do componente `Card` literal, porque o mock exige `overflow-hidden` + raio de 16px + banner colorido de topo sem padding, incompatíveis com o `padding`/raio fixos do `Card` genérico — equivalente visual, não reuso literal do componente (verificado no Execute, gap de precisão do spec original).
 2. The system SHALL usar o badge dot+pill (`Tag` + span de dot) para todo status de card, igual ao padrão `DomainStatusTag`.
 
 **Independent Test**: Screenshot da tela renderizada lado a lado com o mock — sem sombra em nenhum card, badges no formato dot+pill.

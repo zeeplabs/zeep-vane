@@ -67,8 +67,24 @@ export function ConnectDatadogDrawer({ open, onOpenChange }: ConnectDatadogDrawe
       }
     >
       <form id="connect-datadog-form" onSubmit={handleSubmit} className="flex flex-col gap-3">
-        <Field label="API key" type="password" value={apiKey} onChange={(e) => setApiKey(e.target.value)} required />
-        <Field label="App key" type="password" value={appKey} onChange={(e) => setAppKey(e.target.value)} required />
+        <Field
+          variant="filled"
+          label="API key"
+          type="password"
+          placeholder="Chave da API"
+          value={apiKey}
+          onChange={(e) => setApiKey(e.target.value)}
+          required
+        />
+        <Field
+          variant="filled"
+          label="App key"
+          type="password"
+          placeholder="Chave da aplicação"
+          value={appKey}
+          onChange={(e) => setAppKey(e.target.value)}
+          required
+        />
         {error ? (
           <p role="alert" className="text-xs text-critical">
             {error}

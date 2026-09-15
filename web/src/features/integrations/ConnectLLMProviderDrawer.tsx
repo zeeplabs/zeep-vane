@@ -70,7 +70,15 @@ export function ConnectLLMProviderDrawer({ open, onOpenChange }: ConnectLLMProvi
       }
     >
       <form id="connect-llm-form" onSubmit={handleSubmit} className="flex flex-col gap-3">
-        <Field label="API key" type="password" value={apiKey} onChange={(e) => setApiKey(e.target.value)} required />
+        <Field
+          variant="filled"
+          label="API key"
+          type="password"
+          placeholder="Chave da API"
+          value={apiKey}
+          onChange={(e) => setApiKey(e.target.value)}
+          required
+        />
         <div className="flex flex-col gap-1">
           <label htmlFor="connect-llm-model" className="text-sm font-medium text-text">
             Modelo
@@ -79,7 +87,7 @@ export function ConnectLLMProviderDrawer({ open, onOpenChange }: ConnectLLMProvi
             id="connect-llm-model"
             value={model}
             onChange={(e) => setModel(e.target.value)}
-            className="min-h-9 rounded-md border border-divider bg-surface px-3 text-sm text-text"
+            className="min-h-9 rounded-md border border-transparent bg-card-header-bg px-3 text-sm text-text outline-none transition-colors focus:border-accent focus:bg-surface"
           >
             <option value="">{modelAllowlist[PROVIDER_ID][0]}</option>
             {modelAllowlist[PROVIDER_ID].slice(1).map((m) => (

@@ -2,9 +2,11 @@ import { describe, it, expect, afterEach } from "vitest";
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
+import { http, HttpResponse } from "msw";
 import "../../lib/i18n";
 import { AuthProvider } from "../../auth/AuthProvider";
 import { TestQueryProvider } from "../../test/queryClient";
+import { server } from "../../test/msw/server";
 import { apiFetch } from "../../lib/apiClient";
 import { IntegrationsPage } from "./IntegrationsPage";
 
@@ -113,5 +115,62 @@ describe("IntegrationsPage", () => {
     await userEvent.click(within(datadogCard).getByRole("button", { name: "Editar conexão" }));
 
     expect(await screen.findByRole("heading", { name: "Conectar Datadog" })).toBeInTheDocument();
+  });
+
+  it("Datadog nunca conectado (404) mostra Não conectado e botão Conectar", async () => {
+    server.use(
+      http.get("/api/integrations/datadog/status", () =>
+        HttpResponse.json({ error: "datadog integration not connected yet" }, { status: 404 }),
+      ),
+    );
+    await loginAs("owner@vane.app");
+    renderPage();
+
+    const datadogCard = await cardOf("Datadog");
+    expect(await within(datadogCard).findByText("Não conectado")).toBeInTheDocument();
+    expect(within(datadogCard).getByText("Não configurado")).toBeInTheDocument();
+    expect(within(datadogCard).getByRole("button", { name: "Conectar" })).toBeInTheDocument();
+  });
+
+  it("LLM Provider conectado mostra Conectado e o modelo ativo", async () => {
+    await loginAs("owner@vane.app");
+    await apiFetch("/api/integrations/llm/openai", {
+      method: "POST",
+      body: JSON.stringify({ api_key: "sk-real-key", model: "gpt-4o" }),
+    });
+    renderPage();
+
+    const llmCard = await cardOf("LLM Provider");
+    expect(await within(llmCard).findByText("Conectado")).toBeInTheDocument();
+    expect(within(llmCard).getByText("OpenAI · gpt-4o")).toBeInTheDocument();
+    expect(within(llmCard).getByRole("button", { name: "Editar conexão" })).toBeInTheDocument();
+  });
+
+  it("owner clica em Conectar no LLM Provider e abre o drawer padrão", async () => {
+    await loginAs("owner@vane.app");
+    renderPage();
+
+    const llmCard = await cardOf("LLM Provider");
+    await within(llmCard).findByText("Não conectado");
+    await userEvent.click(within(llmCard).getByRole("button", { name: "Conectar" }));
+
+    expect(await screen.findByRole("heading", { name: "Conectar LLM Provider" })).toBeInTheDocument();
+  });
+
+  it("erro ao carregar Datadog fica isolado - LLM e e-mail continuam normais", async () => {
+    server.use(http.get("/api/integrations/datadog/status", () => HttpResponse.json({ error: "boom" }, { status: 500 })));
+    await loginAs("owner@vane.app");
+    renderPage();
+
+    const datadogCard = await cardOf("Datadog");
+    expect(await within(datadogCard).findByText("Não foi possível carregar")).toBeInTheDocument();
+    expect(within(datadogCard).queryByRole("button")).not.toBeInTheDocument();
+
+    const llmCard = await cardOf("LLM Provider");
+    expect(await within(llmCard).findByText("Não conectado")).toBeInTheDocument();
+    expect(within(llmCard).getByRole("button", { name: "Conectar" })).toBeInTheDocument();
+
+    const resendCard = await cardOf("Resend");
+    expect(await within(resendCard).findByText("Não conectado")).toBeInTheDocument();
   });
 });

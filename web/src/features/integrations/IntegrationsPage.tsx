@@ -56,9 +56,12 @@ function actionButton(canManage: boolean, connected: boolean, onClick: () => voi
 }
 
 function DatadogCard({ canManage, onConnect }: { canManage: boolean; onConnect: () => void }) {
-  const { data, isLoading } = useIntegrationStatus();
+  const { data, isLoading, isError } = useIntegrationStatus();
   const connected = data?.connected ?? false;
   const status: IntegrationStatusKind = connected ? "connected" : "not_connected";
+
+  let meta = isLoading ? "Carregando…" : formatSyncedAgo(connected ? data?.last_checked_at : null);
+  if (isError) meta = "Não foi possível carregar";
 
   return (
     <IntegrationCard
@@ -67,8 +70,8 @@ function DatadogCard({ canManage, onConnect }: { canManage: boolean; onConnect: 
       status={status}
       title="Datadog"
       description="Métricas e logs dos serviços monitorados, com alertas sincronizados em tempo real."
-      meta={isLoading ? "Carregando…" : formatSyncedAgo(connected ? data?.last_checked_at : null)}
-      action={isLoading ? null : actionButton(canManage, connected, onConnect)}
+      meta={meta}
+      action={isLoading || isError ? null : actionButton(canManage, connected, onConnect)}
     />
   );
 }
@@ -86,10 +89,13 @@ function NewRelicCard() {
 }
 
 function LLMProviderCard({ canManage, onConnect }: { canManage: boolean; onConnect: () => void }) {
-  const { data, isLoading } = useLLMProviders(1);
+  const { data, isLoading, isError } = useLLMProviders(1);
   const status = data?.providers.find((p) => p.provider === "openai");
   const connected = status?.status === "connected";
   const kind: IntegrationStatusKind = connected ? "connected" : "not_connected";
+
+  let meta = isLoading ? "Carregando…" : connected ? `OpenAI · ${status?.model}` : "Não configurado";
+  if (isError) meta = "Não foi possível carregar";
 
   return (
     <IntegrationCard
@@ -98,8 +104,8 @@ function LLMProviderCard({ canManage, onConnect }: { canManage: boolean; onConne
       status={kind}
       title="LLM Provider"
       description="Geração de resumos e fechamento assistido de incidentes com IA."
-      meta={isLoading ? "Carregando…" : connected ? `OpenAI · ${status?.model}` : "Não configurado"}
-      action={isLoading ? null : actionButton(canManage, connected, onConnect)}
+      meta={meta}
+      action={isLoading || isError ? null : actionButton(canManage, connected, onConnect)}
     />
   );
 }
@@ -126,11 +132,13 @@ function EmailProviderCard({
   id,
   status,
   canManage,
+  isError,
   onConnect,
 }: {
   id: EmailProviderName;
   status?: EmailProviderStatus;
   canManage: boolean;
+  isError: boolean;
   onConnect: () => void;
 }) {
   const meta = EMAIL_PROVIDER_META[id];
@@ -144,8 +152,8 @@ function EmailProviderCard({
       status={kind}
       title={meta.title}
       description={meta.description}
-      meta={connected ? "Verificado" : "Não configurado"}
-      action={actionButton(canManage, connected, onConnect)}
+      meta={isError ? "Não foi possível carregar" : connected ? "Verificado" : "Não configurado"}
+      action={isError ? null : actionButton(canManage, connected, onConnect)}
     />
   );
 }
@@ -153,7 +161,7 @@ function EmailProviderCard({
 export function IntegrationsPage() {
   const { hasRole } = useAuth();
   const canManage = hasRole(["owner", "operator"]);
-  const { data: emailData } = useEmailProviders(1);
+  const { data: emailData, isError: emailIsError } = useEmailProviders(1);
   const byProvider = new Map(emailData?.providers.map((p) => [p.provider, p]));
 
   const [datadogDrawerOpen, setDatadogDrawerOpen] = useState(false);
@@ -183,12 +191,14 @@ export function IntegrationsPage() {
           id="resend"
           status={byProvider.get("resend")}
           canManage={canManage}
+          isError={emailIsError}
           onConnect={() => setEmailDrawerProvider("resend")}
         />
         <EmailProviderCard
           id="sendgrid"
           status={byProvider.get("sendgrid")}
           canManage={canManage}
+          isError={emailIsError}
           onConnect={() => setEmailDrawerProvider("sendgrid")}
         />
       </CategorySection>

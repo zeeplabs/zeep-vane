@@ -78,15 +78,32 @@ export function ConnectEmailProviderDrawer({ provider, onOpenChange }: ConnectEm
       }
     >
       <form id="connect-email-provider-form" onSubmit={handleSubmit} className="flex flex-col gap-3">
-        <Field label="API key" type="password" value={apiKey} onChange={(e) => setApiKey(e.target.value)} required />
         <Field
+          variant="filled"
+          label="API key"
+          type="password"
+          placeholder="Chave da API"
+          value={apiKey}
+          onChange={(e) => setApiKey(e.target.value)}
+          required
+        />
+        <Field
+          variant="filled"
           label="E-mail do remetente"
           type="email"
+          placeholder="remetente@dominio.com"
           value={fromEmail}
           onChange={(e) => setFromEmail(e.target.value)}
           required
         />
-        <Field label="Nome do remetente" value={fromName} onChange={(e) => setFromName(e.target.value)} required />
+        <Field
+          variant="filled"
+          label="Nome do remetente"
+          placeholder="Nome exibido no e-mail"
+          value={fromName}
+          onChange={(e) => setFromName(e.target.value)}
+          required
+        />
         {error ? (
           <p role="alert" className="text-xs text-critical">
             {error}
