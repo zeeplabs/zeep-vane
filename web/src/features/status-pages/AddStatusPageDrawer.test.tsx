@@ -49,9 +49,9 @@ describe("AddStatusPageDrawer", () => {
 
     renderDrawer();
 
-    await userEvent.type(screen.getByLabelText("Nome"), "Status Público Novo");
+    await userEvent.type(screen.getByLabelText("Nome da página"), "Status Público Novo");
     await userEvent.click(screen.getByRole("button", { name: service.name }));
-    await userEvent.click(screen.getByRole("button", { name: "Criar" }));
+    await userEvent.click(screen.getByRole("button", { name: "Criar status page" }));
 
     await waitFor(async () => {
       const list = await apiFetch<Page<{ name: string; service_ids: string[] }>>("/api/status-pages?page=1");

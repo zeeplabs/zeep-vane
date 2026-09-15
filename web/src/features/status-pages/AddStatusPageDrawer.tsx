@@ -1,9 +1,8 @@
 import { useState, type FormEvent, type ReactNode } from "react";
-import { MdOutlinePublic, MdOutlineLock } from "react-icons/md";
+import { MdOutlinePublic, MdOutlineLock, MdCheck } from "react-icons/md";
 import { Drawer, drawerFooterPrimaryStyle, drawerFooterSecondaryStyle } from "../../components/ui/Drawer";
 import { Button } from "../../components/ui/Button";
 import { Field } from "../../components/ui/Field";
-import { Tag } from "../../components/ui/Tag";
 import { ApiError } from "../../lib/apiClient";
 import { useServices } from "../services/hooks";
 import { useCreateStatusPage } from "./hooks";
@@ -18,8 +17,9 @@ type VisibilityChoice = "public" | "private";
 /** Drawer de criação de status page da aba Status Pages (spec.md DSP-15):
  * nome + escolha de visibilidade ("Público" selecionado por padrão e o
  * único funcional, "Privado" desabilitado/decorativo) + checklist de
- * serviços, enviado via `useCreateStatusPage`. Segue o mesmo padrão de tile
- * desabilitado de `AddDomainDrawer.tsx`'s `ModeCard` local (T8's Reuses). */
+ * serviços, enviado via `useCreateStatusPage`. Copy/estrutura extraídos
+ * direto do mock (`handoff-new-layout/Dominios e Status Pages.dc.html`'s
+ * add-page drawer) - checklist é linha com checkbox quadrado, não chip. */
 export function AddStatusPageDrawer({ open, onOpenChange }: AddStatusPageDrawerProps) {
   const [visibility, setVisibility] = useState<VisibilityChoice>("public");
   const [name, setName] = useState("");
@@ -66,7 +66,7 @@ export function AddStatusPageDrawer({ open, onOpenChange }: AddStatusPageDrawerP
       open={open}
       onOpenChange={handleOpenChange}
       title="Criar status page"
-      description="Vincule os serviços que essa status page vai exibir."
+      description="Escolha quais serviços aparecem para o público e a visibilidade da página."
       closeLabel="Fechar"
       footer={
         <>
@@ -85,13 +85,20 @@ export function AddStatusPageDrawer({ open, onOpenChange }: AddStatusPageDrawerP
             style={drawerFooterPrimaryStyle}
             disabled={createStatusPage.isPending || name.trim().length === 0}
           >
-            Criar
+            Criar status page
           </Button>
         </>
       }
     >
       <form id="add-status-page-form" onSubmit={handleSubmit} className="flex flex-col gap-[18px]">
-        <Field label="Nome" value={name} onChange={(e) => setName(e.target.value)} required />
+        <Field
+          variant="filled"
+          label="Nome da página"
+          placeholder="Ex: Status Público"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          required
+        />
 
         <div className="flex flex-col gap-[6px]">
           <span className="text-sm font-medium text-text">Visibilidade</span>
@@ -99,7 +106,7 @@ export function AddStatusPageDrawer({ open, onOpenChange }: AddStatusPageDrawerP
             <ModeCard
               active={visibility === "public"}
               title="Público"
-              description="Qualquer pessoa com o link pode acessar."
+              description="Qualquer pessoa com o link pode ver"
               icon={<MdOutlinePublic size={18} />}
               onClick={() => setVisibility("public")}
             />
@@ -107,20 +114,34 @@ export function AddStatusPageDrawer({ open, onOpenChange }: AddStatusPageDrawerP
               active={false}
               disabled
               title="Privado"
-              description="Em breve: exige autenticação para acessar."
+              description="Somente membros do tenant logados"
               icon={<MdOutlineLock size={18} />}
             />
           </div>
         </div>
 
         <div className="flex flex-col gap-1">
-          <span className="text-sm font-medium text-text">Serviços</span>
-          <div className="flex flex-wrap gap-2">
+          <span className="text-sm font-medium text-text">Serviços exibidos</span>
+          <div className="flex flex-col gap-1">
             {(services ?? []).map((s) => {
-              const active = serviceIds.includes(s.id);
+              const checked = serviceIds.includes(s.id);
               return (
-                <button key={s.id} type="button" onClick={() => toggleService(s.id)} aria-pressed={active} className="cursor-pointer">
-                  <Tag variant={active ? "accent" : "accent-outline"}>{s.name}</Tag>
+                <button
+                  key={s.id}
+                  type="button"
+                  onClick={() => toggleService(s.id)}
+                  aria-pressed={checked}
+                  className="flex cursor-pointer items-center gap-2.5 rounded-md px-2.5 py-[9px] text-left hover:bg-card-header-bg"
+                >
+                  <span
+                    className={
+                      "flex h-4 w-4 flex-none items-center justify-center rounded-[5px] border-[1.5px] " +
+                      (checked ? "border-accent bg-accent" : "border-divider bg-surface")
+                    }
+                  >
+                    {checked ? <MdCheck size={11} className="text-white" aria-hidden="true" /> : null}
+                  </span>
+                  <span className="text-[13px] font-semibold text-text">{s.name}</span>
                 </button>
               );
             })}
