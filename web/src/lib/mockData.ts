@@ -377,6 +377,7 @@ export const companySettings: CompanySettings = {
   name: "Sua Empresa Ltda.",
   contact_email: "contato@suaempresa.com",
   logo_url: null,
+  locale: "pt-BR",
 };
 
 // -- Helpers de id ---------------------------------------------------------------

@@ -1945,12 +1945,20 @@ export const handlers = [
       legal_name?: string;
       tax_id?: string;
       tax_id_type?: "cpf" | "cnpj";
+      website?: string;
+      timezone?: string;
+      billing_address?: CompanySettings["billing_address"];
     };
     if (!body.name || !body.contact_email) {
       return HttpResponse.json(
         { error: "name is required and contact_email must be a valid e-mail address" },
         { status: 422 },
       );
+    }
+    // Mirrors company_settings_handler.go's validTimezones (CFGPG-04).
+    const validTimezones = ["America/Sao_Paulo (GMT-3)", "America/New_York (GMT-5)", "UTC (GMT+0)"];
+    if (body.timezone !== undefined && !validTimezones.includes(body.timezone)) {
+      return HttpResponse.json({ error: "timezone must be one of the supported values" }, { status: 422 });
     }
     // Mirrors TenantRepository.validateTaxID (T4): a tax_id/tax_id_type
     // pair must match cpf's 11 digits or cnpj's 14, checked only when both
@@ -1974,6 +1982,9 @@ export const handlers = [
       ...(body.legal_name !== undefined ? { legal_name: body.legal_name } : {}),
       ...(body.tax_id !== undefined ? { tax_id: body.tax_id } : {}),
       ...(body.tax_id_type !== undefined ? { tax_id_type: body.tax_id_type } : {}),
+      ...(body.website !== undefined ? { website: body.website } : {}),
+      ...(body.timezone !== undefined ? { timezone: body.timezone } : {}),
+      ...(body.billing_address !== undefined ? { billing_address: body.billing_address } : {}),
     };
     return HttpResponse.json(companySettingsState);
   }),
@@ -1994,6 +2005,14 @@ export const handlers = [
     }
     companySettingsState = { ...companySettingsState, logo_url: "/uploads/logo" };
     return HttpResponse.json(companySettingsState);
+  }),
+
+  // DELETE /api/tenants/current (settings-page CFGPG-09) - default happy
+  // path (200, deleted:true). A test proving CFGPG-11 (only active tenant
+  // -> 409) overrides this handler with server.use(...).
+  http.delete("/api/tenants/current", () => {
+    if (!sessionAdminId) return HttpResponse.json({ error: "unauthorized" }, { status: 401 });
+    return HttpResponse.json({ deleted: true });
   }),
 
   // GET /api/overview (dashboard-overview-page OVW-02) - mirrors

@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiFetch } from "../../lib/apiClient";
-import type { CompanySettings, TaxIDType } from "../../types/api";
+import type { CompanySettings, TaxIDType, TenantBillingAddress } from "../../types/api";
 import type { ConnectLLMProviderInput, LLMProviderName, LLMProvidersResponse } from "../../lib/llmProviders";
 
 export function useCompanySettings() {
@@ -13,13 +13,16 @@ export function useCompanySettings() {
 export interface UpdateCompanySettingsInput {
   name: string;
   contact_email: string;
-  // legal_name/tax_id/tax_id_type are all optional (TENANT-22) - omitting
-  // a key leaves it unchanged server-side (db.TenantUpdate's own "nil = no
-  // change" semantics), so this only sends them when the caller (T19's
-  // form) actually provides a value.
+  // legal_name/tax_id/tax_id_type/website/timezone/billing_address are all
+  // optional (TENANT-22, CFGPG-01/06) - omitting a key leaves it unchanged
+  // server-side (db.TenantUpdate's own "nil = no change" semantics), so
+  // this only sends them when the caller's form actually provides a value.
   legal_name?: string;
   tax_id?: string;
   tax_id_type?: TaxIDType;
+  website?: string;
+  timezone?: string;
+  billing_address?: TenantBillingAddress;
 }
 
 export function useUpdateCompanySettings() {
@@ -54,6 +57,16 @@ export function useUploadCompanyLogo() {
     onSuccess: (data) => {
       queryClient.setQueryData(["company-settings"], data);
     },
+  });
+}
+
+// useDeleteTenant calls the settings-page "excluir conta" danger-zone
+// action (CFGPG-09). A 409 response (only active tenant, CFGPG-11) is
+// surfaced to the caller via ApiError like any other mutation error - the
+// UI decides how to present it.
+export function useDeleteTenant() {
+  return useMutation({
+    mutationFn: () => apiFetch<{ deleted: boolean }>("/api/tenants/current", { method: "DELETE" }),
   });
 }
 

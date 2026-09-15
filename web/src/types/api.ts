@@ -199,17 +199,32 @@ export interface PollerStatusResponse {
 // (db.ErrInvalidTaxID: 11 for cpf, 14 for cnpj).
 export type TaxIDType = "cpf" | "cnpj";
 
+// TenantBillingAddress is the settings-page fiscal address shape
+// (CFGPG-06/07) - supersedes TENANT-24's decision to keep billing_address
+// hidden from this endpoint.
+export interface TenantBillingAddress {
+  zip: string;
+  street: string;
+  number: string;
+  complement: string;
+  state: string;
+  city: string;
+  country: string;
+}
+
 export interface CompanySettings {
   name: string;
   contact_email: string;
   logo_url: string | null;
-  // legal_name/tax_id/tax_id_type are all optional (TENANT-22) -
-  // billing_address is deliberately absent from this type: the backend
-  // never returns it from this endpoint (TENANT-24, SaaS billing feature
-  // owns its exposure).
+  // legal_name/tax_id/tax_id_type/website/timezone/billing_address are all
+  // optional (TENANT-22, CFGPG-01/06).
   legal_name?: string | null;
   tax_id?: string | null;
   tax_id_type?: TaxIDType | null;
+  website?: string | null;
+  timezone?: string | null;
+  locale: string;
+  billing_address?: TenantBillingAddress | null;
 }
 
 // Page is the shared response envelope for every paginated list endpoint
