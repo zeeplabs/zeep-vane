@@ -2,11 +2,11 @@ import { useMemo, useState } from "react";
 import { MdChevronRight } from "react-icons/md";
 import { Card } from "../../components/ui/Card";
 import { Pager } from "../../components/ui/Pager";
-import { Tag } from "../../components/ui/Tag";
 import { EmptyState } from "../../layout/EmptyState";
 import type { Domain } from "../../types/api";
 import { useDomains } from "./hooks";
-import { domainStatusLabel, domainStatusVariant, sslStatusLabel } from "./domainStatusMeta";
+import { sslStatusLabel } from "./domainStatusMeta";
+import { DomainStatusTag } from "./DomainStatusTag";
 
 function formatTimestamp(iso: string | null): string {
   return iso ? new Date(iso).toLocaleString("pt-BR") : "—";
@@ -63,7 +63,7 @@ export function DomainsTable({ onSelect }: DomainsTableProps) {
             onClick={() => onSelect(domain)}
             className="grid cursor-pointer grid-cols-[110px_1fr_140px_1fr_90px_140px_20px] items-center gap-3 border-b border-divider px-5 py-3.5 last:border-b-0 hover:bg-card-header-bg"
           >
-            <Tag variant={domainStatusVariant[domain.status]}>{domainStatusLabel[domain.status]}</Tag>
+            <DomainStatusTag status={domain.status} />
             <div className="min-w-0 truncate font-mono text-[13px] text-text">{domain.hostname}</div>
             <div className="text-[13px] text-neutral-300">Domínio próprio</div>
             <div className="min-w-0 truncate text-[13px] text-neutral-300">{attachedPageColumn(domain)}</div>

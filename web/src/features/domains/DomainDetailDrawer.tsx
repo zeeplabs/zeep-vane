@@ -1,12 +1,12 @@
 import { useEffect, useState } from "react";
 import { Drawer, drawerFooterPrimaryStyle, drawerFooterSecondaryStyle } from "../../components/ui/Drawer";
 import { Button } from "../../components/ui/Button";
-import { Tag } from "../../components/ui/Tag";
 import { ApiError } from "../../lib/apiClient";
 import { useDNSTarget } from "../status-pages/hooks";
 import type { Domain } from "../../types/api";
 import { useDeleteDomain, useRecheckDomain } from "./hooks";
-import { domainStatusLabel, domainStatusVariant, sslStatusLabel } from "./domainStatusMeta";
+import { sslStatusLabel } from "./domainStatusMeta";
+import { DomainStatusTag } from "./DomainStatusTag";
 
 function formatTimestamp(iso: string | null): string {
   return iso ? new Date(iso).toLocaleString("pt-BR") : "—";
@@ -87,7 +87,7 @@ export function DomainDetailDrawer({ domain, onClose }: DomainDetailDrawerProps)
       {current ? (
         <div className="flex flex-col gap-4">
           <div className="flex items-center gap-2">
-            <Tag variant={domainStatusVariant[current.status]}>{domainStatusLabel[current.status]}</Tag>
+            <DomainStatusTag status={current.status} />
             <span className="text-sm text-neutral-400">Domínio próprio · {current.hostname}</span>
           </div>
 
