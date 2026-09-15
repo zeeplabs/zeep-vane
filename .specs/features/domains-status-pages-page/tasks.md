@@ -109,11 +109,11 @@ T12
 - Skill: NONE
 
 **Done when**:
-- [ ] New narrow interface (`statusPageNameLister`) added to `DomainsHandler`'s dependencies, backed by `*db.StatusPageRepository` in production wiring
-- [ ] `domainResponse` gains `AttachedPageName *string` (`json:"attached_page_name"`) and `AttachedPageCount int` (`json:"attached_page_count"`)
-- [ ] `toDomainResponse` (or its caller) sets `attached_page_name` to nil and `attached_page_count` to 0 when a domain has no attached pages; to the first name (by `created_at`) and the full count otherwise
-- [ ] Integration tests: 0/1/2+ attached pages per domain, asserted via `GET /api/domains` response body
-- [ ] `make test-integration` passes
+- [x] New narrow interface (`statusPageNameLister`) added to `DomainsHandler`'s dependencies, backed by `*db.StatusPageRepository` in production wiring
+- [x] `domainResponse` gains `AttachedPageName *string` (`json:"attached_page_name"`) and `AttachedPageCount int` (`json:"attached_page_count"`)
+- [x] `toDomainResponse` (or its caller) sets `attached_page_name` to nil and `attached_page_count` to 0 when a domain has no attached pages; to the first name (by `created_at`) and the full count otherwise
+- [x] Integration tests: 0/1/2+ attached pages per domain, asserted via `GET /api/domains` response body
+- [x] `make test-integration` passes
 
 **Tests**: integration
 **Gate**: full

@@ -30,12 +30,20 @@ type domainCreatorLister interface {
 	SetVerificationResult(ctx context.Context, id, status, sslStatus string, lastError *string, verifiedAt time.Time) (*db.Domain, error)
 }
 
+// statusPageNameLister is the subset of *db.StatusPageRepository the
+// domains handler depends on - the read-side join backing List's
+// attached_page_name/attached_page_count fields (design.md).
+type statusPageNameLister interface {
+	AttachedNamesByDomainIDs(ctx context.Context, domainIDs []string) (map[string][]string, error)
+}
+
 // DomainsHandler serves the domain admin routes.
 type DomainsHandler struct {
-	domains  domainCreatorLister
-	audit    *audit.Log
-	logger   *zap.Logger
-	verifier domainVerifier
+	domains         domainCreatorLister
+	statusPageNames statusPageNameLister
+	audit           *audit.Log
+	logger          *zap.Logger
+	verifier        domainVerifier
 	// dnsTarget is config.Config.PublicDNSTarget - the real CNAME target
 	// shown to the operator (domain-verification-state DOMVER-03), never a
 	// hardcoded example. Empty means the operator never configured it.
@@ -45,15 +53,17 @@ type DomainsHandler struct {
 	lastVerifyAt map[string]time.Time
 }
 
-// NewDomainsHandler builds a DomainsHandler backed by domains.
-func NewDomainsHandler(domains domainCreatorLister, auditLog *audit.Log, dnsTarget string, logger *zap.Logger) *DomainsHandler {
+// NewDomainsHandler builds a DomainsHandler backed by domains and
+// statusPageNames.
+func NewDomainsHandler(domains domainCreatorLister, statusPageNames statusPageNameLister, auditLog *audit.Log, dnsTarget string, logger *zap.Logger) *DomainsHandler {
 	return &DomainsHandler{
-		domains:      domains,
-		audit:        auditLog,
-		logger:       logger,
-		verifier:     newNetDomainVerifier(),
-		dnsTarget:    dnsTarget,
-		lastVerifyAt: make(map[string]time.Time),
+		domains:         domains,
+		statusPageNames: statusPageNames,
+		audit:           auditLog,
+		logger:          logger,
+		verifier:        newNetDomainVerifier(),
+		dnsTarget:       dnsTarget,
+		lastVerifyAt:    make(map[string]time.Time),
 	}
 }
 
@@ -70,6 +80,14 @@ type domainResponse struct {
 	SSLStatus  string     `json:"ssl_status"`
 	VerifiedAt *time.Time `json:"verified_at"`
 	LastError  *string    `json:"last_error"`
+	// AttachedPageName/AttachedPageCount are the read-side join over
+	// status_pages.domain_id (design.md, spec.md DSP-02/03/04) - nil/0 when
+	// no status page is attached, the first attached page's name (by
+	// created_at) and the full count otherwise. Not set by Create/Verify/
+	// Delete (a freshly created domain can't have anything attached yet);
+	// only List populates them.
+	AttachedPageName  *string `json:"attached_page_name"`
+	AttachedPageCount int     `json:"attached_page_count"`
 }
 
 func toDomainResponse(domain *db.Domain) domainResponse {
@@ -78,6 +96,21 @@ func toDomainResponse(domain *db.Domain) domainResponse {
 		DomainType: domain.DomainType, Status: domain.Status, SSLStatus: domain.SSLStatus,
 		VerifiedAt: domain.VerifiedAt, LastError: domain.LastError,
 	}
+}
+
+// toDomainResponseWithAttachedPages extends toDomainResponse with the
+// attached-page fields, deriving them from names - the ordered (by
+// created_at) list of status page names attached to domain.ID, as
+// returned by StatusPageRepository.AttachedNamesByDomainIDs. An absent/
+// empty names entry leaves both fields at their zero value (nil name, 0
+// count).
+func toDomainResponseWithAttachedPages(domain *db.Domain, names []string) domainResponse {
+	resp := toDomainResponse(domain)
+	if len(names) > 0 {
+		resp.AttachedPageName = &names[0]
+		resp.AttachedPageCount = len(names)
+	}
+	return resp
 }
 
 const invalidDomainRequestBody = `{"error":"hostname is required"}`
@@ -141,9 +174,20 @@ func (h *DomainsHandler) List(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	domainIDs := make([]string, len(domains))
+	for i, domain := range domains {
+		domainIDs[i] = domain.ID
+	}
+	attachedNames, err := h.statusPageNames.AttachedNamesByDomainIDs(r.Context(), domainIDs)
+	if err != nil {
+		h.logger.Error("domains: failed to list attached status page names", zap.Error(err))
+		writeInternalError(w)
+		return
+	}
+
 	resp := make([]domainResponse, len(domains))
 	for i, domain := range domains {
-		resp[i] = toDomainResponse(&domain)
+		resp[i] = toDomainResponseWithAttachedPages(&domain, attachedNames[domain.ID])
 	}
 
 	var dnsTarget *string

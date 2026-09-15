@@ -25,8 +25,9 @@ func newDomainsRouter(t *testing.T, opts ...func(*DomainsHandler)) (http.Handler
 	pool, _ := newAPITenantScopedPool(t)
 
 	repo := db.NewDomainRepository(pool)
+	statusPages := db.NewStatusPageRepository(pool)
 	admins := db.NewUserRepository(pool)
-	handler := NewDomainsHandler(repo, audit.NewLog(pool), "", zap.NewNop())
+	handler := NewDomainsHandler(repo, statusPages, audit.NewLog(pool), "", zap.NewNop())
 	for _, opt := range opts {
 		opt(handler)
 	}
@@ -430,6 +431,150 @@ func TestListDomains_DNSTargetUnconfigured_NullInResponse(t *testing.T) {
 	}
 	if page.DNSTarget != nil {
 		t.Errorf("DNSTarget = %v, want nil", *page.DNSTarget)
+	}
+}
+
+// insertStatusPageAttachedTo inserts a raw status_pages row attached to
+// domainID (bypassing StatusPageRepository.AttachDomain's "exactly once"
+// constraint, same fixture technique as TestDeleteDomain_InUseByStatusPage_409),
+// registers its cleanup, and returns the generated id/name.
+func insertStatusPageAttachedTo(t *testing.T, pool *db.Pool, domainID, name, subdomain string) string {
+	t.Helper()
+	var id string
+	row := pool.QueryRow(context.Background(),
+		"INSERT INTO status_pages (name, subdomain, domain_id) VALUES ($1, $2, $3) RETURNING id",
+		name, subdomain, domainID,
+	)
+	if err := row.Scan(&id); err != nil {
+		t.Fatalf("failed to insert status page fixture: %v", err)
+	}
+	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), "DELETE FROM status_pages WHERE id = $1", id) })
+	return id
+}
+
+// findDomainResponseAcrossPages is findDomainAcrossPages's sibling,
+// returning the full domainResponse instead of a bool, so tests can assert
+// on attached_page_name/attached_page_count.
+func findDomainResponseAcrossPages(t *testing.T, r http.Handler, token, hostname string) (domainResponse, bool) {
+	t.Helper()
+	for page := 1; ; page++ {
+		rec := getListDomainsPage(t, r, token, page)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("page=%d status = %d, want %d, body = %s", page, rec.Code, http.StatusOK, rec.Body.String())
+		}
+		var got domainsPageResponse
+		if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+			t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+		}
+		for _, d := range got.Items {
+			if d.Hostname == hostname {
+				return d, true
+			}
+		}
+		if len(got.Items) == 0 || page*got.PageSize >= got.Total {
+			return domainResponse{}, false
+		}
+	}
+}
+
+// TestListDomains_ZeroAttachedPages_NilNameZeroCount covers DSP-02: a
+// domain with no status page attached shows attached_page_name=nil,
+// attached_page_count=0.
+func TestListDomains_ZeroAttachedPages_NilNameZeroCount(t *testing.T) {
+	r, pool, admins := newDomainsRouter(t)
+	token := issueTestSessionToken(t, admins)
+	hostname := uniqueHostname(t)
+	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), "DELETE FROM domains WHERE hostname = $1", hostname) })
+
+	createRec := postCreateDomain(t, r, token, hostname)
+	if createRec.Code != http.StatusCreated {
+		t.Fatalf("setup create status = %d, want %d", createRec.Code, http.StatusCreated)
+	}
+
+	got, found := findDomainResponseAcrossPages(t, r, token, hostname)
+	if !found {
+		t.Fatalf("created hostname %q not found across any page of GET /api/domains", hostname)
+	}
+	if got.AttachedPageName != nil {
+		t.Errorf("AttachedPageName = %v, want nil", *got.AttachedPageName)
+	}
+	if got.AttachedPageCount != 0 {
+		t.Errorf("AttachedPageCount = %d, want 0", got.AttachedPageCount)
+	}
+}
+
+// TestListDomains_OneAttachedPage_NameAndCountOne covers DSP-03: a domain
+// with exactly one attached status page shows that page's name and count 1.
+func TestListDomains_OneAttachedPage_NameAndCountOne(t *testing.T) {
+	r, pool, admins := newDomainsRouter(t)
+	token := issueTestSessionToken(t, admins)
+	hostname := uniqueHostname(t)
+
+	createRec := postCreateDomain(t, r, token, hostname)
+	if createRec.Code != http.StatusCreated {
+		t.Fatalf("setup create status = %d, want %d", createRec.Code, http.StatusCreated)
+	}
+	var created domainResponse
+	if err := json.Unmarshal(createRec.Body.Bytes(), &created); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = pool.Exec(context.Background(), "DELETE FROM status_pages WHERE domain_id = $1", created.ID)
+		_, _ = pool.Exec(context.Background(), "DELETE FROM domains WHERE id = $1", created.ID)
+	})
+
+	insertStatusPageAttachedTo(t, pool, created.ID, "One Page Status", "one")
+
+	got, found := findDomainResponseAcrossPages(t, r, token, hostname)
+	if !found {
+		t.Fatalf("created hostname %q not found across any page of GET /api/domains", hostname)
+	}
+	if got.AttachedPageName == nil || *got.AttachedPageName != "One Page Status" {
+		t.Errorf("AttachedPageName = %v, want %q", got.AttachedPageName, "One Page Status")
+	}
+	if got.AttachedPageCount != 1 {
+		t.Errorf("AttachedPageCount = %d, want 1", got.AttachedPageCount)
+	}
+}
+
+// TestListDomains_TwoOrMoreAttachedPages_FirstNameAndFullCount covers
+// DSP-04: a domain with 2+ attached status pages shows the earliest
+// created page's name and the full count.
+func TestListDomains_TwoOrMoreAttachedPages_FirstNameAndFullCount(t *testing.T) {
+	r, pool, admins := newDomainsRouter(t)
+	token := issueTestSessionToken(t, admins)
+	hostname := uniqueHostname(t)
+
+	createRec := postCreateDomain(t, r, token, hostname)
+	if createRec.Code != http.StatusCreated {
+		t.Fatalf("setup create status = %d, want %d", createRec.Code, http.StatusCreated)
+	}
+	var created domainResponse
+	if err := json.Unmarshal(createRec.Body.Bytes(), &created); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = pool.Exec(context.Background(), "DELETE FROM status_pages WHERE domain_id = $1", created.ID)
+		_, _ = pool.Exec(context.Background(), "DELETE FROM domains WHERE id = $1", created.ID)
+	})
+
+	firstID := insertStatusPageAttachedTo(t, pool, created.ID, "First Attached Page", "first")
+	insertStatusPageAttachedTo(t, pool, created.ID, "Second Attached Page", "second")
+	// Force a deterministic created_at ordering so "first" is unambiguous.
+	if _, err := pool.Exec(context.Background(), "UPDATE status_pages SET created_at = $1 WHERE id = $2",
+		time.Now().Add(-1*time.Hour), firstID); err != nil {
+		t.Fatalf("failed to backdate first page created_at: %v", err)
+	}
+
+	got, found := findDomainResponseAcrossPages(t, r, token, hostname)
+	if !found {
+		t.Fatalf("created hostname %q not found across any page of GET /api/domains", hostname)
+	}
+	if got.AttachedPageName == nil || *got.AttachedPageName != "First Attached Page" {
+		t.Errorf("AttachedPageName = %v, want %q (earliest created)", got.AttachedPageName, "First Attached Page")
+	}
+	if got.AttachedPageCount != 2 {
+		t.Errorf("AttachedPageCount = %d, want 2", got.AttachedPageCount)
 	}
 }
 
