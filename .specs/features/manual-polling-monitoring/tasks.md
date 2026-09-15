@@ -164,13 +164,13 @@ T7 → T8 → T9
 - Skill: NONE
 
 **Done when**:
-- [ ] `ValidateTargetSafety` rejects a literal `127.0.0.1`/`10.x`/`172.16-31.x`/`192.168.x`/`169.254.x` target for all three check types
-- [ ] `ValidateTargetSafety` allows a target whose DNS does not resolve at all (no error)
-- [ ] `RunCheck` against a local `httptest.Server` returning 200/301 succeeds; 500 and connection-refused both fail
-- [ ] `RunCheck` (TCP/Ping) against a local `net.Listen`-backed port succeeds; a closed/unreachable port fails
-- [ ] `RunCheck` against a literal blocked-range target fails via the dialer's own `Control` hook (proving the same safety net applies at check time, not only at `ValidateTargetSafety` time - MP-15)
-- [ ] `RunCheck` respects its timeout parameter (a deliberately slow/non-responding server fails within the given timeout, not hanging past it)
-- [ ] Gate check passes: `go test ./internal/checks/...`
+- [x] `ValidateTargetSafety` rejects a literal `127.0.0.1`/`10.x`/`172.16-31.x`/`192.168.x`/`169.254.x` target for all three check types
+- [x] `ValidateTargetSafety` allows a target whose DNS does not resolve at all (no error)
+- [x] `RunCheck` against a local `httptest.Server` returning 200/301 succeeds; 500 and connection-refused both fail
+- [x] `RunCheck` (TCP/Ping) against a local `net.Listen`-backed port succeeds; a closed/unreachable port fails
+- [x] `RunCheck` against a literal blocked-range target fails via the dialer's own `Control` hook (proving the same safety net applies at check time, not only at `ValidateTargetSafety` time - MP-15)
+- [x] `RunCheck` respects its timeout parameter (a deliberately slow/non-responding server fails within the given timeout, not hanging past it)
+- [x] Gate check passes: `go test ./internal/checks/...`
 
 **Tests**: unit
 **Gate**: Quick (Go unit, no DB)
