@@ -278,12 +278,12 @@ T12
 - Skill: NONE
 
 **Done when**:
-- [ ] Renders all 5 columns per DSP-13; Visib. always shows "Público" (Out of Scope: visibility toggle is decorative)
-- [ ] URL pública renders "—" when the page has no `domain_id` (DSP-17)
-- [ ] Row click calls an `onSelect(page)` prop
-- [ ] Zero pages renders `EmptyState`
-- [ ] Unit tests cover: page with domain, page without domain (DSP-17), empty list
-- [ ] `npx vitest run web/src/features/status-pages/StatusPagesTable.test.tsx` passes
+- [x] Renders all 5 columns per DSP-13; Visib. always shows "Público" (Out of Scope: visibility toggle is decorative)
+- [x] URL pública renders "—" when the page has no `domain_id` (DSP-17)
+- [x] Row click calls an `onSelect(page)` prop
+- [x] Zero pages renders `EmptyState`
+- [x] Unit tests cover: page with domain, page without domain (DSP-17), empty list
+- [x] `npx vitest run web/src/features/status-pages/StatusPagesTable.test.tsx` passes
 
 **Tests**: unit
 **Gate**: quick
