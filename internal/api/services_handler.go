@@ -10,6 +10,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"go.uber.org/zap"
 
+	"github.com/zeeplabs/zeep-vane/internal/checks"
 	"github.com/zeeplabs/zeep-vane/internal/db"
 	"github.com/zeeplabs/zeep-vane/internal/history"
 )
@@ -71,7 +72,26 @@ type createServiceRequest struct {
 	Name    string `json:"name"`
 	SLOID   string `json:"slo_id"`
 	SLOName string `json:"slo_name"`
+	// MonitorMode is "slo" (default when omitted, unchanged existing
+	// behavior) or "polling" (manual-polling-monitoring MP-01/MP-02).
+	MonitorMode string `json:"monitor_mode"`
+	// PollType/PollTarget/PollIntervalSeconds apply only when MonitorMode
+	// is "polling".
+	PollType            string `json:"poll_type"`
+	PollTarget          string `json:"poll_target"`
+	PollIntervalSeconds int    `json:"poll_interval_seconds"`
 }
+
+// validPollTypes/validPollIntervalSeconds are the only accepted
+// poll_type/poll_interval_seconds values for a polling-mode create request
+// (manual-polling-monitoring design.md's CreateServiceRequest contract).
+var validPollTypes = map[string]bool{
+	checks.PollTypeHTTP: true,
+	checks.PollTypeTCP:  true,
+	checks.PollTypePing: true,
+}
+
+var validPollIntervalSeconds = map[int]bool{30: true, 60: true, 300: true}
 
 type serviceResponse struct {
 	ID                 string     `json:"id"`
@@ -86,20 +106,87 @@ type serviceResponse struct {
 
 const invalidServiceRequestBody = `{"error":"name and slo_id are required"}`
 
-// Create handles POST /api/services, linking a new service to a Datadog SLO
-// (SP-03). slo_name is optional (validation is unchanged: only name and
-// slo_id are required) - a freshly created service has no interval data
-// yet, so its response always has uptime_30d/last_seen_at nil.
+// Fixed, generic 422 bodies for the polling-mode branch (manual-polling-
+// monitoring MP-01/MP-03/MP-04/MP-05) - never echo the raw parse/resolver
+// error back to the caller (AGENTS.md §4), and never reveal which resolved
+// IP a target hit (design.md's Error Handling Strategy: a rejected target
+// must not confirm vane's own internal network layout to the caller).
+const (
+	invalidMonitorModeBody   = `{"error":"monitor_mode must be \"slo\" or \"polling\""}`
+	mixedModeFieldsBody      = `{"error":"slo fields and poll fields cannot be combined in the same request"}`
+	invalidPollingFieldsBody = `{"error":"poll_type (http, tcp, or ping), poll_target, and poll_interval_seconds (30, 60, or 300) are all required for polling mode"}`
+	invalidPollTargetBody    = `{"error":"poll_target is not a valid or allowed target for the selected poll_type"}`
+)
+
+// Create handles POST /api/services (SP-03). monitor_mode defaults to
+// "slo" when omitted, preserving every existing caller's behavior
+// unchanged: linking a new service to a Datadog SLO (slo_id required,
+// slo_name optional). monitor_mode="polling" instead registers a direct
+// HTTP(S)/TCP/Ping polling target (manual-polling-monitoring MP-01/MP-02):
+// poll_type/poll_target/poll_interval_seconds are required, slo_id/
+// slo_name must be absent, and poll_target must pass both
+// checks.ValidateTargetFormat and checks.ValidateTargetSafety (422 on
+// either failure, fixed generic message - MP-03/MP-04). A freshly created
+// service (either mode) has no interval data yet, so its response always
+// has uptime_30d/last_seen_at nil.
 func (h *ServicesHandler) Create(w http.ResponseWriter, r *http.Request) {
 	var req createServiceRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Name == "" || req.SLOID == "" {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusUnprocessableEntity)
-		_, _ = w.Write([]byte(invalidServiceRequestBody))
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Name == "" {
+		writeAdminError(w, http.StatusUnprocessableEntity, invalidServiceRequestBody)
 		return
 	}
 
-	service := &db.Service{Name: req.Name, SLOID: req.SLOID, SLOName: req.SLOName}
+	monitorMode := req.MonitorMode
+	if monitorMode == "" {
+		monitorMode = "slo"
+	}
+
+	var service *db.Service
+
+	switch monitorMode {
+	case "slo":
+		if req.PollType != "" || req.PollTarget != "" || req.PollIntervalSeconds != 0 {
+			writeAdminError(w, http.StatusUnprocessableEntity, mixedModeFieldsBody)
+			return
+		}
+		if req.SLOID == "" {
+			writeAdminError(w, http.StatusUnprocessableEntity, invalidServiceRequestBody)
+			return
+		}
+		service = &db.Service{Name: req.Name, SLOID: req.SLOID, SLOName: req.SLOName, MonitorMode: "slo"}
+
+	case "polling":
+		if req.SLOID != "" || req.SLOName != "" {
+			writeAdminError(w, http.StatusUnprocessableEntity, mixedModeFieldsBody)
+			return
+		}
+		if !validPollTypes[req.PollType] || req.PollTarget == "" || !validPollIntervalSeconds[req.PollIntervalSeconds] {
+			writeAdminError(w, http.StatusUnprocessableEntity, invalidPollingFieldsBody)
+			return
+		}
+		if err := checks.ValidateTargetFormat(req.PollType, req.PollTarget); err != nil {
+			writeAdminError(w, http.StatusUnprocessableEntity, invalidPollTargetBody)
+			return
+		}
+		if err := checks.ValidateTargetSafety(r.Context(), req.PollType, req.PollTarget); err != nil {
+			writeAdminError(w, http.StatusUnprocessableEntity, invalidPollTargetBody)
+			return
+		}
+
+		pollType, pollTarget, pollInterval := req.PollType, req.PollTarget, req.PollIntervalSeconds
+		service = &db.Service{
+			Name:                req.Name,
+			MonitorMode:         "polling",
+			PollType:            &pollType,
+			PollTarget:          &pollTarget,
+			PollIntervalSeconds: &pollInterval,
+		}
+
+	default:
+		writeAdminError(w, http.StatusUnprocessableEntity, invalidMonitorModeBody)
+		return
+	}
+
 	if err := h.services.Create(r.Context(), service); err != nil {
 		h.logger.Error("services: failed to create service", zap.Error(err))
 		writeInternalError(w)

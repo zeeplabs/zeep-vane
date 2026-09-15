@@ -190,12 +190,12 @@ T7 → T8 → T9
 - Skill: NONE
 
 **Done when**:
-- [ ] Omitting `monitor_mode` behaves exactly as before (existing SLO-mode tests in this file still pass unmodified)
-- [ ] A valid polling-mode request (each of the 3 check types) creates the service with the right fields persisted
-- [ ] A polling-mode request with an SSRF-blocked target returns 422 and creates nothing
-- [ ] A polling-mode request with a malformed target for its check type returns 422 and creates nothing
-- [ ] A polling-mode request that also includes `slo_id` is rejected (422), and an slo-mode request that includes `poll_type`/`poll_target`/`poll_interval_seconds` is rejected (422)
-- [ ] Gate check passes: `make test-integration`
+- [x] Omitting `monitor_mode` behaves exactly as before (existing SLO-mode tests in this file still pass unmodified)
+- [x] A valid polling-mode request (each of the 3 check types) creates the service with the right fields persisted
+- [x] A polling-mode request with an SSRF-blocked target returns 422 and creates nothing
+- [x] A polling-mode request with a malformed target for its check type returns 422 and creates nothing
+- [x] A polling-mode request that also includes `slo_id` is rejected (422), and an slo-mode request that includes `poll_type`/`poll_target`/`poll_interval_seconds` is rejected (422)
+- [x] Gate check passes: `make test-integration`
 
 **Tests**: integration
 **Gate**: Full

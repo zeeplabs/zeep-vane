@@ -101,6 +101,42 @@ func postCreateServiceRaw(t *testing.T, r http.Handler, token, rawBody string) *
 	return rec
 }
 
+// postCreateServicePolling posts a monitor_mode="polling" create request.
+func postCreateServicePolling(t *testing.T, r http.Handler, token, name, pollType, pollTarget string, pollIntervalSeconds int) *httptest.ResponseRecorder {
+	t.Helper()
+	body, err := json.Marshal(createServiceRequest{
+		Name:                name,
+		MonitorMode:         "polling",
+		PollType:            pollType,
+		PollTarget:          pollTarget,
+		PollIntervalSeconds: pollIntervalSeconds,
+	})
+	if err != nil {
+		t.Fatalf("json.Marshal() returned unexpected error: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/services", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+	return rec
+}
+
+// countServicesNamed returns how many services rows currently exist with
+// name - used to assert a rejected create persisted nothing.
+func countServicesNamed(t *testing.T, pool *db.Pool, name string) int {
+	t.Helper()
+	var count int
+	row := pool.QueryRow(context.Background(), "SELECT COUNT(*) FROM services WHERE name = $1", name)
+	if err := row.Scan(&count); err != nil {
+		t.Fatalf("Scan() returned unexpected error: %v", err)
+	}
+	return count
+}
+
 func getServices(t *testing.T, r http.Handler, token string) *httptest.ResponseRecorder {
 	t.Helper()
 	req := httptest.NewRequest(http.MethodGet, "/api/services", nil)
@@ -318,6 +354,220 @@ func TestCreateService_MissingSLOID_422(t *testing.T) {
 	rec := postCreateServiceRaw(t, r, token, `{"name":"missing-slo-id"}`)
 	if rec.Code != http.StatusUnprocessableEntity {
 		t.Errorf("status = %d, want %d, body = %s", rec.Code, http.StatusUnprocessableEntity, rec.Body.String())
+	}
+}
+
+// TestCreateService_OmittedMonitorMode_DefaultsToSLO_UnchangedBehavior
+// asserts T5's "Done when": omitting monitor_mode behaves exactly as
+// before - the created row's monitor_mode column is "slo".
+func TestCreateService_OmittedMonitorMode_DefaultsToSLO_UnchangedBehavior(t *testing.T) {
+	r, pool, admins := newServicesRouter(t)
+	token := issueTestSessionTokenWithTenant(t, admins, pool)
+	name := uniqueServiceName(t)
+	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), "DELETE FROM services WHERE name = $1", name) })
+
+	rec := postCreateService(t, r, token, name, "slo-omitted-mode")
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusCreated, rec.Body.String())
+	}
+
+	var monitorMode string
+	row := pool.QueryRow(context.Background(), "SELECT monitor_mode FROM services WHERE name = $1", name)
+	if err := row.Scan(&monitorMode); err != nil {
+		t.Fatalf("Scan() returned unexpected error: %v", err)
+	}
+	if monitorMode != "slo" {
+		t.Errorf("stored monitor_mode = %q, want %q", monitorMode, "slo")
+	}
+}
+
+// TestCreateService_PollingMode_HTTP_201PersistsFields asserts MP-01/MP-02:
+// a valid polling-mode HTTP(S) request creates the service with the right
+// fields persisted, and slo_id stays unset.
+func TestCreateService_PollingMode_HTTP_201PersistsFields(t *testing.T) {
+	r, pool, admins := newServicesRouter(t)
+	token := issueTestSessionTokenWithTenant(t, admins, pool)
+	name := uniqueServiceName(t) + "-http"
+	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), "DELETE FROM services WHERE name = $1", name) })
+
+	rec := postCreateServicePolling(t, r, token, name, "http", "https://polling-http-test.invalid/health", 30)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusCreated, rec.Body.String())
+	}
+
+	var monitorMode, pollType, pollTarget string
+	var pollIntervalSeconds int
+	var sloID *string
+	row := pool.QueryRow(context.Background(),
+		"SELECT monitor_mode, slo_id, poll_type, poll_target, poll_interval_seconds FROM services WHERE name = $1", name)
+	if err := row.Scan(&monitorMode, &sloID, &pollType, &pollTarget, &pollIntervalSeconds); err != nil {
+		t.Fatalf("Scan() returned unexpected error: %v", err)
+	}
+	if monitorMode != "polling" {
+		t.Errorf("stored monitor_mode = %q, want %q", monitorMode, "polling")
+	}
+	if sloID != nil {
+		t.Errorf("stored slo_id = %v, want nil", sloID)
+	}
+	if pollType != "http" {
+		t.Errorf("stored poll_type = %q, want %q", pollType, "http")
+	}
+	if pollTarget != "https://polling-http-test.invalid/health" {
+		t.Errorf("stored poll_target = %q, want %q", pollTarget, "https://polling-http-test.invalid/health")
+	}
+	if pollIntervalSeconds != 30 {
+		t.Errorf("stored poll_interval_seconds = %d, want %d", pollIntervalSeconds, 30)
+	}
+}
+
+// TestCreateService_PollingMode_TCP_201PersistsFields asserts MP-01/MP-02
+// for the TCP check type.
+func TestCreateService_PollingMode_TCP_201PersistsFields(t *testing.T) {
+	r, pool, admins := newServicesRouter(t)
+	token := issueTestSessionTokenWithTenant(t, admins, pool)
+	name := uniqueServiceName(t) + "-tcp"
+	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), "DELETE FROM services WHERE name = $1", name) })
+
+	rec := postCreateServicePolling(t, r, token, name, "tcp", "polling-tcp-test.invalid:5432", 60)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusCreated, rec.Body.String())
+	}
+
+	var monitorMode, pollType, pollTarget string
+	row := pool.QueryRow(context.Background(),
+		"SELECT monitor_mode, poll_type, poll_target FROM services WHERE name = $1", name)
+	if err := row.Scan(&monitorMode, &pollType, &pollTarget); err != nil {
+		t.Fatalf("Scan() returned unexpected error: %v", err)
+	}
+	if monitorMode != "polling" || pollType != "tcp" || pollTarget != "polling-tcp-test.invalid:5432" {
+		t.Errorf("stored (monitor_mode, poll_type, poll_target) = (%q, %q, %q), want (%q, %q, %q)",
+			monitorMode, pollType, pollTarget, "polling", "tcp", "polling-tcp-test.invalid:5432")
+	}
+}
+
+// TestCreateService_PollingMode_Ping_201PersistsFields asserts MP-01/MP-02
+// for the Ping check type.
+func TestCreateService_PollingMode_Ping_201PersistsFields(t *testing.T) {
+	r, pool, admins := newServicesRouter(t)
+	token := issueTestSessionTokenWithTenant(t, admins, pool)
+	name := uniqueServiceName(t) + "-ping"
+	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), "DELETE FROM services WHERE name = $1", name) })
+
+	rec := postCreateServicePolling(t, r, token, name, "ping", "polling-ping-test.invalid", 300)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusCreated, rec.Body.String())
+	}
+
+	var monitorMode, pollType, pollTarget string
+	var pollIntervalSeconds int
+	row := pool.QueryRow(context.Background(),
+		"SELECT monitor_mode, poll_type, poll_target, poll_interval_seconds FROM services WHERE name = $1", name)
+	if err := row.Scan(&monitorMode, &pollType, &pollTarget, &pollIntervalSeconds); err != nil {
+		t.Fatalf("Scan() returned unexpected error: %v", err)
+	}
+	if monitorMode != "polling" || pollType != "ping" || pollTarget != "polling-ping-test.invalid" || pollIntervalSeconds != 300 {
+		t.Errorf("stored row = (%q, %q, %q, %d), want (%q, %q, %q, %d)",
+			monitorMode, pollType, pollTarget, pollIntervalSeconds, "polling", "ping", "polling-ping-test.invalid", 300)
+	}
+}
+
+// TestCreateService_PollingMode_SSRFBlockedTarget_422NoServiceCreated
+// asserts MP-03: a polling-mode target resolving to a blocked IP range
+// (a literal loopback address here) is rejected with 422 and nothing is
+// persisted.
+func TestCreateService_PollingMode_SSRFBlockedTarget_422NoServiceCreated(t *testing.T) {
+	r, pool, admins := newServicesRouter(t)
+	token := issueTestSessionTokenWithTenant(t, admins, pool)
+	name := uniqueServiceName(t) + "-ssrf-blocked"
+
+	rec := postCreateServicePolling(t, r, token, name, "http", "http://127.0.0.1/health", 30)
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusUnprocessableEntity, rec.Body.String())
+	}
+	if rec.Body.String() != invalidPollTargetBody {
+		t.Errorf("body = %s, want the fixed generic %s (never a raw resolver error)", rec.Body.String(), invalidPollTargetBody)
+	}
+
+	if count := countServicesNamed(t, pool, name); count != 0 {
+		t.Errorf("services rows named %q after a rejected create = %d, want 0", name, count)
+	}
+}
+
+// TestCreateService_PollingMode_MalformedTarget_422NoServiceCreated asserts
+// MP-04: a target whose format doesn't match its poll_type (a bare host for
+// HTTP(S), which requires a full URL) is rejected with 422 and nothing is
+// persisted.
+func TestCreateService_PollingMode_MalformedTarget_422NoServiceCreated(t *testing.T) {
+	r, pool, admins := newServicesRouter(t)
+	token := issueTestSessionTokenWithTenant(t, admins, pool)
+	name := uniqueServiceName(t) + "-malformed-target"
+
+	rec := postCreateServicePolling(t, r, token, name, "http", "api.acme.health", 30)
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusUnprocessableEntity, rec.Body.String())
+	}
+	if rec.Body.String() != invalidPollTargetBody {
+		t.Errorf("body = %s, want the fixed generic %s (never a raw parse error)", rec.Body.String(), invalidPollTargetBody)
+	}
+
+	if count := countServicesNamed(t, pool, name); count != 0 {
+		t.Errorf("services rows named %q after a rejected create = %d, want 0", name, count)
+	}
+}
+
+// TestCreateService_PollingModeWithSLOID_422NoServiceCreated asserts MP-05:
+// a polling-mode request that also includes slo_id is rejected (422), and
+// nothing is persisted.
+func TestCreateService_PollingModeWithSLOID_422NoServiceCreated(t *testing.T) {
+	r, pool, admins := newServicesRouter(t)
+	token := issueTestSessionTokenWithTenant(t, admins, pool)
+	name := uniqueServiceName(t) + "-polling-with-slo-id"
+
+	body, err := json.Marshal(createServiceRequest{
+		Name: name, SLOID: "slo-should-not-be-allowed",
+		MonitorMode: "polling", PollType: "http", PollTarget: "https://polling-mixed-test.invalid/", PollIntervalSeconds: 30,
+	})
+	if err != nil {
+		t.Fatalf("json.Marshal() returned unexpected error: %v", err)
+	}
+	rec := postCreateServiceRaw(t, r, token, string(body))
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusUnprocessableEntity, rec.Body.String())
+	}
+	if rec.Body.String() != mixedModeFieldsBody {
+		t.Errorf("body = %s, want %s", rec.Body.String(), mixedModeFieldsBody)
+	}
+
+	if count := countServicesNamed(t, pool, name); count != 0 {
+		t.Errorf("services rows named %q after a rejected create = %d, want 0", name, count)
+	}
+}
+
+// TestCreateService_SLOModeWithPollFields_422NoServiceCreated asserts
+// MP-05: an slo-mode request that also includes poll_type/poll_target/
+// poll_interval_seconds is rejected (422), and nothing is persisted.
+func TestCreateService_SLOModeWithPollFields_422NoServiceCreated(t *testing.T) {
+	r, pool, admins := newServicesRouter(t)
+	token := issueTestSessionTokenWithTenant(t, admins, pool)
+	name := uniqueServiceName(t) + "-slo-with-poll-fields"
+
+	body, err := json.Marshal(createServiceRequest{
+		Name: name, SLOID: "slo-mixed-1",
+		PollType: "http", PollTarget: "https://polling-mixed-test.invalid/", PollIntervalSeconds: 30,
+	})
+	if err != nil {
+		t.Fatalf("json.Marshal() returned unexpected error: %v", err)
+	}
+	rec := postCreateServiceRaw(t, r, token, string(body))
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusUnprocessableEntity, rec.Body.String())
+	}
+	if rec.Body.String() != mixedModeFieldsBody {
+		t.Errorf("body = %s, want %s", rec.Body.String(), mixedModeFieldsBody)
+	}
+
+	if count := countServicesNamed(t, pool, name); count != 0 {
+		t.Errorf("services rows named %q after a rejected create = %d, want 0", name, count)
 	}
 }
 
