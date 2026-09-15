@@ -132,3 +132,30 @@ h6 {
 *::after {
   box-sizing: border-box;
 }
+
+/* Drawer enter/exit (Radix Dialog `data-state`). Keyframe animations, not
+   transitions: Radix's Presence only auto-waits for unmount on animationend/
+   transitionend, and a transition never plays on first mount because there's
+   no prior frame to transition from - the panel would just appear already
+   in its open position. A keyframe animation runs its full 0%->100% pass
+   regardless of the element's age, so it plays on both open and close. */
+@keyframes drawer-overlay-in {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes drawer-overlay-out {
+  to {
+    opacity: 0;
+  }
+}
+@keyframes drawer-panel-in {
+  from {
+    transform: translateX(100%);
+  }
+}
+@keyframes drawer-panel-out {
+  to {
+    transform: translateX(100%);
+  }
+}
