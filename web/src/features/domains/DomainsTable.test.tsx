@@ -52,6 +52,26 @@ function renderTable(onSelect: (domain: Domain) => void = () => {}) {
 }
 
 describe("DomainsTable", () => {
+  it("renderiza Status/Tipo/SSL da linha (DSP-01)", async () => {
+    mockDomainsPage([
+      baseDomain({
+        id: "dom-full",
+        hostname: "full.example.com",
+        domain_type: "custom",
+        status: "verified",
+        ssl_status: "active",
+      }),
+    ]);
+    await loginAsOwner();
+    renderTable();
+
+    await screen.findByText("full.example.com");
+    const row = screen.getAllByTestId("domain-row")[0];
+    expect(within(row).getByText("Verificado")).toBeInTheDocument();
+    expect(within(row).getByText("Domínio próprio")).toBeInTheDocument();
+    expect(within(row).getByText("Ativo")).toBeInTheDocument();
+  });
+
   it("renderiza '—' na coluna Aponta para quando o domínio não tem status page anexada (DSP-02)", async () => {
     mockDomainsPage([baseDomain({ id: "dom-0", hostname: "zero.example.com", attached_page_name: null, attached_page_count: 0 })]);
     await loginAsOwner();

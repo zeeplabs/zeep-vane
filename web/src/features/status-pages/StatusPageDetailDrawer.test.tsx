@@ -96,4 +96,17 @@ describe("StatusPageDetailDrawer", () => {
     // ambiguous match.
     expect(screen.getAllByText("—")).toHaveLength(2);
   });
+
+  it("com serviços anexados: lista o nome de cada serviço resolvido por id (DSP-14)", async () => {
+    mockDomainsPage([]);
+    await loginAsOwner();
+    const page = basePage({ id: "sp-3", name: "Com serviços", domain_id: null, service_ids: ["svc-1"] });
+    renderDrawer(page);
+
+    await screen.findByText("Com serviços");
+    // svc-1 resolves to "API pública" via the default MSW /api/services
+    // fixture (web/src/lib/mockData.ts) - proves the id->name lookup runs,
+    // not just that the empty-list "—" branch renders.
+    expect(await screen.findByText("API pública")).toBeInTheDocument();
+  });
 });

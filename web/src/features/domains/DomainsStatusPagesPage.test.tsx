@@ -120,5 +120,15 @@ describe("DomainsStatusPagesPage", () => {
     fireEvent.click(screen.getByText("Status Pages"));
 
     expect(screen.queryByRole("button", { name: "Verificar novamente" })).not.toBeInTheDocument();
+
+    // DSP-19 requires the *state* to reset, not just the drawer being
+    // hidden by which tab is conditionally rendered - switching back to
+    // Domínios (where the row is rendered again) must not resurrect the
+    // drawer. A mutant that only guards the drawer's render on
+    // `activeTab === "domains"` (without actually clearing selectedDomainId)
+    // would still pass the assertion above but fail this one.
+    fireEvent.click(screen.getByText("Domínios"));
+    await screen.findByText("click.example.com");
+    expect(screen.queryByRole("button", { name: "Verificar novamente" })).not.toBeInTheDocument();
   });
 });
