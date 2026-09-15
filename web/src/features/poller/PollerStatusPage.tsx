@@ -3,7 +3,7 @@ import { MdOutlineWarningAmber } from "react-icons/md";
 import { Card } from "../../components/ui/Card";
 import { Pager } from "../../components/ui/Pager";
 import { Tag } from "../../components/ui/Tag";
-import { failureMessage, providerLabel } from "./format";
+import { failureMessage, providerLabel, replicaLabel } from "./format";
 import { usePollerStatus } from "./hooks";
 
 function formatTimestamp(iso: string | null): string {
@@ -49,7 +49,7 @@ export function PollerStatusPage() {
       : data.poller_running
         ? "Ativo"
         : "Aguardando integração";
-  const replicaName = data?.leader_elected ? (data.replica?.application_name ?? null) : null;
+  const replicaName = data?.leader_elected && data.replica ? replicaLabel(data.replica.application_name) : null;
 
   return (
     <div className="mx-auto flex w-full max-w-[1280px] flex-col gap-6">

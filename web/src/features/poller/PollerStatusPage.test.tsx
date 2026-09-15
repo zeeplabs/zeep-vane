@@ -111,6 +111,14 @@ describe("PollerStatusPage", () => {
     expect(screen.getByText("1")).toBeInTheDocument();
   });
 
+  it("réplica com application_name unknown (HOSTNAME não setado) mostra réplica local", async () => {
+    pollerLeadership.replica = { application_name: "unknown", backend_start: new Date().toISOString() };
+    await loginAsOwner();
+    renderPage();
+
+    expect(await screen.findByText("Ativo · réplica local")).toBeInTheDocument();
+  });
+
   it("checks_last_minute igual a 0 é valor válido, não estado de erro", async () => {
     pollerLeadership.checks_last_minute = 0;
     await loginAsOwner();

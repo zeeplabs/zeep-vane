@@ -1,3 +1,12 @@
+// replicaLabel maps the backend's replicaApplicationName() fallback
+// (internal/cli/poller_manager.go, when HOSTNAME is unset - local dev,
+// self-hosted without Kubernetes) to a human-readable label. Kubernetes
+// always sets HOSTNAME to the pod name, so "unknown" only ever surfaces
+// outside that environment.
+export function replicaLabel(applicationName: string): string {
+  return applicationName === "unknown" ? "réplica local" : applicationName;
+}
+
 const PROVIDER_LABELS: Record<string, string> = {
   datadog: "Datadog",
   sendgrid: "SendGrid",
