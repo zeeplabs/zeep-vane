@@ -4,6 +4,7 @@ import { Card } from "../../components/ui/Card";
 import { Tag } from "../../components/ui/Tag";
 import { Button } from "../../components/ui/Button";
 import { Field } from "../../components/ui/Field";
+import { Textarea } from "../../components/ui/Textarea";
 import { Drawer, drawerFooterPrimaryStyle, drawerFooterSecondaryStyle } from "../../components/ui/Drawer";
 import { Pager } from "../../components/ui/Pager";
 import { Seg } from "../../components/ui/Seg";
@@ -114,7 +115,7 @@ export function IncidentsPage() {
           </p>
         </div>
         {canManage ? (
-          <Button variant="primary" onClick={() => setDialogOpen(true)}>
+          <Button variant="solid" onClick={() => setDialogOpen(true)}>
             <MdOutlineAdd size={14} aria-hidden="true" />
             Novo incidente
           </Button>
@@ -229,7 +230,7 @@ export function IncidentsPage() {
         }
       >
         <form id="create-incident-form" onSubmit={handleSubmit} className="flex flex-col gap-3">
-          <Field label="Título" value={title} onChange={(e) => setTitle(e.target.value)} required />
+          <Field variant="filled" label="Título" value={title} onChange={(e) => setTitle(e.target.value)} required />
           <div className="flex flex-col gap-1">
             <span className="text-sm font-medium text-text">Serviços afetados</span>
             <div className="flex flex-col gap-1">
@@ -270,13 +271,13 @@ export function IncidentsPage() {
             <label htmlFor="incident-description" className="text-sm font-medium text-text">
               Descrição inicial
             </label>
-            <textarea
+            <Textarea
               id="incident-description"
+              variant="filled"
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               placeholder="O que está acontecendo?"
               rows={4}
-              className="w-full resize-y rounded-md border border-divider bg-surface px-3 py-2 text-sm text-text outline-none transition-colors focus:border-accent"
             />
           </div>
           {error ? (

@@ -3,6 +3,7 @@ import * as RadixDialog from "@radix-ui/react-dialog";
 import { MdClose, MdOutlineAutoAwesome, MdOutlineRefresh } from "react-icons/md";
 import { Button } from "../../components/ui/Button";
 import { Tag } from "../../components/ui/Tag";
+import { Textarea } from "../../components/ui/Textarea";
 import { ApiError } from "../../lib/apiClient";
 import type { Incident, IncidentStatus } from "../../types/api";
 import {
@@ -192,13 +193,13 @@ export function IncidentDetailDrawer({ incident, canManage, serviceName, onClose
                       <label htmlFor="incident-update-body" className="text-[12.5px] font-semibold text-text-muted">
                         Adicionar atualização
                       </label>
-                      <textarea
+                      <Textarea
                         id="incident-update-body"
+                        variant="filled"
                         value={body}
                         onChange={(e) => setBody(e.target.value)}
                         placeholder="Descreva o progresso da investigação..."
                         rows={3}
-                        className="w-full resize-y rounded-md border border-divider bg-card-header-bg px-3 py-2.5 text-sm text-text outline-none transition-colors focus:border-accent focus:bg-surface"
                       />
                       <Button type="submit" variant="secondary" className="w-full" disabled={addUpdate.isPending}>
                         Publicar atualização
@@ -208,7 +209,7 @@ export function IncidentDetailDrawer({ incident, canManage, serviceName, onClose
 
                   {canManage ? (
                     <Button
-                      variant="primary"
+                      variant="solid"
                       className="w-full"
                       onClick={handleConfirmClose}
                       disabled={!incident.pending_close_comment || confirmClose.isPending || discardCloseProposal.isPending}
