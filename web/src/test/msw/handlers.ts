@@ -425,13 +425,26 @@ const serviceIncidentCounts: Record<string, number> = {
   "svc-2": 2,
 };
 
-// toDomainResponse strips fields the real backend never returns.
+// toDomainResponse mirrors DomainsHandler's real domainResponse shape
+// (internal/api/domains_handler.go) - every field the backend actually
+// returns, including the domains-status-pages-page T2 attached-page join.
 // toStatusPageResponse mirrors the real StatusPagesHandler response shape,
 // service_ids included - GET/POST/PATCH .../services on the real backend
 // all return it (internal/api/status_pages_handler.go's
 // toStatusPageResponse).
 function toDomainResponse(domain: Domain) {
-  return { id: domain.id, hostname: domain.hostname, created_at: domain.created_at };
+  return {
+    id: domain.id,
+    hostname: domain.hostname,
+    created_at: domain.created_at,
+    domain_type: domain.domain_type,
+    status: domain.status,
+    ssl_status: domain.ssl_status,
+    verified_at: domain.verified_at,
+    last_error: domain.last_error,
+    attached_page_name: domain.attached_page_name,
+    attached_page_count: domain.attached_page_count,
+  };
 }
 
 function toStatusPageResponse(statusPage: StatusPage) {
@@ -974,11 +987,16 @@ export const handlers = [
   }),
 
   // GET /api/domains (PAG-08) - mirrors DomainsHandler.List: ordered by
-  // hostname, paginated 20 per page.
+  // hostname, paginated 20 per page, dns_target carried loose alongside the
+  // list (domains-status-pages-page T3: DomainsPageResponse, not the
+  // generic Page<T> paginatedPage() would produce).
   http.get("/api/domains", ({ request }) => {
     if (!sessionAdminId) return HttpResponse.json({ error: "unauthorized" }, { status: 401 });
     const sorted = [...domainsState].sort((a, b) => a.hostname.localeCompare(b.hostname));
-    return HttpResponse.json(paginatedPage(request.url, sorted.map(toDomainResponse), 20));
+    return HttpResponse.json({
+      ...paginatedPage(request.url, sorted.map(toDomainResponse), 20),
+      dns_target: dnsTargetState,
+    });
   }),
 
   http.post("/api/domains", async ({ request }) => {
@@ -995,6 +1013,13 @@ export const handlers = [
       id: `dom-msw-${domainIdCounter}`,
       hostname: body.hostname,
       created_at: new Date().toISOString(),
+      domain_type: "custom",
+      status: "pending",
+      ssl_status: "pending",
+      verified_at: null,
+      last_error: null,
+      attached_page_name: null,
+      attached_page_count: 0,
     };
     domainsState.push(created);
     return HttpResponse.json(toDomainResponse(created), { status: 201 });

@@ -135,11 +135,11 @@ T12
 - Skill: NONE
 
 **Done when**:
-- [ ] `Domain` gains `domain_type`, `status` (`DomainStatus`), `ssl_status` (`DomainSSLStatus`), `verified_at`, `last_error`, `attached_page_name`, `attached_page_count`
-- [ ] `useDomains` types its query result as a bespoke `DomainsPageResponse` (`items`/`total`/`page`/`page_size`/`dns_target`) instead of `Page<Domain>`
-- [ ] MSW domain fixture/handler updated to return every new field (mirrors backend response exactly, per AGENTS.md §5)
-- [ ] `hooks.test.ts` updated/extended asserting the new fields round-trip
-- [ ] `npx tsc -b --noEmit` clean; `npx vitest run web/src/features/domains/hooks.test.ts` passes
+- [x] `Domain` gains `domain_type`, `status` (`DomainStatus`), `ssl_status` (`DomainSSLStatus`), `verified_at`, `last_error`, `attached_page_name`, `attached_page_count`
+- [x] `useDomains` types its query result as a bespoke `DomainsPageResponse` (`items`/`total`/`page`/`page_size`/`dns_target`) instead of `Page<Domain>`
+- [x] MSW domain fixture/handler updated to return every new field (mirrors backend response exactly, per AGENTS.md §5)
+- [x] `hooks.test.ts` updated/extended asserting the new fields round-trip
+- [x] `npx tsc -b --noEmit` clean; `npx vitest run web/src/features/domains/hooks.test.ts` passes
 
 **Tests**: unit
 **Gate**: quick

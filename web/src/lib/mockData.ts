@@ -188,8 +188,30 @@ export const services: Service[] = [
 // -- Domínios ---------------------------------------------------------------
 
 export const domains: Domain[] = [
-  { id: "dom-1", hostname: "status.acme.com", created_at: new Date(Date.now() - 1000 * 60 * 60 * 24 * 10).toISOString() },
-  { id: "dom-2", hostname: "status.beta.io", created_at: new Date(Date.now() - 1000 * 60 * 60 * 24 * 2).toISOString() },
+  {
+    id: "dom-1",
+    hostname: "status.acme.com",
+    created_at: new Date(Date.now() - 1000 * 60 * 60 * 24 * 10).toISOString(),
+    domain_type: "custom",
+    status: "verified",
+    ssl_status: "active",
+    verified_at: new Date(Date.now() - 1000 * 60 * 60 * 24 * 9).toISOString(),
+    last_error: null,
+    attached_page_name: "Status Acme",
+    attached_page_count: 1,
+  },
+  {
+    id: "dom-2",
+    hostname: "status.beta.io",
+    created_at: new Date(Date.now() - 1000 * 60 * 60 * 24 * 2).toISOString(),
+    domain_type: "custom",
+    status: "pending",
+    ssl_status: "pending",
+    verified_at: null,
+    last_error: null,
+    attached_page_name: null,
+    attached_page_count: 0,
+  },
 ];
 
 // -- Status Pages -------------------------------------------------------------

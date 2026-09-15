@@ -94,10 +94,30 @@ export interface ServiceDetail extends Service {
   hourly_buckets: HourlyBucket[];
 }
 
+// DomainType/DomainStatus/DomainSSLStatus mirror the backend's
+// domain-verification-state contract (internal/api/domains_handler.go's
+// domainResponse) - "custom" is the only domain_type value the backend
+// ever produces today (domains-status-pages-page's Assumptions: "Subdomínio
+// Vane" ships disabled/decorative, no backend support).
+export type DomainType = "custom";
+export type DomainStatus = "pending" | "verified" | "error";
+export type DomainSSLStatus = "pending" | "active" | "error";
+
 export interface Domain {
   id: string;
   hostname: string;
   created_at: string;
+  domain_type: DomainType;
+  status: DomainStatus;
+  ssl_status: DomainSSLStatus;
+  verified_at: string | null;
+  last_error: string | null;
+  // attached_page_name/attached_page_count are the read-side join over
+  // status_pages.domain_id (domains-status-pages-page DSP-02/03/04) - null/0
+  // when no status page is attached, the earliest-created attached page's
+  // name and the full count otherwise.
+  attached_page_name: string | null;
+  attached_page_count: number;
 }
 
 export type StatusPageState = "draft" | "pending_tls" | "published" | "tls_failed";
