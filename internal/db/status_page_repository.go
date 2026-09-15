@@ -200,6 +200,42 @@ func (r *StatusPageRepository) serviceIDsByStatusPage(ctx context.Context, pageI
 	return result, nil
 }
 
+// AttachedNamesByDomainIDs batch-loads, per domain ID in domainIDs, the
+// names of every status page whose domain_id matches it - ordered
+// created_at ASC so the caller (DomainsHandler.List) can treat the first
+// name in each slice as the "primary" attached page (design.md's "Aponta
+// para" column, spec.md DSP-03/DSP-04). A domain with zero attached pages
+// is simply absent from the returned map, matching serviceIDsByStatusPage's
+// convention. An empty domainIDs slice returns an empty map with no query
+// executed, so DomainsHandler.List can call this unconditionally even on
+// an empty page.
+func (r *StatusPageRepository) AttachedNamesByDomainIDs(ctx context.Context, domainIDs []string) (map[string][]string, error) {
+	result := make(map[string][]string, len(domainIDs))
+	if len(domainIDs) == 0 {
+		return result, nil
+	}
+
+	rows, err := r.pool.Query(ctx,
+		"SELECT domain_id, name FROM status_pages WHERE domain_id = ANY($1) ORDER BY domain_id, created_at ASC", domainIDs)
+	if err != nil {
+		return nil, fmt.Errorf("db: failed to list attached status page names: %w", err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var domainID, name string
+		if err := rows.Scan(&domainID, &name); err != nil {
+			return nil, fmt.Errorf("db: failed to scan attached status page name: %w", err)
+		}
+		result[domainID] = append(result[domainID], name)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("db: failed to list attached status page names: %w", err)
+	}
+
+	return result, nil
+}
+
 // AttachDomain sets domain_id/subdomain on the status page identified by
 // id, exactly once (SPD-06). It locks the target row with SELECT ... FOR
 // UPDATE inside an explicit transaction, rather than a conditional UPDATE
