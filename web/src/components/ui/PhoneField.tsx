@@ -7,13 +7,19 @@ import { useId, useState } from "react";
 // utils/countries) avoids pulling that in.
 import { globalCellphoneMask } from "@zeeptech/toolkit/dist/masks";
 import { countries } from "@zeeptech/toolkit/dist/utils/countries";
-import { Input } from "./Input";
+import { Input, inputVariantClasses, type InputVariant } from "./Input";
 
 export interface PhoneFieldProps {
   label: string;
   /** Recebe o telefone completo já formatado com DDI (ex.: "+55 (11) 98765-4321"), ou "" se o campo estiver vazio. */
   onChange: (value: string) => void;
   required?: boolean;
+  /** Mesma semântica de Input/Field - "filled" nos drawers já migrados
+   * (new-layout-migration), "default" (bordered) nas telas ainda não
+   * migradas (ex. BootstrapPage). Sem isso o DDI/telefone destoava
+   * visualmente do resto do formulário mesmo quando o form ao redor já
+   * usava filled. */
+  variant?: InputVariant;
 }
 
 const DEFAULT_COUNTRY_CODE = "BR";
@@ -24,7 +30,7 @@ const DEFAULT_COUNTRY_CODE = "BR";
 // qualquer instalação internacional. globalCellphoneMask/countries vêm do
 // @zeeptech/toolkit (AD-016) em vez de reimplementar 200 máscaras nacionais
 // aqui.
-export function PhoneField({ label, onChange, required }: PhoneFieldProps) {
+export function PhoneField({ label, onChange, required, variant = "default" }: PhoneFieldProps) {
   const inputId = useId();
   const [countryCode, setCountryCode] = useState(DEFAULT_COUNTRY_CODE);
   const [localValue, setLocalValue] = useState("");
@@ -51,7 +57,10 @@ export function PhoneField({ label, onChange, required }: PhoneFieldProps) {
             setLocalValue("");
             emit(e.target.value, "");
           }}
-          className="min-h-9 w-[104px] flex-none rounded-md border border-divider bg-surface px-2 text-sm text-text outline-none transition-colors focus:border-accent"
+          className={
+            "min-h-9 w-[104px] flex-none rounded-md border px-2 text-sm text-text outline-none transition-colors " +
+            inputVariantClasses[variant]
+          }
         >
           {countries.map((c) => (
             <option key={c.code} value={c.code}>
@@ -62,6 +71,7 @@ export function PhoneField({ label, onChange, required }: PhoneFieldProps) {
         <Input
           id={inputId}
           type="tel"
+          variant={variant}
           autoComplete="tel-national"
           value={globalCellphoneMask(countryCode, localValue)}
           placeholder={selected.mask.replace(/9/g, "0")}

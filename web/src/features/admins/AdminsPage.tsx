@@ -401,7 +401,7 @@ export function AdminsPage() {
             placeholder="nome@empresa.com"
             required
           />
-          <PhoneField label="Celular (opcional)" onChange={setPhone} />
+          <PhoneField label="Celular (opcional)" variant="filled" onChange={setPhone} />
           <div className="flex flex-col gap-1.5">
             <span className="text-sm font-medium text-text">Papel</span>
             <RoleBoxes value={newRole} onChange={setNewRole} />

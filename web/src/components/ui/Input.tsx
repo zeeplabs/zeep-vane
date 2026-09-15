@@ -6,7 +6,10 @@ export interface InputProps extends InputHTMLAttributes<HTMLInputElement> {
   variant?: InputVariant;
 }
 
-const variantClasses: Record<InputVariant, string> = {
+// Exported so other form controls that aren't a plain <input> (e.g.
+// PhoneField's country-code <select>) can match the same variant look
+// instead of hand-duplicating it out of sync.
+export const inputVariantClasses: Record<InputVariant, string> = {
   default: "border-divider bg-surface focus:border-accent",
   // Borderless tinted-bg field (handoff-new-layout's search-box style,
   // e.g. "Buscar serviço") - distinct from "default"'s visibly bordered
@@ -26,7 +29,7 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(function Input(
       className={
         "w-full min-h-9 rounded-md border text-text px-3 text-sm " +
         "outline-none transition-colors " +
-        variantClasses[variant] +
+        inputVariantClasses[variant] +
         " " +
         className
       }
