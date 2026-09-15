@@ -83,7 +83,7 @@ describe("DomainDetailDrawer", () => {
     await userEvent.click(await screen.findByText("error.example.com"));
 
     expect(await screen.findByText("DNS not resolved: no record found for this hostname")).toBeInTheDocument();
-    expect(screen.getByText("Configuração de DNS")).toBeInTheDocument();
+    expect(screen.getByText("Configuração DNS")).toBeInTheDocument();
     expect(screen.getAllByText("Erro").length).toBeGreaterThan(0);
   });
 

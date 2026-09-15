@@ -5,20 +5,11 @@ import { Pager } from "../../components/ui/Pager";
 import { EmptyState } from "../../layout/EmptyState";
 import type { Domain } from "../../types/api";
 import { useDomains } from "./hooks";
-import { sslStatusColor, sslStatusLabel } from "./domainStatusMeta";
+import { attachedPageColumn, domainTypeLabel, sslStatusColor, sslStatusLabel } from "./domainStatusMeta";
 import { DomainStatusTag } from "./DomainStatusTag";
 
 function formatTimestamp(iso: string | null): string {
   return iso ? new Date(iso).toLocaleString("pt-BR") : "—";
-}
-
-// attachedPageColumn renders spec.md DSP-02/03/04's "Aponta para" column:
-// "—" when nothing is attached, the (single) attached page's name, or that
-// name plus " +N" when more than one page is attached.
-function attachedPageColumn(domain: Pick<Domain, "attached_page_name" | "attached_page_count">): string {
-  if (!domain.attached_page_name || domain.attached_page_count === 0) return "—";
-  const extra = domain.attached_page_count - 1;
-  return extra > 0 ? `${domain.attached_page_name} +${extra}` : domain.attached_page_name;
 }
 
 export interface DomainsTableProps {
@@ -65,7 +56,7 @@ export function DomainsTable({ onSelect }: DomainsTableProps) {
           >
             <DomainStatusTag status={domain.status} />
             <div className="min-w-0 truncate font-mono text-[13px] text-text">{domain.hostname}</div>
-            <div className="text-[13px] font-medium text-text-muted">Domínio próprio</div>
+            <div className="text-[13px] font-medium text-text-muted">{domainTypeLabel[domain.domain_type]}</div>
             <div className="min-w-0 truncate text-[13px] font-medium text-text-muted">{attachedPageColumn(domain)}</div>
             <div className="text-[13px] font-semibold" style={{ color: sslStatusColor[domain.ssl_status] }}>
               {sslStatusLabel[domain.ssl_status]}
