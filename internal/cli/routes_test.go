@@ -635,8 +635,13 @@ func buildMultipartLogoBody(t *testing.T) ([]byte, string) {
 	return buf.Bytes(), writer.FormDataContentType()
 }
 
-// companySettingsRouteCases lists the 3 company settings routes mounted in
-// routes.go (SET-02), each restricted to owner only.
+// companySettingsRouteCases lists the company-settings-adjacent routes
+// mounted in routes.go (SET-02, settings-page CFGPG-09), all restricted to
+// owner only. DELETE /api/tenants/current is safe to include here: the
+// fixture tenant these tests build always has exactly one membership (the
+// caller's own), so even the owner-authorized run gets 409 (last active
+// tenant, CFGPG-11) rather than actually soft-deleting the fixture out
+// from under the other cases.
 func companySettingsRouteCases(t *testing.T) []routeCase {
 	logoBody, _ := buildMultipartLogoBody(t)
 	return []routeCase{
@@ -660,6 +665,12 @@ func companySettingsRouteCases(t *testing.T) []routeCase {
 			method: http.MethodPost,
 			path:   "/api/company-settings/logo",
 			body:   func() []byte { return append([]byte{}, logoBody...) },
+		},
+		{
+			name:   "DELETE /api/tenants/current",
+			method: http.MethodDelete,
+			path:   "/api/tenants/current",
+			body:   func() []byte { return nil },
 		},
 	}
 }

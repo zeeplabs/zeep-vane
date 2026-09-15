@@ -4,9 +4,23 @@ package db
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"reflect"
 	"testing"
 )
+
+// decodedJSON unmarshal-compares raw JSON bytes as maps rather than byte
+// strings - Postgres's jsonb column re-serializes (whitespace, key order),
+// so a passthrough round-trip is never byte-identical to the input.
+func decodedJSON(t *testing.T, raw []byte) map[string]any {
+	t.Helper()
+	var m map[string]any
+	if err := json.Unmarshal(raw, &m); err != nil {
+		t.Fatalf("json.Unmarshal(%s) returned unexpected error: %v", raw, err)
+	}
+	return m
+}
 
 func newTenantRepoTestPool(t *testing.T) (*TenantRepository, *Pool) {
 	t.Helper()
@@ -204,5 +218,112 @@ func TestTenantRepository_Update_CNPJWrongDigitCount_ErrInvalidTaxIDNoPersist(t 
 	_, err = repo.Update(ctx, tenant.ID, TenantUpdate{TaxID: &shortCNPJ, TaxIDType: &cnpjType})
 	if !errors.Is(err, ErrInvalidTaxID) {
 		t.Fatalf("Update() error = %v, want ErrInvalidTaxID", err)
+	}
+}
+
+// TestTenantRepository_Update_WebsiteTimezoneBillingAddress_Persists
+// asserts settings-page CFGPG-01/06/07: the 3 new optional fields persist
+// and round-trip via Get, without disturbing pre-existing fiscal fields.
+func TestTenantRepository_Update_WebsiteTimezoneBillingAddress_Persists(t *testing.T) {
+	repo, pool := newTenantRepoTestPool(t)
+	tenant := createTestTenant(t, repo, pool, "update-website-timezone")
+
+	tx, err := pool.BeginTenantTx(context.Background(), "", tenant.ID)
+	if err != nil {
+		t.Fatalf("BeginTenantTx() returned unexpected error: %v", err)
+	}
+	defer func() { _ = tx.Rollback(context.Background()) }()
+	ctx := WithTenantTx(context.Background(), tx)
+
+	website := "https://acme.health"
+	timezone := "UTC (GMT+0)"
+	billingAddress := []byte(`{"zip":"01310-100","city":"São Paulo"}`)
+	updated, err := repo.Update(ctx, tenant.ID, TenantUpdate{
+		Website: &website, Timezone: &timezone, BillingAddress: &billingAddress,
+	})
+	if err != nil {
+		t.Fatalf("Update() returned unexpected error: %v", err)
+	}
+	if updated.Website == nil || *updated.Website != website {
+		t.Errorf("Website = %v, want %q", updated.Website, website)
+	}
+	if updated.Timezone == nil || *updated.Timezone != timezone {
+		t.Errorf("Timezone = %v, want %q", updated.Timezone, timezone)
+	}
+	if !reflect.DeepEqual(decodedJSON(t, updated.BillingAddress), decodedJSON(t, billingAddress)) {
+		t.Errorf("BillingAddress = %s, want %s", updated.BillingAddress, billingAddress)
+	}
+}
+
+// TestTenantRepository_Update_NilBillingAddress_LeavesExistingUnchanged
+// asserts TenantUpdate's "nil = unchanged" semantics extend to
+// BillingAddress: a subsequent Update that omits it must not clobber a
+// previously persisted value.
+func TestTenantRepository_Update_NilBillingAddress_LeavesExistingUnchanged(t *testing.T) {
+	repo, pool := newTenantRepoTestPool(t)
+	tenant := createTestTenant(t, repo, pool, "update-nil-billing-address")
+
+	tx, err := pool.BeginTenantTx(context.Background(), "", tenant.ID)
+	if err != nil {
+		t.Fatalf("BeginTenantTx() returned unexpected error: %v", err)
+	}
+	defer func() { _ = tx.Rollback(context.Background()) }()
+	ctx := WithTenantTx(context.Background(), tx)
+
+	billingAddress := []byte(`{"zip":"01310-100"}`)
+	if _, err := repo.Update(ctx, tenant.ID, TenantUpdate{BillingAddress: &billingAddress}); err != nil {
+		t.Fatalf("first Update() returned unexpected error: %v", err)
+	}
+
+	newName := "Acme Renamed"
+	updated, err := repo.Update(ctx, tenant.ID, TenantUpdate{Name: &newName})
+	if err != nil {
+		t.Fatalf("second Update() returned unexpected error: %v", err)
+	}
+	if !reflect.DeepEqual(decodedJSON(t, updated.BillingAddress), decodedJSON(t, billingAddress)) {
+		t.Errorf("BillingAddress after unrelated update = %s, want unchanged %s", updated.BillingAddress, billingAddress)
+	}
+}
+
+// TestTenantRepository_SoftDelete_SetsStatusAndDeletedAt asserts
+// settings-page CFGPG-09: SoftDelete marks the tenant deleted with a
+// timestamp, without removing the row.
+func TestTenantRepository_SoftDelete_SetsStatusAndDeletedAt(t *testing.T) {
+	repo, pool := newTenantRepoTestPool(t)
+	tenant := createTestTenant(t, repo, pool, "soft-delete-sets-status")
+
+	if err := repo.SoftDelete(context.Background(), tenant.ID); err != nil {
+		t.Fatalf("SoftDelete() returned unexpected error: %v", err)
+	}
+
+	var status string
+	var deletedAt *string
+	if err := pool.QueryRow(context.Background(),
+		"SELECT status, deleted_at::text FROM tenants WHERE id = $1", tenant.ID,
+	).Scan(&status, &deletedAt); err != nil {
+		t.Fatalf("querying tenant returned unexpected error: %v", err)
+	}
+	if status != "deleted" {
+		t.Errorf("status = %q, want %q", status, "deleted")
+	}
+	if deletedAt == nil {
+		t.Error("deleted_at = nil, want a timestamp")
+	}
+}
+
+// TestTenantRepository_SoftDelete_AlreadyDeleted_ErrNotFound asserts
+// SoftDelete is not silently idempotent: calling it twice on the same
+// tenant returns ErrNotFound the second time (edge case in spec.md).
+func TestTenantRepository_SoftDelete_AlreadyDeleted_ErrNotFound(t *testing.T) {
+	repo, pool := newTenantRepoTestPool(t)
+	tenant := createTestTenant(t, repo, pool, "soft-delete-twice")
+
+	if err := repo.SoftDelete(context.Background(), tenant.ID); err != nil {
+		t.Fatalf("first SoftDelete() returned unexpected error: %v", err)
+	}
+
+	err := repo.SoftDelete(context.Background(), tenant.ID)
+	if !errors.Is(err, ErrNotFound) {
+		t.Errorf("second SoftDelete() error = %v, want ErrNotFound", err)
 	}
 }

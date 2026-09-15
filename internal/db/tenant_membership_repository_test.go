@@ -485,3 +485,100 @@ func TestTenantMembershipRepository_ListMembersWithEmail_ExcludesRemoved(t *test
 		t.Errorf("owner missing after the viewer was removed (members=%v)", members)
 	}
 }
+
+// TestTenantMembershipRepository_GetRole_ReturnsRole is a baseline for
+// GetRole: an existing membership resolves to its role.
+func TestTenantMembershipRepository_GetRole_ReturnsRole(t *testing.T) {
+	memberships, tenants, admins, pool := newTenantMembershipRepoTestPool(t)
+	admin := createMembershipTestAdmin(t, admins, pool, fmt.Sprintf("getrole-%d@example.com", time.Now().UnixNano()))
+	tenant := createMembershipTestTenant(t, tenants, pool, fmt.Sprintf("getrole-%d", time.Now().UnixNano()))
+
+	tx, err := pool.BeginTenantTx(context.Background(), "", tenant.ID)
+	if err != nil {
+		t.Fatalf("BeginTenantTx() returned unexpected error: %v", err)
+	}
+	ctx := WithTenantTx(context.Background(), tx)
+	if err := memberships.Create(ctx, &TenantMembership{UserID: admin.ID, TenantID: tenant.ID, Role: RoleViewer}); err != nil {
+		t.Fatalf("Create() returned unexpected error: %v", err)
+	}
+	if err := tx.Commit(context.Background()); err != nil {
+		t.Fatalf("commit returned unexpected error: %v", err)
+	}
+
+	role, err := memberships.GetRole(context.Background(), admin.ID, tenant.ID)
+	if err != nil {
+		t.Fatalf("GetRole() returned unexpected error: %v", err)
+	}
+	if role != RoleViewer {
+		t.Errorf("GetRole() = %q, want %q", role, RoleViewer)
+	}
+}
+
+// TestTenantMembershipRepository_GetRole_SoftDeletedTenant_ErrNotFound
+// asserts settings-page CFGPG-09/CFGPG-13's fail-closed guarantee: once a
+// tenant is soft-deleted, GetRole stops resolving a role for it even
+// though the membership row itself is untouched - this is what makes
+// every tenant-scoped request against a deleted tenant reject, with no
+// separate session-revocation mechanism.
+func TestTenantMembershipRepository_GetRole_SoftDeletedTenant_ErrNotFound(t *testing.T) {
+	memberships, tenants, admins, pool := newTenantMembershipRepoTestPool(t)
+	admin := createMembershipTestAdmin(t, admins, pool, fmt.Sprintf("getrole-deleted-%d@example.com", time.Now().UnixNano()))
+	tenant := createMembershipTestTenant(t, tenants, pool, fmt.Sprintf("getrole-deleted-%d", time.Now().UnixNano()))
+
+	tx, err := pool.BeginTenantTx(context.Background(), "", tenant.ID)
+	if err != nil {
+		t.Fatalf("BeginTenantTx() returned unexpected error: %v", err)
+	}
+	ctx := WithTenantTx(context.Background(), tx)
+	if err := memberships.Create(ctx, &TenantMembership{UserID: admin.ID, TenantID: tenant.ID, Role: RoleOwner}); err != nil {
+		t.Fatalf("Create() returned unexpected error: %v", err)
+	}
+	if err := tx.Commit(context.Background()); err != nil {
+		t.Fatalf("commit returned unexpected error: %v", err)
+	}
+
+	if err := tenants.SoftDelete(context.Background(), tenant.ID); err != nil {
+		t.Fatalf("SoftDelete() returned unexpected error: %v", err)
+	}
+
+	_, err = memberships.GetRole(context.Background(), admin.ID, tenant.ID)
+	if !errors.Is(err, ErrNotFound) {
+		t.Errorf("GetRole() after soft-delete error = %v, want ErrNotFound", err)
+	}
+}
+
+// TestTenantMembershipRepository_ListForUser_ExcludesSoftDeletedTenant
+// asserts CFGPG-13: ListForUser (login/tenant-selector) never offers a
+// soft-deleted tenant again, while an untouched second tenant still shows.
+func TestTenantMembershipRepository_ListForUser_ExcludesSoftDeletedTenant(t *testing.T) {
+	memberships, tenants, admins, pool := newTenantMembershipRepoTestPool(t)
+	admin := createMembershipTestAdmin(t, admins, pool, fmt.Sprintf("listuser-deleted-%d@example.com", time.Now().UnixNano()))
+	deletedTenant := createMembershipTestTenant(t, tenants, pool, fmt.Sprintf("listuser-deleted-a-%d", time.Now().UnixNano()))
+	keptTenant := createMembershipTestTenant(t, tenants, pool, fmt.Sprintf("listuser-deleted-b-%d", time.Now().UnixNano()))
+
+	for _, tenant := range []*Tenant{deletedTenant, keptTenant} {
+		tx, err := pool.BeginTenantTx(context.Background(), "", tenant.ID)
+		if err != nil {
+			t.Fatalf("BeginTenantTx() returned unexpected error: %v", err)
+		}
+		ctx := WithTenantTx(context.Background(), tx)
+		if err := memberships.Create(ctx, &TenantMembership{UserID: admin.ID, TenantID: tenant.ID, Role: RoleOwner}); err != nil {
+			t.Fatalf("Create() returned unexpected error: %v", err)
+		}
+		if err := tx.Commit(context.Background()); err != nil {
+			t.Fatalf("commit returned unexpected error: %v", err)
+		}
+	}
+
+	if err := tenants.SoftDelete(context.Background(), deletedTenant.ID); err != nil {
+		t.Fatalf("SoftDelete() returned unexpected error: %v", err)
+	}
+
+	list, err := memberships.ListForUser(context.Background(), admin.ID)
+	if err != nil {
+		t.Fatalf("ListForUser() returned unexpected error: %v", err)
+	}
+	if len(list) != 1 || list[0].TenantID != keptTenant.ID {
+		t.Fatalf("ListForUser() = %+v, want exactly the kept tenant %q", list, keptTenant.ID)
+	}
+}
