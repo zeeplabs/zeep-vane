@@ -313,6 +313,20 @@ func newPollerFromStoredIntegration(ctx context.Context, pool *db.Pool, cfg conf
 	return p, true, nil
 }
 
+// newManualSchedulerFromPool builds a poller.ManualScheduler wired to pool,
+// mirroring newPollerFromStoredIntegration's own tenant-wiring
+// (db.NewSystemTenantLister/poolTenantTx - manual-polling-monitoring
+// design.md). Unlike the Datadog poller, the manual scheduler reads no
+// stored integration - it has nothing to do with Datadog and can always be
+// built and started, which is why PollerManager.startManualScheduler calls
+// this unconditionally rather than a "started bool, err error" builder like
+// newPollerFromStoredIntegration.
+func newManualSchedulerFromPool(pool *db.Pool, logger *zap.Logger) *poller.ManualScheduler {
+	services := db.NewServiceRepository(pool)
+	intervals := db.NewStatusIntervalRepository(pool)
+	return poller.NewManualScheduler(services, services, intervals, db.NewSystemTenantLister(pool), poolTenantTx(pool), logger)
+}
+
 // poolTenantTx adapts Pool.BeginTenantTx - the same helper the HTTP
 // tenant-context middleware uses - to the poller's TenantTxFunc. The
 // poller acts as no particular user, so app.user_id is left unset ("");

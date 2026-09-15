@@ -93,6 +93,19 @@ type PollerManager struct {
 	cancel    context.CancelFunc
 	done      chan struct{}
 
+	// manualCancel/manualDone track the running poller.ManualScheduler - a
+	// second, independent start/stop pair alongside cancel/done for the
+	// Datadog poller (manual-polling-monitoring design.md Approach
+	// Exploration). Deliberately not folded into cancel/done or into
+	// Restart's own lifecycle: Restart is also called directly by
+	// IntegrationsHandler.ConnectDatadog on every Datadog credential
+	// connect/rotate, and the manual scheduler has no credentials to
+	// rotate - it must not be torn down/rebuilt (losing its in-memory
+	// per-service failure-streak state) every time an admin merely
+	// reconnects Datadog.
+	manualCancel context.CancelFunc
+	manualDone   chan struct{}
+
 	// leaderRetryInterval/leaderHeartbeatInterval default to
 	// defaultLeaderRetryInterval/defaultLeaderHeartbeatInterval in
 	// NewPollerManager; tests override them directly (same package) to
@@ -172,6 +185,14 @@ func (m *PollerManager) RunLeaderLoop(ctx context.Context) {
 
 		m.logger.Info("poller leader election: acquired leadership")
 		m.leading.Store(true)
+
+		// Started unconditionally, in parallel to (not inside) Restart:
+		// the manual scheduler has nothing to do with whether a Datadog
+		// integration is connected (manual-polling-monitoring design.md -
+		// polling-manual services must work in an install with zero
+		// Datadog integration configured).
+		m.startManualScheduler()
+
 		if started, err := m.Restart(ctx); err != nil {
 			m.logger.Error("poller leader election: failed to start poller after acquiring leadership", zap.Error(err))
 		} else if !started {
@@ -192,6 +213,7 @@ func (m *PollerManager) RunLeaderLoop(ctx context.Context) {
 		m.mu.Lock()
 		m.leading.Store(false)
 		m.stopLocked()
+		m.stopManualLocked()
 		m.mu.Unlock()
 		_ = handle.Release(context.Background())
 
@@ -301,6 +323,7 @@ func (m *PollerManager) Stop() {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.stopLocked()
+	m.stopManualLocked()
 }
 
 // stopLocked cancels and waits for the currently running poller, if any.
@@ -313,4 +336,46 @@ func (m *PollerManager) stopLocked() {
 	<-m.done
 	m.cancel = nil
 	m.done = nil
+}
+
+// startManualScheduler builds and starts a poller.ManualScheduler, tracking
+// it in manualCancel/manualDone. It is idempotent - a call while one is
+// already tracked as running is a no-op, since RunLeaderLoop only calls this
+// once per leadership term (right after acquiring the lock), and this
+// scheduler is never restarted by Restart (see manualCancel's own doc
+// comment). Uses m.parentCtx (not the ctx passed to RunLeaderLoop) as the
+// scheduler's parent context, exactly like Restart does for the Datadog
+// poller - the server's own lifetime context, not whatever the caller's ctx
+// happens to be.
+func (m *PollerManager) startManualScheduler() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if m.manualCancel != nil {
+		return
+	}
+
+	scheduler := newManualSchedulerFromPool(m.pool, m.logger)
+
+	runCtx, cancel := context.WithCancel(m.parentCtx)
+	done := make(chan struct{})
+	m.manualCancel = cancel
+	m.manualDone = done
+
+	go func() {
+		defer close(done)
+		scheduler.Run(runCtx)
+	}()
+}
+
+// stopManualLocked cancels and waits for the currently running manual
+// scheduler, if any. Callers must hold m.mu.
+func (m *PollerManager) stopManualLocked() {
+	if m.manualCancel == nil {
+		return
+	}
+	m.manualCancel()
+	<-m.manualDone
+	m.manualCancel = nil
+	m.manualDone = nil
 }

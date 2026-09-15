@@ -129,7 +129,7 @@
 | MP-10 | P2 | Execute (T6) | Done |
 | MP-11 | P2 | Execute (T6) | Done |
 | MP-12 | P2 | Execute (T6) | Done |
-| MP-13 | P2 | Design | Pending (PollerManager leader-only wiring is T7) |
+| MP-13 | P2 | Execute (T7) | Done |
 | MP-14 | P2 | Execute (T6) | Done |
 | MP-15 | P2 | Execute (T4/T6) | Done |
 | MP-16 | P3 | Design | Pending |
@@ -140,7 +140,7 @@
 
 **ID format:** `MP-[NUMBER]`, sequential in file order (P1 ACs 1-5 → MP-01..05, P2 ACs 1-10 → MP-06..15, P3 ACs 1-5 → MP-16..20).
 
-**Coverage:** 20 total, 14 fully done (P1 + T6's slice of P2), 1 pending within P2 (MP-13 - leader-election wiring is T7), 5 pending in P3 (T8-T9 not yet executed).
+**Coverage:** 20 total, 15 fully done (P1 + P2), 5 pending in P3 (T8-T9 not yet executed).
 
 ---
 

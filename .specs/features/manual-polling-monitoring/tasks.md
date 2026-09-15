@@ -241,10 +241,10 @@ T7 → T8 → T9
 - Skill: NONE
 
 **Done when**:
-- [ ] Manual scheduler starts on leadership acquisition even when no Datadog integration is connected (the existing "poller not started" warning path for Datadog is untouched and independent)
-- [ ] Manual scheduler stops on leadership loss and on `Stop()`, same as the Datadog poller
-- [ ] Calling `Restart` (e.g. via a Datadog key rotation) does not restart or otherwise disturb an already-running manual scheduler
-- [ ] Gate check passes: `make test-integration`
+- [x] Manual scheduler starts on leadership acquisition even when no Datadog integration is connected (the existing "poller not started" warning path for Datadog is untouched and independent)
+- [x] Manual scheduler stops on leadership loss and on `Stop()`, same as the Datadog poller
+- [x] Calling `Restart` (e.g. via a Datadog key rotation) does not restart or otherwise disturb an already-running manual scheduler
+- [x] Gate check passes: `make test-integration`
 
 **Tests**: integration
 **Gate**: Full
