@@ -17,7 +17,7 @@ export const buttonBaseClasses =
 export const buttonVariantClasses: Record<ButtonVariant, string> = {
   primary:
     "border border-accent text-accent bg-transparent px-4 h-9 " +
-    "hover:bg-accent-900 active:bg-accent-800",
+    "hover:bg-accent-100 active:bg-accent-200",
   // Solid-filled CTA (handoff-new-layout's primary action button style,
   // e.g. "Adicionar serviço") - distinct from "primary", which is this
   // app's outlined default used everywhere pre-redesign. Reused across
