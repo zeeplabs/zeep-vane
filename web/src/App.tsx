@@ -2,6 +2,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { Routes, Route, Outlet, Navigate } from "react-router-dom";
 import { Toaster } from "sonner";
 import { AuthProvider, useAuth } from "./auth/AuthProvider";
+import { resolveAssetUrl } from "./lib/apiClient";
 import { SessionExpiredModal } from "./auth/SessionExpiredModal";
 import { RequireAuth, RequireRole } from "./routes/RequireRole";
 import { AppShell } from "./layout/AppShell";
@@ -70,7 +71,13 @@ function RootRoute() {
 
   useEffect(() => {
     let cancelled = false;
-    fetch("/api/public-status")
+    // Must go through resolveAssetUrl's baseUrl, not a bare relative fetch:
+    // in dev the frontend (:5173) and backend (:8080) are different
+    // origins (VITE_API_BASE_URL), so an unprefixed fetch hits Vite's own
+    // dev server instead of the backend and gets back its SPA fallback
+    // (200), misclassifying every admin session as a public status page
+    // visitor.
+    fetch(resolveAssetUrl("/api/public-status")!)
       .then((res) => {
         if (!cancelled) setIsPublicStatusPage(res.ok);
       })
