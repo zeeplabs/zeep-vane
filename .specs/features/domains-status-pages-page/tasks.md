@@ -181,9 +181,9 @@ T12
 - Skill: NONE
 
 **Done when**:
-- [ ] `domainStatusLabel`/`domainStatusVariant`/`domainStatusDotColor` (verified/pending/error) and `sslStatusLabel`/`sslStatusColor` (active/pending/error) exported
-- [ ] Unit test asserting all 3 domain-status keys and all 3 SSL-status keys are present (prevents a future 4th status silently falling through)
-- [ ] `npx vitest run web/src/features/domains/domainStatusMeta.test.ts` passes
+- [x] `domainStatusLabel`/`domainStatusVariant`/`domainStatusDotColor` (verified/pending/error) and `sslStatusLabel`/`sslStatusColor` (active/pending/error) exported
+- [x] Unit test asserting all 3 domain-status keys and all 3 SSL-status keys are present (prevents a future 4th status silently falling through)
+- [x] `npx vitest run web/src/features/domains/domainStatusMeta.test.ts` passes
 
 **Tests**: unit
 **Gate**: quick
