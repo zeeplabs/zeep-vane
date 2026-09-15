@@ -57,17 +57,17 @@ A tela de integrações atual (`IntegrationsPage.tsx`) empilha Datadog, provedor
 
 ---
 
-### P2: Ações de conectar/editar abrem o fluxo já existente
+### P2: Ações de conectar/editar abrem via drawer padrão
 
-**User Story**: Como owner/operator, quero clicar em "Conectar"/"Editar conexão" em qualquer card real e usar o formulário já existente daquela integração, sem duplicar lógica de formulário.
+**User Story**: Como owner/operator, quero clicar em "Conectar"/"Editar conexão" em qualquer card e preencher a conexão num drawer lateral, igual ao padrão já usado em "Anexar domínio"/"Criar status page", sem duplicar a lógica de conectar/validar/persistir que já existe.
 
-**Why P2**: A tela nova é composição visual; a lógica de conectar/validar/persistir já existe e não deve ser reescrita.
+**Why P2**: A tela nova é composição visual; a lógica de conectar/validar/persistir já existe (hooks) e não deve ser reescrita — só a superfície de UI muda, de formulário inline pra drawer, por decisão do usuário durante o Execute (consistência com toda tela já migrada).
 
 **Acceptance Criteria**:
 
-1. WHEN um owner/operator clica em "Conectar"/"Editar conexão" no card Datadog THEN o sistema SHALL abrir o formulário de API key/App key já existente (`useConnectDatadog`), sem navegação para outra rota.
-2. WHEN um owner/operator clica em "Conectar"/"Editar conexão" no card Resend ou SendGrid THEN o sistema SHALL abrir o formulário de conexão já existente em `EmailProvidersPage`/`email-providers` hooks para aquele provider específico.
-3. WHEN um owner/operator clica em "Editar conexão" no card LLM Provider (plano Pro, conectado) THEN o sistema SHALL abrir o formulário já existente em `AISettings`.
+1. WHEN um owner/operator clica em "Conectar"/"Editar conexão" no card Datadog THEN o sistema SHALL abrir um `Drawer` (mesmo chrome padrão: X de fechar, padding 24px, footer com border-top) com o formulário de API key/App key, reusando `useConnectDatadog` — sem navegação para outra rota.
+2. WHEN um owner/operator clica em "Conectar"/"Editar conexão" no card Resend ou SendGrid THEN o sistema SHALL abrir o mesmo padrão de `Drawer` com o formulário de conexão daquele provider específico, reusando os hooks já existentes em `email-providers/hooks`.
+3. WHEN um owner/operator clica em "Conectar"/"Editar conexão" no card LLM Provider THEN o sistema SHALL abrir o mesmo padrão de `Drawer` com o formulário de API key/modelo, reusando `useConnectLLMProvider` de `settings/hooks`.
 4. IF o usuário autenticado é `viewer` THEN nenhum botão de ação (Conectar/Editar conexão) SHALL aparecer nos cards — apenas os badges de status, mesmo padrão de RBAC já usado em `IntegrationsPage.tsx` (`hasRole(["owner","operator"])`).
 
 **Independent Test**: Logar como `viewer`, confirmar que nenhum card mostra botão de ação; logar como `owner`, clicar em "Editar conexão" no Datadog e confirmar que o formulário existente abre.
@@ -102,21 +102,21 @@ A tela de integrações atual (`IntegrationsPage.tsx`) empilha Datadog, provedor
 
 | Requirement ID | Story | Phase | Status |
 | --- | --- | --- | --- |
-| INTG-01 | P1: Ver integrações por categoria | Execute | Pending |
-| INTG-02 | P1: Ver integrações por categoria | Execute | Pending |
-| INTG-03 | P1: Ver integrações por categoria | Execute | Pending |
-| INTG-04 | P1: Ver integrações por categoria | Execute | Pending |
-| INTG-05 | P1: Ver integrações por categoria | Execute | Pending |
-| INTG-06 | P1: Ver integrações por categoria | Execute | Pending |
-| INTG-07 | P1: Ver integrações por categoria (New Relic) | Execute | Pending |
-| INTG-08 | P2: Ações abrem fluxo existente | Execute | Pending |
-| INTG-09 | P2: Ações abrem fluxo existente | Execute | Pending |
-| INTG-10 | P2: Ações abrem fluxo existente | Execute | Pending |
-| INTG-11 | P2: RBAC viewer sem ações | Execute | Pending |
-| INTG-12 | P3: Sem sombra nos cards | Execute | Pending |
-| INTG-13 | P3: Badge dot+pill | Execute | Pending |
+| INTG-01 | P1: Ver integrações por categoria | Execute | Verified |
+| INTG-02 | P1: Ver integrações por categoria | Execute | Verified |
+| INTG-03 | P1: Ver integrações por categoria | Execute | Verified |
+| INTG-04 | P1: Ver integrações por categoria | Execute | Verified |
+| INTG-05 | P1: Ver integrações por categoria | Execute | Verified |
+| INTG-06 | P1: Ver integrações por categoria | Execute | Verified |
+| INTG-07 | P1: Ver integrações por categoria (New Relic) | Execute | Verified |
+| INTG-08 | P2: Ações abrem via drawer padrão | Execute | Verified |
+| INTG-09 | P2: Ações abrem via drawer padrão | Execute | Verified |
+| INTG-10 | P2: Ações abrem via drawer padrão | Execute | Verified |
+| INTG-11 | P2: RBAC viewer sem ações | Execute | Verified |
+| INTG-12 | P3: Sem sombra nos cards | Execute | Verified |
+| INTG-13 | P3: Badge dot+pill | Execute | Verified |
 
-**Coverage:** 13 total, 13 mapped to tasks (Execute inline — Medium scope, sem `tasks.md` formal), 0 unmapped.
+**Coverage:** 13 total, 13 verified (Execute inline — Medium scope, sem `tasks.md` formal), 0 unmapped.
 
 ---
 
