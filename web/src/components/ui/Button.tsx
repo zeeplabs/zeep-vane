@@ -25,9 +25,9 @@ export const buttonVariantClasses: Record<ButtonVariant, string> = {
   solid: "border border-accent bg-accent text-white px-4 h-9 hover:bg-accent-hover active:bg-accent-hover",
   secondary:
     "border border-divider text-text bg-transparent px-4 h-9 " +
-    "hover:bg-neutral-900 active:bg-neutral-800",
+    "hover:bg-card-header-bg active:bg-divider",
   ghost: "border-0 text-accent bg-transparent px-2 h-9 hover:text-accent-2 active:text-accent-2",
-  icon: "border border-divider text-text bg-transparent w-9 h-9 p-0 hover:bg-neutral-900 active:bg-neutral-800",
+  icon: "border border-divider text-text bg-transparent w-9 h-9 p-0 hover:bg-card-header-bg active:bg-divider",
 };
 
 export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button(
