@@ -101,6 +101,13 @@
   --color-sidebar-hover-bg: rgba(255, 255, 255, 0.06);
   --color-card-header-bg: #241e3d;
   --color-topbar-icon: #b4aec2;
+
+  /* accent-100 is used as an "active/selected" tint (ModeCard, ChipButton,
+     selected list rows) - the light-theme solid #f5f4ff reads as a jarring
+     white block against the dark surface, so darken it to a translucent
+     purple wash instead. Same technique Sidebar's active-nav bg already
+     uses (rgba(90,70,199,0.08)) - text-accent keeps working on top of it. */
+  --color-accent-100: rgba(90, 70, 199, 0.16);
 }
 
 body {

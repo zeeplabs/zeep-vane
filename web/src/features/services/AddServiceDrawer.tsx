@@ -335,7 +335,7 @@ function ModeCard({ active, disabled, icon, title, description, onClick }: ModeC
           ? "cursor-not-allowed border-divider bg-surface text-neutral-400 opacity-60"
           : "cursor-pointer " +
             (active
-              ? "border-accent bg-accent-100 text-text"
+              ? "border-accent bg-accent-100 text-accent"
               : "border-divider bg-surface text-neutral-400 hover:text-text"))
       }
     >
