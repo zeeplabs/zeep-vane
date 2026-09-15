@@ -70,7 +70,7 @@ export function StatusPageDetailDrawer({ page, onClose }: StatusPageDetailDrawer
       {page ? (
         <div className="flex flex-col gap-4">
           <div>
-            <div className="text-xs text-neutral-400">Serviços</div>
+            <div className="text-xs text-text-muted">Serviços</div>
             {serviceNames.length === 0 ? (
               <div className="text-sm text-text">—</div>
             ) : (
@@ -84,7 +84,7 @@ export function StatusPageDetailDrawer({ page, onClose }: StatusPageDetailDrawer
             )}
           </div>
           <div>
-            <div className="text-xs text-neutral-400">Domínio</div>
+            <div className="text-xs text-text-muted">Domínio</div>
             <div className="text-sm text-text">{domain?.hostname ?? "—"}</div>
           </div>
         </div>

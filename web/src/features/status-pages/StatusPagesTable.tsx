@@ -75,9 +75,9 @@ export function StatusPagesTable({ onSelect }: StatusPagesTableProps) {
           >
             <Tag variant="success">Público</Tag>
             <div className="min-w-0 truncate text-[13px] text-text">{p.name}</div>
-            <div className="min-w-0 truncate font-mono text-[13px] text-neutral-300">{publicUrl(p, hostnameFor(p))}</div>
-            <div className="text-[13px] text-neutral-300">{p.service_ids.length} serviços</div>
-            <div className="text-xs text-neutral-400">{formatTimestamp(p.created_at)}</div>
+            <div className="min-w-0 truncate font-mono text-[13px] font-medium text-text-muted">{publicUrl(p, hostnameFor(p))}</div>
+            <div className="text-[13px] font-medium text-text-muted">{p.service_ids.length} serviços</div>
+            <div className="text-xs text-text-muted">{formatTimestamp(p.created_at)}</div>
             <MdChevronRight size={16} className="text-neutral-500" aria-hidden="true" />
           </div>
         ))}

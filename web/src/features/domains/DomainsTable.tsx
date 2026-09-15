@@ -5,7 +5,7 @@ import { Pager } from "../../components/ui/Pager";
 import { EmptyState } from "../../layout/EmptyState";
 import type { Domain } from "../../types/api";
 import { useDomains } from "./hooks";
-import { sslStatusLabel } from "./domainStatusMeta";
+import { sslStatusColor, sslStatusLabel } from "./domainStatusMeta";
 import { DomainStatusTag } from "./DomainStatusTag";
 
 function formatTimestamp(iso: string | null): string {
@@ -65,10 +65,12 @@ export function DomainsTable({ onSelect }: DomainsTableProps) {
           >
             <DomainStatusTag status={domain.status} />
             <div className="min-w-0 truncate font-mono text-[13px] text-text">{domain.hostname}</div>
-            <div className="text-[13px] text-neutral-300">Domínio próprio</div>
-            <div className="min-w-0 truncate text-[13px] text-neutral-300">{attachedPageColumn(domain)}</div>
-            <div className="text-[13px] text-neutral-300">{sslStatusLabel[domain.ssl_status]}</div>
-            <div className="text-xs text-neutral-400">{formatTimestamp(domain.verified_at)}</div>
+            <div className="text-[13px] font-medium text-text-muted">Domínio próprio</div>
+            <div className="min-w-0 truncate text-[13px] font-medium text-text-muted">{attachedPageColumn(domain)}</div>
+            <div className="text-[13px] font-semibold" style={{ color: sslStatusColor[domain.ssl_status] }}>
+              {sslStatusLabel[domain.ssl_status]}
+            </div>
+            <div className="text-xs text-text-muted">{formatTimestamp(domain.verified_at)}</div>
             <MdChevronRight size={16} className="text-neutral-500" aria-hidden="true" />
           </div>
         ))}

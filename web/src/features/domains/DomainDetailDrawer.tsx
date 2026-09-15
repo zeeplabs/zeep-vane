@@ -5,7 +5,7 @@ import { ApiError } from "../../lib/apiClient";
 import { useDNSTarget } from "../status-pages/hooks";
 import type { Domain } from "../../types/api";
 import { useDeleteDomain, useRecheckDomain } from "./hooks";
-import { sslStatusLabel } from "./domainStatusMeta";
+import { sslStatusColor, sslStatusLabel } from "./domainStatusMeta";
 import { DomainStatusTag } from "./DomainStatusTag";
 
 function formatTimestamp(iso: string | null): string {
@@ -88,7 +88,7 @@ export function DomainDetailDrawer({ domain, onClose }: DomainDetailDrawerProps)
         <div className="flex flex-col gap-4">
           <div className="flex items-center gap-2">
             <DomainStatusTag status={current.status} />
-            <span className="text-sm text-neutral-400">Domínio próprio · {current.hostname}</span>
+            <span className="text-sm text-text-muted">Domínio próprio · {current.hostname}</span>
           </div>
 
           {current.last_error ? (
@@ -99,11 +99,13 @@ export function DomainDetailDrawer({ domain, onClose }: DomainDetailDrawerProps)
 
           <div className="grid grid-cols-2 gap-3 text-sm">
             <div>
-              <div className="text-xs text-neutral-400">SSL</div>
-              <div className="text-text">{sslStatusLabel[current.ssl_status]}</div>
+              <div className="text-xs text-text-muted">SSL</div>
+              <div className="font-semibold" style={{ color: sslStatusColor[current.ssl_status] }}>
+                {sslStatusLabel[current.ssl_status]}
+              </div>
             </div>
             <div>
-              <div className="text-xs text-neutral-400">Verificado</div>
+              <div className="text-xs text-text-muted">Verificado</div>
               <div className="text-text">{formatTimestamp(current.verified_at)}</div>
             </div>
           </div>
@@ -112,11 +114,11 @@ export function DomainDetailDrawer({ domain, onClose }: DomainDetailDrawerProps)
             <div className="flex flex-col gap-1 rounded-md border border-divider p-3">
               <span className="text-sm font-medium text-text">Configuração de DNS</span>
               {dnsTarget ? (
-                <p className="text-xs text-neutral-400">
+                <p className="text-xs text-text-muted">
                   Aponte <strong>{current.hostname}</strong> (CNAME) para <strong>{dnsTarget}</strong>.
                 </p>
               ) : (
-                <p className="text-xs text-neutral-400">
+                <p className="text-xs text-text-muted">
                   O operador ainda não configurou o valor de destino do DNS (PUBLIC_DNS_TARGET).
                 </p>
               )}
