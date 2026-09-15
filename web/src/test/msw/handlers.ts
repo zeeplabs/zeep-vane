@@ -1025,6 +1025,24 @@ export const handlers = [
     return HttpResponse.json(toDomainResponse(created), { status: 201 });
   }),
 
+  // POST /api/domains/:id/verify - mirrors DomainsHandler.Verify: 404
+  // unknown domain, else 200 with the domain re-marked verified/active
+  // (domains-status-pages-page T4's useRecheckDomain). Tests needing an
+  // error response (e.g. status stays "error") override via
+  // server.use(http.post("/api/domains/:id/verify", ...)).
+  http.post("/api/domains/:id/verify", ({ params }) => {
+    if (!sessionAdminId) return HttpResponse.json({ error: "unauthorized" }, { status: 401 });
+    const domain = domainsState.find((d) => d.id === params.id);
+    if (!domain) {
+      return HttpResponse.json({ error: "domain not found" }, { status: 404 });
+    }
+    domain.status = "verified";
+    domain.ssl_status = "active";
+    domain.verified_at = new Date().toISOString();
+    domain.last_error = null;
+    return HttpResponse.json(toDomainResponse(domain));
+  }),
+
   // DELETE /api/domains/:id - mirrors DomainsHandler.Delete: 404 unknown
   // domain, 409 if a status page still references it via domain_id, else
   // 204.

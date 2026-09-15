@@ -1,8 +1,10 @@
 import { describe, it, expect, vi } from "vitest";
 import { renderHook, waitFor } from "@testing-library/react";
+import { http, HttpResponse } from "msw";
+import { server } from "../../test/msw/server";
 import { TestQueryProvider } from "../../test/queryClient";
-import { apiFetch } from "../../lib/apiClient";
-import { useCreateDomain, useDomains } from "./hooks";
+import { apiFetch, ApiError } from "../../lib/apiClient";
+import { useCreateDomain, useDomains, useRecheckDomain } from "./hooks";
 
 async function loginAsOwner() {
   await apiFetch("/api/auth/login", {
@@ -78,5 +80,36 @@ describe("domains hooks", () => {
     expect(beta!.verified_at).toBeNull();
     expect(beta!.attached_page_name).toBeNull();
     expect(beta!.attached_page_count).toBe(0);
+  });
+
+  // domains-status-pages-page T4: useRecheckDomain hits POST
+  // /api/domains/{id}/verify (DomainsHandler.Verify), distinct from
+  // status-pages/hooks.ts's useVerifyDomain (a different endpoint).
+  it("useRecheckDomain invalida a lista de domínios em sucesso", async () => {
+    await loginAsOwner();
+    const { result } = renderHook(
+      () => ({ domains: useDomains(1), recheck: useRecheckDomain() }),
+      { wrapper: TestQueryProvider }
+    );
+    await waitFor(() => expect(result.current.domains.isSuccess).toBe(true));
+    const target = result.current.domains.data!.items.find((d) => d.hostname === "status.beta.io")!;
+    expect(target.status).toBe("pending");
+
+    await result.current.recheck.mutateAsync(target.id);
+
+    await waitFor(() => {
+      const updated = result.current.domains.data!.items.find((d) => d.id === target.id);
+      expect(updated?.status).toBe("verified");
+    });
+  });
+
+  it("useRecheckDomain expõe ApiError em caso de erro", async () => {
+    await loginAsOwner();
+    server.use(
+      http.post("/api/domains/:id/verify", () => HttpResponse.json({ error: "internal error" }, { status: 500 }))
+    );
+    const { result } = renderHook(() => useRecheckDomain(), { wrapper: TestQueryProvider });
+
+    await expect(result.current.mutateAsync("dom-1")).rejects.toBeInstanceOf(ApiError);
   });
 });

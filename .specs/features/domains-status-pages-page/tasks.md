@@ -158,9 +158,9 @@ T12
 - Skill: NONE
 
 **Done when**:
-- [ ] `useRecheckDomain()` posts to `/api/domains/{id}/verify`, invalidates `["domains"]` on success
-- [ ] Unit test: success path invalidates cache; error path surfaces `ApiError`
-- [ ] `npx vitest run web/src/features/domains/hooks.test.ts` passes
+- [x] `useRecheckDomain()` posts to `/api/domains/{id}/verify`, invalidates `["domains"]` on success
+- [x] Unit test: success path invalidates cache; error path surfaces `ApiError`
+- [x] `npx vitest run web/src/features/domains/hooks.test.ts` passes
 
 **Tests**: unit
 **Gate**: quick
