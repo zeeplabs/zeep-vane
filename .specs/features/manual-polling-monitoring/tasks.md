@@ -117,10 +117,10 @@ T7 → T8 → T9
 - Skill: NONE
 
 **Done when**:
-- [ ] `Create` persists a polling-mode service correctly (all four new fields, `SLOID` nil) and an slo-mode service unchanged from today
-- [ ] `ListPollingManual` returns only `monitor_mode='polling'` rows, empty slice (not nil-panic) when none exist
-- [ ] A `Create` call violating the DB constraint (e.g. both `SLOID` and `PollType` set) surfaces the constraint violation as an error, not a silent partial insert
-- [ ] Gate check passes: `make test-integration`
+- [x] `Create` persists a polling-mode service correctly (all four new fields, `SLOID` nil) and an slo-mode service unchanged from today
+- [x] `ListPollingManual` returns only `monitor_mode='polling'` rows, empty slice (not nil-panic) when none exist
+- [x] A `Create` call violating the DB constraint (e.g. both `SLOID` and `PollType` set) surfaces the constraint violation as an error, not a silent partial insert
+- [x] Gate check passes: `make test-integration`
 
 **Tests**: integration
 **Gate**: Full

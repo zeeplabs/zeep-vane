@@ -271,6 +271,15 @@ func (p *Poller) pollOnce(ctx context.Context) {
 	var anySuccess bool
 	var lastErr error
 	for _, svc := range services {
+		// A polling-manual service (manual-polling-monitoring) has no
+		// SLOID at all - it is checked by poller.ManualScheduler instead,
+		// never by this Datadog-specific poller (design.md: "zero change
+		// to the existing Datadog poll path"). services.List is
+		// intentionally unfiltered (Overview/digest still need every
+		// service), so this poller must filter it out itself.
+		if svc.MonitorMode == "polling" {
+			continue
+		}
 		if err := p.pollService(ctx, svc); err != nil {
 			lastErr = err
 			continue
