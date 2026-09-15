@@ -393,6 +393,7 @@ function serviceUptimeAndLastSeen(service: Service): { uptime_30d: number | null
 
 // toServiceResponse mirrors the real serviceResponse
 // (internal/api/services_handler.go): id, name, slo_id, slo_name,
+// monitor_mode, poll_type, poll_target, poll_interval_seconds,
 // current_status, last_status_change_at, uptime_30d, last_seen_at.
 function toServiceResponse(service: Service) {
   const { uptime_30d, last_seen_at } = serviceUptimeAndLastSeen(service);
@@ -401,6 +402,10 @@ function toServiceResponse(service: Service) {
     name: service.name,
     slo_id: service.slo_id,
     slo_name: service.slo_name,
+    monitor_mode: service.monitor_mode,
+    poll_type: service.poll_type,
+    poll_target: service.poll_target,
+    poll_interval_seconds: service.poll_interval_seconds,
     current_status: service.current_status,
     last_status_change_at: service.last_status_change_at,
     uptime_30d,
@@ -1380,25 +1385,102 @@ export const handlers = [
     return HttpResponse.json(paginatedPage(request.url, sorted.map(toServiceResponse), 20));
   }),
 
+  // Mirrors ServicesHandler.Create's monitor_mode branching
+  // (manual-polling-monitoring T5): monitor_mode defaults to "slo" when
+  // omitted, unchanged existing behavior; "polling" requires poll_type/
+  // poll_target/poll_interval_seconds and rejects slo_id/slo_name (and vice
+  // versa). No real SSRF/format validation here - this fixture is a
+  // request/response contract mirror for the frontend, not a re-test of
+  // internal/checks (already covered by its own Go unit tests).
   http.post("/api/services", async ({ request }) => {
     if (!sessionAdminId) return HttpResponse.json({ error: "unauthorized" }, { status: 401 });
-    const body = (await request.json()) as { name?: string; slo_id?: string; slo_name?: string };
-    if (!body.name || !body.slo_id) {
+    const body = (await request.json()) as {
+      name?: string;
+      monitor_mode?: string;
+      slo_id?: string;
+      slo_name?: string;
+      poll_type?: string;
+      poll_target?: string;
+      poll_interval_seconds?: number;
+    };
+    if (!body.name) {
       return HttpResponse.json({ error: "name and slo_id are required" }, { status: 422 });
     }
+
+    const monitorMode = body.monitor_mode ?? "slo";
     serviceIdCounter += 1;
-    const created: Service = {
-      id: `svc-msw-${serviceIdCounter}`,
-      name: body.name,
-      slo_id: body.slo_id,
-      slo_name: body.slo_name ?? sloCatalog.find((slo) => slo.id === body.slo_id)?.name ?? null,
-      current_status: "not_configured",
-      last_status_change_at: new Date().toISOString(),
-      uptime_30d: null,
-      last_seen_at: null,
-    };
-    servicesState.push(created);
-    return HttpResponse.json(toServiceResponse(created), { status: 201 });
+
+    if (monitorMode === "slo") {
+      if (body.poll_type || body.poll_target || body.poll_interval_seconds) {
+        return HttpResponse.json(
+          { error: "slo fields and poll fields cannot be combined in the same request" },
+          { status: 422 }
+        );
+      }
+      if (!body.slo_id) {
+        return HttpResponse.json({ error: "name and slo_id are required" }, { status: 422 });
+      }
+      const created: Service = {
+        id: `svc-msw-${serviceIdCounter}`,
+        name: body.name,
+        slo_id: body.slo_id,
+        slo_name: body.slo_name ?? sloCatalog.find((slo) => slo.id === body.slo_id)?.name ?? null,
+        monitor_mode: "slo",
+        poll_type: null,
+        poll_target: null,
+        poll_interval_seconds: null,
+        current_status: "not_configured",
+        last_status_change_at: new Date().toISOString(),
+        uptime_30d: null,
+        last_seen_at: null,
+      };
+      servicesState.push(created);
+      return HttpResponse.json(toServiceResponse(created), { status: 201 });
+    }
+
+    if (monitorMode === "polling") {
+      if (body.slo_id || body.slo_name) {
+        return HttpResponse.json(
+          { error: "slo fields and poll fields cannot be combined in the same request" },
+          { status: 422 }
+        );
+      }
+      const validPollTypes = ["http", "tcp", "ping"];
+      const validIntervals = [30, 60, 300];
+      if (
+        !body.poll_type ||
+        !validPollTypes.includes(body.poll_type) ||
+        !body.poll_target ||
+        !body.poll_interval_seconds ||
+        !validIntervals.includes(body.poll_interval_seconds)
+      ) {
+        return HttpResponse.json(
+          {
+            error:
+              "poll_type (http, tcp, or ping), poll_target, and poll_interval_seconds (30, 60, or 300) are all required for polling mode",
+          },
+          { status: 422 }
+        );
+      }
+      const created: Service = {
+        id: `svc-msw-${serviceIdCounter}`,
+        name: body.name,
+        slo_id: null,
+        slo_name: null,
+        monitor_mode: "polling",
+        poll_type: body.poll_type as Service["poll_type"],
+        poll_target: body.poll_target,
+        poll_interval_seconds: body.poll_interval_seconds,
+        current_status: "not_configured",
+        last_status_change_at: new Date().toISOString(),
+        uptime_30d: null,
+        last_seen_at: null,
+      };
+      servicesState.push(created);
+      return HttpResponse.json(toServiceResponse(created), { status: 201 });
+    }
+
+    return HttpResponse.json({ error: 'monitor_mode must be "slo" or "polling"' }, { status: 422 });
   }),
 
   // GET /api/services/:id (monitored-services-page SVC-14..19) - mirrors

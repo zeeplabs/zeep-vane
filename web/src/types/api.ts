@@ -46,11 +46,28 @@ export interface SLOSummary {
 
 export type ServiceStatus = "not_configured" | "operational" | "degraded" | "outage";
 
+// MonitorMode/PollType mirror the backend's manual-polling-monitoring
+// contract (internal/api/services_handler.go's createServiceRequest/
+// serviceResponse) - "slo" (Datadog SLO-backed, today's only mode) or
+// "polling" (direct HTTP(S)/TCP/Ping check, no Datadog SLO involved).
+export type MonitorMode = "slo" | "polling";
+export type PollType = "http" | "tcp" | "ping";
+
 export interface Service {
   id: string;
   name: string;
   slo_id: string | null;
   slo_name: string | null;
+  // monitor_mode defaults to "slo" server-side when omitted from a create
+  // request, but every service the API returns always carries an explicit
+  // value (never optional on read).
+  monitor_mode: MonitorMode;
+  // poll_type/poll_target/poll_interval_seconds are null for
+  // monitor_mode="slo", all three set together for monitor_mode="polling"
+  // (services_monitor_mode_fields_check, 0034_service_polling_mode).
+  poll_type: PollType | null;
+  poll_target: string | null;
+  poll_interval_seconds: number | null;
   current_status: ServiceStatus;
   last_status_change_at: string;
   // uptime_30d/last_seen_at (monitored-services-page SVC-01/SVC-06): null

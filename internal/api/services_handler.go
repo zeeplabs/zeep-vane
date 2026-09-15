@@ -94,14 +94,24 @@ var validPollTypes = map[string]bool{
 var validPollIntervalSeconds = map[int]bool{30: true, 60: true, 300: true}
 
 type serviceResponse struct {
-	ID                 string     `json:"id"`
-	Name               string     `json:"name"`
-	SLOID              string     `json:"slo_id"`
-	SLOName            string     `json:"slo_name"`
-	CurrentStatus      string     `json:"current_status"`
-	LastStatusChangeAt time.Time  `json:"last_status_change_at"`
-	Uptime30d          *float64   `json:"uptime_30d"`
-	LastSeenAt         *time.Time `json:"last_seen_at"`
+	ID      string `json:"id"`
+	Name    string `json:"name"`
+	SLOID   string `json:"slo_id"`
+	SLOName string `json:"slo_name"`
+	// MonitorMode/PollType/PollTarget/PollIntervalSeconds mirror the same
+	// fields on db.Service (manual-polling-monitoring T2) so the frontend's
+	// list/detail read paths (T9) can tell a polling-manual service apart
+	// from an slo-mode one without any special-case query - PollType/
+	// PollTarget/PollIntervalSeconds are nil for monitor_mode="slo", same
+	// nullability convention as Uptime30d/LastSeenAt below.
+	MonitorMode         string     `json:"monitor_mode"`
+	PollType            *string    `json:"poll_type"`
+	PollTarget          *string    `json:"poll_target"`
+	PollIntervalSeconds *int       `json:"poll_interval_seconds"`
+	CurrentStatus       string     `json:"current_status"`
+	LastStatusChangeAt  time.Time  `json:"last_status_change_at"`
+	Uptime30d           *float64   `json:"uptime_30d"`
+	LastSeenAt          *time.Time `json:"last_seen_at"`
 }
 
 const invalidServiceRequestBody = `{"error":"name and slo_id are required"}`
@@ -265,14 +275,18 @@ func uptimeAndLastSeen(intervals []db.StatusInterval, windowStart, asOf time.Tim
 
 func toServiceResponse(service *db.Service, uptime30d *float64, lastSeenAt *time.Time) serviceResponse {
 	return serviceResponse{
-		ID:                 service.ID,
-		Name:               service.Name,
-		SLOID:              service.SLOID,
-		SLOName:            service.SLOName,
-		CurrentStatus:      service.CurrentStatus,
-		LastStatusChangeAt: service.LastStatusChangeAt,
-		Uptime30d:          uptime30d,
-		LastSeenAt:         lastSeenAt,
+		ID:                  service.ID,
+		Name:                service.Name,
+		SLOID:               service.SLOID,
+		SLOName:             service.SLOName,
+		MonitorMode:         service.MonitorMode,
+		PollType:            service.PollType,
+		PollTarget:          service.PollTarget,
+		PollIntervalSeconds: service.PollIntervalSeconds,
+		CurrentStatus:       service.CurrentStatus,
+		LastStatusChangeAt:  service.LastStatusChangeAt,
+		Uptime30d:           uptime30d,
+		LastSeenAt:          lastSeenAt,
 	}
 }
 

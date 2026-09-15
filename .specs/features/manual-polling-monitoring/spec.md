@@ -132,15 +132,15 @@
 | MP-13 | P2 | Execute (T7) | Done |
 | MP-14 | P2 | Execute (T6) | Done |
 | MP-15 | P2 | Execute (T4/T6) | Done |
-| MP-16 | P3 | Design | Pending |
-| MP-17 | P3 | Design | Pending |
-| MP-18 | P3 | Design | Pending |
-| MP-19 | P3 | Design | Pending |
-| MP-20 | P3 | Design | Pending |
+| MP-16 | P3 | Execute (T8) | Done |
+| MP-17 | P3 | Execute (T8) | Done |
+| MP-18 | P3 | Execute (T8) | Done |
+| MP-19 | P3 | Execute (T8) | Done |
+| MP-20 | P3 | Execute (T8) | Done |
 
 **ID format:** `MP-[NUMBER]`, sequential in file order (P1 ACs 1-5 → MP-01..05, P2 ACs 1-10 → MP-06..15, P3 ACs 1-5 → MP-16..20).
 
-**Coverage:** 20 total, 15 fully done (P1 + P2), 5 pending in P3 (T8-T9 not yet executed).
+**Coverage:** 20 total, 20 fully done (T9's own display-fallback task remains, tracked under MP-01's read-path coverage rather than a new ID).
 
 ---
 

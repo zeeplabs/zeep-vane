@@ -264,13 +264,13 @@ T7 → T8 → T9
 - Skill: NONE
 
 **Done when**:
-- [ ] Drawer defaults to "Baseado em SLO" with today's existing fields/behavior unchanged
-- [ ] Selecting "Polling manual" swaps in check-type/target/interval fields and hides "Fonte"/SLO-search
-- [ ] Clicking the disabled "New Relic" chip does nothing (selection stays on Datadog, no state change)
-- [ ] Submit is disabled until the active mode's required fields are filled; submitting a polling-mode request sends only `name`/`monitor_mode`/`poll_type`/`poll_target`/`poll_interval_seconds`, never `slo_id`
-- [ ] Every new string added goes through `react-i18next` (pt-BR keys added)
-- [ ] MSW handlers mirror the extended request/response contract
-- [ ] Gate check passes: `cd web && npx tsc -b --noEmit && npm run test`
+- [x] Drawer defaults to "Baseado em SLO" with today's existing fields/behavior unchanged
+- [x] Selecting "Polling manual" swaps in check-type/target/interval fields and hides "Fonte"/SLO-search
+- [x] Clicking the disabled "New Relic" chip does nothing (selection stays on Datadog, no state change)
+- [x] Submit is disabled until the active mode's required fields are filled; submitting a polling-mode request sends only `name`/`monitor_mode`/`poll_type`/`poll_target`/`poll_interval_seconds`, never `slo_id`
+- [x] Every new string added goes through `react-i18next` (pt-BR keys added)
+- [x] MSW handlers mirror the extended request/response contract
+- [x] Gate check passes: `cd web && npx tsc -b --noEmit && npm run test`
 
 **Tests**: unit
 **Gate**: Quick (frontend)
