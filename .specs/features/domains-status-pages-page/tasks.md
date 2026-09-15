@@ -303,11 +303,11 @@ T12
 - Skill: NONE
 
 **Done when**:
-- [ ] Renders service list + domain (or "—") per DSP-14
-- [ ] "Editar página" is a `Link` to `/status-pages/{id}` (DSP-14 per spec's Assumptions decision)
-- [ ] "Ver página pública" absent/disabled when no domain attached (DSP-17)
-- [ ] Unit tests cover: with domain (link present + correct href), without domain (link absent, "—" shown)
-- [ ] `npx vitest run web/src/features/status-pages/StatusPageDetailDrawer.test.tsx` passes
+- [x] Renders service list + domain (or "—") per DSP-14
+- [x] "Editar página" is a `Link` to `/status-pages/{id}` (DSP-14 per spec's Assumptions decision)
+- [x] "Ver página pública" absent/disabled when no domain attached (DSP-17)
+- [x] Unit tests cover: with domain (link present + correct href), without domain (link absent, "—" shown)
+- [x] `npx vitest run web/src/features/status-pages/StatusPageDetailDrawer.test.tsx` passes
 
 **Tests**: unit
 **Gate**: quick
