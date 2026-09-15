@@ -56,9 +56,15 @@ function PinToggleIcon({ pinned }: { pinned: boolean }) {
   return pinned ? <MdOutlineChevronLeft size={18} aria-hidden="true" /> : <MdOutlineChevronRight size={18} aria-hidden="true" />;
 }
 
-const navItemClass = ({ isActive }: { isActive: boolean }) =>
-  "flex h-9 items-center gap-2.5 rounded-md px-3 text-sm transition-colors " +
-  (isActive ? "text-accent bg-[rgba(90,70,199,0.08)]" : "text-text-muted hover:bg-sidebar-hover-bg");
+// navJustify mirrors the handoff: nav items center their icon when the rail
+// is collapsed (72px) instead of staying left-padded - see
+// handoff-new-layout/Visao Geral.dc.html's `navJustify` prop.
+const makeNavItemClass =
+  (expanded: boolean) =>
+  ({ isActive }: { isActive: boolean }) =>
+    "flex h-9 items-center rounded-md px-3 text-sm transition-[background-color,color,gap] duration-200 ease-out " +
+    (expanded ? "justify-start gap-2.5" : "justify-center gap-0") + " " +
+    (isActive ? "text-accent bg-[rgba(90,70,199,0.08)]" : "text-text-muted hover:bg-sidebar-hover-bg");
 
 // Sidebar: collapsible 72px/240px shell nav (new-layout-migration, SHELL-02
 // through SHELL-06). Expands on hover, stays expanded while pinned
@@ -79,8 +85,20 @@ export function Sidebar() {
   // (which redirects to /overview) and /overview itself.
   const overviewActive = location.pathname === "/" || location.pathname.startsWith("/overview");
 
-  const labelClass = expanded ? "" : "sr-only";
-  const groupLabelClass = "px-3 pb-1 pt-3 text-[10.5px] font-semibold uppercase tracking-wider text-text-muted";
+  // Labels fade+grow in sync with the aside's own width transition instead
+  // of an instant sr-only swap - the previous binary toggle popped text in
+  // mid-transition, out of step with the width animation, which read as
+  // janky. overflow-hidden clips the growing max-width so text never
+  // wraps/overflows while it's still animating in.
+  const labelClass =
+    "overflow-hidden whitespace-nowrap transition-[opacity,max-width] duration-200 ease-out " +
+    (expanded ? "max-w-[170px] opacity-100" : "max-w-0 opacity-0");
+  const groupLabelClass =
+    "overflow-hidden whitespace-nowrap px-3 text-[10.5px] font-semibold uppercase tracking-wider text-text-muted " +
+    "transition-[opacity,max-height,padding] duration-200 ease-out " +
+    (expanded ? "max-h-[28px] pb-1 pt-3 opacity-100" : "max-h-0 py-0 opacity-0");
+  const navItemClass = makeNavItemClass(expanded);
+  const justifyClass = expanded ? "justify-start gap-2.5" : "justify-center gap-0";
 
   return (
     <aside
@@ -88,11 +106,11 @@ export function Sidebar() {
       onMouseEnter={() => setHovering(true)}
       onMouseLeave={() => setHovering(false)}
       className={
-        "flex h-full shrink-0 flex-col overflow-hidden border-r border-divider bg-sidebar-bg px-3 py-4 transition-[width] duration-150 " +
+        "flex h-full shrink-0 flex-col overflow-hidden border-r border-divider bg-sidebar-bg px-3 py-4 transition-[width] duration-200 ease-out " +
         (expanded ? "w-[240px]" : "w-[72px]")
       }
     >
-      <TenantSwitcher />
+      <TenantSwitcher expanded={expanded} />
 
       <div className="my-3 h-px bg-divider" />
 
@@ -100,7 +118,8 @@ export function Sidebar() {
         <NavLink
           to="/overview"
           className={
-            "flex h-9 items-center gap-2.5 rounded-md px-3 text-sm transition-colors " +
+            "flex h-9 items-center rounded-md px-3 text-sm transition-[background-color,color,gap] duration-200 ease-out " +
+            justifyClass + " " +
             (overviewActive ? "text-accent bg-[rgba(90,70,199,0.08)]" : "text-text-muted hover:bg-sidebar-hover-bg")
           }
         >
@@ -116,7 +135,8 @@ export function Sidebar() {
           type="button"
           onClick={() => navigate("/domains")}
           className={
-            "flex h-9 cursor-pointer items-center gap-2.5 rounded-md px-3 text-left text-sm transition-colors " +
+            "flex h-9 cursor-pointer items-center rounded-md px-3 text-left text-sm transition-[background-color,color,gap] duration-200 ease-out " +
+            justifyClass + " " +
             (domainsActive ? "text-accent bg-[rgba(90,70,199,0.08)]" : "text-text-muted hover:bg-sidebar-hover-bg")
           }
         >
@@ -164,7 +184,8 @@ export function Sidebar() {
           onClick={togglePinned}
           aria-pressed={pinned}
           className={
-            "flex cursor-pointer items-center gap-2 rounded-md px-3 py-1.5 text-left text-[12.5px] transition-colors " +
+            "flex cursor-pointer items-center rounded-md px-3 py-1.5 text-left text-[12.5px] transition-[background-color,color,gap] duration-200 ease-out " +
+            justifyClass + " " +
             (pinned ? "text-accent" : "text-text-muted hover:text-text")
           }
         >

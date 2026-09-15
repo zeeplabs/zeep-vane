@@ -45,7 +45,7 @@ function PlanBadge({ planTier, t }: { planTier: string; t: (key: string) => stri
 // dropdown/chevron are gated on having more than one membership - the
 // every-day single-membership case still shows the identity row, just not
 // interactive.
-export function TenantSwitcher() {
+export function TenantSwitcher({ expanded }: { expanded: boolean }) {
   const { t } = useTranslation();
   const { admin, switchTenant } = useAuth();
   const [open, setOpen] = useState(false);
@@ -81,29 +81,40 @@ export function TenantSwitcher() {
     await switchTenant(tenantId);
   }
 
+  // The name/badge/chevron block fades+grows in sync with the sidebar's own
+  // width transition (Sidebar.tsx's labelClass uses the same pattern)
+  // instead of mounting/unmounting outright, which popped in with no
+  // animation at all.
   const identity = (
     <>
       <span className="flex h-[28px] w-[28px] shrink-0 items-center justify-center rounded-[8px] bg-accent text-[11px] font-semibold text-white">
         {initialsFor(displayNameFor(active))}
       </span>
-      <span className="min-w-0 flex-1">
-        <span className="block truncate text-[13px] font-medium text-text">{displayNameFor(active)}</span>
-      </span>
-      <PlanBadge planTier={active.plan_tier} t={t} />
-      {isMulti ? (
-        <span aria-hidden="true" className="shrink-0 text-text-muted">
-          <MdOutlineExpandMore size={14} />
+      <span
+        className={
+          "flex min-w-0 items-center gap-2 overflow-hidden whitespace-nowrap transition-[opacity,max-width] duration-200 ease-out " +
+          (expanded ? "max-w-[180px] flex-1 opacity-100" : "max-w-0 opacity-0")
+        }
+      >
+        <span className="min-w-0 flex-1">
+          <span className="block truncate text-[13px] font-medium text-text">{displayNameFor(active)}</span>
         </span>
-      ) : null}
+        <PlanBadge planTier={active.plan_tier} t={t} />
+        {isMulti ? (
+          <span aria-hidden="true" className="shrink-0 text-text-muted">
+            <MdOutlineExpandMore size={14} />
+          </span>
+        ) : null}
+      </span>
     </>
   );
 
+  const rowClass =
+    "flex w-full items-center rounded-[10px] px-2 py-1.5 transition-[gap] duration-200 ease-out " +
+    (expanded ? "justify-start gap-2" : "justify-center gap-0");
+
   if (!isMulti) {
-    return (
-      <div className="flex w-full items-center gap-2 rounded-[10px] px-2 py-1.5">
-        {identity}
-      </div>
-    );
+    return <div className={rowClass}>{identity}</div>;
   }
 
   return (
@@ -113,7 +124,7 @@ export function TenantSwitcher() {
         onClick={() => setOpen((v) => !v)}
         aria-haspopup="listbox"
         aria-expanded={open}
-        className="flex w-full cursor-pointer items-center gap-2 rounded-[10px] px-2 py-1.5 text-left hover:bg-sidebar-hover-bg"
+        className={rowClass + " cursor-pointer text-left hover:bg-sidebar-hover-bg"}
       >
         {identity}
       </button>

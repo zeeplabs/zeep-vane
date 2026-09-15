@@ -130,7 +130,10 @@ describe("Sidebar", () => {
       )
     );
     await loginAs("owner@vane.app");
-    renderSidebar();
+    const { getByTestId } = renderSidebar();
+    // Name/badge only render expanded (collapsed rail shows just the
+    // avatar, matching the handoff) - hover to expand before querying.
+    fireEvent.mouseEnter(getByTestId("sidebar"));
 
     const trigger = await screen.findByRole("button", { name: /Acme Corp/ });
     const nav = await screen.findByText("Serviços monitorados");

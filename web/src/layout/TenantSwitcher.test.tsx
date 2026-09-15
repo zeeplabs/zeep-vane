@@ -53,7 +53,7 @@ function renderSwitcher() {
     <TestQueryProvider>
       <MemoryRouter>
         <AuthProvider>
-          <TenantSwitcher />
+          <TenantSwitcher expanded />
         </AuthProvider>
       </MemoryRouter>
     </TestQueryProvider>
@@ -76,7 +76,7 @@ describe("TenantSwitcher", () => {
         <MemoryRouter>
           <AuthProvider>
             <AdminEmailProbe />
-            <TenantSwitcher />
+            <TenantSwitcher expanded />
           </AuthProvider>
         </MemoryRouter>
       </TestQueryProvider>
