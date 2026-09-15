@@ -320,6 +320,24 @@ Seen once or not yet corroborated. Tracked, not trusted.
 - evidence: SVC-21 (web/src/features/services)
 - last seen: 2026-09-14T23:09:02Z
 
+### L-052 - When a drawer lives inside a tab's conditionally-rendered subtree, a test asserting the drawer disappears on tab switch does not prove the underlying selection state was reset - switch away and back to the same tab and assert the drawer stays closed to actually discriminate the reset logic.
+- signal: `surviving_mutant` · recurrence: 1 feature(s) · scope: `web/src/features` · harmful: 0
+- features: domains-status-pages-page
+- evidence: web/src/features/domains/DomainsStatusPagesPage.tsx:32-37 (web/src/features)
+- last seen: 2026-09-15T11:40:47Z
+
+### L-053 - A table component test suite can cover the risky new columns (join-derived fields) in depth while leaving carried-over columns (status pill, type label, SSL label) with zero row-level assertions - explicitly assert every listed column per spec.md's WHEN/THEN, not just the ones this feature added logic for.
+- signal: `ac_gap` · recurrence: 1 feature(s) · scope: `web/src/features` · harmful: 0
+- features: domains-status-pages-page
+- evidence: DSP-01 (web/src/features)
+- last seen: 2026-09-15T11:40:47Z
+
+### L-054 - A detail-drawer test using an empty list fixture (e.g. service_ids: []) for every test case proves the empty-state render path but never exercises the non-empty render path - include at least one fixture with populated list data for any component whose spec AC mentions 'listing' items.
+- signal: `ac_gap` · recurrence: 1 feature(s) · scope: `web/src/features` · harmful: 0
+- features: domains-status-pages-page
+- evidence: DSP-14 (web/src/features)
+- last seen: 2026-09-15T11:40:47Z
+
 ## Quarantined (failed when applied - ignore)
 
 A confirmed lesson that recurred alongside failure. Kept for the maintainer to review.

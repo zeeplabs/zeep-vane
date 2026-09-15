@@ -3,7 +3,7 @@
   "promote_threshold": 2,
   "window_days": 45,
   "quarantine_threshold": 2,
-  "next_id": 52,
+  "next_id": 55,
   "lessons": [
     {
       "id": "L-001",
@@ -922,6 +922,60 @@
       ],
       "created": "2026-09-14T23:09:02Z",
       "last_seen": "2026-09-14T23:09:02Z"
+    },
+    {
+      "id": "L-052",
+      "key": "surviving_mutant::when a drawer lives inside a tab s conditionally rendered subtree a test asserting the drawer disappears on tab switch does not prove the underlying selection state was reset switch away and back to the same tab and assert the drawer stays closed to actually discriminate the reset logic",
+      "text": "When a drawer lives inside a tab's conditionally-rendered subtree, a test asserting the drawer disappears on tab switch does not prove the underlying selection state was reset - switch away and back to the same tab and assert the drawer stays closed to actually discriminate the reset logic.",
+      "signal": "surviving_mutant",
+      "scope": "web/src/features",
+      "status": "candidate",
+      "features": [
+        "domains-status-pages-page"
+      ],
+      "recurrence": 1,
+      "harmful": 0,
+      "evidence": [
+        "web/src/features/domains/DomainsStatusPagesPage.tsx:32-37 (web/src/features)"
+      ],
+      "created": "2026-09-15T11:40:47Z",
+      "last_seen": "2026-09-15T11:40:47Z"
+    },
+    {
+      "id": "L-053",
+      "key": "ac_gap::a table component test suite can cover the risky new columns join derived fields in depth while leaving carried over columns status pill type label ssl label with zero row level assertions explicitly assert every listed column per spec md s when then not just the ones this feature added logic for",
+      "text": "A table component test suite can cover the risky new columns (join-derived fields) in depth while leaving carried-over columns (status pill, type label, SSL label) with zero row-level assertions - explicitly assert every listed column per spec.md's WHEN/THEN, not just the ones this feature added logic for.",
+      "signal": "ac_gap",
+      "scope": "web/src/features",
+      "status": "candidate",
+      "features": [
+        "domains-status-pages-page"
+      ],
+      "recurrence": 1,
+      "harmful": 0,
+      "evidence": [
+        "DSP-01 (web/src/features)"
+      ],
+      "created": "2026-09-15T11:40:47Z",
+      "last_seen": "2026-09-15T11:40:47Z"
+    },
+    {
+      "id": "L-054",
+      "key": "ac_gap::a detail drawer test using an empty list fixture e g service ids for every test case proves the empty state render path but never exercises the non empty render path include at least one fixture with populated list data for any component whose spec ac mentions listing items",
+      "text": "A detail-drawer test using an empty list fixture (e.g. service_ids: []) for every test case proves the empty-state render path but never exercises the non-empty render path - include at least one fixture with populated list data for any component whose spec AC mentions 'listing' items.",
+      "signal": "ac_gap",
+      "scope": "web/src/features",
+      "status": "candidate",
+      "features": [
+        "domains-status-pages-page"
+      ],
+      "recurrence": 1,
+      "harmful": 0,
+      "evidence": [
+        "DSP-14 (web/src/features)"
+      ],
+      "created": "2026-09-15T11:40:47Z",
+      "last_seen": "2026-09-15T11:40:47Z"
     }
   ]
 }
