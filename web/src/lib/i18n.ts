@@ -4,6 +4,9 @@ import { initReactI18next } from "react-i18next";
 const resources = {
   pt: {
     translation: {
+      common: {
+        close: "Fechar",
+      },
       login: {
         title: "Entrar",
         email: "E-mail",
@@ -385,11 +388,15 @@ const resources = {
         addDrawer: {
           monitorModeLabel: "Como monitorar",
           monitorModeSlo: "Baseado em SLO",
+          monitorModeSloDescription: "Importa o alvo do serviço de observabilidade conectado",
+          monitorModeSloDisabledHint: "Conecte o Datadog em Integrações para usar este modo",
           monitorModePolling: "Polling manual",
+          monitorModePollingDescription: "Vane verifica por HTTP, TCP ou ping",
           sourceLabel: "Fonte",
           sourceDatadog: "Datadog",
           sourceNewRelic: "New Relic",
           sourceNewRelicBadge: "Em breve",
+          sloHelperNote: "Os limites de alerta são herdados do SLO configurado no provedor.",
           checkTypeLabel: "Tipo de verificação",
           checkType: {
             http: "HTTP(S)",
@@ -397,7 +404,7 @@ const resources = {
             ping: "Ping",
           },
           targetLabel: {
-            http: "URL",
+            http: "URL a verificar",
             tcp: "Host:porta",
             ping: "Host",
           },
@@ -409,8 +416,8 @@ const resources = {
           intervalLabel: "Intervalo de verificação",
           interval: {
             "30": "30s",
-            "60": "1min",
-            "300": "5min",
+            "60": "1 min",
+            "300": "5 min",
           },
           pollingValidationError: "Preencha o alvo e o intervalo de verificação antes de salvar.",
         },
@@ -419,6 +426,9 @@ const resources = {
   },
   en: {
     translation: {
+      common: {
+        close: "Close",
+      },
       login: {
         title: "Sign in",
         email: "Email",
@@ -797,11 +807,15 @@ const resources = {
         addDrawer: {
           monitorModeLabel: "How to monitor",
           monitorModeSlo: "SLO-based",
+          monitorModeSloDescription: "Imports the target from the connected observability provider",
+          monitorModeSloDisabledHint: "Connect Datadog under Integrations to use this mode",
           monitorModePolling: "Manual polling",
+          monitorModePollingDescription: "Vane checks via HTTP, TCP or ping",
           sourceLabel: "Source",
           sourceDatadog: "Datadog",
           sourceNewRelic: "New Relic",
           sourceNewRelicBadge: "Coming soon",
+          sloHelperNote: "Alert thresholds are inherited from the SLO configured in the provider.",
           checkTypeLabel: "Check type",
           checkType: {
             http: "HTTP(S)",
@@ -809,7 +823,7 @@ const resources = {
             ping: "Ping",
           },
           targetLabel: {
-            http: "URL",
+            http: "URL to check",
             tcp: "Host:port",
             ping: "Host",
           },
@@ -821,8 +835,8 @@ const resources = {
           intervalLabel: "Check interval",
           interval: {
             "30": "30s",
-            "60": "1min",
-            "300": "5min",
+            "60": "1 min",
+            "300": "5 min",
           },
           pollingValidationError: "Fill in the target and check interval before saving.",
         },

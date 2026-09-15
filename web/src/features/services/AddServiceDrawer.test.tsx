@@ -145,10 +145,10 @@ describe("AddServiceDrawer", () => {
     expect(screen.getByRole("button", { name: "HTTP(S)" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "TCP" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Ping" })).toBeInTheDocument();
-    expect(screen.getByLabelText("URL")).toBeInTheDocument();
+    expect(screen.getByLabelText("URL a verificar")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "30s" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "1min" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "5min" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "1 min" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "5 min" })).toBeInTheDocument();
   });
 
   // P3 AC3: the target field's label/placeholder switch with the selected
@@ -158,7 +158,7 @@ describe("AddServiceDrawer", () => {
     renderDrawer();
     await userEvent.click(screen.getByRole("button", { name: "Polling manual" }));
 
-    expect(screen.getByLabelText("URL")).toHaveAttribute("placeholder", "https://api.acme.health/health");
+    expect(screen.getByLabelText("URL a verificar")).toHaveAttribute("placeholder", "https://api.acme.health/health");
 
     await userEvent.click(screen.getByRole("button", { name: "TCP" }));
     expect(screen.getByLabelText("Host:porta")).toHaveAttribute("placeholder", "db.acme.health:5432");
@@ -198,7 +198,7 @@ describe("AddServiceDrawer", () => {
     await userEvent.type(screen.getByLabelText("Host:porta"), "cache.acme.health:6379");
     expect(screen.getByRole("button", { name: "Adicionar serviço" })).toBeDisabled();
 
-    await userEvent.click(screen.getByRole("button", { name: "1min" }));
+    await userEvent.click(screen.getByRole("button", { name: "1 min" }));
     expect(screen.getByRole("button", { name: "Adicionar serviço" })).toBeEnabled();
 
     await userEvent.click(screen.getByRole("button", { name: "Adicionar serviço" }));
@@ -243,5 +243,25 @@ describe("AddServiceDrawer", () => {
     expect(body).toEqual({ name: "Fila de pagamentos", slo_id: "slo-2", slo_name: "Checkout latência p95" });
 
     fetchSpy.mockRestore();
+  });
+
+  it("blocks 'Baseado em SLO' and defaults to Polling manual when Datadog isn't connected", async () => {
+    server.use(
+      http.get("/api/integrations/datadog/status", () =>
+        HttpResponse.json({ error: "datadog integration not connected yet" }, { status: 404 })
+      )
+    );
+    await loginAsOwner();
+    renderDrawer();
+
+    await screen.findByText("Conecte o Datadog em Integrações para usar este modo");
+    const sloCard = screen.getByRole("button", { name: "Baseado em SLO" });
+    expect(sloCard).toHaveAttribute("aria-disabled", "true");
+    // Polling manual's own fields are showing - proof the mode already
+    // defaulted there, not left on the now-blocked SLO mode.
+    expect(screen.getByLabelText("URL a verificar")).toBeInTheDocument();
+
+    await userEvent.click(sloCard);
+    expect(screen.getByLabelText("URL a verificar")).toBeInTheDocument();
   });
 });

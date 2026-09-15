@@ -6,7 +6,7 @@ import { Tag } from "../../components/ui/Tag";
 import { Button } from "../../components/ui/Button";
 import { Field } from "../../components/ui/Field";
 import { Input } from "../../components/ui/Input";
-import { Drawer } from "../../components/ui/Drawer";
+import { Drawer, drawerFooterPrimaryStyle, drawerFooterSecondaryStyle } from "../../components/ui/Drawer";
 import { Pager } from "../../components/ui/Pager";
 import { EmptyState } from "../../layout/EmptyState";
 import { useAuth } from "../../auth/AuthProvider";
@@ -304,12 +304,24 @@ export function IncidentsPage() {
         onOpenChange={setDialogOpen}
         title="Criar incidente"
         description="Descreva o incidente e vincule os serviços afetados."
+        closeLabel="Fechar"
         footer={
           <>
-            <Button type="button" variant="secondary" onClick={() => setDialogOpen(false)}>
+            <Button
+              type="button"
+              variant="secondary"
+              style={drawerFooterSecondaryStyle}
+              onClick={() => setDialogOpen(false)}
+            >
               Cancelar
             </Button>
-            <Button type="submit" form="create-incident-form" variant="primary" disabled={createIncident.isPending}>
+            <Button
+              type="submit"
+              form="create-incident-form"
+              variant="solid"
+              style={drawerFooterPrimaryStyle}
+              disabled={createIncident.isPending}
+            >
               Criar
             </Button>
           </>

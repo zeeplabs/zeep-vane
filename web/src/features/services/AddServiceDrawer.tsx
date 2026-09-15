@@ -1,10 +1,11 @@
-import { useState, type FormEvent, type ReactNode } from "react";
+import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
-import { Drawer } from "../../components/ui/Drawer";
+import { MdOutlineLink, MdOutlineMonitorHeart } from "react-icons/md";
+import { Drawer, drawerFooterPrimaryStyle, drawerFooterSecondaryStyle } from "../../components/ui/Drawer";
 import { Button } from "../../components/ui/Button";
 import { Field } from "../../components/ui/Field";
 import { ApiError } from "../../lib/apiClient";
-import { useSLOSearch } from "../integrations/hooks";
+import { useIntegrationStatus, useSLOSearch } from "../integrations/hooks";
 import { useCreateService } from "./hooks";
 import type { MonitorMode, PollType } from "../../types/api";
 
@@ -49,12 +50,24 @@ export function AddServiceDrawer({ open, onOpenChange }: AddServiceDrawerProps) 
 
   const createService = useCreateService();
   const sloSearch = useSLOSearch(query);
+  const integrationStatus = useIntegrationStatus();
+  // "Baseado em SLO" needs a live Datadog integration to import a target
+  // from - without one there is nothing to select (empty SLO search
+  // forever), so the mode is blocked and "Polling manual" becomes the only
+  // usable option (the user's own explicit product decision, not an
+  // inferred default).
+  const datadogConnected = integrationStatus.data?.connected === true && integrationStatus.data.status === "active";
+  const sloModeDisabled = integrationStatus.data !== undefined && !datadogConnected;
+
+  useEffect(() => {
+    if (sloModeDisabled && monitorMode === "slo") setMonitorMode("polling");
+  }, [sloModeDisabled, monitorMode]);
 
   function resetForm() {
     setName("");
     setQuery("");
     setSelectedSlo(null);
-    setMonitorMode("slo");
+    setMonitorMode(sloModeDisabled ? "polling" : "slo");
     setPollType("http");
     setPollTarget("");
     setPollIntervalSeconds(null);
@@ -127,18 +140,22 @@ export function AddServiceDrawer({ open, onOpenChange }: AddServiceDrawerProps) 
       onOpenChange={handleOpenChange}
       title="Adicionar serviço"
       description="Configure um novo alvo de monitoramento. O Vane começa a verificar assim que você salvar."
-      showCloseButton
-      closeLabel="Fechar"
-      headerBorder={false}
+      closeLabel={t("common.close")}
       footer={
         <>
-          <Button type="button" variant="secondary" onClick={() => handleOpenChange(false)}>
+          <Button
+            type="button"
+            variant="secondary"
+            style={drawerFooterSecondaryStyle}
+            onClick={() => handleOpenChange(false)}
+          >
             Cancelar
           </Button>
           <Button
             type="submit"
             form="add-service-form"
             variant="solid"
+            style={drawerFooterPrimaryStyle}
             disabled={createService.isPending || !canSubmit}
           >
             Adicionar serviço
@@ -146,7 +163,7 @@ export function AddServiceDrawer({ open, onOpenChange }: AddServiceDrawerProps) 
         </>
       }
     >
-      <form id="add-service-form" onSubmit={handleSubmit} className="flex flex-col gap-3">
+      <form id="add-service-form" onSubmit={handleSubmit} className="flex flex-col gap-[18px]">
         <Field
           variant="filled"
           label="Nome do serviço"
@@ -156,21 +173,34 @@ export function AddServiceDrawer({ open, onOpenChange }: AddServiceDrawerProps) 
           required
         />
 
-        <div className="flex flex-col gap-1.5">
+        <div className="flex flex-col gap-[6px]">
           <span className="text-sm font-medium text-text">{t("services.addDrawer.monitorModeLabel")}</span>
-          <div role="group" aria-label={t("services.addDrawer.monitorModeLabel")} className="flex flex-wrap gap-2">
-            <ChipButton active={monitorMode === "slo"} onClick={() => setMonitorMode("slo")}>
-              {t("services.addDrawer.monitorModeSlo")}
-            </ChipButton>
-            <ChipButton active={monitorMode === "polling"} onClick={() => setMonitorMode("polling")}>
-              {t("services.addDrawer.monitorModePolling")}
-            </ChipButton>
+          <div role="group" aria-label={t("services.addDrawer.monitorModeLabel")} className="grid grid-cols-2 gap-[10px]">
+            <ModeCard
+              active={monitorMode === "slo"}
+              disabled={sloModeDisabled}
+              title={t("services.addDrawer.monitorModeSlo")}
+              description={
+                sloModeDisabled
+                  ? t("services.addDrawer.monitorModeSloDisabledHint")
+                  : t("services.addDrawer.monitorModeSloDescription")
+              }
+              icon={<MdOutlineLink size={18} />}
+              onClick={() => setMonitorMode("slo")}
+            />
+            <ModeCard
+              active={monitorMode === "polling"}
+              icon={<MdOutlineMonitorHeart size={18} />}
+              title={t("services.addDrawer.monitorModePolling")}
+              description={t("services.addDrawer.monitorModePollingDescription")}
+              onClick={() => setMonitorMode("polling")}
+            />
           </div>
         </div>
 
         {monitorMode === "slo" ? (
           <>
-            <div className="flex flex-col gap-1.5">
+            <div className="flex flex-col gap-[6px]">
               <span className="text-sm font-medium text-text">{t("services.addDrawer.sourceLabel")}</span>
               <div role="group" aria-label={t("services.addDrawer.sourceLabel")} className="flex flex-wrap gap-2">
                 <ChipButton active>{t("services.addDrawer.sourceDatadog")}</ChipButton>
@@ -194,6 +224,9 @@ export function AddServiceDrawer({ open, onOpenChange }: AddServiceDrawerProps) 
               }}
               placeholder="Digite o nome do SLO"
             />
+            <p className="rounded-[9px] border border-accent/20 bg-accent-100 px-3 py-2.5 text-[12px] leading-[1.5] text-neutral-400">
+              {t("services.addDrawer.sloHelperNote")}
+            </p>
             {query.trim() && sloSearch.data ? (
               <ul className="flex flex-col gap-1 rounded-md border border-divider bg-bg p-1">
                 {sloSearch.data.length === 0 ? (
@@ -222,7 +255,7 @@ export function AddServiceDrawer({ open, onOpenChange }: AddServiceDrawerProps) 
           </>
         ) : (
           <>
-            <div className="flex flex-col gap-1.5">
+            <div className="flex flex-col gap-[6px]">
               <span className="text-sm font-medium text-text">{t("services.addDrawer.checkTypeLabel")}</span>
               <div role="group" aria-label={t("services.addDrawer.checkTypeLabel")} className="flex flex-wrap gap-2">
                 {checkTypes.map((type) => (
@@ -240,7 +273,7 @@ export function AddServiceDrawer({ open, onOpenChange }: AddServiceDrawerProps) 
               placeholder={targetPlaceholder}
               required
             />
-            <div className="flex flex-col gap-1.5">
+            <div className="flex flex-col gap-[6px]">
               <span className="text-sm font-medium text-text">{t("services.addDrawer.intervalLabel")}</span>
               <div
                 role="group"
@@ -268,6 +301,48 @@ export function AddServiceDrawer({ open, onOpenChange }: AddServiceDrawerProps) 
         ) : null}
       </form>
     </Drawer>
+  );
+}
+
+interface ModeCardProps {
+  active: boolean;
+  disabled?: boolean;
+  icon: ReactNode;
+  title: string;
+  description: string;
+  onClick: () => void;
+}
+
+// ModeCard is the "Como monitorar" tile (icon + title + description),
+// distinct from the pill-shaped ChipButton used for Fonte/check-type/
+// interval - the mock (`handoff-new-layout/Servicos Monitorados.dc.html`'s
+// `modeBoxStyle`) renders this selector as a bigger two-tile grid, not a
+// chip group. `disabled` blocks "Baseado em SLO" when no Datadog
+// integration is connected (nothing to import a target from) - same
+// no-onClick-attached pattern as the "New Relic" chip, never just a
+// CSS-only disabled look.
+function ModeCard({ active, disabled, icon, title, description, onClick }: ModeCardProps) {
+  return (
+    <button
+      type="button"
+      aria-pressed={active && !disabled}
+      aria-disabled={disabled}
+      aria-label={title}
+      onClick={disabled ? undefined : onClick}
+      className={
+        "flex flex-col items-start rounded-[10px] border p-[14px] text-left transition-colors " +
+        (disabled
+          ? "cursor-not-allowed border-divider bg-surface text-neutral-400 opacity-60"
+          : "cursor-pointer " +
+            (active
+              ? "border-accent bg-accent-100 text-text"
+              : "border-divider bg-surface text-neutral-400 hover:text-text"))
+      }
+    >
+      <span className="mb-[8px]">{icon}</span>
+      <span className="mb-0.5 text-[13px] font-bold">{title}</span>
+      <span className="text-[11.5px] leading-[1.4] text-neutral-400">{description}</span>
+    </button>
   );
 }
 

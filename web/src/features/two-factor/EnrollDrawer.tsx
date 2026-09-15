@@ -117,6 +117,7 @@ export function EnrollDrawer({ open, onOpenChange, onEnabled }: EnrollDrawerProp
       onOpenChange={onOpenChange}
       title={t("twoFactor.title")}
       description={t("twoFactor.subtitle")}
+      closeLabel={t("common.close")}
       footer={footer}
     >
       {step === "scan" ? (

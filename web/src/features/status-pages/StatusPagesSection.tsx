@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 import { MdOutlineWeb, MdOutlineDeleteOutline, MdOutlineAdd } from "react-icons/md";
 import { Card } from "../../components/ui/Card";
 import { Dialog } from "../../components/ui/Dialog";
-import { Drawer } from "../../components/ui/Drawer";
+import { Drawer, drawerFooterPrimaryStyle, drawerFooterSecondaryStyle } from "../../components/ui/Drawer";
 import { Pager } from "../../components/ui/Pager";
 import { Button } from "../../components/ui/Button";
 import { Field } from "../../components/ui/Field";
@@ -251,12 +251,24 @@ export function StatusPagesSection() {
         onOpenChange={setDialogOpen}
         title="Criar status page"
         description="Vincule os serviços que essa status page vai exibir. O domínio é anexado depois, numa tela dedicada."
+        closeLabel="Fechar"
         footer={
           <>
-            <Button type="button" variant="secondary" onClick={() => setDialogOpen(false)}>
+            <Button
+              type="button"
+              variant="secondary"
+              style={drawerFooterSecondaryStyle}
+              onClick={() => setDialogOpen(false)}
+            >
               Cancelar
             </Button>
-            <Button type="submit" form="create-status-page-form" variant="primary" disabled={createStatusPage.isPending}>
+            <Button
+              type="submit"
+              form="create-status-page-form"
+              variant="solid"
+              style={drawerFooterPrimaryStyle}
+              disabled={createStatusPage.isPending}
+            >
               Criar
             </Button>
           </>

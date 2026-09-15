@@ -11,6 +11,7 @@ describe("Drawer", () => {
         onOpenChange={() => {}}
         title="Criar status page"
         description="Selecione os serviços"
+        closeLabel="Fechar"
         footer={<button>Criar</button>}
       >
         <p>corpo</p>
@@ -25,7 +26,7 @@ describe("Drawer", () => {
   it("Escape chama onOpenChange(false)", async () => {
     const onOpenChange = vi.fn();
     render(
-      <Drawer open onOpenChange={onOpenChange} title="Criar incidente">
+      <Drawer open onOpenChange={onOpenChange} title="Criar incidente" closeLabel="Fechar">
         <p>conteúdo</p>
       </Drawer>
     );
@@ -35,10 +36,21 @@ describe("Drawer", () => {
 
   it("fechado não renderiza conteúdo", () => {
     render(
-      <Drawer open={false} onOpenChange={() => {}} title="Criar status page">
+      <Drawer open={false} onOpenChange={() => {}} title="Criar status page" closeLabel="Fechar">
         <p>corpo</p>
       </Drawer>
     );
     expect(screen.queryByText("corpo")).not.toBeInTheDocument();
+  });
+
+  it("sempre renderiza o X de fechar (mesmo modelo de chrome em todos os drawers)", async () => {
+    const onOpenChange = vi.fn();
+    render(
+      <Drawer open onOpenChange={onOpenChange} title="Criar status page" closeLabel="Fechar">
+        <p>corpo</p>
+      </Drawer>
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Fechar" }));
+    expect(onOpenChange).toHaveBeenCalledWith(false);
   });
 });
