@@ -20,7 +20,7 @@ const variantClasses: Record<TagVariant, string> = {
   accent: "bg-accent-900 text-accent-200 border border-transparent",
   "accent-outline": "bg-transparent text-accent border border-accent",
   neutral: "bg-neutral-800 text-neutral-200 border border-transparent",
-  "neutral-outline": "bg-transparent text-neutral-300 border border-neutral-600",
+  "neutral-outline": "bg-transparent text-text-muted border border-divider",
   success: "border",
   warning: "border",
   critical: "border",
