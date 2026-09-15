@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { http, HttpResponse } from "msw";
 import { MemoryRouter } from "react-router-dom";
@@ -33,37 +33,61 @@ function renderPage() {
   );
 }
 
+async function openIncidentRow(title: string) {
+  await userEvent.click(await screen.findByText(title));
+}
+
 describe("IncidentsPage", () => {
-  it("incidente não-resolvido aparece na aba Ativos, separado dos resolvidos", async () => {
+  it("tabela lista incidentes ativos e resolvidos juntos por padrão", async () => {
     await loginAs("owner@vane.app");
     renderPage();
     expect(await screen.findByText("Latência elevada no Checkout")).toBeInTheDocument();
-    expect(screen.queryByText("Indisponibilidade parcial da API")).not.toBeInTheDocument();
+    expect(await screen.findByText("Indisponibilidade parcial da API")).toBeInTheDocument();
   });
 
-  it("aba Resolvidos mostra o incidente resolvido com botão Reabrir para quem gerencia", async () => {
+  it("chip de status filtra a tabela (Resolvido esconde os ativos)", async () => {
     await loginAs("owner@vane.app");
     renderPage();
     await screen.findByText("Latência elevada no Checkout");
-    await userEvent.click(screen.getByRole("tab", { name: "Resolvidos" }));
+
+    await userEvent.click(screen.getByRole("button", { name: /Resolvido/ }));
 
     expect(await screen.findByText("Indisponibilidade parcial da API")).toBeInTheDocument();
-    expect(screen.getByText("Resolvido")).toBeInTheDocument();
+    expect(screen.queryByText("Latência elevada no Checkout")).not.toBeInTheDocument();
+  });
+
+  it("clicar numa linha abre o drawer de detalhe com título, serviço e severidade", async () => {
+    await loginAs("owner@vane.app");
+    renderPage();
+    await openIncidentRow("Latência elevada no Checkout");
+
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByRole("heading", { name: "Latência elevada no Checkout" })).toBeInTheDocument();
+    expect(within(dialog).getByTestId("incident-detail-subtitle")).toHaveTextContent("Checkout");
+    expect(within(dialog).getByTestId("incident-detail-subtitle")).toHaveTextContent("Crítico");
+  });
+
+  it("drawer de incidente resolvido mostra banner e botão Reabrir para quem gerencia", async () => {
+    await loginAs("owner@vane.app");
+    renderPage();
+    await openIncidentRow("Indisponibilidade parcial da API");
+
+    expect(await screen.findByText(/Incidente resolvido em/)).toBeInTheDocument();
     expect(await screen.findByRole("button", { name: /Reabrir incidente/ })).toBeInTheDocument();
   });
 
-  it("viewer não vê o formulário de criação nem o botão de reabrir", async () => {
+  it("viewer não vê 'Novo incidente' nem controles de gestão no drawer", async () => {
     await loginAs("viewer@vane.app");
     renderPage();
     await screen.findByText("Latência elevada no Checkout");
     expect(screen.queryByRole("button", { name: "Novo incidente" })).not.toBeInTheDocument();
 
-    await userEvent.click(screen.getByRole("tab", { name: "Resolvidos" }));
-    await screen.findByText("Indisponibilidade parcial da API");
+    await openIncidentRow("Indisponibilidade parcial da API");
+    await screen.findByText(/Incidente resolvido em/);
     expect(screen.queryByRole("button", { name: /Reabrir incidente/ })).not.toBeInTheDocument();
   });
 
-  it("criar incidente com serviços selecionados aparece na aba Ativos", async () => {
+  it("criar incidente com serviços selecionados aparece na tabela", async () => {
     await loginAs("owner@vane.app");
     renderPage();
     await userEvent.click(await screen.findByRole("button", { name: "Novo incidente" }));
@@ -76,23 +100,28 @@ describe("IncidentsPage", () => {
   });
 
   // AI-12: inc-1's fixture (mockData.ts) is auto_created:true, inc-2 isn't -
-  // exercises both the badge-present and badge-absent cases.
-  it("incidente auto-criado mostra badge Automático, manual não mostra", async () => {
+  // exercises both the badge-present and badge-absent cases, in the table
+  // row and in the drawer header.
+  it("incidente auto-criado mostra badge Automático na linha e no drawer, manual não mostra", async () => {
     await loginAs("owner@vane.app");
     renderPage();
 
-    const activeCard = (await screen.findByText("Latência elevada no Checkout")).closest(
-      ".flex.flex-col"
+    const activeRow = (await screen.findByText("Latência elevada no Checkout")).closest(
+      '[data-testid="incident-row"]'
     ) as HTMLElement;
-    expect(activeCard).not.toBeNull();
-    expect(activeCard.textContent).toContain("Automático");
+    expect(activeRow).not.toBeNull();
+    expect(activeRow.textContent).toContain("Automático");
 
-    await userEvent.click(screen.getByRole("tab", { name: "Resolvidos" }));
-    const resolvedCard = (await screen.findByText("Indisponibilidade parcial da API")).closest(
-      ".flex.flex-col"
+    const resolvedRow = (await screen.findByText("Indisponibilidade parcial da API")).closest(
+      '[data-testid="incident-row"]'
     ) as HTMLElement;
-    expect(resolvedCard).not.toBeNull();
-    expect(resolvedCard.textContent).not.toContain("Automático");
+    expect(resolvedRow).not.toBeNull();
+    expect(resolvedRow.textContent).not.toContain("Automático");
+
+    await openIncidentRow("Latência elevada no Checkout");
+    const dialog = await screen.findByRole("dialog");
+    within(dialog).getByRole("heading", { name: "Latência elevada no Checkout" });
+    expect(within(dialog).getByText("Automático")).toBeInTheDocument();
   });
 
   // PAG-07/PAG-11: the incidents list is paginated (page_size 25). These
@@ -111,6 +140,7 @@ describe("IncidentsPage", () => {
           description: null,
           pending_close_comment: null,
           auto_created: false,
+          severity: "moderate",
         })),
         total: items.length,
         page,
@@ -145,7 +175,7 @@ describe("IncidentsPage", () => {
     server.use(
       paginatedIncidents(items),
       http.post("/api/incidents", async ({ request }) => {
-        const body = (await request.json()) as { title: string; service_ids: string[] };
+        const body = (await request.json()) as { title: string; service_ids: string[]; severity: string };
         const created = {
           id: "inc-created-on-page-2",
           title: body.title,
@@ -161,6 +191,7 @@ describe("IncidentsPage", () => {
             description: null,
             pending_close_comment: null,
             auto_created: false,
+            severity: body.severity,
           },
           { status: 201 }
         );
@@ -186,16 +217,13 @@ describe("IncidentsPage", () => {
   });
 
   // INCPG-01: inc-1 (mockData.ts) is severity "critical", inc-2 is
-  // "moderate" - exercises the badge label mapping on both tabs.
-  it("mostra badge de severidade em incidentes ativos e resolvidos (INCPG-01)", async () => {
+  // "moderate" - exercises the badge label mapping in the table.
+  it("mostra badge de severidade na tabela (INCPG-01)", async () => {
     await loginAs("owner@vane.app");
     renderPage();
 
     await screen.findByText("Latência elevada no Checkout");
     expect(screen.getByText("Crítico")).toBeInTheDocument();
-
-    await userEvent.click(screen.getByRole("tab", { name: "Resolvidos" }));
-    await screen.findByText("Indisponibilidade parcial da API");
     expect(screen.getByText("Moderado")).toBeInTheDocument();
   });
 
@@ -246,10 +274,29 @@ describe("IncidentsPage", () => {
     expect(screen.getByLabelText("Descrição inicial")).toHaveValue("");
   });
 
+  // INCPG-06: leaving the description field empty does not block submit -
+  // the incident is created (real MSW create handler, INCSEV-03's
+  // NULL-on-empty convention) with the default severity, and no crash
+  // occurs rendering it back in the table/drawer.
+  it("criar incidente sem descrição envia o form normalmente (INCPG-06)", async () => {
+    await loginAs("owner@vane.app");
+    renderPage();
+
+    await userEvent.click(await screen.findByRole("button", { name: "Novo incidente" }));
+    await userEvent.type(screen.getByLabelText("Título"), "Incidente sem descrição");
+    await userEvent.click(screen.getByRole("button", { name: "API pública" }));
+    await userEvent.click(screen.getByRole("button", { name: "Criar" }));
+
+    await waitFor(() => expect(screen.queryByLabelText("Título")).not.toBeInTheDocument());
+    await openIncidentRow("Incidente sem descrição");
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByTestId("incident-detail-subtitle")).toHaveTextContent("Moderado");
+  });
+
   // INCPG-08/09/10/11: timeline entries distinguish AI-generated summaries
   // ("Resumo gerado por IA"), human updates ("Equipe"), and system updates
-  // with no author ("Sistema").
-  it("timeline distingue resumo de IA, atualização humana e do sistema (INCPG-09..11)", async () => {
+  // with no author ("Sistema"), inside the detail drawer.
+  it("timeline no drawer distingue resumo de IA, atualização humana e do sistema (INCPG-09..11)", async () => {
     server.use(
       http.get("/api/incidents/:id/updates", ({ params }) => {
         const incidentId = params.id as string;
@@ -288,8 +335,7 @@ describe("IncidentsPage", () => {
     );
     await loginAs("owner@vane.app");
     renderPage();
-
-    await userEvent.click(await screen.findByText(/Ver timeline/));
+    await openIncidentRow("Latência elevada no Checkout");
 
     expect(await screen.findByText("Resumo gerado por IA")).toBeInTheDocument();
     expect(screen.getAllByText("Equipe").length).toBeGreaterThan(0);

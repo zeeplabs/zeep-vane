@@ -1,45 +1,27 @@
-import { useState, type FormEvent } from "react";
-import { MdOutlineAdd, MdOutlineCheckCircleOutline, MdOutlineRefresh } from "react-icons/md";
-import { Seg } from "../../components/ui/Seg";
+import { useMemo, useState, type FormEvent } from "react";
+import { MdOutlineAdd, MdChevronRight, MdCheck } from "react-icons/md";
 import { Card } from "../../components/ui/Card";
-import { Tag, type TagVariant } from "../../components/ui/Tag";
+import { Tag } from "../../components/ui/Tag";
 import { Button } from "../../components/ui/Button";
 import { Field } from "../../components/ui/Field";
-import { Input } from "../../components/ui/Input";
 import { Drawer, drawerFooterPrimaryStyle, drawerFooterSecondaryStyle } from "../../components/ui/Drawer";
 import { Pager } from "../../components/ui/Pager";
-import { EmptyState } from "../../layout/EmptyState";
+import { Seg } from "../../components/ui/Seg";
 import { useAuth } from "../../auth/AuthProvider";
 import { ApiError } from "../../lib/apiClient";
-import type { Incident, IncidentSeverity, IncidentStatus, IncidentUpdate } from "../../types/api";
+import type { IncidentSeverity, IncidentStatus } from "../../types/api";
 import { useServices } from "../services/hooks";
-import {
-  useAddIncidentUpdate,
-  useCreateIncident,
-  useIncidents,
-  useIncidentUpdates,
-  useTransitionIncident,
-} from "./hooks";
+import { useCreateIncident, useIncidents } from "./hooks";
+import { IncidentDetailDrawer } from "./IncidentDetailDrawer";
+import { IncidentStatusTag } from "./IncidentStatusTag";
+import { incidentSeverityLabel, incidentStatusLabel, formatDuration } from "./incidentStatusMeta";
 
-const activeStatusLabel: Record<Exclude<IncidentStatus, "resolved">, string> = {
-  investigating: "Investigando",
-  identified: "Identificado",
-  monitoring: "Monitorando",
-};
-
-const transitionOptions: { value: IncidentStatus; label: string }[] = [
-  { value: "identified", label: "Identificado" },
-  { value: "monitoring", label: "Monitorando" },
-  { value: "resolved", label: "Marcar como resolvido" },
-];
-
-// INCPG-01/02: severity badge label/color mapping - Menor=neutral,
-// Moderado=warning, Crítico=critical (spec.md Assumptions).
-const severityMeta: Record<IncidentSeverity, { label: string; variant: TagVariant }> = {
-  minor: { label: "Menor", variant: "neutral-outline" },
-  moderate: { label: "Moderado", variant: "warning" },
-  critical: { label: "Crítico", variant: "critical" },
-};
+// Filter chips mirror the mock's Todos/Investigando/Monitorando/Resolvido
+// row (handoff-new-layout/Incidentes.dc.html), plus "identified" - a real
+// status the mock's seed data never exercises but the backend supports.
+type StatusFilter = "all" | IncidentStatus;
+const statusFilters: StatusFilter[] = ["all", "investigating", "identified", "monitoring", "resolved"];
+const filterLabel: Record<StatusFilter, string> = { all: "Todos", ...incidentStatusLabel };
 
 const severityOptions: { value: IncidentSeverity; label: string }[] = [
   { value: "minor", label: "Menor" },
@@ -49,192 +31,21 @@ const severityOptions: { value: IncidentSeverity; label: string }[] = [
 
 const DEFAULT_SEVERITY: IncidentSeverity = "moderate";
 
-function SeverityBadge({ severity }: { severity: IncidentSeverity }) {
-  const meta = severityMeta[severity] ?? { label: severity, variant: "neutral-outline" as TagVariant };
-  return <Tag variant={meta.variant}>{meta.label}</Tag>;
-}
-
-// INCPG-08/09/10/11: AI-generated closing summaries render distinct from
-// human/system updates; human updates get a generic "Equipe" label since no
-// admin-name-by-ID lookup is wired into this endpoint (spec.md Assumptions,
-// confirmed via AskUserQuestion).
-function authorLabel(update: IncidentUpdate): string {
-  if (update.is_ai_summary) return "Resumo gerado por IA";
-  if (update.author_id) return "Equipe";
-  return "Sistema";
-}
-
-function TimelineEntry({ update }: { update: IncidentUpdate }) {
-  if (update.is_ai_summary) {
-    return (
-      <div
-        className="flex flex-col gap-0.5 rounded-md border px-3 py-2.5"
-        style={{
-          backgroundColor: "color-mix(in oklch, var(--color-accent) 10%, transparent)",
-          borderColor: "color-mix(in oklch, var(--color-accent) 40%, transparent)",
-        }}
-      >
-        <p className="text-[11px] font-bold tracking-wide text-accent uppercase">{authorLabel(update)}</p>
-        <p className="text-sm text-text">{update.body}</p>
-        <p className="text-xs text-neutral-400">{new Date(update.created_at).toLocaleString("pt-BR")}</p>
-      </div>
-    );
-  }
-  return (
-    <div className="flex gap-3">
-      <div className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-accent" />
-      <div className="flex flex-col gap-0.5">
-        <p className="text-xs font-semibold text-text-muted">{authorLabel(update)}</p>
-        <p className="text-sm text-text">{update.body}</p>
-        <p className="text-xs text-neutral-400">{new Date(update.created_at).toLocaleString("pt-BR")}</p>
-      </div>
-    </div>
-  );
-}
-
-function PlusIcon() {
-  return <MdOutlineAdd size={14} aria-hidden="true" />;
-}
-
-function CheckCircleIcon() {
-  return <MdOutlineCheckCircleOutline size={28} aria-hidden="true" />;
-}
-
-function ReloadIcon() {
-  return <MdOutlineRefresh size={14} aria-hidden="true" />;
-}
-
-function ReopenButton({ incident }: { incident: Incident }) {
-  const transition = useTransitionIncident(incident.id);
-  return (
-    <Button
-      variant="ghost"
-      onClick={() => transition.mutate("investigating")}
-      disabled={transition.isPending}
-    >
-      <ReloadIcon />
-      Reabrir incidente
-    </Button>
-  );
-}
-
-function formatActiveTimestamp(iso: string): string {
+function formatOpenedAt(iso: string): string {
   return new Date(iso).toLocaleString("pt-BR", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" });
-}
-
-function formatResolvedTimestamp(iso: string): string {
-  return new Date(iso).toLocaleString("pt-BR", { day: "2-digit", month: "short", year: "numeric" });
-}
-
-function ActiveIncidentCard({
-  incident,
-  canManage,
-  serviceName,
-}: {
-  incident: Incident;
-  canManage: boolean;
-  serviceName: (id: string) => string;
-}) {
-  const [expanded, setExpanded] = useState(false);
-  // SPEC_DEVIATION: fixed page 1, no Pager for this per-incident timeline -
-  // see the equivalent note in IncidentDetail.tsx.
-  const { data: updatesPage } = useIncidentUpdates(incident.id, 1);
-  const updates = updatesPage?.items;
-  const addUpdate = useAddIncidentUpdate(incident.id);
-  const transition = useTransitionIncident(incident.id);
-  const [body, setBody] = useState("");
-
-  async function handlePublish(e: FormEvent) {
-    e.preventDefault();
-    if (!body.trim()) return;
-    await addUpdate.mutateAsync(body);
-    setBody("");
-  }
-
-  return (
-    <Card elevation="none" className="border border-divider flex flex-col gap-2 p-4">
-      <div className="flex items-start justify-between">
-        <div className="flex items-center gap-2">
-          <Tag variant="accent">
-            {activeStatusLabel[incident.status as Exclude<IncidentStatus, "resolved">]}
-          </Tag>
-          <SeverityBadge severity={incident.severity} />
-          {incident.auto_created ? <Tag variant="neutral-outline">Automático</Tag> : null}
-          <span className="text-[15px] font-medium text-text">{incident.title}</span>
-        </div>
-        <span className="text-xs text-neutral-400">{formatActiveTimestamp(incident.created_at)}</span>
-      </div>
-
-      <div className="flex flex-wrap gap-1">
-        {incident.service_ids.map((id) => (
-          <Tag key={id} variant="neutral">
-            {serviceName(id)}
-          </Tag>
-        ))}
-      </div>
-
-      <button
-        type="button"
-        onClick={() => setExpanded((v) => !v)}
-        className="w-fit cursor-pointer text-xs text-accent hover:underline"
-      >
-        Ver timeline ( {(updates ?? []).length} )
-      </button>
-
-      {expanded ? (
-        <>
-          <div className="h-px bg-divider" />
-          <div className="flex flex-col gap-3">
-            {(updates ?? []).map((update) => (
-              <TimelineEntry key={update.id} update={update} />
-            ))}
-          </div>
-
-          {canManage ? (
-            <form onSubmit={handlePublish} className="flex items-center gap-2">
-              <Input
-                aria-label="Adicionar atualização"
-                value={body}
-                onChange={(e) => setBody(e.target.value)}
-                placeholder="Adicionar atualização…"
-              />
-              <Button type="submit" variant="primary" disabled={addUpdate.isPending}>
-                Publicar
-              </Button>
-            </form>
-          ) : null}
-
-          {canManage ? (
-            <div className="flex flex-wrap gap-2">
-              {transitionOptions.map((opt) => (
-                <Button
-                  key={opt.value}
-                  variant="secondary"
-                  disabled={transition.isPending || incident.status === opt.value}
-                  onClick={() => transition.mutate(opt.value)}
-                >
-                  {opt.label}
-                </Button>
-              ))}
-            </div>
-          ) : null}
-        </>
-      ) : null}
-    </Card>
-  );
 }
 
 export function IncidentsPage() {
   const { hasRole } = useAuth();
   const canManage = hasRole(["owner", "operator"]);
-  const [tab, setTab] = useState<"active" | "resolved">("active");
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   // PAG-07/PAG-11: the incidents list is the one endpoint with unbounded
   // growth, so it is paginated (page_size 25) with a Pager below the list.
-  // The Ativos/Resolvidos tabs keep filtering the currently-loaded page's
-  // items, exactly as before pagination.
+  // The filter chips keep filtering the currently-loaded page's items,
+  // exactly as before pagination.
   const [page, setPage] = useState(1);
   const { data: incidentsPage, isLoading } = useIncidents(page);
-  const incidents = incidentsPage?.items;
+  const incidents = useMemo(() => incidentsPage?.items ?? [], [incidentsPage]);
   const totalPages = Math.max(1, Math.ceil((incidentsPage?.total ?? 0) / (incidentsPage?.page_size ?? 25)));
   // SPEC_DEVIATION: fixed page 1 for now - Pager UI for the services
   // dropdown/lookup is out of scope here; T14/T16 (Pager) is a later
@@ -249,6 +60,7 @@ export function IncidentsPage() {
   const [severity, setSeverity] = useState<IncidentSeverity>(DEFAULT_SEVERITY);
   const [description, setDescription] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
 
   function toggleService(id: string) {
     setServiceIds((prev) => (prev.includes(id) ? prev.filter((s) => s !== id) : [...prev, id]));
@@ -275,13 +87,22 @@ export function IncidentsPage() {
     }
   }
 
-  const active = (incidents ?? []).filter((i) => i.status !== "resolved");
-  const resolved = (incidents ?? []).filter((i) => i.status === "resolved");
-  const list = tab === "active" ? active : resolved;
+  const counts = useMemo(() => {
+    const base: Record<StatusFilter, number> = { all: incidents.length, investigating: 0, identified: 0, monitoring: 0, resolved: 0 };
+    for (const incident of incidents) base[incident.status] += 1;
+    return base;
+  }, [incidents]);
+
+  const filtered = useMemo(
+    () => (statusFilter === "all" ? incidents : incidents.filter((i) => i.status === statusFilter)),
+    [incidents, statusFilter]
+  );
 
   function serviceName(id: string): string {
     return services?.find((s) => s.id === id)?.name ?? id;
   }
+
+  const selectedIncident = incidents.find((i) => i.id === selectedId) ?? null;
 
   return (
     <div className="mx-auto flex w-full max-w-[1280px] flex-col gap-6">
@@ -289,77 +110,93 @@ export function IncidentsPage() {
         <div>
           <h2 className="text-text">Incidentes</h2>
           <p className="m-0 text-[13.5px] text-neutral-400">
-            Acompanhe e comunique incidentes vinculados aos serviços monitorados.
+            Acompanhe, atualize e encerre incidentes dos serviços monitorados.
           </p>
         </div>
         {canManage ? (
           <Button variant="primary" onClick={() => setDialogOpen(true)}>
-            <PlusIcon />
+            <MdOutlineAdd size={14} aria-hidden="true" />
             Novo incidente
           </Button>
         ) : null}
       </div>
 
-      <Seg
-        aria-label="Filtrar incidentes"
-        options={[
-          { value: "active", label: "Ativos" },
-          { value: "resolved", label: "Resolvidos" },
-        ]}
-        value={tab}
-        onChange={(v) => setTab(v as "active" | "resolved")}
-      />
+      <div role="group" aria-label="Filtrar por status" className="flex flex-wrap items-center gap-2">
+        {statusFilters.map((value) => {
+          const active = statusFilter === value;
+          return (
+            <button
+              key={value}
+              type="button"
+              aria-pressed={active}
+              onClick={() => setStatusFilter(value)}
+              className={
+                "inline-flex cursor-pointer items-center gap-1.5 rounded-full border px-3.5 py-1.5 text-xs font-semibold transition-colors " +
+                (active
+                  ? "border-accent bg-accent-100 text-accent"
+                  : "border-divider bg-surface text-neutral-400 hover:text-text")
+              }
+            >
+              {filterLabel[value]}
+              <span className="opacity-70">{counts[value]}</span>
+            </button>
+          );
+        })}
+      </div>
 
       {isLoading ? (
         <p className="text-neutral-400">Carregando…</p>
-      ) : list.length === 0 && tab === "active" ? (
-        <EmptyState
-          title="Nenhum incidente ativo"
-          description="Todos os serviços monitorados estão operando normalmente."
-          action={<CheckCircleIcon />}
-        />
-      ) : list.length === 0 ? (
-        <EmptyState title="Nenhum incidente resolvido ainda." />
-      ) : tab === "active" ? (
-        <div className="flex flex-col gap-3">
-          {list.map((incident) => (
-            <ActiveIncidentCard
-              key={incident.id}
-              incident={incident}
-              canManage={canManage}
-              serviceName={serviceName}
-            />
-          ))}
-        </div>
       ) : (
-        <div className="flex flex-col gap-3">
-          {list.map((incident) => (
-            <Card key={incident.id} elevation="none" className="border border-divider flex flex-col gap-2 p-4">
-              <div className="flex items-start justify-between">
-                <div className="flex items-center gap-2">
-                  <Tag variant="neutral">Resolvido</Tag>
-                  <SeverityBadge severity={incident.severity} />
+        <Card elevation="none" className="overflow-hidden border border-divider">
+          <div className="grid grid-cols-[130px_1fr_140px_100px_130px_90px_20px] items-center gap-3 border-b border-divider bg-card-header-bg px-5 py-2.5">
+            <span className="text-[11px] font-bold uppercase tracking-wide text-neutral-400">Status</span>
+            <span className="text-[11px] font-bold uppercase tracking-wide text-neutral-400">Incidente</span>
+            <span className="text-[11px] font-bold uppercase tracking-wide text-neutral-400">Serviço</span>
+            <span className="text-[11px] font-bold uppercase tracking-wide text-neutral-400">Severidade</span>
+            <span className="text-[11px] font-bold uppercase tracking-wide text-neutral-400">Aberto em</span>
+            <span className="text-[11px] font-bold uppercase tracking-wide text-neutral-400">Duração</span>
+            <span />
+          </div>
+          {filtered.length === 0 ? (
+            <p className="px-5 py-12 text-center text-[13.5px] text-neutral-400">
+              Nenhum incidente encontrado com esse filtro.
+            </p>
+          ) : (
+            filtered.map((incident) => (
+              <div
+                key={incident.id}
+                data-testid="incident-row"
+                onClick={() => setSelectedId(incident.id)}
+                className="grid cursor-pointer grid-cols-[130px_1fr_140px_100px_130px_90px_20px] items-center gap-3 border-b border-divider px-5 py-3.5 last:border-b-0 hover:bg-card-header-bg"
+              >
+                <IncidentStatusTag status={incident.status} />
+                <div className="flex min-w-0 items-center gap-2">
+                  <span className="min-w-0 truncate text-[13.5px] font-bold text-text">{incident.title}</span>
                   {incident.auto_created ? <Tag variant="neutral-outline">Automático</Tag> : null}
-                  <span className="text-[15px] font-medium text-text">{incident.title}</span>
                 </div>
-                <span className="text-xs text-neutral-400">
-                  {formatResolvedTimestamp(incident.resolved_at ?? incident.created_at)}
-                </span>
+                <div className="min-w-0 truncate text-[12.5px] text-neutral-400">
+                  {incident.service_ids.length > 0 ? incident.service_ids.map(serviceName).join(", ") : "—"}
+                </div>
+                <div className="text-[12.5px] font-bold text-text">{incidentSeverityLabel[incident.severity]}</div>
+                <div className="text-[12.5px] text-neutral-400">{formatOpenedAt(incident.created_at)}</div>
+                <div className="text-[12.5px] font-semibold text-text">
+                  {formatDuration(incident.created_at, incident.resolved_at)}
+                </div>
+                <MdChevronRight size={16} className="text-neutral-500" aria-hidden="true" />
               </div>
-              <div className="flex flex-wrap gap-1">
-                {incident.service_ids.map((id) => (
-                  <Tag key={id} variant="neutral">
-                    {serviceName(id)}
-                  </Tag>
-                ))}
-              </div>
-              {canManage ? <ReopenButton incident={incident} /> : null}
-            </Card>
-          ))}
-        </div>
+            ))
+          )}
+        </Card>
       )}
 
       <Pager page={page} totalPages={totalPages} onChange={setPage} />
+
+      <IncidentDetailDrawer
+        incident={selectedIncident}
+        canManage={canManage}
+        serviceName={serviceName}
+        onClose={() => setSelectedId(null)}
+      />
 
       <Drawer
         open={dialogOpen}
@@ -393,12 +230,26 @@ export function IncidentsPage() {
           <Field label="Título" value={title} onChange={(e) => setTitle(e.target.value)} required />
           <div className="flex flex-col gap-1">
             <span className="text-sm font-medium text-text">Serviços afetados</span>
-            <div className="flex flex-wrap gap-2">
+            <div className="flex flex-col gap-1">
               {(services ?? []).map((s) => {
-                const isActive = serviceIds.includes(s.id);
+                const checked = serviceIds.includes(s.id);
                 return (
-                  <button key={s.id} type="button" onClick={() => toggleService(s.id)} className="cursor-pointer">
-                    <Tag variant={isActive ? "accent" : "accent-outline"}>{s.name}</Tag>
+                  <button
+                    key={s.id}
+                    type="button"
+                    onClick={() => toggleService(s.id)}
+                    aria-pressed={checked}
+                    className="flex cursor-pointer items-center gap-2.5 rounded-md px-2.5 py-[9px] text-left hover:bg-card-header-bg"
+                  >
+                    <span
+                      className={
+                        "flex h-[16px] w-[16px] flex-none items-center justify-center rounded-[5px] border-[1.5px] " +
+                        (checked ? "border-accent bg-accent" : "border-divider bg-surface")
+                      }
+                    >
+                      {checked ? <MdCheck size={11} className="text-white" aria-hidden="true" /> : null}
+                    </span>
+                    <span className="text-[13px] font-semibold text-text">{s.name}</span>
                   </button>
                 );
               })}
