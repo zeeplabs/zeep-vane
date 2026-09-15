@@ -27,18 +27,30 @@ export const incidentStatusDotColor: Record<IncidentStatus, string> = {
   resolved: "var(--color-success)",
 };
 
-// Mirrors the mock's SEVERITY_META label/color mapping.
+// Mirrors the mock's SEVERITY_META - severity renders as bold colored text
+// (not a Tag/pill), same composition as the mock's `inc.severityColor`/
+// `selected.severityColor`.
 export const incidentSeverityLabel: Record<IncidentSeverity, string> = {
   minor: "Menor",
   moderate: "Moderado",
   critical: "Crítico",
 };
 
-export const incidentSeverityVariant: Record<IncidentSeverity, TagVariant> = {
-  minor: "neutral-outline",
-  moderate: "warning",
-  critical: "critical",
+export const incidentSeverityColor: Record<IncidentSeverity, string> = {
+  minor: "var(--color-text-muted)",
+  moderate: "var(--color-warning)",
+  critical: "var(--color-critical)",
 };
+
+// Edge case (spec.md): an unrecognized severity value renders its raw
+// string in a neutral color instead of crashing/rendering blank.
+export function severityLabel(severity: string): string {
+  return incidentSeverityLabel[severity as IncidentSeverity] ?? severity;
+}
+
+export function severityColor(severity: string): string {
+  return incidentSeverityColor[severity as IncidentSeverity] ?? "var(--color-text-muted)";
+}
 
 // Formats elapsed time between two ISO timestamps as "XhYmin"/"Ymin",
 // matching the mock's "2h 10min"/"38min" duration column.

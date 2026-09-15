@@ -13,7 +13,7 @@ import {
   useTransitionIncident,
 } from "./hooks";
 
-import { incidentSeverityLabel, formatDuration } from "./incidentStatusMeta";
+import { formatDuration, severityColor, severityLabel } from "./incidentStatusMeta";
 import { IncidentStatusTag } from "./IncidentStatusTag";
 import { TimelineEntry } from "./TimelineEntry";
 
@@ -39,18 +39,28 @@ export interface IncidentDetailDrawerProps {
  * DomainDetailDrawer/ServiceDetailDrawer: o mock não tem cabeçalho com
  * borda nem rodapé, é um painel contínuo com badge+X no topo.
  *
- * O resumo de fechamento por IA (mock's "hasAiSummary" box) é, no backend
- * real, apenas mais uma entrada da timeline (`is_ai_summary: true`) - não um
- * campo separado - então já aparece destacada dentro de "Linha do tempo"
- * (TimelineEntry) em vez de duplicada numa caixa própria. O botão "Resolver
- * com resumo de IA" do mock dispara geração síncrona fictícia; o backend
- * real propõe o resumo de forma assíncrona (AI-19) e só oferece
- * confirmar/descartar quando já existe uma proposta pendente - esse fluxo
- * real (`pending_close_comment`/confirm-close/discard-close-proposal,
- * já existente em IncidentDetail.tsx) é o que este drawer expõe. */
+ * A caixa "RESUMO GERADO POR IA" fica acima da timeline, igual ao mock -
+ * mas o texto vem de dois lugares reais possíveis: `pending_close_comment`
+ * (proposta ainda não confirmada) ou, pra incidente já resolvido, a entrada
+ * da timeline com `is_ai_summary: true` (é isso que `ConfirmPendingClose`
+ * grava - `pending_close_comment` já foi limpo nesse ponto). Qualquer
+ * entrada `is_ai_summary` é removida da lista "Linha do tempo" (já
+ * representada na caixa, não duplicada).
+ *
+ * O botão "Resolver com resumo de IA" do mock dispara geração síncrona
+ * fictícia; o backend real só propõe o resumo de forma assíncrona (AI-19).
+ * Decisão confirmada via AskUserQuestion: manter o texto/visual do mock,
+ * mas desabilitado até existir uma proposta pendente de verdade - quando
+ * existe, o clique confirma o fechamento real (`confirm-close`). "Descartar
+ * proposta" e os botões de transição manual (Identificado/Monitorando/
+ * Marcar como resolvido) são capacidade real adicional que o mock não
+ * mostra - mantidos como ações secundárias, mesmo raciocínio de "Reabrir
+ * incidente" abaixo. */
 export function IncidentDetailDrawer({ incident, canManage, serviceName, onClose }: IncidentDetailDrawerProps) {
   const { data: updatesPage } = useIncidentUpdates(incident?.id ?? "", 1);
   const updates = updatesPage?.items ?? [];
+  const timelineUpdates = updates.filter((u) => !u.is_ai_summary);
+  const aiSummaryText = incident?.pending_close_comment ?? updates.find((u) => u.is_ai_summary)?.body ?? null;
   const addUpdate = useAddIncidentUpdate(incident?.id ?? "");
   const transition = useTransitionIncident(incident?.id ?? "");
   const confirmClose = useConfirmCloseIncident(incident?.id ?? "");
@@ -114,7 +124,9 @@ export function IncidentDetailDrawer({ incident, canManage, serviceName, onClose
                 </RadixDialog.Title>
                 <p data-testid="incident-detail-subtitle" className="mt-1 text-[13px] text-text-muted">
                   {incident.service_ids.length > 0 ? incident.service_ids.map(serviceName).join(", ") : "—"} ·{" "}
-                  <span className="font-bold text-text">{incidentSeverityLabel[incident.severity]}</span>
+                  <span className="font-bold" style={{ color: severityColor(incident.severity) }}>
+                    {severityLabel(incident.severity)}
+                  </span>
                 </p>
               </div>
 
@@ -131,58 +143,50 @@ export function IncidentDetailDrawer({ incident, canManage, serviceName, onClose
                 </div>
               </div>
 
+              {aiSummaryText ? (
+                <div
+                  className="flex flex-col gap-2 rounded-md border px-3.5 py-3"
+                  style={{
+                    backgroundColor: "color-mix(in oklch, var(--color-accent) 10%, transparent)",
+                    borderColor: "color-mix(in oklch, var(--color-accent) 40%, transparent)",
+                  }}
+                >
+                  <div className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wide text-accent">
+                    <MdOutlineAutoAwesome size={14} aria-hidden="true" />
+                    Resumo gerado por IA
+                  </div>
+                  <p className="text-[13px] leading-relaxed text-text-muted">{aiSummaryText}</p>
+                  {proposalError ? (
+                    <p role="alert" className="text-xs text-critical">
+                      {proposalError}
+                    </p>
+                  ) : null}
+                  {canManage && incident.pending_close_comment ? (
+                    <button
+                      type="button"
+                      onClick={handleDiscardCloseProposal}
+                      disabled={confirmClose.isPending || discardCloseProposal.isPending}
+                      className="w-fit cursor-pointer text-xs text-accent hover:underline disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      Descartar proposta
+                    </button>
+                  ) : null}
+                </div>
+              ) : null}
+
               <div>
                 <div className="mb-2 text-[10.5px] font-bold uppercase tracking-wide text-text-muted">Linha do tempo</div>
                 <div className="ml-1 flex flex-col gap-3 border-l-2 border-divider pl-4">
-                  {updates.length === 0 ? (
+                  {timelineUpdates.length === 0 ? (
                     <p className="text-xs text-text-muted">Nenhuma atualização ainda.</p>
                   ) : (
-                    updates.map((update) => <TimelineEntry key={update.id} update={update} />)
+                    timelineUpdates.map((update) => <TimelineEntry key={update.id} update={update} />)
                   )}
                 </div>
               </div>
 
               {incident.status !== "resolved" ? (
                 <>
-                  {incident.pending_close_comment ? (
-                    <div
-                      className="flex flex-col gap-2 rounded-md border px-3.5 py-3"
-                      style={{
-                        backgroundColor: "color-mix(in oklch, var(--color-accent) 10%, transparent)",
-                        borderColor: "color-mix(in oklch, var(--color-accent) 40%, transparent)",
-                      }}
-                    >
-                      <div className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wide text-accent">
-                        <MdOutlineAutoAwesome size={14} aria-hidden="true" />
-                        Resumo gerado por IA aguardando confirmação
-                      </div>
-                      <p className="text-[13px] leading-relaxed text-text-muted">{incident.pending_close_comment}</p>
-                      {proposalError ? (
-                        <p role="alert" className="text-xs text-critical">
-                          {proposalError}
-                        </p>
-                      ) : null}
-                      {canManage ? (
-                        <div className="flex gap-2">
-                          <Button
-                            variant="primary"
-                            onClick={handleConfirmClose}
-                            disabled={confirmClose.isPending || discardCloseProposal.isPending}
-                          >
-                            Confirmar e resolver
-                          </Button>
-                          <Button
-                            variant="secondary"
-                            onClick={handleDiscardCloseProposal}
-                            disabled={confirmClose.isPending || discardCloseProposal.isPending}
-                          >
-                            Descartar
-                          </Button>
-                        </div>
-                      ) : null}
-                    </div>
-                  ) : null}
-
                   {canManage ? (
                     <form onSubmit={handlePublish} className="flex flex-col gap-2">
                       <label htmlFor="incident-update-body" className="text-[12.5px] font-semibold text-text-muted">
@@ -196,10 +200,21 @@ export function IncidentDetailDrawer({ incident, canManage, serviceName, onClose
                         rows={3}
                         className="w-full resize-y rounded-md border border-divider bg-card-header-bg px-3 py-2.5 text-sm text-text outline-none transition-colors focus:border-accent focus:bg-surface"
                       />
-                      <Button type="submit" variant="secondary" disabled={addUpdate.isPending}>
+                      <Button type="submit" variant="secondary" className="w-full" disabled={addUpdate.isPending}>
                         Publicar atualização
                       </Button>
                     </form>
+                  ) : null}
+
+                  {canManage ? (
+                    <Button
+                      variant="primary"
+                      className="w-full"
+                      onClick={handleConfirmClose}
+                      disabled={!incident.pending_close_comment || confirmClose.isPending || discardCloseProposal.isPending}
+                    >
+                      Resolver com resumo de IA
+                    </Button>
                   ) : null}
 
                   {canManage ? (

@@ -350,6 +350,18 @@ Seen once or not yet corroborated. Tracked, not trusted.
 - evidence: spec.md Edge Cases §2 (empty items) (frontend/tests)
 - last seen: 2026-09-15T14:22:24Z
 
+### L-057 - When a follow-up commit rewrites a screen for visual parity with a mock, diff the removed component against the spec's ACs - a 'SeverityBadge with Tag variant' silently became plain unstyled text (and its color-mapping constant went dead) even though the commit's whole stated purpose was matching the mock's visuals.
+- signal: `ac_gap` · recurrence: 1 feature(s) · scope: `web/incidents` · harmful: 0
+- features: incidents-page
+- evidence: INCPG-01 - web/src/features/incidents/IncidentsPage.tsx:180 (web/incidents)
+- last seen: 2026-09-15T14:57:35Z
+
+### L-058 - A badge-label test that asserts screen.getByText(label) with no row/element scoping does not verify the label is attached to the right entity - it only proves the string exists somewhere on the page, so swapping two labels in the same enum's map survives that specific test undetected.
+- signal: `spec_precision_gap` · recurrence: 1 feature(s) · scope: `web/incidents` · harmful: 0
+- features: incidents-page
+- evidence: INCPG-01 - IncidentsPage.test.tsx:221-228 (web/incidents)
+- last seen: 2026-09-15T14:57:40Z
+
 ## Quarantined (failed when applied - ignore)
 
 A confirmed lesson that recurred alongside failure. Kept for the maintainer to review.

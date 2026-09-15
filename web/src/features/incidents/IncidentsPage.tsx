@@ -14,7 +14,7 @@ import { useServices } from "../services/hooks";
 import { useCreateIncident, useIncidents } from "./hooks";
 import { IncidentDetailDrawer } from "./IncidentDetailDrawer";
 import { IncidentStatusTag } from "./IncidentStatusTag";
-import { incidentSeverityLabel, incidentStatusLabel, formatDuration } from "./incidentStatusMeta";
+import { incidentStatusLabel, formatDuration, severityColor, severityLabel } from "./incidentStatusMeta";
 
 // Filter chips mirror the mock's Todos/Investigando/Monitorando/Resolvido
 // row (handoff-new-layout/Incidentes.dc.html), plus "identified" - a real
@@ -177,7 +177,9 @@ export function IncidentsPage() {
                 <div className="min-w-0 truncate text-[12.5px] text-neutral-400">
                   {incident.service_ids.length > 0 ? incident.service_ids.map(serviceName).join(", ") : "—"}
                 </div>
-                <div className="text-[12.5px] font-bold text-text">{incidentSeverityLabel[incident.severity]}</div>
+                <div className="text-[12.5px] font-bold" style={{ color: severityColor(incident.severity) }}>
+                  {severityLabel(incident.severity)}
+                </div>
                 <div className="text-[12.5px] text-neutral-400">{formatOpenedAt(incident.created_at)}</div>
                 <div className="text-[12.5px] font-semibold text-text">
                   {formatDuration(incident.created_at, incident.resolved_at)}

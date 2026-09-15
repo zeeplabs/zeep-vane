@@ -217,14 +217,53 @@ describe("IncidentsPage", () => {
   });
 
   // INCPG-01: inc-1 (mockData.ts) is severity "critical", inc-2 is
-  // "moderate" - exercises the badge label mapping in the table.
-  it("mostra badge de severidade na tabela (INCPG-01)", async () => {
+  // "moderate" - exercises the label+color mapping in the table, binding
+  // each label to its own row so a label/severity mismatch would fail.
+  it("mostra severidade colorida por linha na tabela (INCPG-01)", async () => {
     await loginAs("owner@vane.app");
     renderPage();
 
-    await screen.findByText("Latência elevada no Checkout");
-    expect(screen.getByText("Crítico")).toBeInTheDocument();
-    expect(screen.getByText("Moderado")).toBeInTheDocument();
+    const criticalRow = (await screen.findByText("Latência elevada no Checkout")).closest(
+      '[data-testid="incident-row"]'
+    ) as HTMLElement;
+    const moderateRow = (await screen.findByText("Indisponibilidade parcial da API")).closest(
+      '[data-testid="incident-row"]'
+    ) as HTMLElement;
+
+    const criticalCell = within(criticalRow).getByText("Crítico");
+    expect(criticalCell).toHaveStyle({ color: "var(--color-critical)" });
+    const moderateCell = within(moderateRow).getByText("Moderado");
+    expect(moderateCell).toHaveStyle({ color: "var(--color-warning)" });
+  });
+
+  it("severidade desconhecida mostra o valor bruto em vez de quebrar (edge case)", async () => {
+    server.use(
+      http.get("/api/incidents", () =>
+        HttpResponse.json({
+          items: [
+            {
+              id: "inc-weird-severity",
+              title: "Incidente com severidade inesperada",
+              status: "investigating",
+              created_at: new Date().toISOString(),
+              resolved_at: null,
+              service_ids: [],
+              description: null,
+              pending_close_comment: null,
+              auto_created: false,
+              severity: "unknown-value",
+            },
+          ],
+          total: 1,
+          page: 1,
+          page_size: 25,
+        })
+      )
+    );
+    await loginAs("owner@vane.app");
+    renderPage();
+
+    expect(await screen.findByText("unknown-value")).toBeInTheDocument();
   });
 
   // INCPG-03/04/05/06/07: create drawer defaults severity to Moderado,
@@ -340,5 +379,93 @@ describe("IncidentsPage", () => {
     expect(await screen.findByText("Resumo gerado por IA")).toBeInTheDocument();
     expect(screen.getAllByText("Equipe").length).toBeGreaterThan(0);
     expect(screen.getByText("Sistema")).toBeInTheDocument();
+  });
+
+  // Decision confirmed via AskUserQuestion: "Resolver com resumo de IA"
+  // keeps the mock's label/visual but stays disabled until a real pending
+  // proposal exists - no synchronous generate-on-click endpoint exists.
+  it("incidente ativo sem proposta pendente mostra botão desabilitado, sem caixa de IA", async () => {
+    server.use(
+      http.get("/api/incidents/:id/updates", () =>
+        HttpResponse.json({ items: [], total: 0, page: 1, page_size: 25 })
+      ),
+      http.get("/api/incidents", () =>
+        HttpResponse.json({
+          items: [
+            {
+              id: "inc-no-proposal",
+              title: "Incidente sem proposta",
+              status: "investigating",
+              created_at: new Date().toISOString(),
+              resolved_at: null,
+              service_ids: [],
+              description: null,
+              pending_close_comment: null,
+              auto_created: false,
+              severity: "moderate",
+            },
+          ],
+          total: 1,
+          page: 1,
+          page_size: 25,
+        })
+      )
+    );
+    await loginAs("owner@vane.app");
+    renderPage();
+    await openIncidentRow("Incidente sem proposta");
+
+    expect(screen.queryByText("Resumo gerado por IA")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Resolver com resumo de IA" })).toBeDisabled();
+  });
+
+  it("incidente ativo com proposta pendente mostra caixa de IA e confirma o fechamento ao clicar", async () => {
+    const incident = {
+      id: "inc-with-proposal",
+      title: "Incidente com proposta de IA",
+      status: "investigating",
+      created_at: new Date().toISOString(),
+      resolved_at: null as string | null,
+      service_ids: [] as string[],
+      description: null,
+      pending_close_comment: "Resumo proposto pela IA para este incidente." as string | null,
+      auto_created: false,
+      severity: "moderate",
+    };
+    server.use(
+      http.get("/api/incidents/:id/updates", () =>
+        HttpResponse.json({ items: [], total: 0, page: 1, page_size: 25 })
+      ),
+      http.get("/api/incidents", () => HttpResponse.json({ items: [incident], total: 1, page: 1, page_size: 25 })),
+      http.post("/api/incidents/:id/confirm-close", async ({ request }) => {
+        const body = (await request.json()) as { comment?: string };
+        expect(body.comment).toBe("Resumo proposto pela IA para este incidente.");
+        incident.status = "resolved";
+        incident.resolved_at = new Date().toISOString();
+        incident.pending_close_comment = null;
+        return HttpResponse.json(incident);
+      })
+    );
+    await loginAs("owner@vane.app");
+    renderPage();
+    await openIncidentRow("Incidente com proposta de IA");
+
+    expect(await screen.findByText("Resumo gerado por IA")).toBeInTheDocument();
+    expect(screen.getByText("Resumo proposto pela IA para este incidente.")).toBeInTheDocument();
+    const resolveButton = screen.getByRole("button", { name: "Resolver com resumo de IA" });
+    expect(resolveButton).not.toBeDisabled();
+    await userEvent.click(resolveButton);
+
+    expect(await screen.findByText(/Incidente resolvido em/)).toBeInTheDocument();
+  });
+
+  it("incidente resolvido mostra resumo de IA vindo da timeline, sem duplicar na Linha do tempo", async () => {
+    await loginAs("owner@vane.app");
+    renderPage();
+    await openIncidentRow("Indisponibilidade parcial da API");
+
+    const dialog = await screen.findByRole("dialog");
+    const summaryText = "Incidente resolvido após rollback do deploy problemático.";
+    expect(within(dialog).getAllByText(summaryText)).toHaveLength(1);
   });
 });
