@@ -135,7 +135,7 @@ export function AddStatusPageDrawer({ open, onOpenChange }: AddStatusPageDrawerP
                 >
                   <span
                     className={
-                      "flex h-4 w-4 flex-none items-center justify-center rounded-[5px] border-[1.5px] " +
+                      "flex h-[16px] w-[16px] flex-none items-center justify-center rounded-[5px] border-[1.5px] " +
                       (checked ? "border-accent bg-accent" : "border-divider bg-surface")
                     }
                   >
