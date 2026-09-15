@@ -327,10 +327,10 @@ T12
 - Skill: NONE
 
 **Done when**:
-- [ ] "Público" tile default-selected/functional; "Privado" tile disabled, no `onClick`, `aria-disabled="true"` (DSP-15, Out of Scope)
-- [ ] Name field + service checklist submit via `useCreateStatusPage`
-- [ ] Unit tests cover: default selection, disabled tile non-interactive, successful submit calls the mutation with checked services
-- [ ] `npx vitest run web/src/features/status-pages/AddStatusPageDrawer.test.tsx` passes
+- [x] "Público" tile default-selected/functional; "Privado" tile disabled, no `onClick`, `aria-disabled="true"` (DSP-15, Out of Scope)
+- [x] Name field + service checklist submit via `useCreateStatusPage`
+- [x] Unit tests cover: default selection, disabled tile non-interactive, successful submit calls the mutation with checked services
+- [x] `npx vitest run web/src/features/status-pages/AddStatusPageDrawer.test.tsx` passes
 
 **Tests**: unit
 **Gate**: quick
