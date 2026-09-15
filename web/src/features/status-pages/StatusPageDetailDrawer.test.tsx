@@ -57,11 +57,11 @@ function basePage(overrides: Partial<StatusPage>): StatusPage {
   };
 }
 
-function renderDrawer(page: StatusPage | null, onClose: () => void = () => {}) {
+function renderDrawer(page: StatusPage | null, onClose: () => void = () => {}, onEdit: (id: string) => void = () => {}) {
   return render(
     <MemoryRouter>
       <TestQueryProvider>
-        <StatusPageDetailDrawer page={page} onClose={onClose} />
+        <StatusPageDetailDrawer page={page} onClose={onClose} onEdit={onEdit} />
       </TestQueryProvider>
     </MemoryRouter>
   );
@@ -78,8 +78,21 @@ describe("StatusPageDetailDrawer", () => {
     const publicLink = screen.getByRole("link", { name: "Ver página pública" });
     expect(publicLink).toHaveAttribute("href", "https://status.acme.health");
 
-    const editLink = screen.getByRole("link", { name: "Editar página" });
-    expect(editLink).toHaveAttribute("href", "/status-pages/sp-1");
+    expect(screen.getByRole("button", { name: "Editar página" })).toBeInTheDocument();
+  });
+
+  it("'Editar página' aciona onEdit com o id da página, sem navegar para uma tela separada", async () => {
+    mockDomainsPage([]);
+    await loginAsOwner();
+    const page = basePage({ id: "sp-1", name: "Com domínio" });
+    let editedId: string | null = null;
+    renderDrawer(page, undefined, (id) => {
+      editedId = id;
+    });
+
+    await screen.findByText("Com domínio");
+    screen.getByRole("button", { name: "Editar página" }).click();
+    expect(editedId).toBe("sp-1");
   });
 
   it("sem domínio: não mostra o link 'Ver página pública' e exibe '—' para o domínio (DSP-17)", async () => {
@@ -90,7 +103,7 @@ describe("StatusPageDetailDrawer", () => {
 
     await screen.findByText("Sem domínio");
     expect(screen.queryByRole("link", { name: "Ver página pública" })).not.toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Editar página" })).toHaveAttribute("href", "/status-pages/sp-2");
+    expect(screen.getByRole("button", { name: "Editar página" })).toBeInTheDocument();
     // Both the Serviços (empty list) and Domínio (no domain_id) fields
     // render "—" for this fixture - assert both dashes rather than a single
     // ambiguous match.

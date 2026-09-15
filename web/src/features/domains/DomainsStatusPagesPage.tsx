@@ -7,6 +7,7 @@ import { AddDomainDrawer } from "./AddDomainDrawer";
 import { DomainDetailDrawer } from "./DomainDetailDrawer";
 import { DomainsTable } from "./DomainsTable";
 import { AddStatusPageDrawer } from "../status-pages/AddStatusPageDrawer";
+import { EditStatusPageDrawer } from "../status-pages/EditStatusPageDrawer";
 import { StatusPageDetailDrawer } from "../status-pages/StatusPageDetailDrawer";
 import { StatusPagesTable } from "../status-pages/StatusPagesTable";
 
@@ -24,6 +25,7 @@ export function DomainsStatusPagesPage() {
   const [tab, setTab] = useState<Tab>("domains");
   const [selectedDomain, setSelectedDomain] = useState<Domain | null>(null);
   const [selectedPage, setSelectedPage] = useState<StatusPage | null>(null);
+  const [editPageId, setEditPageId] = useState<string | null>(null);
   const [addOpen, setAddOpen] = useState(false);
 
   // DSP-19: switching tabs must not leak drawer state from the previous
@@ -33,6 +35,7 @@ export function DomainsStatusPagesPage() {
     setTab(next);
     setSelectedDomain(null);
     setSelectedPage(null);
+    setEditPageId(null);
     setAddOpen(false);
   }
 
@@ -91,7 +94,15 @@ export function DomainsStatusPagesPage() {
       ) : (
         <>
           <StatusPagesTable onSelect={setSelectedPage} />
-          <StatusPageDetailDrawer page={selectedPage} onClose={() => setSelectedPage(null)} />
+          <StatusPageDetailDrawer
+            page={selectedPage}
+            onClose={() => setSelectedPage(null)}
+            onEdit={(pageId) => {
+              setSelectedPage(null);
+              setEditPageId(pageId);
+            }}
+          />
+          <EditStatusPageDrawer pageId={editPageId} onClose={() => setEditPageId(null)} />
           <AddStatusPageDrawer open={addOpen} onOpenChange={setAddOpen} />
         </>
       )}

@@ -1,4 +1,3 @@
-import { Link } from "react-router-dom";
 import * as RadixDialog from "@radix-ui/react-dialog";
 import { MdClose } from "react-icons/md";
 import { buttonVariantClasses, buttonBaseClasses } from "../../components/ui/Button";
@@ -17,17 +16,21 @@ function publicUrl(page: StatusPage, hostname: string | undefined): string | nul
 export interface StatusPageDetailDrawerProps {
   page: StatusPage | null;
   onClose: () => void;
+  /** Abre o `EditStatusPageDrawer` para esta página - o drawer de detalhe
+   * não navega mais para a tela separada `/status-pages/{id}`, a pedido
+   * explícito do Julio ("em tela separada nao ficou legal"). */
+  onEdit: (pageId: string) => void;
 }
 
 /** Drawer de detalhe (somente leitura) da aba Status Pages (spec.md
  * DSP-14/17): lista de serviços anexados, domínio vinculado, link "Ver
- * página pública" (ausente sem domínio) e "Editar página" apontando para a
- * tela de edição existente (`/status-pages/{id}`).
+ * página pública" (ausente sem domínio) e "Editar página" que abre o
+ * `EditStatusPageDrawer` (edição em drawer, mesmo modelo do de criação).
  *
  * Não usa o <Drawer> compartilhado, mesmo motivo de `DomainDetailDrawer`/
  * `ServiceDetailDrawer`: o mock não tem título/rodapé com borda, é um
  * painel contínuo com badge de visibilidade+X no topo. */
-export function StatusPageDetailDrawer({ page, onClose }: StatusPageDetailDrawerProps) {
+export function StatusPageDetailDrawer({ page, onClose, onEdit }: StatusPageDetailDrawerProps) {
   // SPEC_DEVIATION: fixed page 1 for now - only used to resolve
   // domain hostname / service names for this drawer, not a picker; Pager UI
   // is out of scope. Mirrors the same deviation in StatusPagesTable.tsx.
@@ -124,12 +127,13 @@ export function StatusPageDetailDrawer({ page, onClose }: StatusPageDetailDrawer
                     Ver página pública
                   </a>
                 ) : null}
-                <Link
-                  to={`/status-pages/${page.id}`}
+                <button
+                  type="button"
+                  onClick={() => onEdit(page.id)}
                   className={`${buttonBaseClasses} ${buttonVariantClasses.primary} flex-1`}
                 >
                   Editar página
-                </Link>
+                </button>
               </div>
             </div>
           ) : null}
