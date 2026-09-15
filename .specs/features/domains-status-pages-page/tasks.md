@@ -352,11 +352,11 @@ T12
 - Skill: NONE
 
 **Done when**:
-- [ ] Two-tab switcher (Domínios/Status Pages) renders both tables, "Adicionar domínio"/"Criar status page" button label switches with the active tab
-- [ ] Switching tabs closes any open detail/add drawer from the previous tab (DSP-19)
-- [ ] `App.test.tsx` (or a new page-level test) smoke-tests the route renders without crashing
-- [ ] Live Playwright check against the dev server: both tabs, both add-drawers, both detail-drawers, dark mode (per this session's earlier contrast fix — confirm no white-on-white regression)
-- [ ] Full build gate: `go build/vet/test`, `gofmt -l`, `make test-integration`, `npx tsc -b --noEmit`, `npm run test` (whole suite) all clean
+- [x] Two-tab switcher (Domínios/Status Pages) renders both tables, "Adicionar domínio"/"Criar status page" button label switches with the active tab
+- [x] Switching tabs closes any open detail/add drawer from the previous tab (DSP-19)
+- [x] `App.test.tsx` (or a new page-level test) smoke-tests the route renders without crashing
+- [~] Live Playwright check against the dev server: both tabs, both add-drawers, both detail-drawers, dark mode (per this session's earlier contrast fix — confirm no white-on-white regression) — SKIPPED: no dev-server login credentials available (not seeded/documented, not guessed per instruction); covered instead by MSW-backed vitest suites (T6-T11) plus a static check confirming `AddStatusPageDrawer`'s `ModeCard` reuses the already-fixed `text-accent`/`bg-accent-100` pattern from `AddDomainDrawer` (commit 6b7ee87's dark-mode fix), not the pre-fix `text-text` pattern
+- [x] Full build gate: `go build/vet/test`, `gofmt -l`, `make test-integration`, `npx tsc -b --noEmit`, `npm run test` (whole suite) all clean
 
 **Tests**: unit + manual (Playwright)
 **Gate**: build
