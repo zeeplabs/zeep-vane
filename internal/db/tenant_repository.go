@@ -27,6 +27,9 @@ type Tenant struct {
 	Locale          string
 	PrimaryColor    *string
 	SecondaryColor  *string
+	Website         *string
+	Timezone        *string
+	DeletedAt       *time.Time
 	CreatedAt       time.Time
 }
 
@@ -130,7 +133,7 @@ func (r *TenantRepository) Get(ctx context.Context, tenantID string) (*Tenant, e
 	row := r.pool.QueryRow(ctx,
 		`SELECT id, name, slug, plan, status, contact_email, logo_content_type,
 		        legal_name, tax_id, tax_id_type, billing_address, locale,
-		        primary_color, secondary_color, created_at
+		        primary_color, secondary_color, website, timezone, deleted_at, created_at
 		 FROM tenants WHERE id = $1`,
 		tenantID,
 	)
@@ -139,7 +142,8 @@ func (r *TenantRepository) Get(ctx context.Context, tenantID string) (*Tenant, e
 	if err := row.Scan(
 		&tenant.ID, &tenant.Name, &tenant.Slug, &tenant.Plan, &tenant.Status, &tenant.ContactEmail,
 		&tenant.LogoContentType, &tenant.LegalName, &tenant.TaxID, &tenant.TaxIDType, &tenant.BillingAddress,
-		&tenant.Locale, &tenant.PrimaryColor, &tenant.SecondaryColor, &tenant.CreatedAt,
+		&tenant.Locale, &tenant.PrimaryColor, &tenant.SecondaryColor,
+		&tenant.Website, &tenant.Timezone, &tenant.DeletedAt, &tenant.CreatedAt,
 	); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, ErrNotFound
@@ -158,6 +162,13 @@ type TenantUpdate struct {
 	LegalName    *string
 	TaxID        *string
 	TaxIDType    *string
+	Website      *string
+	Timezone     *string
+	// BillingAddress is a pointer to the raw JSON bytes to persist - the
+	// extra indirection (as opposed to plain []byte) lets nil mean "leave
+	// unchanged" the same way every other TenantUpdate field does, since a
+	// non-nil-but-empty []byte is itself a valid (if odd) JSON payload.
+	BillingAddress *[]byte
 }
 
 // cpfDigitCount and cnpjDigitCount are the exact digit counts
@@ -210,25 +221,35 @@ func (r *TenantRepository) Update(ctx context.Context, tenantID string, u Tenant
 		return nil, err
 	}
 
+	var billingAddress any
+	if u.BillingAddress != nil {
+		billingAddress = *u.BillingAddress
+	}
+
 	row := r.pool.QueryRow(ctx,
 		`UPDATE tenants SET
 		    name = COALESCE($2, name),
 		    contact_email = COALESCE($3, contact_email),
 		    legal_name = COALESCE($4, legal_name),
 		    tax_id = COALESCE($5, tax_id),
-		    tax_id_type = COALESCE($6, tax_id_type)
+		    tax_id_type = COALESCE($6, tax_id_type),
+		    website = COALESCE($7, website),
+		    timezone = COALESCE($8, timezone),
+		    billing_address = COALESCE($9, billing_address)
 		 WHERE id = $1
 		 RETURNING id, name, slug, plan, status, contact_email, logo_content_type,
 		           legal_name, tax_id, tax_id_type, billing_address, locale,
-		           primary_color, secondary_color, created_at`,
+		           primary_color, secondary_color, website, timezone, deleted_at, created_at`,
 		tenantID, u.Name, u.ContactEmail, u.LegalName, u.TaxID, u.TaxIDType,
+		u.Website, u.Timezone, billingAddress,
 	)
 
 	var tenant Tenant
 	if err := row.Scan(
 		&tenant.ID, &tenant.Name, &tenant.Slug, &tenant.Plan, &tenant.Status, &tenant.ContactEmail,
 		&tenant.LogoContentType, &tenant.LegalName, &tenant.TaxID, &tenant.TaxIDType, &tenant.BillingAddress,
-		&tenant.Locale, &tenant.PrimaryColor, &tenant.SecondaryColor, &tenant.CreatedAt,
+		&tenant.Locale, &tenant.PrimaryColor, &tenant.SecondaryColor,
+		&tenant.Website, &tenant.Timezone, &tenant.DeletedAt, &tenant.CreatedAt,
 	); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, ErrNotFound
@@ -250,7 +271,7 @@ func (r *TenantRepository) UpdateLogo(ctx context.Context, tenantID, contentType
 		 WHERE id = $1
 		 RETURNING id, name, slug, plan, status, contact_email, logo_content_type,
 		           legal_name, tax_id, tax_id_type, billing_address, locale,
-		           primary_color, secondary_color, created_at`,
+		           primary_color, secondary_color, website, timezone, deleted_at, created_at`,
 		tenantID, data, contentType,
 	)
 
@@ -258,7 +279,8 @@ func (r *TenantRepository) UpdateLogo(ctx context.Context, tenantID, contentType
 	if err := row.Scan(
 		&tenant.ID, &tenant.Name, &tenant.Slug, &tenant.Plan, &tenant.Status, &tenant.ContactEmail,
 		&tenant.LogoContentType, &tenant.LegalName, &tenant.TaxID, &tenant.TaxIDType, &tenant.BillingAddress,
-		&tenant.Locale, &tenant.PrimaryColor, &tenant.SecondaryColor, &tenant.CreatedAt,
+		&tenant.Locale, &tenant.PrimaryColor, &tenant.SecondaryColor,
+		&tenant.Website, &tenant.Timezone, &tenant.DeletedAt, &tenant.CreatedAt,
 	); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, ErrNotFound
@@ -267,6 +289,27 @@ func (r *TenantRepository) UpdateLogo(ctx context.Context, tenantID, contentType
 	}
 
 	return &tenant, nil
+}
+
+// SoftDelete marks the tenant with the given id as deleted (status =
+// 'deleted', deleted_at = now()) without touching any other table -
+// settings-page CFGPG-09. It never removes the row nor any child data;
+// TenantMembershipRepository.GetRole/ListForUser are what make a deleted
+// tenant fail-closed and disappear from tenant selection (CFGPG-13).
+// Returns ErrNotFound if id doesn't resolve to a row this session can see
+// (RLS) or is already deleted.
+func (r *TenantRepository) SoftDelete(ctx context.Context, tenantID string) error {
+	tag, err := r.pool.Exec(ctx,
+		`UPDATE tenants SET status = 'deleted', deleted_at = now() WHERE id = $1 AND status = 'active'`,
+		tenantID,
+	)
+	if err != nil {
+		return fmt.Errorf("db: failed to soft-delete tenant: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
 }
 
 // legacyDataTenantID is the placeholder tenant the 0024 migration assigns
@@ -302,14 +345,15 @@ func (r *TenantRepository) Active(ctx context.Context) (*Tenant, error) {
 	row := r.pool.QueryRow(ctx,
 		`SELECT id, name, slug, plan, status, contact_email, logo_content_type,
 		        legal_name, tax_id, tax_id_type, billing_address, locale,
-		        primary_color, secondary_color, created_at
+		        primary_color, secondary_color, website, timezone, deleted_at, created_at
 		 FROM tenants`+activeTenantPredicate)
 
 	var tenant Tenant
 	if err := row.Scan(
 		&tenant.ID, &tenant.Name, &tenant.Slug, &tenant.Plan, &tenant.Status, &tenant.ContactEmail,
 		&tenant.LogoContentType, &tenant.LegalName, &tenant.TaxID, &tenant.TaxIDType, &tenant.BillingAddress,
-		&tenant.Locale, &tenant.PrimaryColor, &tenant.SecondaryColor, &tenant.CreatedAt,
+		&tenant.Locale, &tenant.PrimaryColor, &tenant.SecondaryColor,
+		&tenant.Website, &tenant.Timezone, &tenant.DeletedAt, &tenant.CreatedAt,
 	); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, ErrNotFound
@@ -346,7 +390,7 @@ func (r *TenantRepository) List(ctx context.Context) ([]Tenant, error) {
 	rows, err := r.pool.Query(ctx,
 		`SELECT id, name, slug, plan, status, contact_email, logo_content_type,
 		        legal_name, tax_id, tax_id_type, billing_address, locale,
-		        primary_color, secondary_color, created_at
+		        primary_color, secondary_color, website, timezone, deleted_at, created_at
 		 FROM tenants WHERE status = 'active' AND id != $1 ORDER BY created_at ASC`,
 		legacyPlaceholderTenantID)
 	if err != nil {
@@ -360,7 +404,8 @@ func (r *TenantRepository) List(ctx context.Context) ([]Tenant, error) {
 		if err := rows.Scan(
 			&tenant.ID, &tenant.Name, &tenant.Slug, &tenant.Plan, &tenant.Status, &tenant.ContactEmail,
 			&tenant.LogoContentType, &tenant.LegalName, &tenant.TaxID, &tenant.TaxIDType, &tenant.BillingAddress,
-			&tenant.Locale, &tenant.PrimaryColor, &tenant.SecondaryColor, &tenant.CreatedAt,
+			&tenant.Locale, &tenant.PrimaryColor, &tenant.SecondaryColor,
+			&tenant.Website, &tenant.Timezone, &tenant.DeletedAt, &tenant.CreatedAt,
 		); err != nil {
 			return nil, fmt.Errorf("db: failed to scan tenant: %w", err)
 		}

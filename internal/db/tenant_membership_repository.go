@@ -90,8 +90,11 @@ func (r *TenantMembershipRepository) Create(ctx context.Context, m *TenantMember
 // how the caller finds out which tenant(s) exist for this user in the
 // first place).
 func (r *TenantMembershipRepository) ListForUser(ctx context.Context, userID string) ([]TenantMembership, error) {
+	// settings-page CFGPG-13: a soft-deleted tenant (status != 'active')
+	// must never be offered as a selectable tenant again - excluded here
+	// rather than filtered by every caller individually.
 	rows, err := r.pool.Query(ctx,
-		"SELECT tm.user_id, tm.tenant_id, tm.role, tm.created_at, t.name, t.plan FROM tenant_memberships tm JOIN tenants t ON t.id = tm.tenant_id WHERE tm.user_id = $1 ORDER BY tm.created_at ASC",
+		"SELECT tm.user_id, tm.tenant_id, tm.role, tm.created_at, t.name, t.plan FROM tenant_memberships tm JOIN tenants t ON t.id = tm.tenant_id WHERE tm.user_id = $1 AND t.status = 'active' ORDER BY tm.created_at ASC",
 		userID,
 	)
 	if err != nil {
@@ -177,10 +180,15 @@ func (r *TenantMembershipRepository) ListMembersWithEmail(ctx context.Context, t
 // they hold no membership there. This is what resolves a request's
 // effective role: since multi-tenancy-core a role is per tenant
 // (tenant_memberships.role), never a property of the user.
+// A soft-deleted tenant (status != 'active') resolves as ErrNotFound here
+// too (settings-page CFGPG-09/CFGPG-13) - the join on tenants.status makes
+// every tenant-scoped request against a deleted tenant fail-closed via the
+// same path RequireRole already uses for a removed membership, with no new
+// mechanism needed.
 func (r *TenantMembershipRepository) GetRole(ctx context.Context, userID, tenantID string) (string, error) {
 	var role string
 	row := r.pool.QueryRow(ctx,
-		"SELECT role FROM tenant_memberships WHERE user_id = $1 AND tenant_id = $2",
+		"SELECT tm.role FROM tenant_memberships tm JOIN tenants t ON t.id = tm.tenant_id WHERE tm.user_id = $1 AND tm.tenant_id = $2 AND t.status = 'active'",
 		userID, tenantID,
 	)
 	if err := row.Scan(&role); err != nil {
