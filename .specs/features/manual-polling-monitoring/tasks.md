@@ -140,11 +140,11 @@ T7 → T8 → T9
 - Skill: NONE
 
 **Done when**:
-- [ ] HTTP(S): rejects a bare host (no scheme), accepts a full URL with `http://` or `https://`
-- [ ] TCP: rejects a bare host (no port), accepts `host:port`
-- [ ] Ping: accepts a bare host, accepts `host:port`
-- [ ] An unrecognized `pollType` value returns an error (defensive - `ServicesHandler`'s own validation is expected to catch this first, but the function must not panic)
-- [ ] Gate check passes: `go test ./internal/checks/...`
+- [x] HTTP(S): rejects a bare host (no scheme), accepts a full URL with `http://` or `https://`
+- [x] TCP: rejects a bare host (no port), accepts `host:port`
+- [x] Ping: accepts a bare host, accepts `host:port`
+- [x] An unrecognized `pollType` value returns an error (defensive - `ServicesHandler`'s own validation is expected to catch this first, but the function must not panic)
+- [x] Gate check passes: `go test ./internal/checks/...`
 
 **Tests**: unit
 **Gate**: Quick (Go unit, no DB)
