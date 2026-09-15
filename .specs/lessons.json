@@ -3,7 +3,7 @@
   "promote_threshold": 2,
   "window_days": 45,
   "quarantine_threshold": 2,
-  "next_id": 55,
+  "next_id": 57,
   "lessons": [
     {
       "id": "L-001",
@@ -976,6 +976,42 @@
       ],
       "created": "2026-09-15T11:40:47Z",
       "last_seen": "2026-09-15T11:40:47Z"
+    },
+    {
+      "id": "L-055",
+      "key": "spec_precision_gap::when an ac explicitly calls out a boundary value e g 0 is valid not an error write a test that sets that exact value a non zero happy path assertion doesn t cover it",
+      "text": "When an AC explicitly calls out a boundary value (e.g. '0 is valid, not an error'), write a test that sets that exact value — a non-zero happy-path assertion doesn't cover it.",
+      "signal": "spec_precision_gap",
+      "scope": "frontend/tests",
+      "status": "candidate",
+      "features": [
+        "poller-status-page"
+      ],
+      "recurrence": 1,
+      "harmful": 0,
+      "evidence": [
+        "POLLPG-04 (frontend/tests)"
+      ],
+      "created": "2026-09-15T14:22:20Z",
+      "last_seen": "2026-09-15T14:22:20Z"
+    },
+    {
+      "id": "L-056",
+      "key": "ac_gap::an empty list edge case documented in spec md needs its own msw override test don t assume the happy path fixture s non empty items list exercises it",
+      "text": "An 'empty list' edge case documented in spec.md needs its own MSW override test — don't assume the happy-path fixture's non-empty items list exercises it.",
+      "signal": "ac_gap",
+      "scope": "frontend/tests",
+      "status": "candidate",
+      "features": [
+        "poller-status-page"
+      ],
+      "recurrence": 1,
+      "harmful": 0,
+      "evidence": [
+        "spec.md Edge Cases §2 (empty items) (frontend/tests)"
+      ],
+      "created": "2026-09-15T14:22:24Z",
+      "last_seen": "2026-09-15T14:22:24Z"
     }
   ]
 }

@@ -338,6 +338,18 @@ Seen once or not yet corroborated. Tracked, not trusted.
 - evidence: DSP-14 (web/src/features)
 - last seen: 2026-09-15T11:40:47Z
 
+### L-055 - When an AC explicitly calls out a boundary value (e.g. '0 is valid, not an error'), write a test that sets that exact value — a non-zero happy-path assertion doesn't cover it.
+- signal: `spec_precision_gap` · recurrence: 1 feature(s) · scope: `frontend/tests` · harmful: 0
+- features: poller-status-page
+- evidence: POLLPG-04 (frontend/tests)
+- last seen: 2026-09-15T14:22:20Z
+
+### L-056 - An 'empty list' edge case documented in spec.md needs its own MSW override test — don't assume the happy-path fixture's non-empty items list exercises it.
+- signal: `ac_gap` · recurrence: 1 feature(s) · scope: `frontend/tests` · harmful: 0
+- features: poller-status-page
+- evidence: spec.md Edge Cases §2 (empty items) (frontend/tests)
+- last seen: 2026-09-15T14:22:24Z
+
 ## Quarantined (failed when applied - ignore)
 
 A confirmed lesson that recurred alongside failure. Kept for the maintainer to review.

@@ -48,7 +48,7 @@ A tela atual (`PollerStatusPage.tsx`) é uma lista simples de integrações com 
 1. WHEN `/poller-status` carrega e `leader_elected: true` e `poller_running: true` THEN o sistema SHALL exibir o card "Poller" com badge "Ativo" e o nome da réplica líder (`replica.application_name`).
 2. IF `leader_elected: true` e `poller_running: false` THEN o card "Poller" SHALL exibir badge "Aguardando integração" com o nome da réplica líder, e um banner de alerta indicando que a réplica líder existe mas nenhuma integração Datadog está conectada.
 3. IF `leader_elected: false` THEN o card "Poller" SHALL exibir badge "Sem líder no momento" e nenhum nome de réplica — sem erro, sem quebrar a tela.
-4. The system SHALL exibir o card "Verificações/min" com o valor de `checks_last_minute`, incluindo `0` como valor válido (sem tratar como erro ou estado vazio).
+4. The system SHALL exibir o card "Verificações/min" com o valor de `checks_last_minute`, incluindo `0` como valor válido (sem tratar como erro ou estado vazio; verificado no Execute — gap fechado após o Verifier apontar ausência de teste pro caso `0`).
 5. The system SHALL exibir o card "Integrações conectadas" com o valor de `total`.
 6. WHEN a lista de integrações (`items`) carrega THEN cada linha SHALL exibir o badge dot+pill de status ("Sucesso" verde quando `status === "active"`, "Falha" vermelho caso contrário) e a data/hora de `last_checked_at` formatada, igual ao comportamento atual.
 7. IF uma integração tem `status !== "active"` THEN a linha SHALL exibir `last_error` abaixo do nome do provider, igual ao comportamento atual.

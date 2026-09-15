@@ -3,23 +3,12 @@ import { MdOutlineWarningAmber } from "react-icons/md";
 import { Card } from "../../components/ui/Card";
 import { Pager } from "../../components/ui/Pager";
 import { Tag } from "../../components/ui/Tag";
+import { failureMessage, providerLabel } from "./format";
 import { usePollerStatus } from "./hooks";
 
 function formatTimestamp(iso: string | null): string {
   if (!iso) return "-";
   return new Date(iso).toLocaleString("pt-BR");
-}
-
-function providerLabel(provider: string): string {
-  return provider.charAt(0).toUpperCase() + provider.slice(1);
-}
-
-function failureMessage(providers: string[]): string {
-  const labels = providers.map(providerLabel);
-  if (labels.length === 1) {
-    return `Falha ao verificar a integração ${labels[0]} — última tentativa não teve sucesso.`;
-  }
-  return `Falha ao verificar as integrações ${labels.join(" e ")} — última tentativa não teve sucesso.`;
 }
 
 function StatCard({ label, value }: { label: string; value: string }) {

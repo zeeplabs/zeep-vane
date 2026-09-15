@@ -94,7 +94,7 @@ describe("PollerStatusPage", () => {
     await screen.findByText("Datadog");
     await userEvent.click(screen.getByRole("button", { name: "Próximo" }));
 
-    await screen.findByText("Sendgrid");
+    await screen.findByText("SendGrid");
     expect(screen.getByText("Página 2 de 2")).toBeInTheDocument();
   });
 
@@ -109,6 +109,38 @@ describe("PollerStatusPage", () => {
     expect(screen.getByText("4")).toBeInTheDocument();
     expect(screen.getByText("Integrações conectadas")).toBeInTheDocument();
     expect(screen.getByText("1")).toBeInTheDocument();
+  });
+
+  it("checks_last_minute igual a 0 é valor válido, não estado de erro", async () => {
+    pollerLeadership.checks_last_minute = 0;
+    await loginAsOwner();
+    renderPage();
+
+    await screen.findByText("Verificações/min");
+    expect(screen.getByText("0")).toBeInTheDocument();
+  });
+
+  it("lista de integrações vazia mostra mensagem e stat cards continuam com 0/0", async () => {
+    server.use(
+      http.get("/api/poller/status", () =>
+        HttpResponse.json({
+          leader_elected: true,
+          poller_running: false,
+          replica: { application_name: "vane-0", backend_start: new Date().toISOString() },
+          checks_last_minute: 0,
+          items: [],
+          total: 0,
+          page: 1,
+          page_size: 20,
+        })
+      )
+    );
+    await loginAsOwner();
+    renderPage();
+
+    expect(await screen.findByText("Nenhuma integração conectada.")).toBeInTheDocument();
+    expect(screen.getByText("Integrações conectadas")).toBeInTheDocument();
+    expect(screen.getAllByText("0")).toHaveLength(2);
   });
 
   it("líder eleito sem integração Datadog mostra Aguardando integração e banner de alerta", async () => {
