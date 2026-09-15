@@ -55,7 +55,7 @@
 1. WHEN o owner abre `/settings` THEN o sistema SHALL carregar `GET /api/company-settings` e preencher nome, site, fuso horário e idioma com os valores persistidos do tenant ativo.
 2. WHEN o owner edita nome/site/fuso horário/idioma e clica "Salvar alterações" THEN o sistema SHALL enviar `PATCH /api/company-settings` com os 4 campos e, em caso de sucesso (200), exibir o toast "Alterações salvas" por 2.2s.
 3. IF `website` for uma string vazia ou omitida THEN o sistema SHALL aceitar (campo opcional, sem formato de URL validado no backend — mock não valida).
-4. The system SHALL persistir `timezone` como um dos 3 valores oferecidos pelo seletor (`America/Sao_Paulo`, `America/New_York`, `UTC`) — qualquer outro valor recebido pelo backend responde 422.
+4. The system SHALL persistir `timezone` como um dos 3 valores literais oferecidos pelo seletor do mock (`"America/Sao_Paulo (GMT-3)"`, `"America/New_York (GMT-5)"`, `"UTC (GMT+0)"`) — qualquer outro valor recebido pelo backend responde 422.
 5. The system SHALL manter `/settings` acessível somente a `owner` — `RequireRole(["owner"])` no frontend e `RequireRole(db.RoleOwner)` em toda rota `/api/company-settings*` e `/api/tenants/current`, já existente hoje; esta feature não introduz um modo somente-leitura para `operator`/`viewer` (não pedido pelo mock, e o backend já nega 403 pra esses papéis).
 
 **Independent Test**: abrir `/settings`, mudar nome + site, salvar, recarregar a página e confirmar que os valores persistiram.
@@ -113,19 +113,19 @@
 
 | Requirement ID | Story | Phase | Status |
 | --- | --- | --- | --- |
-| CFGPG-01 | P1: Perfil da empresa completo | - | Implementing |
-| CFGPG-02 | P1: Perfil da empresa completo | - | Implementing |
-| CFGPG-03 | P1: Perfil da empresa completo | - | Implementing |
-| CFGPG-04 | P1: Perfil da empresa completo | - | Implementing |
-| CFGPG-05 | P1: Perfil da empresa completo | - | Implementing |
-| CFGPG-06 | P1: Dados fiscais completos | - | Implementing |
-| CFGPG-07 | P1: Dados fiscais completos | - | Implementing |
-| CFGPG-08 | P1: Dados fiscais completos | - | Implementing |
-| CFGPG-09 | P1: Excluir conta | - | Implementing |
-| CFGPG-10 | P1: Excluir conta | - | Implementing |
-| CFGPG-11 | P1: Excluir conta | - | Implementing |
-| CFGPG-12 | P1: Excluir conta | - | Implementing |
-| CFGPG-13 | P1: Excluir conta | - | Implementing |
+| CFGPG-01 | P1: Perfil da empresa completo | - | Verified |
+| CFGPG-02 | P1: Perfil da empresa completo | - | Verified |
+| CFGPG-03 | P1: Perfil da empresa completo | - | Verified |
+| CFGPG-04 | P1: Perfil da empresa completo | - | Verified |
+| CFGPG-05 | P1: Perfil da empresa completo | - | Verified |
+| CFGPG-06 | P1: Dados fiscais completos | - | Verified |
+| CFGPG-07 | P1: Dados fiscais completos | - | Verified |
+| CFGPG-08 | P1: Dados fiscais completos | - | Verified |
+| CFGPG-09 | P1: Excluir conta | - | Verified |
+| CFGPG-10 | P1: Excluir conta | - | Verified |
+| CFGPG-11 | P1: Excluir conta | - | Verified |
+| CFGPG-12 | P1: Excluir conta | - | Verified |
+| CFGPG-13 | P1: Excluir conta | - | Verified |
 
 **ID format:** `CFGPG-[NUMBER]`
 
