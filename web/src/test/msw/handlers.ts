@@ -1557,9 +1557,18 @@ export const handlers = [
 
   http.post("/api/incidents", async ({ request }) => {
     if (!sessionAdminId) return HttpResponse.json({ error: "unauthorized" }, { status: 401 });
-    const body = (await request.json()) as { title?: string; service_ids?: string[] };
+    const body = (await request.json()) as {
+      title?: string;
+      service_ids?: string[];
+      severity?: string;
+      description?: string;
+    };
     if (!body.title || !body.service_ids || body.service_ids.length === 0) {
       return HttpResponse.json({ error: "title and at least one service_id are required" }, { status: 422 });
+    }
+    const validSeverities = ["minor", "moderate", "critical"];
+    if (!body.severity || !validSeverities.includes(body.severity)) {
+      return HttpResponse.json({ error: "severity must be one of minor, moderate, critical" }, { status: 422 });
     }
     incidentIdCounter += 1;
     const created: Incident = {
@@ -1569,9 +1578,10 @@ export const handlers = [
       created_at: new Date().toISOString(),
       resolved_at: null,
       service_ids: body.service_ids,
-      description: null,
+      description: body.description ? body.description : null,
       pending_close_comment: null,
       auto_created: false,
+      severity: body.severity as Incident["severity"],
     };
     incidentsState.push(created);
     return HttpResponse.json(created, { status: 201 });
@@ -1605,6 +1615,8 @@ export const handlers = [
       incident_id: incidentId,
       body: body.body,
       created_at: new Date().toISOString(),
+      author_id: sessionAdminId,
+      is_ai_summary: false,
     });
     return HttpResponse.json(timelineFor(incidentId), { status: 201 });
   }),
@@ -1636,6 +1648,8 @@ export const handlers = [
       incident_id: incidentId,
       body: `Status changed to ${body.status}`,
       created_at: new Date().toISOString(),
+      author_id: null,
+      is_ai_summary: false,
     });
     return HttpResponse.json(incident);
   }),
@@ -1676,6 +1690,8 @@ export const handlers = [
       incident_id: incidentId,
       body: incident.pending_close_comment,
       created_at: new Date().toISOString(),
+      author_id: null,
+      is_ai_summary: true,
     });
     incident.status = "resolved";
     incident.resolved_at = new Date().toISOString();

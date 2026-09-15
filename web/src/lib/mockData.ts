@@ -291,6 +291,7 @@ export const incidents: Incident[] = [
     description: "Aumento sustentado de latência p95 no Checkout, acima do SLO configurado.",
     pending_close_comment: "Latência normalizada após rollback do deploy; monitorando estabilização.",
     auto_created: true,
+    severity: "critical",
   },
   {
     // Manually created, no description/proposal - exercises the
@@ -304,6 +305,7 @@ export const incidents: Incident[] = [
     description: null,
     pending_close_comment: null,
     auto_created: false,
+    severity: "moderate",
   },
 ];
 
@@ -313,24 +315,32 @@ export const incidentUpdates: IncidentUpdate[] = [
     incident_id: "inc-1",
     body: "Identificamos aumento de latência no serviço de Checkout e estamos investigando.",
     created_at: new Date(Date.now() - 1000 * 60 * 60 * 2).toISOString(),
+    author_id: "admin-1",
+    is_ai_summary: false,
   },
   {
     id: "upd-2",
     incident_id: "inc-1",
     body: "Causa raiz identificada: pico de tráfego não previsto. Monitorando estabilização.",
     created_at: new Date(Date.now() - 1000 * 60 * 90).toISOString(),
+    author_id: "admin-1",
+    is_ai_summary: false,
   },
   {
     id: "upd-3",
     incident_id: "inc-2",
     body: "API pública apresentou erros 5xx intermitentes por cerca de 45 minutos.",
     created_at: new Date(Date.now() - 1000 * 60 * 60 * 24 * 3).toISOString(),
+    author_id: "admin-1",
+    is_ai_summary: false,
   },
   {
     id: "upd-4",
     incident_id: "inc-2",
     body: "Incidente resolvido após rollback do deploy problemático.",
     created_at: new Date(Date.now() - 1000 * 60 * 60 * 24 * 3 + 1000 * 60 * 45).toISOString(),
+    author_id: null,
+    is_ai_summary: true,
   },
 ];
 

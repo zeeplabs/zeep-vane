@@ -2,7 +2,7 @@ import { useState, type FormEvent } from "react";
 import { MdOutlineAdd, MdOutlineCheckCircleOutline, MdOutlineRefresh } from "react-icons/md";
 import { Seg } from "../../components/ui/Seg";
 import { Card } from "../../components/ui/Card";
-import { Tag } from "../../components/ui/Tag";
+import { Tag, type TagVariant } from "../../components/ui/Tag";
 import { Button } from "../../components/ui/Button";
 import { Field } from "../../components/ui/Field";
 import { Input } from "../../components/ui/Input";
@@ -11,7 +11,7 @@ import { Pager } from "../../components/ui/Pager";
 import { EmptyState } from "../../layout/EmptyState";
 import { useAuth } from "../../auth/AuthProvider";
 import { ApiError } from "../../lib/apiClient";
-import type { Incident, IncidentStatus } from "../../types/api";
+import type { Incident, IncidentSeverity, IncidentStatus, IncidentUpdate } from "../../types/api";
 import { useServices } from "../services/hooks";
 import {
   useAddIncidentUpdate,
@@ -32,6 +32,65 @@ const transitionOptions: { value: IncidentStatus; label: string }[] = [
   { value: "monitoring", label: "Monitorando" },
   { value: "resolved", label: "Marcar como resolvido" },
 ];
+
+// INCPG-01/02: severity badge label/color mapping - Menor=neutral,
+// Moderado=warning, Crítico=critical (spec.md Assumptions).
+const severityMeta: Record<IncidentSeverity, { label: string; variant: TagVariant }> = {
+  minor: { label: "Menor", variant: "neutral-outline" },
+  moderate: { label: "Moderado", variant: "warning" },
+  critical: { label: "Crítico", variant: "critical" },
+};
+
+const severityOptions: { value: IncidentSeverity; label: string }[] = [
+  { value: "minor", label: "Menor" },
+  { value: "moderate", label: "Moderado" },
+  { value: "critical", label: "Crítico" },
+];
+
+const DEFAULT_SEVERITY: IncidentSeverity = "moderate";
+
+function SeverityBadge({ severity }: { severity: IncidentSeverity }) {
+  const meta = severityMeta[severity] ?? { label: severity, variant: "neutral-outline" as TagVariant };
+  return <Tag variant={meta.variant}>{meta.label}</Tag>;
+}
+
+// INCPG-08/09/10/11: AI-generated closing summaries render distinct from
+// human/system updates; human updates get a generic "Equipe" label since no
+// admin-name-by-ID lookup is wired into this endpoint (spec.md Assumptions,
+// confirmed via AskUserQuestion).
+function authorLabel(update: IncidentUpdate): string {
+  if (update.is_ai_summary) return "Resumo gerado por IA";
+  if (update.author_id) return "Equipe";
+  return "Sistema";
+}
+
+function TimelineEntry({ update }: { update: IncidentUpdate }) {
+  if (update.is_ai_summary) {
+    return (
+      <div
+        className="flex flex-col gap-0.5 rounded-md border px-3 py-2.5"
+        style={{
+          backgroundColor: "color-mix(in oklch, var(--color-accent) 10%, transparent)",
+          borderColor: "color-mix(in oklch, var(--color-accent) 40%, transparent)",
+        }}
+      >
+        <p className="text-[11px] font-bold tracking-wide text-accent uppercase">{authorLabel(update)}</p>
+        <p className="text-sm text-text">{update.body}</p>
+        <p className="text-xs text-neutral-400">{new Date(update.created_at).toLocaleString("pt-BR")}</p>
+      </div>
+    );
+  }
+  return (
+    <div className="flex gap-3">
+      <div className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-accent" />
+      <div className="flex flex-col gap-0.5">
+        <p className="text-xs font-semibold text-text-muted">{authorLabel(update)}</p>
+        <p className="text-sm text-text">{update.body}</p>
+        <p className="text-xs text-neutral-400">{new Date(update.created_at).toLocaleString("pt-BR")}</p>
+      </div>
+    </div>
+  );
+}
 
 function PlusIcon() {
   return <MdOutlineAdd size={14} aria-hidden="true" />;
@@ -99,6 +158,7 @@ function ActiveIncidentCard({
           <Tag variant="accent">
             {activeStatusLabel[incident.status as Exclude<IncidentStatus, "resolved">]}
           </Tag>
+          <SeverityBadge severity={incident.severity} />
           {incident.auto_created ? <Tag variant="neutral-outline">Automático</Tag> : null}
           <span className="text-[15px] font-medium text-text">{incident.title}</span>
         </div>
@@ -126,15 +186,7 @@ function ActiveIncidentCard({
           <div className="h-px bg-divider" />
           <div className="flex flex-col gap-3">
             {(updates ?? []).map((update) => (
-              <div key={update.id} className="flex gap-3">
-                <div className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-accent" />
-                <div className="flex flex-col gap-0.5">
-                  <p className="text-sm text-text">{update.body}</p>
-                  <p className="text-xs text-neutral-400">
-                    {new Date(update.created_at).toLocaleString("pt-BR")}
-                  </p>
-                </div>
-              </div>
+              <TimelineEntry key={update.id} update={update} />
             ))}
           </div>
 
@@ -194,6 +246,8 @@ export function IncidentsPage() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [title, setTitle] = useState("");
   const [serviceIds, setServiceIds] = useState<string[]>([]);
+  const [severity, setSeverity] = useState<IncidentSeverity>(DEFAULT_SEVERITY);
+  const [description, setDescription] = useState("");
   const [error, setError] = useState<string | null>(null);
 
   function toggleService(id: string) {
@@ -204,9 +258,16 @@ export function IncidentsPage() {
     e.preventDefault();
     setError(null);
     try {
-      await createIncident.mutateAsync({ title, service_ids: serviceIds });
+      await createIncident.mutateAsync({
+        title,
+        service_ids: serviceIds,
+        severity,
+        description: description.trim() ? description : undefined,
+      });
       setTitle("");
       setServiceIds([]);
+      setSeverity(DEFAULT_SEVERITY);
+      setDescription("");
       setDialogOpen(false);
     } catch (err) {
       if (err instanceof ApiError) setError(err.message);
@@ -277,6 +338,7 @@ export function IncidentsPage() {
               <div className="flex items-start justify-between">
                 <div className="flex items-center gap-2">
                   <Tag variant="neutral">Resolvido</Tag>
+                  <SeverityBadge severity={incident.severity} />
                   {incident.auto_created ? <Tag variant="neutral-outline">Automático</Tag> : null}
                   <span className="text-[15px] font-medium text-text">{incident.title}</span>
                 </div>
@@ -341,6 +403,28 @@ export function IncidentsPage() {
                 );
               })}
             </div>
+          </div>
+          <div className="flex flex-col gap-1">
+            <span className="text-sm font-medium text-text">Severidade</span>
+            <Seg
+              aria-label="Severidade"
+              options={severityOptions}
+              value={severity}
+              onChange={(v) => setSeverity(v as IncidentSeverity)}
+            />
+          </div>
+          <div className="flex flex-col gap-1">
+            <label htmlFor="incident-description" className="text-sm font-medium text-text">
+              Descrição inicial
+            </label>
+            <textarea
+              id="incident-description"
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              placeholder="O que está acontecendo?"
+              rows={4}
+              className="w-full resize-y rounded-md border border-divider bg-surface px-3 py-2 text-sm text-text outline-none transition-colors focus:border-accent"
+            />
           </div>
           {error ? (
             <p role="alert" className="text-xs text-critical">

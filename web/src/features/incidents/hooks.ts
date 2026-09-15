@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiFetch } from "../../lib/apiClient";
-import type { Incident, IncidentStatus, IncidentUpdate, Page } from "../../types/api";
+import type { Incident, IncidentSeverity, IncidentStatus, IncidentUpdate, Page } from "../../types/api";
 
 export function useIncidents(page: number) {
   return useQuery({
@@ -12,6 +12,8 @@ export function useIncidents(page: number) {
 export interface CreateIncidentInput {
   title: string;
   service_ids: string[];
+  severity: IncidentSeverity;
+  description?: string;
 }
 
 export function useCreateIncident() {

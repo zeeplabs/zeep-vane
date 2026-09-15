@@ -135,6 +135,8 @@ export interface StatusPage {
 
 export type IncidentStatus = "investigating" | "identified" | "monitoring" | "resolved";
 
+export type IncidentSeverity = "minor" | "moderate" | "critical";
+
 export interface Incident {
   id: string;
   title: string;
@@ -148,6 +150,8 @@ export interface Incident {
   description: string | null;
   pending_close_comment: string | null;
   auto_created: boolean;
+  // severity is required on every incident (INCSEV-01/02).
+  severity: IncidentSeverity;
 }
 
 export interface IncidentUpdate {
@@ -155,6 +159,10 @@ export interface IncidentUpdate {
   incident_id: string;
   body: string;
   created_at: string;
+  // author_id/is_ai_summary attribute the entry to a human or the AI
+  // closing-summary flow (INCSEV-05/06).
+  author_id: string | null;
+  is_ai_summary: boolean;
 }
 
 export interface PollerStatusEntry {
