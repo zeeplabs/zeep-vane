@@ -541,6 +541,12 @@ type adminResponse struct {
 	Status    string     `json:"status"`
 	ExpiresAt *time.Time `json:"expires_at,omitempty"`
 	Expired   bool       `json:"expired,omitempty"`
+	// LastAccess is users-page USRPG-05's "Último acesso" column: the most
+	// recent sessions.last_seen_at (falling back to created_at when a
+	// session was never touched) across every session this user ever had,
+	// nil when they have none yet (a pending invite, or an active member
+	// who has never logged in).
+	LastAccess *time.Time `json:"last_access,omitempty"`
 }
 
 // UpdateRole handles PATCH /api/admins/{id}/role (role: owner). It changes
@@ -696,9 +702,14 @@ func (h *AdminsHandler) List(w http.ResponseWriter, r *http.Request) {
 	tenantID, _ := ActiveTenantIDFromContext(ctx)
 
 	rows, err := h.pool.Query(ctx,
-		`SELECT u.id, u.email, u.name, u.phone, m.role
+		`SELECT u.id, u.email, u.name, u.phone, m.role, s.last_access
 		 FROM tenant_memberships m
 		 JOIN users u ON u.id = m.user_id
+		 LEFT JOIN LATERAL (
+		     SELECT MAX(COALESCE(last_seen_at, created_at)) AS last_access
+		     FROM sessions
+		     WHERE user_id = u.id
+		 ) s ON true
 		 WHERE m.tenant_id = $1
 		 ORDER BY u.email`, tenantID)
 	if err != nil {
@@ -711,7 +722,7 @@ func (h *AdminsHandler) List(w http.ResponseWriter, r *http.Request) {
 	list := []adminResponse{}
 	for rows.Next() {
 		var item adminResponse
-		if err := rows.Scan(&item.ID, &item.Email, &item.Name, &item.Phone, &item.Role); err != nil {
+		if err := rows.Scan(&item.ID, &item.Email, &item.Name, &item.Phone, &item.Role, &item.LastAccess); err != nil {
 			h.logger.Error("admins: failed to scan tenant member row", zap.Error(err))
 			writeInternalError(w)
 			return

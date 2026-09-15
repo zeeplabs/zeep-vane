@@ -2005,3 +2005,52 @@ func TestAcceptInvite_ValidToken_PersistsSessionRow(t *testing.T) {
 		t.Errorf("sessions.ip = %q, want the host portion of the request's RemoteAddr %q", storedIP, "203.0.113.8")
 	}
 }
+
+// TestListAdmins_Owner_200_LastAccessFromMostRecentSession asserts
+// users-page USRPG-05: last_access reflects the member's most recent
+// sessions.last_seen_at, not a decorative/absent value.
+func TestListAdmins_Owner_200_LastAccessFromMostRecentSession(t *testing.T) {
+	r, pool, admins, _ := newAdminsRouter(t)
+	token := issueTestSessionToken(t, admins)
+	target := createTenantMember(t, admins, db.RoleViewer)
+
+	wantLastSeen := time.Now().Add(-3 * time.Hour).UTC().Truncate(time.Second)
+	var sessionID string
+	if err := pool.QueryRow(context.Background(),
+		`INSERT INTO sessions (id, user_id, user_agent, ip, created_at, last_seen_at)
+		 VALUES (gen_random_uuid(), $1, 'test-agent', '127.0.0.1', $2, $2)
+		 RETURNING id`,
+		target.ID, wantLastSeen,
+	).Scan(&sessionID); err != nil {
+		t.Fatalf("seeding session row returned unexpected error: %v", err)
+	}
+	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), "DELETE FROM sessions WHERE id = $1", sessionID) })
+
+	found := findAdminAcrossPages(t, r, token, target.Email)
+	if found == nil {
+		t.Fatalf("admin %q not present across any page of GET /api/admins", target.ID)
+	}
+	if found.LastAccess == nil {
+		t.Fatal("LastAccess = nil, want a timestamp")
+	}
+	if !found.LastAccess.Equal(wantLastSeen) {
+		t.Errorf("LastAccess = %v, want %v", found.LastAccess, wantLastSeen)
+	}
+}
+
+// TestListAdmins_Owner_200_LastAccessNilWithoutSession asserts the nil
+// case (USRPG-05 edge case): a member who never had a session shows
+// last_access = nil, not a fabricated value.
+func TestListAdmins_Owner_200_LastAccessNilWithoutSession(t *testing.T) {
+	r, _, admins, _ := newAdminsRouter(t)
+	token := issueTestSessionToken(t, admins)
+	target := createTenantMember(t, admins, db.RoleViewer)
+
+	found := findAdminAcrossPages(t, r, token, target.Email)
+	if found == nil {
+		t.Fatalf("admin %q not present across any page of GET /api/admins", target.ID)
+	}
+	if found.LastAccess != nil {
+		t.Errorf("LastAccess = %v, want nil (no session ever created)", found.LastAccess)
+	}
+}
