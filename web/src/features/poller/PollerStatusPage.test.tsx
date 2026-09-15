@@ -8,7 +8,7 @@ import { AuthProvider } from "../../auth/AuthProvider";
 import { TestQueryProvider } from "../../test/queryClient";
 import { server } from "../../test/msw/server";
 import { apiFetch } from "../../lib/apiClient";
-import { pollerStatus } from "../../lib/mockData";
+import { pollerLeadership, pollerStatus } from "../../lib/mockData";
 import { PollerStatusPage } from "./PollerStatusPage";
 
 async function loginAsOwner() {
@@ -21,6 +21,10 @@ async function loginAsOwner() {
 afterEach(async () => {
   pollerStatus[0].status = "active";
   pollerStatus[0].last_error = null;
+  pollerLeadership.leader_elected = true;
+  pollerLeadership.poller_running = true;
+  pollerLeadership.replica = { application_name: "vane-0", backend_start: new Date().toISOString() };
+  pollerLeadership.checks_last_minute = 4;
   await apiFetch("/api/auth/logout", { method: "POST" });
 });
 
@@ -92,5 +96,81 @@ describe("PollerStatusPage", () => {
 
     await screen.findByText("Sendgrid");
     expect(screen.getByText("Página 2 de 2")).toBeInTheDocument();
+  });
+
+  it("poller ativo mostra stat cards com dados reais (líder, verificações/min, integrações)", async () => {
+    await loginAsOwner();
+    renderPage();
+
+    await screen.findByText("Datadog");
+    expect(screen.getByText("Poller")).toBeInTheDocument();
+    expect(screen.getByText("Ativo · vane-0")).toBeInTheDocument();
+    expect(screen.getByText("Verificações/min")).toBeInTheDocument();
+    expect(screen.getByText("4")).toBeInTheDocument();
+    expect(screen.getByText("Integrações conectadas")).toBeInTheDocument();
+    expect(screen.getByText("1")).toBeInTheDocument();
+  });
+
+  it("líder eleito sem integração Datadog mostra Aguardando integração e banner de alerta", async () => {
+    pollerLeadership.poller_running = false;
+    await loginAsOwner();
+    renderPage();
+
+    await screen.findByText("Aguardando integração · vane-0");
+    expect(screen.getByText("Réplica líder ativa, mas nenhuma integração Datadog conectada.")).toBeInTheDocument();
+  });
+
+  it("sem líder eleito mostra Sem líder no momento, sem nome de réplica", async () => {
+    pollerLeadership.leader_elected = false;
+    pollerLeadership.poller_running = false;
+    pollerLeadership.replica = null;
+    await loginAsOwner();
+    renderPage();
+
+    await screen.findByText("Sem líder no momento");
+  });
+
+  it("integração falhando mostra banner de alerta nomeando o provider", async () => {
+    pollerStatus[0].status = "invalid";
+    pollerStatus[0].last_error = "Credenciais inválidas";
+    await loginAsOwner();
+    renderPage();
+
+    await screen.findByText("Falha");
+    expect(
+      screen.getByText("Falha ao verificar a integração Datadog — última tentativa não teve sucesso.")
+    ).toBeInTheDocument();
+  });
+
+  it("líder sem integração conectada e integração falhando mostram os 2 banners simultaneamente", async () => {
+    pollerLeadership.poller_running = false;
+    pollerStatus[0].status = "invalid";
+    pollerStatus[0].last_error = "Credenciais inválidas";
+    await loginAsOwner();
+    renderPage();
+
+    await screen.findByText("Réplica líder ativa, mas nenhuma integração Datadog conectada.");
+    expect(
+      screen.getByText("Falha ao verificar a integração Datadog — última tentativa não teve sucesso.")
+    ).toBeInTheDocument();
+  });
+
+  it("estado saudável não mostra nenhum banner de alerta", async () => {
+    await loginAsOwner();
+    renderPage();
+
+    await screen.findByText("Datadog");
+    expect(
+      screen.queryByText("Réplica líder ativa, mas nenhuma integração Datadog conectada.")
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText(/Falha ao verificar/)).not.toBeInTheDocument();
+  });
+
+  it("erro ao carregar status do poller mostra estado de erro isolado", async () => {
+    server.use(http.get("/api/poller/status", () => HttpResponse.json({ error: "boom" }, { status: 500 })));
+    await loginAsOwner();
+    renderPage();
+
+    expect(await screen.findByText("Não foi possível carregar o status do poller.")).toBeInTheDocument();
   });
 });

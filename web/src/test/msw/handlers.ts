@@ -10,6 +10,7 @@ import {
   incidentUpdates as seedIncidentUpdates,
   sloCatalog,
   datadogIntegration as seedDatadogIntegration,
+  pollerLeadership,
   pollerStatus as seedPollerStatus,
   companySettings as seedCompanySettings,
   sessions as seedSessions,
@@ -1903,7 +1904,10 @@ export const handlers = [
   // Read-only, no per-test state to reset - always seeded from mockData.
   http.get("/api/poller/status", ({ request }) => {
     if (!sessionAdminId) return HttpResponse.json({ error: "unauthorized" }, { status: 401 });
-    return HttpResponse.json(paginatedPage(request.url, seedPollerStatus, 20));
+    return HttpResponse.json({
+      ...pollerLeadership,
+      ...paginatedPage(request.url, seedPollerStatus, 20),
+    });
   }),
 
   // GET/PATCH /api/company-settings, POST /api/company-settings/logo

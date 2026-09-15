@@ -345,6 +345,22 @@ export const pollerStatus: PollerStatusEntry[] = [
   },
 ];
 
+// Poller leadership/activity fixture (poller-status-page POLLPG-01..05) -
+// mirrors PollerStatusHandler.List's non-list fields. Mutable per-test via
+// server.use overrides in MSW handlers; this default reflects a healthy
+// single-replica install (leader elected, poller running).
+export const pollerLeadership: {
+  leader_elected: boolean;
+  poller_running: boolean;
+  replica: { application_name: string; backend_start: string } | null;
+  checks_last_minute: number;
+} = {
+  leader_elected: true,
+  poller_running: true,
+  replica: { application_name: "vane-0", backend_start: new Date(Date.now() - 1000 * 60 * 30).toISOString() },
+  checks_last_minute: 4,
+};
+
 // -- Configurações da empresa -----------------------------------------------------
 
 export const companySettings: CompanySettings = {

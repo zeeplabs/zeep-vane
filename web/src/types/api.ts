@@ -164,6 +164,27 @@ export interface PollerStatusEntry {
   last_error: string | null;
 }
 
+export interface PollerReplica {
+  application_name: string;
+  backend_start: string;
+}
+
+// Mirrors PollerStatusHandler.List's response shape
+// (internal/api/poller_status.go) - leadership/activity fields sit
+// alongside the paginated integrations list rather than nesting them
+// under a generic Page<T> envelope, same convention as
+// EmailProvidersResponse (AGENTS.md §4).
+export interface PollerStatusResponse {
+  leader_elected: boolean;
+  poller_running: boolean;
+  replica: PollerReplica | null;
+  checks_last_minute: number;
+  items: PollerStatusEntry[];
+  total: number;
+  page: number;
+  page_size: number;
+}
+
 // TaxIDType is CompanySettings.tax_id_type's allowed values (multi-tenancy-
 // core P2, TENANT-22/23) - CPF for a person, CNPJ for a company; both
 // Brazilian tax id formats, backend-validated by digit count
