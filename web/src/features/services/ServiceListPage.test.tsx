@@ -12,8 +12,10 @@ import type { Page } from "../../types/api";
 interface FixtureService {
   id: string;
   name: string;
-  slo_id: string;
-  slo_name: string;
+  slo_id: string | null;
+  slo_name: string | null;
+  monitor_mode?: "slo" | "polling";
+  poll_target?: string | null;
   current_status: "operational" | "degraded" | "outage" | "not_configured";
   last_status_change_at: string;
   uptime_30d: number | null;
@@ -221,6 +223,41 @@ describe("ServiceListPage", () => {
 
     await userEvent.click(screen.getByText("API Gateway"));
     await waitFor(() => expect(selected).toBe("svc-op"));
+  });
+
+  // manual-polling-monitoring T9: a polling-manual row (no slo_name/slo_id
+  // at all) must show its poll_target as the row subtitle, not blank.
+  it("mostra poll_target como subtítulo da linha para um serviço monitor_mode=polling (T9)", async () => {
+    mockServicesPage([
+      {
+        id: "svc-polling",
+        name: "Cache interno",
+        slo_id: null,
+        slo_name: null,
+        monitor_mode: "polling",
+        poll_target: "cache.acme.health:6379",
+        current_status: "operational",
+        last_status_change_at: new Date().toISOString(),
+        uptime_30d: 99.9,
+        last_seen_at: new Date().toISOString(),
+      },
+    ]);
+    await loginAsOwner();
+    renderPage();
+
+    await screen.findByText("Cache interno");
+    expect(screen.getByText("cache.acme.health:6379")).toBeInTheDocument();
+  });
+
+  // Regression: an slo-mode row's subtitle is unchanged.
+  it("mantém slo_name como subtítulo da linha para serviços monitor_mode=slo (T9 regressão)", async () => {
+    mockServicesPage(fourStatusFixture);
+    await loginAsOwner();
+    renderPage();
+
+    await screen.findByText("API Gateway");
+    expect(screen.getByText("API disponibilidade")).toBeInTheDocument();
+    expect(screen.getByText("Checkout p95")).toBeInTheDocument();
   });
 
   it("clicar em 'Adicionar serviço' chama onAddService", async () => {

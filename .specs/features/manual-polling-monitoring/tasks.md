@@ -290,10 +290,10 @@ T7 → T8 → T9
 - Skill: NONE
 
 **Done when**:
-- [ ] A polling-manual service's row/drawer subtitle shows its `poll_target`, not blank/undefined
-- [ ] An slo-mode service's subtitle is unchanged (regression-checked against existing tests)
-- [ ] Gate check passes: `cd web && npx tsc -b --noEmit && npm run test`
-- [ ] Whole-feature Build gate passes: `go build ./... && go vet ./... && go test ./... && gofmt -l $(git diff --name-only --diff-filter=ACM -- '*.go') && make test-integration && cd web && npx tsc -b --noEmit && npm run test`
+- [x] A polling-manual service's row/drawer subtitle shows its `poll_target`, not blank/undefined
+- [x] An slo-mode service's subtitle is unchanged (regression-checked against existing tests)
+- [x] Gate check passes: `cd web && npx tsc -b --noEmit && npm run test`
+- [x] Whole-feature Build gate passes: `go build ./... && go vet ./... && go test ./... && gofmt -l $(git diff --name-only --diff-filter=ACM -- '*.go') && make test-integration && cd web && npx tsc -b --noEmit && npm run test`
 
 **Tests**: unit
 **Gate**: Build

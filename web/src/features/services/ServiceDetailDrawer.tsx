@@ -4,6 +4,7 @@ import { MdOutlineWarningAmber, MdClose } from "react-icons/md";
 import type { HourlyBucket } from "../../types/api";
 import { useServiceDetail } from "./hooks";
 import { StatusTag } from "./StatusTag";
+import { serviceSubtitle } from "./statusMeta";
 
 export interface ServiceDetailDrawerProps {
   serviceId: string;
@@ -90,7 +91,7 @@ export function ServiceDetailDrawer({ serviceId, onClose }: ServiceDetailDrawerP
                 <RadixDialog.Title asChild>
                   <h2 className="text-[19px] font-bold text-text">{detail.name}</h2>
                 </RadixDialog.Title>
-                <p className="mt-0.5 text-[13px] text-neutral-400">{detail.slo_name || detail.slo_id}</p>
+                <p className="mt-0.5 text-[13px] text-neutral-400">{serviceSubtitle(detail)}</p>
               </div>
 
               <div className="grid grid-cols-2 gap-4">

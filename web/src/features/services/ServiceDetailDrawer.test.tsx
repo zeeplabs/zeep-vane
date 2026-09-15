@@ -19,8 +19,10 @@ function buildBuckets(count: number, status: "operational" | "degraded" | "outag
 interface DetailFixture {
   id: string;
   name: string;
-  slo_id: string;
-  slo_name: string;
+  slo_id: string | null;
+  slo_name: string | null;
+  monitor_mode?: "slo" | "polling";
+  poll_target?: string | null;
   current_status: ServiceStatus;
   last_status_change_at: string;
   uptime_30d: number | null;
@@ -140,6 +142,33 @@ describe("ServiceDetailDrawer", () => {
     expect(overlay).not.toBeNull();
     await userEvent.click(overlay);
     expect(closeCalls).toBe(1);
+  });
+
+  // manual-polling-monitoring T9: a polling-manual service has no
+  // slo_name/slo_id at all - the subtitle must show poll_target, not
+  // blank/undefined.
+  it("mostra poll_target como subtítulo para um serviço monitor_mode=polling (T9)", async () => {
+    mockDetail({
+      slo_id: null,
+      slo_name: null,
+      monitor_mode: "polling",
+      poll_target: "cache.acme.health:6379",
+    });
+    await loginAsOwner();
+    renderDrawer();
+
+    await screen.findByText("Checkout");
+    expect(screen.getByText("cache.acme.health:6379")).toBeInTheDocument();
+  });
+
+  // Regression: an slo-mode service's subtitle is unchanged.
+  it("mantém slo_name como subtítulo para um serviço monitor_mode=slo (T9 regressão)", async () => {
+    mockDetail({ monitor_mode: "slo" });
+    await loginAsOwner();
+    renderDrawer();
+
+    await screen.findByText("Checkout");
+    expect(screen.getByText("Checkout latência p95")).toBeInTheDocument();
   });
 
   it("não renderiza 'Pausar monitoramento' nem 'Editar configuração' (SVC-19)", async () => {

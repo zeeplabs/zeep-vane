@@ -6,10 +6,10 @@
 
 ## Goals
 
-- [ ] Admin can register a service monitored by direct HTTP(S), TCP, or "Ping" (TCP-reachability) checks instead of a Datadog SLO, with a configurable check interval (30s/1m/5m).
-- [ ] A polling-manual service's status (operational/degraded/outage) is computed from real check results, using the same `status_intervals`/uptime/history machinery every other service already uses (Overview cards, the services list/drawer, the public status page).
-- [ ] Polling-manual checks run under the same single-active-poller leadership model as the Datadog poller (`ha-multi-replica`) — never duplicated across replicas.
-- [ ] A polling-manual service's target cannot be used to probe the deployment's own internal network (SSRF).
+- [x] Admin can register a service monitored by direct HTTP(S), TCP, or "Ping" (TCP-reachability) checks instead of a Datadog SLO, with a configurable check interval (30s/1m/5m).
+- [x] A polling-manual service's status (operational/degraded/outage) is computed from real check results, using the same `status_intervals`/uptime/history machinery every other service already uses (Overview cards, the services list/drawer, the public status page).
+- [x] Polling-manual checks run under the same single-active-poller leadership model as the Datadog poller (`ha-multi-replica`) — never duplicated across replicas.
+- [x] A polling-manual service's target cannot be used to probe the deployment's own internal network (SSRF).
 
 ## Out of Scope
 
@@ -146,7 +146,7 @@
 
 ## Success Criteria
 
-- [ ] A polling-manual service can be created via the redesigned drawer and reaches a real, check-derived status without any Datadog SLO involved.
-- [ ] Polling-manual services show up correctly everywhere an SLO-based service already does (services list, detail drawer, Overview, public status page) with zero special-casing in those read paths.
-- [ ] No polling-manual check ever runs against a private/internal-network target.
-- [ ] Only one replica ever runs polling-manual checks at a time in a multi-replica deployment.
+- [x] A polling-manual service can be created via the redesigned drawer and reaches a real, check-derived status without any Datadog SLO involved.
+- [x] Polling-manual services show up correctly everywhere an SLO-based service already does (services list, detail drawer, Overview, public status page) with zero special-casing in those read paths.
+- [x] No polling-manual check ever runs against a private/internal-network target.
+- [x] Only one replica ever runs polling-manual checks at a time in a multi-replica deployment.

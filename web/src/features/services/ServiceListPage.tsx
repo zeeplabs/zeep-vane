@@ -8,6 +8,7 @@ import { Pager } from "../../components/ui/Pager";
 import type { ServiceStatus } from "../../types/api";
 import { useServices } from "./hooks";
 import { StatusTag } from "./StatusTag";
+import { serviceSubtitle } from "./statusMeta";
 
 type StatusFilter = "all" | ServiceStatus;
 
@@ -182,9 +183,7 @@ export function ServiceListPage({
                   <StatusTag status={service.current_status} />
                   <div className="min-w-0">
                     <div className="truncate text-[13.5px] font-bold text-text">{service.name}</div>
-                    <div className="truncate text-xs text-neutral-400">
-                      {service.slo_name || service.slo_id}
-                    </div>
+                    <div className="truncate text-xs text-neutral-400">{serviceSubtitle(service)}</div>
                   </div>
                   <div className="text-[13px] font-semibold text-text">{formatUptime(service.uptime_30d)}</div>
                   <div className="text-xs text-neutral-400">

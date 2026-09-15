@@ -1,5 +1,5 @@
 import type { TagVariant } from "../../components/ui/Tag";
-import type { ServiceStatus } from "../../types/api";
+import type { Service, ServiceStatus } from "../../types/api";
 
 // Shared status badge metadata for every ServiceStatus value, used by both
 // ServicesSection (compact embed, IntegrationsPage) and ServiceListPage/
@@ -31,3 +31,18 @@ export const statusDotColor: Record<ServiceStatus, string> = {
   outage: "var(--color-critical)",
   not_configured: "var(--color-neutral-600)",
 };
+
+// serviceSubtitle is the shared row/drawer subtitle (ServiceListPage.tsx's
+// table row and ServiceDetailDrawer.tsx's header) - manual-polling-
+// monitoring T9: a polling-manual service has no slo_name/slo_id at all, so
+// `slo_name || slo_id` alone renders blank/undefined for it. Checking
+// monitor_mode explicitly (rather than falling through to poll_target only
+// when both slo fields are falsy) matches the read path every other service
+// already uses with zero special-casing beyond this one branch (spec.md's
+// own "no special-casing in read paths" success criterion).
+export function serviceSubtitle(service: Pick<Service, "monitor_mode" | "poll_target" | "slo_name" | "slo_id">): string {
+  if (service.monitor_mode === "polling") {
+    return service.poll_target ?? "";
+  }
+  return service.slo_name || service.slo_id || "";
+}
