@@ -34,98 +34,190 @@ function renderPage() {
   );
 }
 
+function rowFor(email: string): HTMLElement {
+  const match = screen
+    .getAllByText(email)
+    .map((el) => el.closest('[data-testid="admin-row"]'))
+    .find((el): el is HTMLElement => el !== null);
+  if (!match) throw new Error(`no admin-row found for ${email}`);
+  return match;
+}
+
 describe("AdminsPage", () => {
-  it("convite pendente aparece com badge Pendente", async () => {
+  it("lista todos os usuários (ativos e pendentes) numa única tabela (USRPG-01)", async () => {
     await loginAsOwner();
     renderPage();
-    expect(await screen.findByText("novo-operador@vane.app")).toBeInTheDocument();
-    expect(screen.getByText("Pendente")).toBeInTheDocument();
+
+    expect(await screen.findByText("owner@vane.app")).toBeInTheDocument();
+    expect(screen.getByText("operator@vane.app")).toBeInTheDocument();
+    expect(screen.getByText("viewer@vane.app")).toBeInTheDocument();
+    expect(screen.getByText("novo-operador@vane.app")).toBeInTheDocument();
+    expect(within(rowFor("novo-operador@vane.app")).getByText("Pendente")).toBeInTheDocument();
   });
 
-  it("coluna Papel usa IconRoleSelector, não um <select>", async () => {
-    await loginAsOwner();
-    renderPage();
-    await screen.findByText("owner@vane.app");
-    expect(screen.getAllByRole("group", { name: "Selecionar papel" }).length).toBeGreaterThan(0);
-    expect(screen.queryAllByRole("combobox")).toHaveLength(0);
-  });
-
-  it("rejeição 409 (lockout de último owner) exibe erro e mantém a linha anterior", async () => {
+  it("rótulos de papel são Admin/Membro/Leitura, nunca owner/operator/viewer (USRPG-01)", async () => {
     await loginAsOwner();
     renderPage();
     await screen.findByText("owner@vane.app");
 
-    const ownerRow = screen.getByText("owner@vane.app").closest("[data-testid]") as HTMLElement;
-    const operatorIcon = ownerRow.querySelector('button[aria-label="Operator"]') as HTMLElement;
-    await userEvent.click(operatorIcon);
+    expect(within(rowFor("owner@vane.app")).getByText("Admin")).toBeInTheDocument();
+    expect(within(rowFor("operator@vane.app")).getByText("Membro")).toBeInTheDocument();
+    expect(within(rowFor("viewer@vane.app")).getByText("Leitura")).toBeInTheDocument();
+    expect(screen.queryByText("owner", { exact: true })).not.toBeInTheDocument();
+  });
 
-    await userEvent.click(screen.getByRole("button", { name: "Confirmar" }));
+  it("chips de papel filtram a tabela com contagem correta (USRPG-02)", async () => {
+    await loginAsOwner();
+    renderPage();
+    await screen.findByText("owner@vane.app");
 
-    expect(await screen.findByRole("alert")).toHaveTextContent(/zero active owners/);
+    await userEvent.click(screen.getByRole("button", { name: /^Admin/ }));
+
     expect(screen.getByText("owner@vane.app")).toBeInTheDocument();
+    expect(screen.queryByText("operator@vane.app")).not.toBeInTheDocument();
+    expect(screen.queryByText("viewer@vane.app")).not.toBeInTheDocument();
   });
 
-  it("remover admin abre confirmação com copy exato", async () => {
+  it("busca filtra por nome ou e-mail (USRPG-03)", async () => {
+    await loginAsOwner();
+    renderPage();
+    await screen.findByText("owner@vane.app");
+
+    await userEvent.type(screen.getByLabelText("Buscar por nome ou email"), "operator");
+
+    expect(screen.getByText("operator@vane.app")).toBeInTheDocument();
+    expect(screen.queryByText("owner@vane.app")).not.toBeInTheDocument();
+  });
+
+  it("filtro sem resultado mostra o estado vazio (USRPG-04)", async () => {
+    await loginAsOwner();
+    renderPage();
+    await screen.findByText("owner@vane.app");
+
+    await userEvent.type(screen.getByLabelText("Buscar por nome ou email"), "ninguem-existe");
+
+    expect(await screen.findByText("Nenhum usuário encontrado com esses filtros.")).toBeInTheDocument();
+  });
+
+  it("clicar numa linha abre o drawer de detalhe com papel e último acesso (USRPG-06)", async () => {
+    await loginAsOwner();
+    renderPage();
+    await screen.findByText("owner@vane.app");
+
+    await userEvent.click(rowFor("owner@vane.app"));
+
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByText("owner@vane.app")).toBeInTheDocument();
+    expect(within(dialog).getByRole("radio", { name: /Admin/ })).toHaveAttribute("aria-checked", "true");
+    expect(within(dialog).getByText(/há \d+/)).toBeInTheDocument();
+  });
+
+  it("trocar papel no drawer chama a API e reflete na tabela (USRPG-07)", async () => {
     await loginAsOwner();
     renderPage();
     await screen.findByText("operator@vane.app");
 
-    const operatorRow = screen.getByText("operator@vane.app").closest("[data-testid]") as HTMLElement;
-    await userEvent.click(within(operatorRow).getByRole("button", { name: "Remover" }));
-
-    expect(await screen.findByText("Remover admin")).toBeInTheDocument();
-    expect(
-      screen.getByText("Remover o acesso de operator@vane.app? Esta ação não pode ser desfeita.")
-    ).toBeInTheDocument();
-  });
-
-  it("alterar papel com sucesso atualiza o papel exibido na lista (AF-27)", async () => {
-    await loginAsOwner();
-    renderPage();
-    await screen.findByText("operator@vane.app");
-
-    const operatorRow = screen.getByText("operator@vane.app").closest("[data-testid]") as HTMLElement;
-    const viewerIcon = within(operatorRow).getByRole("button", { name: "Viewer" });
-    await userEvent.click(viewerIcon);
-    await userEvent.click(screen.getByRole("button", { name: "Confirmar" }));
+    await userEvent.click(rowFor("operator@vane.app"));
+    const dialog = await screen.findByRole("dialog");
+    await userEvent.click(within(dialog).getByRole("radio", { name: /Somente leitura/ }));
 
     await waitFor(() => {
-      const updatedRow = screen.getByText("operator@vane.app").closest("[data-testid]") as HTMLElement;
-      expect(within(updatedRow).getByRole("button", { name: "Viewer" })).toHaveAttribute(
-        "aria-pressed",
-        "true"
-      );
+      expect(within(rowFor("operator@vane.app")).getByText("Leitura")).toBeInTheDocument();
     });
   });
 
-  it("remover admin com sucesso remove a linha e exibe toast de confirmação (AF-28)", async () => {
+  it("troca de papel rejeitada (409, último owner) mantém o papel anterior e mostra erro (USRPG-07)", async () => {
+    await loginAsOwner();
+    renderPage();
+    await screen.findByText("owner@vane.app");
+
+    await userEvent.click(rowFor("owner@vane.app"));
+    const dialog = await screen.findByRole("dialog");
+    await userEvent.click(within(dialog).getByRole("radio", { name: /Membro/ }));
+
+    expect(await within(dialog).findByRole("alert")).toHaveTextContent(/zero active owners/);
+    expect(within(rowFor("owner@vane.app")).getByText("Admin")).toBeInTheDocument();
+  });
+
+  it("drawer de convite pendente mostra Reenviar convite; ativo não mostra (USRPG-08)", async () => {
+    await loginAsOwner();
+    renderPage();
+    await screen.findByText("novo-operador@vane.app");
+
+    await userEvent.click(rowFor("novo-operador@vane.app"));
+    let dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByRole("button", { name: "Reenviar convite" })).toBeInTheDocument();
+    await userEvent.click(within(dialog).getByLabelText("Fechar"));
+
+    await userEvent.click(rowFor("owner@vane.app"));
+    dialog = await screen.findByRole("dialog");
+    expect(within(dialog).queryByRole("button", { name: "Reenviar convite" })).not.toBeInTheDocument();
+  });
+
+  it("remover usuário ativo pelo drawer remove a linha e mostra toast (USRPG-09)", async () => {
     await loginAsOwner();
     renderPage();
     await screen.findByText("operator@vane.app");
 
-    const operatorRow = screen.getByText("operator@vane.app").closest("[data-testid]") as HTMLElement;
-    await userEvent.click(within(operatorRow).getByRole("button", { name: "Remover" }));
-    await screen.findByText("Remover admin");
-    await userEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Remover" }));
+    await userEvent.click(rowFor("operator@vane.app"));
+    const dialog = await screen.findByRole("dialog");
+    await userEvent.click(within(dialog).getByRole("button", { name: "Remover usuário" }));
+
+    await userEvent.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "Remover" }));
 
     await waitFor(() => expect(screen.queryByText("operator@vane.app")).not.toBeInTheDocument());
     expect(await screen.findByText("Acesso de operator@vane.app removido.")).toBeInTheDocument();
   });
 
-  it("convidar admin com sucesso adiciona a linha com badge Pendente (AF-25)", async () => {
+  it("cancelar convite pendente pelo drawer remove a linha e mostra toast (USRPG-09)", async () => {
+    await loginAsOwner();
+    renderPage();
+    await screen.findByText("novo-operador@vane.app");
+
+    await userEvent.click(rowFor("novo-operador@vane.app"));
+    const dialog = await screen.findByRole("dialog");
+    await userEvent.click(within(dialog).getByRole("button", { name: "Remover usuário" }));
+    await userEvent.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "Remover" }));
+
+    await waitFor(() => expect(screen.queryByText("novo-operador@vane.app")).not.toBeInTheDocument());
+    expect(await screen.findByText("Convite de novo-operador@vane.app cancelado.")).toBeInTheDocument();
+  });
+
+  it("último acesso ausente mostra travessão (USRPG-10)", async () => {
+    await loginAsOwner();
+    renderPage();
+    await screen.findByText("novo-operador@vane.app");
+
+    expect(within(rowFor("novo-operador@vane.app")).getByText("—")).toBeInTheDocument();
+  });
+
+  it("convidar usuário via drawer exige nome, telefone opcional e papel (USRPG-11/12)", async () => {
     await loginAsOwner();
     renderPage();
     await screen.findByText("owner@vane.app");
 
-    await userEvent.click(screen.getByRole("button", { name: "Convidar admin" }));
+    await userEvent.click(screen.getByRole("button", { name: "Convidar usuário" }));
     await userEvent.type(screen.getByLabelText("Nome"), "Novo Viewer");
-    await userEvent.type(screen.getByLabelText("E-mail"), "novo-viewer@vane.app");
-    await userEvent.click(screen.getByRole("tab", { name: "Viewer" }));
+    await userEvent.type(screen.getByLabelText("Email"), "novo-viewer@vane.app");
+    await userEvent.click(screen.getByRole("radio", { name: /Somente leitura/ }));
     await userEvent.click(screen.getByRole("button", { name: "Enviar convite" }));
 
     expect(await screen.findByText("novo-viewer@vane.app")).toBeInTheDocument();
-    const newRow = screen.getByText("novo-viewer@vane.app").closest("[data-testid]") as HTMLElement;
-    expect(within(newRow).getByText("Pendente")).toBeInTheDocument();
+    expect(within(rowFor("novo-viewer@vane.app")).getByText("Pendente")).toBeInTheDocument();
+  });
+
+  it("convite rejeitado (409, e-mail já ativo) mantém o drawer aberto e mostra o erro (USRPG-13)", async () => {
+    await loginAsOwner();
+    renderPage();
+    await screen.findByText("owner@vane.app");
+
+    await userEvent.click(screen.getByRole("button", { name: "Convidar usuário" }));
+    await userEvent.type(screen.getByLabelText("Nome"), "Duplicado");
+    await userEvent.type(screen.getByLabelText("Email"), "owner@vane.app");
+    await userEvent.click(screen.getByRole("button", { name: "Enviar convite" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(/an active admin already exists/);
+    expect(screen.getByRole("button", { name: "Enviar convite" })).toBeInTheDocument();
   });
 
   it("reenviar convite pendente mantém a linha e exibe toast de confirmação (INVITE-03)", async () => {
@@ -133,23 +225,11 @@ describe("AdminsPage", () => {
     renderPage();
     await screen.findByText("novo-operador@vane.app");
 
-    const inviteRow = screen.getByText("novo-operador@vane.app").closest("[data-testid]") as HTMLElement;
-    await userEvent.click(within(inviteRow).getByRole("button", { name: "Reenviar" }));
+    await userEvent.click(rowFor("novo-operador@vane.app"));
+    const dialog = await screen.findByRole("dialog");
+    await userEvent.click(within(dialog).getByRole("button", { name: "Reenviar convite" }));
 
     expect(await screen.findByText("Convite reenviado para novo-operador@vane.app.")).toBeInTheDocument();
-    expect(screen.getByText("novo-operador@vane.app")).toBeInTheDocument();
-  });
-
-  it("cancelar convite pendente remove a linha e exibe toast de confirmação (INVITE-05)", async () => {
-    await loginAsOwner();
-    renderPage();
-    await screen.findByText("novo-operador@vane.app");
-
-    const inviteRow = screen.getByText("novo-operador@vane.app").closest("[data-testid]") as HTMLElement;
-    await userEvent.click(within(inviteRow).getByRole("button", { name: "Cancelar" }));
-
-    await waitFor(() => expect(screen.queryByText("novo-operador@vane.app")).not.toBeInTheDocument());
-    expect(await screen.findByText("Convite de novo-operador@vane.app cancelado.")).toBeInTheDocument();
   });
 
   it("convite pendente expirado exibe tag Expirado além de Pendente (INVITE-07)", async () => {
@@ -158,11 +238,11 @@ describe("AdminsPage", () => {
     renderPage();
     await screen.findByText("expirado@vane.app");
 
-    const expiredRow = screen.getByText("expirado@vane.app").closest("[data-testid]") as HTMLElement;
+    const expiredRow = rowFor("expirado@vane.app");
     expect(within(expiredRow).getByText("Expirado")).toBeInTheDocument();
     expect(within(expiredRow).getByText("Pendente")).toBeInTheDocument();
 
-    const freshRow = screen.getByText("novo-operador@vane.app").closest("[data-testid]") as HTMLElement;
+    const freshRow = rowFor("novo-operador@vane.app");
     expect(within(freshRow).queryByText("Expirado")).not.toBeInTheDocument();
   });
 });

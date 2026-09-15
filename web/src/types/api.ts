@@ -21,6 +21,10 @@ export interface Admin {
   phone?: string;
   role: Role;
   status: "active" | "pending";
+  // last_access is users-page USRPG-05's "Último acesso" - the most
+  // recent sessions.last_seen_at for this user, null when they never had
+  // a session (pending invite, or an active member who never logged in).
+  last_access?: string | null;
 }
 
 export interface AdminInvite {

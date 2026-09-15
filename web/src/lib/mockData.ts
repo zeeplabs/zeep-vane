@@ -44,6 +44,7 @@ export const admins: AdminSeed[] = [
     name: "Ana Owner",
     role: "owner",
     status: "active",
+    last_access: new Date(Date.now() - 1000 * 60 * 2).toISOString(),
   },
   {
     id: "admin-2",
@@ -52,6 +53,7 @@ export const admins: AdminSeed[] = [
     name: "Bruno Operator",
     role: "operator",
     status: "active",
+    last_access: new Date(Date.now() - 1000 * 60 * 60 * 3).toISOString(),
   },
   {
     id: "admin-3",
@@ -60,6 +62,7 @@ export const admins: AdminSeed[] = [
     name: "Carla Viewer",
     role: "viewer",
     status: "active",
+    last_access: new Date(Date.now() - 1000 * 60 * 60 * 24).toISOString(),
   },
 ];
 
@@ -68,7 +71,14 @@ export function findAdminByEmail(email: string): AdminSeed | undefined {
 }
 
 export function toPublicAdmin(admin: AdminSeed): Admin {
-  return { id: admin.id, email: admin.email, name: admin.name, role: admin.role, status: admin.status };
+  return {
+    id: admin.id,
+    email: admin.email,
+    name: admin.name,
+    role: admin.role,
+    status: admin.status,
+    last_access: admin.last_access,
+  };
 }
 
 // -- Convites pendentes de admin (AF-38: mesclados em GET /api/admins) --------
