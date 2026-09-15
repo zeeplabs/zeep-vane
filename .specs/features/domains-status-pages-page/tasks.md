@@ -251,12 +251,12 @@ T12
 - Skill: NONE
 
 **Done when**:
-- [ ] Two tiles rendered, "Domínio próprio" default-selected (DSP-09)
-- [ ] "Subdomínio Vane" tile has no `onClick`, `aria-disabled="true"`, clicking it doesn't change selection (DSP-10)
-- [ ] Hostname input submits via `useCreateDomain` (DSP-11)
-- [ ] 409 duplicate-hostname shows inline error, matching `DomainsSection`'s existing copy (DSP-12)
-- [ ] Unit tests cover all four ACs above
-- [ ] `npx vitest run web/src/features/domains/AddDomainDrawer.test.tsx` passes
+- [x] Two tiles rendered, "Domínio próprio" default-selected (DSP-09)
+- [x] "Subdomínio Vane" tile has no `onClick`, `aria-disabled="true"`, clicking it doesn't change selection (DSP-10)
+- [x] Hostname input submits via `useCreateDomain` (DSP-11)
+- [x] 409 duplicate-hostname shows inline error, matching `DomainsSection`'s existing copy (DSP-12)
+- [x] Unit tests cover all four ACs above
+- [x] `npx vitest run web/src/features/domains/AddDomainDrawer.test.tsx` passes
 
 **Tests**: unit
 **Gate**: quick
