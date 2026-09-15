@@ -62,7 +62,7 @@ export function IntegrationsPage() {
       </div>
 
       {!connected && !formOpen ? (
-        <Card elevation="elev-sm" className="flex flex-col gap-3 p-4">
+        <Card elevation="none" className="border border-divider flex flex-col gap-3 p-4">
           <div className="flex items-center gap-3">
             <div className="grid h-[38px] w-[38px] flex-none place-items-center rounded-[10px] bg-accent-800 text-accent-200">
               <DatadogIcon />
@@ -81,7 +81,7 @@ export function IntegrationsPage() {
       ) : null}
 
       {connected && !formOpen ? (
-        <Card elevation="elev-sm" className="flex flex-col gap-3 p-4">
+        <Card elevation="none" className="border border-divider flex flex-col gap-3 p-4">
           <div className="flex items-center gap-3">
             <div className="grid h-[38px] w-[38px] flex-none place-items-center rounded-[10px] bg-accent-800 text-accent-200">
               <DatadogIcon />
@@ -105,7 +105,7 @@ export function IntegrationsPage() {
       ) : null}
 
       {formOpen && canManage ? (
-        <Card elevation="elev-sm" className="flex flex-col gap-3 p-4">
+        <Card elevation="none" className="border border-divider flex flex-col gap-3 p-4">
           <div className="flex items-center gap-3">
             <div className="grid h-[38px] w-[38px] flex-none place-items-center rounded-[10px] bg-accent-800 text-accent-200">
               <DatadogIcon />

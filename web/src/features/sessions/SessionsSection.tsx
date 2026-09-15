@@ -78,7 +78,7 @@ export function SessionsSection() {
         <h2 className="text-text">{t("sessions.title")}</h2>
         <p className="m-0 text-[13.5px] text-neutral-400">{t("sessions.subtitle")}</p>
       </div>
-      <Card elevation="elev-sm" className="divide-y divide-divider overflow-hidden">
+      <Card elevation="none" className="border border-divider divide-y divide-divider overflow-hidden">
         {isLoading ? (
           <p className="px-4 py-6 text-center text-neutral-400" data-testid="sessions-loading">
             {t("sessions.loading")}

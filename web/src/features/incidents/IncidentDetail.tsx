@@ -98,8 +98,8 @@ export function IncidentDetail() {
           (server still enforces 403 on either action regardless, T17). */}
       {incident.pending_close_comment ? (
         <Card
-          elevation="elev-sm"
-          className="flex flex-col gap-2 p-4"
+          elevation="none"
+          className="border border-divider flex flex-col gap-2 p-4"
           style={{ border: "1px solid color-mix(in oklch, var(--color-accent) 30%, var(--color-divider))" }}
         >
           <p className="m-0 text-xs uppercase tracking-wide text-neutral-400">
@@ -163,7 +163,7 @@ export function IncidentDetail() {
 
       <div className="flex flex-col gap-3">
         {(updates ?? []).map((update) => (
-          <Card key={update.id} elevation="elev-sm" className="flex gap-3 p-4">
+          <Card key={update.id} elevation="none" className="border border-divider flex gap-3 p-4">
             <div className="mt-1 h-2 w-2 shrink-0 rounded-full bg-accent" />
             <div className="flex flex-col gap-1">
               <p className="text-sm text-text">{update.body}</p>

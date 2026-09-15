@@ -67,7 +67,7 @@ export function PersonalInfoCard() {
   };
 
   return (
-    <Card elevation="elev-sm" className="p-6">
+    <Card elevation="none" className="border border-divider p-6">
       <form onSubmit={handleSubmit} className="flex flex-col gap-4">
         <div className="flex items-center gap-4">
           <div

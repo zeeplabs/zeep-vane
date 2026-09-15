@@ -57,7 +57,7 @@ export function SecurityCard() {
   };
 
   return (
-    <Card elevation="elev-sm" className="flex flex-col gap-6 p-6">
+    <Card elevation="none" className="border border-divider flex flex-col gap-6 p-6">
       <div>
         <h2 className="text-text">{t("profile.security.title")}</h2>
         <p className="m-0 text-[13.5px] text-neutral-400">{t("profile.security.subtitle")}</p>

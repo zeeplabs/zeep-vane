@@ -97,7 +97,7 @@ export function SettingsPage() {
         </p>
       </div>
 
-      <Card elevation="elev-sm" className="grid grid-cols-[280px_1fr] gap-6 p-6">
+      <Card elevation="none" className="border border-divider grid grid-cols-[280px_1fr] gap-6 p-6">
         <div className="flex flex-col gap-3 border-r border-divider pr-6">
           <span className="text-sm font-medium text-text">Logo da empresa</span>
           <div className="flex h-[260px] w-full items-center justify-center rounded-md border border-divider bg-bg text-neutral-500">
@@ -138,7 +138,7 @@ export function SettingsPage() {
         </div>
       </Card>
 
-      <Card elevation="elev-sm" className="flex flex-col gap-4 p-6">
+      <Card elevation="none" className="border border-divider flex flex-col gap-4 p-6">
         <div>
           <span className="text-sm font-medium text-text">{t("companyFiscal.title")}</span>
           <p className="m-0 text-xs text-neutral-400">{t("companyFiscal.subtitle")}</p>

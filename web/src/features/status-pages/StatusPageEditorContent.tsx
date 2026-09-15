@@ -98,7 +98,7 @@ export function StatusPageEditorContent({ page }: StatusPageEditorContentProps) 
 
   return (
     <div className="flex flex-col gap-4">
-      <Card elevation="elev-sm" className="flex flex-col gap-3 p-4">
+      <Card elevation="none" className="border border-divider flex flex-col gap-3 p-4">
         <div className="flex items-center justify-between gap-3">
           <h3 className="text-text">{page.name}</h3>
 
@@ -184,7 +184,7 @@ export function StatusPageEditorContent({ page }: StatusPageEditorContentProps) 
         <DomainVerificationPanel statusPageId={page.id} fullHostname={`${page.subdomain}.${hostname ?? "?"}`} />
       ) : null}
 
-      <Card elevation="elev-sm" className="flex flex-col gap-3 p-4">
+      <Card elevation="none" className="border border-divider flex flex-col gap-3 p-4">
         <div className="flex items-center justify-between">
           <span className="text-sm font-medium text-text">Serviços vinculados</span>
           <span className="text-xs text-neutral-400">
@@ -272,7 +272,7 @@ function DomainVerificationPanel({ statusPageId, fullHostname }: DomainVerificat
   const result: VerifyDomainResult | undefined = verifyDomain.data;
 
   return (
-    <Card elevation="elev-sm" className="flex flex-col gap-3 p-4">
+    <Card elevation="none" className="border border-divider flex flex-col gap-3 p-4">
       <div className="flex items-center justify-between gap-3">
         <span className="text-sm font-medium text-text">Configuração de DNS</span>
         <Button

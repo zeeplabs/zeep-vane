@@ -79,7 +79,7 @@ export function DomainsSection() {
       </div>
 
       {formOpen && canManage ? (
-        <Card elevation="elev-sm" className="max-w-md p-5">
+        <Card elevation="none" className="border border-divider max-w-md p-5">
           <form onSubmit={handleSubmit} className="flex flex-col gap-3">
             <Field
               label="Hostname"
@@ -106,7 +106,7 @@ export function DomainsSection() {
           <p className="text-neutral-400">Carregando…</p>
         ) : (
           <>
-            <Card elevation="elev-sm" className="divide-y divide-divider overflow-hidden">
+            <Card elevation="none" className="border border-divider divide-y divide-divider overflow-hidden">
               {(domains ?? []).length === 0 ? (
                 <p className="px-4 py-6 text-center text-neutral-400">Nenhum domínio cadastrado.</p>
               ) : (

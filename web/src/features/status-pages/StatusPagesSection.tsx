@@ -179,7 +179,7 @@ export function StatusPagesSection() {
           <p className="text-neutral-400">Carregando…</p>
         ) : (
           <>
-            <Card elevation="elev-sm" className="divide-y divide-divider overflow-hidden">
+            <Card elevation="none" className="border border-divider divide-y divide-divider overflow-hidden">
               {(pages ?? []).length === 0 ? (
                 <p className="px-4 py-6 text-center text-neutral-400">Nenhuma status page criada.</p>
               ) : (

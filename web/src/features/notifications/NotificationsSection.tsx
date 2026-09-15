@@ -54,7 +54,7 @@ export function NotificationsSection() {
   };
 
   return (
-    <Card elevation="elev-sm" className="flex flex-col gap-6 p-6">
+    <Card elevation="none" className="border border-divider flex flex-col gap-6 p-6">
       <div className="flex flex-col gap-1">
         <h2 className="text-text">{t("profile.notifications.title")}</h2>
         <p className="text-sm text-neutral-300">{t("profile.notifications.subtitle")}</p>

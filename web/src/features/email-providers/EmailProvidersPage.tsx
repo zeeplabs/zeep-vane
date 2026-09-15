@@ -68,7 +68,7 @@ function ProviderRow({ id, label, status, isActive, canManage }: ProviderRowProp
   }
 
   return (
-    <Card elevation="elev-sm" className="flex flex-col gap-3 p-4">
+    <Card elevation="none" className="border border-divider flex flex-col gap-3 p-4">
       <div className="flex items-center gap-3">
         <div className="flex-1">
           <div className="text-[15px] font-medium text-text">{label}</div>

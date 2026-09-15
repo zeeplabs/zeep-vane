@@ -153,7 +153,7 @@ export function AdminsPage() {
         {isLoading ? (
           <p className="text-neutral-400">Carregando…</p>
         ) : (
-          <Card elevation="elev-sm" className="divide-y divide-divider overflow-hidden">
+          <Card elevation="none" className="border border-divider divide-y divide-divider overflow-hidden">
             {active.length === 0 ? (
               <p className="px-4 py-6 text-center text-neutral-400">Nenhum admin cadastrado.</p>
             ) : (
@@ -192,7 +192,7 @@ export function AdminsPage() {
       {pending.length > 0 ? (
         <div className="flex flex-col gap-3">
           <h4 className="text-text">Convites pendentes</h4>
-          <Card elevation="elev-sm" className="divide-y divide-divider overflow-hidden">
+          <Card elevation="none" className="border border-divider divide-y divide-divider overflow-hidden">
             {pending.map((a) => (
               <div key={a.id} data-testid="invite-row" className="flex items-center gap-3 px-4 py-3.5">
                 <div className="grid h-9 w-9 flex-none place-items-center rounded-full bg-neutral-800 text-neutral-300">

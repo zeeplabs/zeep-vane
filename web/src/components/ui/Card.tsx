@@ -13,7 +13,7 @@ const elevationClasses: Record<CardElevation, string> = {
   "elev-lg": "shadow-lg",
 };
 
-export function Card({ elevation = "elev-sm", className = "", ...props }: CardProps) {
+export function Card({ elevation = "none", className = "", ...props }: CardProps) {
   return (
     <div
       data-elevation={elevation}
