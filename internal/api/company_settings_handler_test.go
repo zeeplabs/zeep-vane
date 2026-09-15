@@ -363,10 +363,13 @@ func TestCompanySettingsUpdate_ValidCNPJ_200PersistsFiscalFields(t *testing.T) {
 	}
 }
 
-// TestCompanySettingsGet_NeverExposesBillingAddress asserts spec.md's P2
-// AC3: billing_address is never returned by this endpoint, self-hosted or
-// SaaS (TENANT-24) - the SaaS billing feature owns that field's exposure.
-func TestCompanySettingsGet_NeverExposesBillingAddress(t *testing.T) {
+// TestCompanySettingsGet_BillingAddressUnset_NullInResponse asserts
+// settings-page CFGPG-08: a tenant that never set billing_address renders
+// it as null, no error. This supersedes
+// TestCompanySettingsGet_NeverExposesBillingAddress (TENANT-24) - the
+// settings-page feature explicitly re-exposes the field this endpoint used
+// to hide.
+func TestCompanySettingsGet_BillingAddressUnset_NullInResponse(t *testing.T) {
 	r, _, admins := newCompanySettingsRouter(t)
 	token := issueTestSessionToken(t, admins)
 
@@ -375,12 +378,96 @@ func TestCompanySettingsGet_NeverExposesBillingAddress(t *testing.T) {
 		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
 	}
 
-	var raw map[string]any
-	if err := json.Unmarshal(rec.Body.Bytes(), &raw); err != nil {
+	var resp companySettingsResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
 	}
-	if _, present := raw["billing_address"]; present {
-		t.Errorf("response contains billing_address key, want it absent: %v", raw)
+	if resp.BillingAddress != nil {
+		t.Errorf("BillingAddress = %+v, want nil", *resp.BillingAddress)
+	}
+}
+
+// TestCompanySettingsUpdate_BillingAddress_200PersistsAndRoundTrips
+// asserts CFGPG-06/07: the 7 address fields persist as billing_address and
+// come back unchanged on a subsequent GET.
+func TestCompanySettingsUpdate_BillingAddress_200PersistsAndRoundTrips(t *testing.T) {
+	r, _, admins := newCompanySettingsRouter(t)
+	token := issueTestSessionToken(t, admins)
+
+	addr := &tenantBillingAddress{
+		Zip: "01310-100", Street: "Av. Paulista", Number: "1000",
+		Complement: "Sala 12", State: "SP", City: "São Paulo", Country: "Brasil",
+	}
+	rec := patchCompanySettings(t, r, token, updateCompanySettingsRequest{
+		Name: "Acme Inc.", ContactEmail: "owner@acme.example.com", BillingAddress: addr,
+	})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	getRec := getCompanySettings(t, r, token)
+	var getResp companySettingsResponse
+	if err := json.Unmarshal(getRec.Body.Bytes(), &getResp); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+	if getResp.BillingAddress == nil || *getResp.BillingAddress != *addr {
+		t.Errorf("BillingAddress = %+v, want %+v", getResp.BillingAddress, addr)
+	}
+}
+
+// TestCompanySettingsUpdate_InvalidTimezone_422NoPersistence asserts
+// CFGPG-04: a timezone outside the 3 supported values is rejected with 422
+// and the previously persisted value is left untouched.
+func TestCompanySettingsUpdate_InvalidTimezone_422NoPersistence(t *testing.T) {
+	r, _, admins := newCompanySettingsRouter(t)
+	token := issueTestSessionToken(t, admins)
+
+	validTZ := "UTC (GMT+0)"
+	if rec := patchCompanySettings(t, r, token, updateCompanySettingsRequest{
+		Name: "Acme Inc.", ContactEmail: "owner@acme.example.com", Timezone: &validTZ,
+	}); rec.Code != http.StatusOK {
+		t.Fatalf("setup PATCH status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	badTZ := "Mars/Olympus_Mons"
+	rec := patchCompanySettings(t, r, token, updateCompanySettingsRequest{
+		Name: "Acme Inc.", ContactEmail: "owner@acme.example.com", Timezone: &badTZ,
+	})
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusUnprocessableEntity, rec.Body.String())
+	}
+
+	getRec := getCompanySettings(t, r, token)
+	var getResp companySettingsResponse
+	if err := json.Unmarshal(getRec.Body.Bytes(), &getResp); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+	if getResp.Timezone == nil || *getResp.Timezone != validTZ {
+		t.Errorf("Timezone after rejected PATCH = %v, want unchanged %q", getResp.Timezone, validTZ)
+	}
+}
+
+// TestCompanySettingsUpdate_Website_200Persists asserts CFGPG-01/03:
+// website is optional and persists across a GET.
+func TestCompanySettingsUpdate_Website_200Persists(t *testing.T) {
+	r, _, admins := newCompanySettingsRouter(t)
+	token := issueTestSessionToken(t, admins)
+
+	website := "https://acme.health"
+	rec := patchCompanySettings(t, r, token, updateCompanySettingsRequest{
+		Name: "Acme Inc.", ContactEmail: "owner@acme.example.com", Website: &website,
+	})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	getRec := getCompanySettings(t, r, token)
+	var getResp companySettingsResponse
+	if err := json.Unmarshal(getRec.Body.Bytes(), &getResp); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+	if getResp.Website == nil || *getResp.Website != website {
+		t.Errorf("Website = %v, want %q", getResp.Website, website)
 	}
 }
 

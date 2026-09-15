@@ -42,43 +42,83 @@ func NewCompanySettingsHandler(settings companySettingsStore, logger *zap.Logger
 	return &CompanySettingsHandler{settings: settings, logger: logger}
 }
 
-// companySettingsResponse never carries billing_address (SaaS billing
-// feature owns that field's exposure - not this screen's, self-hosted or
-// SaaS) even though db.Tenant has the column (TENANT-24).
+// tenantBillingAddress is the typed shape settings-page CFGPG-06/07
+// persists into db.Tenant.BillingAddress's raw JSON column - superseding
+// the previous decision (TENANT-24) that this endpoint never exposes
+// billing_address; the settings-page screen is now the one place that
+// reads/writes it.
+type tenantBillingAddress struct {
+	Zip        string `json:"zip"`
+	Street     string `json:"street"`
+	Number     string `json:"number"`
+	Complement string `json:"complement"`
+	State      string `json:"state"`
+	City       string `json:"city"`
+	Country    string `json:"country"`
+}
+
+// validTimezones is the exact set settings-page CFGPG-04 allows - mirrors
+// the 3 options the mock's select offers; any other value is rejected
+// (422) rather than silently accepted.
+var validTimezones = map[string]bool{
+	"America/Sao_Paulo (GMT-3)": true,
+	"America/New_York (GMT-5)":  true,
+	"UTC (GMT+0)":               true,
+}
+
 type companySettingsResponse struct {
-	Name         string  `json:"name"`
-	ContactEmail string  `json:"contact_email"`
-	LogoURL      *string `json:"logo_url"`
-	LegalName    *string `json:"legal_name"`
-	TaxID        *string `json:"tax_id"`
-	TaxIDType    *string `json:"tax_id_type"`
+	Name           string                `json:"name"`
+	ContactEmail   string                `json:"contact_email"`
+	LogoURL        *string               `json:"logo_url"`
+	LegalName      *string               `json:"legal_name"`
+	TaxID          *string               `json:"tax_id"`
+	TaxIDType      *string               `json:"tax_id_type"`
+	Website        *string               `json:"website"`
+	Timezone       *string               `json:"timezone"`
+	Locale         string                `json:"locale"`
+	BillingAddress *tenantBillingAddress `json:"billing_address"`
 }
 
 // updateCompanySettingsRequest's fiscal fields (LegalName/TaxID/TaxIDType)
-// are all optional (TENANT-22) - a nil pointer means "leave unchanged",
-// matching db.TenantUpdate's own semantics. billing_address is never
-// accepted here (TENANT-24).
+// and Website/Timezone/BillingAddress are all optional - a nil pointer (or
+// a nil BillingAddress) means "leave unchanged", matching
+// db.TenantUpdate's own semantics.
 type updateCompanySettingsRequest struct {
-	Name         string  `json:"name"`
-	ContactEmail string  `json:"contact_email"`
-	LegalName    *string `json:"legal_name"`
-	TaxID        *string `json:"tax_id"`
-	TaxIDType    *string `json:"tax_id_type"`
+	Name           string                `json:"name"`
+	ContactEmail   string                `json:"contact_email"`
+	LegalName      *string               `json:"legal_name"`
+	TaxID          *string               `json:"tax_id"`
+	TaxIDType      *string               `json:"tax_id_type"`
+	Website        *string               `json:"website"`
+	Timezone       *string               `json:"timezone"`
+	BillingAddress *tenantBillingAddress `json:"billing_address"`
 }
 
 const invalidCompanySettingsRequestBody = `{"error":"name is required and contact_email must be a valid e-mail address"}`
 
 const invalidTaxIDRequestBody = `{"error":"tax_id must have 11 digits for cpf or 14 digits for cnpj"}`
 
+const invalidTimezoneRequestBody = `{"error":"timezone must be one of the supported values"}`
+
 func toCompanySettingsResponse(tenant *db.Tenant) companySettingsResponse {
-	return companySettingsResponse{
+	resp := companySettingsResponse{
 		Name:         tenant.Name,
 		ContactEmail: tenant.ContactEmail,
 		LogoURL:      tenant.LogoServedURL(),
 		LegalName:    tenant.LegalName,
 		TaxID:        tenant.TaxID,
 		TaxIDType:    tenant.TaxIDType,
+		Website:      tenant.Website,
+		Timezone:     tenant.Timezone,
+		Locale:       tenant.Locale,
 	}
+	if tenant.BillingAddress != nil {
+		var addr tenantBillingAddress
+		if err := json.Unmarshal(tenant.BillingAddress, &addr); err == nil {
+			resp.BillingAddress = &addr
+		}
+	}
+	return resp
 }
 
 // Get handles GET /api/company-settings, returning the active tenant's
@@ -117,15 +157,34 @@ func (h *CompanySettingsHandler) Update(w http.ResponseWriter, r *http.Request) 
 		writeCompanySettingsValidationError(w)
 		return
 	}
+	if req.Timezone != nil && !validTimezones[*req.Timezone] {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusUnprocessableEntity)
+		_, _ = w.Write([]byte(invalidTimezoneRequestBody))
+		return
+	}
+
+	var billingAddress *[]byte
+	if req.BillingAddress != nil {
+		encoded, err := json.Marshal(req.BillingAddress)
+		if err != nil {
+			writeCompanySettingsValidationError(w)
+			return
+		}
+		billingAddress = &encoded
+	}
 
 	tenantID, _ := ActiveTenantIDFromContext(r.Context())
 
 	settings, err := h.settings.Update(r.Context(), tenantID, db.TenantUpdate{
-		Name:         &req.Name,
-		ContactEmail: &req.ContactEmail,
-		LegalName:    req.LegalName,
-		TaxID:        req.TaxID,
-		TaxIDType:    req.TaxIDType,
+		Name:           &req.Name,
+		ContactEmail:   &req.ContactEmail,
+		LegalName:      req.LegalName,
+		TaxID:          req.TaxID,
+		TaxIDType:      req.TaxIDType,
+		Website:        req.Website,
+		Timezone:       req.Timezone,
+		BillingAddress: billingAddress,
 	})
 	if err != nil {
 		if errors.Is(err, db.ErrInvalidTaxID) {
