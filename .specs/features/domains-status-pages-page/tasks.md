@@ -203,11 +203,11 @@ T12
 - Skill: NONE
 
 **Done when**:
-- [ ] Renders all 6 columns per spec.md DSP-01, including "+N" formatting (DSP-04) and "—" for null verified_at (DSP-16) / zero attached pages (DSP-02)
-- [ ] Row click calls an `onSelect(domain)` prop
-- [ ] Zero domains renders `EmptyState`, not an empty table
-- [ ] Unit tests cover: 0/1/2+ attached pages per row, null verified_at, empty list
-- [ ] `npx vitest run web/src/features/domains/DomainsTable.test.tsx` passes
+- [x] Renders all 6 columns per spec.md DSP-01, including "+N" formatting (DSP-04) and "—" for null verified_at (DSP-16) / zero attached pages (DSP-02)
+- [x] Row click calls an `onSelect(domain)` prop
+- [x] Zero domains renders `EmptyState`, not an empty table
+- [x] Unit tests cover: 0/1/2+ attached pages per row, null verified_at, empty list
+- [x] `npx vitest run web/src/features/domains/DomainsTable.test.tsx` passes
 
 **Tests**: unit
 **Gate**: quick
