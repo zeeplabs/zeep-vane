@@ -93,11 +93,11 @@ T7 → T8 → T9
 - Skill: NONE
 
 **Done when**:
-- [ ] Migration applies cleanly against a database with existing `services` rows (all default to `monitor_mode='slo'`, `slo_id` unchanged)
-- [ ] `INSERT` with `monitor_mode='slo'` + `slo_id` set + all `poll_*` NULL succeeds; the reverse combination (`monitor_mode='polling'` + all three `poll_*` set + `slo_id` NULL) succeeds
-- [ ] `INSERT` with `monitor_mode='slo'` + a `poll_*` field set is rejected by the constraint; `monitor_mode='polling'` with `slo_id` set is rejected; `monitor_mode='polling'` missing any one of the three `poll_*` fields is rejected
-- [ ] Reverses cleanly, re-applies cleanly
-- [ ] Gate check passes: `make test-integration`
+- [x] Migration applies cleanly against a database with existing `services` rows (all default to `monitor_mode='slo'`, `slo_id` unchanged)
+- [x] `INSERT` with `monitor_mode='slo'` + `slo_id` set + all `poll_*` NULL succeeds; the reverse combination (`monitor_mode='polling'` + all three `poll_*` set + `slo_id` NULL) succeeds
+- [x] `INSERT` with `monitor_mode='slo'` + a `poll_*` field set is rejected by the constraint; `monitor_mode='polling'` with `slo_id` set is rejected; `monitor_mode='polling'` missing any one of the three `poll_*` fields is rejected
+- [x] Reverses cleanly, re-applies cleanly
+- [x] Gate check passes: `make test-integration`
 
 **Tests**: integration
 **Gate**: Full
