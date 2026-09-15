@@ -227,11 +227,11 @@ T12
 - Skill: NONE
 
 **Done when**:
-- [ ] Renders per DSP-05 (status pill, error banner when `last_error` non-null, SSL/Verified-at, DNS config block for `domain_type === "custom"`)
-- [ ] "Verificar novamente" calls `useRecheckDomain`, drawer reflects the returned state (DSP-06)
-- [ ] "Remover domínio" calls `useDeleteDomain`; on success closes the drawer and the row disappears from the table (DSP-07); on 409 shows an inline error and stays open (DSP-08)
-- [ ] Unit tests cover all four `Done when` behaviors above
-- [ ] `npx vitest run web/src/features/domains/DomainDetailDrawer.test.tsx` passes
+- [x] Renders per DSP-05 (status pill, error banner when `last_error` non-null, SSL/Verified-at, DNS config block for `domain_type === "custom"`)
+- [x] "Verificar novamente" calls `useRecheckDomain`, drawer reflects the returned state (DSP-06)
+- [x] "Remover domínio" calls `useDeleteDomain`; on success closes the drawer and the row disappears from the table (DSP-07); on 409 shows an inline error and stays open (DSP-08)
+- [x] Unit tests cover all four `Done when` behaviors above
+- [x] `npx vitest run web/src/features/domains/DomainDetailDrawer.test.tsx` passes
 
 **Tests**: unit
 **Gate**: quick
