@@ -215,13 +215,13 @@ T7 → T8 → T9
 - Skill: NONE
 
 **Done when**:
-- [ ] A newly-created polling-manual service gets its first check within one reconciliation cycle + its own interval (test with a short interval)
-- [ ] A successful check writes `operational` and a `status_intervals` row identical in shape to what the Datadog poller writes for the same table
-- [ ] 1 failed check leaves the prior status unchanged (MP-10); the 2nd consecutive failure flips to `outage` (MP-11/MP-06); a success after failures resets the streak to 0
-- [ ] With zero polling-manual services configured, `Run` starts and returns cleanly on ctx cancellation without error (MP-09 - no-op, not an error)
-- [ ] Goroutine count (`runtime.NumGoroutine()` before/after, allowing for scheduler noise via a bounded-retry assertion) returns to baseline after `Run`'s ctx is canceled
-- [ ] A target that resolves to a blocked range on a later cycle (simulating DNS rebinding) is treated as a failed check, not a panic or a successful connect (MP-15)
-- [ ] Gate check passes: `make test-integration`
+- [x] A newly-created polling-manual service gets its first check within one reconciliation cycle + its own interval (test with a short interval)
+- [x] A successful check writes `operational` and a `status_intervals` row identical in shape to what the Datadog poller writes for the same table
+- [x] 1 failed check leaves the prior status unchanged (MP-10); the 2nd consecutive failure flips to `outage` (MP-11/MP-06); a success after failures resets the streak to 0
+- [x] With zero polling-manual services configured, `Run` starts and returns cleanly on ctx cancellation without error (MP-09 - no-op, not an error)
+- [x] Goroutine count (`runtime.NumGoroutine()` before/after, allowing for scheduler noise via a bounded-retry assertion) returns to baseline after `Run`'s ctx is canceled
+- [x] A target that resolves to a blocked range on a later cycle (simulating DNS rebinding) is treated as a failed check, not a panic or a successful connect (MP-15)
+- [x] Gate check passes: `make test-integration`
 
 **Tests**: integration
 **Gate**: Full
