@@ -1,14 +1,13 @@
 import { useEffect, useState } from "react";
-import { MdOutlineOpenInNew } from "react-icons/md";
-import { Tag } from "../../components/ui/Tag";
+import { MdOutlineOpenInNew, MdCheck } from "react-icons/md";
+import { Tag, type TagVariant } from "../../components/ui/Tag";
 import { Button, buttonBaseClasses, buttonVariantClasses } from "../../components/ui/Button";
-import { Card } from "../../components/ui/Card";
-import { Input } from "../../components/ui/Input";
+import { Field } from "../../components/ui/Field";
 import { useAuth } from "../../auth/AuthProvider";
 import { ApiError } from "../../lib/apiClient";
 import { useDomains } from "../domains/hooks";
 import { useServices } from "../services/hooks";
-import type { Service, StatusPage } from "../../types/api";
+import type { Service, StatusPage, StatusPageState } from "../../types/api";
 import { useDNSTarget, useSetStatusPageServices, useVerifyDomain, type VerifyDomainResult } from "./hooks";
 import { AttachDomainDrawer } from "./AttachDomainDrawer";
 
@@ -28,6 +27,46 @@ function sameServiceSet(a: string[], b: string[]): boolean {
   return [...a].sort().every((id, i) => id === sorted[i]);
 }
 
+const statePillVariant: Record<StatusPageState, TagVariant> = {
+  draft: "accent-outline",
+  pending_tls: "accent",
+  published: "success",
+  tls_failed: "critical",
+};
+
+const statePillLabel: Record<StatusPageState, string> = {
+  draft: "Sem domínio configurado",
+  pending_tls: "Aguardando validação de DNS/certificado",
+  published: "Publicada",
+  tls_failed: "Falha",
+};
+
+interface StatusPagePillProps {
+  page: StatusPage;
+}
+
+// Same dot+pill composition DomainStatusTag/services' StatusTag already
+// established for the new layout - a status page's badge shouldn't look
+// like a different, older component just because it has its own state
+// machine (SPD-12/13).
+function StatusPagePill({ page }: StatusPagePillProps) {
+  // SPD-12: sem domínio nenhum anexado ainda - distinto de "draft" com
+  // domínio (que não deveria mais ocorrer, ver AD-017), mas o texto e a
+  // variante servem pros dois. "published"/"tls_failed" sempre vencem,
+  // mesmo no formato defendido/impossível de published sem domain_id
+  // (nunca produzido pelo fluxo real - MarkPublished exige domain_id via
+  // JOIN por hostname - mas publicUrl() e este pill continuam defendendo
+  // contra ele, mesmo raciocínio de StatusPagesSection.test.tsx).
+  const state: StatusPageState =
+    page.domain_id === null && page.state !== "published" && page.state !== "tls_failed" ? "draft" : page.state;
+  return (
+    <Tag variant={statePillVariant[state]} className="gap-1.5" style={{ borderRadius: "999px" }}>
+      {state === "pending_tls" ? <span className="h-1.5 w-1.5 flex-none animate-pulse rounded-full bg-current" aria-hidden="true" /> : null}
+      {statePillLabel[state]}
+    </Tag>
+  );
+}
+
 export interface StatusPageEditorContentProps {
   page: StatusPage;
 }
@@ -38,7 +77,11 @@ export interface StatusPageEditorContentProps {
  * `/status-pages/{id}` (ainda usada pelo fluxo pré-redesign) quanto pelo
  * `EditStatusPageDrawer` do novo layout, que substitui a navegação pra
  * tela separada por um drawer (mesmo modelo do de criação), por pedido
- * explícito do Julio: "em tela separada nao ficou legal". */
+ * explícito do Julio: "em tela separada nao ficou legal". Layout alinhado
+ * com os componentes já migrados (`DomainDetailDrawer`,
+ * `AddStatusPageDrawer`): sem `Card`, seções separadas por `border-t`,
+ * rótulos em uppercase 10.5px, checklist de serviço com checkbox quadrado
+ * em vez do checkbox nativo redondo. */
 export function StatusPageEditorContent({ page }: StatusPageEditorContentProps) {
   // SPEC_DEVIATION: fixed page 1 for now - Pager UI for the domains
   // dropdown is out of scope here (this reads domains only to resolve a
@@ -98,77 +141,36 @@ export function StatusPageEditorContent({ page }: StatusPageEditorContentProps) 
 
   return (
     <div className="flex flex-col gap-4">
-      <Card elevation="none" className="border border-divider flex flex-col gap-3 p-4">
+      <div className="flex flex-wrap items-center gap-2">
+        <StatusPagePill page={page} />
+      </div>
+
+      {page.domain_id === null ? (
         <div className="flex items-center justify-between gap-3">
-          <h3 className="text-text">{page.name}</h3>
-
-          {/* SPD-12: sem domínio nenhum anexado ainda. */}
-          {page.domain_id === null ? (
-            <Tag variant="accent-outline" className="w-fit">
-              Sem domínio configurado
-            </Tag>
-          ) : null}
-
-          {/* SPD-13: domínio anexado, mas o certificado ainda não foi emitido -
-              substitui o antigo texto ambíguo "Emitindo certificado", que não
-              distinguia esse caso do de "sem domínio" acima. Cobre "draft"
-              (nunca deveria ocorrer mais com domínio anexado, ver AD-017) e
-              "pending_tls" (estado real pós-anexação). */}
-          {page.domain_id !== null && page.state !== "published" && page.state !== "tls_failed" ? (
-            <Tag variant="accent" className="w-fit animate-pulse">
-              Aguardando validação de DNS/certificado
-            </Tag>
-          ) : null}
-
-          {page.state === "published" ? (
-            <Tag variant="success" className="w-fit">
-              Publicada
-            </Tag>
-          ) : null}
-
-          {page.state === "tls_failed" ? (
-            <Tag variant="critical" className="w-fit">
-              Falha
-            </Tag>
-          ) : null}
+          <p className="text-[13px] text-text-muted">Nenhum domínio anexado ainda.</p>
+          <Button type="button" variant="secondary" className="w-fit" onClick={() => setAttachOpen(true)}>
+            Anexar domínio
+          </Button>
         </div>
+      ) : null}
 
-        {page.domain_id === null ? (
-          <div className="flex items-center justify-between gap-3 border-t border-divider pt-3">
-            <p className="text-sm text-neutral-400">Nenhum domínio anexado ainda.</p>
-            <Button variant="secondary" className="w-fit" onClick={() => setAttachOpen(true)}>
-              Anexar domínio
-            </Button>
-          </div>
-        ) : null}
+      {page.state === "published" && url ? (
+        <a href={url} target="_blank" rel="noreferrer" className="font-mono text-[13px] font-semibold text-accent hover:underline">
+          {url}
+        </a>
+      ) : null}
 
-        {page.state === "published" && url ? (
-          <div className="flex items-center gap-2 border-t border-divider pt-3">
-            <a href={url} target="_blank" rel="noreferrer" className="text-sm text-accent hover:underline">
-              {url}
-            </a>
-          </div>
-        ) : null}
+      {page.state === "tls_failed" ? <p className="text-[13px] text-text-muted">{page.tls_last_error}</p> : null}
 
-        {page.state === "tls_failed" ? (
-          <p className="border-t border-divider pt-3 text-sm text-neutral-400">{page.tls_last_error}</p>
-        ) : null}
-
-        <div className="border-t border-divider pt-3">
-          {/* SPD-01/SPD-14: sempre visível, independente de state/domain - o
-              preview (`public-preview`) já compõe pra qualquer estado (AD-008),
-              então não há motivo pra escondê-lo aqui. */}
-          <a
-            href={`/status/${page.id}`}
-            target="_blank"
-            rel="noreferrer"
-            className={`${buttonBaseClasses} ${buttonVariantClasses.secondary} w-fit`}
-          >
-            <ExternalLinkIcon />
-            Pré-visualizar página pública
-          </a>
-        </div>
-      </Card>
+      <a
+        href={`/status/${page.id}`}
+        target="_blank"
+        rel="noreferrer"
+        className={`${buttonBaseClasses} ${buttonVariantClasses.secondary} w-fit`}
+      >
+        <MdOutlineOpenInNew size={14} aria-hidden="true" />
+        Pré-visualizar página pública
+      </a>
 
       {/* Painel fixo de configuração de DNS/certificado (mirrors o fluxo de
           domínio customizado de plataformas como Vercel/Render) - permanece
@@ -181,19 +183,20 @@ export function StatusPageEditorContent({ page }: StatusPageEditorContentProps) 
           confuso/enganoso ("DNS não configurado" quando na verdade só não
           teve permissão de ler) em vez de nada. */}
       {page.domain_id !== null && page.subdomain !== null && page.state !== "published" && canManage ? (
-        <DomainVerificationPanel statusPageId={page.id} fullHostname={`${page.subdomain}.${hostname ?? "?"}`} />
+        <div className="flex flex-col gap-3 border-t border-divider pt-4">
+          <DomainVerificationPanel statusPageId={page.id} fullHostname={`${page.subdomain}.${hostname ?? "?"}`} />
+        </div>
       ) : null}
 
-      <Card elevation="none" className="border border-divider flex flex-col gap-3 p-4">
+      <div className="flex flex-col gap-3 border-t border-divider pt-4">
         <div className="flex items-center justify-between">
-          <span className="text-sm font-medium text-text">Serviços vinculados</span>
-          <span className="text-xs text-neutral-400">
-            {selectedServiceIds.length} de {allServices.length} selecionados
+          <span className="text-[10.5px] font-bold uppercase tracking-wide text-text-muted">
+            Serviços vinculados ({selectedServiceIds.length}/{allServices.length})
           </span>
         </div>
 
         {allServices.length === 0 ? (
-          <p className="text-sm text-neutral-400">Nenhum serviço cadastrado.</p>
+          <p className="text-[13px] text-text-muted">Nenhum serviço cadastrado.</p>
         ) : (
           <>
             {linkedServices.length > 0 ? (
@@ -207,15 +210,15 @@ export function StatusPageEditorContent({ page }: StatusPageEditorContentProps) 
             ) : null}
 
             <div className="flex flex-col gap-2">
-              <Input
+              <Field
                 type="text"
+                variant="filled"
+                label="Disponíveis"
                 placeholder="Buscar serviço…"
                 value={serviceQuery}
                 onChange={(e) => setServiceQuery(e.target.value)}
-                aria-label="Buscar serviço"
               />
               <ServiceGroup
-                label="Disponíveis"
                 services={availableServices}
                 selectedServiceIds={selectedServiceIds}
                 canManage={canManage}
@@ -228,7 +231,7 @@ export function StatusPageEditorContent({ page }: StatusPageEditorContentProps) 
         )}
 
         {canManage ? (
-          <div className="flex items-center gap-2 border-t border-divider pt-3">
+          <div className="flex items-center gap-3">
             <Button
               type="button"
               variant="secondary"
@@ -244,7 +247,7 @@ export function StatusPageEditorContent({ page }: StatusPageEditorContentProps) 
             ) : null}
           </div>
         ) : null}
-      </Card>
+      </div>
 
       <AttachDomainDrawer statusPageId={page.id} open={attachOpen} onOpenChange={setAttachOpen} />
     </div>
@@ -265,16 +268,17 @@ interface DomainVerificationPanelProps {
 // performs a real DNS lookup + TLS handshake server-side (POST
 // .../verify-domain) rather than only waiting for the existing 10s
 // background poll, mirroring the "recheck" action platforms like
-// Vercel/Render offer for custom domains.
+// Vercel/Render offer for custom domains. Table styling mirrors
+// DomainDetailDrawer's TIPO/VALOR DNS block.
 function DomainVerificationPanel({ statusPageId, fullHostname }: DomainVerificationPanelProps) {
   const { data: dnsTarget, isLoading: dnsTargetLoading } = useDNSTarget();
   const verifyDomain = useVerifyDomain();
   const result: VerifyDomainResult | undefined = verifyDomain.data;
 
   return (
-    <Card elevation="none" className="border border-divider flex flex-col gap-3 p-4">
+    <div className="flex flex-col gap-3">
       <div className="flex items-center justify-between gap-3">
-        <span className="text-sm font-medium text-text">Configuração de DNS</span>
+        <span className="text-[10.5px] font-bold uppercase tracking-wide text-text-muted">Configuração DNS</span>
         <Button
           type="button"
           variant="secondary"
@@ -285,23 +289,26 @@ function DomainVerificationPanel({ statusPageId, fullHostname }: DomainVerificat
         </Button>
       </div>
 
-      <div className="flex flex-col gap-1 rounded-md border border-divider p-3">
-        {dnsTargetLoading ? (
-          <p className="text-xs text-neutral-400">Carregando…</p>
-        ) : dnsTarget ? (
-          <p className="text-xs text-neutral-400">
-            Aponte <strong className="text-text">{fullHostname}</strong> (CNAME) para{" "}
-            <strong className="text-text">{dnsTarget}</strong>. O certificado é emitido automaticamente assim
-            que o DNS propagar e alguém acessar a página (ou ao clicar em "Verificar" acima).
-          </p>
-        ) : (
-          <p className="text-xs text-neutral-400">
-            O operador ainda não configurou o destino do DNS (PUBLIC_DNS_TARGET). Aponte{" "}
-            <strong className="text-text">{fullHostname}</strong> (CNAME) para o hostname/IP público do
-            balanceador de carga da instalação.
-          </p>
-        )}
+      <div className="overflow-hidden rounded-md border border-divider">
+        <div className="grid grid-cols-[70px_1fr] gap-2 border-b border-divider bg-card-header-bg px-3.5 py-2.5">
+          <span className="text-[11px] font-bold text-text-muted">TIPO</span>
+          <span className="text-[11px] font-bold text-text-muted">VALOR</span>
+        </div>
+        <div className="grid grid-cols-[70px_1fr] items-center gap-2 px-3.5 py-3">
+          <span className="font-mono text-[12.5px] font-bold text-text">CNAME</span>
+          {dnsTargetLoading ? (
+            <span className="font-mono text-[12.5px] text-text-muted">Carregando…</span>
+          ) : (
+            <span className="min-w-0 truncate font-mono text-[12.5px] text-text-muted">
+              {dnsTarget ?? "não configurado"}
+            </span>
+          )}
+        </div>
       </div>
+      <p className="text-xs text-text-muted">
+        Aponte <strong className="text-text">{fullHostname}</strong> para o valor acima. O certificado é emitido
+        automaticamente assim que o DNS propagar e alguém acessar a página (ou ao clicar em "Verificar" acima).
+      </p>
 
       {verifyDomain.isError ? (
         <p role="alert" className="text-xs text-critical">
@@ -337,10 +344,10 @@ function DomainVerificationPanel({ statusPageId, fullHostname }: DomainVerificat
                   : `Conexão HTTPS ainda falha${result.tls_error ? `: ${result.tls_error}` : ""}`
             }
           />
-          <p className="text-neutral-400">Última verificação: {new Date(result.checked_at).toLocaleString()}</p>
+          <p className="text-text-muted">Última verificação: {new Date(result.checked_at).toLocaleString()}</p>
         </div>
       ) : null}
-    </Card>
+    </div>
   );
 }
 
@@ -355,17 +362,13 @@ function VerificationRow({ ok, label }: VerificationRowProps) {
       <span className={ok ? "text-success" : "text-critical"} aria-hidden="true">
         {ok ? "✓" : "✗"}
       </span>
-      <span className={ok ? "text-neutral-300" : "text-neutral-400"}>{label}</span>
+      <span className="text-text-muted">{label}</span>
     </div>
   );
 }
 
-function ExternalLinkIcon() {
-  return <MdOutlineOpenInNew size={14} aria-hidden="true" />;
-}
-
 interface ServiceGroupProps {
-  label: string;
+  label?: string;
   services: Service[];
   selectedServiceIds: string[];
   canManage: boolean;
@@ -374,28 +377,18 @@ interface ServiceGroupProps {
   scrollable?: boolean;
 }
 
-// ServiceGroup renders one labeled block of ServiceRows ("Vinculados" /
-// "Disponíveis") - split out so the checked/unchecked row markup is
-// defined once and each group only differs by which services it lists.
-function ServiceGroup({
-  label,
-  services,
-  selectedServiceIds,
-  canManage,
-  onToggle,
-  emptyLabel,
-  scrollable,
-}: ServiceGroupProps) {
+// ServiceGroup renders one labeled block of service checklist rows
+// ("Vinculados" / "Disponíveis") - same checkbox-row composition
+// AddStatusPageDrawer's service checklist already established (16px
+// rounded-square checkbox + MdCheck), not the old native round
+// <input type="checkbox">.
+function ServiceGroup({ label, services, selectedServiceIds, canManage, onToggle, emptyLabel, scrollable }: ServiceGroupProps) {
   return (
     <div className="flex flex-col gap-1">
-      <span className="text-xs font-medium uppercase tracking-wide text-neutral-400">{label}</span>
-      <div
-        className={`flex flex-col divide-y divide-divider rounded-md border border-divider ${
-          scrollable ? "max-h-64 overflow-y-auto" : ""
-        }`}
-      >
+      {label ? <span className="text-[10.5px] font-bold uppercase tracking-wide text-text-muted">{label}</span> : null}
+      <div className={`flex flex-col rounded-md border border-divider ${scrollable ? "max-h-64 overflow-y-auto" : ""}`}>
         {services.length === 0 ? (
-          <p className="px-3 py-2 text-sm text-neutral-400">{emptyLabel}</p>
+          <p className="px-3 py-2 text-[13px] text-text-muted">{emptyLabel}</p>
         ) : (
           services.map((s) => (
             <ServiceRow
@@ -421,19 +414,22 @@ interface ServiceRowProps {
 
 function ServiceRow({ name, checked, disabled, onToggle }: ServiceRowProps) {
   return (
-    <label
-      className={`flex items-center gap-3 px-3 py-2 text-sm transition-colors ${
-        disabled ? "cursor-not-allowed text-neutral-400" : "cursor-pointer hover:bg-neutral-800/40"
-      }`}
+    <button
+      type="button"
+      onClick={disabled ? undefined : onToggle}
+      aria-pressed={checked}
+      disabled={disabled}
+      className="flex cursor-pointer items-center gap-2.5 rounded-md px-2.5 py-[9px] text-left hover:bg-card-header-bg disabled:cursor-not-allowed disabled:hover:bg-transparent"
     >
-      <input
-        type="checkbox"
-        checked={checked}
-        disabled={disabled}
-        onChange={onToggle}
-        className="h-4 w-4 rounded-sm border-divider bg-surface accent-accent"
-      />
-      <span className={checked ? "text-text" : "text-neutral-300"}>{name}</span>
-    </label>
+      <span
+        className={
+          "flex h-[16px] w-[16px] flex-none items-center justify-center rounded-[5px] border-[1.5px] " +
+          (checked ? "border-accent bg-accent" : "border-divider bg-surface")
+        }
+      >
+        {checked ? <MdCheck size={11} className="text-white" aria-hidden="true" /> : null}
+      </span>
+      <span className={`text-[13px] font-semibold ${disabled ? "text-text-muted" : "text-text"}`}>{name}</span>
+    </button>
   );
 }
