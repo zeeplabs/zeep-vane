@@ -1,12 +1,14 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import * as RadixDialog from "@radix-ui/react-dialog";
-import { MdOutlineWarningAmber, MdClose, MdOutlineEdit, MdCheck } from "react-icons/md";
+import { MdOutlineWarningAmber, MdClose, MdOutlineEdit, MdCheck, MdOutlineDeleteOutline } from "react-icons/md";
 import { useAuth } from "../../auth/AuthProvider";
 import { ApiError } from "../../lib/apiClient";
 import { Input } from "../../components/ui/Input";
+import { Button } from "../../components/ui/Button";
+import { Dialog } from "../../components/ui/Dialog";
 import type { HourlyBucket } from "../../types/api";
-import { useServiceDetail, useUpdateService } from "./hooks";
+import { useDeleteService, useServiceDetail, useUpdateService } from "./hooks";
 import { StatusTag } from "./StatusTag";
 import { serviceSubtitle } from "./statusMeta";
 
@@ -61,18 +63,34 @@ function Stat({ label, value }: StatProps) {
 export function ServiceDetailDrawer({ serviceId, onClose }: ServiceDetailDrawerProps) {
   const { t } = useTranslation();
   const { hasRole } = useAuth();
-  const canRename = hasRole(["owner"]);
+  const isOwner = hasRole(["owner"]);
   const { data: detail, isLoading } = useServiceDetail(serviceId);
   const updateService = useUpdateService();
+  const deleteService = useDeleteService();
 
   const [editing, setEditing] = useState(false);
   const [nameDraft, setNameDraft] = useState("");
   const [renameError, setRenameError] = useState<string | null>(null);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   useEffect(() => {
     setEditing(false);
     setRenameError(null);
+    setConfirmingDelete(false);
+    setDeleteError(null);
   }, [serviceId]);
+
+  async function confirmDelete() {
+    setDeleteError(null);
+    try {
+      await deleteService.mutateAsync(serviceId);
+      setConfirmingDelete(false);
+      onClose();
+    } catch (err) {
+      setDeleteError(err instanceof ApiError ? err.message : t("services.detail.deleteError"));
+    }
+  }
 
   function startEditing() {
     setNameDraft(detail?.name ?? "");
@@ -164,7 +182,7 @@ export function ServiceDetailDrawer({ serviceId, onClose }: ServiceDetailDrawerP
                 ) : (
                   <div className="flex items-center gap-1.5">
                     <h2 className="text-[19px] font-bold text-text">{detail.name}</h2>
-                    {canRename ? (
+                    {isOwner ? (
                       <button
                         type="button"
                         onClick={startEditing}
@@ -220,10 +238,57 @@ export function ServiceDetailDrawer({ serviceId, onClose }: ServiceDetailDrawerP
                   ))}
                 </div>
               </div>
+
+              {isOwner ? (
+                <Button
+                  type="button"
+                  variant="secondary"
+                  style={{ borderColor: "var(--color-critical)", color: "var(--color-critical)" }}
+                  onClick={() => {
+                    setDeleteError(null);
+                    setConfirmingDelete(true);
+                  }}
+                >
+                  <MdOutlineDeleteOutline size={15} aria-hidden="true" />
+                  {t("services.detail.deleteAction")}
+                </Button>
+              ) : null}
             </div>
           )}
         </RadixDialog.Content>
       </RadixDialog.Portal>
+
+      {detail ? (
+        <Dialog
+          open={confirmingDelete}
+          onOpenChange={(open) => {
+            if (!open) setConfirmingDelete(false);
+          }}
+          title={t("services.detail.deleteConfirmTitle")}
+          description={t("services.detail.deleteConfirmDescription", { name: detail.name })}
+          footer={
+            <>
+              <Button variant="secondary" onClick={() => setConfirmingDelete(false)}>
+                {t("services.detail.cancel")}
+              </Button>
+              <Button
+                variant="primary"
+                onClick={() => void confirmDelete()}
+                disabled={deleteService.isPending}
+                style={{ backgroundColor: "var(--color-critical)" }}
+              >
+                {t("services.detail.deleteAction")}
+              </Button>
+            </>
+          }
+        >
+          {deleteError ? (
+            <p role="alert" className="text-xs text-critical">
+              {deleteError}
+            </p>
+          ) : null}
+        </Dialog>
+      ) : null}
     </RadixDialog.Root>
   );
 }

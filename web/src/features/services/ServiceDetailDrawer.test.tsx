@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { http, HttpResponse } from "msw";
 import { server } from "../../test/msw/server";
@@ -251,5 +251,60 @@ describe("ServiceDetailDrawer", () => {
 
     await screen.findByText("Checkout");
     expect(screen.queryByRole("button", { name: "Renomear serviço" })).not.toBeInTheDocument();
+  });
+
+  // service-delete SVCDEL-09: owner sees the delete action, confirms, and
+  // the drawer closes on success.
+  it("owner consegue excluir o serviço após confirmar (SVCDEL-09)", async () => {
+    mockDetail();
+    await loginAsOwner();
+    server.use(http.delete("/api/services/:id", () => new HttpResponse(null, { status: 204 })));
+    let closeCalls = 0;
+    renderDrawer(() => {
+      closeCalls += 1;
+    });
+
+    await screen.findByText("Checkout");
+    await userEvent.click(screen.getByRole("button", { name: "Excluir serviço" }));
+    // Confirm dialog title uses the same i18n string as the trigger button
+    // - the button with the trigger's own aria-label disambiguates it.
+    const dialogDeleteButtons = await screen.findAllByRole("button", { name: "Excluir serviço" });
+    await userEvent.click(dialogDeleteButtons[dialogDeleteButtons.length - 1]);
+
+    await waitFor(() => expect(closeCalls).toBe(1));
+  });
+
+  it("delete bloqueado (409) mostra erro e não fecha o drawer", async () => {
+    mockDetail();
+    await loginAsOwner();
+    server.use(
+      http.delete("/api/services/:id", () =>
+        HttpResponse.json({ error: "service is still attached to a status page" }, { status: 409 })
+      )
+    );
+    let closeCalls = 0;
+    renderDrawer(() => {
+      closeCalls += 1;
+    });
+
+    await screen.findByText("Checkout");
+    await userEvent.click(screen.getByRole("button", { name: "Excluir serviço" }));
+    const dialogDeleteButtons = await screen.findAllByRole("button", { name: "Excluir serviço" });
+    await userEvent.click(dialogDeleteButtons[dialogDeleteButtons.length - 1]);
+
+    expect(await screen.findByText("service is still attached to a status page")).toBeInTheDocument();
+    expect(closeCalls).toBe(0);
+  });
+
+  it("viewer não vê o botão de excluir", async () => {
+    mockDetail();
+    await apiFetch("/api/auth/login", {
+      method: "POST",
+      body: JSON.stringify({ email: "viewer@vane.app", password: "demo1234" }),
+    });
+    renderDrawer();
+
+    await screen.findByText("Checkout");
+    expect(screen.queryByRole("button", { name: "Excluir serviço" })).not.toBeInTheDocument();
   });
 });
