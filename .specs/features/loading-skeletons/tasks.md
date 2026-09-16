@@ -148,7 +148,7 @@ Note: T2–T18 each depend only on T1 (the shared primitive) — they are indepe
 **Where**: `web/src/features/sessions/SessionsSection.tsx` (test file updated alongside, per co-location rule)
 **Depends on**: T1
 **Requirement**: SKEL-04, SKEL-05, SKEL-06, SKEL-07
-**Done when**: same shape as T2; preserves the existing `isError` branch untouched (`isLoading`/`isError` both present here per spec edge case SKEL-07).
+**Done when**: same shape as T2; preserves the existing `isError` branch untouched (`isLoading`/`isError` both present here per spec edge case SKEL-07). ✅ Done (2026-09-16).
 **Tests**: unit
 **Gate**: quick
 **Commit**: `feat(sessions): add loading skeleton to SessionsSection`
