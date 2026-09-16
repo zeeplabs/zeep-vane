@@ -120,10 +120,7 @@ export function AuthLayout({ children }: AuthLayoutProps) {
         </div>
       </div>
 
-      <div
-        className="flex w-full items-center justify-center px-4 py-12"
-        style={{ background: "color-mix(in srgb, var(--color-bg) 80%, black)" }}
-      >
+      <div className="flex w-full items-center justify-center bg-bg px-4 py-12">
         <div className="w-full max-w-[380px]">
           <div className="mb-8 flex flex-col gap-1 lg:hidden">
             <div className="flex items-center gap-2">
