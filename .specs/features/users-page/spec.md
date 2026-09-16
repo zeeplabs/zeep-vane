@@ -104,19 +104,19 @@
 
 | Requirement ID | Story | Phase | Status |
 | --- | --- | --- | --- |
-| USRPG-01 | P1: Tabela unificada | - | Pending |
-| USRPG-02 | P1: Tabela unificada | - | Pending |
-| USRPG-03 | P1: Tabela unificada | - | Pending |
-| USRPG-04 | P1: Tabela unificada | - | Pending |
-| USRPG-05 | P1: Tabela unificada | - | Pending |
-| USRPG-06 | P1: Drawer de detalhe | - | Pending |
-| USRPG-07 | P1: Drawer de detalhe | - | Pending |
-| USRPG-08 | P1: Drawer de detalhe | - | Pending |
-| USRPG-09 | P1: Drawer de detalhe | - | Pending |
-| USRPG-10 | P1: Drawer de detalhe | - | Pending |
-| USRPG-11 | P2: Convidar via drawer | - | Pending |
-| USRPG-12 | P2: Convidar via drawer | - | Pending |
-| USRPG-13 | P2: Convidar via drawer | - | Pending |
+| USRPG-01 | P1: Tabela unificada | - | Verified |
+| USRPG-02 | P1: Tabela unificada | - | Verified |
+| USRPG-03 | P1: Tabela unificada | - | Verified |
+| USRPG-04 | P1: Tabela unificada | - | Verified |
+| USRPG-05 | P1: Tabela unificada | - | Verified |
+| USRPG-06 | P1: Drawer de detalhe | - | Verified |
+| USRPG-07 | P1: Drawer de detalhe | - | Verified |
+| USRPG-08 | P1: Drawer de detalhe | - | Verified |
+| USRPG-09 | P1: Drawer de detalhe | - | Verified |
+| USRPG-10 | P1: Drawer de detalhe | - | Verified |
+| USRPG-11 | P2: Convidar via drawer | - | Verified |
+| USRPG-12 | P2: Convidar via drawer | - | Verified |
+| USRPG-13 | P2: Convidar via drawer | - | Verified |
 
 **ID format:** `USRPG-[NUMBER]`
 
