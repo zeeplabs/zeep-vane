@@ -86,14 +86,14 @@ Decisão de negócio (Julio, 2026-09-15): criar um env var de modo de distribui�
 
 | Requirement ID | Story | Phase | Status |
 | --- | --- | --- | --- |
-| DEPMODE-01 | P1: Env var + gate de backend | - | Implementing |
-| DEPMODE-02 | P1: Env var + gate de backend | - | Implementing |
-| DEPMODE-03 | P1: Env var + gate de backend | - | Implementing |
-| DEPMODE-04 | P1: Env var + gate de backend | - | Implementing |
-| DEPMODE-05 | P1: Frontend consome o modo | - | Implementing |
-| DEPMODE-06 | P1: Frontend consome o modo | - | Implementing |
-| DEPMODE-07 | P1: Frontend consome o modo | - | Implementing |
-| DEPMODE-08 | P1: Frontend consome o modo | - | Implementing |
+| DEPMODE-01 | P1: Env var + gate de backend | - | Verified |
+| DEPMODE-02 | P1: Env var + gate de backend | - | Verified |
+| DEPMODE-03 | P1: Env var + gate de backend | - | Verified |
+| DEPMODE-04 | P1: Env var + gate de backend | - | Verified |
+| DEPMODE-05 | P1: Frontend consome o modo | - | Verified |
+| DEPMODE-06 | P1: Frontend consome o modo | - | Verified |
+| DEPMODE-07 | P1: Frontend consome o modo | - | Verified |
+| DEPMODE-08 | P1: Frontend consome o modo | - | Verified |
 
 **ID format:** `DEPMODE-[NUMBER]`
 
