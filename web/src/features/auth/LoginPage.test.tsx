@@ -12,6 +12,7 @@ import {
   setTwoFactorEnabled,
   seedRecoveryCode,
   mswValidTotpCode,
+  setDeploymentMode,
 } from "../../test/msw/handlers";
 
 afterEach(async () => {
@@ -217,5 +218,22 @@ describe("LoginPage", () => {
 
     await userEvent.click(screen.getByRole("button", { name: "Use a recovery code" }));
     expect(screen.getByLabelText("Recovery code")).toBeInTheDocument();
+  });
+
+  // DEPMODE-07/08: o link "Criar conta" só aparece quando a instalação
+  // aceita signup.
+  it("mostra o link 'Criar conta' em modo saas (AD-033)", async () => {
+    setDeploymentMode("saas");
+    render(<App />);
+
+    expect(await screen.findByRole("link", { name: "Criar conta" })).toBeInTheDocument();
+  });
+
+  it("oculta o link 'Criar conta' em modo self_hosted (AD-033)", async () => {
+    setDeploymentMode("self_hosted");
+    render(<App />);
+
+    await screen.findByLabelText("E-mail");
+    expect(screen.queryByRole("link", { name: "Criar conta" })).not.toBeInTheDocument();
   });
 });

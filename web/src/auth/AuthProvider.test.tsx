@@ -14,6 +14,7 @@ function Probe() {
     <div>
       <span data-testid="status">{auth.status}</span>
       <span data-testid="needs-bootstrap">{String(auth.needsBootstrap)}</span>
+      <span data-testid="deployment-mode">{auth.deploymentMode}</span>
       <span data-testid="admin">{auth.admin ? JSON.stringify(auth.admin) : "null"}</span>
       <span data-testid="has-owner">{String(auth.hasRole(["owner"]))}</span>
       <span data-testid="has-operator">{String(auth.hasRole(["operator"]))}</span>
@@ -224,6 +225,38 @@ describe("AuthProvider", () => {
 
     await waitFor(() => expect(screen.getByTestId("status")).toHaveTextContent("anonymous"));
     expect(screen.getByTestId("needs-bootstrap")).toHaveTextContent("false");
+  });
+
+  // DEPMODE-05/06: deploymentMode is read from the same boot fetch as
+  // needsBootstrap, defaulting to "saas" (optimistic) until it resolves.
+  it("deploymentMode reflete self_hosted quando GET /api/bootstrap/status retorna deployment_mode: self_hosted (AD-033)", async () => {
+    server.use(
+      http.get("/api/bootstrap/status", () =>
+        HttpResponse.json({ bootstrapped: true, deployment_mode: "self_hosted" })
+      )
+    );
+    render(
+      <AuthProvider>
+        <Probe />
+      </AuthProvider>
+    );
+
+    await waitFor(() => expect(screen.getByTestId("deployment-mode")).toHaveTextContent("self_hosted"));
+  });
+
+  it("deploymentMode reflete saas quando GET /api/bootstrap/status retorna deployment_mode: saas (AD-033)", async () => {
+    server.use(
+      http.get("/api/bootstrap/status", () =>
+        HttpResponse.json({ bootstrapped: true, deployment_mode: "saas" })
+      )
+    );
+    render(
+      <AuthProvider>
+        <Probe />
+      </AuthProvider>
+    );
+
+    await waitFor(() => expect(screen.getByTestId("deployment-mode")).toHaveTextContent("saas"));
   });
 
   // PROFPAGE-12: o provider expõe two_factor_enabled de /me, e refreshAdmin

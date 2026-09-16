@@ -36,14 +36,15 @@ type bootstrapMembershipCreator interface {
 // from the browser instead of a manual SQL insert (SHD-14 through
 // SHD-18).
 type BootstrapHandler struct {
-	pool          *db.Pool
-	users         bootstrapCreator
-	tenants       bootstrapTenantCreator
-	memberships   bootstrapMembershipCreator
-	sessions      *db.SessionRepository
-	logger        *zap.Logger
-	sessionSecret string
-	secureCookies bool
+	pool           *db.Pool
+	users          bootstrapCreator
+	tenants        bootstrapTenantCreator
+	memberships    bootstrapMembershipCreator
+	sessions       *db.SessionRepository
+	logger         *zap.Logger
+	sessionSecret  string
+	secureCookies  bool
+	deploymentMode string
 }
 
 // NewBootstrapHandler builds a BootstrapHandler. pool backs Status's
@@ -58,18 +59,22 @@ type BootstrapHandler struct {
 // per-device revocation that covers Login also covers bootstrap.
 // sessionSecret signs the session token Create issues on success, same as
 // AuthHandler. secureCookies controls the vane_session cookie's Secure
-// attribute (H9), same as AuthHandler.
-func NewBootstrapHandler(pool *db.Pool, users bootstrapCreator, tenants bootstrapTenantCreator, memberships bootstrapMembershipCreator, sessions *db.SessionRepository, logger *zap.Logger, sessionSecret string, secureCookies bool) *BootstrapHandler {
-	return &BootstrapHandler{pool: pool, users: users, tenants: tenants, memberships: memberships, sessions: sessions, logger: logger, sessionSecret: sessionSecret, secureCookies: secureCookies}
+// attribute (H9), same as AuthHandler. deploymentMode (AD-033) is echoed
+// back by Status so the SPA can decide what to show (e.g. the "Criar
+// conta" link) without a separate round-trip.
+func NewBootstrapHandler(pool *db.Pool, users bootstrapCreator, tenants bootstrapTenantCreator, memberships bootstrapMembershipCreator, sessions *db.SessionRepository, logger *zap.Logger, sessionSecret string, secureCookies bool, deploymentMode string) *BootstrapHandler {
+	return &BootstrapHandler{pool: pool, users: users, tenants: tenants, memberships: memberships, sessions: sessions, logger: logger, sessionSecret: sessionSecret, secureCookies: secureCookies, deploymentMode: deploymentMode}
 }
 
 type bootstrapStatusResponse struct {
-	Bootstrapped bool `json:"bootstrapped"`
+	Bootstrapped   bool   `json:"bootstrapped"`
+	DeploymentMode string `json:"deployment_mode"`
 }
 
 // Status reports whether any user exists yet, for the SPA's boot-time
-// redirect decision (SHD-14, SHD-19). Public, unauthenticated - it must
-// be reachable before any user (and therefore any session) exists.
+// redirect decision (SHD-14, SHD-19), and the instance's deployment mode
+// (DEPMODE-05) - self_hosted or saas. Public, unauthenticated - it must be
+// reachable before any user (and therefore any session) exists.
 func (h *BootstrapHandler) Status(w http.ResponseWriter, r *http.Request) {
 	var count int
 	if err := h.pool.QueryRow(r.Context(), "SELECT COUNT(*) FROM users").Scan(&count); err != nil {
@@ -80,7 +85,7 @@ func (h *BootstrapHandler) Status(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	_ = json.NewEncoder(w).Encode(bootstrapStatusResponse{Bootstrapped: count > 0})
+	_ = json.NewEncoder(w).Encode(bootstrapStatusResponse{Bootstrapped: count > 0, DeploymentMode: h.deploymentMode})
 }
 
 type bootstrapCreateRequest struct {

@@ -347,3 +347,47 @@ func TestLoad_AdminBaseURLWithUserinfo_ReturnsError(t *testing.T) {
 		t.Fatal("Load() returned nil error, want an error for a VANE_ADMIN_BASE_URL carrying embedded userinfo")
 	}
 }
+
+// TestLoad_DeploymentModeUnset_DefaultsToSelfHosted asserts DEPMODE-01:
+// Vane defaults to self-hosted (1 tenant) when the operator hasn't set
+// anything, since it's distributed to run on anyone's infrastructure.
+func TestLoad_DeploymentModeUnset_DefaultsToSelfHosted(t *testing.T) {
+	setAllRequiredEnv(t)
+	t.Setenv("VANE_DEPLOYMENT_MODE", "")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() returned unexpected error: %v", err)
+	}
+	if cfg.DeploymentMode != DeploymentModeSelfHosted {
+		t.Errorf("DeploymentMode = %q, want %q", cfg.DeploymentMode, DeploymentModeSelfHosted)
+	}
+}
+
+// TestLoad_DeploymentModeSaaS_UsesGivenValue asserts an operator (Zeep's own
+// hosted server) can opt into the multi-tenant SaaS model explicitly.
+func TestLoad_DeploymentModeSaaS_UsesGivenValue(t *testing.T) {
+	setAllRequiredEnv(t)
+	t.Setenv("VANE_DEPLOYMENT_MODE", "saas")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() returned unexpected error: %v", err)
+	}
+	if cfg.DeploymentMode != DeploymentModeSaaS {
+		t.Errorf("DeploymentMode = %q, want %q", cfg.DeploymentMode, DeploymentModeSaaS)
+	}
+}
+
+// TestLoad_DeploymentModeInvalid_Error asserts an unrecognized value fails
+// the boot instead of silently defaulting - a typo'd value must never
+// quietly disable signup on a deploy meant to run as SaaS (or vice versa).
+func TestLoad_DeploymentModeInvalid_Error(t *testing.T) {
+	setAllRequiredEnv(t)
+	t.Setenv("VANE_DEPLOYMENT_MODE", "sass")
+
+	_, err := Load()
+	if err == nil {
+		t.Fatal("Load() with an invalid VANE_DEPLOYMENT_MODE returned nil error, want error")
+	}
+}

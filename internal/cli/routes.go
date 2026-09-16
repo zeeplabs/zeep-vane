@@ -85,7 +85,7 @@ func buildAdminRouter(pool *db.Pool, cfg config.Config, logger *zap.Logger, poll
 	sessions := db.NewSessionRepository(pool)
 
 	authHandler := api.NewAuthHandler(users, tenantMembershipsRepo, db.NewTwoFactorRepository(pool), db.NewTwoFactorChallengeRepository(pool), sessions, pool, logger, cfg.SessionSecret, cfg.SecureCookies, cfg.MasterKey)
-	bootstrapHandler := api.NewBootstrapHandler(pool, users, tenantsRepo, tenantMembershipsRepo, sessions, logger, cfg.SessionSecret, cfg.SecureCookies)
+	bootstrapHandler := api.NewBootstrapHandler(pool, users, tenantsRepo, tenantMembershipsRepo, sessions, logger, cfg.SessionSecret, cfg.SecureCookies, cfg.DeploymentMode)
 	signupHandler := api.NewSignupHandler(pool, users, tenantsRepo, tenantMembershipsRepo, db.NewEmailVerificationRepository(pool), emailService, logger, cfg.DevTokenLogging, cfg.AdminBaseURL)
 	passwordResetHandler := api.NewPasswordResetHandler(users, db.NewPasswordResetRepository(pool), emailService, tenantsRepo, logger, cfg.DevTokenLogging, cfg.AdminBaseURL)
 	adminsHandler := api.NewAdminsHandler(pool, users, tenantMembershipsRepo, invites, emailService, tenantsRepo, sessions, auditLog, logger, cfg.DevTokenLogging, cfg.AdminBaseURL, cfg.SessionSecret, cfg.SecureCookies)
@@ -134,10 +134,13 @@ func buildAdminRouter(pool *db.Pool, cfg config.Config, logger *zap.Logger, poll
 	// login/password-reset/bootstrap above (T12): mass tenant creation is
 	// the same threat class this limiter already exists for (H10), and an
 	// attacker splitting attempts across routes must not multiply their
-	// effective budget.
-	r.With(credentialLimiter.Middleware).Post("/api/signup", signupHandler.Signup)
-	r.Get("/api/signup/verify/{token}", signupHandler.Verify)
-	r.Post("/api/signup/resend-verification", signupHandler.ResendVerification)
+	// effective budget. requireSaaSMode (AD-033, DEPMODE-02) 404s all 3 of
+	// these routes outright in self-hosted mode - a self-hosted install is
+	// exactly 1 tenant, so a direct API call (bypassing the frontend's
+	// hidden link) must not be able to create a second one.
+	r.With(requireSaaSMode(cfg.DeploymentMode), credentialLimiter.Middleware).Post("/api/signup", signupHandler.Signup)
+	r.With(requireSaaSMode(cfg.DeploymentMode)).Get("/api/signup/verify/{token}", signupHandler.Verify)
+	r.With(requireSaaSMode(cfg.DeploymentMode)).Post("/api/signup/resend-verification", signupHandler.ResendVerification)
 
 	// First-run bootstrap (SHD-14/SHD-15) - public and unauthenticated by
 	// necessity: no authenticated caller can exist before the very first
@@ -279,6 +282,22 @@ func buildAdminRouter(pool *db.Pool, cfg config.Config, logger *zap.Logger, poll
 	// after any route is registered on the same mux. hsts=false - this is
 	// the plain HTTP admin listener, not the TLS-terminating one (M14).
 	return api.NewCORSMiddleware(cfg.CORSAllowedOrigin)(api.SecurityHeaders(false)(r))
+}
+
+// requireSaaSMode (AD-033, DEPMODE-02/03) 404s the wrapped route unless
+// deploymentMode is SaaS. Used only on the 3 public /api/signup* routes: a
+// self-hosted install is exactly 1 tenant (AD-022), so these routes must
+// not exist in that mode, not just be hidden by the frontend.
+func requireSaaSMode(deploymentMode string) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if deploymentMode != config.DeploymentModeSaaS {
+				http.NotFound(w, r)
+				return
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
 }
 
 // validateDatadogCredentials adapts datadog.Client.ValidateCredentials to

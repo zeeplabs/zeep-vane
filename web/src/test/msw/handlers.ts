@@ -328,6 +328,22 @@ export function setBootstrapped(value: boolean): void {
   bootstrapState = value;
 }
 
+// deploymentModeState mirrors Config.DeploymentMode (AD-033). Defaults to
+// "saas" - the opposite of the backend's real default - so every
+// pre-existing test exercising LoginPage's "Criar conta" link or
+// SignupPage's form (written before deployment-mode existed) keeps working
+// without being touched; deployment-mode's own tests override it via
+// setDeploymentMode to exercise the self-hosted-restricted path.
+let deploymentModeState: "self_hosted" | "saas" = "saas";
+
+export function resetDeploymentMode(): void {
+  deploymentModeState = "saas";
+}
+
+export function setDeploymentMode(value: "self_hosted" | "saas"): void {
+  deploymentModeState = value;
+}
+
 // signupState mirrors the real backend's per-email signup lifecycle (T9's
 // SignupHandler): unverified until the emailed link is followed. Keyed by
 // email rather than an id, same as the real handler's own GetByEmail-first
@@ -587,7 +603,7 @@ export const handlers = [
   // whether any admin exists yet, for the SPA's boot-time redirect decision
   // (SHD-19). Public, unauthenticated - never gated on sessionAdminId.
   http.get("/api/bootstrap/status", () => {
-    return HttpResponse.json({ bootstrapped: bootstrapState });
+    return HttpResponse.json({ bootstrapped: bootstrapState, deployment_mode: deploymentModeState });
   }),
 
   // POST /api/bootstrap - mirrors BootstrapHandler.Create: creates the

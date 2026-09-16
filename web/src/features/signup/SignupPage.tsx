@@ -6,6 +6,7 @@ import { Button } from "../../components/ui/Button";
 import { apiFetch, ApiError } from "../../lib/apiClient";
 import { AuthLayout } from "../auth/AuthLayout";
 import { OAuthButtons } from "../auth/OAuthButtons";
+import { useAuth } from "../../auth/AuthProvider";
 
 interface SignupResponse {
   status: string;
@@ -21,6 +22,7 @@ interface SignupResponse {
 // redirect into, just a "check your email" screen with a resend action.
 export function SignupPage() {
   const { t } = useTranslation();
+  const { deploymentMode } = useAuth();
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -80,7 +82,12 @@ export function SignupPage() {
 
   return (
     <AuthLayout>
-      {pendingEmail ? (
+      {deploymentMode === "self_hosted" ? (
+        <>
+          <h1 className="mb-1.5 text-[22px] font-bold tracking-tight text-text">{t("signup.restrictedTitle")}</h1>
+          <p className="text-[13.5px] leading-relaxed text-neutral-400">{t("signup.restrictedSubtitle")}</p>
+        </>
+      ) : pendingEmail ? (
         <>
           <div className="mb-6">
             <h1 className="mb-1.5 text-[22px] font-bold tracking-tight text-text">{t("signup.pendingTitle")}</h1>

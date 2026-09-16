@@ -8,16 +8,19 @@ import { VerifyEmailPage } from "./VerifyEmailPage";
 import { SignupPage } from "./SignupPage";
 import { server } from "../../test/msw/server";
 import { TestQueryProvider } from "../../test/queryClient";
+import { AuthProvider } from "../../auth/AuthProvider";
 
 function App(initialPath: string) {
   return (
     <TestQueryProvider>
       <MemoryRouter initialEntries={[initialPath]}>
-        <Routes>
-          <Route path="/signup" element={<SignupPage />} />
-          <Route path="/verify-email/:token" element={<VerifyEmailPage />} />
-          <Route path="/login" element={<div>login page</div>} />
-        </Routes>
+        <AuthProvider>
+          <Routes>
+            <Route path="/signup" element={<SignupPage />} />
+            <Route path="/verify-email/:token" element={<VerifyEmailPage />} />
+            <Route path="/login" element={<div>login page</div>} />
+          </Routes>
+        </AuthProvider>
       </MemoryRouter>
     </TestQueryProvider>
   );

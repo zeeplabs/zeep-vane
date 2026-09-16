@@ -79,6 +79,14 @@ export interface AuthContextValue {
    * assume bootstrap is needed without a confirmed "false" from the
    * server. */
   needsBootstrap: boolean;
+  /** "self_hosted" or "saas" (AD-033) - read once from GET
+   * /api/bootstrap/status's deployment_mode field, same boot fetch as
+   * needsBootstrap. "saas" until the check resolves, mirroring
+   * needsBootstrap's own optimistic default (false) - the real backend
+   * default is self-hosted, but assuming the restrictive case here would
+   * flash the wrong screen on every real SaaS instance while the check is
+   * in flight. */
+  deploymentMode: "self_hosted" | "saas";
   /** true once an authenticated admin has more than 1 tenant_membership and
    * hasn't picked an active tenant yet - gates the /select-tenant screen
    * (T17, TENANT-19/20/21). Always false for the every-day self-hosted
@@ -120,6 +128,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     false
   );
   const [needsBootstrap, setNeedsBootstrap] = useState(false);
+  const [deploymentMode, setDeploymentMode] = useState<"self_hosted" | "saas">("saas");
 
   useEffect(() => {
     let cancelled = false;
@@ -149,10 +158,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       try {
         // Public, unauthenticated endpoint (never 401s) - skipUnauthorizedHandler
         // guards it the same way the /api/auth/me boot probe is guarded.
-        const { bootstrapped } = await apiFetch<{ bootstrapped: boolean }>("/api/bootstrap/status", {
+        const { bootstrapped, deployment_mode } = await apiFetch<{
+          bootstrapped: boolean;
+          deployment_mode: "self_hosted" | "saas";
+        }>("/api/bootstrap/status", {
           skipUnauthorizedHandler: true,
         });
-        if (!cancelled) setNeedsBootstrap(!bootstrapped);
+        if (!cancelled) {
+          setNeedsBootstrap(!bootstrapped);
+          setDeploymentMode(deployment_mode);
+        }
       } catch {
         // Fails closed: an unreachable/erroring check never traps a real
         // install behind a bootstrap redirect it can't get past.
@@ -286,6 +301,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         admin: state.admin,
         status: state.status,
         needsBootstrap,
+        deploymentMode,
         needsTenantSelection,
         login,
         verifyTwoFactor,

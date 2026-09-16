@@ -32,7 +32,10 @@ func newBootstrapRouter(t *testing.T) (http.Handler, *db.UserRepository, *db.Poo
 	memberships := db.NewTenantMembershipRepository(pool)
 	// secureCookies=true: default behavior, no test in this file exercises
 	// the VANE_SECURE_COOKIES=false path (covered in auth_handler_test.go).
-	handler := NewBootstrapHandler(pool, repo, tenants, memberships, db.NewSessionRepository(pool), zap.NewNop(), testBootstrapSessionSecret, true)
+	// deploymentMode="self_hosted": default (AD-033) - Status's own test
+	// asserts this value is echoed back, not something a mode-specific test
+	// needs to vary here.
+	handler := NewBootstrapHandler(pool, repo, tenants, memberships, db.NewSessionRepository(pool), zap.NewNop(), testBootstrapSessionSecret, true, "self_hosted")
 
 	r := chi.NewRouter()
 	r.Get("/api/bootstrap/status", handler.Status)
@@ -172,6 +175,25 @@ func TestBootstrapHandler_Status_NoAdmins_ReturnsFalse(t *testing.T) {
 	}
 	if body.Bootstrapped {
 		t.Error("Bootstrapped = true on an admin-less table, want false")
+	}
+}
+
+// TestBootstrapHandler_Status_EchoesDeploymentMode asserts DEPMODE-05:
+// Status echoes back the deployment_mode the handler was constructed with,
+// unrelated to whether any admin exists yet.
+func TestBootstrapHandler_Status_EchoesDeploymentMode(t *testing.T) {
+	r, _, pool := newBootstrapRouter(t)
+	restore := clearAdminsForBootstrapTest(t, pool)
+	t.Cleanup(restore)
+
+	rec := getBootstrapStatus(t, r)
+
+	var body bootstrapStatusResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("response body is not valid JSON: %v", err)
+	}
+	if body.DeploymentMode != "self_hosted" {
+		t.Errorf("DeploymentMode = %q, want %q", body.DeploymentMode, "self_hosted")
 	}
 }
 

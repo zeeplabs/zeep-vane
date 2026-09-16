@@ -188,6 +188,8 @@ const resources = {
         resendConfirmation: "E-mail de verificação reenviado.",
         resendError: "Não foi possível reenviar o e-mail. Tente novamente.",
         terms: "Ao continuar, você concorda com os Termos de Uso e a Política de Privacidade.",
+        restrictedTitle: "Cadastro indisponível",
+        restrictedSubtitle: "Esta instalação é self-hosted e não aceita novos cadastros. Fale com o administrador desta instância para obter acesso.",
       },
       verifyEmail: {
         loading: "Verificando seu e-mail...",
@@ -671,6 +673,8 @@ const resources = {
         resendConfirmation: "Verification email resent.",
         resendError: "Could not resend the email. Please try again.",
         terms: "By continuing, you agree to the Terms of Service and Privacy Policy.",
+        restrictedTitle: "Signup unavailable",
+        restrictedSubtitle: "This installation is self-hosted and does not accept new signups. Contact this instance's administrator for access.",
       },
       verifyEmail: {
         loading: "Verifying your email...",

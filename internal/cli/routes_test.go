@@ -33,7 +33,11 @@ func newAdminRouterForTest(t *testing.T) (http.Handler, *db.Pool, *db.UserReposi
 func newAdminRouterAndTenantForTest(t *testing.T) (http.Handler, *db.Pool, *db.UserRepository, string) {
 	t.Helper()
 	pool, tenantID := newServeTestPoolWithTenant(t)
-	cfg := config.Config{SessionSecret: routesTestSessionSecret, MasterKey: "cli-routes-test-master-key"}
+	// DeploymentMode: saas - this shared router backs the signup-route
+	// tests below (rate-limit burst/shared-budget), which predate AD-033
+	// and assume /api/signup is reachable; the self-hosted 404 gate itself
+	// gets its own dedicated router in TestAdminRouter_SignupRoutes_SelfHostedMode_404.
+	cfg := config.Config{SessionSecret: routesTestSessionSecret, MasterKey: "cli-routes-test-master-key", DeploymentMode: config.DeploymentModeSaaS}
 	pollerManager := NewPollerManager(context.Background(), pool, cfg, zap.NewNop(), testDatabaseURL(t))
 	handler := buildAdminRouter(pool, cfg, zap.NewNop(), pollerManager)
 
@@ -919,11 +923,14 @@ func TestAdminRouter_BootstrapRoutes_ReachableThroughRealRouter(t *testing.T) {
 	if statusRec.Code != http.StatusOK {
 		t.Fatalf("GET /api/bootstrap/status status = %d, want 200", statusRec.Code)
 	}
-	var statusBody map[string]bool
+	// map[string]any, not map[string]bool: the response also carries
+	// deployment_mode (AD-033), a string, since bootstrap_handler.go's
+	// Status started echoing it back.
+	var statusBody map[string]any
 	if err := json.Unmarshal(statusRec.Body.Bytes(), &statusBody); err != nil {
 		t.Fatalf("status response is not valid JSON: %v", err)
 	}
-	if statusBody["bootstrapped"] {
+	if bootstrapped, _ := statusBody["bootstrapped"].(bool); bootstrapped {
 		t.Error(`GET /api/bootstrap/status "bootstrapped" = true on an admin-less table, want false`)
 	}
 
@@ -945,11 +952,11 @@ func TestAdminRouter_BootstrapRoutes_ReachableThroughRealRouter(t *testing.T) {
 
 	statusAfterRec := httptest.NewRecorder()
 	r.ServeHTTP(statusAfterRec, httptest.NewRequest(http.MethodGet, "/api/bootstrap/status", nil))
-	var statusAfterBody map[string]bool
+	var statusAfterBody map[string]any
 	if err := json.Unmarshal(statusAfterRec.Body.Bytes(), &statusAfterBody); err != nil {
 		t.Fatalf("status response is not valid JSON: %v", err)
 	}
-	if !statusAfterBody["bootstrapped"] {
+	if bootstrapped, _ := statusAfterBody["bootstrapped"].(bool); !bootstrapped {
 		t.Error(`GET /api/bootstrap/status "bootstrapped" = false after a successful bootstrap, want true`)
 	}
 }
@@ -1269,5 +1276,53 @@ func TestAdminRouter_SignupRateLimit_SharedWithLoginRoute_429(t *testing.T) {
 	rec := postSignupFor(credentialRouteBurst)
 	if rec.Code != http.StatusTooManyRequests {
 		t.Errorf("status = %d, want %d (budget shared with login must already be exhausted)", rec.Code, http.StatusTooManyRequests)
+	}
+}
+
+// TestAdminRouter_SignupRoutes_SelfHostedMode_404 asserts DEPMODE-02: a
+// self-hosted install (default DeploymentMode, unset or explicitly
+// "self_hosted") 404s all 3 public signup routes outright - not just hides
+// the frontend link - since a self-hosted install is exactly 1 tenant
+// (AD-022) and these routes create a new one.
+func TestAdminRouter_SignupRoutes_SelfHostedMode_404(t *testing.T) {
+	pool, _ := newServeTestPoolWithTenant(t)
+	cfg := config.Config{SessionSecret: routesTestSessionSecret, MasterKey: "cli-routes-test-master-key", DeploymentMode: config.DeploymentModeSelfHosted}
+	pollerManager := NewPollerManager(context.Background(), pool, cfg, zap.NewNop(), testDatabaseURL(t))
+	r := buildAdminRouter(pool, cfg, zap.NewNop(), pollerManager)
+
+	signupBody, err := json.Marshal(map[string]string{
+		"email":       "self-hosted-signup-gate@example.com",
+		"password":    "correct-horse-battery-staple",
+		"tenant_name": "Acme Inc",
+	})
+	if err != nil {
+		t.Fatalf("json.Marshal() returned unexpected error: %v", err)
+	}
+
+	cases := []struct {
+		name   string
+		method string
+		path   string
+		body   []byte
+	}{
+		{"signup", http.MethodPost, "/api/signup", signupBody},
+		{"verify", http.MethodGet, "/api/signup/verify/some-token", nil},
+		{"resend-verification", http.MethodPost, "/api/signup/resend-verification", []byte(`{"email":"x@example.com"}`)},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var req *http.Request
+			if tc.body != nil {
+				req = httptest.NewRequest(tc.method, tc.path, bytes.NewReader(tc.body))
+				req.Header.Set("Content-Type", "application/json")
+			} else {
+				req = httptest.NewRequest(tc.method, tc.path, nil)
+			}
+			rec := httptest.NewRecorder()
+			r.ServeHTTP(rec, req)
+			if rec.Code != http.StatusNotFound {
+				t.Errorf("status = %d, want 404 in self-hosted mode, body = %s", rec.Code, rec.Body.String())
+			}
+		})
 	}
 }

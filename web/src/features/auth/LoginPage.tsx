@@ -16,7 +16,7 @@ function EyeIcon({ crossed }: { crossed: boolean }) {
 
 export function LoginPage() {
   const { t } = useTranslation();
-  const { login, verifyTwoFactor } = useAuth();
+  const { login, verifyTwoFactor, deploymentMode } = useAuth();
   const navigate = useNavigate();
 
   const [step, setStep] = useState<"credentials" | "twoFactor">("credentials");
@@ -146,9 +146,11 @@ export function LoginPage() {
             </Button>
           </form>
 
-          <p className="mt-5 text-center text-[13px] text-neutral-400">
-            {t("login.noAccount")} <Link to="/signup" className="font-semibold text-accent hover:underline">{t("login.createAccount")}</Link>
-          </p>
+          {deploymentMode === "saas" ? (
+            <p className="mt-5 text-center text-[13px] text-neutral-400">
+              {t("login.noAccount")} <Link to="/signup" className="font-semibold text-accent hover:underline">{t("login.createAccount")}</Link>
+            </p>
+          ) : null}
         </>
       )}
     </AuthLayout>

@@ -10,6 +10,7 @@ import {
   resetAdmins,
   resetCompanySettings,
   resetBootstrapState,
+  resetDeploymentMode,
   resetEmailProviders,
   resetLLMProviders,
   resetPasswordResetTokens,
@@ -56,6 +57,7 @@ afterEach(() => {
   resetAdmins();
   resetCompanySettings();
   resetBootstrapState();
+  resetDeploymentMode();
   resetEmailProviders();
   resetLLMProviders();
   resetPasswordResetTokens();

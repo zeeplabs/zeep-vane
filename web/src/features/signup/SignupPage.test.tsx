@@ -5,15 +5,19 @@ import { MemoryRouter, Routes, Route } from "react-router-dom";
 import "../../lib/i18n";
 import { SignupPage } from "./SignupPage";
 import { TestQueryProvider } from "../../test/queryClient";
+import { AuthProvider } from "../../auth/AuthProvider";
+import { setDeploymentMode } from "../../test/msw/handlers";
 
 function App() {
   return (
     <TestQueryProvider>
       <MemoryRouter initialEntries={["/signup"]}>
-        <Routes>
-          <Route path="/signup" element={<SignupPage />} />
-          <Route path="/login" element={<div>login page</div>} />
-        </Routes>
+        <AuthProvider>
+          <Routes>
+            <Route path="/signup" element={<SignupPage />} />
+            <Route path="/login" element={<div>login page</div>} />
+          </Routes>
+        </AuthProvider>
       </MemoryRouter>
     </TestQueryProvider>
   );
@@ -78,5 +82,15 @@ describe("SignupPage", () => {
     render(<App />);
     await userEvent.click(screen.getByText("Já tem conta? Entrar"));
     expect(await screen.findByText("login page")).toBeInTheDocument();
+  });
+
+  // DEPMODE-07: em modo self-hosted, mostra mensagem de acesso restrito em
+  // vez do formulário - reflete o 404 real do backend nessas rotas.
+  it("mostra mensagem de acesso restrito em modo self_hosted, sem exibir o formulário (AD-033)", async () => {
+    setDeploymentMode("self_hosted");
+    render(<App />);
+
+    expect(await screen.findByText("Cadastro indisponível")).toBeInTheDocument();
+    expect(screen.queryByLabelText("Nome da organização")).not.toBeInTheDocument();
   });
 });

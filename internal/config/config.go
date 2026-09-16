@@ -26,7 +26,17 @@ type Config struct {
 	DevTokenLogging     bool
 	HTTPSEnabled        bool
 	SecureCookies       bool
+	DeploymentMode      string
 }
+
+// DeploymentModeSelfHosted is the default distribution model: one
+// installation, one tenant, provisioned via /bootstrap. DeploymentModeSaaS
+// is set only on Zeep's own hosted servers, where /signup creates a new
+// paying tenant per account (AD-022, AD-033).
+const (
+	DeploymentModeSelfHosted = "self_hosted"
+	DeploymentModeSaaS       = "saas"
+)
 
 // defaultCORSAllowedOrigin is the Vite dev server's origin - the CORS
 // allowlist entry when CORS_ALLOWED_ORIGIN is unset (local development).
@@ -149,6 +159,24 @@ func Load() (Config, error) {
 	// the session token then travels in the clear on their own network.
 	secureCookies := os.Getenv("VANE_SECURE_COOKIES") != "false"
 
+	// deploymentMode defaults to self-hosted: Vane is distributed open
+	// source to run on anyone's infrastructure, and a self-hosted install
+	// is exactly 1 tenant (AD-022). "saas" is set only on Zeep's own
+	// hosted servers, where each account created via /signup is a new
+	// paying tenant (AD-033). An empty value (unset, or explicitly set to
+	// "") is treated the same as absent - self-hosted - matching every
+	// other optional env var in this file. Any other value fails the boot
+	// outright rather than silently defaulting, since silently treating a
+	// typo'd "sass" as self-hosted would quietly disable signup on what
+	// was meant to be a SaaS deploy.
+	deploymentMode := os.Getenv("VANE_DEPLOYMENT_MODE")
+	if deploymentMode == "" {
+		deploymentMode = DeploymentModeSelfHosted
+	}
+	if deploymentMode != DeploymentModeSelfHosted && deploymentMode != DeploymentModeSaaS {
+		return Config{}, fmt.Errorf("config: environment variable VANE_DEPLOYMENT_MODE must be %q or %q, got %q", DeploymentModeSelfHosted, DeploymentModeSaaS, deploymentMode)
+	}
+
 	return Config{
 		DatabaseURL:         databaseURL,
 		MasterKey:           masterKey,
@@ -162,6 +190,7 @@ func Load() (Config, error) {
 		DevTokenLogging:     devTokenLogging,
 		HTTPSEnabled:        httpsEnabled,
 		SecureCookies:       secureCookies,
+		DeploymentMode:      deploymentMode,
 	}, nil
 }
 
