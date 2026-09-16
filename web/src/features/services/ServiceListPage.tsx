@@ -152,7 +152,7 @@ export function ServiceListPage({
       ) : (
         <>
           <Card elevation="none" className="overflow-hidden border border-divider">
-            <div className="grid grid-cols-[96px_1fr_96px_140px_20px] items-center gap-3 border-b border-divider bg-card-header-bg px-5 py-2.5">
+            <div className="grid grid-cols-[minmax(96px,max-content)_1fr_96px_140px_20px] items-center gap-3 border-b border-divider bg-card-header-bg px-5 py-2.5">
               <span className="text-[11px] font-bold uppercase tracking-wide text-neutral-400">
                 {t("services.columns.status")}
               </span>
@@ -176,7 +176,7 @@ export function ServiceListPage({
                   data-testid="service-row"
                   onClick={() => onSelectService?.(service.id)}
                   className={
-                    "grid cursor-pointer grid-cols-[96px_1fr_96px_140px_20px] items-center gap-3 border-b border-divider px-5 py-3.5 last:border-b-0 hover:bg-card-header-bg " +
+                    "grid cursor-pointer grid-cols-[minmax(96px,max-content)_1fr_96px_140px_20px] items-center gap-3 border-b border-divider px-5 py-3.5 last:border-b-0 hover:bg-card-header-bg " +
                     (service.id === selectedServiceId ? "bg-accent-100" : "")
                   }
                 >
