@@ -1,7 +1,7 @@
 import { describe, it, expect, afterEach } from "vitest";
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { http, HttpResponse } from "msw";
+import { http, HttpResponse, delay } from "msw";
 import { server } from "../../test/msw/server";
 import "../../lib/i18n";
 import { TestQueryProvider } from "../../test/queryClient";
@@ -103,6 +103,37 @@ function renderPage(
 }
 
 describe("ServiceListPage", () => {
+  // SKEL-04/05: while /api/services is loading, skeleton rows matching the
+  // real grid template render (not the old "Carregando…" paragraph as
+  // visible content) inside an aria-busy container that still carries the
+  // sr-only loading string.
+  it("mostra skeletons (não o texto) enquanto /api/services carrega", async () => {
+    server.use(
+      http.get("/api/services", async () => {
+        await delay("infinite");
+        return HttpResponse.json({ items: [], total: 0, page: 1, page_size: 20 });
+      }),
+    );
+    await loginAsOwner();
+    renderPage();
+
+    const srText = await screen.findByText("Carregando…");
+    expect(srText.className).toContain("sr-only");
+    expect(srText.closest('[aria-busy="true"]')).toBeInTheDocument();
+    expect(screen.getAllByTestId("skeleton").length).toBeGreaterThan(0);
+  });
+
+  // SKEL-06: once the fetch resolves, skeletons are gone and the real table
+  // takes over - loading and loaded are mutually exclusive.
+  it("remove os skeletons assim que /api/services termina de carregar", async () => {
+    mockServicesPage(fourStatusFixture);
+    await loginAsOwner();
+    renderPage();
+
+    await screen.findByText("API Gateway");
+    expect(screen.queryAllByTestId("skeleton")).toHaveLength(0);
+  });
+
   it("renderiza status/serviço/uptime/última verificação para cada serviço, sem coluna de latência (SVC-01/SVC-07)", async () => {
     mockServicesPage(fourStatusFixture);
     await loginAsOwner();

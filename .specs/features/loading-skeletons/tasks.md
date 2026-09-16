@@ -184,7 +184,7 @@ Note: T2–T18 each depend only on T1 (the shared primitive) — they are indepe
 **Where**: `web/src/features/services/ServiceListPage.tsx` (test file updated alongside, per co-location rule)
 **Depends on**: T1
 **Requirement**: SKEL-04, SKEL-05, SKEL-06, SKEL-07
-**Done when**: skeleton rows match the real `grid-cols-[minmax(96px,max-content)_1fr_96px_140px_20px]` template (status/service/uptime/lastCheck/menu columns).
+**Done when**: skeleton rows match the real `grid-cols-[minmax(96px,max-content)_1fr_96px_140px_20px]` template (status/service/uptime/lastCheck/menu columns). ✅ Done (2026-09-16).
 **Tests**: unit
 **Gate**: quick
 **Commit**: `feat(services): add loading skeleton to ServiceListPage`
