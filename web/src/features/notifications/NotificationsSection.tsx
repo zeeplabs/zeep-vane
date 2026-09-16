@@ -8,6 +8,7 @@ import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import { Card } from "../../components/ui/Card";
 import { Switch } from "../../components/ui/Switch";
+import { Skeleton } from "../../components/ui/Skeleton";
 import {
   useNotificationPreferences,
   useUpdateNotificationPreference,
@@ -66,22 +67,32 @@ export function NotificationsSection() {
         </p>
       )}
 
-      <ul className="flex flex-col gap-4">
-        {TOGGLES.map(({ type, labelKey, hintKey }) => (
-          <li key={type} className="flex items-center justify-between gap-4">
-            <div className="flex flex-col">
-              <span className="text-text">{t(labelKey)}</span>
-              <span className="text-sm text-neutral-400">{t(hintKey)}</span>
-            </div>
-            <Switch
-              checked={query.data?.[type] ?? false}
-              disabled={disabled}
-              aria-label={t(labelKey)}
-              onChange={(checked) => handleToggle(type, checked)}
-            />
-          </li>
-        ))}
-      </ul>
+      <div aria-busy={query.isLoading ? "true" : undefined}>
+        {query.isLoading ? <span className="sr-only">{t("profile.notifications.loading")}</span> : null}
+        <ul className="flex flex-col gap-4">
+          {TOGGLES.map(({ type, labelKey, hintKey }) => (
+            <li key={type} className="flex items-center justify-between gap-4">
+              {query.isLoading ? (
+                <div className="flex flex-col gap-1.5">
+                  <Skeleton width={140} height={14} />
+                  <Skeleton width={220} height={12} />
+                </div>
+              ) : (
+                <div className="flex flex-col">
+                  <span className="text-text">{t(labelKey)}</span>
+                  <span className="text-sm text-neutral-400">{t(hintKey)}</span>
+                </div>
+              )}
+              <Switch
+                checked={query.data?.[type] ?? false}
+                disabled={disabled}
+                aria-label={t(labelKey)}
+                onChange={(checked) => handleToggle(type, checked)}
+              />
+            </li>
+          ))}
+        </ul>
+      </div>
     </Card>
   );
 }

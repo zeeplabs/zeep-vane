@@ -160,7 +160,7 @@ Note: T2–T18 each depend only on T1 (the shared primitive) — they are indepe
 **Where**: `web/src/features/notifications/NotificationsSection.tsx` (test file updated alongside, per co-location rule)
 **Depends on**: T1
 **Requirement**: SKEL-04, SKEL-05, SKEL-06, SKEL-07
-**Done when**: same shape as T2 — this file's `isLoading` currently only disables a switch; add a skeleton for the toggle-row list itself (per spec's Out of Scope note, this file DOES get a real skeleton for its rows, only the disabled-switch behavior stays as-is).
+**Done when**: same shape as T2 — this file's `isLoading` currently only disables a switch; add a skeleton for the toggle-row list itself (per spec's Out of Scope note, this file DOES get a real skeleton for its rows, only the disabled-switch behavior stays as-is). ✅ Done (2026-09-16): label/hint text swaps for skeleton blocks per row while loading; the Switch itself stays rendered and disabled, preserving NOTIFPREF-15.
 **Tests**: unit
 **Gate**: quick
 **Commit**: `feat(notifications): add loading skeleton to NotificationsSection`
