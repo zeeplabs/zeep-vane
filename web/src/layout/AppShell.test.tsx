@@ -72,6 +72,14 @@ describe("AppShell", () => {
     expect(await within(header).findByText("Meu Perfil")).toBeInTheDocument();
   });
 
+  // BILLPG-01: /billing had no entry in routeTitleKeys until this feature.
+  it("mostra 'Planos & Faturamento' (não o nome do app) como título em /billing", async () => {
+    await loginAs("owner@vane.app");
+    const { container } = renderShellAt("/billing");
+    const header = container.querySelector("header")!;
+    expect(await within(header).findByText("Planos & Faturamento")).toBeInTheDocument();
+  });
+
   it("PollerBanner mantém a mesma posição relativa ao conteúdo roteado (antes do main)", async () => {
     await loginAs("owner@vane.app");
     const { container } = renderShellAt("/services");

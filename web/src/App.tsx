@@ -25,6 +25,7 @@ import { AdminsPage } from "./features/admins/AdminsPage";
 import { PollerStatusPage } from "./features/poller/PollerStatusPage";
 import { SettingsPage } from "./features/settings/SettingsPage";
 import { ProfilePage } from "./features/profile/ProfilePage";
+import { BillingPage } from "./features/billing/BillingPage";
 import { OverviewPage } from "./features/overview/OverviewPage";
 import { PublicStatusPage } from "./features/public-status/PublicStatusPage";
 import "./lib/i18n";
@@ -199,6 +200,9 @@ export default function App() {
           {/* Self-service profile, reachable by any authenticated role
               (profile-page PROFPAGE-01/03) - no RequireRole. */}
           <Route path="/profile" element={<ProfilePage />} />
+          {/* Decorative billing showcase, reachable by any authenticated role
+              (billing-plans-page BILLPG-01) - read-only, nothing mutates. */}
+          <Route path="/billing" element={<BillingPage />} />
           <Route
             path="/settings"
             element={

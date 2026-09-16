@@ -72,11 +72,19 @@ describe("Sidebar", () => {
     expect(link).toHaveAttribute("href", "/services");
   });
 
-  it("omite 'Planos & Faturamento' do grupo Organização (fora de escopo)", async () => {
+  // billing-plans-page BILLPG-01: this reverses the earlier "fora de
+  // escopo" omission - the item now exists as a real (decorative) page.
+  it("mostra 'Planos & Faturamento' no grupo Organização, apontando pra /billing", async () => {
     await loginAs("owner@vane.app");
     renderSidebar();
-    await waitFor(() => expect(screen.getByText("Usuários")).toBeInTheDocument());
-    expect(screen.queryByText("Planos & Faturamento")).not.toBeInTheDocument();
+    const link = await screen.findByRole("link", { name: "Planos & Faturamento" });
+    expect(link).toHaveAttribute("href", "/billing");
+  });
+
+  it("mostra 'Planos & Faturamento' também para non-owner (sem role gate)", async () => {
+    await loginAs("viewer@vane.app");
+    renderSidebar();
+    expect(await screen.findByRole("link", { name: "Planos & Faturamento" })).toBeInTheDocument();
   });
 
   it("colapsada por padrão (72px), expande com mouseenter e recolapsa com mouseleave", async () => {

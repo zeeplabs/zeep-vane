@@ -12,6 +12,7 @@ import {
   MdOutlineSettings,
   MdOutlineChevronLeft,
   MdOutlineChevronRight,
+  MdOutlineCreditCard,
 } from "react-icons/md";
 import { useAuth } from "../auth/AuthProvider";
 import { useSidebarPin } from "../lib/useSidebarPin";
@@ -47,6 +48,10 @@ function OverviewIcon() {
 
 function SettingsIcon() {
   return <MdOutlineSettings size={18} aria-hidden="true" />;
+}
+
+function BillingIcon() {
+  return <MdOutlineCreditCard size={18} aria-hidden="true" />;
 }
 
 // PinToggleIcon mirrors the handoff's collapse-direction chevron: pinned
@@ -158,15 +163,20 @@ export function Sidebar() {
           <span className={labelClass}>{t("sidebar.pollerStatus")}</span>
         </NavLink>
 
+        <div className={groupLabelClass}>{t("sidebar.groupOrganization")}</div>
         {hasRole(["owner"]) ? (
-          <>
-            <div className={groupLabelClass}>{t("sidebar.groupOrganization")}</div>
-            <NavLink to="/admins" className={navItemClass}>
-              <AdminsIcon />
-              <span className={labelClass}>{t("sidebar.admins")}</span>
-            </NavLink>
-          </>
+          <NavLink to="/admins" className={navItemClass}>
+            <AdminsIcon />
+            <span className={labelClass}>{t("sidebar.admins")}</span>
+          </NavLink>
         ) : null}
+        {/* Billing showcase (billing-plans-page BILLPG-01): reachable by any
+            authenticated role, unlike Usuários/Configurações above - it's
+            read-only, nothing mutates. */}
+        <NavLink to="/billing" className={navItemClass}>
+          <BillingIcon />
+          <span className={labelClass}>{t("sidebar.billing")}</span>
+        </NavLink>
       </nav>
 
       <div className="mt-auto flex flex-col gap-2 pt-4">

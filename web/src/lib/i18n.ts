@@ -57,6 +57,7 @@ const resources = {
         integrations: "Integrações",
         services: "Serviços monitorados",
         admins: "Usuários",
+        billing: "Planos & Faturamento",
         pollerStatus: "Poller Status",
         settings: "Configurações",
         pinMenu: "Fixar menu",
@@ -272,6 +273,11 @@ const resources = {
           ip: "IP",
           lastSeen: "Última atividade",
         },
+      },
+      billing: {
+        title: "Planos & Faturamento",
+        subtitle: "Escolha o plano ideal para o seu time e gerencie a assinatura da conta.",
+        comingSoon: "Em breve",
       },
       profile: {
         title: "Meu Perfil",
@@ -544,6 +550,7 @@ const resources = {
         integrations: "Integrations",
         services: "Monitored services",
         admins: "Users",
+        billing: "Plans & Billing",
         pollerStatus: "Poller Status",
         settings: "Settings",
         pinMenu: "Pin menu",
@@ -756,6 +763,11 @@ const resources = {
           ip: "IP",
           lastSeen: "Last seen",
         },
+      },
+      billing: {
+        title: "Plans & Billing",
+        subtitle: "Choose the right plan for your team and manage the account subscription.",
+        comingSoon: "Coming soon",
       },
       profile: {
         title: "My Profile",
