@@ -1,8 +1,10 @@
 import { useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { MdChevronRight } from "react-icons/md";
 import { Card } from "../../components/ui/Card";
 import { Pager } from "../../components/ui/Pager";
 import { Tag } from "../../components/ui/Tag";
+import { Skeleton } from "../../components/ui/Skeleton";
 import { EmptyState } from "../../layout/EmptyState";
 import type { StatusPage } from "../../types/api";
 import { useDomains } from "../domains/hooks";
@@ -31,6 +33,7 @@ export interface StatusPagesTableProps {
  * URL pública/Serviços/Atualizado, mesma estrutura de grid/linha/Pager que
  * DomainsTable (T6) já estabeleceu. */
 export function StatusPagesTable({ onSelect }: StatusPagesTableProps) {
+  const { t } = useTranslation();
   const [page, setPage] = useState(1);
   const { data: statusPagesPage, isLoading } = useStatusPages(page);
   const pages = useMemo(() => statusPagesPage?.items ?? [], [statusPagesPage]);
@@ -48,7 +51,24 @@ export function StatusPagesTable({ onSelect }: StatusPagesTableProps) {
   }
 
   if (isLoading) {
-    return <p className="text-neutral-400">Carregando…</p>;
+    return (
+      <div aria-busy="true" className="overflow-hidden rounded-md border border-divider">
+        <span className="sr-only">{t("statusPages.loading")}</span>
+        {Array.from({ length: 5 }).map((_, i) => (
+          <div
+            key={i}
+            className="grid grid-cols-[100px_1fr_1fr_120px_140px_20px] items-center gap-3 border-b border-divider px-5 py-3.5 last:border-b-0"
+          >
+            <Skeleton width={70} height={20} radius={999} />
+            <Skeleton width={140} height={14} />
+            <Skeleton width={160} height={14} />
+            <Skeleton width={70} height={14} />
+            <Skeleton width={90} height={12} />
+            <Skeleton width={16} height={16} />
+          </div>
+        ))}
+      </div>
+    );
   }
 
   if (pages.length === 0) {

@@ -220,7 +220,7 @@ Note: T2–T18 each depend only on T1 (the shared primitive) — they are indepe
 **Where**: `web/src/features/status-pages/StatusPagesTable.tsx` (test file updated alongside, per co-location rule)
 **Depends on**: T1
 **Requirement**: SKEL-04, SKEL-05, SKEL-06, SKEL-07
-**Done when**: same shape as T2.
+**Done when**: same shape as T2. ✅ Done (2026-09-16): reuses the `statusPages.loading` key added in T10; skeleton rows match `grid-cols-[100px_1fr_1fr_120px_140px_20px]`.
 **Tests**: unit
 **Gate**: quick
 **Commit**: `feat(status-pages): add loading skeleton to StatusPagesTable`
