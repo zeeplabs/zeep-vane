@@ -44,6 +44,9 @@ func newServicesRouter(t *testing.T) (http.Handler, *db.Pool, *db.UserRepository
 		// service-edit SVCEDIT-05: mirrors routes.go's ownerOnly gate on
 		// PATCH /api/services/{id}.
 		protected.With(RequireRole(db.RoleOwner)).Patch("/api/services/{id}", handler.Update)
+		// service-delete SVCDEL-05: mirrors routes.go's ownerOnly gate on
+		// DELETE /api/services/{id}.
+		protected.With(RequireRole(db.RoleOwner)).Delete("/api/services/{id}", handler.Delete)
 	})
 
 	return r, pool, admins
@@ -172,6 +175,19 @@ func patchServiceName(t *testing.T, r http.Handler, token, id, name string) *htt
 	}
 	req := httptest.NewRequest(http.MethodPatch, "/api/services/"+id, bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+	return rec
+}
+
+// deleteService issues DELETE /api/services/{id} (service-delete
+// SVCDEL-01..05).
+func deleteService(t *testing.T, r http.Handler, token, id string) *httptest.ResponseRecorder {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodDelete, "/api/services/"+id, nil)
 	if token != "" {
 		req.Header.Set("Authorization", "Bearer "+token)
 	}
@@ -1015,5 +1031,106 @@ func TestUpdateService_SameName_200Idempotent(t *testing.T) {
 	rec := patchServiceName(t, r, token, created.ID, name)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+}
+
+// TestDeleteService_Unattached_204HidesFromList covers SVCDEL-01/02: a
+// service not linked to any status page is soft-deleted and disappears
+// from the list.
+func TestDeleteService_Unattached_204HidesFromList(t *testing.T) {
+	r, pool, admins := newServicesRouter(t)
+	token := issueTestSessionTokenWithTenant(t, admins, pool)
+	name := uniqueServiceName(t)
+	created := createServiceForDetail(t, r, pool, token, name, "slo-delete-1", "")
+
+	rec := deleteService(t, r, token, created.ID)
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusNoContent, rec.Body.String())
+	}
+
+	getRec := getServiceDetail(t, r, token, created.ID)
+	if getRec.Code != http.StatusNotFound {
+		t.Errorf("GET after delete: status = %d, want %d", getRec.Code, http.StatusNotFound)
+	}
+
+	listRec := getServices(t, r, token)
+	var page Page[serviceResponse]
+	if err := json.Unmarshal(listRec.Body.Bytes(), &page); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+	for _, item := range page.Items {
+		if item.ID == created.ID {
+			t.Errorf("GET /api/services still lists soft-deleted service %s", created.ID)
+		}
+	}
+}
+
+// TestDeleteService_AttachedToStatusPage_409NotDeleted covers SVCDEL-03:
+// blocked while referenced by status_page_services, with a fixed generic
+// body, and the service is still fully visible afterward.
+func TestDeleteService_AttachedToStatusPage_409NotDeleted(t *testing.T) {
+	r, pool, admins := newServicesRouter(t)
+	token := issueTestSessionTokenWithTenant(t, admins, pool)
+	name := uniqueServiceName(t)
+	created := createServiceForDetail(t, r, pool, token, name, "slo-delete-2", "")
+
+	var statusPageID string
+	if err := pool.QueryRow(context.Background(),
+		"INSERT INTO status_pages (name, tenant_id) VALUES ($1, $2) RETURNING id",
+		name+"-page", currentAPITestTenant,
+	).Scan(&statusPageID); err != nil {
+		t.Fatalf("setup status_pages INSERT returned unexpected error: %v", err)
+	}
+	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), "DELETE FROM status_pages WHERE id = $1", statusPageID) })
+	if _, err := pool.Exec(context.Background(),
+		"INSERT INTO status_page_services (status_page_id, service_id) VALUES ($1, $2)", statusPageID, created.ID,
+	); err != nil {
+		t.Fatalf("setup status_page_services INSERT returned unexpected error: %v", err)
+	}
+
+	rec := deleteService(t, r, token, created.ID)
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusConflict, rec.Body.String())
+	}
+	if rec.Body.String() != serviceInUseBody {
+		t.Errorf("body = %s, want %s", rec.Body.String(), serviceInUseBody)
+	}
+
+	getRec := getServiceDetail(t, r, token, created.ID)
+	if getRec.Code != http.StatusOK {
+		t.Errorf("GET after blocked delete: status = %d, want %d - service must still exist", getRec.Code, http.StatusOK)
+	}
+}
+
+// TestDeleteService_UnknownID_404 covers SVCDEL-04.
+func TestDeleteService_UnknownID_404(t *testing.T) {
+	r, pool, admins := newServicesRouter(t)
+	token := issueTestSessionTokenWithTenant(t, admins, pool)
+
+	rec := deleteService(t, r, token, "00000000-0000-0000-0000-000000000000")
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusNotFound, rec.Body.String())
+	}
+	if rec.Body.String() != serviceNotFoundBody {
+		t.Errorf("body = %s, want %s", rec.Body.String(), serviceNotFoundBody)
+	}
+}
+
+// TestDeleteService_NonOwner_403NotDeleted covers SVCDEL-05: ownerOnly.
+func TestDeleteService_NonOwner_403NotDeleted(t *testing.T) {
+	r, pool, admins := newServicesRouter(t)
+	ownerToken := issueTestSessionTokenWithTenant(t, admins, pool)
+	name := uniqueServiceName(t)
+	created := createServiceForDetail(t, r, pool, ownerToken, name, "slo-delete-3", "")
+
+	viewerToken := seedSessionForRole(t, admins, db.RoleViewer)
+	rec := deleteService(t, r, viewerToken, created.ID)
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusForbidden, rec.Body.String())
+	}
+
+	getRec := getServiceDetail(t, r, ownerToken, created.ID)
+	if getRec.Code != http.StatusOK {
+		t.Errorf("GET after 403'd delete: status = %d, want %d - service must still exist", getRec.Code, http.StatusOK)
 	}
 }

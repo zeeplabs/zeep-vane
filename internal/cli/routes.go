@@ -228,6 +228,8 @@ func buildAdminRouter(pool *db.Pool, cfg config.Config, logger *zap.Logger, poll
 		// DELETE /api/admins/{id} - a stricter gate than the writeRoles
 		// used for Create/List/Get above.
 		protected.With(ownerOnly).Patch("/api/services/{id}", servicesHandler.Update)
+		// service-delete SVCDEL-05: ownerOnly, same tier as the rename above.
+		protected.With(ownerOnly).Delete("/api/services/{id}", servicesHandler.Delete)
 		protected.With(writeRoles).Post("/api/integrations/datadog", integrationsHandler.ConnectDatadog)
 		protected.With(writeRoles).Post("/api/integrations/email/{provider}", emailProvidersHandler.Connect)
 		protected.With(writeRoles).Post("/api/integrations/email/{provider}/activate", emailProvidersHandler.Activate)

@@ -80,13 +80,13 @@ There is no way to remove a monitored service today — `ServiceRepository`/`Ser
 | SVCDEL-02 | P1: Soft-delete a monitored service | Implementing | Implementing |
 | SVCDEL-03 | P1: Soft-delete a monitored service | Implementing | Implementing |
 | SVCDEL-04 | P1: Soft-delete a monitored service | Implementing | Implementing |
-| SVCDEL-05 | P1: Soft-delete a monitored service | Implementing | Pending |
+| SVCDEL-05 | P1: Soft-delete a monitored service | Implementing | Implementing |
 | SVCDEL-06 | P1: Soft-delete a monitored service | Implementing | Pending |
 | SVCDEL-07 | P1: Soft-delete a monitored service | Implementing | Implementing |
 | SVCDEL-08 | P1: Soft-delete a monitored service | Implementing | Implementing |
 | SVCDEL-09 | P1: Soft-delete a monitored service | Implementing | Pending |
 
-**Coverage:** 9 total, 6 mapped to tasks (repository layer), 3 unmapped (handler/poller/frontend) ⚠️
+**Coverage:** 9 total, 8 mapped to tasks (repository + handler layers), 1 unmapped (poller goroutine teardown / frontend) ⚠️
 
 ---
 
