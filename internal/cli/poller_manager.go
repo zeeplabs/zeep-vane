@@ -225,10 +225,23 @@ func (m *PollerManager) RunLeaderLoop(ctx context.Context) {
 }
 
 // heartbeatUntilLost blocks until ctx is done or handle's session is found
-// unhealthy, checking on leaderHeartbeatInterval.
+// unhealthy, checking on leaderHeartbeatInterval. Each tick it also retries
+// starting the poller if this replica is leading but has none running (AD-034):
+// RunLeaderLoop's own Restart call at acquisition time is a one-shot attempt,
+// so a Datadog connect/rotate that lands - via IntegrationsHandler, the admin
+// API is served by every replica - on a replica that isn't currently leading
+// makes Restart there a documented no-op (Restart's own leading check) that
+// never reaches the real leader. Without this retry, the leader never learns
+// a credential now exists until it loses and re-acquires leadership (or the
+// process restarts), leaving every service stuck at not_configured
+// indefinitely even though the integration shows connected. warnedNotStarted
+// keeps the "not started" log to a single line per outage instead of
+// spamming it every heartbeat while genuinely waiting on a first connect.
 func (m *PollerManager) heartbeatUntilLost(ctx context.Context, handle *pglock.Handle) {
 	ticker := time.NewTicker(m.leaderHeartbeatInterval)
 	defer ticker.Stop()
+
+	warnedNotStarted := false
 
 	for {
 		select {
@@ -247,6 +260,24 @@ func (m *PollerManager) heartbeatUntilLost(ctx context.Context, handle *pglock.H
 			cancel()
 			if !healthy {
 				return
+			}
+
+			m.mu.Lock()
+			running := m.cancel != nil
+			m.mu.Unlock()
+			if running {
+				warnedNotStarted = false
+				continue
+			}
+
+			started, err := m.Restart(ctx)
+			if err != nil {
+				m.logger.Error("poller leader election: failed to start poller on heartbeat retry", zap.Error(err))
+			} else if started {
+				warnedNotStarted = false
+			} else if !warnedNotStarted {
+				m.logger.Warn("poller leader election: still no datadog integration connected, poller not started")
+				warnedNotStarted = true
 			}
 		}
 	}
