@@ -144,22 +144,22 @@ Explicitly excluded. Documented to prevent scope creep.
 
 | Requirement ID | Story | Phase | Status |
 | --- | --- | --- | --- |
-| EMAIL-01 | P1: Connect an email provider | Design | Implementing |
-| EMAIL-02 | P1: Connect an email provider | Design | Implementing |
-| EMAIL-03 | P1: Connect an email provider | Design | Implementing |
-| EMAIL-04 | P1: Switch the active provider | Design | Implementing |
-| EMAIL-05 | P1: Switch the active provider | Design | Implementing |
-| EMAIL-06 | P1: List connected providers and their status | Design | Implementing |
-| EMAIL-07 | P1: Send the admin-invite email through the active provider | Design | Implementing |
-| EMAIL-08 | P1: Send the admin-invite email through the active provider | Design | Implementing |
-| EMAIL-09 | P1: Send the admin-invite email through the active provider | Design | Implementing |
-| EMAIL-10 | P2: Admin UI to connect, list, and switch providers | - | Pending |
+| EMAIL-01 | P1: Connect an email provider | Design | Verified |
+| EMAIL-02 | P1: Connect an email provider | Design | Verified |
+| EMAIL-03 | P1: Connect an email provider | Design | Verified |
+| EMAIL-04 | P1: Switch the active provider | Design | Verified |
+| EMAIL-05 | P1: Switch the active provider | Design | Verified |
+| EMAIL-06 | P1: List connected providers and their status | Design | Verified |
+| EMAIL-07 | P1: Send the admin-invite email through the active provider | Design | Verified |
+| EMAIL-08 | P1: Send the admin-invite email through the active provider | Design | Verified |
+| EMAIL-09 | P1: Send the admin-invite email through the active provider | Design | Verified |
+| EMAIL-10 | P2: Admin UI to connect, list, and switch providers | - | Verified |
 
 **ID format:** `EMAIL-[NUMBER]`
 
 **Status values:** Pending → In Design → In Tasks → Implementing → Verified
 
-**Coverage:** 10 total, 0 mapped to tasks, 10 unmapped ⚠️ (Tasks phase not yet run)
+**Coverage:** 10 total, 10 mapped to tasks, 0 unmapped (retroactive: feature is Executed/Verified — `validation.md` PASS — this table was never flipped after closure until 2026-09-15's spec-audit pass)
 
 ---
 

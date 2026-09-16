@@ -108,27 +108,27 @@
 
 | Requirement ID | Story | Phase | Status |
 | --- | --- | --- | --- |
-| DSP-01 | P1 | Design | Pending |
-| DSP-02 | P1 | Design | Pending |
-| DSP-03 | P1 | Design | Pending |
-| DSP-04 | P1 | Design | Pending |
-| DSP-05 | P1 | Design | Pending |
-| DSP-06 | P1 | Design | Pending |
-| DSP-07 | P1 | Design | Pending |
-| DSP-08 | P1 | Design | Pending |
-| DSP-09 | P2 | Design | Pending |
-| DSP-10 | P2 | Design | Pending |
-| DSP-11 | P2 | Design | Pending |
-| DSP-12 | P2 | Design | Pending |
-| DSP-13 | P3 | Design | Pending |
-| DSP-14 | P3 | Design | Pending |
-| DSP-15 | P3 | Design | Pending |
-| DSP-16 | Edge case | Design | Pending |
-| DSP-17 | Edge case | Design | Pending |
-| DSP-18 | Edge case | Design | Pending |
-| DSP-19 | Edge case | Design | Pending |
+| DSP-01 | P1 | Design | Verified |
+| DSP-02 | P1 | Design | Verified |
+| DSP-03 | P1 | Design | Verified |
+| DSP-04 | P1 | Design | Verified |
+| DSP-05 | P1 | Design | Verified |
+| DSP-06 | P1 | Design | Verified |
+| DSP-07 | P1 | Design | Verified |
+| DSP-08 | P1 | Design | Verified |
+| DSP-09 | P2 | Design | Verified |
+| DSP-10 | P2 | Design | Verified |
+| DSP-11 | P2 | Design | Verified |
+| DSP-12 | P2 | Design | Verified |
+| DSP-13 | P3 | Design | Verified |
+| DSP-14 | P3 | Design | Verified |
+| DSP-15 | P3 | Design | Verified |
+| DSP-16 | Edge case | Design | Verified |
+| DSP-17 | Edge case | Design | Verified |
+| DSP-18 | Edge case | Design | Verified |
+| DSP-19 | Edge case | Design | Verified |
 
-**Coverage:** 19 total, 0 mapped to tasks, 19 unmapped ⚠️ (expected pre-Design)
+**Coverage:** 19 total, 19 mapped to tasks, 0 unmapped (retroactive: feature is Executed/Verified — `validation.md` PASS — this table was never flipped after closure until 2026-09-15's spec-audit pass)
 
 ---
 

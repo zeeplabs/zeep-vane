@@ -192,55 +192,55 @@ Toda ambiguidade foi resolvida ou registrada aqui — nada fica silenciosamente 
 
 | Requirement ID | Story | Phase | Status |
 | --- | --- | --- | --- |
-| AF-01 | P1: Login e sessão | Design | Pending |
-| AF-02 | P1: Login e sessão | Design | Pending |
-| AF-03 | P1: Login e sessão | Design | Pending |
-| AF-04 | P1: Login e sessão | Design | Pending |
-| AF-05 | P1: Login e sessão | Design | Pending |
-| AF-06 | P1: Login e sessão | Design | Pending |
-| AF-07 | P1: Conectar Datadog | Design | Pending |
-| AF-08 | P1: Conectar Datadog | Design | Pending |
-| AF-09 | P1: Conectar Datadog | Design | Pending |
-| AF-10 | P1: Conectar Datadog | Design | Pending |
-| AF-11 | P1: Conectar Datadog | Design | Pending |
-| AF-12 | P1: Domínios/TLS | Design | Pending |
-| AF-13 | P1: Domínios/TLS | Design | Pending |
-| AF-14 | P1: Domínios/TLS | Design | Pending |
-| AF-15 | P1: Domínios/TLS | Design | Pending |
-| AF-16 | P1: Domínios/TLS | Design | Pending |
-| AF-17 | P1: Domínios/TLS | Design | Pending |
-| AF-18 | P1: Domínios/TLS | Design | Pending |
-| AF-19 | P1: Incidentes | Design | Pending |
-| AF-20 | P1: Incidentes | Design | Pending |
-| AF-21 | P1: Incidentes | Design | Pending |
-| AF-22 | P1: Incidentes | Design | Pending |
-| AF-23 | P1: Incidentes | Design | Pending |
-| AF-24 | P1: Incidentes | Design | Pending |
-| AF-25 | P2: Gestão de admins | Design | Pending |
-| AF-26 | P2: Gestão de admins | Design | Pending |
-| AF-27 | P2: Gestão de admins | Design | Pending |
-| AF-28 | P2: Gestão de admins | Design | Pending |
-| AF-29 | P2: Gestão de admins | Design | Pending |
-| AF-30 | P2: Gestão de admins | Design | Pending |
-| AF-31 | P2: Status do poller | Design | Pending |
-| AF-32 | P2: Status do poller | Design | Pending |
-| AF-33 | P2: Status do poller | Design | Pending |
-| AF-34 | P1: Endpoints de suporte da API | Design | Pending |
-| AF-35 | P1: Endpoints de suporte da API | Design | Pending |
-| AF-36 | P1: Endpoints de suporte da API | Design | Pending |
-| AF-37 | P1: Endpoints de suporte da API | Design | Pending |
-| AF-38 | P1: Endpoints de suporte da API | Design | Pending |
-| AF-39 | P1: Endpoints de suporte da API | Design | Pending |
-| AF-40 | P1: Endpoints de suporte da API | Design | Pending |
-| AF-41 | P1: Endpoints de suporte da API | Design | Pending |
-| AF-42 | P1: Endpoints de suporte da API | Design | Pending |
-| AF-43 | P1: Login e sessão (AC7 — logout) | Design | Pending |
+| AF-01 | P1: Login e sessão | Design | Verified |
+| AF-02 | P1: Login e sessão | Design | Verified |
+| AF-03 | P1: Login e sessão | Design | Verified |
+| AF-04 | P1: Login e sessão | Design | Verified |
+| AF-05 | P1: Login e sessão | Design | Verified |
+| AF-06 | P1: Login e sessão | Design | Verified |
+| AF-07 | P1: Conectar Datadog | Design | Verified |
+| AF-08 | P1: Conectar Datadog | Design | Verified |
+| AF-09 | P1: Conectar Datadog | Design | Verified |
+| AF-10 | P1: Conectar Datadog | Design | Verified |
+| AF-11 | P1: Conectar Datadog | Design | Verified |
+| AF-12 | P1: Domínios/TLS | Design | Verified |
+| AF-13 | P1: Domínios/TLS | Design | Verified |
+| AF-14 | P1: Domínios/TLS | Design | Verified |
+| AF-15 | P1: Domínios/TLS | Design | Verified |
+| AF-16 | P1: Domínios/TLS | Design | Verified |
+| AF-17 | P1: Domínios/TLS | Design | Verified |
+| AF-18 | P1: Domínios/TLS | Design | Verified |
+| AF-19 | P1: Incidentes | Design | Verified |
+| AF-20 | P1: Incidentes | Design | Verified |
+| AF-21 | P1: Incidentes | Design | Verified |
+| AF-22 | P1: Incidentes | Design | Verified |
+| AF-23 | P1: Incidentes | Design | Verified |
+| AF-24 | P1: Incidentes | Design | Verified |
+| AF-25 | P2: Gestão de admins | Design | Verified |
+| AF-26 | P2: Gestão de admins | Design | Verified |
+| AF-27 | P2: Gestão de admins | Design | Verified |
+| AF-28 | P2: Gestão de admins | Design | Verified |
+| AF-29 | P2: Gestão de admins | Design | Verified |
+| AF-30 | P2: Gestão de admins | Design | Verified |
+| AF-31 | P2: Status do poller | Design | Verified |
+| AF-32 | P2: Status do poller | Design | Verified |
+| AF-33 | P2: Status do poller | Design | Verified |
+| AF-34 | P1: Endpoints de suporte da API | Design | Verified |
+| AF-35 | P1: Endpoints de suporte da API | Design | Verified |
+| AF-36 | P1: Endpoints de suporte da API | Design | Verified |
+| AF-37 | P1: Endpoints de suporte da API | Design | Verified |
+| AF-38 | P1: Endpoints de suporte da API | Design | Verified |
+| AF-39 | P1: Endpoints de suporte da API | Design | Verified |
+| AF-40 | P1: Endpoints de suporte da API | Design | Verified |
+| AF-41 | P1: Endpoints de suporte da API | Design | Verified |
+| AF-42 | P1: Endpoints de suporte da API | Design | Verified |
+| AF-43 | P1: Login e sessão (AC7 — logout) | Design | Verified |
 
 **ID format:** `AF-NN` (Admin Frontend)
 
 **Status values:** Pending → In Design → In Tasks → Implementing → Verified
 
-**Coverage:** 43 total, 0 mapped to tasks, 43 unmapped ⚠️ (esperado — Design/Tasks ainda não rodaram)
+**Coverage:** 43 total, 43 mapped to tasks, 0 unmapped (retroactive: feature is Executed/Verified — `validation.md` PASS — this table was never flipped after closure until 2026-09-15's spec-audit pass)
 
 ---
 
