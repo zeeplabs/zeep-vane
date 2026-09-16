@@ -2,7 +2,7 @@ import { describe, it, expect, afterEach } from "vitest";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
-import { http, HttpResponse } from "msw";
+import { http, HttpResponse, delay } from "msw";
 import "../../lib/i18n";
 import { AuthProvider } from "../../auth/AuthProvider";
 import { TestQueryProvider } from "../../test/queryClient";
@@ -41,6 +41,36 @@ function renderPage() {
 }
 
 describe("PollerStatusPage", () => {
+  // SKEL-04/05: while /api/poller/status is loading, the page shows
+  // skeleton blocks (not the old "Carregando…" paragraph as visible
+  // content) inside an aria-busy container that still carries the sr-only
+  // loading string.
+  it("mostra skeletons (não o texto) enquanto /api/poller/status carrega", async () => {
+    server.use(
+      http.get("/api/poller/status", async () => {
+        await delay("infinite");
+        return HttpResponse.json({ items: [], total: 0, page: 1, page_size: 20 });
+      }),
+    );
+    await loginAsOwner();
+    renderPage();
+
+    const srText = await screen.findByText("Carregando…");
+    expect(srText.className).toContain("sr-only");
+    expect(srText.closest('[aria-busy="true"]')).toBeInTheDocument();
+    expect(screen.getAllByTestId("skeleton").length).toBeGreaterThan(0);
+  });
+
+  // SKEL-06: once the fetch resolves, skeletons are gone and the real
+  // stat cards/list take over - loading and loaded are mutually exclusive.
+  it("remove os skeletons assim que /api/poller/status termina de carregar", async () => {
+    await loginAsOwner();
+    renderPage();
+
+    await screen.findByText("Datadog");
+    expect(screen.queryAllByTestId("skeleton")).toHaveLength(0);
+  });
+
   it("mostra integração, última execução e resultado, mensagem de erro só em falha", async () => {
     await loginAsOwner();
     renderPage();
