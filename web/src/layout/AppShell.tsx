@@ -20,6 +20,8 @@ const routeTitleKeys: Array<[prefix: string, i18nKey: string]> = [
   ["/admins", "sidebar.admins"],
   ["/poller-status", "sidebar.pollerStatus"],
   ["/settings", "sidebar.settings"],
+  ["/profile", "profile.title"],
+  ["/billing", "sidebar.billing"],
 ];
 
 function titleKeyFor(pathname: string): string {

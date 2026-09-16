@@ -40,6 +40,20 @@ async function fill(user: ReturnType<typeof userEvent.setup>, current: string, n
 }
 
 describe("SecurityCard", () => {
+  // PROFRD-03: "Senha atual" full-width acima, "Nova senha"/"Confirmar nova
+  // senha" lado a lado em grid de 2 colunas - matching the mock's layout.
+  it("Nova senha e Confirmar nova senha renderizam em grid de 2 colunas (PROFRD-03)", async () => {
+    await loginAsOwner();
+    renderCard();
+
+    const newPasswordInput = await screen.findByLabelText("Nova senha");
+    const grid = newPasswordInput.closest(".grid");
+    expect(grid).not.toBeNull();
+    expect(grid!.className).toContain("grid-cols-2");
+    expect(grid).toContainElement(screen.getByLabelText("Confirmar nova senha"));
+    expect(grid).not.toContainElement(screen.getByLabelText("Senha atual"));
+  });
+
   // PROFPAGE-08: confirmação diferente bloqueia o submit e não envia request.
   it("confirmação diferente bloqueia o submit sem enviar request", async () => {
     const user = userEvent.setup();

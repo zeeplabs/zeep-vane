@@ -67,8 +67,12 @@ export function PersonalInfoCard() {
   };
 
   return (
-    <Card elevation="none" className="border border-divider p-6">
+    <Card elevation="none" className="border border-divider p-[24px]">
       <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+        <div>
+          <h2 className="m-0 text-sm font-bold text-text">{t("profile.personalInfo.title")}</h2>
+          <p className="m-0 mt-0.5 text-[12.5px] text-neutral-400">{t("profile.personalInfo.subtitle")}</p>
+        </div>
         <div className="flex items-center gap-4">
           <div
             data-testid="profile-avatar"
@@ -77,18 +81,16 @@ export function PersonalInfoCard() {
           >
             {initialsOf(admin.name, admin.email)}
           </div>
-          <div>
-            <h2 className="text-text">{t("profile.personalInfo.title")}</h2>
-            <p className="m-0 text-[13.5px] text-neutral-400">{t("profile.personalInfo.subtitle")}</p>
-          </div>
         </div>
-        <Field
-          label={t("profile.personalInfo.nameLabel")}
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          error={error ?? undefined}
-        />
-        <Field label={t("profile.personalInfo.emailLabel")} value={admin.email} readOnly />
+        <div className="grid grid-cols-2 gap-4">
+          <Field
+            label={t("profile.personalInfo.nameLabel")}
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            error={error ?? undefined}
+          />
+          <Field label={t("profile.personalInfo.emailLabel")} value={admin.email} readOnly />
+        </div>
         <div>
           <Button type="submit" disabled={update.isPending}>
             {t("profile.personalInfo.saveButton")}

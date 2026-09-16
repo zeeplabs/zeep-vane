@@ -73,12 +73,13 @@ export function SessionsSection() {
   };
 
   return (
-    <div className="flex flex-col gap-4">
+    <>
+    <Card elevation="none" className="flex flex-col gap-4 border border-divider p-[24px]">
       <div>
-        <h2 className="text-text">{t("sessions.title")}</h2>
-        <p className="m-0 text-[13.5px] text-neutral-400">{t("sessions.subtitle")}</p>
+        <h2 className="m-0 text-sm font-bold text-text">{t("sessions.title")}</h2>
+        <p className="m-0 mt-0.5 text-[12.5px] text-neutral-400">{t("sessions.subtitle")}</p>
       </div>
-      <Card elevation="none" className="border border-divider divide-y divide-divider overflow-hidden">
+      <div className="-mx-[24px] divide-y divide-divider border-t border-divider">
         {isLoading ? (
           <p className="px-4 py-6 text-center text-neutral-400" data-testid="sessions-loading">
             {t("sessions.loading")}
@@ -132,29 +133,30 @@ export function SessionsSection() {
             </div>
           ))
         )}
-      </Card>
-      <Dialog
-        open={pendingRevokeId !== null}
-        onOpenChange={(open) => {
-          if (!open) setPendingRevokeId(null);
-        }}
-        title={t("profile.sessionsRevoke.title")}
-        description={t("profile.sessionsRevoke.body")}
-        footer={
-          <>
-            <Button
-              variant="secondary"
-              onClick={() => setPendingRevokeId(null)}
-              data-testid="cancel-revoke-button"
-            >
-              {t("profile.sessionsRevoke.cancel")}
-            </Button>
-            <Button onClick={handleConfirmRevoke} data-testid="confirm-revoke-button">
-              {t("profile.sessionsRevoke.confirm")}
-            </Button>
-          </>
-        }
-      />
-    </div>
+      </div>
+    </Card>
+    <Dialog
+      open={pendingRevokeId !== null}
+      onOpenChange={(open) => {
+        if (!open) setPendingRevokeId(null);
+      }}
+      title={t("profile.sessionsRevoke.title")}
+      description={t("profile.sessionsRevoke.body")}
+      footer={
+        <>
+          <Button
+            variant="secondary"
+            onClick={() => setPendingRevokeId(null)}
+            data-testid="cancel-revoke-button"
+          >
+            {t("profile.sessionsRevoke.cancel")}
+          </Button>
+          <Button onClick={handleConfirmRevoke} data-testid="confirm-revoke-button">
+            {t("profile.sessionsRevoke.confirm")}
+          </Button>
+        </>
+      }
+    />
+    </>
   );
 }

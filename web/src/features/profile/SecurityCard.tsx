@@ -57,10 +57,10 @@ export function SecurityCard() {
   };
 
   return (
-    <Card elevation="none" className="border border-divider flex flex-col gap-6 p-6">
+    <Card elevation="none" className="border border-divider flex flex-col gap-6 p-[24px]">
       <div>
-        <h2 className="text-text">{t("profile.security.title")}</h2>
-        <p className="m-0 text-[13.5px] text-neutral-400">{t("profile.security.subtitle")}</p>
+        <h2 className="m-0 text-sm font-bold text-text">{t("profile.security.title")}</h2>
+        <p className="m-0 mt-0.5 text-[12.5px] text-neutral-400">{t("profile.security.subtitle")}</p>
       </div>
 
       <form onSubmit={handleSubmit} className="flex flex-col gap-4">
@@ -71,20 +71,22 @@ export function SecurityCard() {
           onChange={(e) => setCurrentPassword(e.target.value)}
           autoComplete="current-password"
         />
-        <Field
-          type="password"
-          label={t("profile.security.newPassword")}
-          value={newPassword}
-          onChange={(e) => setNewPassword(e.target.value)}
-          autoComplete="new-password"
-        />
-        <Field
-          type="password"
-          label={t("profile.security.confirmPassword")}
-          value={confirmPassword}
-          onChange={(e) => setConfirmPassword(e.target.value)}
-          autoComplete="new-password"
-        />
+        <div className="grid grid-cols-2 gap-4">
+          <Field
+            type="password"
+            label={t("profile.security.newPassword")}
+            value={newPassword}
+            onChange={(e) => setNewPassword(e.target.value)}
+            autoComplete="new-password"
+          />
+          <Field
+            type="password"
+            label={t("profile.security.confirmPassword")}
+            value={confirmPassword}
+            onChange={(e) => setConfirmPassword(e.target.value)}
+            autoComplete="new-password"
+          />
+        </div>
         {error ? (
           <p role="alert" className="m-0 text-xs text-critical">
             {error}

@@ -63,6 +63,15 @@ describe("AppShell", () => {
     expect(await within(header).findByText("Visão geral")).toBeInTheDocument();
   });
 
+  // PROFRD-01: /profile had no entry in routeTitleKeys, falling back to
+  // "Vane" - same bug class already fixed for /overview.
+  it("mostra 'Meu Perfil' (não o nome do app) como título em /profile", async () => {
+    await loginAs("owner@vane.app");
+    const { container } = renderShellAt("/profile");
+    const header = container.querySelector("header")!;
+    expect(await within(header).findByText("Meu Perfil")).toBeInTheDocument();
+  });
+
   it("PollerBanner mantém a mesma posição relativa ao conteúdo roteado (antes do main)", async () => {
     await loginAs("owner@vane.app");
     const { container } = renderShellAt("/services");

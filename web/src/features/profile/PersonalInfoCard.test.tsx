@@ -47,6 +47,19 @@ describe("PersonalInfoCard", () => {
     expect(screen.getByTestId("profile-avatar")).toHaveTextContent("AO");
   });
 
+  // PROFRD-03: Nome/Email render side by side in a 2-column grid, matching
+  // the mock's layout - not stacked in a single column.
+  it("Nome e Email renderizam em grid de 2 colunas (PROFRD-03)", async () => {
+    await loginAsOwner();
+    renderCard();
+
+    const nameInput = await screen.findByLabelText("Nome");
+    const grid = nameInput.closest(".grid");
+    expect(grid).not.toBeNull();
+    expect(grid!.className).toContain("grid-cols-2");
+    expect(grid).toContainElement(screen.getByLabelText("Email"));
+  });
+
   // PROFPAGE-04/05: salvar um nome válido envia o PATCH e mostra o toast; o
   // campo re-sincroniza com o valor re-hidratado de /me (o trim prova que o
   // estado veio do servidor, não do que foi digitado).

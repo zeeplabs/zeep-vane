@@ -54,10 +54,10 @@ export function NotificationsSection() {
   };
 
   return (
-    <Card elevation="none" className="border border-divider flex flex-col gap-6 p-6">
-      <div className="flex flex-col gap-1">
-        <h2 className="text-text">{t("profile.notifications.title")}</h2>
-        <p className="text-sm text-neutral-300">{t("profile.notifications.subtitle")}</p>
+    <Card elevation="none" className="border border-divider flex flex-col gap-6 p-[24px]">
+      <div>
+        <h2 className="m-0 text-sm font-bold text-text">{t("profile.notifications.title")}</h2>
+        <p className="m-0 mt-0.5 text-[12.5px] text-neutral-400">{t("profile.notifications.subtitle")}</p>
       </div>
 
       {query.isError && (
