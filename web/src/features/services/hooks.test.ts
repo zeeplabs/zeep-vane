@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from "vitest";
 import { renderHook, waitFor } from "@testing-library/react";
 import { TestQueryProvider } from "../../test/queryClient";
 import { apiFetch, ApiError } from "../../lib/apiClient";
-import { useCreateService, useServices } from "./hooks";
+import { useCreateService, useServiceDetail, useServices } from "./hooks";
 
 async function loginAsOwner() {
   await apiFetch("/api/auth/login", {
@@ -34,6 +34,7 @@ describe("services hooks", () => {
     const created = await result.current.create.mutateAsync({
       name: "Serviço com SLO",
       slo_id: "slo-1",
+      slo_name: "API disponibilidade 99.9%",
     });
     expect(created.current_status).toBe("not_configured");
     expect(created.slo_name).not.toBeNull();
@@ -67,6 +68,65 @@ describe("services hooks", () => {
     expect(result.current.data?.page_size).toBe(20);
     expect(Array.isArray(result.current.data?.items)).toBe(true);
     expect(typeof result.current.data?.total).toBe("number");
+
+    fetchSpy.mockRestore();
+  });
+
+  // SVC-01/SVC-06: useServices must return slo_name/uptime_30d/last_seen_at
+  // straight from the single list response, with no per-row live call
+  // (the old fetchSLOName call this hook used to make, I15's
+  // SPEC_DEVIATION, is gone).
+  it("useServices retorna slo_name/uptime_30d/last_seen_at por item com uma única chamada de rede", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch");
+    await loginAsOwner();
+    const { result } = renderHook(() => useServices(1), { wrapper: TestQueryProvider });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+    const items = result.current.data!.items;
+    const notConfigured = items.find((s) => s.current_status === "not_configured")!;
+    const operational = items.find((s) => s.current_status === "operational")!;
+    expect(typeof notConfigured.slo_name).toBe("string");
+    expect(notConfigured.uptime_30d).toBeNull();
+    expect(notConfigured.last_seen_at).toBeNull();
+    expect(operational.uptime_30d).not.toBeNull();
+    expect(operational.last_seen_at).not.toBeNull();
+
+    const serviceCalls = fetchSpy.mock.calls.filter(([url]) => String(url).includes("/api/services"));
+    expect(serviceCalls).toHaveLength(1);
+
+    fetchSpy.mockRestore();
+  });
+
+  // SVC-14..17: useServiceDetail fetches GET /api/services/{id} and returns
+  // the flat detail DTO, including all 24 hourly_buckets.
+  it("useServiceDetail retorna uptime/incidentes/status_analysis e 24 hourly_buckets", async () => {
+    await loginAsOwner();
+    const { result: list } = renderHook(() => useServices(1), { wrapper: TestQueryProvider });
+    await waitFor(() => expect(list.current.isSuccess).toBe(true));
+    const degraded = list.current.data!.items.find((s) => s.current_status === "degraded")!;
+
+    const { result } = renderHook(() => useServiceDetail(degraded.id), { wrapper: TestQueryProvider });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+    expect(result.current.data!.id).toBe(degraded.id);
+    expect(typeof result.current.data!.incidents_30d).toBe("number");
+    expect(result.current.data!.status_analysis).not.toBeNull();
+    expect(result.current.data!.hourly_buckets).toHaveLength(24);
+  });
+
+  // SVC-20..25: useCreateService sends slo_name in the POST body (the
+  // frontend already has it from the selected SLOSummary).
+  it("useCreateService envia slo_name no corpo da requisição", async () => {
+    await loginAsOwner();
+    const fetchSpy = vi.spyOn(globalThis, "fetch");
+    const { result } = renderHook(() => useCreateService(), { wrapper: TestQueryProvider });
+
+    await result.current.mutateAsync({ name: "Serviço X", slo_id: "slo-1", slo_name: "SLO da API" });
+
+    const call = fetchSpy.mock.calls.find(([url]) => String(url).endsWith("/api/services"));
+    expect(call).toBeDefined();
+    const body = JSON.parse((call![1] as RequestInit).body as string);
+    expect(body).toEqual({ name: "Serviço X", slo_id: "slo-1", slo_name: "SLO da API" });
 
     fetchSpy.mockRestore();
   });

@@ -230,6 +230,138 @@ Seen once or not yet corroborated. Tracked, not trusted.
 - evidence: spec.md Edge Cases: revoked/expired API key marked invalid (internal/llm)
 - last seen: 2026-09-09T17:58:22Z
 
+### L-037 - When a spec pins exact design-token literals (hex colors, font family/weights), add a compiled-CSS regex assertion for each one, not just a smoke test that a CSS variable is wired up.
+- signal: `spec_precision_gap` · recurrence: 1 feature(s) · scope: `frontend-tokens` · harmful: 0
+- features: new-layout-migration
+- evidence: validation.md#SHELL-01,SHELL-02,SHELL-03 (frontend-tokens)
+- last seen: 2026-09-11T14:36:52Z
+
+### L-038 - When a spec pins exact layout literals (padding, max-width) that jsdom cannot compute, still assert the literal Tailwind arbitrary-value class name in the DOM instead of leaving the criterion untested.
+- signal: `spec_precision_gap` · recurrence: 1 feature(s) · scope: `frontend-layout` · harmful: 0
+- features: new-layout-migration
+- evidence: validation.md#SHELL-19 (frontend-layout)
+- last seen: 2026-09-11T14:37:00Z
+
+### L-039 - For a pre-mount inline-script behavior (e.g. theme-boot flash prevention) that jsdom can't observe, add a dedicated unit test that evaluates the script's logic in isolation instead of leaving it untested.
+- signal: `spec_precision_gap` · recurrence: 1 feature(s) · scope: `frontend-bootstrap` · harmful: 0
+- features: new-layout-migration
+- evidence: validation.md#SHELL-07 (frontend-bootstrap)
+- last seen: 2026-09-11T14:37:01Z
+
+### L-040 - When spec.md's requirement traceability table assigns sequential IDs per story, double check each task's Requirement field cites the same IDs instead of reusing IDs from an earlier story.
+- signal: `ac_gap` · recurrence: 1 feature(s) · scope: `tasks-traceability` · harmful: 0
+- features: new-layout-migration
+- evidence: tasks.md T7,T9,T10,T11,T12,T13 Requirement fields (tasks-traceability)
+- last seen: 2026-09-11T14:37:01Z
+
+### L-041 - Cover each spec.md edge case at the same layer the user hits it (component/e2e), not only at the hook layer.
+- signal: `spec_precision_gap` · recurrence: 1 feature(s) · scope: `web/edge-cases` · harmful: 0
+- features: profile-page
+- evidence: validation.md edge case: enroll 409 / name 422 (EnrollDrawer.test.tsx, PersonalInfoCard.test.tsx) (web/edge-cases)
+- last seen: 2026-09-11T22:58:31Z
+
+### L-042 - When a spec requires locale-dependent copy, add an explicit non-default-locale render test, not just the default-locale assertions.
+- signal: `spec_precision_gap` · recurrence: 1 feature(s) · scope: `web/i18n` · harmful: 0
+- features: profile-page
+- evidence: validation.md edge case: browser locale English (ProfilePage.test.tsx) (web/i18n)
+- last seen: 2026-09-11T22:58:32Z
+
+### L-043 - When a spec AC requires behavior under a non-default locale, add an explicit locale-switch test for every new string set; the pt-BR default passing does not prove the en tree exists.
+- signal: `ac_gap` · recurrence: 1 feature(s) · scope: `web/src/features/auth` · harmful: 0
+- features: login-2fa
+- evidence: LOGIN2FA-12 (web/src/features/auth)
+- last seen: 2026-09-12T01:14:20Z
+
+### L-044 - Optimistic-rollback tests must hold the failing request behind a gate, assert the intermediate optimistic value, then assert the rolled-back value; asserting only the post-failure value (equal to the pre-mutation value) does not detect a removed rollback.
+- signal: `surviving_mutant` · recurrence: 1 feature(s) · scope: `frontend/react-query/optimistic-update` · harmful: 0
+- features: notification-preferences
+- evidence: web/src/features/notifications/hooks.ts onError rollback (mutant M8) (frontend/react-query/optimistic-update)
+- last seen: 2026-09-12T16:34:48Z
+
+### L-045 - When sibling branches return the same observable value, drive each branch in a test explicitly; one call can cover only one branch and leave the other's mutant alive.
+- signal: `surviving_mutant` · recurrence: 1 feature(s) · scope: `backend/ratelimit` · harmful: 0
+- features: ratelimit-store-fallback
+- evidence: M7 - internal/ratelimit/ip_limiter_test.go:337 (backend/ratelimit)
+- last seen: 2026-09-12T17:25:28Z
+
+### L-046 - When changing a function signature, grep every caller including integration-tagged test files; a plain go build/go test skips //go:build integration files and will not catch them, so run the integration build (or grep for the symbol) before committing the signature change.
+- signal: `gate_fail` · recurrence: 1 feature(s) · scope: `backend/testing` · harmful: 0
+- features: tls-key-encryption
+- evidence: T3 - internal/cli/serve_test.go:268 (6 call sites missed by the non-integration quick gate) (backend/testing)
+- last seen: 2026-09-12T18:19:41Z
+
+### L-047 - Before calling a feature done, reconcile every tasks.md Done-when checkbox and remove stale SPEC_DEVIATION comments - a feature with no validation.md shipped with PAG-07 (the incidents Pager) never implemented behind a comment claiming its dependency did not exist yet.
+- signal: `ac_gap` · recurrence: 1 feature(s) · scope: `web/incidents` · harmful: 0
+- features: list-pagination
+- evidence: .specs/features/list-pagination/tasks.md T5 (Done-when unchecked); IncidentsPage.tsx stale SPEC_DEVIATION (web/incidents)
+- last seen: 2026-09-12T21:44:56Z
+
+### L-048 - A test for a boolean count filter is only discriminating if the fixture makes the true/false branches yield different counts; one item per branch lets the flipped condition produce the same value and survive.
+- signal: `surviving_mutant` · recurrence: 1 feature(s) · scope: `api/test-discrimination` · harmful: 0
+- features: dashboard-overview-page
+- evidence: validation.md M3 - internal/api/overview_handler.go CurrentStatus != operational (api/test-discrimination)
+- last seen: 2026-09-14T17:38:24Z
+
+### L-049 - Assert a fixed-count contract (e.g. 14 buckets) against the literal, never against the same constant the implementation uses, or mutating the constant passes.
+- signal: `surviving_mutant` · recurrence: 1 feature(s) · scope: `api/test-discrimination` · harmful: 0
+- features: dashboard-overview-page
+- evidence: validation.md M4 - internal/api/overview_handler.go overviewUptimeSeriesDays=14 (api/test-discrimination)
+- last seen: 2026-09-14T17:38:24Z
+
+### L-050 - Rendering a page directly in RootRoute bypasses AuthenticatedLayout/AppShell; route landing pages through the shell-wrapped route (redirect) and assert the shell-rendered page, not just the component.
+- signal: `spec_deviation` · recurrence: 1 feature(s) · scope: `web/routing` · harmful: 0
+- features: dashboard-overview-page
+- evidence: validation.md T8 - web/src/App.tsx:88 RootRoute (web/routing)
+- last seen: 2026-09-14T17:38:24Z
+
+### L-051 - When a spec AC says 'debounced', write a test that asserts debounce timing (e.g. fake timers + call-count check) even if the underlying search hook already exists — reusing an untouched hook is not the same as testing the AC's own wording.
+- signal: `spec_precision_gap` · recurrence: 1 feature(s) · scope: `web/src/features/services` · harmful: 0
+- features: monitored-services-page
+- evidence: SVC-21 (web/src/features/services)
+- last seen: 2026-09-14T23:09:02Z
+
+### L-052 - When a drawer lives inside a tab's conditionally-rendered subtree, a test asserting the drawer disappears on tab switch does not prove the underlying selection state was reset - switch away and back to the same tab and assert the drawer stays closed to actually discriminate the reset logic.
+- signal: `surviving_mutant` · recurrence: 1 feature(s) · scope: `web/src/features` · harmful: 0
+- features: domains-status-pages-page
+- evidence: web/src/features/domains/DomainsStatusPagesPage.tsx:32-37 (web/src/features)
+- last seen: 2026-09-15T11:40:47Z
+
+### L-053 - A table component test suite can cover the risky new columns (join-derived fields) in depth while leaving carried-over columns (status pill, type label, SSL label) with zero row-level assertions - explicitly assert every listed column per spec.md's WHEN/THEN, not just the ones this feature added logic for.
+- signal: `ac_gap` · recurrence: 1 feature(s) · scope: `web/src/features` · harmful: 0
+- features: domains-status-pages-page
+- evidence: DSP-01 (web/src/features)
+- last seen: 2026-09-15T11:40:47Z
+
+### L-054 - A detail-drawer test using an empty list fixture (e.g. service_ids: []) for every test case proves the empty-state render path but never exercises the non-empty render path - include at least one fixture with populated list data for any component whose spec AC mentions 'listing' items.
+- signal: `ac_gap` · recurrence: 1 feature(s) · scope: `web/src/features` · harmful: 0
+- features: domains-status-pages-page
+- evidence: DSP-14 (web/src/features)
+- last seen: 2026-09-15T11:40:47Z
+
+### L-055 - When an AC explicitly calls out a boundary value (e.g. '0 is valid, not an error'), write a test that sets that exact value — a non-zero happy-path assertion doesn't cover it.
+- signal: `spec_precision_gap` · recurrence: 1 feature(s) · scope: `frontend/tests` · harmful: 0
+- features: poller-status-page
+- evidence: POLLPG-04 (frontend/tests)
+- last seen: 2026-09-15T14:22:20Z
+
+### L-056 - An 'empty list' edge case documented in spec.md needs its own MSW override test — don't assume the happy-path fixture's non-empty items list exercises it.
+- signal: `ac_gap` · recurrence: 1 feature(s) · scope: `frontend/tests` · harmful: 0
+- features: poller-status-page
+- evidence: spec.md Edge Cases §2 (empty items) (frontend/tests)
+- last seen: 2026-09-15T14:22:24Z
+
+### L-057 - When a follow-up commit rewrites a screen for visual parity with a mock, diff the removed component against the spec's ACs - a 'SeverityBadge with Tag variant' silently became plain unstyled text (and its color-mapping constant went dead) even though the commit's whole stated purpose was matching the mock's visuals.
+- signal: `ac_gap` · recurrence: 1 feature(s) · scope: `web/incidents` · harmful: 0
+- features: incidents-page
+- evidence: INCPG-01 - web/src/features/incidents/IncidentsPage.tsx:180 (web/incidents)
+- last seen: 2026-09-15T14:57:35Z
+
+### L-058 - A badge-label test that asserts screen.getByText(label) with no row/element scoping does not verify the label is attached to the right entity - it only proves the string exists somewhere on the page, so swapping two labels in the same enum's map survives that specific test undetected.
+- signal: `spec_precision_gap` · recurrence: 1 feature(s) · scope: `web/incidents` · harmful: 0
+- features: incidents-page
+- evidence: INCPG-01 - IncidentsPage.test.tsx:221-228 (web/incidents)
+- last seen: 2026-09-15T14:57:40Z
+
 ## Quarantined (failed when applied - ignore)
 
 A confirmed lesson that recurred alongside failure. Kept for the maintainer to review.

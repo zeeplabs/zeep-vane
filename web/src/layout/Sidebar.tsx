@@ -1,226 +1,207 @@
 import { useState } from "react";
 import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
+import {
+  MdOutlineCable,
+  MdOutlineGridView,
+  MdOutlinePublic,
+  MdOutlineWarningAmber,
+  MdOutlineGroup,
+  MdOutlineMonitorHeart,
+  MdOutlineSpaceDashboard,
+  MdOutlineSettings,
+  MdOutlineChevronLeft,
+  MdOutlineChevronRight,
+  MdOutlineCreditCard,
+} from "react-icons/md";
 import { useAuth } from "../auth/AuthProvider";
-import { Dialog } from "../components/ui/Dialog";
-import { Button } from "../components/ui/Button";
-import { useBrandLogoUrl } from "../lib/branding";
-import vaneLogo from "../assets/vane-logo.webp";
-import type { Role } from "../types/api";
+import { useSidebarPin } from "../lib/useSidebarPin";
+import { TenantSwitcher } from "./TenantSwitcher";
 
 function IntegrationsIcon() {
-  return (
-    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d="M9 2v4M15 2v4M7 8h2v4a3 3 0 0 0 3 3 3 3 0 0 0 3-3V8h2M12 15v4M9 22h6" />
-    </svg>
-  );
+  return <MdOutlineCable size={18} aria-hidden="true" />;
 }
 
 function ServicesIcon() {
-  return (
-    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <rect x="3" y="3" width="7" height="7" rx="1.5" />
-      <rect x="14" y="3" width="7" height="7" rx="1.5" />
-      <rect x="3" y="14" width="7" height="7" rx="1.5" />
-      <rect x="14" y="14" width="7" height="7" rx="1.5" />
-    </svg>
-  );
+  return <MdOutlineGridView size={18} aria-hidden="true" />;
 }
 
 function DomainsIcon() {
-  return (
-    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <circle cx="12" cy="12" r="9" />
-      <path d="M3 12h18M12 3c2.5 2.7 4 6.1 4 9s-1.5 6.3-4 9c-2.5-2.7-4-6.1-4-9s1.5-6.3 4-9Z" />
-    </svg>
-  );
+  return <MdOutlinePublic size={18} aria-hidden="true" />;
 }
 
 function IncidentsIcon() {
-  return (
-    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d="M12 3 2 20h20L12 3Z" />
-      <path d="M12 10v4M12 17h.01" />
-    </svg>
-  );
+  return <MdOutlineWarningAmber size={18} aria-hidden="true" />;
 }
 
 function AdminsIcon() {
-  return (
-    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <circle cx="9" cy="8" r="3.2" />
-      <path d="M2.8 19c.7-3.4 3.2-5.5 6.2-5.5s5.5 2.1 6.2 5.5" />
-      <circle cx="17.5" cy="8.5" r="2.4" />
-      <path d="M16 13.8c2.2.4 3.9 2.1 4.4 4.4" />
-    </svg>
-  );
+  return <MdOutlineGroup size={18} aria-hidden="true" />;
 }
 
 function PollerIcon() {
-  return (
-    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d="M2 12h4l2 7 4-14 2 7h8" />
-    </svg>
-  );
+  return <MdOutlineMonitorHeart size={18} aria-hidden="true" />;
+}
+
+function OverviewIcon() {
+  return <MdOutlineSpaceDashboard size={18} aria-hidden="true" />;
 }
 
 function SettingsIcon() {
-  return (
-    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <circle cx="12" cy="12" r="3" />
-      <path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1.04 1.56V21a2 2 0 1 1-4 0v-.09A1.7 1.7 0 0 0 9 19.4a1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-1.56-1.04H3a2 2 0 1 1 0-4h.09A1.7 1.7 0 0 0 4.6 9a1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.7 1.7 0 0 0 9 4.6a1.7 1.7 0 0 0 1.04-1.56V3a2 2 0 1 1 4 0v.09A1.7 1.7 0 0 0 15 4.6a1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.7 1.7 0 0 0 19.4 9a1.7 1.7 0 0 0 1.56 1.04H21a2 2 0 1 1 0 4h-.09A1.7 1.7 0 0 0 19.4 15Z" />
-    </svg>
-  );
+  return <MdOutlineSettings size={18} aria-hidden="true" />;
 }
 
-function LogoutIcon() {
-  return (
-    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9" />
-    </svg>
-  );
+function BillingIcon() {
+  return <MdOutlineCreditCard size={18} aria-hidden="true" />;
 }
 
-const navItemClass = ({ isActive }: { isActive: boolean }) =>
-  "flex h-9 items-center gap-2.5 rounded-md px-3 text-sm transition-colors " +
-  (isActive ? "text-accent bg-accent-900" : "text-neutral-300 hover:text-text");
+// PinToggleIcon mirrors the handoff's collapse-direction chevron: pinned
+// shows a left-pointing arrow (collapse), unpinned a right-pointing one
+// (expand) - not a thumbtack, and not the same icon both ways.
+function PinToggleIcon({ pinned }: { pinned: boolean }) {
+  return pinned ? <MdOutlineChevronLeft size={18} aria-hidden="true" /> : <MdOutlineChevronRight size={18} aria-hidden="true" />;
+}
 
-const DEV_ROLES: { value: Role; label: string }[] = [
-  { value: "owner", label: "Owner" },
-  { value: "operator", label: "Operator" },
-  { value: "viewer", label: "Viewer" },
-];
+// navJustify mirrors the handoff: nav items center their icon when the rail
+// is collapsed (72px) instead of staying left-padded - see
+// handoff-new-layout/Visao Geral.dc.html's `navJustify` prop.
+const makeNavItemClass =
+  (expanded: boolean) =>
+  ({ isActive }: { isActive: boolean }) =>
+    "flex h-9 items-center rounded-md px-3 text-sm transition-[background-color,color,gap] duration-200 ease-out " +
+    (expanded ? "justify-start gap-2.5" : "justify-center gap-0") + " " +
+    (isActive ? "text-accent bg-[rgba(90,70,199,0.08)]" : "text-text-muted hover:bg-sidebar-hover-bg");
 
+// Sidebar: collapsible 72px/240px shell nav (new-layout-migration, SHELL-02
+// through SHELL-06). Expands on hover, stays expanded while pinned
+// (useSidebarPin, T7). TenantSwitcher (T9) sits at the top; LogoutConfirmDialog
+// (T8) replaces the modal this file used to inline.
 export function Sidebar() {
-  const { admin, hasRole, logout, setDevRole } = useAuth();
-  const logoUrl = useBrandLogoUrl();
+  const { hasRole } = useAuth();
+  const { pinned, togglePinned } = useSidebarPin();
   const { t } = useTranslation();
   const location = useLocation();
   const navigate = useNavigate();
-  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [hovering, setHovering] = useState(false);
 
-  async function handleConfirmLogout() {
-    setConfirmOpen(false);
-    await logout();
-  }
+  const expanded = pinned || hovering;
 
   const domainsActive = location.pathname.startsWith("/domains") || location.pathname.startsWith("/status-pages");
+  // OVW-15/16: the standalone "Visão geral" item is active on both "/"
+  // (which redirects to /overview) and /overview itself.
+  const overviewActive = location.pathname === "/" || location.pathname.startsWith("/overview");
+
+  // Labels fade+grow in sync with the aside's own width transition instead
+  // of an instant sr-only swap - the previous binary toggle popped text in
+  // mid-transition, out of step with the width animation, which read as
+  // janky. overflow-hidden clips the growing max-width so text never
+  // wraps/overflows while it's still animating in.
+  const labelClass =
+    "overflow-hidden whitespace-nowrap transition-[opacity,max-width] duration-200 ease-out " +
+    (expanded ? "max-w-[170px] opacity-100" : "max-w-0 opacity-0");
+  const groupLabelClass =
+    "overflow-hidden whitespace-nowrap px-3 text-[10.5px] font-semibold uppercase tracking-wider text-text-muted " +
+    "transition-[opacity,max-height,padding] duration-200 ease-out " +
+    (expanded ? "max-h-[28px] pb-1 pt-3 opacity-100" : "max-h-0 py-0 opacity-0");
+  const navItemClass = makeNavItemClass(expanded);
+  const justifyClass = expanded ? "justify-start gap-2.5" : "justify-center gap-0";
 
   return (
-    <aside className="flex h-full w-[236px] shrink-0 flex-col border-r border-divider bg-bg px-3 py-4">
-      <div className="flex items-center gap-2 px-2 pb-4 mb-4 text-accent">
-        <img
-          src={logoUrl ?? vaneLogo}
-          alt={t("sidebar.brand")}
-          className="w-26 flex-none object-contain"
-        />
-      </div>
+    <aside
+      data-testid="sidebar"
+      onMouseEnter={() => setHovering(true)}
+      onMouseLeave={() => setHovering(false)}
+      className={
+        "flex h-full shrink-0 flex-col overflow-hidden border-r border-divider bg-sidebar-bg px-3 py-4 transition-[width] duration-200 ease-out " +
+        (expanded ? "w-[240px]" : "w-[72px]")
+      }
+    >
+      <TenantSwitcher expanded={expanded} />
 
-      <nav className="flex flex-col gap-0.5">
-        <NavLink to="/integrations" className={navItemClass}>
-          <IntegrationsIcon />
-          <span>{t("sidebar.integrations")}</span>
+      <div className="my-3 h-px bg-divider" />
+
+      <nav className="flex flex-col gap-0.5 overflow-y-auto">
+        <NavLink
+          to="/overview"
+          className={
+            "flex h-9 items-center rounded-md px-3 text-sm transition-[background-color,color,gap] duration-200 ease-out " +
+            justifyClass + " " +
+            (overviewActive ? "text-accent bg-[rgba(90,70,199,0.08)]" : "text-text-muted hover:bg-sidebar-hover-bg")
+          }
+        >
+          <OverviewIcon />
+          <span className={labelClass}>{t("sidebar.overview")}</span>
         </NavLink>
+        <div className={groupLabelClass}>{t("sidebar.groupMonitoring")}</div>
         <NavLink to="/services" className={navItemClass}>
           <ServicesIcon />
-          <span>{t("sidebar.services")}</span>
+          <span className={labelClass}>{t("sidebar.services")}</span>
         </NavLink>
         <button
           type="button"
           onClick={() => navigate("/domains")}
           className={
-            "flex h-9 cursor-pointer items-center gap-2.5 rounded-md px-3 text-left text-sm transition-colors " +
-            (domainsActive ? "text-accent bg-accent-900" : "text-neutral-300 hover:text-text")
+            "flex h-9 cursor-pointer items-center rounded-md px-3 text-left text-sm transition-[background-color,color,gap] duration-200 ease-out " +
+            justifyClass + " " +
+            (domainsActive ? "text-accent bg-[rgba(90,70,199,0.08)]" : "text-text-muted hover:bg-sidebar-hover-bg")
           }
         >
           <DomainsIcon />
-          <span>{t("sidebar.domainsStatusPages")}</span>
+          <span className={labelClass}>{t("sidebar.domainsStatusPages")}</span>
         </button>
         <NavLink to="/incidents" className={navItemClass}>
           <IncidentsIcon />
-          <span>{t("sidebar.incidents")}</span>
+          <span className={labelClass}>{t("sidebar.incidents")}</span>
         </NavLink>
+
+        <div className={groupLabelClass}>{t("sidebar.groupPlatform")}</div>
+        <NavLink to="/integrations" className={navItemClass}>
+          <IntegrationsIcon />
+          <span className={labelClass}>{t("sidebar.integrations")}</span>
+        </NavLink>
+        <NavLink to="/poller-status" className={navItemClass}>
+          <PollerIcon />
+          <span className={labelClass}>{t("sidebar.pollerStatus")}</span>
+        </NavLink>
+
+        <div className={groupLabelClass}>{t("sidebar.groupOrganization")}</div>
         {hasRole(["owner"]) ? (
           <NavLink to="/admins" className={navItemClass}>
             <AdminsIcon />
-            <span>{t("sidebar.admins")}</span>
+            <span className={labelClass}>{t("sidebar.admins")}</span>
           </NavLink>
         ) : null}
-        <NavLink to="/poller-status" className={navItemClass}>
-          <PollerIcon />
-          <span>{t("sidebar.pollerStatus")}</span>
+        {/* Billing showcase (billing-plans-page BILLPG-01): reachable by any
+            authenticated role, unlike Usuários/Configurações above - it's
+            read-only, nothing mutates. */}
+        <NavLink to="/billing" className={navItemClass}>
+          <BillingIcon />
+          <span className={labelClass}>{t("sidebar.billing")}</span>
         </NavLink>
-        {hasRole(["owner"]) ? (
-          <NavLink to="/settings" className={navItemClass}>
-            <SettingsIcon />
-            <span>{t("sidebar.settings")}</span>
-          </NavLink>
-        ) : null}
       </nav>
 
       <div className="mt-auto flex flex-col gap-2 pt-4">
         <div className="h-px bg-divider" />
 
-        {import.meta.env.DEV ? (
-          <div className="px-2 py-0.5">
-            <div className="mb-1.5 text-[10px] uppercase tracking-wider text-neutral-400 opacity-70">
-              {t("sidebar.viewingAs")}
-            </div>
-            <div className="flex w-full rounded-md border border-divider bg-bg p-0.5" role="radiogroup" aria-label={t("sidebar.viewingAs")}>
-              {DEV_ROLES.map((r) => {
-                const active = admin?.role === r.value;
-                return (
-                  <button
-                    key={r.value}
-                    type="button"
-                    role="radio"
-                    aria-checked={active}
-                    onClick={() => setDevRole(r.value)}
-                    className={
-                      "flex-1 cursor-pointer rounded-sm px-1 py-1.5 text-[10.5px] transition-colors " +
-                      (active ? "text-accent ring-1 ring-inset ring-accent" : "text-neutral-400 hover:text-text")
-                    }
-                  >
-                    {r.label}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        ) : null}
-
-        {admin ? (
-          <div className="px-2 py-1">
-            <div className="truncate text-[13px] font-medium text-text">{admin.name || admin.email}</div>
-            {admin.name ? <div className="truncate text-[11.5px] text-neutral-400">{admin.email}</div> : null}
-          </div>
+        {hasRole(["owner"]) ? (
+          <NavLink to="/settings" className={navItemClass}>
+            <SettingsIcon />
+            <span className={labelClass}>{t("sidebar.settings")}</span>
+          </NavLink>
         ) : null}
 
         <button
           type="button"
-          onClick={() => setConfirmOpen(true)}
-          className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-left text-[12.5px] text-text opacity-55 transition-opacity hover:opacity-80"
-        >
-          <LogoutIcon />
-          {t("sidebar.logout")}
-        </button>
-
-        <Dialog
-          open={confirmOpen}
-          onOpenChange={setConfirmOpen}
-          title={t("logoutDialog.title")}
-          description={t("logoutDialog.body")}
-          footer={
-            <>
-              <Button variant="secondary" onClick={() => setConfirmOpen(false)}>
-                {t("logoutDialog.cancel")}
-              </Button>
-              <Button variant="primary" onClick={handleConfirmLogout}>
-                {t("logoutDialog.confirm")}
-              </Button>
-            </>
+          onClick={togglePinned}
+          aria-pressed={pinned}
+          className={
+            "flex cursor-pointer items-center rounded-md px-3 py-1.5 text-left text-[12.5px] transition-[background-color,color,gap] duration-200 ease-out " +
+            justifyClass + " " +
+            (pinned ? "text-accent" : "text-text-muted hover:text-text")
           }
-        />
+        >
+          <PinToggleIcon pinned={pinned} />
+          <span className={labelClass}>{t("sidebar.pinMenu")}</span>
+        </button>
       </div>
     </aside>
   );

@@ -33,17 +33,17 @@ Don't report a task as complete without having actually run these.
 
 ### Integration test database — hard rule
 
-**Never run the integration test gate against `vane-dev-pg`** (or any database holding real/dev data the user cares about). Always spin up a disposable Postgres container for the gate and destroy it afterward:
+**Never run the integration test gate against `vane-dev-pg`** (or any database holding real/dev data the user cares about). Always spin up a disposable Postgres container for the gate and destroy it afterward. `make test-integration` runs exactly the block below against a fresh disposable container, so prefer it over hand-rolling the commands:
 
 ```bash
 docker run -d --rm --name vane-test-pg -p 5433:5432 \
   -e POSTGRES_USER=vane -e POSTGRES_PASSWORD=vane -e POSTGRES_DB=vane \
   postgres:16-alpine -c max_connections=300
-TEST_DATABASE_URL="postgres://vane:vane@localhost:5433/vane?sslmode=disable" go test -tags=integration ./...
+TEST_DATABASE_URL="postgres://vane:vane@localhost:5433/vane?sslmode=disable" go test -tags=integration -p 1 ./...
 docker stop vane-test-pg
 ```
 
-`max_connections=300` matters — the default 100 gets exhausted under `go test ./...`'s package parallelism. This has caused real dev-database pollution once already; treat it as non-negotiable.
+`-p 1` matters — every integration package shares the one `TEST_DATABASE_URL` database and several mutate the same singleton/shared tables, so parallel package test binaries race each other (401s, count mismatches). Run the gate against a disposable container, **fresh per run**: a few singleton tables aren't reset between successive runs against the same database. `max_connections=300` is kept because the suite's dedicated advisory-lock connections are connection-heavy. Never run this against `vane-dev-pg` or any database holding real/dev data the user cares about. This has caused real dev-database pollution once already; treat it as non-negotiable.
 
 ## 4. Backend rules
 
@@ -71,3 +71,4 @@ docker stop vane-test-pg
 - Treat database migrations, changes to auth/session handling, and anything touching TLS/CertMagic (`internal/tls`) as higher-risk — explain the change and, when in doubt, confirm before applying.
 - Never disable/bypass a security check (role enforcement, rate limiting, cookie flags) to "make something work" without flagging it explicitly and getting confirmation first.
 - Never run a destructive or data-mutating command (migrations, integration test gate, `docker compose down -v`, etc.) against a database the user didn't explicitly designate as disposable — see the integration test rule in section 3.
+- **Before `go run ./cmd/vane migrate up` (or any `db.MigrateUp`/`migrate` CLI invocation) against `DATABASE_URL`, print/check the host in that DSN first.** It must be `localhost`/`127.0.0.1` (the `dev-db` Docker Postgres from the Makefile). If it resolves to anything else — an RDS endpoint, a real hostname, a shared cluster — stop and confirm with the user before running; do not assume `.env` is correct just because it's gitignored. This happened once already: a migration meant for local Docker ran against the Starbem dev RDS instead, dropping `admins`/`company_settings` in place and breaking the live dev pod's login (incident 2026-09-10). Same check applies before any one-off `psql`/`migrate` command run by hand outside the Makefile.

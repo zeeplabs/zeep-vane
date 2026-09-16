@@ -24,42 +24,28 @@ func testDatabaseURL(t *testing.T) string {
 
 func newLogForTest(t *testing.T) (*Log, *db.Pool) {
 	t.Helper()
-	dsn := testDatabaseURL(t)
-
-	if err := db.MigrateUp(dsn, "../db/migrations"); err != nil {
-		t.Fatalf("MigrateUp() returned unexpected error: %v", err)
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	pool, err := db.NewPool(ctx, dsn)
-	if err != nil {
-		t.Fatalf("NewPool() returned unexpected error: %v", err)
-	}
-	t.Cleanup(pool.Close)
-
+	pool := newTenantScopedTestPool(t, "../db/migrations")
 	return NewLog(pool), pool
 }
 
-func createTestAdminForAudit(t *testing.T, pool *db.Pool) *db.Admin {
+func createTestAdminForAudit(t *testing.T, pool *db.Pool) *db.User {
 	t.Helper()
 	ctx := context.Background()
 
-	// db.AdminRepository.Create always inserts with the `admins.role`
-	// column's database default, which is `owner` (migration 0009) -
+	// Creating identity rows here races other packages' bulk clears of the
+	// shared `users` table -
 	// this transiently creates a real owner-role row in the shared
 	// `admins` table. `go test ./...` runs internal/audit, internal/db,
 	// internal/api, and internal/cli as separate concurrent processes
 	// against the same TEST_DATABASE_URL, so an unlocked create here can
 	// corrupt another package's owner-count-sensitive test mid-window.
-	// See dbtest.LockAdminsTable's doc comment.
-	dbtest.LockAdminsTable(t, ctx, testDatabaseURL(t))
+	// See dbtest.LockUsersTable's doc comment.
+	dbtest.LockUsersTable(t, ctx, testDatabaseURL(t))
 
-	admins := db.NewAdminRepository(pool)
+	admins := db.NewUserRepository(pool)
 	email := fmt.Sprintf("audit-log-test-%d@example.com", time.Now().UnixNano())
 
-	admin := &db.Admin{Email: email, PasswordHash: "hash"}
+	admin := &db.User{Email: email, PasswordHash: "hash"}
 	if err := admins.Create(ctx, admin); err != nil {
 		t.Fatalf("admins.Create() returned unexpected error: %v", err)
 	}
@@ -73,7 +59,7 @@ func TestLog_Record_InsertsRowWithTimestamp(t *testing.T) {
 	target := createTestAdminForAudit(t, pool)
 	t.Cleanup(func() {
 		_, _ = pool.Exec(ctx, "DELETE FROM admin_audit_log WHERE actor_id = $1", actor.ID)
-		_, _ = pool.Exec(ctx, "DELETE FROM admins WHERE id IN ($1, $2)", actor.ID, target.ID)
+		_, _ = pool.Exec(ctx, "DELETE FROM users WHERE id IN ($1, $2)", actor.ID, target.ID)
 	})
 
 	before := time.Now().Add(-1 * time.Second)
@@ -118,7 +104,7 @@ func TestLog_Record_SurvivesReferencedAdminRemoval(t *testing.T) {
 
 	// Remove both referenced admins - the audit row must not be cascaded
 	// away, since it is the historical record of the removal itself.
-	if _, err := pool.Exec(ctx, "DELETE FROM admins WHERE id IN ($1, $2)", actor.ID, target.ID); err != nil {
+	if _, err := pool.Exec(ctx, "DELETE FROM users WHERE id IN ($1, $2)", actor.ID, target.ID); err != nil {
 		t.Fatalf("deleting referenced admins returned unexpected error: %v", err)
 	}
 
@@ -132,4 +118,41 @@ func TestLog_Record_SurvivesReferencedAdminRemoval(t *testing.T) {
 	if count != 1 {
 		t.Errorf("admin_audit_log rows for removed admin = %d, want 1 (row must survive admin deletion)", count)
 	}
+}
+
+// newTenantScopedTestPool returns a migrated pool whose every connection
+// has app.tenant_id preset (at session level, via the connection's
+// `options` parameter) to a throwaway fixture tenant. Every tenant-scoped
+// table's tenant_id defaults from current_setting('app.tenant_id', true)
+// and is NOT NULL since 0024, so a fixture INSERT made outside a tenant
+// context is rejected.
+func newTenantScopedTestPool(t *testing.T, migrationsDir string) *db.Pool {
+	t.Helper()
+	dsn := testDatabaseURL(t)
+	if err := db.MigrateUp(dsn, migrationsDir); err != nil {
+		t.Fatalf("MigrateUp() returned unexpected error: %v", err)
+	}
+
+	ctx := context.Background()
+	bootstrapPool, err := db.NewPool(ctx, dsn)
+	if err != nil {
+		t.Fatalf("NewPool() returned unexpected error: %v", err)
+	}
+	var tenantID string
+	if err := bootstrapPool.QueryRow(ctx, "INSERT INTO tenants (name) VALUES ($1) RETURNING id", "fixture-tenant").Scan(&tenantID); err != nil {
+		bootstrapPool.Close()
+		t.Fatalf("seeding fixture tenant returned unexpected error: %v", err)
+	}
+	bootstrapPool.Close()
+
+	pool, err := db.NewPool(ctx, dbtest.TenantScopedDSN(dsn, tenantID))
+	if err != nil {
+		t.Fatalf("NewPool() (tenant-scoped) returned unexpected error: %v", err)
+	}
+	t.Cleanup(pool.Close)
+	t.Cleanup(func() {
+		_, _ = pool.Exec(context.Background(), "DELETE FROM tenants WHERE id = $1", tenantID)
+	})
+
+	return pool
 }

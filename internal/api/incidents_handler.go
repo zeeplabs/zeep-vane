@@ -11,6 +11,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/zeeplabs/zeep-vane/internal/db"
+	"github.com/zeeplabs/zeep-vane/internal/notify"
 )
 
 // incidentsPageSize is the fixed page size for both /api/incidents and
@@ -23,27 +24,72 @@ const incidentsPageSize = 25
 type incidentCreator interface {
 	Create(ctx context.Context, incident *db.Incident, serviceIDs []string) error
 	ListPaginated(ctx context.Context, page, pageSize int) ([]db.Incident, int, error)
-	AddUpdate(ctx context.Context, incidentID, body string) (*db.IncidentUpdate, error)
+	AddUpdate(ctx context.Context, incidentID, body string, authorID *string, isAISummary bool) (*db.IncidentUpdate, error)
 	ListUpdatesPaginated(ctx context.Context, incidentID string, page, pageSize int) ([]db.IncidentUpdate, int, error)
 	Transition(ctx context.Context, incidentID, status string) (*db.Incident, error)
 	ConfirmPendingClose(ctx context.Context, incidentID, expectedComment string) (*db.Incident, error)
 	DiscardCloseProposal(ctx context.Context, incidentID string) error
+	SetSeverity(ctx context.Context, incidentID, severity string) (*db.Incident, error)
+}
+
+// incidentNotifier is the subset of *notify.Service the incidents handler
+// depends on for lifecycle email notifications (notification-preferences
+// NOTIFPREF-04/07).
+type incidentNotifier interface {
+	NotifyIncidentOpened(ctx context.Context, tenantID string, summary notify.IncidentSummary) error
+	NotifyIncidentResolved(ctx context.Context, tenantID string, summary notify.IncidentSummary) error
 }
 
 // IncidentsHandler serves the incident admin routes.
 type IncidentsHandler struct {
 	incidents incidentCreator
+	notify    incidentNotifier
 	logger    *zap.Logger
 }
 
 // NewIncidentsHandler builds an IncidentsHandler backed by incidents.
-func NewIncidentsHandler(incidents incidentCreator, logger *zap.Logger) *IncidentsHandler {
-	return &IncidentsHandler{incidents: incidents, logger: logger}
+func NewIncidentsHandler(incidents incidentCreator, notifier incidentNotifier, logger *zap.Logger) *IncidentsHandler {
+	return &IncidentsHandler{incidents: incidents, notify: notifier, logger: logger}
+}
+
+// notifyIncidentOpened fires the incident-opened notification for a
+// just-created incident. It is best-effort: a lookup or send failure is logged
+// and never changes the incident response (spec's non-fatal requirement).
+func (h *IncidentsHandler) notifyIncidentOpened(ctx context.Context, incident *db.Incident) {
+	h.notifyIncident(ctx, incident, false)
+}
+
+// notifyIncidentResolved fires the incident-resolved notification.
+func (h *IncidentsHandler) notifyIncidentResolved(ctx context.Context, incident *db.Incident) {
+	h.notifyIncident(ctx, incident, true)
+}
+
+func (h *IncidentsHandler) notifyIncident(ctx context.Context, incident *db.Incident, resolved bool) {
+	tenantID, ok := ActiveTenantIDFromContext(ctx)
+	if !ok || h.notify == nil {
+		return
+	}
+	summary := notify.IncidentSummary{
+		IncidentID: incident.ID,
+		Title:      incident.Title,
+		Severity:   incident.Severity,
+	}
+	var err error
+	if resolved {
+		err = h.notify.NotifyIncidentResolved(ctx, tenantID, summary)
+	} else {
+		err = h.notify.NotifyIncidentOpened(ctx, tenantID, summary)
+	}
+	if err != nil {
+		h.logger.Error("incidents: failed to send incident notification", zap.Error(err))
+	}
 }
 
 type createIncidentRequest struct {
-	Title      string   `json:"title"`
-	ServiceIDs []string `json:"service_ids"`
+	Title       string   `json:"title"`
+	ServiceIDs  []string `json:"service_ids"`
+	Severity    string   `json:"severity"`
+	Description string   `json:"description"`
 }
 
 type incidentResponse struct {
@@ -60,12 +106,22 @@ type incidentResponse struct {
 	Description         *string `json:"description"`
 	PendingCloseComment *string `json:"pending_close_comment"`
 	AutoCreated         bool    `json:"auto_created"`
+	// Severity is one of "minor"/"moderate"/"critical" (INCSEV-01).
+	Severity string `json:"severity"`
 }
 
 const invalidIncidentRequestBody = `{"error":"title and at least one service_id are required"}`
+const invalidIncidentSeverityBody = `{"error":"severity must be one of minor, moderate, critical"}`
+
+var validIncidentSeverities = map[string]bool{
+	"minor":    true,
+	"moderate": true,
+	"critical": true,
+}
 
 // Create handles POST /api/incidents, creating an incident bound to one or
-// more services (SP-16).
+// more services (SP-16), with a required severity (INCSEV-01/02) and an
+// optional initial description (INCSEV-03).
 func (h *IncidentsHandler) Create(w http.ResponseWriter, r *http.Request) {
 	var req createIncidentRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Title == "" || len(req.ServiceIDs) == 0 {
@@ -74,14 +130,26 @@ func (h *IncidentsHandler) Create(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte(invalidIncidentRequestBody))
 		return
 	}
+	if !validIncidentSeverities[req.Severity] {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusUnprocessableEntity)
+		_, _ = w.Write([]byte(invalidIncidentSeverityBody))
+		return
+	}
 
-	incident := &db.Incident{Title: req.Title}
+	incident := &db.Incident{Title: req.Title, Severity: req.Severity}
+	// An empty description on create stores NULL, matching SetDescription's
+	// existing NULL/absent convention (spec.md edge case).
+	if req.Description != "" {
+		incident.Description = &req.Description
+	}
 	if err := h.incidents.Create(r.Context(), incident, req.ServiceIDs); err != nil {
 		h.logger.Error("incidents: failed to create incident", zap.Error(err))
 		writeInternalError(w)
 		return
 	}
 	incident.ServiceIDs = req.ServiceIDs
+	h.notifyIncidentOpened(r.Context(), incident)
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
@@ -116,6 +184,10 @@ type incidentUpdateResponse struct {
 	IncidentID string    `json:"incident_id"`
 	Body       string    `json:"body"`
 	CreatedAt  time.Time `json:"created_at"`
+	// AuthorID and IsAISummary attribute the entry to a human or the AI
+	// (INCSEV-05/06).
+	AuthorID    *string `json:"author_id"`
+	IsAISummary bool    `json:"is_ai_summary"`
 }
 
 type addIncidentUpdateRequest struct {
@@ -126,10 +198,17 @@ const invalidIncidentUpdateRequestBody = `{"error":"body is required"}`
 const incidentNotFoundBody = `{"error":"incident not found"}`
 
 // AddUpdate handles POST /api/incidents/{id}/updates, appending an update to
-// the incident's timeline and returning the full timeline, most recent
-// first (SP-17). It returns 404 if the incident doesn't exist.
+// the incident's timeline - attributed to the authenticated actor
+// (INCSEV-05) - and returning the full timeline, most recent first (SP-17).
+// It returns 404 if the incident doesn't exist.
 func (h *IncidentsHandler) AddUpdate(w http.ResponseWriter, r *http.Request) {
 	incidentID := chi.URLParam(r, "id")
+
+	actor, ok := UserFromContext(r.Context())
+	if !ok {
+		writeForbidden(w)
+		return
+	}
 
 	var req addIncidentUpdateRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Body == "" {
@@ -139,7 +218,7 @@ func (h *IncidentsHandler) AddUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if _, err := h.incidents.AddUpdate(r.Context(), incidentID, req.Body); err != nil {
+	if _, err := h.incidents.AddUpdate(r.Context(), incidentID, req.Body, &actor.ID, false); err != nil {
 		if errors.Is(err, db.ErrNotFound) {
 			writeIncidentNotFound(w)
 			return
@@ -163,7 +242,7 @@ func (h *IncidentsHandler) AddUpdate(w http.ResponseWriter, r *http.Request) {
 
 	resp := make([]incidentUpdateResponse, len(updates))
 	for i, update := range updates {
-		resp[i] = incidentUpdateResponse{ID: update.ID, IncidentID: update.IncidentID, Body: update.Body, CreatedAt: update.CreatedAt}
+		resp[i] = incidentUpdateResponse{ID: update.ID, IncidentID: update.IncidentID, Body: update.Body, CreatedAt: update.CreatedAt, AuthorID: update.AuthorID, IsAISummary: update.IsAISummary}
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -191,7 +270,7 @@ func (h *IncidentsHandler) ListUpdates(w http.ResponseWriter, r *http.Request) {
 
 	resp := make([]incidentUpdateResponse, len(updates))
 	for i, update := range updates {
-		resp[i] = incidentUpdateResponse{ID: update.ID, IncidentID: update.IncidentID, Body: update.Body, CreatedAt: update.CreatedAt}
+		resp[i] = incidentUpdateResponse{ID: update.ID, IncidentID: update.IncidentID, Body: update.Body, CreatedAt: update.CreatedAt, AuthorID: update.AuthorID, IsAISummary: update.IsAISummary}
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -236,6 +315,10 @@ func (h *IncidentsHandler) Transition(w http.ResponseWriter, r *http.Request) {
 		h.logger.Error("incidents: failed to transition incident", zap.Error(err))
 		writeInternalError(w)
 		return
+	}
+
+	if req.Status == "resolved" {
+		h.notifyIncidentResolved(r.Context(), incident)
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -292,6 +375,42 @@ func (h *IncidentsHandler) ConfirmClose(w http.ResponseWriter, r *http.Request) 
 			return
 		}
 		h.logger.Error("incidents: failed to confirm pending close", zap.Error(err))
+		writeInternalError(w)
+		return
+	}
+
+	h.notifyIncidentResolved(r.Context(), incident)
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(toIncidentResponse(incident))
+}
+
+type setIncidentSeverityRequest struct {
+	Severity string `json:"severity"`
+}
+
+// SetSeverity handles PATCH /api/incidents/{id}/severity, changing an
+// incident's severity independent of its status (INCSEV-04). Returns 422 for
+// an invalid severity, 404 if the incident doesn't exist.
+func (h *IncidentsHandler) SetSeverity(w http.ResponseWriter, r *http.Request) {
+	incidentID := chi.URLParam(r, "id")
+
+	var req setIncidentSeverityRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || !validIncidentSeverities[req.Severity] {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusUnprocessableEntity)
+		_, _ = w.Write([]byte(invalidIncidentSeverityBody))
+		return
+	}
+
+	incident, err := h.incidents.SetSeverity(r.Context(), incidentID, req.Severity)
+	if err != nil {
+		if errors.Is(err, db.ErrNotFound) {
+			writeIncidentNotFound(w)
+			return
+		}
+		h.logger.Error("incidents: failed to set incident severity", zap.Error(err))
 		writeInternalError(w)
 		return
 	}
@@ -353,6 +472,7 @@ func toIncidentResponse(incident *db.Incident) incidentResponse {
 		ServiceIDs:          serviceIDs,
 		Description:         incident.Description,
 		PendingCloseComment: incident.PendingCloseComment,
+		Severity:            incident.Severity,
 		AutoCreated:         incident.AutoCreated,
 	}
 }

@@ -46,6 +46,27 @@
       content="Connects your Datadog SLOs to public status pages with automatic TLS, incident management, and role-based admin access — self-hosted, open source."
     />
     <meta name="twitter:image" content="/og-image.png" />
+
+    <!--
+      Theme-boot: applies a persisted theme before React mounts, so the
+      first paint never flashes the opposite theme (new-layout-migration,
+      SHELL-05/SHELL-07). Reads the same "vane:theme" localStorage key
+      useThemeToggle reads/writes at runtime. Wrapped in try/catch - a
+      throw (private-mode restriction, quota) is swallowed and the app
+      boots with the light default, matching the Edge Case in spec.md.
+    -->
+    <script>
+      (function () {
+        try {
+          var stored = window.localStorage.getItem("vane:theme");
+          if (stored === "dark") {
+            document.documentElement.dataset.theme = "dark";
+          }
+        } catch (e) {
+          // localStorage unavailable - fall back to the light default.
+        }
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

@@ -63,6 +63,25 @@ type serviceLister interface {
 	List(ctx context.Context) ([]db.Service, error)
 }
 
+// tenantLister is the subset of *db.TenantRepository the poller depends on
+// to discover which tenants to iterate (T15, TENANT-04) - never a
+// BYPASSRLS role, one tenant's app.tenant_id set at a time via TenantTxFunc.
+type tenantLister interface {
+	List(ctx context.Context) ([]db.Tenant, error)
+}
+
+// TenantTxFunc opens a transaction scoped to tenantID's RLS session
+// (app.tenant_id) and returns a context carrying it - every repository
+// call issued against the returned context runs on that same transaction,
+// so RLS's session settings apply (see db.WithTenantTx) - plus functions to
+// commit or roll it back. The poller depends on this function type rather
+// than *db.Pool directly (TENANT-04: iterate tenants one at a time via a
+// real transaction per tenant, never a role that bypasses RLS), which also
+// lets this package's own unit tests fake tenant iteration without a
+// database connection. Production wires it to Pool.BeginTenantTx via
+// cli.poolTenantTx (internal/cli/serve.go).
+type TenantTxFunc func(ctx context.Context, tenantID string) (tenantCtx context.Context, commit func(context.Context) error, rollback func(context.Context), err error)
+
 // serviceStatusUpdater is the subset of *db.ServiceRepository the poller
 // depends on to persist a service's newly observed status.
 type serviceStatusUpdater interface {
@@ -99,6 +118,13 @@ type Poller struct {
 	interval        time.Duration
 	analyzer        *SLOAnalyzer
 	logger          *zap.Logger
+
+	// tenants/tenantTx enable per-tenant iteration (T15, TENANT-04) when
+	// both are set via EnableTenantIteration; nil (the default for every
+	// existing NewPoller caller) preserves the original single
+	// ambient-context poll cycle unchanged.
+	tenants  tenantLister
+	tenantTx TenantTxFunc
 
 	// breachStreak tracks, per service ID, how many consecutive cycles in a
 	// row Datadog has reported "breached" for that service's most recent
@@ -141,7 +167,7 @@ func (p *Poller) Run(ctx context.Context) {
 	case <-ctx.Done():
 		return
 	default:
-		p.pollOnce(ctx)
+		p.pollCycle(ctx)
 	}
 
 	ticker := time.NewTicker(p.interval)
@@ -152,8 +178,77 @@ func (p *Poller) Run(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			p.pollOnce(ctx)
+			p.pollCycle(ctx)
 		}
+	}
+}
+
+// EnableTenantIteration wires per-tenant iteration into this Poller
+// (T15, TENANT-04): once both are set, every subsequent pollCycle
+// enumerates tenants.List and processes each one's services inside its own
+// tenant-scoped transaction (tenantTx), never a single ambient/shared
+// session. Production calls this from newPollerFromStoredIntegration
+// (internal/cli/serve.go) with db.SystemTenantLister and cli.poolTenantTx.
+func (p *Poller) EnableTenantIteration(tenants tenantLister, tenantTx TenantTxFunc) {
+	p.tenants = tenants
+	p.tenantTx = tenantTx
+}
+
+// TenantIterationEnabled reports whether EnableTenantIteration has wired
+// both a tenant lister and a tenant transaction opener, i.e. whether
+// pollCycle iterates tenants instead of falling back to the single
+// ambient-context poll. Exported so the production construction path
+// (internal/cli) can be asserted on from its own package's tests rather
+// than only being verifiable by reading the code.
+func (p *Poller) TenantIterationEnabled() bool {
+	return p.tenants != nil && p.tenantTx != nil
+}
+
+// pollCycle runs one polling cycle. When tenant iteration is enabled
+// (EnableTenantIteration), it enumerates every tenant tenants.List returns
+// and runs pollOnce once per tenant, each inside that tenant's own
+// app.tenant_id-scoped transaction (TENANT-04) - a tenant with zero
+// services configured is skipped without error, since pollOnce's own loop
+// over an empty service list is already a no-op. Otherwise it falls back
+// to the single ambient-context behavior pollOnce always had, unchanged
+// for every existing caller of NewPoller.
+//
+// Each tenant's transaction (and the Datadog calls pollOnce makes while it
+// is open, per AD-024's trade-off note) is bounded to p.interval so one
+// slow/hanging tenant can never hold its connection past the next tick -
+// worst case that tenant's cycle is cut short and retried next interval,
+// it never blocks the tenants after it in the same cycle indefinitely.
+func (p *Poller) pollCycle(ctx context.Context) {
+	if p.tenants == nil || p.tenantTx == nil {
+		p.pollOnce(ctx)
+		return
+	}
+
+	tenants, err := p.tenants.List(ctx)
+	if err != nil {
+		p.logger.Error("poller: failed to list tenants", zap.Error(err))
+		return
+	}
+
+	for _, tenant := range tenants {
+		tenantCtx, cancel := context.WithTimeout(ctx, p.interval)
+
+		tenantTxCtx, commit, rollback, err := p.tenantTx(tenantCtx, tenant.ID)
+		if err != nil {
+			p.logger.Error("poller: failed to begin tenant transaction", zap.String("tenant_id", tenant.ID), zap.Error(err))
+			cancel()
+			continue
+		}
+		tenantCtx = tenantTxCtx
+		tenantCtx = withTenantID(tenantCtx, tenant.ID)
+
+		p.pollOnce(tenantCtx)
+
+		if err := commit(tenantCtx); err != nil {
+			p.logger.Error("poller: failed to commit tenant transaction", zap.String("tenant_id", tenant.ID), zap.Error(err))
+			rollback(tenantCtx)
+		}
+		cancel()
 	}
 }
 
@@ -176,6 +271,15 @@ func (p *Poller) pollOnce(ctx context.Context) {
 	var anySuccess bool
 	var lastErr error
 	for _, svc := range services {
+		// A polling-manual service (manual-polling-monitoring) has no
+		// SLOID at all - it is checked by poller.ManualScheduler instead,
+		// never by this Datadog-specific poller (design.md: "zero change
+		// to the existing Datadog poll path"). services.List is
+		// intentionally unfiltered (Overview/digest still need every
+		// service), so this poller must filter it out itself.
+		if svc.MonitorMode == "polling" {
+			continue
+		}
 		if err := p.pollService(ctx, svc); err != nil {
 			lastErr = err
 			continue
@@ -221,10 +325,16 @@ func (p *Poller) pollService(ctx context.Context, svc db.Service) error {
 		// previous status forward rather than let a handful of requests
 		// flip the public page (AD-019).
 		current = svc.CurrentStatus
-	case status.State == "breached":
-		// Hysteresis (AD-019 addendum, breachHysteresisCycles): a single
-		// breached window is not enough to commit to "outage" - see the
-		// constant's doc comment for why. Carry the previous status forward
+	case status.Target <= 0:
+		// The response carried no usable threshold, so no honest
+		// window-rescaled bound can be computed - fall back to the
+		// pre-AD-019-addendum-4 state-based classification, unchanged.
+		current = p.classifyByState(status, svc)
+	case status.SLI < breachBound(status.Target, status.RequestCount, breachThresholdSigmas):
+		// Breach decided by the window's own SLI against a bound rescaled
+		// to its width, never by Datadog's fixed-timeframe overall.state
+		// (AD-019 addendum 4). Hysteresis (breachHysteresisCycles) still
+		// absorbs single-window noise: carry the previous status forward
 		// until the streak clears the threshold, then latch to "outage".
 		p.breachStreak[svc.ID]++
 		if p.breachStreak[svc.ID] >= breachHysteresisCycles {
@@ -232,6 +342,11 @@ func (p *Poller) pollService(ctx context.Context, svc db.Service) error {
 		} else {
 			current = svc.CurrentStatus
 		}
+	case status.State == "warning" || status.State == "breached" || status.SLI < status.Target:
+		// Below the SLO's own target but inside the sampling band: a real
+		// signal of degradation, not enough evidence for "outage".
+		p.breachStreak[svc.ID] = 0
+		current = "degraded"
 	default:
 		p.breachStreak[svc.ID] = 0
 		current = normalizeStatus(status.State)
@@ -269,10 +384,31 @@ func (p *Poller) pollService(ctx context.Context, svc db.Service) error {
 	return nil
 }
 
+// classifyByState is the pre-AD-019-addendum-4 classification, used only
+// when the SLO response carries no usable target (Target <= 0) and a
+// window-rescaled bound therefore cannot be computed. It preserves the old
+// behavior exactly: a single breached window carries the previous status
+// forward, breachHysteresisCycles consecutive breaches flip to "outage",
+// and anything else maps through normalizeStatus. Factored out so the
+// fallback is demonstrably the old logic rather than a near-copy.
+func (p *Poller) classifyByState(status datadog.SLOStatus, svc db.Service) string {
+	if status.State != "breached" {
+		p.breachStreak[svc.ID] = 0
+		return normalizeStatus(status.State)
+	}
+
+	p.breachStreak[svc.ID]++
+	if p.breachStreak[svc.ID] >= breachHysteresisCycles {
+		return "outage"
+	}
+	return svc.CurrentStatus
+}
+
 // normalizeStatus maps a Datadog SLO state to vane's Service.CurrentStatus
 // values (SP-06/SP-07). Documents the full mapping for every state Datadog
 // can report, but pollService itself never reaches the "breached" case
-// below: it intercepts status.State == "breached" earlier to apply
+// below: it intercepts breached windows earlier (via breachBound, or via
+// classifyByState when the response carries no target) to apply
 // breachHysteresisCycles, so this function only ever actually sees "ok"/
 // "warning"/anything else in production. Kept here (not deleted) so the
 // mapping stays complete and self-documenting, and so a future caller that

@@ -2,6 +2,9 @@ package cli
 
 import (
 	"context"
+	"net/url"
+	"os"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -19,8 +22,43 @@ import (
 // test-only keys (727100001-727100003) - see internal/pglock's own doc
 // comment for the full namespace rationale - so a production poller lock
 // can never collide with (and deadlock against) a test-only one sharing
-// the same database.
-const pollerLeaderLockKey int64 = 727200001
+// the same database. Exported as db.PollerLeaderLockKey so
+// PollerLeadershipRepository (poller-status-real-state, POLLST-01) can
+// query pg_locks for the same key without an import cycle; kept as a local
+// alias here so this file's existing references don't all need rewriting.
+const pollerLeaderLockKey = db.PollerLeaderLockKey
+
+// replicaApplicationName identifies this replica in
+// pg_stat_activity.application_name (poller-status-real-state POLLST-01/03),
+// sourced from HOSTNAME - which Kubernetes sets to the pod name - falling
+// back to a fixed placeholder outside Kubernetes so the admin UI never
+// renders a blank replica name.
+func replicaApplicationName() string {
+	if h := os.Getenv("HOSTNAME"); h != "" {
+		return h
+	}
+	return "unknown"
+}
+
+// dsnWithApplicationName appends application_name=name to dsn, so the
+// connection this DSN opens is identifiable in
+// pg_stat_activity.application_name. Falls back to raw query-string
+// concatenation when dsn doesn't parse as a URL (e.g. a keyword/value DSN) -
+// Postgres accepts application_name as either a URL query parameter or a
+// keyword/value pair, so appending it as "key=value" text works either way.
+func dsnWithApplicationName(dsn, name string) string {
+	if u, err := url.Parse(dsn); err == nil && u.Scheme != "" {
+		q := u.Query()
+		q.Set("application_name", name)
+		u.RawQuery = q.Encode()
+		return u.String()
+	}
+	sep := " "
+	if strings.HasSuffix(strings.TrimSpace(dsn), "=") || dsn == "" {
+		sep = ""
+	}
+	return dsn + sep + "application_name='" + name + "'"
+}
 
 // defaultLeaderRetryInterval controls how often a non-leader replica
 // retries acquiring the poller leadership lock.
@@ -54,6 +92,19 @@ type PollerManager struct {
 	dsn       string
 	cancel    context.CancelFunc
 	done      chan struct{}
+
+	// manualCancel/manualDone track the running poller.ManualScheduler - a
+	// second, independent start/stop pair alongside cancel/done for the
+	// Datadog poller (manual-polling-monitoring design.md Approach
+	// Exploration). Deliberately not folded into cancel/done or into
+	// Restart's own lifecycle: Restart is also called directly by
+	// IntegrationsHandler.ConnectDatadog on every Datadog credential
+	// connect/rotate, and the manual scheduler has no credentials to
+	// rotate - it must not be torn down/rebuilt (losing its in-memory
+	// per-service failure-streak state) every time an admin merely
+	// reconnects Datadog.
+	manualCancel context.CancelFunc
+	manualDone   chan struct{}
 
 	// leaderRetryInterval/leaderHeartbeatInterval default to
 	// defaultLeaderRetryInterval/defaultLeaderHeartbeatInterval in
@@ -116,7 +167,7 @@ func (m *PollerManager) RunLeaderLoop(ctx context.Context) {
 			return
 		}
 
-		handle, ok, err := pglock.TryAcquire(ctx, m.dsn, pollerLeaderLockKey)
+		handle, ok, err := pglock.TryAcquire(ctx, dsnWithApplicationName(m.dsn, replicaApplicationName()), pollerLeaderLockKey)
 		if err != nil {
 			m.logger.Warn("poller leader election: failed to attempt lock acquisition, retrying", zap.Error(err))
 			if !sleepOrDone(ctx, m.leaderRetryInterval) {
@@ -134,6 +185,14 @@ func (m *PollerManager) RunLeaderLoop(ctx context.Context) {
 
 		m.logger.Info("poller leader election: acquired leadership")
 		m.leading.Store(true)
+
+		// Started unconditionally, in parallel to (not inside) Restart:
+		// the manual scheduler has nothing to do with whether a Datadog
+		// integration is connected (manual-polling-monitoring design.md -
+		// polling-manual services must work in an install with zero
+		// Datadog integration configured).
+		m.startManualScheduler()
+
 		if started, err := m.Restart(ctx); err != nil {
 			m.logger.Error("poller leader election: failed to start poller after acquiring leadership", zap.Error(err))
 		} else if !started {
@@ -154,6 +213,7 @@ func (m *PollerManager) RunLeaderLoop(ctx context.Context) {
 		m.mu.Lock()
 		m.leading.Store(false)
 		m.stopLocked()
+		m.stopManualLocked()
 		m.mu.Unlock()
 		_ = handle.Release(context.Background())
 
@@ -263,6 +323,7 @@ func (m *PollerManager) Stop() {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.stopLocked()
+	m.stopManualLocked()
 }
 
 // stopLocked cancels and waits for the currently running poller, if any.
@@ -275,4 +336,46 @@ func (m *PollerManager) stopLocked() {
 	<-m.done
 	m.cancel = nil
 	m.done = nil
+}
+
+// startManualScheduler builds and starts a poller.ManualScheduler, tracking
+// it in manualCancel/manualDone. It is idempotent - a call while one is
+// already tracked as running is a no-op, since RunLeaderLoop only calls this
+// once per leadership term (right after acquiring the lock), and this
+// scheduler is never restarted by Restart (see manualCancel's own doc
+// comment). Uses m.parentCtx (not the ctx passed to RunLeaderLoop) as the
+// scheduler's parent context, exactly like Restart does for the Datadog
+// poller - the server's own lifetime context, not whatever the caller's ctx
+// happens to be.
+func (m *PollerManager) startManualScheduler() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if m.manualCancel != nil {
+		return
+	}
+
+	scheduler := newManualSchedulerFromPool(m.pool, m.logger)
+
+	runCtx, cancel := context.WithCancel(m.parentCtx)
+	done := make(chan struct{})
+	m.manualCancel = cancel
+	m.manualDone = done
+
+	go func() {
+		defer close(done)
+		scheduler.Run(runCtx)
+	}()
+}
+
+// stopManualLocked cancels and waits for the currently running manual
+// scheduler, if any. Callers must hold m.mu.
+func (m *PollerManager) stopManualLocked() {
+	if m.manualCancel == nil {
+		return
+	}
+	m.manualCancel()
+	<-m.manualDone
+	m.manualCancel = nil
+	m.manualDone = nil
 }

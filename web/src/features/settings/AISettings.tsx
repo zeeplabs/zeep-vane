@@ -90,7 +90,7 @@ export function AISettings() {
         <p className="m-0 text-[13.5px] text-neutral-400">{t("aiSettings.subtitle")}</p>
       </div>
 
-      <Card elevation="elev-sm" className="flex flex-col gap-3 p-4">
+      <Card elevation="none" className="border border-divider flex flex-col gap-3 p-4">
         <div className="flex items-center gap-3">
           <div className="flex-1">
             <div className="text-[15px] font-medium text-text">{t("aiSettings.providerLabel")}</div>

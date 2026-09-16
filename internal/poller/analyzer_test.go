@@ -12,6 +12,7 @@ import (
 	"github.com/zeeplabs/zeep-vane/internal/connectors/datadog"
 	"github.com/zeeplabs/zeep-vane/internal/db"
 	"github.com/zeeplabs/zeep-vane/internal/llm"
+	"github.com/zeeplabs/zeep-vane/internal/notify"
 )
 
 // fakeIncidentStore is a no-network, no-DB fake of incidentStore that
@@ -620,5 +621,98 @@ func TestSLOAnalyzer_HandleTransition_ReturnsWellBeforeBlockedLLMCallUnblocks(t 
 
 	if elapsed > 200*time.Millisecond {
 		t.Errorf("HandleTransition() took %v, want well under the 5s timeout (blocked LLM call must not delay the caller)", elapsed)
+	}
+}
+
+// recordingIncidentNotifier is an incidentNotifier double recording the
+// auto-created incident-opened notifications the analyzer fires.
+type recordingIncidentNotifier struct {
+	tenants   []string
+	summaries []notify.IncidentSummary
+	err       error
+}
+
+func (n *recordingIncidentNotifier) NotifyIncidentOpened(_ context.Context, tenantID string, summary notify.IncidentSummary) error {
+	n.tenants = append(n.tenants, tenantID)
+	n.summaries = append(n.summaries, summary)
+	return n.err
+}
+
+// TestSLOAnalyzer_AutoCreatedOutage_NotifiesIncidentOpened covers the
+// notification-preferences edge case: an incident auto-created by the analyzer
+// (not via the HTTP handler) still fires the incident-opened notification,
+// scoped to the poll cycle's tenant.
+func TestSLOAnalyzer_AutoCreatedOutage_NotifiesIncidentOpened(t *testing.T) {
+	incidents := &fakeIncidentStore{openIncidents: map[string]string{}}
+	notifier := &recordingIncidentNotifier{}
+	a := newTestAnalyzer(incidents, &fakeStatusAnalysisWriter{}, &fakeLLMGenerator{}, time.Second)
+	a.SetNotifier(notifier)
+
+	ctx := withTenantID(context.Background(), "tenant-1")
+	a.HandleTransition(ctx, db.Service{ID: "svc-1", Name: "API"}, "operational", "outage", datadog.SLOStatus{})
+
+	if len(notifier.tenants) != 1 {
+		t.Fatalf("notifications fired = %d, want exactly 1", len(notifier.tenants))
+	}
+	if notifier.tenants[0] != "tenant-1" {
+		t.Errorf("notification tenant = %q, want %q", notifier.tenants[0], "tenant-1")
+	}
+	summary := notifier.summaries[0]
+	if summary.IncidentID != "new-incident-id" {
+		t.Errorf("summary.IncidentID = %q, want %q", summary.IncidentID, "new-incident-id")
+	}
+	if summary.ServiceName != "API" {
+		t.Errorf("summary.ServiceName = %q, want %q", summary.ServiceName, "API")
+	}
+}
+
+// TestSLOAnalyzer_AutoCreatedOutage_NoTenantContext_NoNotify covers the guard:
+// without a tenant in context (the non-tenant poll path), no notification is
+// attempted.
+func TestSLOAnalyzer_AutoCreatedOutage_NoTenantContext_NoNotify(t *testing.T) {
+	incidents := &fakeIncidentStore{openIncidents: map[string]string{}}
+	notifier := &recordingIncidentNotifier{}
+	a := newTestAnalyzer(incidents, &fakeStatusAnalysisWriter{}, &fakeLLMGenerator{}, time.Second)
+	a.SetNotifier(notifier)
+
+	a.HandleTransition(context.Background(), db.Service{ID: "svc-1", Name: "API"}, "operational", "outage", datadog.SLOStatus{})
+
+	if len(notifier.tenants) != 0 {
+		t.Errorf("notifications fired = %d, want 0 without a tenant context", len(notifier.tenants))
+	}
+}
+
+// TestSLOAnalyzer_OutageAlreadyOpenIncident_NoNotify proves the notification
+// is tied to incident creation: when an incident is already open (no new
+// incident, no duplicate), no notification fires.
+func TestSLOAnalyzer_OutageAlreadyOpenIncident_NoNotify(t *testing.T) {
+	incidents := &fakeIncidentStore{openIncidents: map[string]string{"svc-1": "existing-incident"}}
+	notifier := &recordingIncidentNotifier{}
+	a := newTestAnalyzer(incidents, &fakeStatusAnalysisWriter{}, &fakeLLMGenerator{}, time.Second)
+	a.SetNotifier(notifier)
+
+	ctx := withTenantID(context.Background(), "tenant-1")
+	a.HandleTransition(ctx, db.Service{ID: "svc-1", Name: "API"}, "operational", "outage", datadog.SLOStatus{})
+
+	if len(notifier.tenants) != 0 {
+		t.Errorf("notifications fired = %d, want 0 when no new incident was created", len(notifier.tenants))
+	}
+}
+
+// TestSLOAnalyzer_AutoCreatedOutage_NotifierError_StillCreatesIncident proves a
+// notification failure is non-fatal: the incident is still created and the
+// poll cycle is not failed.
+func TestSLOAnalyzer_AutoCreatedOutage_NotifierError_StillCreatesIncident(t *testing.T) {
+	incidents := &fakeIncidentStore{openIncidents: map[string]string{}}
+	notifier := &recordingIncidentNotifier{err: errors.New("notify boom")}
+	a := newTestAnalyzer(incidents, &fakeStatusAnalysisWriter{}, &fakeLLMGenerator{}, time.Second)
+	a.SetNotifier(notifier)
+
+	ctx := withTenantID(context.Background(), "tenant-1")
+	a.HandleTransition(ctx, db.Service{ID: "svc-1", Name: "API"}, "operational", "outage", datadog.SLOStatus{})
+
+	createCalls, _, _ := incidents.snapshot()
+	if createCalls != 1 {
+		t.Errorf("Create called %d times, want 1 despite the notification error", createCalls)
 	}
 }

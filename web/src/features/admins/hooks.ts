@@ -11,6 +11,7 @@ export interface AdminRow {
   status: "active" | "pending";
   expires_at?: string;
   expired?: boolean;
+  last_access?: string | null;
 }
 
 export interface InviteEmailResult {

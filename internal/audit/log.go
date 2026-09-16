@@ -21,8 +21,11 @@ func NewLog(pool *db.Pool) *Log {
 
 // Record inserts an append-only audit entry: actorID performed action
 // against targetID. There is no cascade delete tying rows here to the
-// admins table - removing an Admin must never remove the audit history
-// that references it.
+// users table - removing a user must never remove the audit history that
+// references it. tenant_id is left to the column's default (the session's
+// app.tenant_id), so an entry always lands on the tenant whose request
+// produced it, and an insert outside a tenant context is rejected by NOT
+// NULL rather than landing on the wrong tenant.
 func (l *Log) Record(ctx context.Context, actorID, targetID, action string) error {
 	if _, err := l.pool.Exec(ctx,
 		"INSERT INTO admin_audit_log (actor_id, target_id, action) VALUES ($1, $2, $3)",

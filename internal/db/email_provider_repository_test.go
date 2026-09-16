@@ -6,7 +6,6 @@ import (
 	"context"
 	"errors"
 	"testing"
-	"time"
 )
 
 // resetEmailProviders clears both email_providers rows and the
@@ -14,35 +13,26 @@ import (
 // same clean state a fresh migration would - so each test in this file
 // starts from a known baseline regardless of what a previous test left
 // behind.
-func resetEmailProviders(t *testing.T, ctx context.Context, pool *Pool) {
+// resetEmailProviders clears this tenant's provider rows and its
+// email_settings row. Both are tenant-scoped since multi-tenancy-core, so
+// the reset is too - it must never touch another concurrently-running
+// suite's tenant.
+func resetEmailProviders(t *testing.T, ctx context.Context, pool *Pool, tenantID string) {
 	t.Helper()
-	if _, err := pool.Exec(ctx, "UPDATE email_settings SET active_provider = NULL WHERE id = 1"); err != nil {
-		t.Fatalf("failed to reset email_settings.active_provider: %v", err)
+	if _, err := pool.Exec(ctx, "DELETE FROM email_settings WHERE tenant_id = $1", tenantID); err != nil {
+		t.Fatalf("failed to reset email_settings: %v", err)
 	}
-	if _, err := pool.Exec(ctx, "DELETE FROM email_providers"); err != nil {
+	if _, err := pool.Exec(ctx, "DELETE FROM email_providers WHERE tenant_id = $1", tenantID); err != nil {
 		t.Fatalf("failed to clear email_providers: %v", err)
 	}
 }
 
 func newEmailProviderRepoForTest(t *testing.T) (*EmailProviderRepository, *Pool) {
 	t.Helper()
-	dsn := testDatabaseURL(t)
+	pool, tenantID := newTenantScopedPool(t)
 
-	if err := MigrateUp(dsn, "migrations"); err != nil {
-		t.Fatalf("MigrateUp() returned unexpected error: %v", err)
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	pool, err := NewPool(ctx, dsn)
-	if err != nil {
-		t.Fatalf("NewPool() returned unexpected error: %v", err)
-	}
-	t.Cleanup(pool.Close)
-
-	resetEmailProviders(t, context.Background(), pool)
-	t.Cleanup(func() { resetEmailProviders(t, context.Background(), pool) })
+	resetEmailProviders(t, context.Background(), pool, tenantID)
+	t.Cleanup(func() { resetEmailProviders(t, context.Background(), pool, tenantID) })
 
 	return NewEmailProviderRepository(pool), pool
 }

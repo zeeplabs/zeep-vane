@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -14,33 +15,57 @@ import (
 	"github.com/go-chi/chi/v5"
 	"go.uber.org/zap"
 
+	"github.com/zeeplabs/zeep-vane/internal/auth"
 	"github.com/zeeplabs/zeep-vane/internal/db"
+	"github.com/zeeplabs/zeep-vane/internal/dbtest"
+	"github.com/zeeplabs/zeep-vane/internal/notify"
 )
 
-func newIncidentsRouter(t *testing.T) (http.Handler, *db.Pool, *db.AdminRepository) {
+// recordingIncidentNotifier is an incidentNotifier double recording the
+// lifecycle notifications the handler fires, with injectable errors.
+type recordingIncidentNotifier struct {
+	openedTenants     []string
+	resolvedTenants   []string
+	openedSummaries   []notify.IncidentSummary
+	resolvedSummaries []notify.IncidentSummary
+	openErr           error
+	resolveErr        error
+}
+
+func (n *recordingIncidentNotifier) NotifyIncidentOpened(_ context.Context, tenantID string, summary notify.IncidentSummary) error {
+	n.openedTenants = append(n.openedTenants, tenantID)
+	n.openedSummaries = append(n.openedSummaries, summary)
+	return n.openErr
+}
+
+func (n *recordingIncidentNotifier) NotifyIncidentResolved(_ context.Context, tenantID string, summary notify.IncidentSummary) error {
+	n.resolvedTenants = append(n.resolvedTenants, tenantID)
+	n.resolvedSummaries = append(n.resolvedSummaries, summary)
+	return n.resolveErr
+}
+
+func newIncidentsRouter(t *testing.T) (http.Handler, *db.Pool, *db.UserRepository) {
 	t.Helper()
-	dsn := testDatabaseURL(t)
+	r, pool, admins, _ := newIncidentsRouterWithNotifier(t, &recordingIncidentNotifier{})
+	return r, pool, admins
+}
 
-	if err := db.MigrateUp(dsn, "../db/migrations"); err != nil {
-		t.Fatalf("MigrateUp() returned unexpected error: %v", err)
-	}
+func newIncidentsRouterWithNotifier(t *testing.T, notifier incidentNotifier) (http.Handler, *db.Pool, *db.UserRepository, incidentNotifier) {
+	t.Helper()
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	pool, err := db.NewPool(ctx, dsn)
-	if err != nil {
-		t.Fatalf("NewPool() returned unexpected error: %v", err)
-	}
-	t.Cleanup(pool.Close)
+	pool, _ := newAPITenantScopedPool(t)
 
 	repo := db.NewIncidentRepository(pool)
-	admins := db.NewAdminRepository(pool)
-	handler := NewIncidentsHandler(repo, zap.NewNop())
+	admins := db.NewUserRepository(pool)
+	handler := NewIncidentsHandler(repo, notifier, zap.NewNop())
 
 	r := chi.NewRouter()
 	r.Group(func(protected chi.Router) {
-		protected.Use(RequireAuth(middlewareTestSecret, admins))
+		protected.Use(RequireAuth(middlewareTestSecret, admins, db.NewSessionRepository(pool), zap.NewNop()))
+		// Mirrors buildAdminRouter: TenantContext runs right after
+		// RequireAuth and is what resolves the caller's role in the active
+		// tenant for RequireRole (multi-tenancy-core, AD-022).
+		protected.Use(TenantContext(pool, db.NewTenantMembershipRepository(pool), zap.NewNop()))
 		protected.Post("/api/incidents", handler.Create)
 		protected.Get("/api/incidents", handler.List)
 		protected.Post("/api/incidents/{id}/updates", handler.AddUpdate)
@@ -48,9 +73,10 @@ func newIncidentsRouter(t *testing.T) (http.Handler, *db.Pool, *db.AdminReposito
 		protected.Patch("/api/incidents/{id}", handler.Transition)
 		protected.Post("/api/incidents/{id}/confirm-close", handler.ConfirmClose)
 		protected.Post("/api/incidents/{id}/discard-close-proposal", handler.DiscardCloseProposal)
+		protected.Patch("/api/incidents/{id}/severity", handler.SetSeverity)
 	})
 
-	return r, pool, admins
+	return r, pool, admins, notifier
 }
 
 // createIncidentTestService inserts a service to link an incident to,
@@ -59,27 +85,39 @@ func createIncidentTestService(t *testing.T, pool *db.Pool) string {
 	t.Helper()
 	services := db.NewServiceRepository(pool)
 	service := &db.Service{Name: uniqueServiceName(t), SLOID: "slo-incidents-test"}
-	if err := services.Create(context.Background(), service); err != nil {
-		t.Fatalf("setup Create() service returned unexpected error: %v", err)
-	}
+	tenantID := seedTestTenant(t, pool)
+	withTenantTx(t, pool, tenantID, func(ctx context.Context) {
+		if err := services.Create(ctx, service); err != nil {
+			t.Fatalf("setup Create() service returned unexpected error: %v", err)
+		}
+	})
 	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), "DELETE FROM services WHERE id = $1", service.ID) })
 	return service.ID
 }
 
+// postCreateIncident issues POST /api/incidents with severity defaulted to
+// "moderate" - the tests using this helper don't care about the severity
+// value itself. Use postCreateIncidentRequest directly for tests exercising
+// severity/description.
 func postCreateIncident(t *testing.T, r http.Handler, token, title string, serviceIDs []string) *httptest.ResponseRecorder {
 	t.Helper()
-	body, err := json.Marshal(createIncidentRequest{Title: title, ServiceIDs: serviceIDs})
+	return postCreateIncidentRequest(t, r, token, createIncidentRequest{Title: title, ServiceIDs: serviceIDs, Severity: "moderate"})
+}
+
+func postCreateIncidentRequest(t *testing.T, r http.Handler, token string, req createIncidentRequest) *httptest.ResponseRecorder {
+	t.Helper()
+	body, err := json.Marshal(req)
 	if err != nil {
 		t.Fatalf("json.Marshal() returned unexpected error: %v", err)
 	}
 
-	req := httptest.NewRequest(http.MethodPost, "/api/incidents", bytes.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
+	httpReq := httptest.NewRequest(http.MethodPost, "/api/incidents", bytes.NewReader(body))
+	httpReq.Header.Set("Content-Type", "application/json")
 	if token != "" {
-		req.Header.Set("Authorization", "Bearer "+token)
+		httpReq.Header.Set("Authorization", "Bearer "+token)
 	}
 	rec := httptest.NewRecorder()
-	r.ServeHTTP(rec, req)
+	r.ServeHTTP(rec, httpReq)
 	return rec
 }
 
@@ -915,5 +953,421 @@ func TestListIncidentUpdates_InvalidPage_ClampsToPageOne_200(t *testing.T) {
 		if page.Page != 1 {
 			t.Errorf("?page=%s -> page = %d, want 1 (clamped)", rawPage, page.Page)
 		}
+	}
+}
+
+// end of pre-existing pagination tests; severity/authorship tests follow.
+
+// issueTestSessionTokenWithID mirrors seedSessionForRole but also returns
+// the seeded user's ID - needed to assert an incident update's author_id
+// matches the authenticated actor (INCSEV-05).
+func issueTestSessionTokenWithID(t *testing.T, admins *db.UserRepository) (token, userID string) {
+	t.Helper()
+	if currentAPITestTenant == "" {
+		t.Fatal("issueTestSessionTokenWithID called before newAPITenantScopedPool - no fixture tenant to bind the session to")
+	}
+	ctx := context.Background()
+	dbtest.LockUsersTable(t, ctx, testDatabaseURL(t))
+
+	user := &db.User{Email: uniqueTestEmail(t), PasswordHash: "hash"}
+	if err := admins.Create(ctx, user); err != nil {
+		t.Fatalf("admins.Create() returned unexpected error: %v", err)
+	}
+	t.Cleanup(func() { _ = admins.Delete(context.Background(), user.ID) })
+
+	seedMembership(t, user.ID, currentAPITestTenant, db.RoleOwner)
+
+	token, err := auth.IssueSessionWithTenant(user.ID, currentAPITestTenant, auth.IssueTestSessionID, middlewareTestSecret)
+	if err != nil {
+		t.Fatalf("auth.IssueSessionWithTenant() returned unexpected error: %v", err)
+	}
+	return token, user.ID
+}
+
+// TestCreateIncident_ValidSeverityAndDescription_201EchoesBoth covers
+// INCSEV-01/03: a valid severity and non-empty description are persisted and
+// echoed in the response.
+func TestCreateIncident_ValidSeverityAndDescription_201EchoesBoth(t *testing.T) {
+	r, pool, admins := newIncidentsRouter(t)
+	token := issueTestSessionToken(t, admins)
+	serviceID := createIncidentTestService(t, pool)
+
+	rec := postCreateIncidentRequest(t, r, token, createIncidentRequest{
+		Title:       "severity and description test incident",
+		ServiceIDs:  []string{serviceID},
+		Severity:    "critical",
+		Description: "root cause unknown",
+	})
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusCreated, rec.Body.String())
+	}
+	t.Cleanup(func() {
+		_, _ = pool.Exec(context.Background(), "DELETE FROM incidents WHERE title = $1", "severity and description test incident")
+	})
+
+	var created incidentResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &created); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+	if created.Severity != "critical" {
+		t.Errorf("Severity = %q, want %q", created.Severity, "critical")
+	}
+	if created.Description == nil || *created.Description != "root cause unknown" {
+		t.Errorf("Description = %v, want %q", created.Description, "root cause unknown")
+	}
+}
+
+// TestCreateIncident_MissingOrInvalidSeverity_422NoRowCreated covers
+// INCSEV-02: an omitted or invalid severity is rejected with 422 and no
+// incident is created.
+func TestCreateIncident_MissingOrInvalidSeverity_422NoRowCreated(t *testing.T) {
+	r, pool, admins := newIncidentsRouter(t)
+	token := issueTestSessionToken(t, admins)
+	serviceID := createIncidentTestService(t, pool)
+
+	for _, tc := range []struct {
+		name     string
+		severity string
+	}{
+		{"missing", ""},
+		{"invalid", "urgent"},
+	} {
+		title := "invalid severity test incident " + tc.name
+		rec := postCreateIncidentRequest(t, r, token, createIncidentRequest{
+			Title:      title,
+			ServiceIDs: []string{serviceID},
+			Severity:   tc.severity,
+		})
+		if rec.Code != http.StatusUnprocessableEntity {
+			t.Errorf("%s: status = %d, want %d, body = %s", tc.name, rec.Code, http.StatusUnprocessableEntity, rec.Body.String())
+		}
+
+		var count int
+		row := pool.QueryRow(context.Background(), "SELECT COUNT(*) FROM incidents WHERE title = $1", title)
+		if err := row.Scan(&count); err != nil {
+			t.Fatalf("%s: Scan() returned unexpected error: %v", tc.name, err)
+		}
+		if count != 0 {
+			t.Errorf("%s: incident row count = %d, want 0 (not created)", tc.name, count)
+		}
+	}
+}
+
+// TestCreateIncident_EmptyDescription_StoresNil covers the edge case: an
+// empty-string description stores NULL, not an empty string.
+func TestCreateIncident_EmptyDescription_StoresNil(t *testing.T) {
+	r, pool, admins := newIncidentsRouter(t)
+	token := issueTestSessionToken(t, admins)
+	serviceID := createIncidentTestService(t, pool)
+
+	rec := postCreateIncidentRequest(t, r, token, createIncidentRequest{
+		Title:       "empty description test incident",
+		ServiceIDs:  []string{serviceID},
+		Severity:    "minor",
+		Description: "",
+	})
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusCreated, rec.Body.String())
+	}
+	t.Cleanup(func() {
+		_, _ = pool.Exec(context.Background(), "DELETE FROM incidents WHERE title = $1", "empty description test incident")
+	})
+
+	var created incidentResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &created); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+	if created.Description != nil {
+		t.Errorf("Description = %q, want nil", *created.Description)
+	}
+}
+
+func patchIncidentSeverity(t *testing.T, r http.Handler, token, incidentID, severity string) *httptest.ResponseRecorder {
+	t.Helper()
+	body, err := json.Marshal(setIncidentSeverityRequest{Severity: severity})
+	if err != nil {
+		t.Fatalf("json.Marshal() returned unexpected error: %v", err)
+	}
+	req := httptest.NewRequest(http.MethodPatch, "/api/incidents/"+incidentID+"/severity", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+	return rec
+}
+
+// TestSetIncidentSeverity_ValidValue_200UpdatesSeverity covers INCSEV-04's
+// happy path.
+func TestSetIncidentSeverity_ValidValue_200UpdatesSeverity(t *testing.T) {
+	r, pool, admins := newIncidentsRouter(t)
+	token := issueTestSessionToken(t, admins)
+	incident := createTestIncident(t, r, pool, token, "set severity test incident")
+
+	rec := patchIncidentSeverity(t, r, token, incident.ID, "critical")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	var updated incidentResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &updated); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+	if updated.Severity != "critical" {
+		t.Errorf("Severity = %q, want %q", updated.Severity, "critical")
+	}
+}
+
+// TestSetIncidentSeverity_InvalidValue_422Unchanged covers INCSEV-04's
+// validation path: the stored severity is untouched on a 422.
+func TestSetIncidentSeverity_InvalidValue_422Unchanged(t *testing.T) {
+	r, pool, admins := newIncidentsRouter(t)
+	token := issueTestSessionToken(t, admins)
+	incident := createTestIncident(t, r, pool, token, "invalid set severity test incident")
+
+	rec := patchIncidentSeverity(t, r, token, incident.ID, "urgent")
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusUnprocessableEntity, rec.Body.String())
+	}
+
+	var severity string
+	row := pool.QueryRow(context.Background(), "SELECT severity FROM incidents WHERE id = $1", incident.ID)
+	if err := row.Scan(&severity); err != nil {
+		t.Fatalf("Scan() returned unexpected error: %v", err)
+	}
+	if severity != "moderate" {
+		t.Errorf("severity = %q, want unchanged %q", severity, "moderate")
+	}
+}
+
+// TestSetIncidentSeverity_UnknownIncident_404 covers INCSEV-04's not-found
+// path.
+func TestSetIncidentSeverity_UnknownIncident_404(t *testing.T) {
+	r, _, admins := newIncidentsRouter(t)
+	token := issueTestSessionToken(t, admins)
+
+	rec := patchIncidentSeverity(t, r, token, "00000000-0000-0000-0000-000000000000", "critical")
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("status = %d, want %d, body = %s", rec.Code, http.StatusNotFound, rec.Body.String())
+	}
+}
+
+// TestSetIncidentSeverity_OnResolvedIncident_200 covers the edge case:
+// severity is independent of status, so a resolved incident's severity can
+// still be changed.
+func TestSetIncidentSeverity_OnResolvedIncident_200(t *testing.T) {
+	r, pool, admins := newIncidentsRouter(t)
+	token := issueTestSessionToken(t, admins)
+	incident := createTestIncident(t, r, pool, token, "resolved severity test incident")
+
+	if resolveRec := patchIncidentStatus(t, r, token, incident.ID, "resolved"); resolveRec.Code != http.StatusOK {
+		t.Fatalf("setup resolve status = %d, want %d, body = %s", resolveRec.Code, http.StatusOK, resolveRec.Body.String())
+	}
+
+	rec := patchIncidentSeverity(t, r, token, incident.ID, "critical")
+	if rec.Code != http.StatusOK {
+		t.Errorf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+}
+
+// TestAddIncidentUpdate_AttributesAuthorID_NotAISummary covers INCSEV-05: a
+// manual update's response carries the authenticated actor's user ID and
+// is_ai_summary: false.
+func TestAddIncidentUpdate_AttributesAuthorID_NotAISummary(t *testing.T) {
+	r, pool, admins := newIncidentsRouter(t)
+	token, adminID := issueTestSessionTokenWithID(t, admins)
+	incident := createTestIncident(t, r, pool, token, "author attribution test incident")
+
+	rec := postIncidentUpdate(t, r, token, incident.ID, "operator note")
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusCreated, rec.Body.String())
+	}
+
+	var timeline []incidentUpdateResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &timeline); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+	if len(timeline) != 1 {
+		t.Fatalf("len(timeline) = %d, want 1", len(timeline))
+	}
+	if timeline[0].AuthorID == nil || *timeline[0].AuthorID != adminID {
+		t.Errorf("AuthorID = %v, want %q", timeline[0].AuthorID, adminID)
+	}
+	if timeline[0].IsAISummary {
+		t.Error("IsAISummary = true, want false")
+	}
+}
+
+// TestConfirmClose_TimelineEntry_NoAuthorIsAISummary covers INCSEV-06: the
+// AI-drafted closing summary's timeline entry has author_id: null and
+// is_ai_summary: true.
+func TestConfirmClose_TimelineEntry_NoAuthorIsAISummary(t *testing.T) {
+	r, pool, admins := newIncidentsRouter(t)
+	token := issueTestSessionToken(t, admins)
+	incident := createTestIncident(t, r, pool, token, "confirm-close authorship test incident")
+
+	repo := db.NewIncidentRepository(pool)
+	if err := repo.SetPendingCloseComment(context.Background(), incident.ID, "recovered, closing via ai"); err != nil {
+		t.Fatalf("setup SetPendingCloseComment() returned unexpected error: %v", err)
+	}
+	if rec := postConfirmClose(t, r, token, incident.ID, "recovered, closing via ai"); rec.Code != http.StatusOK {
+		t.Fatalf("confirm-close status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	updatesRec := getIncidentUpdates(t, r, token, incident.ID)
+	if updatesRec.Code != http.StatusOK {
+		t.Fatalf("get updates status = %d, want %d, body = %s", updatesRec.Code, http.StatusOK, updatesRec.Body.String())
+	}
+	var page Page[incidentUpdateResponse]
+	if err := json.Unmarshal(updatesRec.Body.Bytes(), &page); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+	if len(page.Items) != 1 {
+		t.Fatalf("len(page.Items) = %d, want 1", len(page.Items))
+	}
+	if page.Items[0].AuthorID != nil {
+		t.Errorf("AuthorID = %v, want nil", page.Items[0].AuthorID)
+	}
+	if !page.Items[0].IsAISummary {
+		t.Error("IsAISummary = false, want true")
+	}
+}
+
+// TestCreateIncident_FiresIncidentOpenedNotification covers NOTIFPREF-04: a
+// successful create fires exactly one incident-opened notification carrying
+// the active tenant and the created incident's id/title/severity.
+func TestCreateIncident_FiresIncidentOpenedNotification(t *testing.T) {
+	notifier := &recordingIncidentNotifier{}
+	r, pool, admins, _ := newIncidentsRouterWithNotifier(t, notifier)
+	token := issueTestSessionToken(t, admins)
+	serviceID := createIncidentTestService(t, pool)
+
+	rec := postCreateIncident(t, r, token, "opened-notification test incident", []string{serviceID})
+	t.Cleanup(func() {
+		_, _ = pool.Exec(context.Background(), "DELETE FROM incidents WHERE title = $1", "opened-notification test incident")
+	})
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusCreated, rec.Body.String())
+	}
+
+	if len(notifier.openedTenants) != 1 {
+		t.Fatalf("opened notifications = %d, want exactly 1", len(notifier.openedTenants))
+	}
+	if notifier.openedTenants[0] == "" {
+		t.Error("notification tenant id is empty, want the active tenant from context")
+	}
+	var created incidentResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &created); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+	summary := notifier.openedSummaries[0]
+	if summary.IncidentID != created.ID {
+		t.Errorf("summary.IncidentID = %q, want %q", summary.IncidentID, created.ID)
+	}
+	if summary.Title != "opened-notification test incident" || summary.Severity != "moderate" {
+		t.Errorf("summary = %+v, want title and moderate severity from the created incident", summary)
+	}
+	if len(notifier.resolvedTenants) != 0 {
+		t.Errorf("resolved notifications = %d, want 0 on create", len(notifier.resolvedTenants))
+	}
+}
+
+// TestCreateIncident_NotificationError_StillReturns201 covers NOTIFPREF-05: a
+// notification failure never fails or rolls back the incident creation.
+func TestCreateIncident_NotificationError_StillReturns201(t *testing.T) {
+	notifier := &recordingIncidentNotifier{openErr: errors.New("notify boom")}
+	r, pool, admins, _ := newIncidentsRouterWithNotifier(t, notifier)
+	token := issueTestSessionToken(t, admins)
+	serviceID := createIncidentTestService(t, pool)
+
+	rec := postCreateIncident(t, r, token, "notify-failure test incident", []string{serviceID})
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want %d despite the notification error, body = %s", rec.Code, http.StatusCreated, rec.Body.String())
+	}
+
+	var created incidentResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &created); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = pool.Exec(context.Background(), "DELETE FROM incidents WHERE id = $1", created.ID)
+	})
+
+	var count int
+	if err := pool.QueryRow(context.Background(),
+		"SELECT COUNT(*) FROM incidents WHERE id = $1", created.ID).Scan(&count); err != nil {
+		t.Fatalf("Scan() returned unexpected error: %v", err)
+	}
+	if count != 1 {
+		t.Errorf("persisted incident rows for the created id = %d, want 1 (creation must not be rolled back)", count)
+	}
+}
+
+// TestTransitionToResolved_FiresIncidentResolvedNotification covers
+// NOTIFPREF-07: resolving via Transition fires exactly one resolved
+// notification.
+func TestTransitionToResolved_FiresIncidentResolvedNotification(t *testing.T) {
+	notifier := &recordingIncidentNotifier{}
+	r, pool, admins, _ := newIncidentsRouterWithNotifier(t, notifier)
+	token := issueTestSessionToken(t, admins)
+	incident := createTestIncident(t, r, pool, token, "resolved-notification test incident")
+
+	rec := patchIncidentStatus(t, r, token, incident.ID, "resolved")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	if len(notifier.resolvedSummaries) != 1 {
+		t.Fatalf("resolved notifications = %d, want exactly 1", len(notifier.resolvedSummaries))
+	}
+	if notifier.resolvedSummaries[0].IncidentID != incident.ID {
+		t.Errorf("summary.IncidentID = %q, want %q", notifier.resolvedSummaries[0].IncidentID, incident.ID)
+	}
+	if len(notifier.openedTenants) != 1 {
+		t.Errorf("opened notifications = %d, want exactly 1 from the setup create", len(notifier.openedTenants))
+	}
+}
+
+// TestTransitionToNonResolved_DoesNotNotify covers NOTIFPREF-09: a transition
+// to any status other than resolved sends no resolved notification.
+func TestTransitionToNonResolved_DoesNotNotify(t *testing.T) {
+	notifier := &recordingIncidentNotifier{}
+	r, pool, admins, _ := newIncidentsRouterWithNotifier(t, notifier)
+	token := issueTestSessionToken(t, admins)
+	incident := createTestIncident(t, r, pool, token, "non-resolved-transition test incident")
+
+	rec := patchIncidentStatus(t, r, token, incident.ID, "identified")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	if len(notifier.resolvedTenants) != 0 {
+		t.Errorf("resolved notifications = %d, want 0 for a non-resolving transition", len(notifier.resolvedTenants))
+	}
+}
+
+// TestConfirmClose_FiresIncidentResolvedNotification covers NOTIFPREF-08:
+// resolving through the AI-assisted ConfirmClose path fires the same resolved
+// notification.
+func TestConfirmClose_FiresIncidentResolvedNotification(t *testing.T) {
+	notifier := &recordingIncidentNotifier{}
+	r, pool, admins, _ := newIncidentsRouterWithNotifier(t, notifier)
+	token := issueTestSessionToken(t, admins)
+	incident := createTestIncident(t, r, pool, token, "confirm-close-notification test incident")
+
+	repo := db.NewIncidentRepository(pool)
+	if err := repo.SetPendingCloseComment(context.Background(), incident.ID, "recovered, closing out"); err != nil {
+		t.Fatalf("setup SetPendingCloseComment() returned unexpected error: %v", err)
+	}
+
+	rec := postConfirmClose(t, r, token, incident.ID, "recovered, closing out")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	if len(notifier.resolvedSummaries) != 1 {
+		t.Fatalf("resolved notifications = %d, want exactly 1", len(notifier.resolvedSummaries))
+	}
+	if notifier.resolvedSummaries[0].IncidentID != incident.ID {
+		t.Errorf("summary.IncidentID = %q, want %q", notifier.resolvedSummaries[0].IncidentID, incident.ID)
 	}
 }

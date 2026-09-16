@@ -19,6 +19,7 @@ import (
 	"github.com/zeeplabs/zeep-vane/internal/db"
 	"github.com/zeeplabs/zeep-vane/internal/email"
 	"github.com/zeeplabs/zeep-vane/internal/llm"
+	"github.com/zeeplabs/zeep-vane/internal/notify"
 	"github.com/zeeplabs/zeep-vane/internal/ratelimit"
 	"github.com/zeeplabs/zeep-vane/internal/router"
 	"github.com/zeeplabs/zeep-vane/web"
@@ -47,11 +48,12 @@ const credentialRouteIdleTTL = 10 * time.Minute
 func buildAdminRouter(pool *db.Pool, cfg config.Config, logger *zap.Logger, pollerManager *PollerManager) http.Handler {
 	r := router.New(pool)
 
-	admins := db.NewAdminRepository(pool)
-	invites := db.NewAdminInviteRepository(pool)
+	users := db.NewUserRepository(pool)
+	invites := db.NewTenantInviteRepository(pool)
 	auditLog := audit.NewLog(pool)
 
-	companySettingsRepo := db.NewCompanySettingsRepository(pool)
+	tenantsRepo := db.NewTenantRepository(pool)
+	tenantMembershipsRepo := db.NewTenantMembershipRepository(pool)
 
 	// emailService is built with a ProviderFactory closure rather than a
 	// direct import of internal/connectors/sendgrid|resend from
@@ -74,23 +76,39 @@ func buildAdminRouter(pool *db.Pool, cfg config.Config, logger *zap.Logger, poll
 	llmService := llm.NewService(db.NewLLMProviderStore(db.NewLLMProviderRepository(pool)), llmProviderFactory, cfg.MasterKey, logger)
 	llmProvidersHandler := api.NewLLMProvidersHandler(llmService, logger)
 
-	authHandler := api.NewAuthHandler(admins, logger, cfg.SessionSecret, cfg.SecureCookies)
-	bootstrapHandler := api.NewBootstrapHandler(pool, admins, logger, cfg.SessionSecret, cfg.SecureCookies)
-	passwordResetHandler := api.NewPasswordResetHandler(admins, db.NewPasswordResetRepository(pool), emailService, companySettingsRepo, logger, cfg.DevTokenLogging, cfg.AdminBaseURL)
-	adminsHandler := api.NewAdminsHandler(pool, admins, invites, emailService, companySettingsRepo, auditLog, logger, cfg.DevTokenLogging, cfg.AdminBaseURL, cfg.SessionSecret, cfg.SecureCookies)
-	domainsHandler := api.NewDomainsHandler(db.NewDomainRepository(pool), auditLog, logger)
-	servicesHandler := api.NewServicesHandler(db.NewServiceRepository(pool), logger)
-	integrationsHandler := api.NewIntegrationsHandler(db.NewIntegrationRepository(pool), validateDatadogCredentials, searchDatadogSLOs, pollerManager, cfg.MasterKey, logger)
-	incidentsHandler := api.NewIncidentsHandler(db.NewIncidentRepository(pool), logger)
-	statusPagesHandler := api.NewStatusPagesHandler(db.NewStatusPageRepository(pool), auditLog, cfg.PublicDNSTarget, logger)
-	pollerStatusHandler := api.NewPollerStatusHandler(db.NewIntegrationRepository(pool), logger)
-	publicStatusHandler := api.NewPublicStatusHandler(db.NewServiceRepository(pool), db.NewStatusIntervalRepository(pool), db.NewIncidentRepository(pool), companySettingsRepo, logger)
-	publicStatusPreviewHandler := api.NewPublicStatusPreviewHandler(db.NewStatusPageRepository(pool), publicStatusHandler, logger)
-	companySettingsHandler := api.NewCompanySettingsHandler(companySettingsRepo, logger)
-	logoFileHandler := api.NewLogoFileHandler(companySettingsRepo)
-	instanceConfigHandler := api.NewInstanceConfigHandler(cfg.PublicDNSTarget, companySettingsRepo, logger)
+	// Per-device session row repository (user-sessions): every issued
+	// session token corresponds to a real sessions-table row, looked up
+	// on every authenticated request by RequireAuth (which carries it as
+	// the sessionLoader interface) and revoked by Logout, the "Encerrar"
+	// button on the redesigned Meu Perfil screen, and admin events
+	// UpdateRole/Delete (per decision #1 of context.md).
+	sessions := db.NewSessionRepository(pool)
 
-	requireAuth := api.RequireAuth(cfg.SessionSecret, admins)
+	authHandler := api.NewAuthHandler(users, tenantMembershipsRepo, db.NewTwoFactorRepository(pool), db.NewTwoFactorChallengeRepository(pool), sessions, pool, logger, cfg.SessionSecret, cfg.SecureCookies, cfg.MasterKey)
+	bootstrapHandler := api.NewBootstrapHandler(pool, users, tenantsRepo, tenantMembershipsRepo, sessions, logger, cfg.SessionSecret, cfg.SecureCookies, cfg.DeploymentMode)
+	signupHandler := api.NewSignupHandler(pool, users, tenantsRepo, tenantMembershipsRepo, db.NewEmailVerificationRepository(pool), emailService, logger, cfg.DevTokenLogging, cfg.AdminBaseURL)
+	passwordResetHandler := api.NewPasswordResetHandler(users, db.NewPasswordResetRepository(pool), emailService, tenantsRepo, logger, cfg.DevTokenLogging, cfg.AdminBaseURL)
+	adminsHandler := api.NewAdminsHandler(pool, users, tenantMembershipsRepo, invites, emailService, tenantsRepo, sessions, auditLog, logger, cfg.DevTokenLogging, cfg.AdminBaseURL, cfg.SessionSecret, cfg.SecureCookies)
+	domainsHandler := api.NewDomainsHandler(db.NewDomainRepository(pool), db.NewStatusPageRepository(pool), auditLog, cfg.PublicDNSTarget, logger)
+	servicesHandler := api.NewServicesHandler(db.NewServiceRepository(pool), db.NewStatusIntervalRepository(pool), db.NewIncidentRepository(pool), logger)
+	integrationsHandler := api.NewIntegrationsHandler(db.NewIntegrationRepository(pool), validateDatadogCredentials, searchDatadogSLOs, pollerManager, cfg.MasterKey, logger)
+	incidentsHandler := api.NewIncidentsHandler(
+		db.NewIncidentRepository(pool),
+		notify.NewService(db.NewTenantMembershipRepository(pool), db.NewNotificationPreferenceRepository(pool), emailService, cfg.AdminBaseURL, logger),
+		logger,
+	)
+	statusPagesHandler := api.NewStatusPagesHandler(db.NewStatusPageRepository(pool), auditLog, cfg.PublicDNSTarget, logger)
+	pollerStatusHandler := api.NewPollerStatusHandler(db.NewIntegrationRepository(pool), db.NewPollerLeadershipRepository(pool), db.NewStatusIntervalRepository(pool), logger)
+	sessionsHandler := api.NewSessionsHandler(sessions, logger)
+	publicStatusHandler := api.NewPublicStatusHandler(db.NewServiceRepository(pool), db.NewStatusIntervalRepository(pool), db.NewIncidentRepository(pool), tenantsRepo, logger)
+	publicStatusPreviewHandler := api.NewPublicStatusPreviewHandler(db.NewStatusPageRepository(pool), publicStatusHandler, logger)
+	companySettingsHandler := api.NewCompanySettingsHandler(tenantsRepo, logger)
+	tenantHandler := api.NewTenantHandler(tenantMembershipsRepo, tenantsRepo, logger)
+	logoFileHandler := api.NewLogoFileHandler(tenantsRepo)
+	instanceConfigHandler := api.NewInstanceConfigHandler(cfg.PublicDNSTarget, tenantsRepo, logger)
+	overviewHandler := api.NewOverviewHandler(db.NewServiceRepository(pool), db.NewStatusIntervalRepository(pool), db.NewIncidentRepository(pool), db.NewDomainRepository(pool), logger)
+
+	requireAuth := api.RequireAuth(cfg.SessionSecret, users, sessions, logger)
 	writeRoles := api.RequireRole(db.RoleOwner, db.RoleOperator)
 	anyRole := api.RequireRole(db.RoleOwner, db.RoleOperator, db.RoleViewer)
 	ownerOnly := api.RequireRole(db.RoleOwner)
@@ -104,9 +122,25 @@ func buildAdminRouter(pool *db.Pool, cfg config.Config, logger *zap.Logger, poll
 
 	// Public - no authentication.
 	r.With(credentialLimiter.Middleware).Post("/api/auth/login", authHandler.Login)
+	// verify-2fa is the credential-guessing surface of the login flow (a
+	// 6-digit TOTP code, or a 10-code recovery pool) - shares the same
+	// limiter instance as login itself (auth-2fa-totp spec.md Assumptions).
+	r.With(credentialLimiter.Middleware).Post("/api/auth/login/verify-2fa", authHandler.VerifyTwoFactor)
 	r.With(credentialLimiter.Middleware).Post("/api/auth/password-reset/request", passwordResetHandler.Request)
 	r.With(credentialLimiter.Middleware).Post("/api/auth/password-reset/confirm", passwordResetHandler.Confirm)
 	r.With(credentialLimiter.Middleware).Post("/api/admins/invite/{token}/accept", adminsHandler.AcceptInvite)
+
+	// Public SaaS signup - same shared credential-route limiter as
+	// login/password-reset/bootstrap above (T12): mass tenant creation is
+	// the same threat class this limiter already exists for (H10), and an
+	// attacker splitting attempts across routes must not multiply their
+	// effective budget. requireSaaSMode (AD-033, DEPMODE-02) 404s all 3 of
+	// these routes outright in self-hosted mode - a self-hosted install is
+	// exactly 1 tenant, so a direct API call (bypassing the frontend's
+	// hidden link) must not be able to create a second one.
+	r.With(requireSaaSMode(cfg.DeploymentMode), credentialLimiter.Middleware).Post("/api/signup", signupHandler.Signup)
+	r.With(requireSaaSMode(cfg.DeploymentMode)).Get("/api/signup/verify/{token}", signupHandler.Verify)
+	r.With(requireSaaSMode(cfg.DeploymentMode)).Post("/api/signup/resend-verification", signupHandler.ResendVerification)
 
 	// First-run bootstrap (SHD-14/SHD-15) - public and unauthenticated by
 	// necessity: no authenticated caller can exist before the very first
@@ -127,9 +161,47 @@ func buildAdminRouter(pool *db.Pool, cfg config.Config, logger *zap.Logger, poll
 
 	r.Group(func(protected chi.Router) {
 		protected.Use(requireAuth)
+		// TenantContext must run after requireAuth (it reads the admin and
+		// active-tenant claim requireAuth stores in context) and ahead of
+		// every tenant-scoped route below it (multi-tenancy-core, AD-022).
+		protected.Use(api.TenantContext(pool, tenantMembershipsRepo, logger))
 
-		protected.With(anyRole).Get("/api/auth/me", authHandler.Me)
-		protected.With(anyRole).Post("/api/auth/logout", authHandler.Logout)
+		// Session-management routes need authentication, not a role: a
+		// role is per tenant since multi-tenancy-core, and a user with
+		// more than one membership has no active tenant (and therefore no
+		// role) until they pick one - which is exactly what /me and
+		// switch-tenant are for.
+		protected.Get("/api/auth/me", authHandler.Me)
+		protected.Patch("/api/auth/me", authHandler.UpdateProfile)
+		// Personal notification toggles (notification-preferences NOTIFPREF-01/02/03) -
+		// self only, anyRole, same posture as /api/auth/me above.
+		protected.Get("/api/auth/notification-preferences", authHandler.GetNotificationPreferences)
+		protected.Patch("/api/auth/notification-preferences", authHandler.UpdateNotificationPreferences)
+		protected.Post("/api/auth/logout", authHandler.Logout)
+		protected.Post("/api/auth/switch-tenant", authHandler.SwitchTenant)
+		// Per-device session management (user-sessions spec) - self-only,
+		// anyRole. The handler reads userID and sid from RequireAuth's
+		// context and never accepts an id matching ctx.sid (409), so even
+		// owner can't revoke their own current session this way - they
+		// must use POST /api/auth/logout instead.
+		protected.Get("/api/auth/sessions", sessionsHandler.List)
+		protected.Delete("/api/auth/sessions/{id}", sessionsHandler.Revoke)
+		// change-password additionally rides the shared credential-route
+		// limiter (profile-self-service, H10 class): a wrong-current-password
+		// guess is exactly the credential-guessing attempt that limiter
+		// exists to slow down.
+		protected.With(credentialLimiter.Middleware).Post("/api/auth/change-password", authHandler.ChangePassword)
+		// 2FA enrollment/confirm (auth-2fa-totp TOTP-01/02/03/04) - self
+		// only, same posture as change-password above: no explicit role
+		// middleware, since UserFromContext always scopes the operation to
+		// the caller's own account.
+		protected.Post("/api/auth/2fa/enroll", authHandler.Enroll)
+		protected.Post("/api/auth/2fa/confirm", authHandler.Confirm2FA)
+		// disable additionally rides the shared credential-route limiter,
+		// same class as change-password above: a wrong-current-password
+		// guess is exactly the credential-guessing attempt that limiter
+		// exists to slow down.
+		protected.With(credentialLimiter.Middleware).Post("/api/auth/2fa/disable", authHandler.Disable2FA)
 
 		// Admin management (admin-dashboard ADM-09) - owner only.
 		protected.With(ownerOnly).Post("/api/admins", adminsHandler.Invite)
@@ -144,6 +216,10 @@ func buildAdminRouter(pool *db.Pool, cfg config.Config, logger *zap.Logger, poll
 		protected.With(ownerOnly).Get("/api/company-settings", companySettingsHandler.Get)
 		protected.With(ownerOnly).Patch("/api/company-settings", companySettingsHandler.Update)
 		protected.With(ownerOnly).Post("/api/company-settings/logo", companySettingsHandler.UploadLogo)
+		// Self-hosted installs are single-tenant (AD-002) and run on the
+		// operator's own infra - deleting "the tenant" would destroy the
+		// whole install, not close a SaaS account. saas-only (AD-033).
+		protected.With(ownerOnly, requireSaaSMode(cfg.DeploymentMode)).Delete("/api/tenants/current", tenantHandler.Delete)
 
 		// mvp-core write routes - owner and operator (ADM-10).
 		protected.With(writeRoles).Post("/api/domains", domainsHandler.Create)
@@ -159,18 +235,23 @@ func buildAdminRouter(pool *db.Pool, cfg config.Config, logger *zap.Logger, poll
 		protected.With(writeRoles).Patch("/api/incidents/{id}", incidentsHandler.Transition)
 		protected.With(writeRoles).Post("/api/incidents/{id}/confirm-close", incidentsHandler.ConfirmClose)
 		protected.With(writeRoles).Post("/api/incidents/{id}/discard-close-proposal", incidentsHandler.DiscardCloseProposal)
+		protected.With(writeRoles).Patch("/api/incidents/{id}/severity", incidentsHandler.SetSeverity)
 		protected.With(writeRoles).Post("/api/status-pages", statusPagesHandler.Create)
 		protected.With(writeRoles).Patch("/api/status-pages/{id}/domain", statusPagesHandler.AttachDomain)
 		protected.With(writeRoles).Patch("/api/status-pages/{id}/services", statusPagesHandler.SetServices)
 		protected.With(writeRoles).Post("/api/status-pages/{id}/verify-domain", statusPagesHandler.VerifyDomain)
 		protected.With(writeRoles).Delete("/api/status-pages/{id}", statusPagesHandler.Delete)
 		protected.With(writeRoles).Delete("/api/domains/{id}", domainsHandler.Delete)
+		protected.With(writeRoles).Post("/api/domains/{id}/verify", domainsHandler.Verify)
 		protected.With(writeRoles).Get("/api/instance/dns-target", instanceConfigHandler.DNSTarget)
 
 		// mvp-core read routes and poller status (admin-dashboard ADM-13) -
 		// owner, operator, and viewer (ADM-10, ADM-11).
 		protected.With(anyRole).Get("/api/domains", domainsHandler.List)
 		protected.With(anyRole).Get("/api/services", servicesHandler.List)
+		// monitored-services-page detail drawer (SVC-14..19) - same anyRole
+		// as List, read-only.
+		protected.With(anyRole).Get("/api/services/{id}", servicesHandler.Get)
 		protected.With(anyRole).Get("/api/status-pages", statusPagesHandler.List)
 		protected.With(anyRole).Get("/api/incidents", incidentsHandler.List)
 		protected.With(anyRole).Get("/api/incidents/{id}/updates", incidentsHandler.ListUpdates)
@@ -186,6 +267,10 @@ func buildAdminRouter(pool *db.Pool, cfg config.Config, logger *zap.Logger, poll
 		// status/list routes above which viewer can also reach.
 		protected.With(writeRoles).Get("/api/integrations/datadog/slos", integrationsHandler.SearchSLOs)
 		protected.With(anyRole).Get("/api/poller/status", pollerStatusHandler.List)
+		// Overview aggregation (dashboard-overview-page OVW-02) - same anyRole
+		// gate as the other tenant-wide read routes above; the page is the
+		// authenticated landing screen for every role (spec P2 AC5).
+		protected.With(anyRole).Get("/api/overview", overviewHandler.Get)
 	})
 
 	// Serves the embedded SPA (with client-route fallback) for any path
@@ -200,6 +285,22 @@ func buildAdminRouter(pool *db.Pool, cfg config.Config, logger *zap.Logger, poll
 	// after any route is registered on the same mux. hsts=false - this is
 	// the plain HTTP admin listener, not the TLS-terminating one (M14).
 	return api.NewCORSMiddleware(cfg.CORSAllowedOrigin)(api.SecurityHeaders(false)(r))
+}
+
+// requireSaaSMode (AD-033, DEPMODE-02/03) 404s the wrapped route unless
+// deploymentMode is SaaS. Used only on the 3 public /api/signup* routes: a
+// self-hosted install is exactly 1 tenant (AD-022), so these routes must
+// not exist in that mode, not just be hidden by the frontend.
+func requireSaaSMode(deploymentMode string) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if deploymentMode != config.DeploymentModeSaaS {
+				http.NotFound(w, r)
+				return
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
 }
 
 // validateDatadogCredentials adapts datadog.Client.ValidateCredentials to

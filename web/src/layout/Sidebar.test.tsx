@@ -1,10 +1,13 @@
-import { describe, it, expect, afterEach, vi } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { describe, it, expect, afterEach } from "vitest";
+import { render, screen, waitFor, fireEvent } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
+import { http, HttpResponse } from "msw";
 import "../lib/i18n";
 import { AuthProvider } from "../auth/AuthProvider";
 import { Sidebar } from "./Sidebar";
 import { apiFetch } from "../lib/apiClient";
+import { server } from "../test/msw/server";
 import { TestQueryProvider } from "../test/queryClient";
 
 async function loginAs(email: string) {
@@ -20,12 +23,13 @@ afterEach(async () => {
   } catch {
     /* ignore */
   }
+  window.localStorage.clear();
 });
 
-function renderSidebar() {
+function renderSidebar(initialPath = "/") {
   return render(
     <TestQueryProvider>
-      <MemoryRouter>
+      <MemoryRouter initialEntries={[initialPath]}>
         <AuthProvider>
           <Sidebar />
         </AuthProvider>
@@ -35,45 +39,149 @@ function renderSidebar() {
 }
 
 describe("Sidebar", () => {
-  it("esconde 'Equipe' para non-owner", async () => {
+  it("esconde 'Usuários' para non-owner", async () => {
     await loginAs("viewer@vane.app");
     renderSidebar();
-    await waitFor(() => expect(screen.getByText("Domínios & Status Pages")).toBeInTheDocument());
-    expect(screen.queryByText("Equipe")).not.toBeInTheDocument();
+    await waitFor(() => expect(screen.getByText("Domínios & Status")).toBeInTheDocument());
+    expect(screen.queryByText("Usuários")).not.toBeInTheDocument();
   });
 
-  it("mostra 'Equipe' para owner", async () => {
+  it("mostra 'Usuários' para owner", async () => {
     await loginAs("owner@vane.app");
     renderSidebar();
-    await waitFor(() => expect(screen.getByText("Equipe")).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText("Usuários")).toBeInTheDocument());
   });
 
-  it("mostra link para Serviços apontando pra /services", async () => {
+  it("esconde 'Configurações' para non-owner", async () => {
+    await loginAs("viewer@vane.app");
+    renderSidebar();
+    await waitFor(() => expect(screen.getByText("Domínios & Status")).toBeInTheDocument());
+    expect(screen.queryByText("Configurações")).not.toBeInTheDocument();
+  });
+
+  it("mostra 'Configurações' para owner (role gate, outro lado)", async () => {
     await loginAs("owner@vane.app");
     renderSidebar();
-    const link = await screen.findByRole("link", { name: "Serviços" });
+    await waitFor(() => expect(screen.getByText("Configurações")).toBeInTheDocument());
+  });
+
+  it("mostra link para Serviços monitorados apontando pra /services", async () => {
+    await loginAs("owner@vane.app");
+    renderSidebar();
+    const link = await screen.findByRole("link", { name: "Serviços monitorados" });
     expect(link).toHaveAttribute("href", "/services");
   });
 
-  it("mostra o controle 'Visualizando como' em DEV", async () => {
+  // billing-plans-page BILLPG-01: this reverses the earlier "fora de
+  // escopo" omission - the item now exists as a real (decorative) page.
+  it("mostra 'Planos & Faturamento' no grupo Organização, apontando pra /billing", async () => {
     await loginAs("owner@vane.app");
     renderSidebar();
-    await waitFor(() => expect(screen.getByRole("radiogroup")).toBeInTheDocument());
+    const link = await screen.findByRole("link", { name: "Planos & Faturamento" });
+    expect(link).toHaveAttribute("href", "/billing");
   });
 
-  it("esconde o controle 'Visualizando como' fora de DEV", async () => {
-    vi.stubEnv("DEV", false);
-    await loginAs("owner@vane.app");
+  it("mostra 'Planos & Faturamento' também para non-owner (sem role gate)", async () => {
+    await loginAs("viewer@vane.app");
     renderSidebar();
-    await waitFor(() => expect(screen.getByText("Domínios & Status Pages")).toBeInTheDocument());
-    expect(screen.queryByRole("radiogroup")).not.toBeInTheDocument();
-    vi.unstubAllEnvs();
+    expect(await screen.findByRole("link", { name: "Planos & Faturamento" })).toBeInTheDocument();
   });
 
-  it("mostra nome e e-mail do admin logado acima do botão Sair", async () => {
+  it("colapsada por padrão (72px), expande com mouseenter e recolapsa com mouseleave", async () => {
     await loginAs("owner@vane.app");
     renderSidebar();
-    expect(await screen.findByText("Ana Owner")).toBeInTheDocument();
-    expect(screen.getByText("owner@vane.app")).toBeInTheDocument();
+    const sidebar = await screen.findByTestId("sidebar");
+    expect(sidebar.className).toContain("w-[72px]");
+
+    fireEvent.mouseEnter(sidebar);
+    expect(sidebar.className).toContain("w-[240px]");
+
+    fireEvent.mouseLeave(sidebar);
+    expect(sidebar.className).toContain("w-[72px]");
+  });
+
+  it("com o menu fixado, mouseleave não recolapsa a sidebar", async () => {
+    await loginAs("owner@vane.app");
+    renderSidebar();
+    const sidebar = await screen.findByTestId("sidebar");
+
+    await userEvent.click(screen.getByRole("button", { name: "Fixar menu" }));
+    expect(sidebar.className).toContain("w-[240px]");
+
+    fireEvent.mouseEnter(sidebar);
+    fireEvent.mouseLeave(sidebar);
+    expect(sidebar.className).toContain("w-[240px]");
+  });
+
+  it("destaca o item de nav da rota atual com o fundo/texto de acento", async () => {
+    await loginAs("owner@vane.app");
+    renderSidebar("/services");
+    const link = await screen.findByRole("link", { name: "Serviços monitorados" });
+    expect(link.className).toContain("text-accent");
+    expect(link.className).toContain("bg-[rgba(90,70,199,0.08)]");
+  });
+
+  it("TenantSwitcher (>1 membership) renderiza no topo da sidebar, acima dos grupos de nav", async () => {
+    server.use(
+      http.get("/api/auth/me", () =>
+        HttpResponse.json({
+          id: "admin-1",
+          email: "owner@vane.app",
+          name: "Ana Owner",
+          role: "owner",
+          active_tenant_id: "tenant-1",
+          memberships: [
+            { tenant_id: "tenant-1", role: "owner", name: "Acme Corp", plan_tier: "scale" },
+            { tenant_id: "tenant-2", role: "operator", name: "Beta Inc", plan_tier: "" },
+          ],
+        })
+      )
+    );
+    await loginAs("owner@vane.app");
+    const { getByTestId } = renderSidebar();
+    // Name/badge only render expanded (collapsed rail shows just the
+    // avatar, matching the handoff) - hover to expand before querying.
+    fireEvent.mouseEnter(getByTestId("sidebar"));
+
+    const trigger = await screen.findByRole("button", { name: /Acme Corp/ });
+    const nav = await screen.findByText("Serviços monitorados");
+    // compareDocumentPosition bit 4 (DOCUMENT_POSITION_FOLLOWING) confirms
+    // the nav item comes after the tenant switcher trigger in DOM order.
+    expect(trigger.compareDocumentPosition(nav) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it("'Fixar menu' persiste em localStorage entre montagens", async () => {
+    await loginAs("owner@vane.app");
+    const { unmount } = renderSidebar();
+    await screen.findByTestId("sidebar");
+    await userEvent.click(screen.getByRole("button", { name: "Fixar menu" }));
+    unmount();
+
+    renderSidebar();
+    const sidebar = await screen.findByTestId("sidebar");
+    expect(sidebar.className).toContain("w-[240px]");
+  });
+
+  it("mostra 'Visão geral' como primeiro item, acima dos grupos de nav (OVW-15)", async () => {
+    await loginAs("owner@vane.app");
+    renderSidebar();
+
+    const overviewLink = await screen.findByRole("link", { name: "Visão geral" });
+    const servicesLink = screen.getByRole("link", { name: "Serviços monitorados" });
+    expect(overviewLink).toHaveAttribute("href", "/overview");
+    // DOM order: the standalone overview item precedes the first grouped item.
+    expect(overviewLink.compareDocumentPosition(servicesLink) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it("'Visão geral' fica ativo tanto em / quanto em /overview (OVW-16)", async () => {
+    await loginAs("owner@vane.app");
+    const { unmount } = renderSidebar("/");
+    const atRoot = await screen.findByRole("link", { name: "Visão geral" });
+    expect(atRoot.className).toContain("text-accent");
+    unmount();
+
+    renderSidebar("/overview");
+    const atOverview = await screen.findByRole("link", { name: "Visão geral" });
+    expect(atOverview.className).toContain("text-accent");
   });
 });

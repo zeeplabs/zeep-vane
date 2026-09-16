@@ -1,6 +1,6 @@
 import { forwardRef, type ButtonHTMLAttributes } from "react";
 
-export type ButtonVariant = "primary" | "secondary" | "ghost" | "icon";
+export type ButtonVariant = "primary" | "solid" | "secondary" | "ghost" | "icon";
 
 export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: ButtonVariant;
@@ -17,12 +17,17 @@ export const buttonBaseClasses =
 export const buttonVariantClasses: Record<ButtonVariant, string> = {
   primary:
     "border border-accent text-accent bg-transparent px-4 h-9 " +
-    "hover:bg-accent-900 active:bg-accent-800",
+    "hover:bg-accent-100 active:bg-accent-200",
+  // Solid-filled CTA (handoff-new-layout's primary action button style,
+  // e.g. "Adicionar serviço") - distinct from "primary", which is this
+  // app's outlined default used everywhere pre-redesign. Reused across
+  // every new-layout-migration screen instead of a raw <button> per page.
+  solid: "border border-accent bg-accent text-white px-4 h-9 hover:bg-accent-hover active:bg-accent-hover",
   secondary:
     "border border-divider text-text bg-transparent px-4 h-9 " +
-    "hover:bg-neutral-900 active:bg-neutral-800",
+    "hover:bg-card-header-bg active:bg-divider",
   ghost: "border-0 text-accent bg-transparent px-2 h-9 hover:text-accent-2 active:text-accent-2",
-  icon: "border border-divider text-text bg-transparent w-9 h-9 p-0 hover:bg-neutral-900 active:bg-neutral-800",
+  icon: "border border-divider text-text bg-transparent w-9 h-9 p-0 hover:bg-card-header-bg active:bg-divider",
 };
 
 export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button(

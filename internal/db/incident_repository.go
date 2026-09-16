@@ -32,6 +32,10 @@ type Incident struct {
 	// AutoCreated distinguishes an SLOAnalyzer-created incident (AI-12) from
 	// an admin-authored one, for the admin dashboard's badge.
 	AutoCreated bool
+	// Severity is one of "minor"/"moderate"/"critical" (INCSEV-01), enforced
+	// by a DB CHECK constraint. Settable at creation and changeable via
+	// SetSeverity.
+	Severity string
 }
 
 // IncidentUpdate is a single timeline entry attached to an Incident.
@@ -40,6 +44,15 @@ type IncidentUpdate struct {
 	IncidentID string
 	Body       string
 	CreatedAt  time.Time
+	// AuthorID is the human author's user ID, or nil when the entry has no
+	// human author (INCSEV-05/06) - system/AI-authored entries (Transition's
+	// status-change note, ConfirmPendingClose's AI summary).
+	AuthorID *string
+	// IsAISummary marks an entry as the LLM-drafted closing summary recorded
+	// by ConfirmPendingClose (INCSEV-06), distinct from AuthorID being nil -
+	// the UI branches its purple-tinted styling on this flag, not on
+	// AuthorID's presence.
+	IsAISummary bool
 }
 
 // IncidentRepository accesses the incidents, incident_services, and
@@ -69,11 +82,18 @@ func (r *IncidentRepository) Create(ctx context.Context, incident *Incident, ser
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
+	// COALESCE(NULLIF($4, ''), 'moderate'): callers that don't set Severity
+	// (SLOAnalyzer's auto-created incidents, repository-level test helpers)
+	// fall back to the same DB default a bare NOT NULL column would apply -
+	// an explicit empty string is treated as "not set", not as a request to
+	// store an empty severity (the CHECK constraint would reject it anyway).
 	row := tx.QueryRow(ctx,
-		"INSERT INTO incidents (title, description, auto_created) VALUES ($1, $2, $3) RETURNING id, status, created_at",
-		incident.Title, incident.Description, incident.AutoCreated,
+		`INSERT INTO incidents (title, description, auto_created, severity)
+		 VALUES ($1, $2, $3, COALESCE(NULLIF($4, ''), 'moderate'))
+		 RETURNING id, status, created_at, severity`,
+		incident.Title, incident.Description, incident.AutoCreated, incident.Severity,
 	)
-	if err := row.Scan(&incident.ID, &incident.Status, &incident.CreatedAt); err != nil {
+	if err := row.Scan(&incident.ID, &incident.Status, &incident.CreatedAt, &incident.Severity); err != nil {
 		return fmt.Errorf("db: failed to create incident: %w", err)
 	}
 
@@ -93,17 +113,19 @@ func (r *IncidentRepository) Create(ctx context.Context, incident *Incident, ser
 	return nil
 }
 
-// AddUpdate appends an update to incidentID's timeline (SP-17). It returns
-// ErrNotFound if incidentID doesn't exist.
-func (r *IncidentRepository) AddUpdate(ctx context.Context, incidentID, body string) (*IncidentUpdate, error) {
+// AddUpdate appends an update to incidentID's timeline (SP-17), attributed to
+// authorID (the authenticated actor, INCSEV-05) or, when authorID is nil,
+// marked is_ai_summary per isAISummary. Returns ErrNotFound if incidentID
+// doesn't exist.
+func (r *IncidentRepository) AddUpdate(ctx context.Context, incidentID, body string, authorID *string, isAISummary bool) (*IncidentUpdate, error) {
 	if err := r.mustExist(ctx, incidentID); err != nil {
 		return nil, err
 	}
 
-	update := &IncidentUpdate{IncidentID: incidentID, Body: body}
+	update := &IncidentUpdate{IncidentID: incidentID, Body: body, AuthorID: authorID, IsAISummary: isAISummary}
 	row := r.pool.QueryRow(ctx,
-		"INSERT INTO incident_updates (incident_id, body) VALUES ($1, $2) RETURNING id, created_at",
-		incidentID, body,
+		"INSERT INTO incident_updates (incident_id, body, author_id, is_ai_summary) VALUES ($1, $2, $3, $4) RETURNING id, created_at",
+		incidentID, body, authorID, isAISummary,
 	)
 	if err := row.Scan(&update.ID, &update.CreatedAt); err != nil {
 		return nil, fmt.Errorf("db: failed to add incident update: %w", err)
@@ -127,7 +149,7 @@ func (r *IncidentRepository) ListPaginated(ctx context.Context, page, pageSize i
 	offset := (page - 1) * pageSize
 
 	rows, err := r.pool.Query(ctx,
-		`SELECT id, title, status, created_at, resolved_at, description, auto_created, pending_close_comment, COUNT(*) OVER() AS total
+		`SELECT id, title, status, created_at, resolved_at, description, auto_created, pending_close_comment, severity, COUNT(*) OVER() AS total
 		 FROM incidents
 		 ORDER BY created_at DESC
 		 LIMIT $1 OFFSET $2`,
@@ -143,7 +165,7 @@ func (r *IncidentRepository) ListPaginated(ctx context.Context, page, pageSize i
 	for rows.Next() {
 		var incident Incident
 		if err := rows.Scan(&incident.ID, &incident.Title, &incident.Status, &incident.CreatedAt, &incident.ResolvedAt,
-			&incident.Description, &incident.AutoCreated, &incident.PendingCloseComment, &total); err != nil {
+			&incident.Description, &incident.AutoCreated, &incident.PendingCloseComment, &incident.Severity, &total); err != nil {
 			return nil, 0, fmt.Errorf("db: failed to scan incident: %w", err)
 		}
 		incidents = append(incidents, incident)
@@ -177,6 +199,78 @@ func (r *IncidentRepository) countIncidents(ctx context.Context) (int, error) {
 	row := r.pool.QueryRow(ctx, "SELECT COUNT(*) FROM incidents")
 	if err := row.Scan(&total); err != nil {
 		return 0, fmt.Errorf("db: failed to count incidents: %w", err)
+	}
+	return total, nil
+}
+
+// CountOpen returns how many incidents are currently open - status not
+// resolved - for the active tenant (OVW-04). "Open" uses the same
+// definition IncidentRepository applies everywhere else: an incident is
+// closed only by status "resolved" (Transition's resolved_at handling),
+// so every other status counts as open. Relies on app.tenant_id being set
+// so RLS scopes the count to one tenant.
+func (r *IncidentRepository) CountOpen(ctx context.Context) (int, error) {
+	var total int
+	row := r.pool.QueryRow(ctx, "SELECT COUNT(*) FROM incidents WHERE status <> 'resolved'")
+	if err := row.Scan(&total); err != nil {
+		return 0, fmt.Errorf("db: failed to count open incidents: %w", err)
+	}
+	return total, nil
+}
+
+// CountOpenBreakdown returns, among currently-open incidents (status <>
+// 'resolved'), how many have severity 'critical' and how many have status
+// 'monitoring' - the two figures the Overview page's incidents card
+// summarizes alongside the open total (OVW-04). The two counts are not
+// mutually exclusive (an incident can be both critical and monitoring) and
+// don't have to sum to the open total; each is its own independent filter.
+func (r *IncidentRepository) CountOpenBreakdown(ctx context.Context) (criticalCount, monitoringCount int, err error) {
+	row := r.pool.QueryRow(ctx,
+		`SELECT
+		   COUNT(*) FILTER (WHERE severity = 'critical'),
+		   COUNT(*) FILTER (WHERE status = 'monitoring')
+		 FROM incidents WHERE status <> 'resolved'`,
+	)
+	if err := row.Scan(&criticalCount, &monitoringCount); err != nil {
+		return 0, 0, fmt.Errorf("db: failed to count open incident breakdown: %w", err)
+	}
+	return criticalCount, monitoringCount, nil
+}
+
+// CountOpenedResolvedBetween returns how many incidents opened (created_at) and
+// resolved (resolved_at) in [from, to) for the active tenant. It is what the
+// weekly digest summarizes (notification-preferences NOTIFPREF-10). Requires
+// app.tenant_id set, so RLS scopes the counts to one tenant.
+func (r *IncidentRepository) CountOpenedResolvedBetween(ctx context.Context, from, to time.Time) (opened, resolved int, err error) {
+	row := r.pool.QueryRow(ctx,
+		`SELECT
+		   COUNT(*) FILTER (WHERE created_at >= $1 AND created_at < $2),
+		   COUNT(*) FILTER (WHERE resolved_at >= $1 AND resolved_at < $2)
+		 FROM incidents`,
+		from, to,
+	)
+	if err := row.Scan(&opened, &resolved); err != nil {
+		return 0, 0, fmt.Errorf("db: failed to count incidents between %s and %s: %w", from, to, err)
+	}
+	return opened, resolved, nil
+}
+
+// CountByServiceSince returns how many incidents (any status) linked to
+// serviceID via incident_services were created at or after since - the
+// monitored-services-page detail drawer's "Incidentes (30d)" stat
+// (SVC-14). Requires app.tenant_id set, so RLS scopes the count to one
+// tenant (same as CountOpenedResolvedBetween).
+func (r *IncidentRepository) CountByServiceSince(ctx context.Context, serviceID string, since time.Time) (int, error) {
+	var total int
+	row := r.pool.QueryRow(ctx,
+		`SELECT COUNT(*)
+		 FROM incidents i
+		 JOIN incident_services isv ON isv.incident_id = i.id
+		 WHERE isv.service_id = $1 AND i.created_at >= $2`,
+		serviceID, since,
+	)
+	if err := row.Scan(&total); err != nil {
+		return 0, fmt.Errorf("db: failed to count incidents for service %s since %s: %w", serviceID, since, err)
 	}
 	return total, nil
 }
@@ -227,7 +321,7 @@ func (r *IncidentRepository) ListUpdates(ctx context.Context, incidentID string)
 	}
 
 	rows, err := r.pool.Query(ctx,
-		"SELECT id, incident_id, body, created_at FROM incident_updates WHERE incident_id = $1 ORDER BY created_at DESC",
+		"SELECT id, incident_id, body, created_at, author_id, is_ai_summary FROM incident_updates WHERE incident_id = $1 ORDER BY created_at DESC",
 		incidentID,
 	)
 	if err != nil {
@@ -238,7 +332,7 @@ func (r *IncidentRepository) ListUpdates(ctx context.Context, incidentID string)
 	var updates []IncidentUpdate
 	for rows.Next() {
 		var update IncidentUpdate
-		if err := rows.Scan(&update.ID, &update.IncidentID, &update.Body, &update.CreatedAt); err != nil {
+		if err := rows.Scan(&update.ID, &update.IncidentID, &update.Body, &update.CreatedAt, &update.AuthorID, &update.IsAISummary); err != nil {
 			return nil, fmt.Errorf("db: failed to scan incident update: %w", err)
 		}
 		updates = append(updates, update)
@@ -263,7 +357,7 @@ func (r *IncidentRepository) ListUpdatesPaginated(ctx context.Context, incidentI
 	offset := (page - 1) * pageSize
 
 	rows, err := r.pool.Query(ctx,
-		`SELECT id, incident_id, body, created_at, COUNT(*) OVER() AS total
+		`SELECT id, incident_id, body, created_at, author_id, is_ai_summary, COUNT(*) OVER() AS total
 		 FROM incident_updates
 		 WHERE incident_id = $1
 		 ORDER BY created_at DESC
@@ -279,7 +373,7 @@ func (r *IncidentRepository) ListUpdatesPaginated(ctx context.Context, incidentI
 	total := 0
 	for rows.Next() {
 		var update IncidentUpdate
-		if err := rows.Scan(&update.ID, &update.IncidentID, &update.Body, &update.CreatedAt, &total); err != nil {
+		if err := rows.Scan(&update.ID, &update.IncidentID, &update.Body, &update.CreatedAt, &update.AuthorID, &update.IsAISummary, &total); err != nil {
 			return nil, 0, fmt.Errorf("db: failed to scan incident update: %w", err)
 		}
 		updates = append(updates, update)
@@ -328,10 +422,10 @@ func (r *IncidentRepository) Transition(ctx context.Context, incidentID, status 
 		 SET status = $2,
 		     resolved_at = CASE WHEN $2 = 'resolved' THEN now() ELSE NULL END
 		 WHERE id = $1
-		 RETURNING title, status, created_at, resolved_at`,
+		 RETURNING title, status, created_at, resolved_at, severity`,
 		incidentID, status,
 	)
-	if err := row.Scan(&incident.Title, &incident.Status, &incident.CreatedAt, &incident.ResolvedAt); err != nil {
+	if err := row.Scan(&incident.Title, &incident.Status, &incident.CreatedAt, &incident.ResolvedAt, &incident.Severity); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, ErrNotFound
 		}
@@ -347,6 +441,28 @@ func (r *IncidentRepository) Transition(ctx context.Context, incidentID, status 
 
 	if err := tx.Commit(ctx); err != nil {
 		return nil, fmt.Errorf("db: failed to commit incident transition transaction: %w", err)
+	}
+
+	return incident, nil
+}
+
+// SetSeverity updates incidentID's severity (INCSEV-04), independent of
+// status - unlike SetDescription/SetPendingCloseComment, a resolved incident
+// can still have its severity changed (spec.md: "severity is independent of
+// the status state machine"). Returns ErrNotFound if incidentID doesn't
+// exist.
+func (r *IncidentRepository) SetSeverity(ctx context.Context, incidentID, severity string) (*Incident, error) {
+	incident := &Incident{ID: incidentID}
+	row := r.pool.QueryRow(ctx,
+		`UPDATE incidents SET severity = $2 WHERE id = $1
+		 RETURNING title, status, created_at, resolved_at, severity`,
+		incidentID, severity,
+	)
+	if err := row.Scan(&incident.Title, &incident.Status, &incident.CreatedAt, &incident.ResolvedAt, &incident.Severity); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrNotFound
+		}
+		return nil, fmt.Errorf("db: failed to set incident severity: %w", err)
 	}
 
 	return incident, nil
@@ -726,16 +842,19 @@ func (r *IncidentRepository) ConfirmPendingClose(ctx context.Context, incidentID
 		`UPDATE incidents
 		 SET status = 'resolved', resolved_at = now(), pending_close_comment = NULL
 		 WHERE id = $1
-		 RETURNING title, status, created_at, resolved_at, description, auto_created`,
+		 RETURNING title, status, created_at, resolved_at, description, auto_created, severity`,
 		incidentID,
 	)
 	if err := row.Scan(&incident.Title, &incident.Status, &incident.CreatedAt, &incident.ResolvedAt,
-		&incident.Description, &incident.AutoCreated); err != nil {
+		&incident.Description, &incident.AutoCreated, &incident.Severity); err != nil {
 		return nil, fmt.Errorf("db: failed to confirm pending close: %w", err)
 	}
 
+	// author_id stays NULL and is_ai_summary is true: the comment text is
+	// LLM-drafted (AI-19/AI-20); the human only confirms it, they don't
+	// author it (INCSEV-06).
 	if _, err := tx.Exec(ctx,
-		"INSERT INTO incident_updates (incident_id, body) VALUES ($1, $2)",
+		"INSERT INTO incident_updates (incident_id, body, is_ai_summary) VALUES ($1, $2, true)",
 		incidentID, expectedComment,
 	); err != nil {
 		return nil, fmt.Errorf("db: failed to record closing comment on timeline: %w", err)

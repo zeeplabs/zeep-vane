@@ -5,10 +5,33 @@ import (
 	"net/http"
 )
 
-// logoGetter is the subset of *db.CompanySettingsRepository the logo file
-// handler depends on.
+// logoGetter is the subset of *db.TenantRepository the logo file handler
+// depends on. This route is public - it has no session and therefore no
+// active tenant of its own - so it reads through ActiveLogo, whose
+// predicate honours app.tenant_id when one is set and otherwise falls back
+// to the installation's single tenant (see
+// TenantRepository.activeTenantPredicate).
+//
+// Which of those two applies depends on the listener, because this handler
+// is mounted on both:
+//
+//   - On the public HTTPS listener (cmd/vane serve, newHTTPSServer) it sits
+//     behind router.HostRouter, which resolves the visitor's Host header to
+//     a published status page and sets app.tenant_id to that page's tenant
+//     for the request's transaction. ActiveLogo then returns that tenant's
+//     logo - correct under RLS and correct across tenants.
+//   - On the admin HTTP listener (internal/cli/routes.go) it is mounted
+//     unauthenticated, outside api.TenantContext, so the login screen's
+//     <img> can load before a session exists. That request carries no
+//     tenant signal at all: the admin domain is shared, not per-tenant, so
+//     there is nothing to resolve from and the single-tenant fallback is
+//     what answers. That is correct for self-hosted (one tenant by
+//     definition) and is a known open question for a shared-admin-domain
+//     SaaS deployment, where resolving the tenant needs a signal this route
+//     does not have yet (an admin subdomain or slug). Deliberately not
+//     guessed here.
 type logoGetter interface {
-	GetLogo(ctx context.Context) (contentType string, data []byte, found bool, err error)
+	ActiveLogo(ctx context.Context) (contentType string, data []byte, found bool, err error)
 }
 
 // logoServeCSP is stricter than the general SecurityHeaders default:
@@ -27,14 +50,13 @@ const logoServeCSP = "default-src 'none'; sandbox"
 // NewLogoFileHandler builds the handler that serves the one stored logo
 // back over HTTP with no authentication required (SET-12 - the public
 // status page must render it unauthenticated). The logo lives in Postgres
-// (company_settings.logo_data), not on this replica's local disk - every
-// replica reading the same database serves the same logo regardless of
-// which one handled the upload (see CompanySettingsRepository.UpdateLogo's
-// doc comment). A request when no logo has ever been uploaded gets a
+// (tenants.logo_data), not on this replica's local disk - every replica
+// reading the same database serves the same logo regardless of which one
+// handled the upload (see TenantRepository.UpdateLogo's doc comment). A request when no logo has ever been uploaded gets a
 // plain 404, never a directory listing or an empty 200.
 func NewLogoFileHandler(logos logoGetter) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		contentType, data, found, err := logos.GetLogo(r.Context())
+		contentType, data, found, err := logos.ActiveLogo(r.Context())
 		if err != nil || !found {
 			http.NotFound(w, r)
 			return

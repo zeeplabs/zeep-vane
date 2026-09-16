@@ -1,16 +1,12 @@
 import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
+import { MdOutlineLock } from "react-icons/md";
 import { Dialog } from "../components/ui/Dialog";
 import { Button } from "../components/ui/Button";
 import { useAuth } from "./AuthProvider";
 
 function LockIcon() {
-  return (
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <rect x="5" y="11" width="14" height="9" rx="2" stroke="currentColor" strokeWidth="1.5" />
-      <path d="M8 11V7a4 4 0 118 0v4" stroke="currentColor" strokeWidth="1.5" />
-    </svg>
-  );
+  return <MdOutlineLock size={20} aria-hidden="true" />;
 }
 
 export function SessionExpiredModal() {

@@ -43,6 +43,10 @@ type ProviderFactory func(provider, apiKey string) (Provider, error)
 type Sender interface {
 	SendAdminInvite(ctx context.Context, to string, data AdminInviteEmailData) error
 	SendPasswordReset(ctx context.Context, to string, data PasswordResetEmailData) error
+	SendSignupVerification(ctx context.Context, to string, data SignupVerificationEmailData) error
+	SendIncidentOpened(ctx context.Context, to string, data IncidentOpenedEmailData) error
+	SendIncidentResolved(ctx context.Context, to string, data IncidentResolvedEmailData) error
+	SendWeeklyDigest(ctx context.Context, to string, data WeeklyDigestEmailData) error
 }
 
 // AdminInviteEmailData is the data the admin-invite template renders.
@@ -62,6 +66,64 @@ type PasswordResetEmailData struct {
 	CompanyName string
 	// ResetURL is the password-reset link, built by the caller.
 	ResetURL string
+}
+
+// SignupVerificationEmailData is the data the signup email-verification
+// template renders (T9/T10, multi-tenancy-core).
+type SignupVerificationEmailData struct {
+	// TenantName is the newly created tenant's display name.
+	TenantName string
+	// VerifyURL is the email-verification link, built by the caller.
+	VerifyURL string
+}
+
+// IncidentOpenedEmailData is the data the incident-opened template renders
+// (notification-preferences NOTIFPREF-04).
+type IncidentOpenedEmailData struct {
+	// TenantName is the tenant the incident belongs to, for context.
+	TenantName string
+	// ServiceName is the monitored service the incident affects.
+	ServiceName string
+	// IncidentTitle is the incident's title.
+	IncidentTitle string
+	// Severity is the incident's severity (e.g. critical/major/minor).
+	Severity string
+	// DashboardURL links to the incident in the admin dashboard.
+	DashboardURL string
+}
+
+// IncidentResolvedEmailData is the data the incident-resolved template renders
+// (notification-preferences NOTIFPREF-07).
+type IncidentResolvedEmailData struct {
+	// TenantName is the tenant the incident belongs to, for context.
+	TenantName string
+	// ServiceName is the monitored service the incident affected.
+	ServiceName string
+	// IncidentTitle is the incident's title.
+	IncidentTitle string
+	// Severity is the incident's severity (e.g. critical/major/minor).
+	Severity string
+	// DashboardURL links to the incident in the admin dashboard.
+	DashboardURL string
+}
+
+// WeeklyDigestEmailData is the data the weekly digest template renders
+// (notification-preferences NOTIFPREF-10). The aggregates are computed by the
+// caller (DigestScheduler) from existing data; this struct only carries the
+// values.
+type WeeklyDigestEmailData struct {
+	// TenantName is the tenant the digest summarizes.
+	TenantName string
+	// UptimePercent is the tenant's uptime over the period, 0-100.
+	UptimePercent float64
+	// IncidentsOpened is how many incidents opened during the period.
+	IncidentsOpened int
+	// IncidentsResolved is how many incidents resolved during the period.
+	IncidentsResolved int
+	// PeriodStart and PeriodEnd are preformatted date strings for the period
+	// the digest covers.
+	PeriodStart string
+	PeriodEnd   string
 }
 
 // Typed errors shared by both connectors, since the HTTP-behavior

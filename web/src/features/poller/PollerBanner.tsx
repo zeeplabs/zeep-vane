@@ -1,40 +1,11 @@
 import { useNavigate } from "react-router-dom";
+import { MdOutlineWarningAmber } from "react-icons/md";
 import { Button } from "../../components/ui/Button";
+import { failureMessage } from "./format";
 import { usePollerStatus } from "./hooks";
 
 function WarningTriangleIcon() {
-  return (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <path
-        d="M12 3l10 18H2L12 3z"
-        stroke="currentColor"
-        strokeWidth="1.5"
-        strokeLinejoin="round"
-      />
-      <path d="M12 10v4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-      <circle cx="12" cy="17" r="0.9" fill="currentColor" />
-    </svg>
-  );
-}
-
-const PROVIDER_LABELS: Record<string, string> = {
-  datadog: "Datadog",
-  sendgrid: "SendGrid",
-  resend: "Resend",
-};
-
-function providerLabel(provider: string): string {
-  return PROVIDER_LABELS[provider] ?? provider;
-}
-
-// Names the specific integration(s) so an operator doesn't have to open the
-// details page just to know which credential to rotate.
-function failureMessage(providers: string[]): string {
-  const labels = providers.map(providerLabel);
-  if (labels.length === 1) {
-    return `Falha ao verificar a integração ${labels[0]} — última tentativa não teve sucesso.`;
-  }
-  return `Falha ao verificar as integrações ${labels.join(" e ")} — última tentativa não teve sucesso.`;
+  return <MdOutlineWarningAmber size={18} aria-hidden="true" />;
 }
 
 export function PollerBanner() {

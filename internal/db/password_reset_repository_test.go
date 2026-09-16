@@ -11,7 +11,7 @@ import (
 	"github.com/zeeplabs/zeep-vane/internal/dbtest"
 )
 
-func newPasswordResetRepositoryForTest(t *testing.T) (*PasswordResetRepository, *AdminRepository, *Pool) {
+func newPasswordResetRepositoryForTest(t *testing.T) (*PasswordResetRepository, *UserRepository, *Pool) {
 	t.Helper()
 	dsn := testDatabaseURL(t)
 
@@ -29,24 +29,24 @@ func newPasswordResetRepositoryForTest(t *testing.T) (*PasswordResetRepository, 
 	t.Cleanup(pool.Close)
 
 	// Tests in this file create an admin via createTestAdminForReset, and
-	// AdminRepository.Create always inserts with the `admins.role`
-	// column's database default (owner, migration 0009) - see
-	// LockAdminsTable's doc comment for why this must be held across
+	// Creating identity rows here races other packages' bulk clears of
+	// the shared `users` table - see
+	// LockUsersTable's doc comment for why this must be held across
 	// concurrently-run packages. Deliberately context.Background(), not
 	// the bounded `ctx` above, which is canceled by the deferred cancel()
 	// as soon as this function returns.
-	dbtest.LockAdminsTable(t, context.Background(), dsn)
+	dbtest.LockUsersTable(t, context.Background(), dsn)
 
-	return NewPasswordResetRepository(pool), NewAdminRepository(pool), pool
+	return NewPasswordResetRepository(pool), NewUserRepository(pool), pool
 }
 
-func createTestAdminForReset(t *testing.T, admins *AdminRepository, pool *Pool) *Admin {
+func createTestAdminForReset(t *testing.T, admins *UserRepository, pool *Pool) *User {
 	t.Helper()
 	ctx := context.Background()
 	email := uniqueTestEmail(t)
-	t.Cleanup(func() { _, _ = pool.Exec(ctx, "DELETE FROM admins WHERE email = $1", email) })
+	t.Cleanup(func() { _, _ = pool.Exec(ctx, "DELETE FROM users WHERE email = $1", email) })
 
-	admin := &Admin{Email: email, PasswordHash: "hash"}
+	admin := &User{Email: email, PasswordHash: "hash"}
 	if err := admins.Create(ctx, admin); err != nil {
 		t.Fatalf("admins.Create() returned unexpected error: %v", err)
 	}
@@ -59,7 +59,7 @@ func TestPasswordResetRepository_Create_Success(t *testing.T) {
 	ctx := context.Background()
 
 	token := &PasswordResetToken{
-		AdminID:   admin.ID,
+		UserID:    admin.ID,
 		TokenHash: "hash-" + admin.ID,
 		ExpiresAt: time.Now().Add(1 * time.Hour),
 	}
@@ -80,7 +80,7 @@ func TestPasswordResetRepository_GetByTokenHash_Existing_ReturnsToken(t *testing
 
 	expiresAt := time.Now().Add(1 * time.Hour).Truncate(time.Second)
 	created := &PasswordResetToken{
-		AdminID:   admin.ID,
+		UserID:    admin.ID,
 		TokenHash: "hash-" + admin.ID,
 		ExpiresAt: expiresAt,
 	}
@@ -98,8 +98,8 @@ func TestPasswordResetRepository_GetByTokenHash_Existing_ReturnsToken(t *testing
 	if got.ID != created.ID {
 		t.Errorf("GetByTokenHash() ID = %q, want %q", got.ID, created.ID)
 	}
-	if got.AdminID != admin.ID {
-		t.Errorf("GetByTokenHash() AdminID = %q, want %q", got.AdminID, admin.ID)
+	if got.UserID != admin.ID {
+		t.Errorf("GetByTokenHash() UserID = %q, want %q", got.UserID, admin.ID)
 	}
 	if !got.ExpiresAt.Equal(expiresAt) {
 		t.Errorf("GetByTokenHash() ExpiresAt = %v, want %v", got.ExpiresAt, expiresAt)
@@ -124,7 +124,7 @@ func TestPasswordResetRepository_MarkUsed_SetsUsedAt(t *testing.T) {
 	ctx := context.Background()
 
 	token := &PasswordResetToken{
-		AdminID:   admin.ID,
+		UserID:    admin.ID,
 		TokenHash: "hash-" + admin.ID,
 		ExpiresAt: time.Now().Add(1 * time.Hour),
 	}

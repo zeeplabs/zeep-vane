@@ -1,0 +1,6 @@
+{{if .TenantName}}Weekly digest for {{.TenantName}}{{else}}Your weekly digest{{end}}
+
+Period: {{.PeriodStart}} to {{.PeriodEnd}}
+Uptime: {{printf "%.2f" .UptimePercent}}%
+Incidents opened: {{.IncidentsOpened}}
+Incidents resolved: {{.IncidentsResolved}}

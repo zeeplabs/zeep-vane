@@ -10,9 +10,12 @@ import {
   incidentUpdates as seedIncidentUpdates,
   sloCatalog,
   datadogIntegration as seedDatadogIntegration,
+  pollerLeadership,
   pollerStatus as seedPollerStatus,
   companySettings as seedCompanySettings,
+  sessions as seedSessions,
 } from "../../lib/mockData";
+import type { MockSession } from "../../lib/mockData";
 import type {
   Admin,
   AdminInvite,
@@ -24,6 +27,7 @@ import type {
   IncidentUpdate,
   IncidentStatus,
   CompanySettings,
+  SessionView,
   Page,
 } from "../../types/api";
 import type { LLMProviderName } from "../../lib/llmProviders";
@@ -34,9 +38,101 @@ import type { LLMProviderName } from "../../lib/llmProviders";
 // "logged in or not" across requests within a test.
 let sessionAdminId: string | null = null;
 
+// In-memory profile/2FA overrides (profile-page), mirroring the fields GET
+// /api/auth/me reports for the logged-in admin. Tests toggle 2FA via
+// setTwoFactorEnabled (or the enroll/confirm/disable handlers); PATCH
+// /api/auth/me writes profileNameOverride and change-password writes
+// passwordOverride. resetAuthSession clears all of them
+// (test/setup.ts afterEach) so no test leaks identity state into the next -
+// importantly the seeded "demo1234" password stays valid after another test
+// rotates it.
+let twoFactorEnabledState = false;
+let profileNameOverride: Record<string, string> = {};
+let passwordOverride: Record<string, string> = {};
+
+// In-memory notification preference state (notification-preferences
+// NOTIFPREF-13/14). A missing key resolves to the documented backend default
+// (the two incident types on, the digest off), mirroring
+// db.NotificationDefaultEnabled.
+let notificationPreferencesState: Record<string, boolean> = {};
+
+const notificationPreferenceDefaults: Record<string, boolean> = {
+  incident_opened: true,
+  incident_resolved: true,
+  weekly_digest: false,
+};
+
+function resolveNotificationPreferences(): Record<string, boolean> {
+  return {
+    incident_opened:
+      notificationPreferencesState.incident_opened ??
+      notificationPreferenceDefaults.incident_opened,
+    incident_resolved:
+      notificationPreferencesState.incident_resolved ??
+      notificationPreferenceDefaults.incident_resolved,
+    weekly_digest:
+      notificationPreferencesState.weekly_digest ??
+      notificationPreferenceDefaults.weekly_digest,
+  };
+}
+
+// Login-2FA challenge state (login-2fa): twoFactorChallengesState maps an
+// issued challenge token to the admin id it was issued for. The real backend
+// signs a JWT carrying the user id (auth.IssueTwoFactorChallenge); the mock
+// keeps an opaque per-test id -> adminId map instead. recoveryCodesState holds
+// the valid, not-yet-consumed recovery codes a test seeded via
+// seedRecoveryCode - POST verify-2fa consumes (removes) one on success,
+// mirroring the real single-use invariant (TwoFactorService.ConsumeRecoveryCode).
+let twoFactorChallengesState: Record<string, string> = {};
+let recoveryCodesState: string[] = [];
+let twoFactorChallengeCounter = 0;
+
 export function resetAuthSession(): void {
   sessionAdminId = null;
+  currentSessionId = null;
+  twoFactorEnabledState = false;
+  profileNameOverride = {};
+  passwordOverride = {};
+  notificationPreferencesState = {};
+  twoFactorChallengesState = {};
+  recoveryCodesState = [];
+  twoFactorChallengeCounter = 0;
 }
+
+// seedRecoveryCode registers code as a valid, unused recovery code for
+// POST /api/auth/login/verify-2fa (login-2fa). The real codes are minted at
+// confirm time and only ever shown once; the mock exposes this seed helper so
+// a test can drive the device-loss fallback without re-running enrollment.
+export function seedRecoveryCode(code: string): void {
+  recoveryCodesState.push(code);
+}
+
+// setTwoFactorEnabled lets a test drive the 2FA state GET /api/auth/me
+// reports without going through the enroll/confirm handlers.
+export function setTwoFactorEnabled(value: boolean): void {
+  twoFactorEnabledState = value;
+}
+
+// mswValidTotpCode is the code POST /api/auth/2fa/confirm accepts. The mock
+// has no real pending TOTP secret to validate against, so it accepts this
+// fixed code and 422s everything else, mirroring the backend's wrong-code
+// path (auth_handler.go Confirm2FA).
+export const mswValidTotpCode = "123456";
+
+// In-memory sessions state (user-sessions spec). Seeded fresh from
+// mockData on every resetSessions() call (test/setup.ts afterEach).
+// currentSessionId stands in for the JWT's `sid` claim: the real
+// backend derives "is this the request's session?" by comparing the
+// row id against the sid RequireAuth put in the request context, and
+// we mirror that here so the list/revoke handlers can answer
+// current:true/409 without a real JWT parse.
+let sessionsState: MockSession[] = [];
+let currentSessionId: string | null = null;
+
+export function resetSessions(): void {
+  sessionsState = seedSessions.map((s) => ({ ...s }));
+}
+resetSessions();
 
 // In-memory domains/status-pages state, seeded fresh from mockData's
 // fixtures on every resetDomainsAndStatusPages() call (test/setup.ts
@@ -232,6 +328,44 @@ export function setBootstrapped(value: boolean): void {
   bootstrapState = value;
 }
 
+// deploymentModeState mirrors Config.DeploymentMode (AD-033). Defaults to
+// "saas" - the opposite of the backend's real default - so every
+// pre-existing test exercising LoginPage's "Criar conta" link or
+// SignupPage's form (written before deployment-mode existed) keeps working
+// without being touched; deployment-mode's own tests override it via
+// setDeploymentMode to exercise the self-hosted-restricted path.
+let deploymentModeState: "self_hosted" | "saas" = "saas";
+
+export function resetDeploymentMode(): void {
+  deploymentModeState = "saas";
+}
+
+export function setDeploymentMode(value: "self_hosted" | "saas"): void {
+  deploymentModeState = value;
+}
+
+// signupState mirrors the real backend's per-email signup lifecycle (T9's
+// SignupHandler): unverified until the emailed link is followed. Keyed by
+// email rather than an id, same as the real handler's own GetByEmail-first
+// flow. signupVerifyToken derives a deterministic token per email instead
+// of a random one - the real token is only ever delivered via the email
+// the mock doesn't send, so tests need a stable, guessable value to
+// exercise VerifyEmailPage without a separate "extract the raw token"
+// helper.
+interface SignupFixtureEntry {
+  tenantName: string;
+  verified: boolean;
+}
+let signupState: Record<string, SignupFixtureEntry> = {};
+
+export function resetSignupState(): void {
+  signupState = {};
+}
+
+function signupVerifyToken(email: string): string {
+  return `verify-token-for-${email}`;
+}
+
 const validAdminRoles: Role[] = ["owner", "operator", "viewer"];
 
 // wouldLeaveZeroOwners mirrors admins.go's function of the same name
@@ -263,26 +397,71 @@ function paginatedPage<T>(requestUrl: string, items: T[], pageSize: number): Pag
   };
 }
 
-// toServiceResponse strips slo_name - the real serviceResponse
-// (internal/api/services_handler.go) never returns it, only the opaque
-// slo_id (see services/hooks.ts's toService adapter, SPEC_DEVIATION I15).
+// serviceUptimeAndLastSeen fabricates a plausible uptime_30d/last_seen_at
+// pair for the fixture: a service with current_status "not_configured" has
+// no StatusInterval data yet (mirrors the real backend's nil-when-no-data
+// rule, SVC-06), any other status gets a real-looking value.
+function serviceUptimeAndLastSeen(service: Service): { uptime_30d: number | null; last_seen_at: string | null } {
+  if (service.current_status === "not_configured") {
+    return { uptime_30d: null, last_seen_at: null };
+  }
+  return { uptime_30d: 99.9, last_seen_at: new Date().toISOString() };
+}
+
+// toServiceResponse mirrors the real serviceResponse
+// (internal/api/services_handler.go): id, name, slo_id, slo_name,
+// monitor_mode, poll_type, poll_target, poll_interval_seconds,
+// current_status, last_status_change_at, uptime_30d, last_seen_at.
 function toServiceResponse(service: Service) {
+  const { uptime_30d, last_seen_at } = serviceUptimeAndLastSeen(service);
   return {
     id: service.id,
     name: service.name,
     slo_id: service.slo_id,
+    slo_name: service.slo_name,
+    monitor_mode: service.monitor_mode,
+    poll_type: service.poll_type,
+    poll_target: service.poll_target,
+    poll_interval_seconds: service.poll_interval_seconds,
     current_status: service.current_status,
     last_status_change_at: service.last_status_change_at,
+    uptime_30d,
+    last_seen_at,
   };
 }
 
-// toDomainResponse strips fields the real backend never returns.
+// serviceDegradedNotes/serviceIncidentCounts back the detail endpoint's
+// status_analysis/incidents_30d fixtures (SVC-14..17) - keyed by id rather
+// than added to the shared Service type, since no other endpoint needs
+// them.
+const serviceDegradedNotes: Record<string, string> = {
+  "svc-2": "Latência acima do normal nas últimas 2 horas.",
+};
+
+const serviceIncidentCounts: Record<string, number> = {
+  "svc-2": 2,
+};
+
+// toDomainResponse mirrors DomainsHandler's real domainResponse shape
+// (internal/api/domains_handler.go) - every field the backend actually
+// returns, including the domains-status-pages-page T2 attached-page join.
 // toStatusPageResponse mirrors the real StatusPagesHandler response shape,
 // service_ids included - GET/POST/PATCH .../services on the real backend
 // all return it (internal/api/status_pages_handler.go's
 // toStatusPageResponse).
 function toDomainResponse(domain: Domain) {
-  return { id: domain.id, hostname: domain.hostname, created_at: domain.created_at };
+  return {
+    id: domain.id,
+    hostname: domain.hostname,
+    created_at: domain.created_at,
+    domain_type: domain.domain_type,
+    status: domain.status,
+    ssl_status: domain.ssl_status,
+    verified_at: domain.verified_at,
+    last_error: domain.last_error,
+    attached_page_name: domain.attached_page_name,
+    attached_page_count: domain.attached_page_count,
+  };
 }
 
 function toStatusPageResponse(statusPage: StatusPage) {
@@ -335,6 +514,79 @@ function buildFixtureHistory(status: Service["current_status"], bucketCount: num
   }));
 }
 
+// defaultMembershipsFor mirrors the real backend's every-day case
+// (self-hosted, exactly 1 tenant_membership): every seeded admin belongs
+// to exactly one fixture tenant, in their own seeded role. Tests
+// exercising >1 membership (T17's TenantSelector) override /api/auth/me
+// (and /api/auth/switch-tenant) via server.use rather than changing this
+// default, so every other test's single-membership assumption (no
+// /select-tenant redirect) stays intact.
+function defaultMembershipsFor(role: Role) {
+  return [{ tenant_id: "tenant-1", role }];
+}
+
+// effectivePassword applies the in-memory rotation from change-password over
+// the seeded password, so login/change-password/disable all agree within a
+// test without mutating the shared seed fixture.
+function effectivePassword(admin: (typeof seedAdmins)[number]): string {
+  return passwordOverride[admin.id] ?? admin.password;
+}
+
+// buildMeResponse is the single source of the GET/PATCH /api/auth/me body,
+// so both handlers stay byte-identical in shape (the real backend shares one
+// meResponse struct).
+function buildMeResponse(admin: (typeof seedAdmins)[number]) {
+  return {
+    id: admin.id,
+    email: admin.email,
+    name: profileNameOverride[admin.id] ?? admin.name,
+    role: admin.role,
+    active_tenant_id: "tenant-1",
+    memberships: defaultMembershipsFor(admin.role),
+    two_factor_enabled: twoFactorEnabledState,
+  };
+}
+
+// overviewSeed returns a realistic GET /api/overview response
+// (dashboard-overview-page), mirroring internal/api/overview_handler.go's
+// OverviewResponse shape: a flat DTO, not a Page<T>. The 14 daily buckets
+// end today, oldest first; the first bucket is null ("—") so component tests
+// can assert the no-data rendering without an override.
+function overviewSeed() {
+  const series = Array.from({ length: 14 }, (_, i) => {
+    const d = new Date();
+    d.setDate(d.getDate() - (13 - i));
+    const date = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+    return { date, uptime_percent: i === 0 ? null : 99.9 };
+  });
+  return {
+    uptime_avg_30d: 99.9,
+    uptime_avg_30d_prior: 99.8,
+    open_incidents: 1,
+    open_incidents_critical: 1,
+    open_incidents_monitoring: 0,
+    unhealthy_services: 2,
+    total_services: 6,
+    verified_domains: 1,
+    total_domains: 2,
+    uptime_series: series,
+    recent_incidents: [
+      {
+        id: "inc-overview-1",
+        title: "Latência elevada no checkout",
+        status: "investigating",
+        created_at: new Date().toISOString(),
+      },
+      {
+        id: "inc-overview-2",
+        title: "Instabilidade no gateway",
+        status: "resolved",
+        created_at: new Date(Date.now() - 3_600_000).toISOString(),
+      },
+    ],
+  };
+}
+
 export const handlers = [
   // GET /api/public-status - mirrors the production public status page
   // endpoint (AD-018), only ever wired up on the public HTTPS listener in
@@ -351,7 +603,7 @@ export const handlers = [
   // whether any admin exists yet, for the SPA's boot-time redirect decision
   // (SHD-19). Public, unauthenticated - never gated on sessionAdminId.
   http.get("/api/bootstrap/status", () => {
-    return HttpResponse.json({ bootstrapped: bootstrapState });
+    return HttpResponse.json({ bootstrapped: bootstrapState, deployment_mode: deploymentModeState });
   }),
 
   // POST /api/bootstrap - mirrors BootstrapHandler.Create: creates the
@@ -374,27 +626,346 @@ export const handlers = [
     return HttpResponse.json({ id: "admin-bootstrap-1", email: body.email, name: body.name, phone: body.phone, role: "owner" });
   }),
 
+  // POST /api/signup - mirrors SignupHandler.Signup's "new email" path
+  // (T9): 422 on missing fields or a too-short/too-long password
+  // (auth.ValidatePassword's 8-72 range), 409 on retrying the same email
+  // while still unverified (spec.md edge case), otherwise 201 with the
+  // pending_verification status the real handler returns.
+  http.post("/api/signup", async ({ request }) => {
+    const body = (await request.json()) as { email?: string; password?: string; tenant_name?: string };
+    if (!body.email || !body.password || !body.tenant_name) {
+      return HttpResponse.json({ error: "email, password, and tenant_name are required" }, { status: 422 });
+    }
+    if (body.password.length < 8 || body.password.length > 72) {
+      return HttpResponse.json({ error: "password must be between 8 and 72 characters" }, { status: 422 });
+    }
+    const existing = signupState[body.email];
+    if (existing && !existing.verified) {
+      return HttpResponse.json(
+        { error: "a signup for this email is already pending verification" },
+        { status: 409 }
+      );
+    }
+    signupState[body.email] = { tenantName: body.tenant_name, verified: false };
+    return HttpResponse.json(
+      { status: "pending_verification", email: body.email, email_sent: true },
+      { status: 201 }
+    );
+  }),
+
+  // GET /api/signup/verify/:token - mirrors SignupHandler.Verify (T10): 401
+  // on an unrecognized token (signupVerifyToken's deterministic derivation
+  // means only a token minted for a real pending signup ever matches),
+  // otherwise marks that email verified.
+  http.get("/api/signup/verify/:token", ({ params }) => {
+    const token = params.token as string;
+    const email = Object.keys(signupState).find((e) => signupVerifyToken(e) === token);
+    if (!email) {
+      return HttpResponse.json({ error: "invalid or expired verification token" }, { status: 401 });
+    }
+    signupState[email].verified = true;
+    return HttpResponse.json({ status: "verified" });
+  }),
+
+  // POST /api/signup/resend-verification - mirrors
+  // SignupHandler.ResendVerification (T11): 422 missing email, 404 unknown
+  // email, 409 already-verified, otherwise 200 with a fresh token issued
+  // (email_sent always true in this fixture - a send-failure path has no
+  // separate mock branch since no test here exercises it).
+  http.post("/api/signup/resend-verification", async ({ request }) => {
+    const body = (await request.json()) as { email?: string };
+    if (!body.email) {
+      return HttpResponse.json({ error: "email is required" }, { status: 422 });
+    }
+    const existing = signupState[body.email];
+    if (!existing) {
+      return HttpResponse.json({ error: "no pending signup found for this email" }, { status: 404 });
+    }
+    if (existing.verified) {
+      return HttpResponse.json({ error: "this email is already verified" }, { status: 409 });
+    }
+    return HttpResponse.json({ status: "resent", email_sent: true });
+  }),
+
   http.post("/api/auth/login", async ({ request }) => {
     const body = (await request.json()) as { email?: string; password?: string };
-    const admin = seedAdmins.find((a) => a.email === body.email && a.password === body.password);
+    const admin = seedAdmins.find(
+      (a) => a.email === body.email && effectivePassword(a) === body.password,
+    );
     if (!admin) {
       return HttpResponse.json({ error: "invalid email or password" }, { status: 401 });
     }
+    // Mirrors AuthHandler.Login's TOTP-05 branch: a 2FA-enabled user gets a
+    // short-lived challenge token and no session - the mock sets no
+    // sessionAdminId/currentSessionId until verify-2fa succeeds.
+    if (twoFactorEnabledState) {
+      twoFactorChallengeCounter += 1;
+      const challengeToken = `msw-2fa-challenge-${twoFactorChallengeCounter}`;
+      twoFactorChallengesState[challengeToken] = admin.id;
+      return HttpResponse.json({ challenge_token: challengeToken });
+    }
     sessionAdminId = admin.id;
+    // Mirror AuthHandler.Login: a fresh login issues a new session row
+    // which becomes "current" for subsequent requests. The mock doesn't
+    // INSERT a new row (the seed is the universe of sessions) so we just
+    // pick the first non-revoked session for this admin as current.
+    // Users with no seeded sessions (e.g. admin-3) keep currentSessionId
+    // null and the list endpoint returns the empty set.
+    const userSession = sessionsState.find((s) => s.user_id === admin.id && !s.revoked_at);
+    currentSessionId = userSession?.id ?? null;
     return HttpResponse.json({ token: `msw-token-${admin.id}` });
   }),
 
+  // POST /api/auth/login/verify-2fa (login-2fa) - mirrors
+  // AuthHandler.VerifyTwoFactor: 401 on an unknown/consumed challenge token, a
+  // wrong code, or an unknown/used recovery code; on success consumes the
+  // challenge (single-use), establishes the session exactly like login, and
+  // returns {token}. A non-empty recovery_code is checked instead of code,
+  // matching verifyTwoFactorRequest's precedence.
+  http.post("/api/auth/login/verify-2fa", async ({ request }) => {
+    const invalid = () =>
+      HttpResponse.json({ error: "invalid or expired verification" }, { status: 401 });
+    const body = (await request.json().catch(() => null)) as
+      | { challenge_token?: string; code?: string; recovery_code?: string }
+      | null;
+    const challengeToken = body?.challenge_token;
+    const adminId = challengeToken ? twoFactorChallengesState[challengeToken] : undefined;
+    if (!adminId || !challengeToken) {
+      return invalid();
+    }
+    if (body?.recovery_code) {
+      const idx = recoveryCodesState.indexOf(body.recovery_code);
+      if (idx === -1) {
+        return invalid();
+      }
+      recoveryCodesState.splice(idx, 1);
+    } else if (body?.code !== mswValidTotpCode) {
+      return invalid();
+    }
+    delete twoFactorChallengesState[challengeToken];
+    sessionAdminId = adminId;
+    const userSession = sessionsState.find((s) => s.user_id === adminId && !s.revoked_at);
+    currentSessionId = userSession?.id ?? null;
+    return HttpResponse.json({ token: `msw-token-${adminId}` });
+  }),
+
+  // GET /api/auth/me - mirrors AuthHandler.Me. `two_factor_enabled` comes
+  // from the mock's in-memory state (setTwoFactorEnabled / the 2FA handlers)
+  // and `name` from a PATCH override, both reset after each test.
   http.get("/api/auth/me", () => {
     const admin = seedAdmins.find((a) => a.id === sessionAdminId);
     if (!admin) {
       return HttpResponse.json({ error: "unauthorized" }, { status: 401 });
     }
-    return HttpResponse.json({ id: admin.id, email: admin.email, name: admin.name, role: admin.role });
+    return HttpResponse.json(buildMeResponse(admin));
+  }),
+
+  // PATCH /api/auth/me (PROFPAGE-04/05) - mirrors AuthHandler.UpdateProfile:
+  // 401 without a session, 422 on an empty name, otherwise persists the new
+  // name (in the mock's override) and returns the same meResponse GET /me
+  // returns, so a subsequent refreshAdmin() sees it.
+  http.patch("/api/auth/me", async ({ request }) => {
+    const admin = seedAdmins.find((a) => a.id === sessionAdminId);
+    if (!admin) {
+      return HttpResponse.json({ error: "unauthorized" }, { status: 401 });
+    }
+    const body = (await request.json()) as { name?: string };
+    if (!body.name) {
+      return HttpResponse.json({ error: "name is required" }, { status: 422 });
+    }
+    profileNameOverride[admin.id] = body.name;
+    return HttpResponse.json(buildMeResponse(admin));
+  }),
+
+  // POST /api/auth/change-password (PROFPAGE-07..10) - mirrors
+  // AuthHandler.ChangePassword: 401 on a wrong current password (checked
+  // before the new-password policy, same order as the handler), 422 on a new
+  // password outside the 8-72 char range, otherwise 200 {"status":"ok"} and
+  // the in-memory password rotates (so a later login uses the new one within
+  // the same test).
+  http.post("/api/auth/change-password", async ({ request }) => {
+    const admin = seedAdmins.find((a) => a.id === sessionAdminId);
+    if (!admin) {
+      return HttpResponse.json({ error: "unauthorized" }, { status: 401 });
+    }
+    const body = (await request.json().catch(() => null)) as
+      | { current_password?: string; new_password?: string }
+      | null;
+    if (!body || effectivePassword(admin) !== body.current_password) {
+      return HttpResponse.json({ error: "current password is incorrect" }, { status: 401 });
+    }
+    const newPassword = body.new_password ?? "";
+    if (newPassword.length < 8 || newPassword.length > 72) {
+      return HttpResponse.json(
+        { error: "password must be between 8 and 72 characters" },
+        { status: 422 },
+      );
+    }
+    passwordOverride[admin.id] = newPassword;
+    return HttpResponse.json({ status: "ok" });
+  }),
+
+  // GET/PATCH /api/auth/notification-preferences (NOTIFPREF-13/14) - mirrors
+  // AuthHandler's self-service endpoints: 401 without a session, defaults
+  // applied for any type with no stored row, and a partial PATCH that only
+  // touches the provided keys.
+  http.get("/api/auth/notification-preferences", () => {
+    if (!seedAdmins.find((a) => a.id === sessionAdminId)) {
+      return HttpResponse.json({ error: "unauthorized" }, { status: 401 });
+    }
+    return HttpResponse.json(resolveNotificationPreferences());
+  }),
+  http.patch("/api/auth/notification-preferences", async ({ request }) => {
+    if (!seedAdmins.find((a) => a.id === sessionAdminId)) {
+      return HttpResponse.json({ error: "unauthorized" }, { status: 401 });
+    }
+    const body = (await request.json().catch(() => null)) as Partial<
+      Record<string, boolean>
+    > | null;
+    if (!body) {
+      return HttpResponse.json({ error: "invalid request body" }, { status: 422 });
+    }
+    for (const key of ["incident_opened", "incident_resolved", "weekly_digest"]) {
+      if (typeof body[key] === "boolean") {
+        notificationPreferencesState[key] = body[key];
+      }
+    }
+    return HttpResponse.json(resolveNotificationPreferences());
+  }),
+
+  // POST /api/auth/2fa/enroll (PROFPAGE-13) - mirrors AuthHandler.Enroll:
+  // 401 without a session, 409 when 2FA is already enabled, otherwise a
+  // canned {secret, otpauth_uri} pair.
+  http.post("/api/auth/2fa/enroll", () => {
+    const admin = seedAdmins.find((a) => a.id === sessionAdminId);
+    if (!admin) {
+      return HttpResponse.json({ error: "unauthorized" }, { status: 401 });
+    }
+    if (twoFactorEnabledState) {
+      return HttpResponse.json(
+        { error: "two-factor authentication is already enabled" },
+        { status: 409 },
+      );
+    }
+    const secret = "JBSWY3DPEHPK3PXP";
+    return HttpResponse.json({
+      secret,
+      otpauth_uri: `otpauth://totp/Vane:${admin.email}?secret=${secret}&issuer=Vane`,
+    });
+  }),
+
+  // POST /api/auth/2fa/confirm (PROFPAGE-14/15) - mirrors
+  // AuthHandler.Confirm2FA: 401 without a session, 422 on any code other than
+  // mswValidTotpCode, otherwise enables 2FA and returns 10 recovery codes.
+  http.post("/api/auth/2fa/confirm", async ({ request }) => {
+    if (!seedAdmins.some((a) => a.id === sessionAdminId)) {
+      return HttpResponse.json({ error: "unauthorized" }, { status: 401 });
+    }
+    const body = (await request.json()) as { code?: string };
+    if (body.code !== mswValidTotpCode) {
+      return HttpResponse.json({ error: "invalid verification code" }, { status: 422 });
+    }
+    twoFactorEnabledState = true;
+    const recovery_codes = Array.from(
+      { length: 10 },
+      (_, i) => `REC-${String(i + 1).padStart(4, "0")}`,
+    );
+    return HttpResponse.json({ recovery_codes });
+  }),
+
+  // POST /api/auth/2fa/disable (PROFPAGE-17/18) - mirrors
+  // AuthHandler.Disable2FA: 401 without a session or on a wrong current
+  // password, otherwise 200 {"status":"ok"} (idempotent) and turns 2FA off.
+  http.post("/api/auth/2fa/disable", async ({ request }) => {
+    const admin = seedAdmins.find((a) => a.id === sessionAdminId);
+    if (!admin) {
+      return HttpResponse.json({ error: "unauthorized" }, { status: 401 });
+    }
+    const body = (await request.json().catch(() => null)) as { current_password?: string } | null;
+    if (!body || effectivePassword(admin) !== body.current_password) {
+      return HttpResponse.json({ error: "current password is incorrect" }, { status: 401 });
+    }
+    twoFactorEnabledState = false;
+    return HttpResponse.json({ status: "ok" });
   }),
 
   http.post("/api/auth/logout", () => {
     sessionAdminId = null;
+    currentSessionId = null;
     return new HttpResponse(null, { status: 200 });
+  }),
+
+  // GET /api/auth/sessions - mirrors internal/api/sessions_handler.go's
+  // SessionsHandler.List: returns the current user's active sessions
+  // (revoked_at IS NULL), newest first, with the row whose id matches
+  // currentSessionId (the JWT's sid claim in the real backend) tagged
+  // current:true. 401 when not logged in, matching the real handler's
+  // sessionAdminId gate via RequireAuth.
+  http.get("/api/auth/sessions", () => {
+    if (!sessionAdminId) {
+      return HttpResponse.json({ error: "unauthorized" }, { status: 401 });
+    }
+    // Project to the backend's exact SessionView fields - the seed's
+    // mock-only user_id/revoked_at must not leak into the response
+    // (AGENTS.md §5).
+    const userSessions: SessionView[] = sessionsState
+      .filter((s) => s.user_id === sessionAdminId && !s.revoked_at)
+      .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+      .map((s) => ({
+        id: s.id,
+        user_agent: s.user_agent,
+        ip: s.ip,
+        created_at: s.created_at,
+        last_seen_at: s.last_seen_at,
+        current: s.id === currentSessionId,
+      }));
+    return HttpResponse.json(userSessions);
+  }),
+
+  // DELETE /api/auth/sessions/:id - mirrors
+  // internal/api/sessions_handler.go's SessionsHandler.Revoke:
+  //   401 when not logged in
+  //   409 when the target row is the current session (use /api/auth/logout
+  //      instead - the real handler returns the same status with a
+  //      "cannot revoke current session" body)
+  //   404 when the id doesn't exist, is malformed, or belongs to a
+  //      different user (anti-enumeration: byte-identical 404 to all
+  //      three, matching sessions_handler.go's isInvalidUUIDSyntax + the
+  //      ownership check at the same status)
+  //   204 on success, with revoked_at set to "now"
+  http.delete("/api/auth/sessions/:id", ({ params }) => {
+    if (!sessionAdminId) {
+      return HttpResponse.json({ error: "unauthorized" }, { status: 401 });
+    }
+    const id = String(params.id);
+    if (id === currentSessionId) {
+      return HttpResponse.json(
+        { error: "cannot revoke the current session; use /api/auth/logout instead" },
+        { status: 409 },
+      );
+    }
+    const target = sessionsState.find((s) => s.id === id && s.user_id === sessionAdminId);
+    if (!target) {
+      return HttpResponse.json({ error: "session not found" }, { status: 404 });
+    }
+    target.revoked_at = new Date().toISOString();
+    return new HttpResponse(null, { status: 204 });
+  }),
+
+  // POST /api/auth/switch-tenant - mirrors AuthHandler.SwitchTenant: 403 on
+  // a tenant_id outside the fixture's own memberships (multi-tenancy-core,
+  // TENANT-21), otherwise 200 with the new active tenant. The default
+  // fixture only ever has "tenant-1" - tests needing a real >1-membership
+  // switch scenario override this handler via server.use (T17).
+  http.post("/api/auth/switch-tenant", async ({ request }) => {
+    const body = (await request.json()) as { tenant_id?: string };
+    if (!sessionAdminId) {
+      return HttpResponse.json({ error: "unauthorized" }, { status: 401 });
+    }
+    if (body.tenant_id !== "tenant-1") {
+      return HttpResponse.json({ error: "no access to that tenant" }, { status: 403 });
+    }
+    return HttpResponse.json({ token: `msw-token-${sessionAdminId}`, tenant_id: body.tenant_id });
   }),
 
   // POST /api/auth/password-reset/request - mirrors
@@ -433,11 +1004,16 @@ export const handlers = [
   }),
 
   // GET /api/domains (PAG-08) - mirrors DomainsHandler.List: ordered by
-  // hostname, paginated 20 per page.
+  // hostname, paginated 20 per page, dns_target carried loose alongside the
+  // list (domains-status-pages-page T3: DomainsPageResponse, not the
+  // generic Page<T> paginatedPage() would produce).
   http.get("/api/domains", ({ request }) => {
     if (!sessionAdminId) return HttpResponse.json({ error: "unauthorized" }, { status: 401 });
     const sorted = [...domainsState].sort((a, b) => a.hostname.localeCompare(b.hostname));
-    return HttpResponse.json(paginatedPage(request.url, sorted.map(toDomainResponse), 20));
+    return HttpResponse.json({
+      ...paginatedPage(request.url, sorted.map(toDomainResponse), 20),
+      dns_target: dnsTargetState,
+    });
   }),
 
   http.post("/api/domains", async ({ request }) => {
@@ -454,9 +1030,34 @@ export const handlers = [
       id: `dom-msw-${domainIdCounter}`,
       hostname: body.hostname,
       created_at: new Date().toISOString(),
+      domain_type: "custom",
+      status: "pending",
+      ssl_status: "pending",
+      verified_at: null,
+      last_error: null,
+      attached_page_name: null,
+      attached_page_count: 0,
     };
     domainsState.push(created);
     return HttpResponse.json(toDomainResponse(created), { status: 201 });
+  }),
+
+  // POST /api/domains/:id/verify - mirrors DomainsHandler.Verify: 404
+  // unknown domain, else 200 with the domain re-marked verified/active
+  // (domains-status-pages-page T4's useRecheckDomain). Tests needing an
+  // error response (e.g. status stays "error") override via
+  // server.use(http.post("/api/domains/:id/verify", ...)).
+  http.post("/api/domains/:id/verify", ({ params }) => {
+    if (!sessionAdminId) return HttpResponse.json({ error: "unauthorized" }, { status: 401 });
+    const domain = domainsState.find((d) => d.id === params.id);
+    if (!domain) {
+      return HttpResponse.json({ error: "domain not found" }, { status: 404 });
+    }
+    domain.status = "verified";
+    domain.ssl_status = "active";
+    domain.verified_at = new Date().toISOString();
+    domain.last_error = null;
+    return HttpResponse.json(toDomainResponse(domain));
   }),
 
   // DELETE /api/domains/:id - mirrors DomainsHandler.Delete: 404 unknown
@@ -844,23 +1445,120 @@ export const handlers = [
     return HttpResponse.json(paginatedPage(request.url, sorted.map(toServiceResponse), 20));
   }),
 
+  // Mirrors ServicesHandler.Create's monitor_mode branching
+  // (manual-polling-monitoring T5): monitor_mode defaults to "slo" when
+  // omitted, unchanged existing behavior; "polling" requires poll_type/
+  // poll_target/poll_interval_seconds and rejects slo_id/slo_name (and vice
+  // versa). No real SSRF/format validation here - this fixture is a
+  // request/response contract mirror for the frontend, not a re-test of
+  // internal/checks (already covered by its own Go unit tests).
   http.post("/api/services", async ({ request }) => {
     if (!sessionAdminId) return HttpResponse.json({ error: "unauthorized" }, { status: 401 });
-    const body = (await request.json()) as { name?: string; slo_id?: string };
-    if (!body.name || !body.slo_id) {
+    const body = (await request.json()) as {
+      name?: string;
+      monitor_mode?: string;
+      slo_id?: string;
+      slo_name?: string;
+      poll_type?: string;
+      poll_target?: string;
+      poll_interval_seconds?: number;
+    };
+    if (!body.name) {
       return HttpResponse.json({ error: "name and slo_id are required" }, { status: 422 });
     }
+
+    const monitorMode = body.monitor_mode ?? "slo";
     serviceIdCounter += 1;
-    const created: Service = {
-      id: `svc-msw-${serviceIdCounter}`,
-      name: body.name,
-      slo_id: body.slo_id,
-      slo_name: sloCatalog.find((slo) => slo.id === body.slo_id)?.name ?? null,
-      current_status: "not_configured",
-      last_status_change_at: new Date().toISOString(),
-    };
-    servicesState.push(created);
-    return HttpResponse.json(toServiceResponse(created), { status: 201 });
+
+    if (monitorMode === "slo") {
+      if (body.poll_type || body.poll_target || body.poll_interval_seconds) {
+        return HttpResponse.json(
+          { error: "slo fields and poll fields cannot be combined in the same request" },
+          { status: 422 }
+        );
+      }
+      if (!body.slo_id) {
+        return HttpResponse.json({ error: "name and slo_id are required" }, { status: 422 });
+      }
+      const created: Service = {
+        id: `svc-msw-${serviceIdCounter}`,
+        name: body.name,
+        slo_id: body.slo_id,
+        slo_name: body.slo_name ?? sloCatalog.find((slo) => slo.id === body.slo_id)?.name ?? null,
+        monitor_mode: "slo",
+        poll_type: null,
+        poll_target: null,
+        poll_interval_seconds: null,
+        current_status: "not_configured",
+        last_status_change_at: new Date().toISOString(),
+        uptime_30d: null,
+        last_seen_at: null,
+      };
+      servicesState.push(created);
+      return HttpResponse.json(toServiceResponse(created), { status: 201 });
+    }
+
+    if (monitorMode === "polling") {
+      if (body.slo_id || body.slo_name) {
+        return HttpResponse.json(
+          { error: "slo fields and poll fields cannot be combined in the same request" },
+          { status: 422 }
+        );
+      }
+      const validPollTypes = ["http", "tcp", "ping"];
+      const validIntervals = [30, 60, 300];
+      if (
+        !body.poll_type ||
+        !validPollTypes.includes(body.poll_type) ||
+        !body.poll_target ||
+        !body.poll_interval_seconds ||
+        !validIntervals.includes(body.poll_interval_seconds)
+      ) {
+        return HttpResponse.json(
+          {
+            error:
+              "poll_type (http, tcp, or ping), poll_target, and poll_interval_seconds (30, 60, or 300) are all required for polling mode",
+          },
+          { status: 422 }
+        );
+      }
+      const created: Service = {
+        id: `svc-msw-${serviceIdCounter}`,
+        name: body.name,
+        slo_id: null,
+        slo_name: null,
+        monitor_mode: "polling",
+        poll_type: body.poll_type as Service["poll_type"],
+        poll_target: body.poll_target,
+        poll_interval_seconds: body.poll_interval_seconds,
+        current_status: "not_configured",
+        last_status_change_at: new Date().toISOString(),
+        uptime_30d: null,
+        last_seen_at: null,
+      };
+      servicesState.push(created);
+      return HttpResponse.json(toServiceResponse(created), { status: 201 });
+    }
+
+    return HttpResponse.json({ error: 'monitor_mode must be "slo" or "polling"' }, { status: 422 });
+  }),
+
+  // GET /api/services/:id (monitored-services-page SVC-14..19) - mirrors
+  // ServicesHandler.Get: 404 fixed body for an unknown id, else the detail
+  // DTO (same uptime_30d/last_seen_at as List, plus status_analysis,
+  // incidents_30d, and exactly 24 hourly_buckets).
+  http.get("/api/services/:id", ({ params }) => {
+    if (!sessionAdminId) return HttpResponse.json({ error: "unauthorized" }, { status: 401 });
+    const service = servicesState.find((s) => s.id === params.id);
+    if (!service) {
+      return HttpResponse.json({ error: "service not found" }, { status: 404 });
+    }
+    return HttpResponse.json({
+      ...toServiceResponse(service),
+      status_analysis: service.current_status === "degraded" ? (serviceDegradedNotes[service.id] ?? null) : null,
+      incidents_30d: serviceIncidentCounts[service.id] ?? 0,
+      hourly_buckets: buildFixtureHistory(service.current_status, 24),
+    });
   }),
 
   // GET /api/incidents (I16) - mirrors IncidentsHandler.List: most recently
@@ -875,9 +1573,18 @@ export const handlers = [
 
   http.post("/api/incidents", async ({ request }) => {
     if (!sessionAdminId) return HttpResponse.json({ error: "unauthorized" }, { status: 401 });
-    const body = (await request.json()) as { title?: string; service_ids?: string[] };
+    const body = (await request.json()) as {
+      title?: string;
+      service_ids?: string[];
+      severity?: string;
+      description?: string;
+    };
     if (!body.title || !body.service_ids || body.service_ids.length === 0) {
       return HttpResponse.json({ error: "title and at least one service_id are required" }, { status: 422 });
+    }
+    const validSeverities = ["minor", "moderate", "critical"];
+    if (!body.severity || !validSeverities.includes(body.severity)) {
+      return HttpResponse.json({ error: "severity must be one of minor, moderate, critical" }, { status: 422 });
     }
     incidentIdCounter += 1;
     const created: Incident = {
@@ -887,9 +1594,10 @@ export const handlers = [
       created_at: new Date().toISOString(),
       resolved_at: null,
       service_ids: body.service_ids,
-      description: null,
+      description: body.description ? body.description : null,
       pending_close_comment: null,
       auto_created: false,
+      severity: body.severity as Incident["severity"],
     };
     incidentsState.push(created);
     return HttpResponse.json(created, { status: 201 });
@@ -923,6 +1631,8 @@ export const handlers = [
       incident_id: incidentId,
       body: body.body,
       created_at: new Date().toISOString(),
+      author_id: sessionAdminId,
+      is_ai_summary: false,
     });
     return HttpResponse.json(timelineFor(incidentId), { status: 201 });
   }),
@@ -954,6 +1664,8 @@ export const handlers = [
       incident_id: incidentId,
       body: `Status changed to ${body.status}`,
       created_at: new Date().toISOString(),
+      author_id: null,
+      is_ai_summary: false,
     });
     return HttpResponse.json(incident);
   }),
@@ -994,6 +1706,8 @@ export const handlers = [
       incident_id: incidentId,
       body: incident.pending_close_comment,
       created_at: new Date().toISOString(),
+      author_id: null,
+      is_ai_summary: true,
     });
     incident.status = "resolved";
     incident.resolved_at = new Date().toISOString();
@@ -1222,7 +1936,10 @@ export const handlers = [
   // Read-only, no per-test state to reset - always seeded from mockData.
   http.get("/api/poller/status", ({ request }) => {
     if (!sessionAdminId) return HttpResponse.json({ error: "unauthorized" }, { status: 401 });
-    return HttpResponse.json(paginatedPage(request.url, seedPollerStatus, 20));
+    return HttpResponse.json({
+      ...pollerLeadership,
+      ...paginatedPage(request.url, seedPollerStatus, 20),
+    });
   }),
 
   // GET/PATCH /api/company-settings, POST /api/company-settings/logo
@@ -1238,14 +1955,53 @@ export const handlers = [
 
   http.patch("/api/company-settings", async ({ request }) => {
     if (!sessionAdminId) return HttpResponse.json({ error: "unauthorized" }, { status: 401 });
-    const body = (await request.json()) as { name?: string; contact_email?: string };
+    const body = (await request.json()) as {
+      name?: string;
+      contact_email?: string;
+      legal_name?: string;
+      tax_id?: string;
+      tax_id_type?: "cpf" | "cnpj";
+      website?: string;
+      timezone?: string;
+      billing_address?: CompanySettings["billing_address"];
+    };
     if (!body.name || !body.contact_email) {
       return HttpResponse.json(
         { error: "name is required and contact_email must be a valid e-mail address" },
         { status: 422 },
       );
     }
-    companySettingsState = { ...companySettingsState, name: body.name, contact_email: body.contact_email };
+    // Mirrors company_settings_handler.go's validTimezones (CFGPG-04).
+    const validTimezones = ["America/Sao_Paulo (GMT-3)", "America/New_York (GMT-5)", "UTC (GMT+0)"];
+    if (body.timezone !== undefined && !validTimezones.includes(body.timezone)) {
+      return HttpResponse.json({ error: "timezone must be one of the supported values" }, { status: 422 });
+    }
+    // Mirrors TenantRepository.validateTaxID (T4): a tax_id/tax_id_type
+    // pair must match cpf's 11 digits or cnpj's 14, checked only when both
+    // are present in this PATCH - either being absent leaves the
+    // previously stored value untouched (T16's "nil = no change"
+    // semantics), never re-validated against a stale pairing.
+    if (body.tax_id !== undefined && body.tax_id_type !== undefined) {
+      const digitCount = body.tax_id.replace(/\D/g, "").length;
+      const expected = body.tax_id_type === "cpf" ? 11 : 14;
+      if (digitCount !== expected) {
+        return HttpResponse.json(
+          { error: "tax_id must have 11 digits for cpf or 14 digits for cnpj" },
+          { status: 422 },
+        );
+      }
+    }
+    companySettingsState = {
+      ...companySettingsState,
+      name: body.name,
+      contact_email: body.contact_email,
+      ...(body.legal_name !== undefined ? { legal_name: body.legal_name } : {}),
+      ...(body.tax_id !== undefined ? { tax_id: body.tax_id } : {}),
+      ...(body.tax_id_type !== undefined ? { tax_id_type: body.tax_id_type } : {}),
+      ...(body.website !== undefined ? { website: body.website } : {}),
+      ...(body.timezone !== undefined ? { timezone: body.timezone } : {}),
+      ...(body.billing_address !== undefined ? { billing_address: body.billing_address } : {}),
+    };
     return HttpResponse.json(companySettingsState);
   }),
 
@@ -1265,5 +2021,22 @@ export const handlers = [
     }
     companySettingsState = { ...companySettingsState, logo_url: "/uploads/logo" };
     return HttpResponse.json(companySettingsState);
+  }),
+
+  // DELETE /api/tenants/current (settings-page CFGPG-09) - default happy
+  // path (200, deleted:true). A test proving CFGPG-11 (only active tenant
+  // -> 409) overrides this handler with server.use(...).
+  http.delete("/api/tenants/current", () => {
+    if (!sessionAdminId) return HttpResponse.json({ error: "unauthorized" }, { status: 401 });
+    return HttpResponse.json({ deleted: true });
+  }),
+
+  // GET /api/overview (dashboard-overview-page OVW-02) - mirrors
+  // OverviewHandler.Get: authenticated (anyRole), one flat aggregation DTO.
+  // Read-only, seeded once; a test needing edge values overrides it with
+  // server.use(...).
+  http.get("/api/overview", () => {
+    if (!sessionAdminId) return HttpResponse.json({ error: "unauthorized" }, { status: 401 });
+    return HttpResponse.json(overviewSeed());
   }),
 ];

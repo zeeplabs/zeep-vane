@@ -1,0 +1,9 @@
+<!doctype html>
+<html>
+  <body style="font-family: sans-serif; color: #1a1a1a;">
+    <p>{{if .TenantName}}Welcome to <strong>{{.TenantName}}</strong>!{{else}}Welcome!{{end}}</p>
+    <p><a href="{{.VerifyURL}}">Verify your email</a> to finish setting up your account.</p>
+    <p>If the link above doesn't work, copy and paste this URL into your browser:</p>
+    <p>{{.VerifyURL}}</p>
+  </body>
+</html>

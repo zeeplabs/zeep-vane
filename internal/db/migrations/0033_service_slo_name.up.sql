@@ -1,0 +1,1 @@
+ALTER TABLE services ADD COLUMN slo_name TEXT NOT NULL DEFAULT '';

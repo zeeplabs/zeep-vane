@@ -10,3 +10,4 @@ internal/webui/static/
 .DS_Store
 data/
 *.tsbuildinfo
+.playwright-mcp/

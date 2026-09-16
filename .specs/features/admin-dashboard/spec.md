@@ -104,26 +104,26 @@ Excluído explicitamente desta spec (MVP). Documentado para prevenir scope creep
 
 | Requirement ID | Story | Phase | Status |
 | --- | --- | --- | --- |
-| ADM-01 | P1: Gerenciar admins | Design | Pending |
-| ADM-02 | P1: Gerenciar admins | Design | Pending |
-| ADM-03 | P1: Gerenciar admins | Design | Pending |
-| ADM-04 | P1: Gerenciar admins | Design | Pending |
-| ADM-05 | P1: Gerenciar admins | Design | Pending |
-| ADM-06 | P1: Gerenciar admins | Design | Pending |
-| ADM-07 | P1: Gerenciar admins | Design | Pending |
-| ADM-08 | P1: Gerenciar admins | Design | Pending |
-| ADM-09 | P1: Gerenciar admins | Design | Pending |
-| ADM-10 | P1: Autorização por papel | Design | Pending |
-| ADM-11 | P1: Autorização por papel | Design | Pending |
-| ADM-12 | P1: Autorização por papel | Design | Pending |
-| ADM-13 | P1: Status do poller | Design | Pending |
-| ADM-14 | P1: Status do poller | Design | Pending |
+| ADM-01 | P1: Gerenciar admins | Design | Verified |
+| ADM-02 | P1: Gerenciar admins | Design | Verified |
+| ADM-03 | P1: Gerenciar admins | Design | Verified |
+| ADM-04 | P1: Gerenciar admins | Design | Verified |
+| ADM-05 | P1: Gerenciar admins | Design | Verified |
+| ADM-06 | P1: Gerenciar admins | Design | Verified |
+| ADM-07 | P1: Gerenciar admins | Design | Verified |
+| ADM-08 | P1: Gerenciar admins | Design | Verified |
+| ADM-09 | P1: Gerenciar admins | Design | Verified |
+| ADM-10 | P1: Autorização por papel | Design | Verified |
+| ADM-11 | P1: Autorização por papel | Design | Verified |
+| ADM-12 | P1: Autorização por papel | Design | Verified |
+| ADM-13 | P1: Status do poller | Design | Verified |
+| ADM-14 | P1: Status do poller | Design | Verified |
 
 **ID format:** `ADM-NN` (Admin Dashboard)
 
 **Status values:** Pending → In Design → In Tasks → Implementing → Verified
 
-**Coverage:** 14 total, 0 mapped to tasks, 14 unmapped ⚠️ (esperado — Design/Tasks ainda não rodaram)
+**Coverage:** 14 total, 14 mapped to tasks, 0 unmapped (retroactive: feature is Executed/Verified — `validation.md` PASS — this table was never flipped after closure until 2026-09-15's spec-audit pass)
 
 ---
 

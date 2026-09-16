@@ -1,4 +1,4 @@
-.PHONY: build web-build run test lint vet dev-db dev-db-stop migrate dev-backend dev-frontend dev
+.PHONY: build web-build run test test-integration lint vet dev-db dev-db-stop migrate dev-backend dev-frontend dev
 
 DEV_DB_CONTAINER := vane-dev-pg
 DEV_DB_PORT := 5432
@@ -23,6 +23,31 @@ run:
 
 test:
 	go test ./...
+
+# Integration gate against a disposable Postgres (never the dev DB).
+# Mirrors AGENTS.md §3 and .github/workflows/ci.yml: -p 1 is mandatory -
+# every integration package shares the one TEST_DATABASE_URL and several
+# mutate the same singleton/shared tables (users, tenants, integrations,
+# admins), so parallel package binaries race each other (spurious 401s,
+# count mismatches, and the intermittent `dbtest: pg_advisory_lock failed:
+# timeout`). -count=1 forces real runs instead of cached package results,
+# and the container is created fresh per run because a few singleton tables
+# are not reset between successive runs against the same database.
+INTEGRATION_DB_CONTAINER := vane-test-pg
+INTEGRATION_DB_PORT := 5433
+INTEGRATION_DATABASE_URL := postgres://vane:vane@localhost:$(INTEGRATION_DB_PORT)/vane?sslmode=disable
+
+test-integration:
+	@docker rm -f $(INTEGRATION_DB_CONTAINER) >/dev/null 2>&1 || true
+	docker run -d --rm --name $(INTEGRATION_DB_CONTAINER) \
+		-e POSTGRES_USER=vane -e POSTGRES_PASSWORD=vane -e POSTGRES_DB=vane \
+		-p $(INTEGRATION_DB_PORT):5432 postgres:16-alpine -c max_connections=300
+	@for i in $$(seq 1 30); do \
+		docker exec $(INTEGRATION_DB_CONTAINER) pg_isready -U vane >/dev/null 2>&1 && break; \
+		sleep 1; \
+	done
+	@trap 'docker rm -f $(INTEGRATION_DB_CONTAINER) >/dev/null 2>&1 || true' EXIT; \
+	TEST_DATABASE_URL="$(INTEGRATION_DATABASE_URL)" go test -tags=integration -count=1 -p 1 ./...
 
 lint:
 	gofmt -l .

@@ -13,17 +13,8 @@ import (
 // status_pages.domain_id and .subdomain both accept NULL after migration
 // 0013, since a status page can now be created with no domain attached.
 func TestStatusPagesMigration_NullDomainAndSubdomain_Allowed(t *testing.T) {
-	dsn := testDatabaseURL(t)
-	if err := MigrateUp(dsn, "migrations"); err != nil {
-		t.Fatalf("MigrateUp() returned unexpected error: %v", err)
-	}
-
 	ctx := context.Background()
-	pool, err := NewPool(ctx, dsn)
-	if err != nil {
-		t.Fatalf("NewPool() returned unexpected error: %v", err)
-	}
-	t.Cleanup(pool.Close)
+	pool, _ := newTenantScopedPool(t)
 
 	name := fmt.Sprintf("status-pages-migration-test-%d", time.Now().UnixNano())
 	var id string
@@ -40,17 +31,8 @@ func TestStatusPagesMigration_NullDomainAndSubdomain_Allowed(t *testing.T) {
 // domain_id IS NOT NULL rejects a second row that collides with an
 // existing non-null pair.
 func TestStatusPagesMigration_DuplicateDomainSubdomainPair_RejectedByPartialIndex(t *testing.T) {
-	dsn := testDatabaseURL(t)
-	if err := MigrateUp(dsn, "migrations"); err != nil {
-		t.Fatalf("MigrateUp() returned unexpected error: %v", err)
-	}
-
 	ctx := context.Background()
-	pool, err := NewPool(ctx, dsn)
-	if err != nil {
-		t.Fatalf("NewPool() returned unexpected error: %v", err)
-	}
-	t.Cleanup(pool.Close)
+	pool, _ := newTenantScopedPool(t)
 
 	hostname := fmt.Sprintf("status-pages-migration-test-%d.example.com", time.Now().UnixNano())
 	var domainID string
@@ -72,7 +54,7 @@ func TestStatusPagesMigration_DuplicateDomainSubdomainPair_RejectedByPartialInde
 	}
 	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), "DELETE FROM status_pages WHERE id = $1", firstID) })
 
-	_, err = pool.Exec(ctx,
+	_, err := pool.Exec(ctx,
 		"INSERT INTO status_pages (name, subdomain, domain_id) VALUES ($1, $2, $3)",
 		name+"-second", subdomain, domainID)
 	if err == nil {
@@ -84,17 +66,8 @@ func TestStatusPagesMigration_DuplicateDomainSubdomainPair_RejectedByPartialInde
 // partial index never applies to domain-less rows: any number of rows with
 // domain_id IS NULL (regardless of subdomain value) succeed.
 func TestStatusPagesMigration_MultipleNullDomainRows_NeverBlocked(t *testing.T) {
-	dsn := testDatabaseURL(t)
-	if err := MigrateUp(dsn, "migrations"); err != nil {
-		t.Fatalf("MigrateUp() returned unexpected error: %v", err)
-	}
-
 	ctx := context.Background()
-	pool, err := NewPool(ctx, dsn)
-	if err != nil {
-		t.Fatalf("NewPool() returned unexpected error: %v", err)
-	}
-	t.Cleanup(pool.Close)
+	pool, _ := newTenantScopedPool(t)
 
 	baseName := fmt.Sprintf("status-pages-migration-test-nulls-%d", time.Now().UnixNano())
 

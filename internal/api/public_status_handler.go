@@ -36,11 +36,15 @@ type publicIncidentLister interface {
 	ListPublicForStatusPage(ctx context.Context, statusPageID string, retentionDays, page, pageSize int) (active, resolved []db.IncidentPublic, resolvedTotal int, err error)
 }
 
-// companySettingsGetter is the subset of *db.CompanySettingsRepository the
-// public status handler depends on, to surface the real company identity
-// instead of mockData.companySettings (SET-15, SET-16).
+// companySettingsGetter is the subset of *db.TenantRepository the public
+// status handler (and the other unauthenticated readers of the old
+// company_settings singleton) depend on, to surface the real company
+// identity instead of mockData.companySettings (SET-15, SET-16). Active
+// resolves the session's tenant, falling back to the installation's single
+// tenant on these public routes, which have no session at all - see
+// TenantRepository.activeTenantPredicate.
 type companySettingsGetter interface {
-	Get(ctx context.Context) (*db.CompanySettings, error)
+	Active(ctx context.Context) (*db.Tenant, error)
 }
 
 // incidentRetentionDays is the public status page's incident history
@@ -212,7 +216,7 @@ func (h *PublicStatusHandler) composeResponse(ctx context.Context, statusPageID 
 		return publicStatusResponse{}, fmt.Errorf("failed to list public incidents: %w", err)
 	}
 
-	companySettings, err := h.companySettings.Get(ctx)
+	companySettings, err := h.companySettings.Active(ctx)
 	if err != nil {
 		return publicStatusResponse{}, fmt.Errorf("failed to get company settings: %w", err)
 	}

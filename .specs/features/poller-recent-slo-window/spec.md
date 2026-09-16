@@ -107,23 +107,23 @@ Explicitly excluded. Documented to prevent scope creep.
 
 | Requirement ID | Story                                  | Phase  | Status  |
 | --------------- | --------------------------------------- | ------ | ------- |
-| RSW-01          | P1: Recent-window status                | Design | Pending |
-| RSW-02          | P1: Recent-window status                | Design | Pending |
-| RSW-03          | P1: Recent-window status                | Design | Pending |
-| RSW-04          | P1: Recent-window status                | Design | Pending |
-| RSW-05          | P1: Recent-window status                | Design | Pending |
-| RSW-06          | P1: Low-volume guard                    | Design | Pending |
-| RSW-07          | P1: Low-volume guard                    | Design | Pending |
-| RSW-08          | P1: Low-volume guard                    | Design | Pending |
-| RSW-09          | P2: Failure handling unchanged          | Design | Pending |
-| RSW-10          | P2: Failure handling unchanged          | Design | Pending |
-| RSW-11          | P2: Failure handling unchanged          | Design | Pending |
+| RSW-01          | P1: Recent-window status                | Design | Verified |
+| RSW-02          | P1: Recent-window status                | Design | Verified |
+| RSW-03          | P1: Recent-window status                | Design | Verified |
+| RSW-04          | P1: Recent-window status                | Design | Verified |
+| RSW-05          | P1: Recent-window status                | Design | Verified |
+| RSW-06          | P1: Low-volume guard                    | Design | Verified |
+| RSW-07          | P1: Low-volume guard                    | Design | Verified |
+| RSW-08          | P1: Low-volume guard                    | Design | Verified |
+| RSW-09          | P2: Failure handling unchanged          | Design | Verified |
+| RSW-10          | P2: Failure handling unchanged          | Design | Verified |
+| RSW-11          | P2: Failure handling unchanged          | Design | Verified |
 
 **ID format:** `RSW-[NUMBER]` (Recent SLO Window)
 
 **Status values:** Pending → In Design → In Tasks → Implementing → Verified
 
-**Coverage:** 11 total, 0 mapped to tasks, 11 unmapped ⚠️ (expected — Design/Tasks phases not run yet)
+**Coverage:** 11 total, 11 mapped to tasks, 0 unmapped (retroactive: feature is Executed/Verified — `validation.md` PASS — this table was never flipped after closure until 2026-09-15's spec-audit pass)
 
 ---
 

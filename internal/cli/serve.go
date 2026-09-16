@@ -18,8 +18,10 @@ import (
 	"github.com/zeeplabs/zeep-vane/internal/connectors/datadog"
 	"github.com/zeeplabs/zeep-vane/internal/crypto"
 	"github.com/zeeplabs/zeep-vane/internal/db"
+	"github.com/zeeplabs/zeep-vane/internal/email"
 	"github.com/zeeplabs/zeep-vane/internal/llm"
 	"github.com/zeeplabs/zeep-vane/internal/logging"
+	"github.com/zeeplabs/zeep-vane/internal/notify"
 	"github.com/zeeplabs/zeep-vane/internal/poller"
 	"github.com/zeeplabs/zeep-vane/internal/retention"
 	"github.com/zeeplabs/zeep-vane/internal/router"
@@ -105,8 +107,18 @@ func NewServeCmd() *cobra.Command {
 			// the poller's (design.md: polling and pruning are unrelated
 			// responsibilities) - canceled by the same ctx/stop() as the
 			// poller and the HTTP/HTTPS listeners below (SHU-16..20).
-			pruner := retention.NewPruner(db.NewStatusIntervalRepository(pool), pruneTick, pruneRetention, logger)
+			pruner := retention.NewPruner(db.NewStatusIntervalRepository(pool), cfg.DatabaseURL, pruneTick, pruneRetention, logger)
 			go pruner.Run(ctx)
+
+			// The weekly digest scheduler runs on its own Monday-00:00-UTC
+			// timer, gated by a second advisory lock so only one replica sends
+			// (notification-preferences NOTIFPREF-10/11). It is stopped by the
+			// same ctx cancellation as the poller and pruner.
+			digestScheduler, err := newDigestScheduler(pool, cfg, logger)
+			if err != nil {
+				return err
+			}
+			go digestScheduler.Run(ctx)
 
 			addr := fmt.Sprintf(":%d", cfg.Port)
 			srv := &http.Server{Addr: addr, Handler: buildAdminRouter(pool, cfg, logger, pollerManager)}
@@ -122,7 +134,7 @@ func NewServeCmd() *cobra.Command {
 				serverErrs <- nil
 			}()
 			if cfg.HTTPSEnabled {
-				httpsSrv = newHTTPSServer(pool, cfg.DatabaseURL, logger)
+				httpsSrv = newHTTPSServer(pool, cfg.DatabaseURL, cfg.MasterKey, logger)
 				go func() {
 					logger.Info("serve: https listening (on-demand tls)", zap.String("addr", httpsSrv.Addr))
 					if err := httpsSrv.ListenAndServeTLS("", ""); err != nil && !errors.Is(err, http.ErrServerClosed) {
@@ -166,7 +178,8 @@ func NewServeCmd() *cobra.Command {
 // their custom domains, with on-demand TLS via CertMagic (SP-11, SP-12,
 // SP-13). Its port is configurable via HTTPS_PORT, falling back to 443
 // when unset. Certificate storage is always Postgres-backed
-// (tls.PostgresStorage, ha-multi-replica HA-13) - dsn is needed only for
+// (tls.PostgresStorage, ha-multi-replica HA-13), wrapped in
+// tls.EncryptedStorage so private key material is sealed at rest (AD-030) - dsn is needed only for
 // PostgresStorage's Lock/Unlock, which require dedicated (non-pooled)
 // connections for session-scoped advisory locks; every other storage
 // method goes through pool. HostPolicy (internal/tls) gates every
@@ -189,13 +202,15 @@ func NewServeCmd() *cobra.Command {
 // (public_status_preview_handler.go), never through this production one. A
 // request's Host header resolves to a published StatusPage, whose ID is
 // threaded down so the public handler's services/incidents queries are
-// scoped to that status page (SP-15); the logo route and static SPA need
-// no such scoping - the logo file is a single, install-wide singleton
-// (SET-06), and the SPA's JS resolves its own data client-side via
-// same-origin fetch. The admin API/SPA is served on the separate HTTP
+// scoped to that status page (SP-15) and whose tenant_id is threaded down
+// as the request's RLS session tenant (0024) - which is what scopes the
+// logo route too, since the logo lives on the tenant row and is no longer
+// an install-wide singleton. The static SPA needs neither: its JS resolves
+// its own data client-side via same-origin fetch, back through the two
+// routes above. The admin API/SPA is served on the separate HTTP
 // listener built in RunE (router.New) - HostRouter here never touches it
 // (design.md placeholder).
-func newHTTPSServer(pool *db.Pool, dsn string, logger *zap.Logger) *http.Server {
+func newHTTPSServer(pool *db.Pool, dsn, masterKey string, logger *zap.Logger) *http.Server {
 	httpsPort := os.Getenv("HTTPS_PORT")
 	if httpsPort == "" {
 		httpsPort = defaultHTTPSPort
@@ -203,14 +218,25 @@ func newHTTPSServer(pool *db.Pool, dsn string, logger *zap.Logger) *http.Server 
 
 	statusPages := db.NewStatusPageRepository(pool)
 	storage := vanetls.NewPostgresStorage(pool, dsn)
-	manager := vanetls.NewManager(statusPages, storage)
+	encryptedStorage := vanetls.NewEncryptedStorage(storage, masterKey)
+
+	// Seal any private key left in plaintext by a pre-AD-030 database before
+	// the listener serves. Best-effort: legacy plaintext keys still load, so
+	// a failure here is a warning, never a boot blocker.
+	backfillCtx, cancelBackfill := context.WithTimeout(context.Background(), 30*time.Second)
+	if _, err := vanetls.EncryptLegacyKeys(backfillCtx, pool, masterKey, logger); err != nil {
+		logger.Warn("serve: legacy private-key encryption backfill failed; plaintext keys remain readable in the database", zap.Error(err))
+	}
+	cancelBackfill()
+
+	manager := vanetls.NewManager(statusPages, encryptedStorage)
 
 	services := db.NewServiceRepository(pool)
 	intervals := db.NewStatusIntervalRepository(pool)
 	incidents := db.NewIncidentRepository(pool)
-	companySettings := db.NewCompanySettingsRepository(pool)
-	publicHandler := api.NewPublicStatusHandler(services, intervals, incidents, companySettings, logger)
-	logoFileHandler := api.NewLogoFileHandler(companySettings)
+	tenants := db.NewTenantRepository(pool)
+	publicHandler := api.NewPublicStatusHandler(services, intervals, incidents, tenants, logger)
+	logoFileHandler := api.NewLogoFileHandler(tenants)
 
 	publicMux := http.NewServeMux()
 	publicMux.Handle("/uploads/", logoFileHandler)
@@ -219,7 +245,7 @@ func newHTTPSServer(pool *db.Pool, dsn string, logger *zap.Logger) *http.Server 
 
 	// hsts=true - this listener really does terminate TLS, unlike the admin
 	// HTTP listener (M14).
-	handler := api.SecurityHeaders(true)(router.HostRouter(statusPages, publicMux))
+	handler := api.SecurityHeaders(true)(router.HostRouter(statusPages, pool, publicMux))
 
 	tlsConfig := manager.TLSConfig()
 	tlsConfig.NextProtos = append([]string{"h2", "http/1.1"}, tlsConfig.NextProtos...)
@@ -265,5 +291,88 @@ func newPollerFromStoredIntegration(ctx context.Context, pool *db.Pool, cfg conf
 	llmSvc := llm.NewService(db.NewLLMProviderStore(db.NewLLMProviderRepository(pool)), llmProviderFactory, cfg.MasterKey, logger)
 	analyzer := poller.NewSLOAnalyzer(incidents, services, llmSvc, poller.AnalysisTimeout, logger)
 
-	return poller.NewPoller(services, services, intervals, integrations, client, interval, analyzer, logger), true, nil
+	// Auto-created outage incidents bypass the HTTP handler, so the analyzer
+	// needs its own notifier to fire the incident-opened email
+	// (notification-preferences NOTIFPREF-04, spec edge case).
+	notifier, err := newNotifyService(pool, cfg, logger)
+	if err != nil {
+		return nil, false, err
+	}
+	analyzer.SetNotifier(notifier)
+
+	p = poller.NewPoller(services, services, intervals, integrations, client, interval, analyzer, logger)
+
+	// TENANT-04: every production poll cycle iterates tenants explicitly,
+	// one app.tenant_id-scoped transaction at a time, instead of the old
+	// single-install ambient scan that would have polled whichever rows a
+	// context-less session happened to see. The tenant list itself comes
+	// from db.SystemTenantLister, the only caller allowed to read tenants
+	// without a tenant of its own (AD-024) - never a BYPASSRLS role.
+	p.EnableTenantIteration(db.NewSystemTenantLister(pool), poolTenantTx(pool))
+
+	return p, true, nil
+}
+
+// newManualSchedulerFromPool builds a poller.ManualScheduler wired to pool,
+// mirroring newPollerFromStoredIntegration's own tenant-wiring
+// (db.NewSystemTenantLister/poolTenantTx - manual-polling-monitoring
+// design.md). Unlike the Datadog poller, the manual scheduler reads no
+// stored integration - it has nothing to do with Datadog and can always be
+// built and started, which is why PollerManager.startManualScheduler calls
+// this unconditionally rather than a "started bool, err error" builder like
+// newPollerFromStoredIntegration.
+func newManualSchedulerFromPool(pool *db.Pool, logger *zap.Logger) *poller.ManualScheduler {
+	services := db.NewServiceRepository(pool)
+	intervals := db.NewStatusIntervalRepository(pool)
+	return poller.NewManualScheduler(services, services, intervals, db.NewSystemTenantLister(pool), poolTenantTx(pool), logger)
+}
+
+// poolTenantTx adapts Pool.BeginTenantTx - the same helper the HTTP
+// tenant-context middleware uses - to the poller's TenantTxFunc. The
+// poller acts as no particular user, so app.user_id is left unset ("");
+// app.tenant_id is the tenant being polled. Nothing here touches
+// app.is_system: that flag belongs to the enumeration step alone (AD-024),
+// and the per-tenant work below runs under ordinary tenant scoping like
+// every other request.
+func poolTenantTx(pool *db.Pool) poller.TenantTxFunc {
+	return func(ctx context.Context, tenantID string) (context.Context, func(context.Context) error, func(context.Context), error) {
+		tx, err := pool.BeginTenantTx(ctx, "", tenantID)
+		if err != nil {
+			return nil, nil, nil, err
+		}
+		return db.WithTenantTx(ctx, tx),
+			tx.Commit,
+			func(rollbackCtx context.Context) { _ = tx.Rollback(rollbackCtx) },
+			nil
+	}
+}
+
+// newNotifyService builds the notification service shared by the incident
+// lifecycle (HTTP handler and poller's auto-created incidents) and the weekly
+// digest scheduler.
+func newNotifyService(pool *db.Pool, cfg config.Config, logger *zap.Logger) (*notify.Service, error) {
+	emailService, err := email.NewService(db.NewEmailProviderRepository(pool), emailProviderFactory, cfg.MasterKey, logger)
+	if err != nil {
+		return nil, fmt.Errorf("serve: failed to build email service for notifications: %w", err)
+	}
+	return notify.NewService(db.NewTenantMembershipRepository(pool), db.NewNotificationPreferenceRepository(pool), emailService, cfg.AdminBaseURL, logger), nil
+}
+
+// newDigestScheduler builds the weekly digest scheduler with its production
+// dependencies.
+func newDigestScheduler(pool *db.Pool, cfg config.Config, logger *zap.Logger) (*DigestScheduler, error) {
+	notifier, err := newNotifyService(pool, cfg, logger)
+	if err != nil {
+		return nil, err
+	}
+	return NewDigestScheduler(
+		cfg.DatabaseURL,
+		pool,
+		db.NewSystemTenantLister(pool),
+		db.NewServiceRepository(pool),
+		db.NewStatusIntervalRepository(pool),
+		db.NewIncidentRepository(pool),
+		notifier,
+		logger,
+	), nil
 }

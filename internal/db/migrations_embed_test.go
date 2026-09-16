@@ -69,7 +69,7 @@ func TestMigrateUpEmbedded_FreshDatabase_AppliesAllMigrations(t *testing.T) {
 	defer pool.Close()
 
 	var adminsTableExists bool
-	row := pool.QueryRow(ctx, "SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'admins')")
+	row := pool.QueryRow(ctx, "SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'users')")
 	if err := row.Scan(&adminsTableExists); err != nil {
 		t.Fatalf("querying information_schema returned unexpected error: %v", err)
 	}

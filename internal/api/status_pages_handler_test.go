@@ -31,25 +31,13 @@ func (f *fakeDomainVerifier) Verify(ctx context.Context, hostname, expectedTarge
 	return f.result
 }
 
-func newStatusPagesRouter(t *testing.T, opts ...func(*StatusPagesHandler)) (http.Handler, *db.Pool, *db.AdminRepository) {
+func newStatusPagesRouter(t *testing.T, opts ...func(*StatusPagesHandler)) (http.Handler, *db.Pool, *db.UserRepository) {
 	t.Helper()
-	dsn := testDatabaseURL(t)
 
-	if err := db.MigrateUp(dsn, "../db/migrations"); err != nil {
-		t.Fatalf("MigrateUp() returned unexpected error: %v", err)
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	pool, err := db.NewPool(ctx, dsn)
-	if err != nil {
-		t.Fatalf("NewPool() returned unexpected error: %v", err)
-	}
-	t.Cleanup(pool.Close)
+	pool, _ := newAPITenantScopedPool(t)
 
 	repo := db.NewStatusPageRepository(pool)
-	admins := db.NewAdminRepository(pool)
+	admins := db.NewUserRepository(pool)
 	handler := NewStatusPagesHandler(repo, audit.NewLog(pool), "", zap.NewNop())
 	for _, opt := range opts {
 		opt(handler)
@@ -57,7 +45,11 @@ func newStatusPagesRouter(t *testing.T, opts ...func(*StatusPagesHandler)) (http
 
 	r := chi.NewRouter()
 	r.Group(func(protected chi.Router) {
-		protected.Use(RequireAuth(middlewareTestSecret, admins))
+		protected.Use(RequireAuth(middlewareTestSecret, admins, db.NewSessionRepository(pool), zap.NewNop()))
+		// Mirrors buildAdminRouter: TenantContext runs right after
+		// RequireAuth and is what resolves the caller's role in the active
+		// tenant for RequireRole (multi-tenancy-core, AD-022).
+		protected.Use(TenantContext(pool, db.NewTenantMembershipRepository(pool), zap.NewNop()))
 		protected.Post("/api/status-pages", handler.Create)
 		protected.Get("/api/status-pages", handler.List)
 		protected.Patch("/api/status-pages/{id}/domain", handler.AttachDomain)
@@ -92,11 +84,14 @@ func createTestService(t *testing.T, pool *db.Pool) string {
 	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), "DELETE FROM services WHERE name = $1", name) })
 
 	var serviceID string
-	row := pool.QueryRow(context.Background(),
-		"INSERT INTO services (name, slo_id) VALUES ($1, $2) RETURNING id", name, "slo-fixture")
-	if err := row.Scan(&serviceID); err != nil {
-		t.Fatalf("failed to insert service fixture: %v", err)
-	}
+	tenantID := seedTestTenant(t, pool)
+	withTenantTx(t, pool, tenantID, func(ctx context.Context) {
+		row := pool.QueryRow(ctx,
+			"INSERT INTO services (name, slo_id) VALUES ($1, $2) RETURNING id", name, "slo-fixture")
+		if err := row.Scan(&serviceID); err != nil {
+			t.Fatalf("failed to insert service fixture: %v", err)
+		}
+	})
 	return serviceID
 }
 

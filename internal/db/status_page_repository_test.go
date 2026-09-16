@@ -43,33 +43,17 @@ func createStatusPageFixture(t *testing.T, pool *Pool) string {
 }
 
 func TestStatusPageRepository_StateByHostname_UnknownHostname_ErrNotFound(t *testing.T) {
-	dsn := testDatabaseURL(t)
-	if err := MigrateUp(dsn, "migrations"); err != nil {
-		t.Fatalf("MigrateUp() returned unexpected error: %v", err)
-	}
-	pool, err := NewPool(context.Background(), dsn)
-	if err != nil {
-		t.Fatalf("NewPool() returned unexpected error: %v", err)
-	}
-	t.Cleanup(pool.Close)
+	pool, _ := newTenantScopedPool(t)
 
 	repo := NewStatusPageRepository(pool)
-	_, err = repo.StateByHostname(context.Background(), "no-such-page.example.com")
+	_, err := repo.StateByHostname(context.Background(), "no-such-page.example.com")
 	if !errors.Is(err, ErrNotFound) {
 		t.Fatalf("StateByHostname() error = %v, want ErrNotFound", err)
 	}
 }
 
 func TestStatusPageRepository_MarkPublished_SetsPublishedStateAndClearsError(t *testing.T) {
-	dsn := testDatabaseURL(t)
-	if err := MigrateUp(dsn, "migrations"); err != nil {
-		t.Fatalf("MigrateUp() returned unexpected error: %v", err)
-	}
-	pool, err := NewPool(context.Background(), dsn)
-	if err != nil {
-		t.Fatalf("NewPool() returned unexpected error: %v", err)
-	}
-	t.Cleanup(pool.Close)
+	pool, _ := newTenantScopedPool(t)
 
 	hostname := createStatusPageFixture(t, pool)
 	repo := NewStatusPageRepository(pool)
@@ -104,15 +88,7 @@ func TestStatusPageRepository_MarkPublished_SetsPublishedStateAndClearsError(t *
 }
 
 func TestStatusPageRepository_MarkTLSFailed_SetsTLSFailedStateWithReason(t *testing.T) {
-	dsn := testDatabaseURL(t)
-	if err := MigrateUp(dsn, "migrations"); err != nil {
-		t.Fatalf("MigrateUp() returned unexpected error: %v", err)
-	}
-	pool, err := NewPool(context.Background(), dsn)
-	if err != nil {
-		t.Fatalf("NewPool() returned unexpected error: %v", err)
-	}
-	t.Cleanup(pool.Close)
+	pool, _ := newTenantScopedPool(t)
 
 	hostname := createStatusPageFixture(t, pool)
 	repo := NewStatusPageRepository(pool)
@@ -146,15 +122,7 @@ func TestStatusPageRepository_MarkTLSFailed_SetsTLSFailedStateWithReason(t *test
 // both nil, and the returned row reflects both as nil (no domain forced on
 // creation).
 func TestStatusPageRepository_Create_NoDomain_ReturnsNullDomainAndSubdomain(t *testing.T) {
-	dsn := testDatabaseURL(t)
-	if err := MigrateUp(dsn, "migrations"); err != nil {
-		t.Fatalf("MigrateUp() returned unexpected error: %v", err)
-	}
-	pool, err := NewPool(context.Background(), dsn)
-	if err != nil {
-		t.Fatalf("NewPool() returned unexpected error: %v", err)
-	}
-	t.Cleanup(pool.Close)
+	pool, _ := newTenantScopedPool(t)
 
 	repo := NewStatusPageRepository(pool)
 	statusPage := &StatusPage{Name: fmt.Sprintf("no-domain-page-%d", time.Now().UnixNano())}
@@ -180,15 +148,7 @@ func TestStatusPageRepository_Create_NoDomain_ReturnsNullDomainAndSubdomain(t *t
 // existing with-domain create path (SPD-05: backward compatible) still
 // returns the exact domain/subdomain provided.
 func TestStatusPageRepository_Create_WithDomain_Unchanged(t *testing.T) {
-	dsn := testDatabaseURL(t)
-	if err := MigrateUp(dsn, "migrations"); err != nil {
-		t.Fatalf("MigrateUp() returned unexpected error: %v", err)
-	}
-	pool, err := NewPool(context.Background(), dsn)
-	if err != nil {
-		t.Fatalf("NewPool() returned unexpected error: %v", err)
-	}
-	t.Cleanup(pool.Close)
+	pool, _ := newTenantScopedPool(t)
 
 	hostname := fmt.Sprintf("status-page-repo-create-test-%d.example.com", time.Now().UnixNano())
 	domains := NewDomainRepository(pool)
@@ -216,10 +176,14 @@ func TestStatusPageRepository_Create_WithDomain_Unchanged(t *testing.T) {
 	}
 }
 
-// TestStatusPageRepository_List_MixOfDomainedAndDomainless_CorrectNullability
-// asserts SPD-01/SPD-05: List returns both a domain-less and a domained
-// row with correct nullability on each.
-func TestStatusPageRepository_List_MixOfDomainedAndDomainless_CorrectNullability(t *testing.T) {
+// newUnscopedPool returns a migrated pool with NO session-level
+// app.tenant_id, unlike newTenantScopedPool. A test that needs to prove
+// something about how a repository handles the caller's transaction cannot
+// use the tenant-scoped pool: presetting the setting on every connection
+// would make an independently pooled transaction resolve the tenant_id
+// DEFAULT just fine, hiding the very failure under test.
+func newUnscopedPool(t *testing.T) *Pool {
+	t.Helper()
 	dsn := testDatabaseURL(t)
 	if err := MigrateUp(dsn, "migrations"); err != nil {
 		t.Fatalf("MigrateUp() returned unexpected error: %v", err)
@@ -229,6 +193,65 @@ func TestStatusPageRepository_List_MixOfDomainedAndDomainless_CorrectNullability
 		t.Fatalf("NewPool() returned unexpected error: %v", err)
 	}
 	t.Cleanup(pool.Close)
+	return pool
+}
+
+// TestStatusPageRepository_Create_InsideExistingTenantTx_ReusesCallerTransaction
+// is the regression guard on Create opening its own pooled transaction: the
+// tenant_id DEFAULT reads current_setting('app.tenant_id'), which is SET
+// LOCAL on the caller's transaction only, so a second transaction resolved
+// it to NULL and the insert died on the NOT NULL constraint. Asserts three
+// things at once: the call succeeds, the row lands on the caller's tenant,
+// and it is genuinely part of the caller's transaction (rolling that
+// transaction back removes it, which a self-committing Create could not
+// honour).
+func TestStatusPageRepository_Create_InsideExistingTenantTx_ReusesCallerTransaction(t *testing.T) {
+	pool := newUnscopedPool(t)
+	tenantID := seedPlainTenant(t, pool)
+	ctx := context.Background()
+
+	tx, err := pool.BeginTenantTx(ctx, "", tenantID)
+	if err != nil {
+		t.Fatalf("BeginTenantTx() returned unexpected error: %v", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	txCtx := WithTenantTx(ctx, tx)
+
+	repo := NewStatusPageRepository(pool)
+	statusPage := &StatusPage{Name: fmt.Sprintf("tenant-tx-page-%d", time.Now().UnixNano())}
+	if err := repo.Create(txCtx, statusPage, nil); err != nil {
+		t.Fatalf("Create() inside an existing tenant transaction returned unexpected error: %v", err)
+	}
+	if statusPage.ID == "" {
+		t.Fatal("Create() left StatusPage.ID empty")
+	}
+
+	var gotTenantID string
+	if err := pool.QueryRow(txCtx, "SELECT tenant_id FROM status_pages WHERE id = $1", statusPage.ID).Scan(&gotTenantID); err != nil {
+		t.Fatalf("reading back tenant_id returned unexpected error: %v", err)
+	}
+	if gotTenantID != tenantID {
+		t.Errorf("status_pages.tenant_id = %q, want %q", gotTenantID, tenantID)
+	}
+
+	if err := tx.Rollback(ctx); err != nil {
+		t.Fatalf("Rollback() returned unexpected error: %v", err)
+	}
+
+	var count int
+	if err := pool.QueryRow(ctx, "SELECT COUNT(*) FROM status_pages WHERE id = $1", statusPage.ID).Scan(&count); err != nil {
+		t.Fatalf("counting rows after rollback returned unexpected error: %v", err)
+	}
+	if count != 0 {
+		t.Errorf("status page rows surviving the caller's rollback = %d, want 0 (Create committed its own transaction)", count)
+	}
+}
+
+// TestStatusPageRepository_List_MixOfDomainedAndDomainless_CorrectNullability
+// asserts SPD-01/SPD-05: List returns both a domain-less and a domained
+// row with correct nullability on each.
+func TestStatusPageRepository_List_MixOfDomainedAndDomainless_CorrectNullability(t *testing.T) {
+	pool, _ := newTenantScopedPool(t)
 
 	repo := NewStatusPageRepository(pool)
 
@@ -330,15 +353,7 @@ func createDomainlessStatusPage(t *testing.T, repo *StatusPageRepository, pool *
 
 func newAttachDomainTestRepo(t *testing.T) (*StatusPageRepository, *Pool) {
 	t.Helper()
-	dsn := testDatabaseURL(t)
-	if err := MigrateUp(dsn, "migrations"); err != nil {
-		t.Fatalf("MigrateUp() returned unexpected error: %v", err)
-	}
-	pool, err := NewPool(context.Background(), dsn)
-	if err != nil {
-		t.Fatalf("NewPool() returned unexpected error: %v", err)
-	}
-	t.Cleanup(pool.Close)
+	pool, _ := newTenantScopedPool(t)
 	return NewStatusPageRepository(pool), pool
 }
 
@@ -603,9 +618,12 @@ func createSetServicesTestService(t *testing.T, pool *Pool, namePrefix string) s
 	t.Helper()
 	services := NewServiceRepository(pool)
 	service := &Service{Name: fmt.Sprintf("%s-%d", namePrefix, time.Now().UnixNano()), SLOID: "slo-fixture-id"}
-	if err := services.Create(context.Background(), service); err != nil {
-		t.Fatalf("setup service Create() returned unexpected error: %v", err)
-	}
+	tenantID := seedPlainTenant(t, pool)
+	withTenantTx(t, pool, tenantID, func(ctx context.Context) {
+		if err := services.Create(ctx, service); err != nil {
+			t.Fatalf("setup service Create() returned unexpected error: %v", err)
+		}
+	})
 	t.Cleanup(func() {
 		_, _ = pool.Exec(context.Background(), "DELETE FROM services WHERE id = $1", service.ID)
 	})
@@ -801,6 +819,104 @@ func TestStatusPageRepository_ListPaginated_PageBeyondLast_EmptyItemsCorrectTota
 // serviceIDsByStatusPage batch lookup still attaches ServiceIDs correctly
 // when scoped to just the paged subset of IDs (design.md: this now runs
 // against only the paged IDs, not every status page in the table).
+// TestAttachedNamesByDomainIDs_EmptyInput_ReturnsEmptyMapNoQuery asserts
+// an empty domainIDs slice short-circuits to an empty map without error
+// (domains-status-pages-page T1: DomainsHandler.List can call this
+// unconditionally even on an empty page).
+func TestAttachedNamesByDomainIDs_EmptyInput_ReturnsEmptyMapNoQuery(t *testing.T) {
+	repo, _ := newAttachDomainTestRepo(t)
+
+	got, err := repo.AttachedNamesByDomainIDs(context.Background(), []string{})
+	if err != nil {
+		t.Fatalf("AttachedNamesByDomainIDs() returned unexpected error: %v", err)
+	}
+	if len(got) != 0 {
+		t.Errorf("AttachedNamesByDomainIDs() = %v, want empty map", got)
+	}
+}
+
+// TestAttachedNamesByDomainIDs_ZeroAttached_KeyAbsentFromMap asserts a
+// domain with no attached status pages simply has no key in the result
+// map (DSP-02's zero-attached case at the repository layer).
+func TestAttachedNamesByDomainIDs_ZeroAttached_KeyAbsentFromMap(t *testing.T) {
+	repo, pool := newAttachDomainTestRepo(t)
+	domainID := createAttachTestDomain(t, pool)
+
+	got, err := repo.AttachedNamesByDomainIDs(context.Background(), []string{domainID})
+	if err != nil {
+		t.Fatalf("AttachedNamesByDomainIDs() returned unexpected error: %v", err)
+	}
+	if _, ok := got[domainID]; ok {
+		t.Errorf("AttachedNamesByDomainIDs()[%q] = %v, want key absent (zero attached)", domainID, got[domainID])
+	}
+}
+
+// TestAttachedNamesByDomainIDs_OneAttached_ReturnsSingleName asserts
+// DSP-03: a domain with exactly one attached page returns that page's
+// name.
+func TestAttachedNamesByDomainIDs_OneAttached_ReturnsSingleName(t *testing.T) {
+	repo, pool := newAttachDomainTestRepo(t)
+	domainID := createAttachTestDomain(t, pool)
+	pageID := createDomainlessStatusPage(t, repo, pool, "attached-names-one")
+	if _, err := repo.AttachDomain(context.Background(), pageID, domainID, "status"); err != nil {
+		t.Fatalf("setup AttachDomain() returned unexpected error: %v", err)
+	}
+
+	page, err := repo.GetByID(context.Background(), pageID)
+	if err != nil {
+		t.Fatalf("GetByID() returned unexpected error: %v", err)
+	}
+
+	got, err := repo.AttachedNamesByDomainIDs(context.Background(), []string{domainID})
+	if err != nil {
+		t.Fatalf("AttachedNamesByDomainIDs() returned unexpected error: %v", err)
+	}
+	if len(got[domainID]) != 1 || got[domainID][0] != page.Name {
+		t.Errorf("AttachedNamesByDomainIDs()[%q] = %v, want [%q]", domainID, got[domainID], page.Name)
+	}
+}
+
+// TestAttachedNamesByDomainIDs_TwoOrMoreAttached_OrderedByCreatedAt
+// asserts DSP-04: a domain with 2+ attached pages returns every name,
+// ordered created_at ASC so the caller can treat the first as "primary".
+// AttachDomain can only be called once per page (SPD-06), so this fixture
+// creates two status pages already carrying their domain_id at insert
+// time (bypassing AttachDomain), sequencing their created_at explicitly.
+func TestAttachedNamesByDomainIDs_TwoOrMoreAttached_OrderedByCreatedAt(t *testing.T) {
+	repo, pool := newAttachDomainTestRepo(t)
+	domainID := createAttachTestDomain(t, pool)
+
+	subdomainA := "status-a"
+	subdomainB := "status-b"
+	pageA := &StatusPage{Name: fmt.Sprintf("attached-names-multi-a-%d", time.Now().UnixNano()), Subdomain: &subdomainA, DomainID: &domainID}
+	if err := repo.Create(context.Background(), pageA, nil); err != nil {
+		t.Fatalf("setup Create() (page A) returned unexpected error: %v", err)
+	}
+	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), "DELETE FROM status_pages WHERE id = $1", pageA.ID) })
+
+	pageB := &StatusPage{Name: fmt.Sprintf("attached-names-multi-b-%d", time.Now().UnixNano()), Subdomain: &subdomainB, DomainID: &domainID}
+	if err := repo.Create(context.Background(), pageB, nil); err != nil {
+		t.Fatalf("setup Create() (page B) returned unexpected error: %v", err)
+	}
+	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), "DELETE FROM status_pages WHERE id = $1", pageB.ID) })
+
+	// Force a deterministic created_at ordering rather than relying on two
+	// inserts issued microseconds apart.
+	if _, err := pool.Exec(context.Background(), "UPDATE status_pages SET created_at = $1 WHERE id = $2",
+		time.Now().Add(-1*time.Hour), pageA.ID); err != nil {
+		t.Fatalf("failed to backdate page A created_at: %v", err)
+	}
+
+	got, err := repo.AttachedNamesByDomainIDs(context.Background(), []string{domainID})
+	if err != nil {
+		t.Fatalf("AttachedNamesByDomainIDs() returned unexpected error: %v", err)
+	}
+	want := []string{pageA.Name, pageB.Name}
+	if len(got[domainID]) != 2 || got[domainID][0] != want[0] || got[domainID][1] != want[1] {
+		t.Errorf("AttachedNamesByDomainIDs()[%q] = %v, want %v (ordered created_at ASC)", domainID, got[domainID], want)
+	}
+}
+
 func TestStatusPageRepository_ListPaginated_PopulatesServiceIDs(t *testing.T) {
 	repo, pool := newAttachDomainTestRepo(t)
 	serviceA := createSetServicesTestService(t, pool, "list-paginated-svc-ids")

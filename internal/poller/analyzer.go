@@ -13,6 +13,7 @@ import (
 	"github.com/zeeplabs/zeep-vane/internal/connectors/datadog"
 	"github.com/zeeplabs/zeep-vane/internal/db"
 	"github.com/zeeplabs/zeep-vane/internal/llm"
+	"github.com/zeeplabs/zeep-vane/internal/notify"
 )
 
 // incidentStore is the subset of *db.IncidentRepository SLOAnalyzer depends
@@ -112,10 +113,27 @@ type SLOAnalyzer struct {
 	timeout   time.Duration
 	logger    *zap.Logger
 
+	// notifier sends the incident-opened email for an auto-created outage
+	// incident (notification-preferences NOTIFPREF-04). Optional: nil (the
+	// default, and every test that does not exercise notifications) disables
+	// those emails. Set via SetNotifier from boot wiring.
+	notifier incidentNotifier
+
 	sem chan struct{} // bounds concurrent enrichment goroutines (maxConcurrentEnrichments)
 
 	mu           sync.Mutex
 	lastDispatch map[string]time.Time // dedupe key -> last dispatch time (enrichmentCooldown)
+}
+
+// incidentNotifier is the subset of *notify.Service SLOAnalyzer depends on.
+type incidentNotifier interface {
+	NotifyIncidentOpened(ctx context.Context, tenantID string, summary notify.IncidentSummary) error
+}
+
+// SetNotifier installs the notifier used for auto-created incident-opened
+// emails. Optional - a nil notifier (the default) disables those emails.
+func (a *SLOAnalyzer) SetNotifier(n incidentNotifier) {
+	a.notifier = n
 }
 
 // NewSLOAnalyzer builds an SLOAnalyzer. timeout bounds every async LLM
@@ -233,6 +251,23 @@ func (a *SLOAnalyzer) handleOutageTransition(ctx context.Context, svc db.Service
 		a.logger.Error("slo-analyzer: failed to create auto-detected outage incident",
 			zap.String("service_id", svc.ID), zap.Error(err))
 		return
+	}
+
+	// Auto-created incidents bypass IncidentsHandler.Create, so their
+	// incident-opened notification has to fire here (spec edge case: an
+	// auto-created incident still notifies). Best-effort, like the handler
+	// hooks: a lookup or send failure is logged and never delays or fails the
+	// poll cycle. tenantID comes from the poll cycle's per-tenant context.
+	if tenantID := tenantIDFromContext(ctx); a.notifier != nil && tenantID != "" {
+		if err := a.notifier.NotifyIncidentOpened(ctx, tenantID, notify.IncidentSummary{
+			IncidentID:  incident.ID,
+			Title:       incident.Title,
+			Severity:    incident.Severity,
+			ServiceName: svc.Name,
+		}); err != nil {
+			a.logger.Error("slo-analyzer: failed to notify incident opened",
+				zap.String("incident_id", incident.ID), zap.Error(err))
+		}
 	}
 
 	a.dispatchOutageEnrichment(ctx, svc, sloStatus, incident.ID)

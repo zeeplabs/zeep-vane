@@ -1,0 +1,5 @@
+An incident{{if .ServiceName}} for {{.ServiceName}}{{end}}{{if .TenantName}} in {{.TenantName}}{{end}} has been resolved.
+
+{{.IncidentTitle}}{{if .Severity}} (severity: {{.Severity}}){{end}}
+
+View the incident: {{.DashboardURL}}

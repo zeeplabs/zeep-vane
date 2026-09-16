@@ -19,33 +19,30 @@ import (
 	"github.com/zeeplabs/zeep-vane/internal/db"
 )
 
-func newDomainsRouter(t *testing.T) (http.Handler, *db.Pool, *db.AdminRepository) {
+func newDomainsRouter(t *testing.T, opts ...func(*DomainsHandler)) (http.Handler, *db.Pool, *db.UserRepository) {
 	t.Helper()
-	dsn := testDatabaseURL(t)
 
-	if err := db.MigrateUp(dsn, "../db/migrations"); err != nil {
-		t.Fatalf("MigrateUp() returned unexpected error: %v", err)
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	pool, err := db.NewPool(ctx, dsn)
-	if err != nil {
-		t.Fatalf("NewPool() returned unexpected error: %v", err)
-	}
-	t.Cleanup(pool.Close)
+	pool, _ := newAPITenantScopedPool(t)
 
 	repo := db.NewDomainRepository(pool)
-	admins := db.NewAdminRepository(pool)
-	handler := NewDomainsHandler(repo, audit.NewLog(pool), zap.NewNop())
+	statusPages := db.NewStatusPageRepository(pool)
+	admins := db.NewUserRepository(pool)
+	handler := NewDomainsHandler(repo, statusPages, audit.NewLog(pool), "", zap.NewNop())
+	for _, opt := range opts {
+		opt(handler)
+	}
 
 	r := chi.NewRouter()
 	r.Group(func(protected chi.Router) {
-		protected.Use(RequireAuth(middlewareTestSecret, admins))
+		protected.Use(RequireAuth(middlewareTestSecret, admins, db.NewSessionRepository(pool), zap.NewNop()))
+		// Mirrors buildAdminRouter: TenantContext runs right after
+		// RequireAuth and is what resolves the caller's role in the active
+		// tenant for RequireRole (multi-tenancy-core, AD-022).
+		protected.Use(TenantContext(pool, db.NewTenantMembershipRepository(pool), zap.NewNop()))
 		protected.Post("/api/domains", handler.Create)
 		protected.Get("/api/domains", handler.List)
 		protected.Delete("/api/domains/{id}", handler.Delete)
+		protected.Post("/api/domains/{id}/verify", handler.Verify)
 	})
 
 	return r, pool, admins
@@ -163,7 +160,7 @@ func findDomainAcrossPages(t *testing.T, r http.Handler, token, hostname string)
 		if rec.Code != http.StatusOK {
 			t.Fatalf("page=%d status = %d, want %d, body = %s", page, rec.Code, http.StatusOK, rec.Body.String())
 		}
-		var got Page[domainResponse]
+		var got domainsPageResponse
 		if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
 			t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
 		}
@@ -194,7 +191,7 @@ func TestListDomains_AnyRole_200IncludesCreated(t *testing.T) {
 		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
 	}
 
-	var page Page[domainResponse]
+	var page domainsPageResponse
 	if err := json.Unmarshal(rec.Body.Bytes(), &page); err != nil {
 		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
 	}
@@ -230,7 +227,7 @@ func TestListDomains_InvalidPage_ClampsToPage1(t *testing.T) {
 		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
 	}
 
-	var page Page[domainResponse]
+	var page domainsPageResponse
 	if err := json.Unmarshal(rec.Body.Bytes(), &page); err != nil {
 		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
 	}
@@ -252,7 +249,7 @@ func TestListDomains_PageBeyondLast_EmptyItems200(t *testing.T) {
 		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
 	}
 
-	var page Page[domainResponse]
+	var page domainsPageResponse
 	if err := json.Unmarshal(rec.Body.Bytes(), &page); err != nil {
 		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
 	}
@@ -361,6 +358,414 @@ func TestDeleteDomain_NoAuth_401(t *testing.T) {
 	r, _, _ := newDomainsRouter(t)
 
 	rec := deleteDomain(t, r, "", "00000000-0000-0000-0000-000000000000")
+	if rec.Code != http.StatusUnauthorized {
+		t.Errorf("status = %d, want %d", rec.Code, http.StatusUnauthorized)
+	}
+}
+
+// TestCreateDomain_DefaultsToPendingCustom covers DOMVER-02: a newly
+// created domain's response shows domain_type=custom, status=pending,
+// ssl_status=pending, verified_at=null.
+func TestCreateDomain_DefaultsToPendingCustom(t *testing.T) {
+	r, pool, admins := newDomainsRouter(t)
+	token := issueTestSessionToken(t, admins)
+	hostname := uniqueHostname(t)
+	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), "DELETE FROM domains WHERE hostname = $1", hostname) })
+
+	rec := postCreateDomain(t, r, token, hostname)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusCreated, rec.Body.String())
+	}
+
+	var created domainResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &created); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+	if created.DomainType != "custom" {
+		t.Errorf("DomainType = %q, want %q", created.DomainType, "custom")
+	}
+	if created.Status != "pending" {
+		t.Errorf("Status = %q, want %q", created.Status, "pending")
+	}
+	if created.SSLStatus != "pending" {
+		t.Errorf("SSLStatus = %q, want %q", created.SSLStatus, "pending")
+	}
+	if created.VerifiedAt != nil {
+		t.Errorf("VerifiedAt = %v, want nil", created.VerifiedAt)
+	}
+}
+
+// TestListDomains_DNSTargetConfigured_IncludedInResponse covers DOMVER-03:
+// the response carries the operator's real configured CNAME target.
+func TestListDomains_DNSTargetConfigured_IncludedInResponse(t *testing.T) {
+	r, _, admins := newDomainsRouter(t, func(h *DomainsHandler) { h.dnsTarget = "lb.example-cluster.internal" })
+	token := issueTestSessionToken(t, admins)
+
+	rec := getListDomains(t, r, token)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	var page domainsPageResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &page); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+	if page.DNSTarget == nil || *page.DNSTarget != "lb.example-cluster.internal" {
+		t.Errorf("DNSTarget = %v, want %q", page.DNSTarget, "lb.example-cluster.internal")
+	}
+}
+
+// TestListDomains_DNSTargetUnconfigured_NullInResponse covers the edge
+// case: an unset PUBLIC_DNS_TARGET is reported as null, not an empty
+// string, so the frontend can show "not configured" explicitly.
+func TestListDomains_DNSTargetUnconfigured_NullInResponse(t *testing.T) {
+	r, _, admins := newDomainsRouter(t)
+	token := issueTestSessionToken(t, admins)
+
+	rec := getListDomains(t, r, token)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	var page domainsPageResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &page); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+	if page.DNSTarget != nil {
+		t.Errorf("DNSTarget = %v, want nil", *page.DNSTarget)
+	}
+}
+
+// insertStatusPageAttachedTo inserts a raw status_pages row attached to
+// domainID (bypassing StatusPageRepository.AttachDomain's "exactly once"
+// constraint, same fixture technique as TestDeleteDomain_InUseByStatusPage_409),
+// registers its cleanup, and returns the generated id/name.
+func insertStatusPageAttachedTo(t *testing.T, pool *db.Pool, domainID, name, subdomain string) string {
+	t.Helper()
+	var id string
+	row := pool.QueryRow(context.Background(),
+		"INSERT INTO status_pages (name, subdomain, domain_id) VALUES ($1, $2, $3) RETURNING id",
+		name, subdomain, domainID,
+	)
+	if err := row.Scan(&id); err != nil {
+		t.Fatalf("failed to insert status page fixture: %v", err)
+	}
+	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), "DELETE FROM status_pages WHERE id = $1", id) })
+	return id
+}
+
+// findDomainResponseAcrossPages is findDomainAcrossPages's sibling,
+// returning the full domainResponse instead of a bool, so tests can assert
+// on attached_page_name/attached_page_count.
+func findDomainResponseAcrossPages(t *testing.T, r http.Handler, token, hostname string) (domainResponse, bool) {
+	t.Helper()
+	for page := 1; ; page++ {
+		rec := getListDomainsPage(t, r, token, page)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("page=%d status = %d, want %d, body = %s", page, rec.Code, http.StatusOK, rec.Body.String())
+		}
+		var got domainsPageResponse
+		if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+			t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+		}
+		for _, d := range got.Items {
+			if d.Hostname == hostname {
+				return d, true
+			}
+		}
+		if len(got.Items) == 0 || page*got.PageSize >= got.Total {
+			return domainResponse{}, false
+		}
+	}
+}
+
+// TestListDomains_ZeroAttachedPages_NilNameZeroCount covers DSP-02: a
+// domain with no status page attached shows attached_page_name=nil,
+// attached_page_count=0.
+func TestListDomains_ZeroAttachedPages_NilNameZeroCount(t *testing.T) {
+	r, pool, admins := newDomainsRouter(t)
+	token := issueTestSessionToken(t, admins)
+	hostname := uniqueHostname(t)
+	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), "DELETE FROM domains WHERE hostname = $1", hostname) })
+
+	createRec := postCreateDomain(t, r, token, hostname)
+	if createRec.Code != http.StatusCreated {
+		t.Fatalf("setup create status = %d, want %d", createRec.Code, http.StatusCreated)
+	}
+
+	got, found := findDomainResponseAcrossPages(t, r, token, hostname)
+	if !found {
+		t.Fatalf("created hostname %q not found across any page of GET /api/domains", hostname)
+	}
+	if got.AttachedPageName != nil {
+		t.Errorf("AttachedPageName = %v, want nil", *got.AttachedPageName)
+	}
+	if got.AttachedPageCount != 0 {
+		t.Errorf("AttachedPageCount = %d, want 0", got.AttachedPageCount)
+	}
+}
+
+// TestListDomains_OneAttachedPage_NameAndCountOne covers DSP-03: a domain
+// with exactly one attached status page shows that page's name and count 1.
+func TestListDomains_OneAttachedPage_NameAndCountOne(t *testing.T) {
+	r, pool, admins := newDomainsRouter(t)
+	token := issueTestSessionToken(t, admins)
+	hostname := uniqueHostname(t)
+
+	createRec := postCreateDomain(t, r, token, hostname)
+	if createRec.Code != http.StatusCreated {
+		t.Fatalf("setup create status = %d, want %d", createRec.Code, http.StatusCreated)
+	}
+	var created domainResponse
+	if err := json.Unmarshal(createRec.Body.Bytes(), &created); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = pool.Exec(context.Background(), "DELETE FROM status_pages WHERE domain_id = $1", created.ID)
+		_, _ = pool.Exec(context.Background(), "DELETE FROM domains WHERE id = $1", created.ID)
+	})
+
+	insertStatusPageAttachedTo(t, pool, created.ID, "One Page Status", "one")
+
+	got, found := findDomainResponseAcrossPages(t, r, token, hostname)
+	if !found {
+		t.Fatalf("created hostname %q not found across any page of GET /api/domains", hostname)
+	}
+	if got.AttachedPageName == nil || *got.AttachedPageName != "One Page Status" {
+		t.Errorf("AttachedPageName = %v, want %q", got.AttachedPageName, "One Page Status")
+	}
+	if got.AttachedPageCount != 1 {
+		t.Errorf("AttachedPageCount = %d, want 1", got.AttachedPageCount)
+	}
+}
+
+// TestListDomains_TwoOrMoreAttachedPages_FirstNameAndFullCount covers
+// DSP-04: a domain with 2+ attached status pages shows the earliest
+// created page's name and the full count.
+func TestListDomains_TwoOrMoreAttachedPages_FirstNameAndFullCount(t *testing.T) {
+	r, pool, admins := newDomainsRouter(t)
+	token := issueTestSessionToken(t, admins)
+	hostname := uniqueHostname(t)
+
+	createRec := postCreateDomain(t, r, token, hostname)
+	if createRec.Code != http.StatusCreated {
+		t.Fatalf("setup create status = %d, want %d", createRec.Code, http.StatusCreated)
+	}
+	var created domainResponse
+	if err := json.Unmarshal(createRec.Body.Bytes(), &created); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = pool.Exec(context.Background(), "DELETE FROM status_pages WHERE domain_id = $1", created.ID)
+		_, _ = pool.Exec(context.Background(), "DELETE FROM domains WHERE id = $1", created.ID)
+	})
+
+	firstID := insertStatusPageAttachedTo(t, pool, created.ID, "First Attached Page", "first")
+	insertStatusPageAttachedTo(t, pool, created.ID, "Second Attached Page", "second")
+	// Force a deterministic created_at ordering so "first" is unambiguous.
+	if _, err := pool.Exec(context.Background(), "UPDATE status_pages SET created_at = $1 WHERE id = $2",
+		time.Now().Add(-1*time.Hour), firstID); err != nil {
+		t.Fatalf("failed to backdate first page created_at: %v", err)
+	}
+
+	got, found := findDomainResponseAcrossPages(t, r, token, hostname)
+	if !found {
+		t.Fatalf("created hostname %q not found across any page of GET /api/domains", hostname)
+	}
+	if got.AttachedPageName == nil || *got.AttachedPageName != "First Attached Page" {
+		t.Errorf("AttachedPageName = %v, want %q (earliest created)", got.AttachedPageName, "First Attached Page")
+	}
+	if got.AttachedPageCount != 2 {
+		t.Errorf("AttachedPageCount = %d, want 2", got.AttachedPageCount)
+	}
+}
+
+func postDomainVerify(t *testing.T, r http.Handler, token, id string) *httptest.ResponseRecorder {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodPost, "/api/domains/"+id+"/verify", nil)
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+	return rec
+}
+
+// createVerifiableTestDomain creates a domain via the handler and returns
+// its response, registering cleanup. Distinct from status_pages_handler_test.go's
+// own createTestDomain (a raw-SQL fixture with a different signature).
+func createVerifiableTestDomain(t *testing.T, r http.Handler, pool *db.Pool, token string) domainResponse {
+	t.Helper()
+	hostname := uniqueHostname(t)
+	rec := postCreateDomain(t, r, token, hostname)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("setup create status = %d, want %d, body = %s", rec.Code, http.StatusCreated, rec.Body.String())
+	}
+	var created domainResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &created); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), "DELETE FROM domains WHERE id = $1", created.ID) })
+	return created
+}
+
+// TestVerifyDomain_Success_VerifiedActive covers DOMVER-04/07: a
+// successful DNS+TLS check persists status=verified, ssl_status=active.
+func TestVerifyDomain_Success_VerifiedActive(t *testing.T) {
+	r, pool, admins := newDomainsRouter(t, func(h *DomainsHandler) {
+		h.verifier = &fakeDomainVerifier{result: domainVerificationResult{
+			DNSResolved: true, TLSReachable: true, TLSCertValid: true,
+		}}
+	})
+	token := issueTestSessionToken(t, admins)
+	domain := createVerifiableTestDomain(t, r, pool, token)
+
+	rec := postDomainVerify(t, r, token, domain.ID)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	var updated domainResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &updated); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+	if updated.Status != "verified" {
+		t.Errorf("Status = %q, want %q", updated.Status, "verified")
+	}
+	if updated.SSLStatus != "active" {
+		t.Errorf("SSLStatus = %q, want %q", updated.SSLStatus, "active")
+	}
+	if updated.VerifiedAt == nil {
+		t.Error("VerifiedAt = nil, want a timestamp")
+	}
+	if updated.LastError != nil {
+		t.Errorf("LastError = %v, want nil", updated.LastError)
+	}
+}
+
+// TestVerifyDomain_DNSFailure_ErrorWithLastError covers DOMVER-08: a DNS
+// resolution failure persists status=error with a populated last_error.
+func TestVerifyDomain_DNSFailure_ErrorWithLastError(t *testing.T) {
+	r, pool, admins := newDomainsRouter(t, func(h *DomainsHandler) {
+		h.verifier = &fakeDomainVerifier{result: domainVerificationResult{DNSResolved: false}}
+	})
+	token := issueTestSessionToken(t, admins)
+	domain := createVerifiableTestDomain(t, r, pool, token)
+
+	rec := postDomainVerify(t, r, token, domain.ID)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	var updated domainResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &updated); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+	if updated.Status != "error" {
+		t.Errorf("Status = %q, want %q", updated.Status, "error")
+	}
+	if updated.LastError == nil || *updated.LastError == "" {
+		t.Error("LastError is nil/empty, want a populated description")
+	}
+}
+
+// TestVerifyDomain_DNSMismatch_ErrorWithLastError covers DOMVER-08's other
+// failure branch: DNS resolves but doesn't match the configured target
+// (DNSMatchesTarget = false, not just "DNS doesn't resolve at all").
+func TestVerifyDomain_DNSMismatch_ErrorWithLastError(t *testing.T) {
+	mismatch := false
+	r, pool, admins := newDomainsRouter(t, func(h *DomainsHandler) {
+		h.verifier = &fakeDomainVerifier{result: domainVerificationResult{
+			DNSResolved: true, DNSMatchesTarget: &mismatch, TLSReachable: true, TLSCertValid: true,
+		}}
+	})
+	token := issueTestSessionToken(t, admins)
+	domain := createVerifiableTestDomain(t, r, pool, token)
+
+	rec := postDomainVerify(t, r, token, domain.ID)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	var updated domainResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &updated); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+	if updated.Status != "error" {
+		t.Errorf("Status = %q, want %q (DNS resolved but doesn't match the configured target)", updated.Status, "error")
+	}
+	if updated.LastError == nil || *updated.LastError == "" {
+		t.Error("LastError is nil/empty, want a populated mismatch description")
+	}
+	// TLS succeeded independently of the DNS mismatch - ssl_status must
+	// still reflect that, proving status and ssl_status are derived
+	// independently rather than one failure blanking both.
+	if updated.SSLStatus != "active" {
+		t.Errorf("SSLStatus = %q, want %q (TLS check succeeded independently of the DNS mismatch)", updated.SSLStatus, "active")
+	}
+}
+
+// TestVerifyDomain_UnknownDomain_404 covers DOMVER-05.
+func TestVerifyDomain_UnknownDomain_404(t *testing.T) {
+	r, _, admins := newDomainsRouter(t, func(h *DomainsHandler) {
+		h.verifier = &fakeDomainVerifier{}
+	})
+	token := issueTestSessionToken(t, admins)
+
+	rec := postDomainVerify(t, r, token, "00000000-0000-0000-0000-000000000000")
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("status = %d, want %d, body = %s", rec.Code, http.StatusNotFound, rec.Body.String())
+	}
+}
+
+// countingDomainVerifier wraps fakeDomainVerifier to count Verify() calls,
+// so the cooldown test can assert no second network call was made.
+type countingDomainVerifier struct {
+	result domainVerificationResult
+	calls  int
+}
+
+func (f *countingDomainVerifier) Verify(ctx context.Context, hostname, expectedTarget string) domainVerificationResult {
+	f.calls++
+	return f.result
+}
+
+// TestVerifyDomain_WithinCooldown_ReturnsExistingStateNoNewCheck covers
+// DOMVER-06: a second verify call within verifyDomainCooldown of the first
+// returns the existing persisted state (200) without a new network call,
+// unlike StatusPagesHandler.VerifyDomain's 429.
+func TestVerifyDomain_WithinCooldown_ReturnsExistingStateNoNewCheck(t *testing.T) {
+	counter := &countingDomainVerifier{result: domainVerificationResult{DNSResolved: true, TLSReachable: true, TLSCertValid: true}}
+	r, pool, admins := newDomainsRouter(t, func(h *DomainsHandler) { h.verifier = counter })
+	token := issueTestSessionToken(t, admins)
+	domain := createVerifiableTestDomain(t, r, pool, token)
+
+	firstRec := postDomainVerify(t, r, token, domain.ID)
+	if firstRec.Code != http.StatusOK {
+		t.Fatalf("first verify status = %d, want %d, body = %s", firstRec.Code, http.StatusOK, firstRec.Body.String())
+	}
+
+	secondRec := postDomainVerify(t, r, token, domain.ID)
+	if secondRec.Code != http.StatusOK {
+		t.Fatalf("second verify status = %d, want %d, body = %s", secondRec.Code, http.StatusOK, secondRec.Body.String())
+	}
+
+	if counter.calls != 1 {
+		t.Errorf("verifier.Verify() calls = %d, want 1 (second call within cooldown must not trigger a fresh network check)", counter.calls)
+	}
+
+	var second domainResponse
+	if err := json.Unmarshal(secondRec.Body.Bytes(), &second); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+	if second.Status != "verified" {
+		t.Errorf("second response Status = %q, want %q (existing persisted state)", second.Status, "verified")
+	}
+}
+
+// TestVerifyDomain_NoAuth_401 proves the endpoint requires authentication.
+func TestVerifyDomain_NoAuth_401(t *testing.T) {
+	r, _, _ := newDomainsRouter(t)
+
+	rec := postDomainVerify(t, r, "", "00000000-0000-0000-0000-000000000000")
 	if rec.Code != http.StatusUnauthorized {
 		t.Errorf("status = %d, want %d", rec.Code, http.StatusUnauthorized)
 	}

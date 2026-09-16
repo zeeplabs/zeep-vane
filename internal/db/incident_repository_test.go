@@ -8,21 +8,15 @@ import (
 	"fmt"
 	"testing"
 	"time"
+
+	"github.com/zeeplabs/zeep-vane/internal/dbtest"
 )
 
 // newIncidentRepoTestPool boots a migrated pool and a fresh
 // *IncidentRepository backed by it.
 func newIncidentRepoTestPool(t *testing.T) (*IncidentRepository, *Pool) {
 	t.Helper()
-	dsn := testDatabaseURL(t)
-	if err := MigrateUp(dsn, "migrations"); err != nil {
-		t.Fatalf("MigrateUp() returned unexpected error: %v", err)
-	}
-	pool, err := NewPool(context.Background(), dsn)
-	if err != nil {
-		t.Fatalf("NewPool() returned unexpected error: %v", err)
-	}
-	t.Cleanup(pool.Close)
+	pool, _ := newTenantScopedPool(t)
 	return NewIncidentRepository(pool), pool
 }
 
@@ -198,9 +192,12 @@ func TestIncidentRepository_ListPaginated_PopulatesServiceIDs(t *testing.T) {
 	repo, pool := newIncidentRepoTestPool(t)
 	services := NewServiceRepository(pool)
 	service := &Service{Name: fmt.Sprintf("incident-list-svc-%d", time.Now().UnixNano()), SLOID: "slo-fixture-id"}
-	if err := services.Create(context.Background(), service); err != nil {
-		t.Fatalf("setup service Create() returned unexpected error: %v", err)
-	}
+	tenantID := seedPlainTenant(t, pool)
+	withTenantTx(t, pool, tenantID, func(ctx context.Context) {
+		if err := services.Create(ctx, service); err != nil {
+			t.Fatalf("setup service Create() returned unexpected error: %v", err)
+		}
+	})
 	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), "DELETE FROM services WHERE id = $1", service.ID) })
 
 	incident := &Incident{Title: fmt.Sprintf("list-service-ids-%d", time.Now().UnixNano())}
@@ -234,7 +231,7 @@ func TestIncidentRepository_ListUpdatesPaginated_Page1And2_CorrectSlicing(t *tes
 
 	const seedCount = 27
 	for i := 0; i < seedCount; i++ {
-		if _, err := repo.AddUpdate(context.Background(), incident.ID, fmt.Sprintf("update-%d", i)); err != nil {
+		if _, err := repo.AddUpdate(context.Background(), incident.ID, fmt.Sprintf("update-%d", i), nil, false); err != nil {
 			t.Fatalf("setup AddUpdate() returned unexpected error: %v", err)
 		}
 		time.Sleep(time.Millisecond)
@@ -267,7 +264,7 @@ func TestIncidentRepository_ListUpdatesPaginated_PageBeyondLast_EmptyItemsCorrec
 	repo, pool := newIncidentRepoTestPool(t)
 	incident := createIncidentFixture(t, repo, pool, fmt.Sprintf("updates-paginated-beyond-%d", time.Now().UnixNano()))
 
-	if _, err := repo.AddUpdate(context.Background(), incident.ID, "only update"); err != nil {
+	if _, err := repo.AddUpdate(context.Background(), incident.ID, "only update", nil, false); err != nil {
 		t.Fatalf("setup AddUpdate() returned unexpected error: %v", err)
 	}
 
@@ -288,13 +285,13 @@ func TestIncidentRepository_ListUpdatesPaginated_ScopedToOneIncident(t *testing.
 	incidentA := createIncidentFixture(t, repo, pool, fmt.Sprintf("updates-scoped-a-%d", time.Now().UnixNano()))
 	incidentB := createIncidentFixture(t, repo, pool, fmt.Sprintf("updates-scoped-b-%d", time.Now().UnixNano()))
 
-	if _, err := repo.AddUpdate(context.Background(), incidentA.ID, "a-update-1"); err != nil {
+	if _, err := repo.AddUpdate(context.Background(), incidentA.ID, "a-update-1", nil, false); err != nil {
 		t.Fatalf("setup AddUpdate() (A) returned unexpected error: %v", err)
 	}
-	if _, err := repo.AddUpdate(context.Background(), incidentB.ID, "b-update-1"); err != nil {
+	if _, err := repo.AddUpdate(context.Background(), incidentB.ID, "b-update-1", nil, false); err != nil {
 		t.Fatalf("setup AddUpdate() (B) returned unexpected error: %v", err)
 	}
-	if _, err := repo.AddUpdate(context.Background(), incidentB.ID, "b-update-2"); err != nil {
+	if _, err := repo.AddUpdate(context.Background(), incidentB.ID, "b-update-2", nil, false); err != nil {
 		t.Fatalf("setup AddUpdate() (B) returned unexpected error: %v", err)
 	}
 
@@ -324,5 +321,454 @@ func TestIncidentRepository_ListUpdatesPaginated_UnknownIncident_ErrNotFound(t *
 	_, _, err := repo.ListUpdatesPaginated(context.Background(), "00000000-0000-0000-0000-000000000000", 1, 25)
 	if !errors.Is(err, ErrNotFound) {
 		t.Fatalf("ListUpdatesPaginated() error = %v, want ErrNotFound", err)
+	}
+}
+
+// TestIncidentRepository_Create_PersistsExplicitSeverity covers INCSEV-01:
+// Create stores the caller-supplied severity verbatim.
+func TestIncidentRepository_Create_PersistsExplicitSeverity(t *testing.T) {
+	repo, pool := newIncidentRepoTestPool(t)
+	incident := &Incident{Title: "critical incident", Severity: "critical"}
+
+	if err := repo.Create(context.Background(), incident, nil); err != nil {
+		t.Fatalf("Create() returned unexpected error: %v", err)
+	}
+	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), "DELETE FROM incidents WHERE id = $1", incident.ID) })
+
+	if incident.Severity != "critical" {
+		t.Errorf("Severity = %q, want %q", incident.Severity, "critical")
+	}
+}
+
+// TestIncidentRepository_Create_NoSeverity_DefaultsToModerate covers the
+// spec's default-fallback assumption: a caller that leaves Severity unset
+// (e.g. SLOAnalyzer's auto-created incidents) gets the same "moderate"
+// default as any other incident.
+func TestIncidentRepository_Create_NoSeverity_DefaultsToModerate(t *testing.T) {
+	repo, pool := newIncidentRepoTestPool(t)
+	incident := createIncidentFixture(t, repo, pool, "default severity incident")
+
+	if incident.Severity != "moderate" {
+		t.Errorf("Severity = %q, want %q (default)", incident.Severity, "moderate")
+	}
+}
+
+// TestIncidentRepository_SetSeverity_UpdatesAndReturnsIncident covers
+// INCSEV-04's happy path, including on a resolved incident - severity is
+// independent of the status state machine.
+func TestIncidentRepository_SetSeverity_UpdatesAndReturnsIncident(t *testing.T) {
+	repo, pool := newIncidentRepoTestPool(t)
+	incident := createIncidentFixture(t, repo, pool, "severity update incident")
+
+	if _, err := repo.Transition(context.Background(), incident.ID, "resolved"); err != nil {
+		t.Fatalf("setup Transition() returned unexpected error: %v", err)
+	}
+
+	updated, err := repo.SetSeverity(context.Background(), incident.ID, "critical")
+	if err != nil {
+		t.Fatalf("SetSeverity() returned unexpected error: %v", err)
+	}
+	if updated.Severity != "critical" {
+		t.Errorf("Severity = %q, want %q", updated.Severity, "critical")
+	}
+	if updated.Status != "resolved" {
+		t.Errorf("Status = %q, want unchanged %q", updated.Status, "resolved")
+	}
+}
+
+// TestIncidentRepository_SetSeverity_UnknownIncident_ErrNotFound covers
+// INCSEV-04's 404 path.
+func TestIncidentRepository_SetSeverity_UnknownIncident_ErrNotFound(t *testing.T) {
+	repo, _ := newIncidentRepoTestPool(t)
+
+	_, err := repo.SetSeverity(context.Background(), "00000000-0000-0000-0000-000000000000", "critical")
+	if !errors.Is(err, ErrNotFound) {
+		t.Fatalf("SetSeverity() error = %v, want ErrNotFound", err)
+	}
+}
+
+// TestIncidentRepository_AddUpdate_WithAuthorID_PersistsAuthorshipNotAISummary
+// covers INCSEV-05: a manually-authored update carries the given author_id
+// and is_ai_summary = false.
+func TestIncidentRepository_AddUpdate_WithAuthorID_PersistsAuthorshipNotAISummary(t *testing.T) {
+	repo, pool := newIncidentRepoTestPool(t)
+	incident := createIncidentFixture(t, repo, pool, "authored update incident")
+	admins := NewUserRepository(pool)
+	author := &User{Email: fmt.Sprintf("update-author-%d@example.com", time.Now().UnixNano()), PasswordHash: "hash"}
+	if err := admins.Create(context.Background(), author); err != nil {
+		t.Fatalf("setup admins.Create() returned unexpected error: %v", err)
+	}
+	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), "DELETE FROM users WHERE id = $1", author.ID) })
+
+	update, err := repo.AddUpdate(context.Background(), incident.ID, "manual note", &author.ID, false)
+	if err != nil {
+		t.Fatalf("AddUpdate() returned unexpected error: %v", err)
+	}
+	if update.AuthorID == nil || *update.AuthorID != author.ID {
+		t.Errorf("AuthorID = %v, want %q", update.AuthorID, author.ID)
+	}
+	if update.IsAISummary {
+		t.Error("IsAISummary = true, want false")
+	}
+
+	updates, err := repo.ListUpdates(context.Background(), incident.ID)
+	if err != nil {
+		t.Fatalf("ListUpdates() returned unexpected error: %v", err)
+	}
+	if len(updates) != 1 || updates[0].AuthorID == nil || *updates[0].AuthorID != author.ID || updates[0].IsAISummary {
+		t.Errorf("ListUpdates()[0] = %+v, want author_id=%q is_ai_summary=false", updates[0], author.ID)
+	}
+}
+
+// TestIncidentRepository_ConfirmPendingClose_AppendsUpdate_NoAuthorIsAISummary
+// covers INCSEV-06: the AI-drafted closing summary carries no human author
+// and is_ai_summary = true.
+func TestIncidentRepository_ConfirmPendingClose_AppendsUpdate_NoAuthorIsAISummary(t *testing.T) {
+	repo, pool := newIncidentRepoTestPool(t)
+	incident := createIncidentFixture(t, repo, pool, "confirm-close authorship incident")
+
+	if err := repo.SetPendingCloseComment(context.Background(), incident.ID, "service recovered"); err != nil {
+		t.Fatalf("setup SetPendingCloseComment() returned unexpected error: %v", err)
+	}
+	if _, err := repo.ConfirmPendingClose(context.Background(), incident.ID, "service recovered"); err != nil {
+		t.Fatalf("ConfirmPendingClose() returned unexpected error: %v", err)
+	}
+
+	updates, err := repo.ListUpdates(context.Background(), incident.ID)
+	if err != nil {
+		t.Fatalf("ListUpdates() returned unexpected error: %v", err)
+	}
+	if len(updates) != 1 {
+		t.Fatalf("len(updates) = %d, want 1", len(updates))
+	}
+	if updates[0].AuthorID != nil {
+		t.Errorf("AuthorID = %v, want nil", updates[0].AuthorID)
+	}
+	if !updates[0].IsAISummary {
+		t.Error("IsAISummary = false, want true")
+	}
+}
+
+// TestIncidentRepository_CountOpenedResolvedBetween covers the digest's
+// incident counts (notification-preferences NOTIFPREF-10): empty tenant -> 0/0,
+// then 2 opened / 1 resolved inside the window, and 0/0 for a window that
+// precedes everything.
+func TestIncidentRepository_CountOpenedResolvedBetween(t *testing.T) {
+	repo, pool := newIncidentRepoTestPool(t)
+	ctx := context.Background()
+
+	// The shared test database already holds incidents from other tests (the
+	// test role does not fail-close on RLS), so the window is anchored to this
+	// test's own fixtures' created_at rather than assumed-empty.
+	first := createIncidentFixture(t, repo, pool, "count-window-first")
+	_ = createIncidentFixture(t, repo, pool, "count-window-second")
+
+	var anchor time.Time
+	if err := pool.QueryRow(ctx, "SELECT created_at FROM incidents WHERE id = $1", first.ID).Scan(&anchor); err != nil {
+		t.Fatalf("reading fixture created_at returned unexpected error: %v", err)
+	}
+
+	if _, err := repo.Transition(ctx, first.ID, "resolved"); err != nil {
+		t.Fatalf("setup Transition() returned unexpected error: %v", err)
+	}
+
+	windowStart := anchor
+	windowEnd := time.Now().Add(time.Minute)
+	opened, resolved, err := repo.CountOpenedResolvedBetween(ctx, windowStart, windowEnd)
+	if err != nil {
+		t.Fatalf("CountOpenedResolvedBetween() returned unexpected error: %v", err)
+	}
+	if opened != 2 || resolved != 1 {
+		t.Errorf("counts = %d/%d, want 2 opened / 1 resolved", opened, resolved)
+	}
+
+	// A window entirely before any seeded row is empty.
+	pastOpened, pastResolved, err := repo.CountOpenedResolvedBetween(ctx,
+		time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC), time.Date(2000, 1, 2, 0, 0, 0, 0, time.UTC))
+	if err != nil {
+		t.Fatalf("CountOpenedResolvedBetween() (past window) returned unexpected error: %v", err)
+	}
+	if pastOpened != 0 || pastResolved != 0 {
+		t.Errorf("past-window counts = %d/%d, want 0/0", pastOpened, pastResolved)
+	}
+}
+
+// newIncidentRepoScratchPool returns an IncidentRepository backed by a
+// pool on a fresh scratch database, so an unfiltered COUNT (which, unlike
+// CountOpenedResolvedBetween, has no time window to isolate this test's
+// fixtures) is deterministic instead of racing other suites that share
+// TEST_DATABASE_URL.
+func newIncidentRepoScratchPool(t *testing.T) (*IncidentRepository, *Pool) {
+	t.Helper()
+	dsn := newScratchDatabase(t)
+	if err := MigrateUp(dsn, "migrations"); err != nil {
+		t.Fatalf("MigrateUp() returned unexpected error: %v", err)
+	}
+
+	ctx := context.Background()
+	admin, err := NewPool(ctx, dsn)
+	if err != nil {
+		t.Fatalf("NewPool() (admin) returned unexpected error: %v", err)
+	}
+
+	var tenantID string
+	if err := admin.QueryRow(ctx, "INSERT INTO tenants (name) VALUES ($1) RETURNING id", "countopen-fixture-tenant").Scan(&tenantID); err != nil {
+		admin.Close()
+		t.Fatalf("seeding fixture tenant returned unexpected error: %v", err)
+	}
+	admin.Close()
+
+	pool, err := NewPool(ctx, dbtest.TenantScopedDSN(dsn, tenantID))
+	if err != nil {
+		t.Fatalf("NewPool() (tenant-scoped) returned unexpected error: %v", err)
+	}
+	t.Cleanup(pool.Close)
+
+	return NewIncidentRepository(pool), pool
+}
+
+func TestIncidentRepository_CountOpen_MixedOpenAndResolved_CountsOnlyOpen(t *testing.T) {
+	repo, _ := newIncidentRepoScratchPool(t)
+	ctx := context.Background()
+
+	baseline, err := repo.CountOpen(ctx)
+	if err != nil {
+		t.Fatalf("CountOpen() (baseline) returned unexpected error: %v", err)
+	}
+	if baseline != 0 {
+		t.Fatalf("baseline = %d, want 0 on a fresh scratch database", baseline)
+	}
+
+	openA := &Incident{Title: "countopen-open-a"}
+	if err := repo.Create(ctx, openA, nil); err != nil {
+		t.Fatalf("Create(openA) returned unexpected error: %v", err)
+	}
+	openB := &Incident{Title: "countopen-open-b"}
+	if err := repo.Create(ctx, openB, nil); err != nil {
+		t.Fatalf("Create(openB) returned unexpected error: %v", err)
+	}
+	resolvedC := &Incident{Title: "countopen-resolved-c"}
+	if err := repo.Create(ctx, resolvedC, nil); err != nil {
+		t.Fatalf("Create(resolvedC) returned unexpected error: %v", err)
+	}
+	if _, err := repo.Transition(ctx, resolvedC.ID, "resolved"); err != nil {
+		t.Fatalf("Transition(resolvedC, resolved) returned unexpected error: %v", err)
+	}
+
+	got, err := repo.CountOpen(ctx)
+	if err != nil {
+		t.Fatalf("CountOpen() returned unexpected error: %v", err)
+	}
+	if got != 2 {
+		t.Errorf("CountOpen() = %d, want 2 (two investigating, one resolved excluded)", got)
+	}
+}
+
+// TestIncidentRepository_CountOpenBreakdown_MixedSeverityAndStatus_CountsIndependently
+// covers OVW-18 (Overview's "incidentes abertos" breakdown subtext): critical
+// and monitoring are independent, non-mutually-exclusive filters, both scoped
+// to status <> 'resolved'.
+func TestIncidentRepository_CountOpenBreakdown_MixedSeverityAndStatus_CountsIndependently(t *testing.T) {
+	repo, _ := newIncidentRepoScratchPool(t)
+	ctx := context.Background()
+
+	baselineCritical, baselineMonitoring, err := repo.CountOpenBreakdown(ctx)
+	if err != nil {
+		t.Fatalf("CountOpenBreakdown() (baseline) returned unexpected error: %v", err)
+	}
+	if baselineCritical != 0 || baselineMonitoring != 0 {
+		t.Fatalf("baseline = (%d, %d), want (0, 0) on a fresh scratch database", baselineCritical, baselineMonitoring)
+	}
+
+	critical := &Incident{Title: "countopenbreakdown-critical"}
+	if err := repo.Create(ctx, critical, nil); err != nil {
+		t.Fatalf("Create(critical) returned unexpected error: %v", err)
+	}
+	if _, err := repo.SetSeverity(ctx, critical.ID, "critical"); err != nil {
+		t.Fatalf("SetSeverity(critical) returned unexpected error: %v", err)
+	}
+
+	monitoring := &Incident{Title: "countopenbreakdown-monitoring"}
+	if err := repo.Create(ctx, monitoring, nil); err != nil {
+		t.Fatalf("Create(monitoring) returned unexpected error: %v", err)
+	}
+	if _, err := repo.Transition(ctx, monitoring.ID, "monitoring"); err != nil {
+		t.Fatalf("Transition(monitoring) returned unexpected error: %v", err)
+	}
+
+	resolvedCritical := &Incident{Title: "countopenbreakdown-resolved-critical"}
+	if err := repo.Create(ctx, resolvedCritical, nil); err != nil {
+		t.Fatalf("Create(resolvedCritical) returned unexpected error: %v", err)
+	}
+	if _, err := repo.SetSeverity(ctx, resolvedCritical.ID, "critical"); err != nil {
+		t.Fatalf("SetSeverity(resolvedCritical) returned unexpected error: %v", err)
+	}
+	if _, err := repo.Transition(ctx, resolvedCritical.ID, "resolved"); err != nil {
+		t.Fatalf("Transition(resolvedCritical, resolved) returned unexpected error: %v", err)
+	}
+
+	gotCritical, gotMonitoring, err := repo.CountOpenBreakdown(ctx)
+	if err != nil {
+		t.Fatalf("CountOpenBreakdown() returned unexpected error: %v", err)
+	}
+	if gotCritical != 1 {
+		t.Errorf("CountOpenBreakdown() critical = %d, want 1 (resolved critical excluded)", gotCritical)
+	}
+	if gotMonitoring != 1 {
+		t.Errorf("CountOpenBreakdown() monitoring = %d, want 1", gotMonitoring)
+	}
+}
+
+func TestIncidentRepository_CountOpenBreakdown_NoIncidents_ReturnsZero(t *testing.T) {
+	repo, _ := newIncidentRepoScratchPool(t)
+
+	gotCritical, gotMonitoring, err := repo.CountOpenBreakdown(context.Background())
+	if err != nil {
+		t.Fatalf("CountOpenBreakdown() returned unexpected error: %v", err)
+	}
+	if gotCritical != 0 || gotMonitoring != 0 {
+		t.Errorf("CountOpenBreakdown() = (%d, %d), want (0, 0) for a tenant with no incidents", gotCritical, gotMonitoring)
+	}
+}
+
+func TestIncidentRepository_CountOpen_NoIncidents_ReturnsZero(t *testing.T) {
+	repo, _ := newIncidentRepoScratchPool(t)
+
+	got, err := repo.CountOpen(context.Background())
+	if err != nil {
+		t.Fatalf("CountOpen() returned unexpected error: %v", err)
+	}
+	if got != 0 {
+		t.Errorf("CountOpen() = %d, want 0 for a tenant with no incidents", got)
+	}
+}
+
+// createServiceFixture inserts a service (for CountByServiceSince's
+// incident_services join fixtures) and registers its cleanup.
+func createServiceFixture(t *testing.T, pool *Pool, name string) *Service {
+	t.Helper()
+	svc := &Service{Name: name, SLOID: "slo-" + name}
+	if err := NewServiceRepository(pool).Create(context.Background(), svc); err != nil {
+		t.Fatalf("setup Service Create() returned unexpected error: %v", err)
+	}
+	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), "DELETE FROM services WHERE id = $1", svc.ID) })
+	return svc
+}
+
+// setIncidentCreatedAt backdates incidentID's created_at directly - Create
+// doesn't accept a CreatedAt override, and CountByServiceSince's window
+// tests need incidents both inside and outside the window.
+func setIncidentCreatedAt(t *testing.T, pool *Pool, incidentID string, createdAt time.Time) {
+	t.Helper()
+	if _, err := pool.Exec(context.Background(), "UPDATE incidents SET created_at = $1 WHERE id = $2", createdAt, incidentID); err != nil {
+		t.Fatalf("setup UPDATE incidents.created_at returned unexpected error: %v", err)
+	}
+}
+
+func TestIncidentRepository_CountByServiceSince_NoIncidents_ReturnsZero(t *testing.T) {
+	repo, pool := newIncidentRepoTestPool(t)
+	svc := createServiceFixture(t, pool, fmt.Sprintf("count-by-service-zero-%d", time.Now().UnixNano()))
+
+	got, err := repo.CountByServiceSince(context.Background(), svc.ID, time.Now().Add(-30*24*time.Hour))
+	if err != nil {
+		t.Fatalf("CountByServiceSince() returned unexpected error: %v", err)
+	}
+	if got != 0 {
+		t.Errorf("CountByServiceSince() = %d, want 0 for a service with no linked incidents", got)
+	}
+}
+
+func TestIncidentRepository_CountByServiceSince_OneIncidentInWindow_ReturnsOne(t *testing.T) {
+	repo, pool := newIncidentRepoTestPool(t)
+	svc := createServiceFixture(t, pool, fmt.Sprintf("count-by-service-one-%d", time.Now().UnixNano()))
+	ctx := context.Background()
+
+	incident := &Incident{Title: "one-incident"}
+	if err := repo.Create(ctx, incident, []string{svc.ID}); err != nil {
+		t.Fatalf("setup Create() returned unexpected error: %v", err)
+	}
+	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), "DELETE FROM incidents WHERE id = $1", incident.ID) })
+
+	got, err := repo.CountByServiceSince(ctx, svc.ID, time.Now().Add(-30*24*time.Hour))
+	if err != nil {
+		t.Fatalf("CountByServiceSince() returned unexpected error: %v", err)
+	}
+	if got != 1 {
+		t.Errorf("CountByServiceSince() = %d, want 1", got)
+	}
+}
+
+func TestIncidentRepository_CountByServiceSince_ThreeIncidentsInWindow_ReturnsThree(t *testing.T) {
+	repo, pool := newIncidentRepoTestPool(t)
+	svc := createServiceFixture(t, pool, fmt.Sprintf("count-by-service-three-%d", time.Now().UnixNano()))
+	ctx := context.Background()
+
+	for i := 0; i < 3; i++ {
+		incident := &Incident{Title: fmt.Sprintf("three-incidents-%d", i)}
+		if err := repo.Create(ctx, incident, []string{svc.ID}); err != nil {
+			t.Fatalf("setup Create() returned unexpected error: %v", err)
+		}
+		t.Cleanup(func(id string) func() {
+			return func() { _, _ = pool.Exec(context.Background(), "DELETE FROM incidents WHERE id = $1", id) }
+		}(incident.ID))
+	}
+
+	got, err := repo.CountByServiceSince(ctx, svc.ID, time.Now().Add(-30*24*time.Hour))
+	if err != nil {
+		t.Fatalf("CountByServiceSince() returned unexpected error: %v", err)
+	}
+	if got != 3 {
+		t.Errorf("CountByServiceSince() = %d, want 3", got)
+	}
+}
+
+// TestIncidentRepository_CountByServiceSince_ExcludesIncidentOutsideWindow
+// asserts the "created_at < since" edge case: an incident created before
+// the window start is excluded from the count.
+func TestIncidentRepository_CountByServiceSince_ExcludesIncidentOutsideWindow(t *testing.T) {
+	repo, pool := newIncidentRepoTestPool(t)
+	svc := createServiceFixture(t, pool, fmt.Sprintf("count-by-service-outside-window-%d", time.Now().UnixNano()))
+	ctx := context.Background()
+	since := time.Now().Add(-30 * 24 * time.Hour)
+
+	oldIncident := &Incident{Title: "outside-window"}
+	if err := repo.Create(ctx, oldIncident, []string{svc.ID}); err != nil {
+		t.Fatalf("setup Create() returned unexpected error: %v", err)
+	}
+	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), "DELETE FROM incidents WHERE id = $1", oldIncident.ID) })
+	setIncidentCreatedAt(t, pool, oldIncident.ID, since.Add(-1*time.Hour))
+
+	got, err := repo.CountByServiceSince(ctx, svc.ID, since)
+	if err != nil {
+		t.Fatalf("CountByServiceSince() returned unexpected error: %v", err)
+	}
+	if got != 0 {
+		t.Errorf("CountByServiceSince() = %d, want 0 (incident created before the window start is excluded)", got)
+	}
+}
+
+// TestIncidentRepository_CountByServiceSince_ExcludesIncidentForDifferentService
+// asserts the "linked to a different service" edge case: an incident
+// linked to another service, but not this one, is excluded from the count.
+func TestIncidentRepository_CountByServiceSince_ExcludesIncidentForDifferentService(t *testing.T) {
+	repo, pool := newIncidentRepoTestPool(t)
+	svc := createServiceFixture(t, pool, fmt.Sprintf("count-by-service-this-%d", time.Now().UnixNano()))
+	otherSvc := createServiceFixture(t, pool, fmt.Sprintf("count-by-service-other-%d", time.Now().UnixNano()))
+	ctx := context.Background()
+
+	otherIncident := &Incident{Title: "other-service-incident"}
+	if err := repo.Create(ctx, otherIncident, []string{otherSvc.ID}); err != nil {
+		t.Fatalf("setup Create() returned unexpected error: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = pool.Exec(context.Background(), "DELETE FROM incidents WHERE id = $1", otherIncident.ID)
+	})
+
+	got, err := repo.CountByServiceSince(ctx, svc.ID, time.Now().Add(-30*24*time.Hour))
+	if err != nil {
+		t.Fatalf("CountByServiceSince() returned unexpected error: %v", err)
+	}
+	if got != 0 {
+		t.Errorf("CountByServiceSince() = %d, want 0 (incident linked to a different service is excluded)", got)
 	}
 }

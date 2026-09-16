@@ -1,10 +1,12 @@
 import { describe, it, expect, afterEach } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
+import { http, HttpResponse } from "msw";
 import "../../lib/i18n";
 import { AuthProvider } from "../../auth/AuthProvider";
 import { TestQueryProvider } from "../../test/queryClient";
+import { server } from "../../test/msw/server";
 import { apiFetch } from "../../lib/apiClient";
 import { IntegrationsPage } from "./IntegrationsPage";
 
@@ -27,38 +29,148 @@ function renderPage() {
           <IntegrationsPage />
         </AuthProvider>
       </TestQueryProvider>
-    </MemoryRouter>
+    </MemoryRouter>,
   );
 }
 
+async function cardOf(name: string) {
+  const heading = await screen.findByText(name);
+  return heading.closest(".rounded-2xl") as HTMLElement;
+}
+
 describe("IntegrationsPage", () => {
-  it("mostra card conectado com chave mascarada e tag Conectado para owner", async () => {
+  it("agrupa as integrações nas 3 categorias do mock com contagem", async () => {
     await loginAs("owner@vane.app");
     renderPage();
-    expect(await screen.findByText("Datadog")).toBeInTheDocument();
-    expect(screen.getByText("Conectado")).toBeInTheDocument();
-    expect(screen.getByText(/Chave: •••• •••• •••• /)).toBeInTheDocument();
+
+    expect(await screen.findByText("APM & Observabilidade")).toBeInTheDocument();
+    expect(screen.getAllByText("2 integrações")).toHaveLength(2); // APM (Datadog+New Relic) e E-mail (Resend+SendGrid)
+    expect(screen.getByText("IA")).toBeInTheDocument();
+    expect(screen.getByText("1 integração")).toBeInTheDocument();
+    expect(screen.getByText("E-mail")).toBeInTheDocument();
   });
 
-  it("viewer não vê o botão de rotacionar chave", async () => {
+  it("mostra Datadog conectado (seed) e New Relic sempre como Em breve", async () => {
+    await loginAs("owner@vane.app");
+    renderPage();
+
+    const datadogCard = await cardOf("Datadog");
+    expect(await within(datadogCard).findByText(/^Sincronizado/)).toBeInTheDocument();
+    expect(within(datadogCard).getByText("Conectado")).toBeInTheDocument();
+
+    const newRelicCard = await cardOf("New Relic");
+    expect(within(newRelicCard).getByText("Em breve")).toBeInTheDocument();
+    expect(within(newRelicCard).queryByRole("button")).not.toBeInTheDocument();
+  });
+
+  it("LLM Provider e provedores de e-mail começam não conectados", async () => {
+    await loginAs("owner@vane.app");
+    renderPage();
+
+    const llmCard = await cardOf("LLM Provider");
+    expect(within(llmCard).getByText("Não conectado")).toBeInTheDocument();
+
+    const resendCard = await cardOf("Resend");
+    expect(within(resendCard).getByText("Não conectado")).toBeInTheDocument();
+
+    const sendgridCard = await cardOf("SendGrid");
+    expect(within(sendgridCard).getByText("Não conectado")).toBeInTheDocument();
+  });
+
+  it("viewer não vê nenhum botão de ação nos cards", async () => {
     await loginAs("viewer@vane.app");
     renderPage();
+
     await screen.findByText("Datadog");
-    expect(screen.queryByRole("button", { name: "Rotacionar chave" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Editar conexão" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Conectar" })).not.toBeInTheDocument();
   });
 
-  it("rotacionar chave abre form e salva com sucesso", async () => {
+  it("owner conecta Resend via drawer e o card atualiza pra Conectado", async () => {
     await loginAs("owner@vane.app");
     renderPage();
-    await userEvent.click(await screen.findByRole("button", { name: "Rotacionar chave" }));
-    await userEvent.type(screen.getByLabelText("Nova API key"), "novachave1234");
-    await userEvent.type(screen.getByLabelText("Nova App key"), "novaappkey");
-    await userEvent.click(screen.getByRole("button", { name: "Salvar chave" }));
 
-    await waitFor(() => expect(screen.queryByLabelText("Nova API key")).not.toBeInTheDocument());
-    // O backend real nunca reexibe a chave, nem mascarada (SP-01.4) -
-    // diferente do mock antigo, que simulava um masked_key com os últimos
-    // dígitos. Placeholder genérico permanece (SPEC_DEVIATION, I15).
-    expect(await screen.findByText(/Chave: •••• •••• •••• \?\?\?\?/)).toBeInTheDocument();
+    const resendCard = await cardOf("Resend");
+    await within(resendCard).findByText("Não conectado");
+    await userEvent.click(within(resendCard).getByRole("button", { name: "Conectar" }));
+
+    const drawerTitle = await screen.findByRole("heading", { name: "Conectar Resend" });
+    const drawer = drawerTitle.closest('[role="dialog"]') as HTMLElement;
+    await userEvent.type(within(drawer).getByLabelText("API key"), "re-real-key");
+    await userEvent.type(within(drawer).getByLabelText("E-mail do remetente"), "no-reply@acme.example.com");
+    await userEvent.type(within(drawer).getByLabelText("Nome do remetente"), "Acme");
+    await userEvent.click(within(drawer).getByRole("button", { name: "Salvar" }));
+
+    await waitFor(() => expect(screen.queryByRole("heading", { name: "Conectar Resend" })).not.toBeInTheDocument());
+    const updatedCard = await cardOf("Resend");
+    expect(within(updatedCard).getByText("Conectado")).toBeInTheDocument();
+  });
+
+  it("owner clica em Editar conexão no Datadog (já conectado) e abre o drawer de conectar novamente", async () => {
+    await loginAs("owner@vane.app");
+    renderPage();
+
+    const datadogCard = await cardOf("Datadog");
+    await within(datadogCard).findByText(/^Sincronizado/);
+    await userEvent.click(within(datadogCard).getByRole("button", { name: "Editar conexão" }));
+
+    expect(await screen.findByRole("heading", { name: "Conectar Datadog" })).toBeInTheDocument();
+  });
+
+  it("Datadog nunca conectado (404) mostra Não conectado e botão Conectar", async () => {
+    server.use(
+      http.get("/api/integrations/datadog/status", () =>
+        HttpResponse.json({ error: "datadog integration not connected yet" }, { status: 404 }),
+      ),
+    );
+    await loginAs("owner@vane.app");
+    renderPage();
+
+    const datadogCard = await cardOf("Datadog");
+    expect(await within(datadogCard).findByText("Não conectado")).toBeInTheDocument();
+    expect(within(datadogCard).getByText("Não configurado")).toBeInTheDocument();
+    expect(within(datadogCard).getByRole("button", { name: "Conectar" })).toBeInTheDocument();
+  });
+
+  it("LLM Provider conectado mostra Conectado e o modelo ativo", async () => {
+    await loginAs("owner@vane.app");
+    await apiFetch("/api/integrations/llm/openai", {
+      method: "POST",
+      body: JSON.stringify({ api_key: "sk-real-key", model: "gpt-4o" }),
+    });
+    renderPage();
+
+    const llmCard = await cardOf("LLM Provider");
+    expect(await within(llmCard).findByText("Conectado")).toBeInTheDocument();
+    expect(within(llmCard).getByText("OpenAI · gpt-4o")).toBeInTheDocument();
+    expect(within(llmCard).getByRole("button", { name: "Editar conexão" })).toBeInTheDocument();
+  });
+
+  it("owner clica em Conectar no LLM Provider e abre o drawer padrão", async () => {
+    await loginAs("owner@vane.app");
+    renderPage();
+
+    const llmCard = await cardOf("LLM Provider");
+    await within(llmCard).findByText("Não conectado");
+    await userEvent.click(within(llmCard).getByRole("button", { name: "Conectar" }));
+
+    expect(await screen.findByRole("heading", { name: "Conectar LLM Provider" })).toBeInTheDocument();
+  });
+
+  it("erro ao carregar Datadog fica isolado - LLM e e-mail continuam normais", async () => {
+    server.use(http.get("/api/integrations/datadog/status", () => HttpResponse.json({ error: "boom" }, { status: 500 })));
+    await loginAs("owner@vane.app");
+    renderPage();
+
+    const datadogCard = await cardOf("Datadog");
+    expect(await within(datadogCard).findByText("Não foi possível carregar")).toBeInTheDocument();
+    expect(within(datadogCard).queryByRole("button")).not.toBeInTheDocument();
+
+    const llmCard = await cardOf("LLM Provider");
+    expect(await within(llmCard).findByText("Não conectado")).toBeInTheDocument();
+    expect(within(llmCard).getByRole("button", { name: "Conectar" })).toBeInTheDocument();
+
+    const resendCard = await cardOf("Resend");
+    expect(await within(resendCard).findByText("Não conectado")).toBeInTheDocument();
   });
 });

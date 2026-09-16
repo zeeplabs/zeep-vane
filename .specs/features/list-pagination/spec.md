@@ -115,27 +115,27 @@ Explicitly excluded. Documented to prevent scope creep.
 
 | Requirement ID | Story | Phase | Status |
 | --------------- | ------ | ------ | ------- |
-| PAG-01 | P1: Admin navigates a growing incident list without loading everything | Specify | Implementing |
-| PAG-02 | P1: Admin navigates a growing incident list without loading everything | Specify | Implementing |
-| PAG-03 | P1: Admin navigates a growing incident list without loading everything | Specify | Implementing |
-| PAG-04 | P1: Admin navigates a growing incident list without loading everything | Specify | Implementing |
-| PAG-05 | P1: Admin navigates a growing incident list without loading everything | Specify | Implementing |
-| PAG-06 | P1: Admin navigates a growing incident list without loading everything | Specify | Implementing |
-| PAG-07 | P1: Admin navigates a growing incident list without loading everything | Specify | Pending |
-| PAG-08 | P2: The same pagination pattern applies to every other admin list screen | Specify | Implementing |
-| PAG-09 | P2: The same pagination pattern applies to every other admin list screen | Specify | Implementing |
-| PAG-10 | P2: The same pagination pattern applies to every other admin list screen | Specify | Pending |
-| PAG-11 | P2: The same pagination pattern applies to every other admin list screen | Specify | Implementing |
-| PAG-12 | P3: Public status page visitors load incident history progressively | Specify | Pending |
-| PAG-13 | P3: Public status page visitors load incident history progressively | Specify | Pending |
-| PAG-14 | P3: Public status page visitors load incident history progressively | Specify | Pending |
-| PAG-15 | P3: Public status page visitors load incident history progressively | Specify | Pending |
+| PAG-01 | P1: Admin navigates a growing incident list without loading everything | Specify | Verified |
+| PAG-02 | P1: Admin navigates a growing incident list without loading everything | Specify | Verified |
+| PAG-03 | P1: Admin navigates a growing incident list without loading everything | Specify | Verified |
+| PAG-04 | P1: Admin navigates a growing incident list without loading everything | Specify | Verified |
+| PAG-05 | P1: Admin navigates a growing incident list without loading everything | Specify | Verified |
+| PAG-06 | P1: Admin navigates a growing incident list without loading everything | Specify | Verified |
+| PAG-07 | P1: Admin navigates a growing incident list without loading everything | Specify | Verified |
+| PAG-08 | P2: The same pagination pattern applies to every other admin list screen | Specify | Verified |
+| PAG-09 | P2: The same pagination pattern applies to every other admin list screen | Specify | Verified |
+| PAG-10 | P2: The same pagination pattern applies to every other admin list screen | Specify | Verified |
+| PAG-11 | P2: The same pagination pattern applies to every other admin list screen | Specify | Verified |
+| PAG-12 | P3: Public status page visitors load incident history progressively | Specify | Verified |
+| PAG-13 | P3: Public status page visitors load incident history progressively | Specify | Verified |
+| PAG-14 | P3: Public status page visitors load incident history progressively | Specify | Verified |
+| PAG-15 | P3: Public status page visitors load incident history progressively | Specify | Verified |
 
 **ID format:** `PAG-[NUMBER]`
 
 **Status values:** Pending → In Design → In Tasks → Implementing → Verified
 
-**Coverage:** 15 total, 0 mapped to tasks, 15 unmapped ⚠️ (expected at Specify — mapping happens in Tasks)
+**Coverage:** 15 total, 15 verified (`validation.md`). PAG-07 (incidents `Pager`) was a real gap found and fixed in the 2026-09-12 retro-validation.
 
 ---
 

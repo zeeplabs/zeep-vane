@@ -2,14 +2,18 @@ import { useEffect, useState, type ReactNode } from "react";
 import { Routes, Route, Outlet, Navigate } from "react-router-dom";
 import { Toaster } from "sonner";
 import { AuthProvider, useAuth } from "./auth/AuthProvider";
+import { resolveAssetUrl } from "./lib/apiClient";
 import { SessionExpiredModal } from "./auth/SessionExpiredModal";
 import { RequireAuth, RequireRole } from "./routes/RequireRole";
-import { Sidebar } from "./layout/Sidebar";
+import { AppShell } from "./layout/AppShell";
 import { LoginPage } from "./features/auth/LoginPage";
 import { BootstrapPage } from "./features/auth/BootstrapPage";
 import { PasswordResetRequestPage } from "./features/auth/PasswordResetRequestPage";
 import { PasswordResetConfirmPage } from "./features/auth/PasswordResetConfirmPage";
 import { AcceptInvitePage } from "./features/auth/AcceptInvitePage";
+import { TenantSelector } from "./features/auth/TenantSelector";
+import { SignupPage } from "./features/signup/SignupPage";
+import { VerifyEmailPage } from "./features/signup/VerifyEmailPage";
 import { IntegrationsPage } from "./features/integrations/IntegrationsPage";
 import { ServicesPage } from "./features/services/ServicesPage";
 import { DomainsStatusPagesPage } from "./features/domains/DomainsStatusPagesPage";
@@ -18,9 +22,11 @@ import { StatusPageDetail } from "./features/status-pages/StatusPageDetail";
 import { IncidentsPage } from "./features/incidents/IncidentsPage";
 import { IncidentDetail } from "./features/incidents/IncidentDetail";
 import { AdminsPage } from "./features/admins/AdminsPage";
-import { PollerBanner } from "./features/poller/PollerBanner";
 import { PollerStatusPage } from "./features/poller/PollerStatusPage";
 import { SettingsPage } from "./features/settings/SettingsPage";
+import { ProfilePage } from "./features/profile/ProfilePage";
+import { BillingPage } from "./features/billing/BillingPage";
+import { OverviewPage } from "./features/overview/OverviewPage";
 import { PublicStatusPage } from "./features/public-status/PublicStatusPage";
 import "./lib/i18n";
 
@@ -66,7 +72,13 @@ function RootRoute() {
 
   useEffect(() => {
     let cancelled = false;
-    fetch("/api/public-status")
+    // Must go through resolveAssetUrl's baseUrl, not a bare relative fetch:
+    // in dev the frontend (:5173) and backend (:8080) are different
+    // origins (VITE_API_BASE_URL), so an unprefixed fetch hits Vite's own
+    // dev server instead of the backend and gets back its SPA fallback
+    // (200), misclassifying every admin session as a public status page
+    // visitor.
+    fetch(resolveAssetUrl("/api/public-status")!)
       .then((res) => {
         if (!cancelled) setIsPublicStatusPage(res.ok);
       })
@@ -84,26 +96,38 @@ function RootRoute() {
   return (
     <RedirectToBootstrapIfNeeded>
       <RequireAuth>
-        <Navigate to="/domains" replace />
+        {/* dashboard-overview-page OVW-01: "/" lands on the Overview page
+            instead of /domains. SPEC_DEVIATION from design.md's Integration
+            Points, which said to render <OverviewPage /> directly here:
+            RootRoute is NOT inside AuthenticatedLayout, so rendering the page
+            directly would drop the AppShell (sidebar/topbar). A replace
+            redirect to the shell-wrapped /overview route is the same single
+            hop the previous <Navigate to="/domains" /> was, and keeps the
+            shell. */}
+        <Navigate to="/overview" replace />
       </RequireAuth>
     </RedirectToBootstrapIfNeeded>
   );
 }
 
+// SelectTenantRoute mirrors BootstrapRoute's dead-end-redirect shape: a
+// direct visit to /select-tenant with 0 or 1 membership (nothing to pick)
+// bounces to "/" instead of showing an empty/pointless list (T17,
+// TENANT-19/20/21).
+function SelectTenantRoute() {
+  const { status, needsTenantSelection } = useAuth();
+
+  if (status === "loading") return null;
+  if (status !== "authenticated") return <Navigate to="/login" replace />;
+  if (!needsTenantSelection) return <Navigate to="/" replace />;
+  return <TenantSelector />;
+}
+
 function AuthenticatedLayout() {
   return (
-    <div className="flex h-screen w-full bg-bg">
-      <Sidebar />
-      <div className="flex min-w-0 flex-1 flex-col">
-        {/* Slot fixo acima do conteúdo, visível em qualquer rota autenticada (T34). */}
-        <div data-testid="global-banner-slot">
-          <PollerBanner />
-        </div>
-        <main className="flex-1 overflow-auto p-6">
-          <Outlet />
-        </main>
-      </div>
-    </div>
+    <AppShell>
+      <Outlet />
+    </AppShell>
   );
 }
 
@@ -131,6 +155,14 @@ export default function App() {
           }
         />
         <Route path="/status/:id" element={<PublicStatusPage />} />
+        <Route path="/select-tenant" element={<SelectTenantRoute />} />
+        {/* Public SaaS signup (T18, TENANT-08 through TENANT-11) - no
+            RedirectToBootstrapIfNeeded/auth guard, same precedent as
+            /accept-invite/:token and /status/:id: an anonymous visitor
+            reaching either of these has no session and no bootstrap state
+            to gate on. */}
+        <Route path="/signup" element={<SignupPage />} />
+        <Route path="/verify-email/:token" element={<VerifyEmailPage />} />
         <Route path="/" element={<RootRoute />} />
         {/* No RedirectToBootstrapIfNeeded/auth guard - matches /status/:id's
             precedent (spec.md accept-invite-page: an already-authenticated
@@ -147,6 +179,9 @@ export default function App() {
           }
         >
           <Route path="/domains" element={<DomainsStatusPagesPage />} />
+          {/* dashboard-overview-page OVW-01: explicit authenticated landing
+              route (the "/" RootRoute redirects here after login). */}
+          <Route path="/overview" element={<OverviewPage />} />
           <Route path="/status-pages" element={<StatusPagesPage />} />
           <Route path="/status-pages/:id" element={<StatusPageDetail />} />
           <Route path="/incidents" element={<IncidentsPage />} />
@@ -162,6 +197,12 @@ export default function App() {
             }
           />
           <Route path="/poller-status" element={<PollerStatusPage />} />
+          {/* Self-service profile, reachable by any authenticated role
+              (profile-page PROFPAGE-01/03) - no RequireRole. */}
+          <Route path="/profile" element={<ProfilePage />} />
+          {/* Decorative billing showcase, reachable by any authenticated role
+              (billing-plans-page BILLPG-01) - read-only, nothing mutates. */}
+          <Route path="/billing" element={<BillingPage />} />
           <Route
             path="/settings"
             element={

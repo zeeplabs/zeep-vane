@@ -53,13 +53,9 @@ jobs:
       # Run Postgres via `docker run` instead of GitHub Actions' `services:`
       # block: `services:` only accepts docker-create flags (`options:`),
       # not arguments to the postgres process itself, so max_connections
-      # can't be raised that way. AGENTS.md's own disposable-container gate
-      # already uses max_connections=300 for exactly this reason - the
-      # default 100 is exceeded by this suite's dedicated (non-pooled)
-      # internal/dbtest advisory-lock connections opened across many
-      # packages/tests, a documented pre-existing flake (README Known
-      # gaps) that -p 1 alone did not fix (the pressure is within a single
-      # large package, internal/api, not just across packages).
+      # can't be raised that way. max_connections=300 matches AGENTS.md's
+      # disposable-container gate - this suite's dedicated (non-pooled)
+      # internal/dbtest advisory-lock connections are connection-heavy.
       - name: Start disposable Postgres
         run: |
           docker run -d --name vane-ci-pg -p 5432:5432 \
@@ -69,10 +65,17 @@ jobs:
             docker exec vane-ci-pg pg_isready -U vane && break
             sleep 1
           done
+      # -p 1 serializes package test binaries. Every package shares this one
+      # database and several mutate the same singleton/shared tables (users,
+      # status_intervals, integrations), so parallel binaries race each
+      # other. The migration *_DownReversesCleanly tests also used to step
+      # the latest migration (now 0031_sessions) down on this shared
+      # database - dropping `sessions` out from under parallel auth tests -
+      # and now run on their own scratch database instead.
       - name: Run integration tests
         env:
           TEST_DATABASE_URL: "postgres://vane:vane@localhost:5432/vane?sslmode=disable"
-        run: go test -tags=integration ./...
+        run: go test -tags=integration -p 1 ./...
       - name: Stop disposable Postgres
         if: always()
         run: docker rm -f vane-ci-pg

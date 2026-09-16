@@ -1,9 +1,10 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { http, HttpResponse } from "msw";
 import { MemoryRouter, Routes, Route } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import "../../lib/i18n";
 import { server } from "../../test/msw/server";
 import { apiFetch } from "../../lib/apiClient";
 import { PublicStatusPage } from "./PublicStatusPage";
@@ -129,6 +130,64 @@ function mockManyResolvedIncidents(total: number) {
     }),
   );
 }
+
+describe("PublicStatusPage - tema local (PUBSTATUS-07..11)", () => {
+  beforeEach(() => {
+    window.localStorage.removeItem("vane:publicStatusTheme");
+    window.localStorage.removeItem("vane:theme");
+    delete document.documentElement.dataset.theme;
+  });
+
+  afterEach(() => {
+    window.localStorage.removeItem("vane:publicStatusTheme");
+    window.localStorage.removeItem("vane:theme");
+    delete document.documentElement.dataset.theme;
+  });
+
+  it("abre em light por padrão, independente de vane:theme (app) estar dark", async () => {
+    window.localStorage.setItem("vane:theme", "dark");
+    document.documentElement.dataset.theme = "dark"; // simula admin logado com o app em dark
+
+    await renderAt("/status/sp-4");
+    await screen.findByText("Todos os sistemas operacionais");
+
+    expect(screen.getByTestId("public-status-theme-root")).not.toHaveAttribute("data-theme");
+  });
+
+  it("alternar o tema muda o data-theme só do root desta página, sem tocar document.documentElement", async () => {
+    await renderAt("/status/sp-4");
+    await screen.findByText("Todos os sistemas operacionais");
+
+    const toggle = screen.getByRole("button", { name: "Alternar tema" });
+    await userEvent.click(toggle);
+
+    expect(screen.getByTestId("public-status-theme-root")).toHaveAttribute("data-theme", "dark");
+    expect(document.documentElement.dataset.theme).toBeUndefined();
+  });
+
+  it("persiste a escolha em localStorage sob chave própria, distinta de vane:theme", async () => {
+    await renderAt("/status/sp-4");
+    await screen.findByText("Todos os sistemas operacionais");
+
+    await userEvent.click(screen.getByRole("button", { name: "Alternar tema" }));
+
+    expect(window.localStorage.getItem("vane:publicStatusTheme")).toBe("dark");
+    expect(window.localStorage.getItem("vane:theme")).toBeNull();
+  });
+
+  it("mostra o ícone de lua em light (oferece trocar pra dark) e de sol em dark (oferece voltar pra light)", async () => {
+    await renderAt("/status/sp-4");
+    await screen.findByText("Todos os sistemas operacionais");
+
+    expect(screen.getByTestId("theme-icon-moon")).toBeInTheDocument();
+    expect(screen.queryByTestId("theme-icon-sun")).not.toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "Alternar tema" }));
+
+    expect(screen.getByTestId("theme-icon-sun")).toBeInTheDocument();
+    expect(screen.queryByTestId("theme-icon-moon")).not.toBeInTheDocument();
+  });
+});
 
 describe("PublicStatusPage", () => {
   it("página sem incidentes mostra banda de operacional e nenhum incidente ativo", async () => {

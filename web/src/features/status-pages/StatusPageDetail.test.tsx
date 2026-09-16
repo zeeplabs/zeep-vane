@@ -125,7 +125,7 @@ describe("StatusPageDetail", () => {
     renderDetail("sp-2");
     await screen.findByText("Aguardando validação de DNS/certificado");
 
-    expect(screen.getByText("Configuração de DNS")).toBeInTheDocument();
+    expect(screen.getByText("Configuração DNS")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Verificar DNS/certificado" })).toBeInTheDocument();
 
     await userEvent.click(screen.getByRole("button", { name: "Verificar DNS/certificado" }));
@@ -135,7 +135,7 @@ describe("StatusPageDetail", () => {
     // "published" (não dá pra garantir observar o resultado intermediário
     // do painel de forma não-racy, já que ele desmonta no mesmo instante).
     expect(await screen.findByText("Publicada")).toBeInTheDocument();
-    expect(screen.queryByText("Configuração de DNS")).not.toBeInTheDocument();
+    expect(screen.queryByText("Configuração DNS")).not.toBeInTheDocument();
   });
 
   it("resultado de verificação com DNS incorreto/certificado inválido é exibido sem publicar a página", async () => {
@@ -166,7 +166,7 @@ describe("StatusPageDetail", () => {
       await screen.findByText(/Conexão HTTPS respondeu, mas o certificado não é válido/)
     ).toBeInTheDocument();
     // Não publicou - painel continua visível pro admin tentar de novo.
-    expect(screen.getByText("Configuração de DNS")).toBeInTheDocument();
+    expect(screen.getByText("Configuração DNS")).toBeInTheDocument();
     expect(screen.queryByText("Publicada")).not.toBeInTheDocument();
   });
 
@@ -175,7 +175,7 @@ describe("StatusPageDetail", () => {
     renderDetail("sp-2");
 
     expect(await screen.findByText("Aguardando validação de DNS/certificado")).toBeInTheDocument();
-    expect(screen.queryByText("Configuração de DNS")).not.toBeInTheDocument();
+    expect(screen.queryByText("Configuração DNS")).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Verificar DNS/certificado" })).not.toBeInTheDocument();
   });
 
@@ -214,33 +214,34 @@ describe("StatusPageDetail", () => {
     await loginAsOwner();
     renderDetail("sp-1");
 
-    expect(await screen.findByText("Serviços vinculados")).toBeInTheDocument();
+    expect(await screen.findByText(/^Serviços vinculados/)).toBeInTheDocument();
     // sp-1 fixture: service_ids = ["svc-1", "svc-2"] (API pública, Checkout).
-    // Vinculados são checkboxes marcados no grupo "Vinculados"; os demais
-    // aparecem desmarcados no grupo "Disponíveis" (SPD-16 redesign).
-    expect(screen.getByRole("checkbox", { name: "API pública" })).toBeChecked();
-    expect(screen.getByRole("checkbox", { name: "Checkout" })).toBeChecked();
-    expect(screen.getByRole("checkbox", { name: "Notificações" })).not.toBeChecked();
-    expect(screen.getByRole("checkbox", { name: "Fila de processamento" })).not.toBeChecked();
+    // Vinculados aparecem marcados (aria-pressed) no grupo "Vinculados"; os
+    // demais aparecem desmarcados no grupo "Disponíveis" (SPD-16 redesign) -
+    // checklist de botão com checkbox visual, não <input type="checkbox">.
+    expect(screen.getByRole("button", { name: "API pública" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: "Checkout" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: "Notificações" })).toHaveAttribute("aria-pressed", "false");
+    expect(screen.getByRole("button", { name: "Fila de processamento" })).toHaveAttribute("aria-pressed", "false");
   });
 
   it("owner alterna um serviço e salva, persistindo o novo conjunto via PATCH (SPD-15)", async () => {
     await loginAsOwner();
     renderDetail("sp-1");
-    await screen.findByText("Serviços vinculados");
+    await screen.findByText(/^Serviços vinculados/);
 
     const saveButton = screen.getByRole("button", { name: "Salvar serviços" });
     expect(saveButton).toBeDisabled();
 
-    await userEvent.click(screen.getByRole("checkbox", { name: "Notificações" }));
+    await userEvent.click(screen.getByRole("button", { name: "Notificações" }));
     expect(saveButton).toBeEnabled();
 
     await userEvent.click(saveButton);
 
     await vi.waitFor(() => expect(saveButton).toBeDisabled());
-    expect(screen.getByRole("checkbox", { name: "API pública" })).toBeChecked();
-    expect(screen.getByRole("checkbox", { name: "Checkout" })).toBeChecked();
-    expect(screen.getByRole("checkbox", { name: "Notificações" })).toBeChecked();
+    expect(screen.getByRole("button", { name: "API pública" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: "Checkout" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: "Notificações" })).toHaveAttribute("aria-pressed", "true");
 
     // Confirma que persistiu de fato (reflete o servidor, não só estado local
     // otimista): reconsulta via GET /api/status-pages.
@@ -252,10 +253,10 @@ describe("StatusPageDetail", () => {
   it("desmarcar todos e salvar substitui o conjunto inteiro por vazio (replace-all, não incremental)", async () => {
     await loginAsOwner();
     renderDetail("sp-1");
-    await screen.findByText("Serviços vinculados");
+    await screen.findByText(/^Serviços vinculados/);
 
-    await userEvent.click(screen.getByRole("checkbox", { name: "API pública" }));
-    await userEvent.click(screen.getByRole("checkbox", { name: "Checkout" }));
+    await userEvent.click(screen.getByRole("button", { name: "API pública" }));
+    await userEvent.click(screen.getByRole("button", { name: "Checkout" }));
     await userEvent.click(screen.getByRole("button", { name: "Salvar serviços" }));
 
     await vi.waitFor(async () => {
@@ -267,25 +268,25 @@ describe("StatusPageDetail", () => {
   it("busca filtra o grupo Disponíveis sem afetar o grupo Vinculados (SPD-16)", async () => {
     await loginAsOwner();
     renderDetail("sp-1");
-    await screen.findByText("Serviços vinculados");
+    await screen.findByText(/^Serviços vinculados/);
 
     // sp-1 fixture: vinculados = API pública, Checkout; disponíveis =
     // Notificações, Fila de processamento.
-    await userEvent.type(screen.getByLabelText("Buscar serviço"), "notif");
+    await userEvent.type(screen.getByLabelText("Disponíveis"), "notif");
 
-    expect(screen.getByRole("checkbox", { name: "Notificações" })).toBeInTheDocument();
-    expect(screen.queryByRole("checkbox", { name: "Fila de processamento" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Notificações" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Fila de processamento" })).not.toBeInTheDocument();
     // Vinculados nunca é afetado pelo filtro, mesmo sem match no texto buscado.
-    expect(screen.getByRole("checkbox", { name: "API pública" })).toBeInTheDocument();
-    expect(screen.getByRole("checkbox", { name: "Checkout" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "API pública" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Checkout" })).toBeInTheDocument();
   });
 
   it("viewer vê os serviços vinculados mas não pode alterá-los nem vê o botão salvar", async () => {
     await loginAs("viewer@vane.app");
     renderDetail("sp-1");
 
-    expect(await screen.findByText("Serviços vinculados")).toBeInTheDocument();
-    expect(screen.getByRole("checkbox", { name: "API pública" })).toBeDisabled();
+    expect(await screen.findByText(/^Serviços vinculados/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "API pública" })).toBeDisabled();
     expect(screen.queryByRole("button", { name: "Salvar serviços" })).not.toBeInTheDocument();
   });
 });

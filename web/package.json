@@ -1,7 +1,7 @@
 {
   "name": "vane-web",
   "private": true,
-  "version": "0.2.6",
+  "version": "0.3.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -14,10 +14,13 @@
     "@tanstack/react-query": "^5.62.7",
     "@zeeptech/toolkit": "^1.0.1",
     "i18next": "^23.16.8",
+    "qrcode.react": "^4.2.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-i18next": "^14.1.3",
+    "react-icons": "^5.7.0",
     "react-router-dom": "^6.28.1",
+    "recharts": "^3.10.1",
     "sonner": "^1.7.1"
   },
   "devDependencies": {

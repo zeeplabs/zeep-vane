@@ -29,12 +29,15 @@ func newServiceRepoTestPool(t *testing.T) (*ServiceRepository, *Pool) {
 // registers their cleanup.
 func seedServiceFixtures(t *testing.T, repo *ServiceRepository, pool *Pool, prefix string, n int) []*Service {
 	t.Helper()
+	tenantID := seedPlainTenant(t, pool)
 	services := make([]*Service, n)
 	for i := 0; i < n; i++ {
 		s := &Service{Name: fmt.Sprintf("%s-%d", prefix, i), SLOID: fmt.Sprintf("slo-%s-%d", prefix, i)}
-		if err := repo.Create(context.Background(), s); err != nil {
-			t.Fatalf("setup Create() returned unexpected error: %v", err)
-		}
+		withTenantTx(t, pool, tenantID, func(ctx context.Context) {
+			if err := repo.Create(ctx, s); err != nil {
+				t.Fatalf("setup Create() returned unexpected error: %v", err)
+			}
+		})
 		t.Cleanup(func() {
 			_, _ = pool.Exec(context.Background(), "DELETE FROM services WHERE id = $1", s.ID)
 		})
@@ -145,6 +148,382 @@ func TestServiceRepository_ListPaginated_OrderByNameUnchanged(t *testing.T) {
 	for i, s := range ours {
 		if s.ID != seeded[i].ID {
 			t.Errorf("ours[%d].ID = %q, want %q (ORDER BY name)", i, s.ID, seeded[i].ID)
+		}
+	}
+}
+
+// TestServiceRepository_Create_PersistsAndReturnsSLOName asserts SVC-01:
+// Create persists SLOName and it round-trips on the returned *Service.
+func TestServiceRepository_Create_PersistsAndReturnsSLOName(t *testing.T) {
+	repo, pool := newServiceRepoTestPool(t)
+	tenantID := seedPlainTenant(t, pool)
+	name := fmt.Sprintf("create-slo-name-%d", time.Now().UnixNano())
+	service := &Service{Name: name, SLOID: "slo-create-1", SLOName: "Checkout latency SLO"}
+
+	withTenantTx(t, pool, tenantID, func(ctx context.Context) {
+		if err := repo.Create(ctx, service); err != nil {
+			t.Fatalf("Create() returned unexpected error: %v", err)
+		}
+	})
+	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), "DELETE FROM services WHERE id = $1", service.ID) })
+
+	if service.SLOName != "Checkout latency SLO" {
+		t.Errorf("service.SLOName = %q, want %q", service.SLOName, "Checkout latency SLO")
+	}
+
+	var storedSLOName string
+	row := pool.QueryRow(context.Background(), "SELECT slo_name FROM services WHERE id = $1", service.ID)
+	if err := row.Scan(&storedSLOName); err != nil {
+		t.Fatalf("Scan() returned unexpected error: %v", err)
+	}
+	if storedSLOName != "Checkout latency SLO" {
+		t.Errorf("stored slo_name = %q, want %q", storedSLOName, "Checkout latency SLO")
+	}
+}
+
+// TestServiceRepository_ListPaginated_ReturnsSLONameForMixOfPreAndPostMigrationRows
+// asserts SVC-01: ListPaginated returns SLOName for every row, including a
+// row created with an empty SLOName (simulating a pre-migration row never
+// re-saved) alongside one created with a real SLOName - neither errors, and
+// the empty one comes back as "" rather than some other zero value.
+func TestServiceRepository_ListPaginated_ReturnsSLONameForMixOfPreAndPostMigrationRows(t *testing.T) {
+	repo, pool := newServiceRepoTestPool(t)
+	tenantID := seedPlainTenant(t, pool)
+	prefix := fmt.Sprintf("mixed-slo-name-%d", time.Now().UnixNano())
+
+	withSLOName := &Service{Name: prefix + "-with-name", SLOID: "slo-mixed-1", SLOName: "Checkout latency SLO"}
+	withoutSLOName := &Service{Name: prefix + "-without-name", SLOID: "slo-mixed-2", SLOName: ""}
+	withTenantTx(t, pool, tenantID, func(ctx context.Context) {
+		if err := repo.Create(ctx, withSLOName); err != nil {
+			t.Fatalf("Create(withSLOName) returned unexpected error: %v", err)
+		}
+		if err := repo.Create(ctx, withoutSLOName); err != nil {
+			t.Fatalf("Create(withoutSLOName) returned unexpected error: %v", err)
+		}
+	})
+	t.Cleanup(func() {
+		_, _ = pool.Exec(context.Background(), "DELETE FROM services WHERE id IN ($1, $2)", withSLOName.ID, withoutSLOName.ID)
+	})
+
+	items, _, err := repo.ListPaginated(context.Background(), 1, 20)
+	if err != nil {
+		t.Fatalf("ListPaginated() returned unexpected error: %v", err)
+	}
+
+	var gotWithName, gotWithoutName *Service
+	for i := range items {
+		switch items[i].ID {
+		case withSLOName.ID:
+			gotWithName = &items[i]
+		case withoutSLOName.ID:
+			gotWithoutName = &items[i]
+		}
+	}
+
+	if gotWithName == nil {
+		t.Fatalf("service %s not found in ListPaginated()", withSLOName.ID)
+	}
+	if gotWithName.SLOName != "Checkout latency SLO" {
+		t.Errorf("gotWithName.SLOName = %q, want %q", gotWithName.SLOName, "Checkout latency SLO")
+	}
+
+	if gotWithoutName == nil {
+		t.Fatalf("service %s not found in ListPaginated()", withoutSLOName.ID)
+	}
+	if gotWithoutName.SLOName != "" {
+		t.Errorf("gotWithoutName.SLOName = %q, want %q (empty, not an error)", gotWithoutName.SLOName, "")
+	}
+}
+
+// TestServiceRepository_Get_Found_ReturnsFullRow asserts SVC-01/SVC-14:
+// Get returns the full row - including SLOName, CurrentStatus, and
+// StatusAnalysis - for an existing service.
+func TestServiceRepository_Get_Found_ReturnsFullRow(t *testing.T) {
+	repo, pool := newServiceRepoTestPool(t)
+	tenantID := seedPlainTenant(t, pool)
+	name := fmt.Sprintf("get-found-%d", time.Now().UnixNano())
+	service := &Service{Name: name, SLOID: "slo-get-1", SLOName: "Checkout latency SLO"}
+	withTenantTx(t, pool, tenantID, func(ctx context.Context) {
+		if err := repo.Create(ctx, service); err != nil {
+			t.Fatalf("setup Create() returned unexpected error: %v", err)
+		}
+	})
+	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), "DELETE FROM services WHERE id = $1", service.ID) })
+
+	analysis := "SLI dropped below target"
+	if _, err := pool.Exec(context.Background(), "UPDATE services SET current_status = 'degraded', status_analysis = $1 WHERE id = $2", analysis, service.ID); err != nil {
+		t.Fatalf("setup UPDATE returned unexpected error: %v", err)
+	}
+
+	got, found, err := repo.Get(context.Background(), service.ID)
+	if err != nil {
+		t.Fatalf("Get() returned unexpected error: %v", err)
+	}
+	if !found {
+		t.Fatalf("found = false, want true")
+	}
+	if got.SLOName != "Checkout latency SLO" {
+		t.Errorf("got.SLOName = %q, want %q", got.SLOName, "Checkout latency SLO")
+	}
+	if got.CurrentStatus != "degraded" {
+		t.Errorf("got.CurrentStatus = %q, want %q", got.CurrentStatus, "degraded")
+	}
+	if got.StatusAnalysis == nil || *got.StatusAnalysis != analysis {
+		t.Errorf("got.StatusAnalysis = %v, want %q", got.StatusAnalysis, analysis)
+	}
+}
+
+// TestServiceRepository_Get_NotFound_ReturnsFalseNoError asserts SVC-14:
+// an unknown ID returns found=false with a nil error, not ErrNotFound or a
+// scan error.
+func TestServiceRepository_Get_NotFound_ReturnsFalseNoError(t *testing.T) {
+	repo, _ := newServiceRepoTestPool(t)
+
+	got, found, err := repo.Get(context.Background(), "00000000-0000-0000-0000-000000000000")
+	if err != nil {
+		t.Fatalf("Get() returned unexpected error: %v, want nil", err)
+	}
+	if found {
+		t.Errorf("found = true, want false for an unknown ID")
+	}
+	if got != nil {
+		t.Errorf("got = %+v, want nil", got)
+	}
+}
+
+// strPtr returns a pointer to s, for building polling-mode Service fixtures
+// whose PollType/PollTarget fields are *string.
+func strPtr(s string) *string { return &s }
+
+// intPtr returns a pointer to i, for building polling-mode Service fixtures
+// whose PollIntervalSeconds field is *int.
+func intPtr(i int) *int { return &i }
+
+// TestServiceRepository_Create_PollingMode_PersistsAllFourFieldsAndNilSLOID
+// asserts MP-01/MP-02/MP-06: Create persists a polling-mode service's
+// MonitorMode/PollType/PollTarget/PollIntervalSeconds, and slo_id stays NULL
+// in storage (read back as "" via Get's COALESCE).
+func TestServiceRepository_Create_PollingMode_PersistsAllFourFieldsAndNilSLOID(t *testing.T) {
+	repo, pool := newServiceRepoTestPool(t)
+	tenantID := seedPlainTenant(t, pool)
+	name := fmt.Sprintf("create-polling-%d", time.Now().UnixNano())
+	service := &Service{
+		Name:                name,
+		MonitorMode:         "polling",
+		PollType:            strPtr("http"),
+		PollTarget:          strPtr("https://example.test/health"),
+		PollIntervalSeconds: intPtr(30),
+	}
+
+	withTenantTx(t, pool, tenantID, func(ctx context.Context) {
+		if err := repo.Create(ctx, service); err != nil {
+			t.Fatalf("Create() returned unexpected error: %v", err)
+		}
+	})
+	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), "DELETE FROM services WHERE id = $1", service.ID) })
+
+	if service.MonitorMode != "polling" {
+		t.Errorf("service.MonitorMode = %q, want %q", service.MonitorMode, "polling")
+	}
+
+	var monitorMode string
+	var sloID *string
+	var pollType, pollTarget string
+	var pollIntervalSeconds int
+	row := pool.QueryRow(context.Background(),
+		"SELECT monitor_mode, slo_id, poll_type, poll_target, poll_interval_seconds FROM services WHERE id = $1",
+		service.ID)
+	if err := row.Scan(&monitorMode, &sloID, &pollType, &pollTarget, &pollIntervalSeconds); err != nil {
+		t.Fatalf("Scan() returned unexpected error: %v", err)
+	}
+
+	if monitorMode != "polling" {
+		t.Errorf("stored monitor_mode = %q, want %q", monitorMode, "polling")
+	}
+	if sloID != nil {
+		t.Errorf("stored slo_id = %v, want nil", sloID)
+	}
+	if pollType != "http" {
+		t.Errorf("stored poll_type = %q, want %q", pollType, "http")
+	}
+	if pollTarget != "https://example.test/health" {
+		t.Errorf("stored poll_target = %q, want %q", pollTarget, "https://example.test/health")
+	}
+	if pollIntervalSeconds != 30 {
+		t.Errorf("stored poll_interval_seconds = %d, want %d", pollIntervalSeconds, 30)
+	}
+}
+
+// TestServiceRepository_Create_SLOModeUnchanged asserts MP-01/MP-05: an
+// slo-mode Create (MonitorMode left at its zero value, exactly as every
+// caller before this feature) still persists slo_id/slo_name unchanged -
+// existing behavior, not regressed by the new branching.
+func TestServiceRepository_Create_SLOModeUnchanged(t *testing.T) {
+	repo, pool := newServiceRepoTestPool(t)
+	tenantID := seedPlainTenant(t, pool)
+	name := fmt.Sprintf("create-slo-unchanged-%d", time.Now().UnixNano())
+	service := &Service{Name: name, SLOID: "slo-unchanged-1", SLOName: "Unchanged SLO"}
+
+	withTenantTx(t, pool, tenantID, func(ctx context.Context) {
+		if err := repo.Create(ctx, service); err != nil {
+			t.Fatalf("Create() returned unexpected error: %v", err)
+		}
+	})
+	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), "DELETE FROM services WHERE id = $1", service.ID) })
+
+	if service.MonitorMode != "slo" {
+		t.Errorf("service.MonitorMode = %q, want %q", service.MonitorMode, "slo")
+	}
+
+	var monitorMode, sloID, sloName string
+	var pollType *string
+	row := pool.QueryRow(context.Background(),
+		"SELECT monitor_mode, slo_id, slo_name, poll_type FROM services WHERE id = $1", service.ID)
+	if err := row.Scan(&monitorMode, &sloID, &sloName, &pollType); err != nil {
+		t.Fatalf("Scan() returned unexpected error: %v", err)
+	}
+	if monitorMode != "slo" {
+		t.Errorf("stored monitor_mode = %q, want %q", monitorMode, "slo")
+	}
+	if sloID != "slo-unchanged-1" {
+		t.Errorf("stored slo_id = %q, want %q", sloID, "slo-unchanged-1")
+	}
+	if sloName != "Unchanged SLO" {
+		t.Errorf("stored slo_name = %q, want %q", sloName, "Unchanged SLO")
+	}
+	if pollType != nil {
+		t.Errorf("stored poll_type = %v, want nil", pollType)
+	}
+}
+
+// TestServiceRepository_Create_PollingModeMissingRequiredField_SurfacesConstraintViolation
+// asserts T2's "Done when": a Create call that would violate the DB's
+// mode/field-combination CHECK constraint (here: monitor_mode="polling" but
+// PollTarget/PollIntervalSeconds left unset, a plausible caller bug) returns
+// an error rather than silently partial-inserting the row.
+func TestServiceRepository_Create_PollingModeMissingRequiredField_SurfacesConstraintViolation(t *testing.T) {
+	repo, pool := newServiceRepoTestPool(t)
+	tenantID := seedPlainTenant(t, pool)
+	name := fmt.Sprintf("create-polling-invalid-%d", time.Now().UnixNano())
+	service := &Service{
+		Name:        name,
+		MonitorMode: "polling",
+		PollType:    strPtr("http"),
+		// PollTarget/PollIntervalSeconds deliberately left nil.
+	}
+
+	tx, err := pool.BeginTenantTx(context.Background(), "", tenantID)
+	if err != nil {
+		t.Fatalf("BeginTenantTx() returned unexpected error: %v", err)
+	}
+	txCtx := WithTenantTx(context.Background(), tx)
+
+	createErr := repo.Create(txCtx, service)
+	if createErr == nil {
+		t.Fatalf("Create() succeeded, want a CHECK constraint violation error")
+	}
+	_ = tx.Rollback(context.Background())
+
+	var count int
+	row := pool.QueryRow(context.Background(), "SELECT COUNT(*) FROM services WHERE name = $1", name)
+	if err := row.Scan(&count); err != nil {
+		t.Fatalf("Scan() returned unexpected error: %v", err)
+	}
+	if count != 0 {
+		t.Errorf("services rows named %q after failed Create() = %d, want 0 (no partial insert)", name, count)
+	}
+}
+
+// TestServiceRepository_ListPollingManual_ReturnsOnlyPollingRows asserts
+// MP-06: ListPollingManual returns only monitor_mode='polling' rows,
+// excluding an slo-mode row created alongside it.
+func TestServiceRepository_ListPollingManual_ReturnsOnlyPollingRows(t *testing.T) {
+	repo, pool := newServiceRepoTestPool(t)
+	tenantID := seedPlainTenant(t, pool)
+	prefix := fmt.Sprintf("list-polling-only-%d", time.Now().UnixNano())
+
+	pollingSvc := &Service{
+		Name:                prefix + "-polling",
+		MonitorMode:         "polling",
+		PollType:            strPtr("tcp"),
+		PollTarget:          strPtr("db.example.test:5432"),
+		PollIntervalSeconds: intPtr(60),
+	}
+	sloSvc := &Service{Name: prefix + "-slo", SLOID: "slo-list-polling-only"}
+
+	withTenantTx(t, pool, tenantID, func(ctx context.Context) {
+		if err := repo.Create(ctx, pollingSvc); err != nil {
+			t.Fatalf("Create(pollingSvc) returned unexpected error: %v", err)
+		}
+		if err := repo.Create(ctx, sloSvc); err != nil {
+			t.Fatalf("Create(sloSvc) returned unexpected error: %v", err)
+		}
+	})
+	t.Cleanup(func() {
+		_, _ = pool.Exec(context.Background(), "DELETE FROM services WHERE id IN ($1, $2)", pollingSvc.ID, sloSvc.ID)
+	})
+
+	items, err := repo.ListPollingManual(context.Background())
+	if err != nil {
+		t.Fatalf("ListPollingManual() returned unexpected error: %v", err)
+	}
+
+	var foundPolling, foundSLO bool
+	for _, item := range items {
+		if item.ID == pollingSvc.ID {
+			foundPolling = true
+			if item.MonitorMode != "polling" {
+				t.Errorf("item.MonitorMode = %q, want %q", item.MonitorMode, "polling")
+			}
+			if item.PollType == nil || *item.PollType != "tcp" {
+				t.Errorf("item.PollType = %v, want %q", item.PollType, "tcp")
+			}
+			if item.PollTarget == nil || *item.PollTarget != "db.example.test:5432" {
+				t.Errorf("item.PollTarget = %v, want %q", item.PollTarget, "db.example.test:5432")
+			}
+			if item.PollIntervalSeconds == nil || *item.PollIntervalSeconds != 60 {
+				t.Errorf("item.PollIntervalSeconds = %v, want %d", item.PollIntervalSeconds, 60)
+			}
+		}
+		if item.ID == sloSvc.ID {
+			foundSLO = true
+		}
+	}
+
+	if !foundPolling {
+		t.Errorf("ListPollingManual() did not return the polling-mode service %s", pollingSvc.ID)
+	}
+	if foundSLO {
+		t.Errorf("ListPollingManual() returned the slo-mode service %s, want it excluded", sloSvc.ID)
+	}
+}
+
+// TestServiceRepository_ListPollingManual_EmptyWhenNoneExist asserts T2's
+// "Done when": ListPollingManual returns an empty (non-nil) slice, not a
+// nil-panic, when no polling-manual service exists in the current result
+// set.
+func TestServiceRepository_ListPollingManual_EmptyWhenNoneExist(t *testing.T) {
+	repo, pool := newServiceRepoTestPool(t)
+	tenantID := seedPlainTenant(t, pool)
+	name := fmt.Sprintf("list-polling-empty-slo-only-%d", time.Now().UnixNano())
+	sloSvc := &Service{Name: name, SLOID: "slo-list-polling-empty"}
+	withTenantTx(t, pool, tenantID, func(ctx context.Context) {
+		if err := repo.Create(ctx, sloSvc); err != nil {
+			t.Fatalf("Create() returned unexpected error: %v", err)
+		}
+	})
+	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), "DELETE FROM services WHERE id = $1", sloSvc.ID) })
+
+	items, err := repo.ListPollingManual(context.Background())
+	if err != nil {
+		t.Fatalf("ListPollingManual() returned unexpected error: %v", err)
+	}
+	if items == nil {
+		t.Errorf("ListPollingManual() = nil, want a non-nil (possibly empty) slice")
+	}
+	for _, item := range items {
+		if item.ID == sloSvc.ID {
+			t.Errorf("ListPollingManual() returned the slo-mode service %s", sloSvc.ID)
 		}
 	}
 }

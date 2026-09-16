@@ -43,7 +43,13 @@ const pendingTLSState = "pending_tls"
 // both nullable: a status page can be created with no domain attached
 // (SPD-01) and gets both set together, exactly once, by AttachDomain.
 type StatusPage struct {
-	ID           string
+	ID string
+	// TenantID is the tenant this status page belongs to (0024). Only
+	// GetByHostname populates it: it is the one lookup that runs before any
+	// tenant context exists (an anonymous visitor has no session), so the
+	// row itself is what tells router.HostRouter which tenant to scope the
+	// rest of the request to.
+	TenantID     string
 	Name         string
 	Subdomain    *string
 	DomainID     *string
@@ -69,14 +75,40 @@ func NewStatusPageRepository(pool *Pool) *StatusPageRepository {
 // SP-15), and CreatedAt. The insert and the service links are wrapped in a
 // single transaction: a status page is never left without its intended
 // service links because a later insert failed partway through.
+//
+// If ctx already carries a tenant transaction (db.WithTenantTx - e.g. a
+// request inside api.TenantContext, or router.HostRouter's public path),
+// Create runs on that transaction instead of opening its own, following
+// TenantRepository.Create's convention. This is required, not just tidier:
+// status_pages.tenant_id defaults from current_setting('app.tenant_id'),
+// which is SET LOCAL on the caller's transaction (0024), so a second,
+// independently pooled transaction would resolve that DEFAULT to NULL and
+// the insert would fail the NOT NULL constraint.
 func (r *StatusPageRepository) Create(ctx context.Context, statusPage *StatusPage, serviceIDs []string) error {
+	if _, ok := TenantTxFromContext(ctx); ok {
+		return r.insert(ctx, statusPage, serviceIDs)
+	}
+
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
 		return fmt.Errorf("db: failed to begin status page create transaction: %w", err)
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
-	row := tx.QueryRow(ctx,
+	if err := r.insert(WithTenantTx(ctx, tx), statusPage, serviceIDs); err != nil {
+		return err
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("db: failed to commit status page create transaction: %w", err)
+	}
+
+	return nil
+}
+
+// insert performs Create's writes on whatever transaction ctx carries.
+func (r *StatusPageRepository) insert(ctx context.Context, statusPage *StatusPage, serviceIDs []string) error {
+	row := r.pool.QueryRow(ctx,
 		"INSERT INTO status_pages (name, subdomain, domain_id) VALUES ($1, $2, $3) RETURNING id, state, created_at",
 		statusPage.Name, statusPage.Subdomain, statusPage.DomainID,
 	)
@@ -85,16 +117,12 @@ func (r *StatusPageRepository) Create(ctx context.Context, statusPage *StatusPag
 	}
 
 	for _, serviceID := range serviceIDs {
-		if _, err := tx.Exec(ctx,
+		if _, err := r.pool.Exec(ctx,
 			"INSERT INTO status_page_services (status_page_id, service_id) VALUES ($1, $2)",
 			statusPage.ID, serviceID,
 		); err != nil {
 			return fmt.Errorf("db: failed to link service %s to status page: %w", serviceID, err)
 		}
-	}
-
-	if err := tx.Commit(ctx); err != nil {
-		return fmt.Errorf("db: failed to commit status page create transaction: %w", err)
 	}
 
 	statusPage.ServiceIDs = serviceIDs
@@ -167,6 +195,42 @@ func (r *StatusPageRepository) serviceIDsByStatusPage(ctx context.Context, pageI
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("db: failed to list service links: %w", err)
+	}
+
+	return result, nil
+}
+
+// AttachedNamesByDomainIDs batch-loads, per domain ID in domainIDs, the
+// names of every status page whose domain_id matches it - ordered
+// created_at ASC so the caller (DomainsHandler.List) can treat the first
+// name in each slice as the "primary" attached page (design.md's "Aponta
+// para" column, spec.md DSP-03/DSP-04). A domain with zero attached pages
+// is simply absent from the returned map, matching serviceIDsByStatusPage's
+// convention. An empty domainIDs slice returns an empty map with no query
+// executed, so DomainsHandler.List can call this unconditionally even on
+// an empty page.
+func (r *StatusPageRepository) AttachedNamesByDomainIDs(ctx context.Context, domainIDs []string) (map[string][]string, error) {
+	result := make(map[string][]string, len(domainIDs))
+	if len(domainIDs) == 0 {
+		return result, nil
+	}
+
+	rows, err := r.pool.Query(ctx,
+		"SELECT domain_id, name FROM status_pages WHERE domain_id = ANY($1) ORDER BY domain_id, created_at ASC", domainIDs)
+	if err != nil {
+		return nil, fmt.Errorf("db: failed to list attached status page names: %w", err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var domainID, name string
+		if err := rows.Scan(&domainID, &name); err != nil {
+			return nil, fmt.Errorf("db: failed to scan attached status page name: %w", err)
+		}
+		result[domainID] = append(result[domainID], name)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("db: failed to list attached status page names: %w", err)
 	}
 
 	return result, nil
@@ -413,18 +477,20 @@ func (r *StatusPageRepository) StateByHostname(ctx context.Context, hostname str
 // joining status_pages to its parent domain. It returns ErrNotFound if no
 // status page matches. Unlike StateByHostname (used only by tls.HostPolicy,
 // which needs just the state to gate ACME issuance), this returns the
-// StatusPage's ID too, so callers like router.HostRouter can thread it down
-// to the scoped public queries that implement SP-15 (a status page shows
-// only its own linked services/incidents).
+// StatusPage's ID and TenantID too, so callers like router.HostRouter can
+// thread the ID down to the scoped public queries that implement SP-15 (a
+// status page shows only its own linked services/incidents) and the tenant
+// id into the request's RLS session settings (0024) - the hostname is the
+// only tenant signal an anonymous visitor carries.
 func (r *StatusPageRepository) GetByHostname(ctx context.Context, hostname string) (*StatusPage, error) {
 	row := r.pool.QueryRow(ctx,
-		"SELECT sp.id, sp.name, sp.subdomain, sp.domain_id, sp.state, sp.tls_last_error, sp.created_at "+
+		"SELECT sp.id, sp.tenant_id, sp.name, sp.subdomain, sp.domain_id, sp.state, sp.tls_last_error, sp.created_at "+
 			"FROM status_pages sp JOIN domains d ON "+hostnameMatch,
 		hostname,
 	)
 
 	var sp StatusPage
-	if err := row.Scan(&sp.ID, &sp.Name, &sp.Subdomain, &sp.DomainID, &sp.State, &sp.TLSLastError, &sp.CreatedAt); err != nil {
+	if err := row.Scan(&sp.ID, &sp.TenantID, &sp.Name, &sp.Subdomain, &sp.DomainID, &sp.State, &sp.TLSLastError, &sp.CreatedAt); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, ErrNotFound
 		}

@@ -164,38 +164,38 @@ Toda ambiguidade foi resolvida ou registrada aqui — nada fica silenciosamente 
 
 | Requirement ID | Story | Phase | Status |
 | --- | --- | --- | --- |
-| SP-01 | P1: Conectar Datadog | Design | Pending |
-| SP-02 | P1: Conectar Datadog | Design | Pending |
-| SP-03 | P1: Conectar Datadog | Design | Pending |
-| SP-04 | P1: Conectar Datadog | Design | Pending |
-| SP-05 | P1: Conectar Datadog | Design | Pending |
-| SP-06 | P1: Status público | Design | Pending |
-| SP-07 | P1: Status público | Design | Pending |
-| SP-08 | P1: Status público | Design | Pending |
-| SP-09 | P1: Status público | Design | Pending |
-| SP-10 | P1: Status público | Design | Pending |
-| SP-11 | P1: Domínio/TLS | Design | Pending |
-| SP-12 | P1: Domínio/TLS | Design | Pending |
-| SP-13 | P1: Domínio/TLS | Design | Pending |
-| SP-14 | P1: Domínio/TLS | Design | Pending |
-| SP-15 | P1: Domínio/TLS | Design | Pending |
-| SP-16 | P1: Incidentes | Design | Pending |
-| SP-17 | P1: Incidentes | Design | Pending |
-| SP-18 | P1: Incidentes | Design | Pending |
-| SP-19 | P1: Incidentes | Design | Pending |
-| SP-20 | P1: Incidentes | Design | Pending |
-| SP-21 | P2: Login/conta | Design | Implementing |
-| SP-22 | P2: Login/conta | Design | Implementing |
-| SP-23 | P2: Login/conta | Design | Implementing |
-| SP-24 | P2: Login/conta | Design | Implementing |
-| SP-25 | P2: Login/conta | Design | Implementing |
-| SP-26 | P3: Uptime histórico | Design | Pending |
+| SP-01 | P1: Conectar Datadog | Design | Verified |
+| SP-02 | P1: Conectar Datadog | Design | Verified |
+| SP-03 | P1: Conectar Datadog | Design | Verified |
+| SP-04 | P1: Conectar Datadog | Design | Verified |
+| SP-05 | P1: Conectar Datadog | Design | Verified |
+| SP-06 | P1: Status público | Design | Verified |
+| SP-07 | P1: Status público | Design | Verified |
+| SP-08 | P1: Status público | Design | Verified |
+| SP-09 | P1: Status público | Design | Verified |
+| SP-10 | P1: Status público | Design | Verified |
+| SP-11 | P1: Domínio/TLS | Design | Verified |
+| SP-12 | P1: Domínio/TLS | Design | Verified |
+| SP-13 | P1: Domínio/TLS | Design | Verified |
+| SP-14 | P1: Domínio/TLS | Design | Verified |
+| SP-15 | P1: Domínio/TLS | Design | Verified |
+| SP-16 | P1: Incidentes | Design | Verified |
+| SP-17 | P1: Incidentes | Design | Verified |
+| SP-18 | P1: Incidentes | Design | Verified |
+| SP-19 | P1: Incidentes | Design | Verified |
+| SP-20 | P1: Incidentes | Design | Verified |
+| SP-21 | P2: Login/conta | Design | Verified |
+| SP-22 | P2: Login/conta | Design | Verified |
+| SP-23 | P2: Login/conta | Design | Verified |
+| SP-24 | P2: Login/conta | Design | Verified |
+| SP-25 | P2: Login/conta | Design | Verified |
+| SP-26 | P3: Uptime histórico | Design | Verified |
 
 **ID format:** `SP-NN` (Status Page)
 
 **Status values:** Pending → In Design → In Tasks → Implementing → Verified
 
-**Coverage:** 26 total, 0 mapped to tasks, 26 unmapped ⚠️ (esperado — Design/Tasks ainda não rodaram)
+**Coverage:** 26 total, 26 mapped to tasks, 0 unmapped (retroactive: feature is Executed/Verified — `validation.md` PASS — this table was never flipped after closure until 2026-09-15's spec-audit pass)
 
 ---
 

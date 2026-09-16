@@ -12,6 +12,7 @@ import (
 	"github.com/caddyserver/certmagic"
 
 	"github.com/zeeplabs/zeep-vane/internal/db"
+	"github.com/zeeplabs/zeep-vane/internal/dbtest"
 )
 
 func testDatabaseURL(t *testing.T) string {
@@ -28,18 +29,8 @@ func testDatabaseURL(t *testing.T) string {
 // registering cleanup for both fixture rows.
 func setUpStatusPageFixture(t *testing.T) (hostname string, repo *db.StatusPageRepository, pool *db.Pool) {
 	t.Helper()
-	dsn := testDatabaseURL(t)
-
-	if err := db.MigrateUp(dsn, "../db/migrations"); err != nil {
-		t.Fatalf("MigrateUp() returned unexpected error: %v", err)
-	}
-
 	ctx := context.Background()
-	pool, err := db.NewPool(ctx, dsn)
-	if err != nil {
-		t.Fatalf("NewPool() returned unexpected error: %v", err)
-	}
-	t.Cleanup(pool.Close)
+	pool = newTenantScopedTestPool(t, "../db/migrations")
 
 	suffix := fmt.Sprintf("%d", time.Now().UnixNano())
 	rootHostname := fmt.Sprintf("tls-manager-test-%s.example.com", suffix)
@@ -176,4 +167,41 @@ func TestOnEvent_CertFailed_MarksStatusPageTLSFailedWithReason(t *testing.T) {
 	if tlsLastError == nil || *tlsLastError != failureReason {
 		t.Errorf("tls_last_error = %v, want %q", tlsLastError, failureReason)
 	}
+}
+
+// newTenantScopedTestPool returns a migrated pool whose every connection
+// has app.tenant_id preset (at session level, via the connection's
+// `options` parameter) to a throwaway fixture tenant. Every tenant-scoped
+// table's tenant_id defaults from current_setting('app.tenant_id', true)
+// and is NOT NULL since 0024, so a fixture INSERT made outside a tenant
+// context is rejected.
+func newTenantScopedTestPool(t *testing.T, migrationsDir string) *db.Pool {
+	t.Helper()
+	dsn := testDatabaseURL(t)
+	if err := db.MigrateUp(dsn, migrationsDir); err != nil {
+		t.Fatalf("MigrateUp() returned unexpected error: %v", err)
+	}
+
+	ctx := context.Background()
+	bootstrapPool, err := db.NewPool(ctx, dsn)
+	if err != nil {
+		t.Fatalf("NewPool() returned unexpected error: %v", err)
+	}
+	var tenantID string
+	if err := bootstrapPool.QueryRow(ctx, "INSERT INTO tenants (name) VALUES ($1) RETURNING id", "fixture-tenant").Scan(&tenantID); err != nil {
+		bootstrapPool.Close()
+		t.Fatalf("seeding fixture tenant returned unexpected error: %v", err)
+	}
+	bootstrapPool.Close()
+
+	pool, err := db.NewPool(ctx, dbtest.TenantScopedDSN(dsn, tenantID))
+	if err != nil {
+		t.Fatalf("NewPool() (tenant-scoped) returned unexpected error: %v", err)
+	}
+	t.Cleanup(pool.Close)
+	t.Cleanup(func() {
+		_, _ = pool.Exec(context.Background(), "DELETE FROM tenants WHERE id = $1", tenantID)
+	})
+
+	return pool
 }

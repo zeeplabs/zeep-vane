@@ -1,0 +1,3 @@
+ALTER TABLE tenants ADD COLUMN website TEXT;
+ALTER TABLE tenants ADD COLUMN timezone TEXT;
+ALTER TABLE tenants ADD COLUMN deleted_at TIMESTAMPTZ;

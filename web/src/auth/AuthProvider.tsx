@@ -8,9 +8,23 @@ import {
   type ReactNode,
 } from "react";
 import { apiFetch, ApiError, setUnauthorizedHandler } from "../lib/apiClient";
-import type { Role } from "../types/api";
+import type { Role, TenantMembership } from "../types/api";
 
 type Status = "loading" | "authenticated" | "anonymous";
+
+// LoginOutcome is what a password login yields (login-2fa): either a full
+// authenticated session, or a 2FA challenge the caller must complete with
+// verifyTwoFactor before any session exists (auth-2fa-totp TOTP-05). The
+// challenge token lives only in this return value and the caller's memory -
+// never in URL or browser storage (LOGIN2FA-09).
+export type LoginOutcome =
+  | { kind: "authenticated" }
+  | { kind: "twoFactorRequired"; challengeToken: string };
+
+// TwoFactorFactor is the second factor verifyTwoFactor submits: a TOTP code or
+// the device-loss recovery-code fallback (LOGIN2FA-05). Mirrors
+// verifyTwoFactorRequest's code/recovery_code fields.
+export type TwoFactorFactor = { code: string } | { recoveryCode: string };
 
 // Shape of GET /api/auth/me's real response body (AF-34) - flat, no
 // wrapper. Deliberately narrower than mockData's full Admin (no `status`):
@@ -21,6 +35,17 @@ export interface AuthenticatedAdmin {
   email: string;
   name?: string;
   role: Role;
+  // active_tenant_id is "" (or absent, real backend omits empty fields via
+  // omitempty) when the user has more than one tenant_membership and
+  // hasn't picked one yet - pending tenant selection (T17, TENANT-19/20).
+  active_tenant_id?: string;
+  // memberships always has at least one entry for an authenticated
+  // session (Login refuses zero memberships outright, internal/api's
+  // noTenantAccessBody).
+  memberships: TenantMembership[];
+  // Whether the user has a confirmed TOTP enrollment (profile-page
+  // PROFPAGE-12) - mirrors GET /api/auth/me's two_factor_enabled.
+  two_factor_enabled: boolean;
 }
 
 interface State {
@@ -54,8 +79,37 @@ export interface AuthContextValue {
    * assume bootstrap is needed without a confirmed "false" from the
    * server. */
   needsBootstrap: boolean;
-  login: (email: string, password: string) => Promise<void>;
+  /** "self_hosted" or "saas" (AD-033) - read once from GET
+   * /api/bootstrap/status's deployment_mode field, same boot fetch as
+   * needsBootstrap. "saas" until the check resolves, mirroring
+   * needsBootstrap's own optimistic default (false) - the real backend
+   * default is self-hosted, but assuming the restrictive case here would
+   * flash the wrong screen on every real SaaS instance while the check is
+   * in flight. */
+  deploymentMode: "self_hosted" | "saas";
+  /** true once an authenticated admin has more than 1 tenant_membership and
+   * hasn't picked an active tenant yet - gates the /select-tenant screen
+   * (T17, TENANT-19/20/21). Always false for the every-day self-hosted
+   * case (exactly 1 membership). */
+  needsTenantSelection: boolean;
+  login: (email: string, password: string) => Promise<LoginOutcome>;
+  /** Completes the login Login deferred when it returned a challenge token
+   * (login-2fa LOGIN2FA-11): POSTs the code or recovery code, then hydrates
+   * the authenticated admin from /api/auth/me exactly like login. Throws
+   * ApiError on an invalid/expired code (401). */
+  verifyTwoFactor: (challengeToken: string, factor: TwoFactorFactor) => Promise<void>;
   logout: () => Promise<void>;
+  /** Sets tenantId as the session's active tenant (POST
+   * /api/auth/switch-tenant) and re-hydrates the authenticated admin from
+   * /api/auth/me - no new login required (TENANT-20). Throws ApiError on a
+   * tenant_id the caller has no membership for (403, TENANT-21). */
+  switchTenant: (tenantId: string) => Promise<void>;
+  /** Re-hydrates the authenticated admin from GET /api/auth/me, same path
+   * as the boot effect and switchTenant - lets a profile/2FA mutation
+   * reflect its new state without a reload (profile-page PROFPAGE-05/12).
+   * Never throws: on failure the previous identity is kept and callers
+   * proceed (design.md Error Handling). */
+  refreshAdmin: () => Promise<void>;
   hasRole: (roles: Role[]) => boolean;
   sessionExpired: boolean;
   dismissSessionExpired: () => void;
@@ -74,6 +128,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     false
   );
   const [needsBootstrap, setNeedsBootstrap] = useState(false);
+  const [deploymentMode, setDeploymentMode] = useState<"self_hosted" | "saas">("saas");
 
   useEffect(() => {
     let cancelled = false;
@@ -103,10 +158,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       try {
         // Public, unauthenticated endpoint (never 401s) - skipUnauthorizedHandler
         // guards it the same way the /api/auth/me boot probe is guarded.
-        const { bootstrapped } = await apiFetch<{ bootstrapped: boolean }>("/api/bootstrap/status", {
+        const { bootstrapped, deployment_mode } = await apiFetch<{
+          bootstrapped: boolean;
+          deployment_mode: "self_hosted" | "saas";
+        }>("/api/bootstrap/status", {
           skipUnauthorizedHandler: true,
         });
-        if (!cancelled) setNeedsBootstrap(!bootstrapped);
+        if (!cancelled) {
+          setNeedsBootstrap(!bootstrapped);
+          setDeploymentMode(deployment_mode);
+        }
       } catch {
         // Fails closed: an unreachable/erroring check never traps a real
         // install behind a bootstrap redirect it can't get past.
@@ -124,7 +185,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => setUnauthorizedHandler(null);
   }, []);
 
-  const login = useCallback(async (email: string, password: string) => {
+  const login = useCallback(async (email: string, password: string): Promise<LoginOutcome> => {
     // O corpo de /api/auth/login traz só {token} - descartado
     // deliberadamente, nunca guardado em estado. A sessão real vem do
     // cookie httpOnly que o login também seta (AD-004); a identidade é
@@ -132,13 +193,65 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // skipUnauthorizedHandler: a wrong-credentials 401 here is a normal
     // login failure (LoginPage shows its own inline error), never a
     // session that expired.
-    await apiFetch<{ token: string }>("/api/auth/login", {
+    const body = await apiFetch<{ token?: string; challenge_token?: string }>("/api/auth/login", {
       method: "POST",
       body: JSON.stringify({ email, password }),
       skipUnauthorizedHandler: true,
     });
+    // 2FA-enabled user (TOTP-05): no session/cookie exists yet - hand the
+    // challenge token back and hydrate nothing (LOGIN2FA-10).
+    if (body.challenge_token) {
+      return { kind: "twoFactorRequired", challengeToken: body.challenge_token };
+    }
     const admin = await apiFetch<AuthenticatedAdmin>("/api/auth/me");
     dispatch({ type: "AUTHENTICATED", admin });
+    return { kind: "authenticated" };
+  }, []);
+
+  const verifyTwoFactor = useCallback(
+    async (challengeToken: string, factor: TwoFactorFactor) => {
+      // A 401 here (wrong/expired code) is a normal verify failure the page
+      // renders inline, so it must not trip the session-expired handler -
+      // same reasoning as login's skipUnauthorizedHandler.
+      const payload =
+        "recoveryCode" in factor
+          ? { challenge_token: challengeToken, recovery_code: factor.recoveryCode }
+          : { challenge_token: challengeToken, code: factor.code };
+      await apiFetch<{ token: string }>("/api/auth/login/verify-2fa", {
+        method: "POST",
+        body: JSON.stringify(payload),
+        skipUnauthorizedHandler: true,
+      });
+      // Same hydrate path as login/switchTenant: one identity source, so the
+      // resolved tenant state can't diverge (LOGIN2FA-11).
+      const admin = await apiFetch<AuthenticatedAdmin>("/api/auth/me");
+      dispatch({ type: "AUTHENTICATED", admin });
+    },
+    []
+  );
+
+  const switchTenant = useCallback(async (tenantId: string) => {
+    // Body's own {token, tenant_id} is discarded, same reasoning as
+    // login's: the real session lives in the httpOnly cookie the endpoint
+    // also sets (AD-004); identity is re-hydrated via /api/auth/me right
+    // after, same as login.
+    await apiFetch<{ token: string; tenant_id?: string }>("/api/auth/switch-tenant", {
+      method: "POST",
+      body: JSON.stringify({ tenant_id: tenantId }),
+    });
+    const admin = await apiFetch<AuthenticatedAdmin>("/api/auth/me");
+    dispatch({ type: "AUTHENTICATED", admin });
+  }, []);
+
+  const refreshAdmin = useCallback(async () => {
+    try {
+      const admin = await apiFetch<AuthenticatedAdmin>("/api/auth/me");
+      dispatch({ type: "AUTHENTICATED", admin });
+    } catch {
+      // Best-effort: keep the previous identity rather than logging the
+      // user out for a transient refresh failure (design.md Error
+      // Handling - "New" identity may lag until next navigation).
+    }
   }, []);
 
   const logout = useCallback(async () => {
@@ -165,12 +278,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (!seed) return;
       dispatch({
         type: "AUTHENTICATED",
-        admin: { id: seed.id, email: seed.email, role: seed.role },
+        admin: {
+          id: seed.id,
+          email: seed.email,
+          role: seed.role,
+          active_tenant_id: "dev-tenant",
+          memberships: [{ tenant_id: "dev-tenant", role: seed.role, name: "Dev Tenant", plan_tier: "free" }],
+          two_factor_enabled: false,
+        },
       });
     });
   }, []);
 
   const simulateSessionExpired = useCallback(() => setSessionExpired(true), []);
+
+  const needsTenantSelection =
+    state.admin !== null && state.admin.memberships.length > 1 && !state.admin.active_tenant_id;
 
   return (
     <AuthContext.Provider
@@ -178,8 +301,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         admin: state.admin,
         status: state.status,
         needsBootstrap,
+        deploymentMode,
+        needsTenantSelection,
         login,
+        verifyTwoFactor,
         logout,
+        switchTenant,
+        refreshAdmin,
         hasRole,
         sessionExpired,
         dismissSessionExpired,

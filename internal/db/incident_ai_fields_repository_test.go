@@ -16,9 +16,12 @@ func createServiceFixtureForIncidentAI(t *testing.T, pool *Pool) *Service {
 	t.Helper()
 	services := NewServiceRepository(pool)
 	svc := &Service{Name: fmt.Sprintf("incident-ai-svc-%d", time.Now().UnixNano()), SLOID: "slo-incident-ai"}
-	if err := services.Create(context.Background(), svc); err != nil {
-		t.Fatalf("setup service Create() returned unexpected error: %v", err)
-	}
+	tenantID := seedPlainTenant(t, pool)
+	withTenantTx(t, pool, tenantID, func(ctx context.Context) {
+		if err := services.Create(ctx, svc); err != nil {
+			t.Fatalf("setup service Create() returned unexpected error: %v", err)
+		}
+	})
 	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), "DELETE FROM services WHERE id = $1", svc.ID) })
 	return svc
 }

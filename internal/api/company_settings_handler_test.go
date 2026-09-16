@@ -11,7 +11,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
-	"time"
 
 	"github.com/go-chi/chi/v5"
 	"go.uber.org/zap"
@@ -68,14 +67,14 @@ func buildMultipartLogoRequest(t *testing.T, filename string, content []byte, to
 // RequireRole) in front of CompanySettingsHandler, mirroring
 // newDomainsRouter: RBAC for these routes is asserted at the routes.go
 // wiring level (T8), not by the handler itself.
-func newCompanySettingsRouter(t *testing.T) (http.Handler, *db.Pool, *db.AdminRepository) {
+func newCompanySettingsRouter(t *testing.T) (http.Handler, *db.Pool, *db.UserRepository) {
 	t.Helper()
 	pool, admins := newCompanySettingsTestPool(t)
-	repo := db.NewCompanySettingsRepository(pool)
-	return buildCompanySettingsRouter(admins, repo), pool, admins
+	repo := db.NewTenantRepository(pool)
+	return buildCompanySettingsRouter(pool, admins, repo), pool, admins
 }
 
-// failingLogoStore wraps a real *db.CompanySettingsRepository, forcing
+// failingLogoStore wraps a real *db.TenantRepository, forcing
 // UpdateLogo to fail while Get/Update still hit the real database - used
 // by TestUploadLogo_PersistFailure_500NoLogoChange to force a persistence
 // failure deterministically (SET-13), the same "force a dependency to
@@ -83,56 +82,44 @@ func newCompanySettingsRouter(t *testing.T) (http.Handler, *db.Pool, *db.AdminRe
 // rather than relying on filesystem permissions now that the logo has no
 // on-disk representation to break.
 type failingLogoStore struct {
-	*db.CompanySettingsRepository
+	*db.TenantRepository
 }
 
-func (s *failingLogoStore) UpdateLogo(ctx context.Context, contentType string, data []byte) (*db.CompanySettings, error) {
+func (s *failingLogoStore) UpdateLogo(ctx context.Context, tenantID, contentType string, data []byte) (*db.Tenant, error) {
 	return nil, errors.New("forced UpdateLogo failure for test")
 }
 
-func newCompanySettingsTestPool(t *testing.T) (*db.Pool, *db.AdminRepository) {
+func newCompanySettingsTestPool(t *testing.T) (*db.Pool, *db.UserRepository) {
 	t.Helper()
-	dsn := testDatabaseURL(t)
+	pool, tenantID := newAPITenantScopedPool(t)
 
-	if err := db.MigrateUp(dsn, "../db/migrations"); err != nil {
-		t.Fatalf("MigrateUp() returned unexpected error: %v", err)
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	pool, err := db.NewPool(ctx, dsn)
-	if err != nil {
-		t.Fatalf("NewPool() returned unexpected error: %v", err)
-	}
-	t.Cleanup(pool.Close)
-
-	// The company_settings row is a singleton shared across every test in
-	// this package - reset it to a known state before and after each
-	// test. That reset races internal/db's and internal/cli's own
-	// company_settings tests across the separate concurrent processes
-	// `go test ./...` runs them as, so take the shared advisory lock for
-	// the duration of this test - see LockCompanySettings' doc comment.
-	// Deliberately context.Background(), not the bounded `ctx` above,
-	// which is canceled by the deferred cancel() as soon as this
-	// function returns.
-	dbtest.LockCompanySettings(t, context.Background(), dsn)
+	// The company profile lives on the fixture tenant's row - reset it to a known state before and after each
+	// test. That reset races internal/cli's own company-profile tests
+	// across the separate concurrent processes `go test ./...` runs them
+	// as, so take the shared advisory lock for the duration of this test -
+	// see LockTenantsTable's doc comment.
+	dbtest.LockTenantsTable(t, context.Background(), testDatabaseURL(t))
 	reset := func() {
-		_, _ = pool.Exec(context.Background(), "UPDATE company_settings SET name = '', contact_email = '', logo_data = NULL, logo_content_type = NULL WHERE id = 1")
+		_, _ = pool.Exec(context.Background(),
+			"UPDATE tenants SET name = '', contact_email = '', logo_data = NULL, logo_content_type = NULL WHERE id = $1", tenantID)
 	}
 	reset()
 	t.Cleanup(reset)
 
-	admins := db.NewAdminRepository(pool)
+	admins := db.NewUserRepository(pool)
 	return pool, admins
 }
 
-func buildCompanySettingsRouter(admins *db.AdminRepository, store companySettingsStore) http.Handler {
+func buildCompanySettingsRouter(pool *db.Pool, admins *db.UserRepository, store companySettingsStore) http.Handler {
 	handler := NewCompanySettingsHandler(store, zap.NewNop())
 
 	r := chi.NewRouter()
 	r.Group(func(protected chi.Router) {
-		protected.Use(RequireAuth(middlewareTestSecret, admins))
+		protected.Use(RequireAuth(middlewareTestSecret, admins, db.NewSessionRepository(pool), zap.NewNop()))
+		// Mirrors buildAdminRouter: TenantContext runs right after
+		// RequireAuth and is what resolves the caller's role in the active
+		// tenant for RequireRole (multi-tenancy-core, AD-022).
+		protected.Use(TenantContext(pool, db.NewTenantMembershipRepository(pool), zap.NewNop()))
 		protected.Get("/api/company-settings", handler.Get)
 		protected.Patch("/api/company-settings", handler.Update)
 		protected.Post("/api/company-settings/logo", handler.UploadLogo)
@@ -280,6 +267,210 @@ func TestCompanySettingsUpdate_MalformedContactEmail_422NoPersistence(t *testing
 	}
 }
 
+// TestCompanySettingsUpdate_CPFWrongDigitCount_422NoPersistence asserts
+// spec.md's P2 "Perfil da empresa" AC2: tax_id_type=cpf with a tax_id that
+// isn't 11 digits is rejected with 422, no persistence (TENANT-23).
+func TestCompanySettingsUpdate_CPFWrongDigitCount_422NoPersistence(t *testing.T) {
+	r, _, admins := newCompanySettingsRouter(t)
+	token := issueTestSessionToken(t, admins)
+
+	if rec := patchCompanySettings(t, r, token, updateCompanySettingsRequest{Name: "Acme Inc.", ContactEmail: "owner@acme.example.com"}); rec.Code != http.StatusOK {
+		t.Fatalf("setup PATCH status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	shortCPF := "1234"
+	cpfType := "cpf"
+	rec := patchCompanySettings(t, r, token, updateCompanySettingsRequest{
+		Name: "Acme Inc.", ContactEmail: "owner@acme.example.com",
+		TaxID: &shortCPF, TaxIDType: &cpfType,
+	})
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusUnprocessableEntity, rec.Body.String())
+	}
+
+	getRec := getCompanySettings(t, r, token)
+	var getResp companySettingsResponse
+	if err := json.Unmarshal(getRec.Body.Bytes(), &getResp); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+	if getResp.TaxID != nil {
+		t.Errorf("TaxID after rejected PATCH = %v, want nil (unchanged)", *getResp.TaxID)
+	}
+}
+
+// TestCompanySettingsUpdate_CNPJWrongDigitCount_422NoPersistence asserts
+// spec.md's P2 "Perfil da empresa" AC2 for tax_id_type=cnpj (14 digits
+// required), TENANT-23.
+func TestCompanySettingsUpdate_CNPJWrongDigitCount_422NoPersistence(t *testing.T) {
+	r, _, admins := newCompanySettingsRouter(t)
+	token := issueTestSessionToken(t, admins)
+
+	if rec := patchCompanySettings(t, r, token, updateCompanySettingsRequest{Name: "Acme Inc.", ContactEmail: "owner@acme.example.com"}); rec.Code != http.StatusOK {
+		t.Fatalf("setup PATCH status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	shortCNPJ := "123456"
+	cnpjType := "cnpj"
+	rec := patchCompanySettings(t, r, token, updateCompanySettingsRequest{
+		Name: "Acme Inc.", ContactEmail: "owner@acme.example.com",
+		TaxID: &shortCNPJ, TaxIDType: &cnpjType,
+	})
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusUnprocessableEntity, rec.Body.String())
+	}
+
+	getRec := getCompanySettings(t, r, token)
+	var getResp companySettingsResponse
+	if err := json.Unmarshal(getRec.Body.Bytes(), &getResp); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+	if getResp.TaxID != nil {
+		t.Errorf("TaxID after rejected PATCH = %v, want nil (unchanged)", *getResp.TaxID)
+	}
+}
+
+// TestCompanySettingsUpdate_ValidCNPJ_200PersistsFiscalFields asserts
+// spec.md's P2 AC1: legal_name/tax_id/tax_id_type persist together when
+// valid (TENANT-22).
+func TestCompanySettingsUpdate_ValidCNPJ_200PersistsFiscalFields(t *testing.T) {
+	r, _, admins := newCompanySettingsRouter(t)
+	token := issueTestSessionToken(t, admins)
+
+	legalName := "Acme Comercio Ltda"
+	cnpj := "12345678000199"
+	cnpjType := "cnpj"
+	rec := patchCompanySettings(t, r, token, updateCompanySettingsRequest{
+		Name: "Acme Inc.", ContactEmail: "owner@acme.example.com",
+		LegalName: &legalName, TaxID: &cnpj, TaxIDType: &cnpjType,
+	})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	getRec := getCompanySettings(t, r, token)
+	var getResp companySettingsResponse
+	if err := json.Unmarshal(getRec.Body.Bytes(), &getResp); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+	if getResp.LegalName == nil || *getResp.LegalName != legalName {
+		t.Errorf("LegalName = %v, want %q", getResp.LegalName, legalName)
+	}
+	if getResp.TaxID == nil || *getResp.TaxID != cnpj {
+		t.Errorf("TaxID = %v, want %q", getResp.TaxID, cnpj)
+	}
+	if getResp.TaxIDType == nil || *getResp.TaxIDType != cnpjType {
+		t.Errorf("TaxIDType = %v, want %q", getResp.TaxIDType, cnpjType)
+	}
+}
+
+// TestCompanySettingsGet_BillingAddressUnset_NullInResponse asserts
+// settings-page CFGPG-08: a tenant that never set billing_address renders
+// it as null, no error. This supersedes
+// TestCompanySettingsGet_NeverExposesBillingAddress (TENANT-24) - the
+// settings-page feature explicitly re-exposes the field this endpoint used
+// to hide.
+func TestCompanySettingsGet_BillingAddressUnset_NullInResponse(t *testing.T) {
+	r, _, admins := newCompanySettingsRouter(t)
+	token := issueTestSessionToken(t, admins)
+
+	rec := getCompanySettings(t, r, token)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	var resp companySettingsResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+	if resp.BillingAddress != nil {
+		t.Errorf("BillingAddress = %+v, want nil", *resp.BillingAddress)
+	}
+}
+
+// TestCompanySettingsUpdate_BillingAddress_200PersistsAndRoundTrips
+// asserts CFGPG-06/07: the 7 address fields persist as billing_address and
+// come back unchanged on a subsequent GET.
+func TestCompanySettingsUpdate_BillingAddress_200PersistsAndRoundTrips(t *testing.T) {
+	r, _, admins := newCompanySettingsRouter(t)
+	token := issueTestSessionToken(t, admins)
+
+	addr := &tenantBillingAddress{
+		Zip: "01310-100", Street: "Av. Paulista", Number: "1000",
+		Complement: "Sala 12", State: "SP", City: "São Paulo", Country: "Brasil",
+	}
+	rec := patchCompanySettings(t, r, token, updateCompanySettingsRequest{
+		Name: "Acme Inc.", ContactEmail: "owner@acme.example.com", BillingAddress: addr,
+	})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	getRec := getCompanySettings(t, r, token)
+	var getResp companySettingsResponse
+	if err := json.Unmarshal(getRec.Body.Bytes(), &getResp); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+	if getResp.BillingAddress == nil || *getResp.BillingAddress != *addr {
+		t.Errorf("BillingAddress = %+v, want %+v", getResp.BillingAddress, addr)
+	}
+}
+
+// TestCompanySettingsUpdate_InvalidTimezone_422NoPersistence asserts
+// CFGPG-04: a timezone outside the 3 supported values is rejected with 422
+// and the previously persisted value is left untouched.
+func TestCompanySettingsUpdate_InvalidTimezone_422NoPersistence(t *testing.T) {
+	r, _, admins := newCompanySettingsRouter(t)
+	token := issueTestSessionToken(t, admins)
+
+	validTZ := "UTC (GMT+0)"
+	if rec := patchCompanySettings(t, r, token, updateCompanySettingsRequest{
+		Name: "Acme Inc.", ContactEmail: "owner@acme.example.com", Timezone: &validTZ,
+	}); rec.Code != http.StatusOK {
+		t.Fatalf("setup PATCH status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	badTZ := "Mars/Olympus_Mons"
+	rec := patchCompanySettings(t, r, token, updateCompanySettingsRequest{
+		Name: "Acme Inc.", ContactEmail: "owner@acme.example.com", Timezone: &badTZ,
+	})
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusUnprocessableEntity, rec.Body.String())
+	}
+
+	getRec := getCompanySettings(t, r, token)
+	var getResp companySettingsResponse
+	if err := json.Unmarshal(getRec.Body.Bytes(), &getResp); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+	if getResp.Timezone == nil || *getResp.Timezone != validTZ {
+		t.Errorf("Timezone after rejected PATCH = %v, want unchanged %q", getResp.Timezone, validTZ)
+	}
+}
+
+// TestCompanySettingsUpdate_Website_200Persists asserts CFGPG-01/03:
+// website is optional and persists across a GET.
+func TestCompanySettingsUpdate_Website_200Persists(t *testing.T) {
+	r, _, admins := newCompanySettingsRouter(t)
+	token := issueTestSessionToken(t, admins)
+
+	website := "https://acme.health"
+	rec := patchCompanySettings(t, r, token, updateCompanySettingsRequest{
+		Name: "Acme Inc.", ContactEmail: "owner@acme.example.com", Website: &website,
+	})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	getRec := getCompanySettings(t, r, token)
+	var getResp companySettingsResponse
+	if err := json.Unmarshal(getRec.Body.Bytes(), &getResp); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+	if getResp.Website == nil || *getResp.Website != website {
+		t.Errorf("Website = %v, want %q", getResp.Website, website)
+	}
+}
+
 // TestUploadLogo_ValidPNG_200UpdatesLogoURL asserts SET-07: a valid PNG
 // upload under 10 MB is persisted and responds 200 with the fixed
 // "/uploads/logo" URL.
@@ -302,7 +493,7 @@ func TestUploadLogo_ValidPNG_200UpdatesLogoURL(t *testing.T) {
 		t.Fatalf("LogoURL = %v, want %q", resp.LogoURL, "/uploads/logo")
 	}
 
-	contentType, data, found, err := db.NewCompanySettingsRepository(pool).GetLogo(context.Background())
+	contentType, data, found, err := db.NewTenantRepository(pool).ActiveLogo(context.Background())
 	if err != nil {
 		t.Fatalf("GetLogo() returned unexpected error: %v", err)
 	}
@@ -347,7 +538,7 @@ func TestUploadLogo_ValidSVG_200UpdatesLogoURL(t *testing.T) {
 		t.Fatalf("LogoURL = %v, want %q", resp.LogoURL, "/uploads/logo")
 	}
 
-	contentType, _, found, err := db.NewCompanySettingsRepository(pool).GetLogo(context.Background())
+	contentType, _, found, err := db.NewTenantRepository(pool).ActiveLogo(context.Background())
 	if err != nil {
 		t.Fatalf("GetLogo() returned unexpected error: %v", err)
 	}
@@ -384,7 +575,7 @@ func TestUploadLogo_OverSizeLimit_422NoLogoURLChange(t *testing.T) {
 		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusUnprocessableEntity, rec.Body.String())
 	}
 
-	_, _, found, err := db.NewCompanySettingsRepository(pool).GetLogo(context.Background())
+	_, _, found, err := db.NewTenantRepository(pool).ActiveLogo(context.Background())
 	if err != nil {
 		t.Fatalf("GetLogo() returned unexpected error: %v", err)
 	}
@@ -441,8 +632,8 @@ func TestUploadLogo_JustUnderSizeLimit_200UpdatesLogoURL(t *testing.T) {
 // the logo has no on-disk representation left to break.
 func TestUploadLogo_PersistFailure_500NoLogoChange(t *testing.T) {
 	pool, admins := newCompanySettingsTestPool(t)
-	realRepo := db.NewCompanySettingsRepository(pool)
-	r := buildCompanySettingsRouter(admins, realRepo)
+	realRepo := db.NewTenantRepository(pool)
+	r := buildCompanySettingsRouter(pool, admins, realRepo)
 	token := issueTestSessionToken(t, admins)
 
 	// Seed a known-good logo first so "unchanged" is a non-nil value - the
@@ -454,7 +645,7 @@ func TestUploadLogo_PersistFailure_500NoLogoChange(t *testing.T) {
 		t.Fatalf("seed upload status = %d, want %d, body = %s", seedRec.Code, http.StatusOK, seedRec.Body.String())
 	}
 
-	failingRouter := buildCompanySettingsRouter(admins, &failingLogoStore{CompanySettingsRepository: realRepo})
+	failingRouter := buildCompanySettingsRouter(pool, admins, &failingLogoStore{TenantRepository: realRepo})
 
 	req := buildMultipartLogoRequest(t, "logo.svg", []byte(validSVGBody), token)
 	rec := httptest.NewRecorder()
@@ -473,7 +664,7 @@ func TestUploadLogo_PersistFailure_500NoLogoChange(t *testing.T) {
 		t.Errorf("LogoURL after failed persist = %v, want unchanged %q", getResp.LogoURL, "/uploads/logo")
 	}
 
-	contentType, _, found, err := realRepo.GetLogo(context.Background())
+	contentType, _, found, err := realRepo.ActiveLogo(context.Background())
 	if err != nil {
 		t.Fatalf("GetLogo() returned unexpected error: %v", err)
 	}
@@ -567,7 +758,7 @@ func TestUploadLogo_SecondValidUpload_OverwritesFirst(t *testing.T) {
 		t.Fatalf("second upload status = %d, want %d, body = %s", secondRec.Code, http.StatusOK, secondRec.Body.String())
 	}
 
-	contentType, data, found, err := db.NewCompanySettingsRepository(pool).GetLogo(context.Background())
+	contentType, data, found, err := db.NewTenantRepository(pool).ActiveLogo(context.Background())
 	if err != nil {
 		t.Fatalf("GetLogo() returned unexpected error: %v", err)
 	}

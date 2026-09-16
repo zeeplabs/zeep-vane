@@ -2,19 +2,52 @@ package db
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
+
+	"github.com/jackc/pgx/v5"
 )
 
-// Service is a monitored service, linked to a Datadog SLO by SLOID.
-// CurrentStatus defaults to "not_configured" until the poller (Phase 4) has
-// fetched a status for it at least once.
+// Service is a monitored service, monitored either via a Datadog SLO
+// (MonitorMode "slo", linked by SLOID) or via direct HTTP/TCP/Ping polling
+// (MonitorMode "polling", configured by PollType/PollTarget/
+// PollIntervalSeconds - manual-polling-monitoring design.md). CurrentStatus
+// defaults to "not_configured" until a poller (the Datadog Poller or, for a
+// polling-mode service, poller.ManualScheduler) has fetched a status for it
+// at least once.
 type Service struct {
-	ID                 string
-	Name               string
-	SLOID              string
-	CurrentStatus      string
-	LastStatusChangeAt time.Time
+	ID   string
+	Name string
+	// SLOID is '' for a polling-mode service (manual-polling-monitoring
+	// MP-01/MP-05).
+	//
+	// SPEC_DEVIATION: design.md's data model calls for this field to become
+	// *string (nil for monitor_mode="polling"). Kept as string instead: the
+	// column itself is nullable (0034_service_polling_mode), but every read
+	// path scans it via COALESCE(slo_id, '') so the Go type never has to
+	// change. Changing it to *string would ripple into every existing
+	// caller across internal/api, internal/poller, and internal/cli that
+	// already treats SLOID as a plain string (15+ files) - well outside
+	// this task's scope, and '' already unambiguously means "no SLO" here,
+	// matching the SLOName field's own precedent below.
+	SLOID string
+	// SLOName is the linked SLO's human name, recorded at link time
+	// (monitored-services-page design.md) so no read path needs a live
+	// Datadog call to display it. '' for a row created before this field
+	// existed and never re-saved, or for a polling-mode service (no SLO).
+	SLOName string
+	// MonitorMode is "slo" (default, unchanged existing behavior) or
+	// "polling" (manual-polling-monitoring MP-01/MP-02).
+	MonitorMode string
+	// PollType/PollTarget/PollIntervalSeconds are set only for
+	// MonitorMode="polling" (nil otherwise) - manual-polling-monitoring
+	// MP-01/MP-02/MP-06.
+	PollType            *string
+	PollTarget          *string
+	PollIntervalSeconds *int
+	CurrentStatus       string
+	LastStatusChangeAt  time.Time
 	// StatusAnalysis is the LLM-generated degraded-tooltip text (AI-14),
 	// non-nil only while the service is "degraded" - UpdateStatusAnalysis
 	// clears it to NULL synchronously on entering/leaving that state
@@ -36,18 +69,57 @@ func NewServiceRepository(pool *Pool) *ServiceRepository {
 }
 
 // Create inserts service, filling in its generated ID, CurrentStatus, and
-// LastStatusChangeAt.
+// LastStatusChangeAt. The INSERT's column list branches on
+// service.MonitorMode (manual-polling-monitoring MP-01/MP-02): "polling"
+// persists PollType/PollTarget/PollIntervalSeconds and leaves slo_id/
+// slo_name NULL/empty; anything else (including "", every existing caller's
+// zero value) persists slo_id/slo_name unchanged from today and normalizes
+// service.MonitorMode to "slo" on success.
 func (r *ServiceRepository) Create(ctx context.Context, service *Service) error {
-	row := r.pool.QueryRow(ctx,
-		"INSERT INTO services (name, slo_id) VALUES ($1, $2) RETURNING id, current_status, last_status_change_at",
-		service.Name, service.SLOID,
-	)
+	var row pgx.Row
+	if service.MonitorMode == "polling" {
+		row = r.pool.QueryRow(ctx,
+			`INSERT INTO services (name, monitor_mode, poll_type, poll_target, poll_interval_seconds)
+			 VALUES ($1, 'polling', $2, $3, $4) RETURNING id, current_status, last_status_change_at`,
+			service.Name, service.PollType, service.PollTarget, service.PollIntervalSeconds,
+		)
+	} else {
+		row = r.pool.QueryRow(ctx,
+			"INSERT INTO services (name, slo_id, slo_name) VALUES ($1, $2, $3) RETURNING id, current_status, last_status_change_at",
+			service.Name, service.SLOID, service.SLOName,
+		)
+	}
 
 	if err := row.Scan(&service.ID, &service.CurrentStatus, &service.LastStatusChangeAt); err != nil {
 		return fmt.Errorf("db: failed to create service: %w", err)
 	}
 
+	if service.MonitorMode != "polling" {
+		service.MonitorMode = "slo"
+	}
+
 	return nil
+}
+
+// Get returns the service identified by id, including SLOName,
+// CurrentStatus, and StatusAnalysis - the full row the monitored-services
+// detail drawer needs (SVC-14). Returns found=false (no error) if no
+// service matches id, the same not-found convention
+// IncidentRepository.HasOpenIncidentForService uses.
+func (r *ServiceRepository) Get(ctx context.Context, id string) (*Service, bool, error) {
+	var service Service
+	row := r.pool.QueryRow(ctx,
+		"SELECT id, name, COALESCE(slo_id, ''), slo_name, current_status, last_status_change_at, status_analysis FROM services WHERE id = $1",
+		id,
+	)
+	if err := row.Scan(&service.ID, &service.Name, &service.SLOID, &service.SLOName, &service.CurrentStatus, &service.LastStatusChangeAt, &service.StatusAnalysis); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, false, nil
+		}
+		return nil, false, fmt.Errorf("db: failed to get service: %w", err)
+	}
+
+	return &service, true, nil
 }
 
 // ListPaginated returns one page of registered services, ordered by name,
@@ -58,7 +130,7 @@ func (r *ServiceRepository) ListPaginated(ctx context.Context, page, pageSize in
 	offset := (page - 1) * pageSize
 
 	rows, err := r.pool.Query(ctx,
-		`SELECT id, name, slo_id, current_status, last_status_change_at, COUNT(*) OVER() AS total
+		`SELECT id, name, COALESCE(slo_id, ''), slo_name, current_status, last_status_change_at, COUNT(*) OVER() AS total
 		 FROM services
 		 ORDER BY name
 		 LIMIT $1 OFFSET $2`,
@@ -73,7 +145,7 @@ func (r *ServiceRepository) ListPaginated(ctx context.Context, page, pageSize in
 	total := 0
 	for rows.Next() {
 		var service Service
-		if err := rows.Scan(&service.ID, &service.Name, &service.SLOID, &service.CurrentStatus, &service.LastStatusChangeAt, &total); err != nil {
+		if err := rows.Scan(&service.ID, &service.Name, &service.SLOID, &service.SLOName, &service.CurrentStatus, &service.LastStatusChangeAt, &total); err != nil {
 			return nil, 0, fmt.Errorf("db: failed to scan service: %w", err)
 		}
 		services = append(services, service)
@@ -109,7 +181,7 @@ func (r *ServiceRepository) countServices(ctx context.Context) (int, error) {
 // this is the ServiceRepository/poller.go precedent, not a new deviation).
 func (r *ServiceRepository) List(ctx context.Context) ([]Service, error) {
 	rows, err := r.pool.Query(ctx,
-		"SELECT id, name, slo_id, current_status, last_status_change_at FROM services ORDER BY name")
+		"SELECT id, name, COALESCE(slo_id, ''), monitor_mode, current_status, last_status_change_at FROM services ORDER BY name")
 	if err != nil {
 		return nil, fmt.Errorf("db: failed to list services: %w", err)
 	}
@@ -118,13 +190,46 @@ func (r *ServiceRepository) List(ctx context.Context) ([]Service, error) {
 	var services []Service
 	for rows.Next() {
 		var service Service
-		if err := rows.Scan(&service.ID, &service.Name, &service.SLOID, &service.CurrentStatus, &service.LastStatusChangeAt); err != nil {
+		if err := rows.Scan(&service.ID, &service.Name, &service.SLOID, &service.MonitorMode, &service.CurrentStatus, &service.LastStatusChangeAt); err != nil {
 			return nil, fmt.Errorf("db: failed to scan service: %w", err)
 		}
 		services = append(services, service)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("db: failed to iterate services: %w", err)
+	}
+
+	return services, nil
+}
+
+// ListPollingManual returns every polling-manual service (monitor_mode =
+// 'polling'), ordered by name - the discovery query
+// poller.ManualScheduler's reconciliation loop uses (manual-polling-
+// monitoring MP-06). Always a non-nil slice, empty (not nil) when no
+// polling-manual service exists, matching ListPaginated's zero-row
+// convention.
+func (r *ServiceRepository) ListPollingManual(ctx context.Context) ([]Service, error) {
+	rows, err := r.pool.Query(ctx,
+		`SELECT id, name, poll_type, poll_target, poll_interval_seconds, current_status, last_status_change_at
+		 FROM services
+		 WHERE monitor_mode = 'polling'
+		 ORDER BY name`)
+	if err != nil {
+		return nil, fmt.Errorf("db: failed to list polling-manual services: %w", err)
+	}
+	defer rows.Close()
+
+	services := []Service{}
+	for rows.Next() {
+		var service Service
+		if err := rows.Scan(&service.ID, &service.Name, &service.PollType, &service.PollTarget, &service.PollIntervalSeconds, &service.CurrentStatus, &service.LastStatusChangeAt); err != nil {
+			return nil, fmt.Errorf("db: failed to scan polling-manual service: %w", err)
+		}
+		service.MonitorMode = "polling"
+		services = append(services, service)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("db: failed to iterate polling-manual services: %w", err)
 	}
 
 	return services, nil
@@ -137,7 +242,7 @@ func (r *ServiceRepository) List(ctx context.Context) ([]Service, error) {
 // in the installation.
 func (r *ServiceRepository) ListForStatusPage(ctx context.Context, statusPageID string) ([]Service, error) {
 	rows, err := r.pool.Query(ctx,
-		`SELECT s.id, s.name, s.slo_id, s.current_status, s.last_status_change_at, s.status_analysis
+		`SELECT s.id, s.name, COALESCE(s.slo_id, ''), s.current_status, s.last_status_change_at, s.status_analysis
 		 FROM services s
 		 JOIN status_page_services sps ON sps.service_id = s.id
 		 WHERE sps.status_page_id = $1

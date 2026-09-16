@@ -152,3 +152,90 @@ func TestIPLimiter_Cleanup_RemovesIdleRows(t *testing.T) {
 		t.Errorf("fresh row count = %d after cleanup, want 1 (not idle, must survive cleanup)", freshCount)
 	}
 }
+
+// TestIPLimiter_RealStore_FallsBackThenRecovers covers RLF-01/RLF-06 against
+// a real Postgres-backed store: a primary failure routes requests to the
+// in-memory fallback (which enforces the limit), and once the primary is
+// usable again and the cooldown elapses, the shared store resumes.
+func TestIPLimiter_RealStore_FallsBackThenRecovers(t *testing.T) {
+	pool := newRateLimitTestPool(t)
+	t.Cleanup(func() {
+		_, _ = pool.Exec(context.Background(), "DELETE FROM rate_limit_buckets WHERE ip = $1", "203.0.113.104")
+	})
+
+	const ip = "203.0.113.104"
+	limiter := NewIPLimiter(pool, 60, 1, time.Minute)
+
+	// Force the primary store into error by calling with a canceled context.
+	deadCtx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	if !limiter.allow(deadCtx, ip) {
+		t.Fatal("first allow() with a failing primary = false, want true (fresh fallback bucket)")
+	}
+	if limiter.allow(deadCtx, ip) {
+		t.Error("second allow() with a failing primary = true, want false (fallback enforces burst=1, not fail-open)")
+	}
+
+	// Every primary attempt failed before it could persist a row, and the
+	// open circuit must have skipped the primary entirely.
+	var rows int
+	if err := pool.QueryRow(context.Background(), "SELECT count(*) FROM rate_limit_buckets WHERE ip = $1", ip).Scan(&rows); err != nil {
+		t.Fatalf("counting rows returned unexpected error: %v", err)
+	}
+	if rows != 0 {
+		t.Errorf("rate_limit_buckets rows for ip = %d, want 0 (primary never succeeded)", rows)
+	}
+
+	// Expire the cooldown so the next call is the half-open probe.
+	limiter.mu.Lock()
+	limiter.breakerOpenUntil = time.Now().Add(-time.Second)
+	limiter.mu.Unlock()
+
+	// The probe now uses a healthy pool: the primary grant must succeed and
+	// resume the shared store.
+	if !limiter.allow(context.Background(), ip) {
+		t.Fatal("recovery probe = false, want true (primary usable again)")
+	}
+	if limiter.allow(context.Background(), ip) {
+		t.Error("second call after recovery = true, want false (primary store resumed, burst=1)")
+	}
+
+	if err := pool.QueryRow(context.Background(), "SELECT count(*) FROM rate_limit_buckets WHERE ip = $1", ip).Scan(&rows); err != nil {
+		t.Fatalf("counting rows after recovery returned unexpected error: %v", err)
+	}
+	if rows != 1 {
+		t.Errorf("rate_limit_buckets rows after recovery = %d, want 1 (primary used)", rows)
+	}
+}
+
+// TestIPLimiter_RealStore_FallbackDenies_429 covers RLF-02 end-to-end: with
+// the primary store failing, the middleware still returns the exact 429 the
+// primary path would, driven entirely by the in-memory fallback.
+func TestIPLimiter_RealStore_FallbackDenies_429(t *testing.T) {
+	pool := newRateLimitTestPool(t)
+	t.Cleanup(func() {
+		_, _ = pool.Exec(context.Background(), "DELETE FROM rate_limit_buckets WHERE ip = $1", "203.0.113.105")
+	})
+
+	limiter := NewIPLimiter(pool, 60, 1, time.Minute)
+	handler := limiter.Middleware(newTestHandler())
+
+	deadCtx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	const remoteAddr = "203.0.113.105:1"
+	wantCodes := []int{http.StatusOK, http.StatusTooManyRequests}
+	for i, want := range wantCodes {
+		req := httptest.NewRequest(http.MethodPost, "/", nil).WithContext(deadCtx)
+		req.RemoteAddr = remoteAddr
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, req)
+		if rec.Code != want {
+			t.Fatalf("request %d: status = %d, want %d (fallback enforces burst=1)", i, rec.Code, want)
+		}
+		if i == 1 && rec.Body.String() != rateLimitedBody {
+			t.Errorf("429 body = %q, want %q", rec.Body.String(), rateLimitedBody)
+		}
+	}
+}

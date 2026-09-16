@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/mail"
@@ -18,12 +19,14 @@ import (
 // memory and stored as a Postgres bytea, not streamed to disk).
 const maxLogoBytes = 10 << 20
 
-// companySettingsStore is the subset of *db.CompanySettingsRepository the
-// company settings handler depends on.
+// companySettingsStore is the subset of *db.TenantRepository the company
+// settings handler depends on. company_settings was dropped by the
+// multi-tenancy-core migration: its columns are tenants columns now, and
+// "the company" this screen edits is the session's active tenant.
 type companySettingsStore interface {
-	Get(ctx context.Context) (*db.CompanySettings, error)
-	Update(ctx context.Context, name, contactEmail string) (*db.CompanySettings, error)
-	UpdateLogo(ctx context.Context, contentType string, data []byte) (*db.CompanySettings, error)
+	Get(ctx context.Context, tenantID string) (*db.Tenant, error)
+	Update(ctx context.Context, tenantID string, u db.TenantUpdate) (*db.Tenant, error)
+	UpdateLogo(ctx context.Context, tenantID, contentType string, data []byte) (*db.Tenant, error)
 }
 
 // CompanySettingsHandler serves the company settings admin routes: GET/PATCH
@@ -39,28 +42,92 @@ func NewCompanySettingsHandler(settings companySettingsStore, logger *zap.Logger
 	return &CompanySettingsHandler{settings: settings, logger: logger}
 }
 
-type companySettingsResponse struct {
-	Name         string  `json:"name"`
-	ContactEmail string  `json:"contact_email"`
-	LogoURL      *string `json:"logo_url"`
+// tenantBillingAddress is the typed shape settings-page CFGPG-06/07
+// persists into db.Tenant.BillingAddress's raw JSON column - superseding
+// the previous decision (TENANT-24) that this endpoint never exposes
+// billing_address; the settings-page screen is now the one place that
+// reads/writes it.
+type tenantBillingAddress struct {
+	Zip        string `json:"zip"`
+	Street     string `json:"street"`
+	Number     string `json:"number"`
+	Complement string `json:"complement"`
+	State      string `json:"state"`
+	City       string `json:"city"`
+	Country    string `json:"country"`
 }
 
+// validTimezones is the exact set settings-page CFGPG-04 allows - mirrors
+// the 3 options the mock's select offers; any other value is rejected
+// (422) rather than silently accepted.
+var validTimezones = map[string]bool{
+	"America/Sao_Paulo (GMT-3)": true,
+	"America/New_York (GMT-5)":  true,
+	"UTC (GMT+0)":               true,
+}
+
+type companySettingsResponse struct {
+	Name           string                `json:"name"`
+	ContactEmail   string                `json:"contact_email"`
+	LogoURL        *string               `json:"logo_url"`
+	LegalName      *string               `json:"legal_name"`
+	TaxID          *string               `json:"tax_id"`
+	TaxIDType      *string               `json:"tax_id_type"`
+	Website        *string               `json:"website"`
+	Timezone       *string               `json:"timezone"`
+	Locale         string                `json:"locale"`
+	BillingAddress *tenantBillingAddress `json:"billing_address"`
+}
+
+// updateCompanySettingsRequest's fiscal fields (LegalName/TaxID/TaxIDType)
+// and Website/Timezone/BillingAddress are all optional - a nil pointer (or
+// a nil BillingAddress) means "leave unchanged", matching
+// db.TenantUpdate's own semantics.
 type updateCompanySettingsRequest struct {
-	Name         string `json:"name"`
-	ContactEmail string `json:"contact_email"`
+	Name           string                `json:"name"`
+	ContactEmail   string                `json:"contact_email"`
+	LegalName      *string               `json:"legal_name"`
+	TaxID          *string               `json:"tax_id"`
+	TaxIDType      *string               `json:"tax_id_type"`
+	Website        *string               `json:"website"`
+	Timezone       *string               `json:"timezone"`
+	BillingAddress *tenantBillingAddress `json:"billing_address"`
 }
 
 const invalidCompanySettingsRequestBody = `{"error":"name is required and contact_email must be a valid e-mail address"}`
 
-func toCompanySettingsResponse(settings *db.CompanySettings) companySettingsResponse {
-	return companySettingsResponse{Name: settings.Name, ContactEmail: settings.ContactEmail, LogoURL: settings.LogoServedURL()}
+const invalidTaxIDRequestBody = `{"error":"tax_id must have 11 digits for cpf or 14 digits for cnpj"}`
+
+const invalidTimezoneRequestBody = `{"error":"timezone must be one of the supported values"}`
+
+func toCompanySettingsResponse(tenant *db.Tenant) companySettingsResponse {
+	resp := companySettingsResponse{
+		Name:         tenant.Name,
+		ContactEmail: tenant.ContactEmail,
+		LogoURL:      tenant.LogoServedURL(),
+		LegalName:    tenant.LegalName,
+		TaxID:        tenant.TaxID,
+		TaxIDType:    tenant.TaxIDType,
+		Website:      tenant.Website,
+		Timezone:     tenant.Timezone,
+		Locale:       tenant.Locale,
+	}
+	if tenant.BillingAddress != nil {
+		var addr tenantBillingAddress
+		if err := json.Unmarshal(tenant.BillingAddress, &addr); err == nil {
+			resp.BillingAddress = &addr
+		}
+	}
+	return resp
 }
 
-// Get handles GET /api/company-settings, returning the singleton company
-// settings row - including on a fresh install, where it is the seeded row
-// rather than a 404 (SET-03).
+// Get handles GET /api/company-settings, returning the active tenant's
+// company profile - including on a fresh install, where it is the tenant
+// bootstrap created rather than a 404 (SET-03).
 func (h *CompanySettingsHandler) Get(w http.ResponseWriter, r *http.Request) {
-	settings, err := h.settings.Get(r.Context())
+	tenantID, _ := ActiveTenantIDFromContext(r.Context())
+
+	settings, err := h.settings.Get(r.Context(), tenantID)
 	if err != nil {
 		h.logger.Error("company-settings: failed to get settings", zap.Error(err))
 		writeInternalError(w)
@@ -90,9 +157,42 @@ func (h *CompanySettingsHandler) Update(w http.ResponseWriter, r *http.Request) 
 		writeCompanySettingsValidationError(w)
 		return
 	}
+	if req.Timezone != nil && !validTimezones[*req.Timezone] {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusUnprocessableEntity)
+		_, _ = w.Write([]byte(invalidTimezoneRequestBody))
+		return
+	}
 
-	settings, err := h.settings.Update(r.Context(), req.Name, req.ContactEmail)
+	var billingAddress *[]byte
+	if req.BillingAddress != nil {
+		encoded, err := json.Marshal(req.BillingAddress)
+		if err != nil {
+			writeCompanySettingsValidationError(w)
+			return
+		}
+		billingAddress = &encoded
+	}
+
+	tenantID, _ := ActiveTenantIDFromContext(r.Context())
+
+	settings, err := h.settings.Update(r.Context(), tenantID, db.TenantUpdate{
+		Name:           &req.Name,
+		ContactEmail:   &req.ContactEmail,
+		LegalName:      req.LegalName,
+		TaxID:          req.TaxID,
+		TaxIDType:      req.TaxIDType,
+		Website:        req.Website,
+		Timezone:       req.Timezone,
+		BillingAddress: billingAddress,
+	})
 	if err != nil {
+		if errors.Is(err, db.ErrInvalidTaxID) {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusUnprocessableEntity)
+			_, _ = w.Write([]byte(invalidTaxIDRequestBody))
+			return
+		}
 		h.logger.Error("company-settings: failed to update settings", zap.Error(err))
 		writeInternalError(w)
 		return
@@ -154,7 +254,9 @@ func (h *CompanySettingsHandler) UploadLogo(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	settings, err := h.settings.UpdateLogo(r.Context(), contentType, data)
+	tenantID, _ := ActiveTenantIDFromContext(r.Context())
+
+	settings, err := h.settings.UpdateLogo(r.Context(), tenantID, contentType, data)
 	if err != nil {
 		h.logger.Error("company-settings: failed to persist logo", zap.Error(err))
 		writeInternalError(w)

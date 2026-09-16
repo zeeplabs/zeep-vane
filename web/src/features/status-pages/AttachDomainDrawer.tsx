@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from "react";
-import { Drawer } from "../../components/ui/Drawer";
+import { Drawer, drawerFooterPrimaryStyle, drawerFooterSecondaryStyle } from "../../components/ui/Drawer";
 import { Button } from "../../components/ui/Button";
 import { Field } from "../../components/ui/Field";
 import { ApiError } from "../../lib/apiClient";
@@ -64,12 +64,24 @@ export function AttachDomainDrawer({ statusPageId, open, onOpenChange }: AttachD
       onOpenChange={onOpenChange}
       title="Anexar domínio"
       description="Escolha o domínio e o subdomínio que essa status page vai usar. O certificado é emitido automaticamente depois que o DNS propagar."
+      closeLabel="Fechar"
       footer={
         <>
-          <Button type="button" variant="secondary" onClick={() => onOpenChange(false)}>
+          <Button
+            type="button"
+            variant="secondary"
+            style={drawerFooterSecondaryStyle}
+            onClick={() => onOpenChange(false)}
+          >
             Cancelar
           </Button>
-          <Button type="submit" form="attach-domain-form" variant="primary" disabled={attachDomain.isPending}>
+          <Button
+            type="submit"
+            form="attach-domain-form"
+            variant="solid"
+            style={drawerFooterPrimaryStyle}
+            disabled={attachDomain.isPending}
+          >
             Anexar
           </Button>
         </>
