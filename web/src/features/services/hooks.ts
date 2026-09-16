@@ -97,6 +97,27 @@ function toServiceDetail(raw: ServiceDetailResponse): ServiceDetail {
   };
 }
 
+// useUpdateService renames a service via PATCH /api/services/{id}
+// (service-edit SVCEDIT-01..05). Invalidates both the list and the detail
+// query for id so the drawer and the list row pick up the new name without
+// a full page reload (SVCEDIT-06).
+export function useUpdateService() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, name }: { id: string; name: string }): Promise<Service> => {
+      const raw = await apiFetch<ServiceResponse>(`/api/services/${id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ name }),
+      });
+      return toService(raw);
+    },
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({ queryKey: ["services"] });
+      queryClient.invalidateQueries({ queryKey: ["services", "detail", variables.id] });
+    },
+  });
+}
+
 // useServiceDetail fetches the monitored-services-page detail drawer's data
 // (SVC-14..19). `id` is nullable so the drawer's "no service selected" state
 // can call this hook unconditionally without triggering a request.

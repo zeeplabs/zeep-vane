@@ -1561,6 +1561,23 @@ export const handlers = [
     });
   }),
 
+  // PATCH /api/services/:id (service-edit SVCEDIT-01..05) - mirrors
+  // ServicesHandler.Update: 422 on an empty name, 404 fixed body on an
+  // unknown id, else renames in place and returns the full serviceResponse.
+  http.patch("/api/services/:id", async ({ request, params }) => {
+    if (!sessionAdminId) return HttpResponse.json({ error: "unauthorized" }, { status: 401 });
+    const service = servicesState.find((s) => s.id === params.id);
+    if (!service) {
+      return HttpResponse.json({ error: "service not found" }, { status: 404 });
+    }
+    const body = (await request.json()) as { name?: string };
+    if (!body.name || !body.name.trim()) {
+      return HttpResponse.json({ error: "name and slo_id are required" }, { status: 422 });
+    }
+    service.name = body.name;
+    return HttpResponse.json(toServiceResponse(service));
+  }),
+
   // GET /api/incidents (I16) - mirrors IncidentsHandler.List: most recently
   // created first, each with its service_ids.
   http.get("/api/incidents", ({ request }) => {
