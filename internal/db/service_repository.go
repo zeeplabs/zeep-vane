@@ -269,6 +269,23 @@ func (r *ServiceRepository) ListForStatusPage(ctx context.Context, statusPageID 
 	return services, nil
 }
 
+// Update renames the service identified by id (service-edit spec.md
+// SVCEDIT-01/03/04: name only - monitor_mode/slo_id/poll_* are deliberately
+// out of scope for this method, since changing them requires resetting
+// poller-side in-memory hysteresis state, a separate feature). Returns
+// ErrNotFound if no service matches id, the same not-found convention
+// DomainRepository.Delete uses.
+func (r *ServiceRepository) Update(ctx context.Context, id, name string) error {
+	tag, err := r.pool.Exec(ctx, "UPDATE services SET name = $2 WHERE id = $1", id, name)
+	if err != nil {
+		return fmt.Errorf("db: failed to update service: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
 // UpdateStatus sets service serviceID's current_status to status. It only
 // touches last_status_change_at when status actually differs from the
 // stored value, so a repeated "operational" poll result doesn't fake a

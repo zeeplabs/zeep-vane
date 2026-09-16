@@ -4,6 +4,7 @@ package db
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"testing"
 	"time"
@@ -552,5 +553,78 @@ func TestServiceRepository_List_StillWorksForPoller(t *testing.T) {
 	}
 	if found != len(seeded) {
 		t.Errorf("List() returned %d of this test's 25 seeded services, want all 25 (unpaginated)", found)
+	}
+}
+
+// TestServiceRepository_Update_RenamesAndLeavesEverythingElseUnchanged
+// covers service-edit spec.md SVCEDIT-01: only name changes, every other
+// column (monitor_mode, slo_id, slo_name, current_status) stays byte-for-
+// byte identical.
+func TestServiceRepository_Update_RenamesAndLeavesEverythingElseUnchanged(t *testing.T) {
+	repo, pool := newServiceRepoTestPool(t)
+	tenantID := seedPlainTenant(t, pool)
+	oldName := fmt.Sprintf("update-old-%d", time.Now().UnixNano())
+	service := &Service{Name: oldName, SLOID: "slo-update-1", SLOName: "Checkout latency SLO"}
+	withTenantTx(t, pool, tenantID, func(ctx context.Context) {
+		if err := repo.Create(ctx, service); err != nil {
+			t.Fatalf("setup Create() returned unexpected error: %v", err)
+		}
+	})
+	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), "DELETE FROM services WHERE id = $1", service.ID) })
+
+	newName := fmt.Sprintf("update-new-%d", time.Now().UnixNano())
+	if err := repo.Update(context.Background(), service.ID, newName); err != nil {
+		t.Fatalf("Update() returned unexpected error: %v", err)
+	}
+
+	got, found, err := repo.Get(context.Background(), service.ID)
+	if err != nil {
+		t.Fatalf("Get() returned unexpected error: %v", err)
+	}
+	if !found {
+		t.Fatalf("found = false, want true")
+	}
+	if got.Name != newName {
+		t.Errorf("got.Name = %q, want %q", got.Name, newName)
+	}
+	if got.SLOID != "slo-update-1" {
+		t.Errorf("got.SLOID = %q, want unchanged %q", got.SLOID, "slo-update-1")
+	}
+	if got.SLOName != "Checkout latency SLO" {
+		t.Errorf("got.SLOName = %q, want unchanged %q", got.SLOName, "Checkout latency SLO")
+	}
+	if got.CurrentStatus != "not_configured" {
+		t.Errorf("got.CurrentStatus = %q, want unchanged %q", got.CurrentStatus, "not_configured")
+	}
+}
+
+// TestServiceRepository_Update_UnknownID_ReturnsErrNotFound covers SVCEDIT-04:
+// an unknown ID returns ErrNotFound, not a silent no-op success.
+func TestServiceRepository_Update_UnknownID_ReturnsErrNotFound(t *testing.T) {
+	repo, _ := newServiceRepoTestPool(t)
+
+	err := repo.Update(context.Background(), "00000000-0000-0000-0000-000000000000", "anything")
+	if !errors.Is(err, ErrNotFound) {
+		t.Errorf("Update() error = %v, want ErrNotFound", err)
+	}
+}
+
+// TestServiceRepository_Update_SameName_IsIdempotentNoError covers the
+// spec.md Edge Case: resubmitting the same name is a no-op success, not an
+// error.
+func TestServiceRepository_Update_SameName_IsIdempotentNoError(t *testing.T) {
+	repo, pool := newServiceRepoTestPool(t)
+	tenantID := seedPlainTenant(t, pool)
+	name := fmt.Sprintf("update-idempotent-%d", time.Now().UnixNano())
+	service := &Service{Name: name, SLOID: "slo-update-2"}
+	withTenantTx(t, pool, tenantID, func(ctx context.Context) {
+		if err := repo.Create(ctx, service); err != nil {
+			t.Fatalf("setup Create() returned unexpected error: %v", err)
+		}
+	})
+	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), "DELETE FROM services WHERE id = $1", service.ID) })
+
+	if err := repo.Update(context.Background(), service.ID, name); err != nil {
+		t.Errorf("Update() with unchanged name returned unexpected error: %v", err)
 	}
 }
