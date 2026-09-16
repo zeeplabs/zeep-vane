@@ -5,6 +5,7 @@ import { MemoryRouter } from "react-router-dom";
 import { http, HttpResponse } from "msw";
 import "../../lib/i18n";
 import { server } from "../../test/msw/server";
+import { resetDeploymentMode, setDeploymentMode } from "../../test/msw/handlers";
 import { TestQueryProvider } from "../../test/queryClient";
 import { apiFetch } from "../../lib/apiClient";
 import { AuthProvider } from "../../auth/AuthProvider";
@@ -20,6 +21,7 @@ async function loginAsOwner() {
 
 afterEach(async () => {
   await apiFetch("/api/auth/logout", { method: "POST" });
+  resetDeploymentMode();
 });
 
 function renderPage() {
@@ -243,5 +245,15 @@ describe("SettingsPage", () => {
       "this is your only active account - it cannot be deleted",
     );
     expect(screen.getByRole("dialog")).toBeInTheDocument();
+  });
+
+  it("self_hosted: zona de perigo (Excluir conta) não é renderizada - AD-002, single-tenant por instalação", async () => {
+    setDeploymentMode("self_hosted");
+    await loginAsOwner();
+    renderPage();
+    await screen.findByDisplayValue("Sua Empresa Ltda.");
+
+    expect(screen.queryByRole("button", { name: "Excluir conta" })).not.toBeInTheDocument();
+    expect(screen.queryByText(/Remove permanentemente esta conta/)).not.toBeInTheDocument();
   });
 });

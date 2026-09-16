@@ -1279,6 +1279,28 @@ func TestAdminRouter_SignupRateLimit_SharedWithLoginRoute_429(t *testing.T) {
 	}
 }
 
+// TestAdminRouter_DeleteTenant_SelfHostedMode_404 asserts a self-hosted
+// install 404s DELETE /api/tenants/current outright, even for the owner -
+// self-hosted is single-tenant per install (AD-002), so "deleting the
+// tenant" would destroy the whole install, not close a SaaS account.
+func TestAdminRouter_DeleteTenant_SelfHostedMode_404(t *testing.T) {
+	pool, tenantID := newServeTestPoolWithTenant(t)
+	cfg := config.Config{SessionSecret: routesTestSessionSecret, MasterKey: "cli-routes-test-master-key", DeploymentMode: config.DeploymentModeSelfHosted}
+	pollerManager := NewPollerManager(context.Background(), pool, cfg, zap.NewNop(), testDatabaseURL(t))
+	r := buildAdminRouter(pool, cfg, zap.NewNop(), pollerManager)
+	admins := db.NewUserRepository(pool)
+	token := issueRoutesTestToken(t, admins, pool, tenantID, db.RoleOwner)
+
+	req := httptest.NewRequest(http.MethodDelete, "/api/tenants/current", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("status = %d, want 404 in self-hosted mode, body = %s", rec.Code, rec.Body.String())
+	}
+}
+
 // TestAdminRouter_SignupRoutes_SelfHostedMode_404 asserts DEPMODE-02: a
 // self-hosted install (default DeploymentMode, unset or explicitly
 // "self_hosted") 404s all 3 public signup routes outright - not just hides

@@ -216,7 +216,10 @@ func buildAdminRouter(pool *db.Pool, cfg config.Config, logger *zap.Logger, poll
 		protected.With(ownerOnly).Get("/api/company-settings", companySettingsHandler.Get)
 		protected.With(ownerOnly).Patch("/api/company-settings", companySettingsHandler.Update)
 		protected.With(ownerOnly).Post("/api/company-settings/logo", companySettingsHandler.UploadLogo)
-		protected.With(ownerOnly).Delete("/api/tenants/current", tenantHandler.Delete)
+		// Self-hosted installs are single-tenant (AD-002) and run on the
+		// operator's own infra - deleting "the tenant" would destroy the
+		// whole install, not close a SaaS account. saas-only (AD-033).
+		protected.With(ownerOnly, requireSaaSMode(cfg.DeploymentMode)).Delete("/api/tenants/current", tenantHandler.Delete)
 
 		// mvp-core write routes - owner and operator (ADM-10).
 		protected.With(writeRoles).Post("/api/domains", domainsHandler.Create)

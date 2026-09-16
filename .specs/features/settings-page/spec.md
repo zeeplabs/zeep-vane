@@ -95,6 +95,7 @@
 5. IF o papel do usuário autenticado no tenant ativo não for `owner` THEN o sistema SHALL responder 403 e a UI SHALL nunca exibir o botão/zona de perigo pra esse usuário (consistente com a AC de RBAC da primeira história).
 6. WHILE um tenant está com `status = 'deleted'` o sistema SHALL tratá-lo como inexistente para toda resolução de papel (`TenantContext`/`GetRole`) — qualquer requisição tenant-scoped contra ele falha fail-closed (401/403), igual ao caso de uma membership removida.
 7. WHILE um tenant está com `status = 'deleted'` o sistema SHALL excluí-lo da lista retornada por `TenantMembershipRepository.ListForUser` (login/seletor de tenant nunca mais o oferece como opção).
+8. WHILE `deploymentMode === "self_hosted"` o sistema SHALL nunca exibir a zona de perigo ("Excluir conta") em `/settings`, e `DELETE /api/tenants/current` SHALL responder 404 (mesmo gate `requireSaaSMode`/AD-033 já usado por `/api/signup`) — uma instalação self-hosted é single-tenant por design (AD-002); "apagar o tenant" destruiria a instalação inteira, não encerraria uma conta SaaS.
 
 **Independent Test**: criar um segundo tenant de teste pro mesmo usuário, excluir o tenant ativo, confirmar que ele some da lista de seleção e que qualquer chamada tenant-scoped anterior contra ele responde fail-closed.
 
@@ -126,12 +127,13 @@
 | CFGPG-11 | P1: Excluir conta | - | Verified |
 | CFGPG-12 | P1: Excluir conta | - | Verified |
 | CFGPG-13 | P1: Excluir conta | - | Verified |
+| CFGPG-14 | P1: Excluir conta | - | Verified |
 
 **ID format:** `CFGPG-[NUMBER]`
 
 **Status values:** Pending → In Design → In Tasks → Implementing → Verified
 
-**Coverage:** 13 total, 13 mapped to tasks (implícitas, escopo Medium), 0 unmapped
+**Coverage:** 14 total, 14 mapped to tasks (implícitas, escopo Medium), 0 unmapped (CFGPG-14 adicionado em 2026-09-16, achado de bug report ao vivo: zona de perigo/`DELETE /api/tenants/current` não tinha gate `deploymentMode`/AD-033 nem AD-002 no ciclo original)
 
 ---
 

@@ -38,7 +38,7 @@ export function SettingsPage() {
   const updateSettings = useUpdateCompanySettings();
   const uploadLogo = useUploadCompanyLogo();
   const deleteTenant = useDeleteTenant();
-  const { logout } = useAuth();
+  const { logout, deploymentMode } = useAuth();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [name, setName] = useState("");
@@ -363,57 +363,61 @@ export function SettingsPage() {
         </Button>
       </div>
 
-      <div
-        className="flex items-center justify-between gap-4 rounded-md border p-5"
-        style={{ borderColor: "color-mix(in oklch, var(--color-critical) 35%, transparent)" }}
-      >
-        <div>
-          <div className="mb-1 text-[13.5px] font-bold text-critical">{t("settingsPage.dangerZone.title")}</div>
-          <p className="m-0 max-w-[480px] text-xs leading-normal text-neutral-400">
-            {t("settingsPage.dangerZone.description")}
-          </p>
-        </div>
-        <button
-          type="button"
-          onClick={() => setDeleteDialogOpen(true)}
-          className="flex-shrink-0 cursor-pointer rounded-md border-[1.5px] bg-surface px-4 py-2.5 text-[13px] font-bold text-critical"
-          style={{ borderColor: "color-mix(in oklch, var(--color-critical) 45%, transparent)" }}
-        >
-          {t("settingsPage.dangerZone.button")}
-        </button>
-      </div>
-
-      <Dialog
-        open={deleteDialogOpen}
-        onOpenChange={(open) => {
-          setDeleteDialogOpen(open);
-          if (!open) setDeleteError(null);
-        }}
-        title={t("settingsPage.deleteDialog.title")}
-        description={t("settingsPage.deleteDialog.body")}
-        footer={
-          <>
-            <Button type="button" variant="secondary" onClick={() => setDeleteDialogOpen(false)}>
-              {t("settingsPage.deleteDialog.cancel")}
-            </Button>
-            <Button
+      {deploymentMode === "saas" ? (
+        <>
+          <div
+            className="flex items-center justify-between gap-4 rounded-md border p-5"
+            style={{ borderColor: "color-mix(in oklch, var(--color-critical) 35%, transparent)" }}
+          >
+            <div>
+              <div className="mb-1 text-[13.5px] font-bold text-critical">{t("settingsPage.dangerZone.title")}</div>
+              <p className="m-0 max-w-[480px] text-xs leading-normal text-neutral-400">
+                {t("settingsPage.dangerZone.description")}
+              </p>
+            </div>
+            <button
               type="button"
-              variant="solid"
-              className="!border-critical !bg-critical hover:!bg-critical"
-              onClick={handleConfirmDelete}
-              disabled={deleteTenant.isPending}
+              onClick={() => setDeleteDialogOpen(true)}
+              className="flex-shrink-0 cursor-pointer rounded-md border-[1.5px] bg-surface px-4 py-2.5 text-[13px] font-bold text-critical"
+              style={{ borderColor: "color-mix(in oklch, var(--color-critical) 45%, transparent)" }}
             >
-              {t("settingsPage.deleteDialog.confirm")}
-            </Button>
-          </>
-        }
-      >
-        {deleteError ? (
-          <p role="alert" className="text-xs text-critical">
-            {deleteError}
-          </p>
-        ) : null}
-      </Dialog>
+              {t("settingsPage.dangerZone.button")}
+            </button>
+          </div>
+
+          <Dialog
+            open={deleteDialogOpen}
+            onOpenChange={(open) => {
+              setDeleteDialogOpen(open);
+              if (!open) setDeleteError(null);
+            }}
+            title={t("settingsPage.deleteDialog.title")}
+            description={t("settingsPage.deleteDialog.body")}
+            footer={
+              <>
+                <Button type="button" variant="secondary" onClick={() => setDeleteDialogOpen(false)}>
+                  {t("settingsPage.deleteDialog.cancel")}
+                </Button>
+                <Button
+                  type="button"
+                  variant="solid"
+                  className="!border-critical !bg-critical hover:!bg-critical"
+                  onClick={handleConfirmDelete}
+                  disabled={deleteTenant.isPending}
+                >
+                  {t("settingsPage.deleteDialog.confirm")}
+                </Button>
+              </>
+            }
+          >
+            {deleteError ? (
+              <p role="alert" className="text-xs text-critical">
+                {deleteError}
+              </p>
+            ) : null}
+          </Dialog>
+        </>
+      ) : null}
     </div>
   );
 }
