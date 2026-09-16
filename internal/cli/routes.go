@@ -224,6 +224,10 @@ func buildAdminRouter(pool *db.Pool, cfg config.Config, logger *zap.Logger, poll
 		// mvp-core write routes - owner and operator (ADM-10).
 		protected.With(writeRoles).Post("/api/domains", domainsHandler.Create)
 		protected.With(writeRoles).Post("/api/services", servicesHandler.Create)
+		// service-edit SVCEDIT-05: rename is ownerOnly, same tier as
+		// DELETE /api/admins/{id} - a stricter gate than the writeRoles
+		// used for Create/List/Get above.
+		protected.With(ownerOnly).Patch("/api/services/{id}", servicesHandler.Update)
 		protected.With(writeRoles).Post("/api/integrations/datadog", integrationsHandler.ConnectDatadog)
 		protected.With(writeRoles).Post("/api/integrations/email/{provider}", emailProvidersHandler.Connect)
 		protected.With(writeRoles).Post("/api/integrations/email/{provider}/activate", emailProvidersHandler.Activate)

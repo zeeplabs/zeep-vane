@@ -41,6 +41,9 @@ func newServicesRouter(t *testing.T) (http.Handler, *db.Pool, *db.UserRepository
 		protected.Post("/api/services", handler.Create)
 		protected.Get("/api/services", handler.List)
 		protected.Get("/api/services/{id}", handler.Get)
+		// service-edit SVCEDIT-05: mirrors routes.go's ownerOnly gate on
+		// PATCH /api/services/{id}.
+		protected.With(RequireRole(db.RoleOwner)).Patch("/api/services/{id}", handler.Update)
 	})
 
 	return r, pool, admins
@@ -151,6 +154,24 @@ func getServices(t *testing.T, r http.Handler, token string) *httptest.ResponseR
 func getServicesPage(t *testing.T, r http.Handler, token string, page int) *httptest.ResponseRecorder {
 	t.Helper()
 	req := httptest.NewRequest(http.MethodGet, fmt.Sprintf("/api/services?page=%d", page), nil)
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+	return rec
+}
+
+// patchServiceName issues PATCH /api/services/{id} with the given name
+// (service-edit SVCEDIT-01..05).
+func patchServiceName(t *testing.T, r http.Handler, token, id, name string) *httptest.ResponseRecorder {
+	t.Helper()
+	body, err := json.Marshal(updateServiceRequest{Name: name})
+	if err != nil {
+		t.Fatalf("json.Marshal() returned unexpected error: %v", err)
+	}
+	req := httptest.NewRequest(http.MethodPatch, "/api/services/"+id, bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
 	if token != "" {
 		req.Header.Set("Authorization", "Bearer "+token)
 	}
@@ -878,5 +899,121 @@ func TestGetService_Incidents30d_ReflectsCount(t *testing.T) {
 
 	if detail.Incidents30d != 2 {
 		t.Errorf("detail.Incidents30d = %d, want 2", detail.Incidents30d)
+	}
+}
+
+// TestUpdateService_ValidRequest_200RenamesAndReturnsFullBody covers
+// SVCEDIT-01/02: name changes, monitor_mode/slo_id/slo_name/current_status
+// stay unchanged, and the response is a full serviceResponse.
+func TestUpdateService_ValidRequest_200RenamesAndReturnsFullBody(t *testing.T) {
+	r, pool, admins := newServicesRouter(t)
+	token := issueTestSessionTokenWithTenant(t, admins, pool)
+	oldName := uniqueServiceName(t)
+	created := createServiceForDetail(t, r, pool, token, oldName, "slo-update-1", "Checkout latency SLO")
+
+	newName := oldName + "-renamed"
+	rec := patchServiceName(t, r, token, created.ID, newName)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	var resp serviceResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+	if resp.Name != newName {
+		t.Errorf("resp.Name = %q, want %q", resp.Name, newName)
+	}
+	if resp.SLOID != "slo-update-1" {
+		t.Errorf("resp.SLOID = %q, want unchanged %q", resp.SLOID, "slo-update-1")
+	}
+	if resp.SLOName != "Checkout latency SLO" {
+		t.Errorf("resp.SLOName = %q, want unchanged %q", resp.SLOName, "Checkout latency SLO")
+	}
+	if resp.CurrentStatus != "not_configured" {
+		t.Errorf("resp.CurrentStatus = %q, want unchanged %q", resp.CurrentStatus, "not_configured")
+	}
+
+	getRec := getServiceDetail(t, r, token, created.ID)
+	var detail serviceDetailResponse
+	if err := json.Unmarshal(getRec.Body.Bytes(), &detail); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+	if detail.Name != newName {
+		t.Errorf("GET after update: detail.Name = %q, want %q", detail.Name, newName)
+	}
+}
+
+// TestUpdateService_EmptyName_422NoChange covers SVCEDIT-03.
+func TestUpdateService_EmptyName_422NoChange(t *testing.T) {
+	r, pool, admins := newServicesRouter(t)
+	token := issueTestSessionTokenWithTenant(t, admins, pool)
+	name := uniqueServiceName(t)
+	created := createServiceForDetail(t, r, pool, token, name, "slo-update-2", "")
+
+	rec := patchServiceName(t, r, token, created.ID, "")
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusUnprocessableEntity, rec.Body.String())
+	}
+
+	getRec := getServiceDetail(t, r, token, created.ID)
+	var detail serviceDetailResponse
+	if err := json.Unmarshal(getRec.Body.Bytes(), &detail); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+	if detail.Name != name {
+		t.Errorf("detail.Name = %q, want unchanged %q after rejected empty-name update", detail.Name, name)
+	}
+}
+
+// TestUpdateService_UnknownID_404 covers SVCEDIT-04: a fixed generic 404
+// body, same as GET /api/services/{id}'s serviceNotFoundBody.
+func TestUpdateService_UnknownID_404(t *testing.T) {
+	r, pool, admins := newServicesRouter(t)
+	token := issueTestSessionTokenWithTenant(t, admins, pool)
+
+	rec := patchServiceName(t, r, token, "00000000-0000-0000-0000-000000000000", "new-name")
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusNotFound, rec.Body.String())
+	}
+	if rec.Body.String() != serviceNotFoundBody {
+		t.Errorf("body = %s, want %s", rec.Body.String(), serviceNotFoundBody)
+	}
+}
+
+// TestUpdateService_NonOwner_403NoChange covers SVCEDIT-05: ownerOnly.
+func TestUpdateService_NonOwner_403NoChange(t *testing.T) {
+	r, pool, admins := newServicesRouter(t)
+	ownerToken := issueTestSessionTokenWithTenant(t, admins, pool)
+	name := uniqueServiceName(t)
+	created := createServiceForDetail(t, r, pool, ownerToken, name, "slo-update-3", "")
+
+	viewerToken := seedSessionForRole(t, admins, db.RoleViewer)
+	rec := patchServiceName(t, r, viewerToken, created.ID, "renamed-by-viewer")
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusForbidden, rec.Body.String())
+	}
+
+	getRec := getServiceDetail(t, r, ownerToken, created.ID)
+	var detail serviceDetailResponse
+	if err := json.Unmarshal(getRec.Body.Bytes(), &detail); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+	if detail.Name != name {
+		t.Errorf("detail.Name = %q, want unchanged %q after 403'd update", detail.Name, name)
+	}
+}
+
+// TestUpdateService_SameName_200Idempotent covers the spec.md Edge Case:
+// resubmitting the same name is a 200 no-op, not an error.
+func TestUpdateService_SameName_200Idempotent(t *testing.T) {
+	r, pool, admins := newServicesRouter(t)
+	token := issueTestSessionTokenWithTenant(t, admins, pool)
+	name := uniqueServiceName(t)
+	created := createServiceForDetail(t, r, pool, token, name, "slo-update-4", "")
+
+	rec := patchServiceName(t, r, token, created.ID, name)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
 	}
 }
