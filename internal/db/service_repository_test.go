@@ -761,3 +761,153 @@ func TestServiceRepository_SoftDelete_AlreadyDeleted_ReturnsErrNotFound(t *testi
 		t.Errorf("second SoftDelete() error = %v, want ErrNotFound", err)
 	}
 }
+
+// TestServiceRepository_SoftDelete_ConcurrentAttach_SerializesAndBlocksDelete
+// covers the Verifier finding in service-delete validation.md (M2): without
+// SoftDelete locking the services row FOR UPDATE before its
+// status_page_services check, a concurrent attach could commit between the
+// check and the UPDATE, leaving a service both deleted and attached - the
+// exact state spec.md's Assumptions table says cannot occur. Mirrors
+// TestAttachDomain_ConcurrentAttachesOnSamePage_ExactlyOneWins's technique:
+// an explicit "holder" transaction takes the same row lock SoftDelete would
+// take, performs the attach itself, and stays open while a real SoftDelete
+// call runs concurrently in a goroutine - proving SoftDelete cannot
+// complete until the holder releases the lock, and that on release it
+// observes the now-attached service and returns ErrServiceInUse, not a
+// delete that raced past the attach.
+func TestServiceRepository_SoftDelete_ConcurrentAttach_SerializesAndBlocksDelete(t *testing.T) {
+	repo, pool := newServiceRepoTestPool(t)
+	tenantID := seedPlainTenant(t, pool)
+	name := fmt.Sprintf("softdelete-race-%d", time.Now().UnixNano())
+	service := &Service{Name: name, SLOID: "slo-race"}
+	withTenantTx(t, pool, tenantID, func(ctx context.Context) {
+		if err := repo.Create(ctx, service); err != nil {
+			t.Fatalf("setup Create() returned unexpected error: %v", err)
+		}
+	})
+	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), "DELETE FROM services WHERE id = $1", service.ID) })
+
+	ctx := context.Background()
+
+	holderTx, err := pool.Begin(ctx)
+	if err != nil {
+		t.Fatalf("failed to begin holder transaction: %v", err)
+	}
+	defer func() { _ = holderTx.Rollback(context.Background()) }()
+
+	var lockedID string
+	if err := holderTx.QueryRow(ctx, "SELECT id FROM services WHERE id = $1 FOR UPDATE", service.ID).Scan(&lockedID); err != nil {
+		t.Fatalf("holder SELECT ... FOR UPDATE failed: %v", err)
+	}
+
+	var statusPageID string
+	if err := holderTx.QueryRow(ctx,
+		"INSERT INTO status_pages (name, tenant_id) VALUES ($1, $2) RETURNING id",
+		"softdelete-race-page", tenantID,
+	).Scan(&statusPageID); err != nil {
+		t.Fatalf("holder status_pages INSERT failed: %v", err)
+	}
+	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), "DELETE FROM status_pages WHERE id = $1", statusPageID) })
+	if _, err := holderTx.Exec(ctx,
+		"INSERT INTO status_page_services (status_page_id, service_id) VALUES ($1, $2)", statusPageID, service.ID,
+	); err != nil {
+		t.Fatalf("holder status_page_services INSERT failed: %v", err)
+	}
+
+	// Run the real SoftDelete call while holderTx is still open and
+	// uncommitted. With the production SELECT ... FOR UPDATE in place, this
+	// call cannot observe a result until holderTx releases the row lock.
+	done := make(chan error, 1)
+	go func() {
+		done <- repo.SoftDelete(context.Background(), service.ID)
+	}()
+
+	select {
+	case err := <-done:
+		t.Fatalf("SoftDelete() returned (err=%v) while the holder transaction was still open - the row lock did not block it", err)
+	case <-time.After(300 * time.Millisecond):
+		// Expected: still blocked behind the holder's uncommitted row lock.
+	}
+
+	if err := holderTx.Commit(ctx); err != nil {
+		t.Fatalf("failed to commit holder transaction: %v", err)
+	}
+
+	var softDeleteErr error
+	select {
+	case softDeleteErr = <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("SoftDelete() did not return after the holder transaction committed")
+	}
+
+	if !errors.Is(softDeleteErr, ErrServiceInUse) {
+		t.Fatalf("SoftDelete() error = %v, want ErrServiceInUse (the attach committed first)", softDeleteErr)
+	}
+
+	var deletedAt *time.Time
+	if err := pool.QueryRow(context.Background(), "SELECT deleted_at FROM services WHERE id = $1", service.ID).Scan(&deletedAt); err != nil {
+		t.Fatalf("verify deleted_at query returned unexpected error: %v", err)
+	}
+	if deletedAt != nil {
+		t.Errorf("deleted_at = %v, want nil - SoftDelete must not have applied after losing the race", *deletedAt)
+	}
+}
+
+// TestServiceRepository_SoftDelete_PreservesStatusIntervalsAndIncidents
+// covers SVCDEL-07: history rows referencing the deleted service's ID are
+// never touched (no cascade, no cleanup).
+func TestServiceRepository_SoftDelete_PreservesStatusIntervalsAndIncidents(t *testing.T) {
+	repo, pool := newServiceRepoTestPool(t)
+	tenantID := seedPlainTenant(t, pool)
+	name := fmt.Sprintf("softdelete-history-%d", time.Now().UnixNano())
+	service := &Service{Name: name, SLOID: "slo-history"}
+	withTenantTx(t, pool, tenantID, func(ctx context.Context) {
+		if err := repo.Create(ctx, service); err != nil {
+			t.Fatalf("setup Create() returned unexpected error: %v", err)
+		}
+	})
+	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), "DELETE FROM services WHERE id = $1", service.ID) })
+
+	if _, err := pool.Exec(context.Background(),
+		"INSERT INTO status_intervals (service_id, status, error_budget_remaining, starts_at, last_seen_at) VALUES ($1, 'operational', 0, now(), now())",
+		service.ID,
+	); err != nil {
+		t.Fatalf("setup status_intervals INSERT returned unexpected error: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = pool.Exec(context.Background(), "DELETE FROM status_intervals WHERE service_id = $1", service.ID)
+	})
+
+	var incidentID string
+	if err := pool.QueryRow(context.Background(),
+		"INSERT INTO incidents (title, tenant_id) VALUES ($1, $2) RETURNING id", "softdelete-history-incident", tenantID,
+	).Scan(&incidentID); err != nil {
+		t.Fatalf("setup incidents INSERT returned unexpected error: %v", err)
+	}
+	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), "DELETE FROM incidents WHERE id = $1", incidentID) })
+	if _, err := pool.Exec(context.Background(),
+		"INSERT INTO incident_services (incident_id, service_id) VALUES ($1, $2)", incidentID, service.ID,
+	); err != nil {
+		t.Fatalf("setup incident_services INSERT returned unexpected error: %v", err)
+	}
+
+	if err := repo.SoftDelete(context.Background(), service.ID); err != nil {
+		t.Fatalf("SoftDelete() returned unexpected error: %v", err)
+	}
+
+	var intervalCount int
+	if err := pool.QueryRow(context.Background(), "SELECT COUNT(*) FROM status_intervals WHERE service_id = $1", service.ID).Scan(&intervalCount); err != nil {
+		t.Fatalf("verify status_intervals count query returned unexpected error: %v", err)
+	}
+	if intervalCount != 1 {
+		t.Errorf("status_intervals count after SoftDelete = %d, want 1 (preserved)", intervalCount)
+	}
+
+	var incidentServiceCount int
+	if err := pool.QueryRow(context.Background(), "SELECT COUNT(*) FROM incident_services WHERE service_id = $1", service.ID).Scan(&incidentServiceCount); err != nil {
+		t.Fatalf("verify incident_services count query returned unexpected error: %v", err)
+	}
+	if incidentServiceCount != 1 {
+		t.Errorf("incident_services count after SoftDelete = %d, want 1 (preserved)", incidentServiceCount)
+	}
+}

@@ -310,6 +310,26 @@ func (r *ServiceRepository) SoftDelete(ctx context.Context, id string) error {
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
+	// Lock the services row FOR UPDATE before checking status_page_services
+	// (Verifier finding, service-delete validation.md M2): an INSERT into
+	// status_page_services implicitly takes a FOR KEY SHARE lock on the
+	// referenced services row as part of its FK check, and Postgres's lock
+	// matrix has FOR UPDATE conflict with FOR KEY SHARE - so this genuinely
+	// serializes against a concurrent attach, the same way AttachDomain's
+	// own SELECT ... FOR UPDATE serializes against concurrent attaches on
+	// status_pages (status_page_repository.go). Without this lock, a
+	// concurrent attach could commit between the EXISTS check below and the
+	// UPDATE, leaving a service both deleted and attached - exactly the
+	// state spec.md's Assumptions table says cannot occur.
+	var lockedID string
+	err = tx.QueryRow(ctx, "SELECT id FROM services WHERE id = $1 FOR UPDATE", id).Scan(&lockedID)
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return fmt.Errorf("db: failed to lock service row: %w", err)
+	}
+	if errors.Is(err, pgx.ErrNoRows) {
+		return ErrNotFound
+	}
+
 	var inUse bool
 	if err := tx.QueryRow(ctx, "SELECT EXISTS (SELECT 1 FROM status_page_services WHERE service_id = $1)", id).Scan(&inUse); err != nil {
 		return fmt.Errorf("db: failed to check status_page_services for service: %w", err)
