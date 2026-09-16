@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
-import { MdOutlineSchedule } from "react-icons/md";
+import { useTranslation } from "react-i18next";
+import { MdOutlineSchedule, MdOutlineWbSunny, MdOutlineNightlight } from "react-icons/md";
 import { Card } from "../../components/ui/Card";
 import { Button } from "../../components/ui/Button";
 import { Tag } from "../../components/ui/Tag";
@@ -16,6 +17,7 @@ import type {
 } from "../../lib/publicStatus";
 import { resolveAssetUrl } from "../../lib/apiClient";
 import { usePublicStatusPage } from "./hooks";
+import { usePublicStatusTheme } from "./usePublicStatusTheme";
 import { formatRelativeTime, formatDateTime, formatDuration } from "./format";
 
 const overallCopy: Record<PublicServiceStatus, { label: string; colorVar: string }> = {
@@ -131,23 +133,37 @@ function ClockIcon() {
   return <MdOutlineSchedule size={13} style={{ color: "var(--color-warning)" }} aria-hidden="true" />;
 }
 
+function SunIcon() {
+  return <MdOutlineWbSunny size={16} aria-hidden="true" data-testid="theme-icon-sun" />;
+}
+
+function MoonIcon() {
+  return <MdOutlineNightlight size={16} aria-hidden="true" data-testid="theme-icon-moon" />;
+}
+
 function IncidentCard({ incident, tone }: { incident: PublicIncidentEntry; tone: "active" | "resolved" }) {
   const [expanded, setExpanded] = useState(false);
 
   return (
     <Card
-      elevation="elev-sm"
-      className="flex flex-col gap-2 p-4"
-      style={tone === "active" ? { border: "1px solid color-mix(in oklch, var(--color-critical) 30%, var(--color-divider))" } : undefined}
+      className="flex flex-col gap-2.5 rounded-md border border-divider p-[18px_20px]"
+      style={
+        tone === "active"
+          ? {
+              border: "1px solid color-mix(in oklch, var(--color-critical) 30%, var(--color-divider))",
+              background: "color-mix(in oklch, var(--color-critical) 8%, var(--color-surface))",
+            }
+          : undefined
+      }
     >
       <div
         className="flex cursor-pointer items-start justify-between gap-3"
         onClick={() => setExpanded((v) => !v)}
       >
         <div className="flex flex-col gap-1.5">
-          <p className="text-[15px] font-medium text-text">{incident.title}</p>
+          <p className="text-[15px] font-bold text-text">{incident.title}</p>
           {incident.description ? (
-            <p className="text-[13px] text-neutral-300">{incident.description}</p>
+            <p className="text-[13px] leading-relaxed text-neutral-300">{incident.description}</p>
           ) : null}
           {tone === "active" ? (
             <div className="flex flex-wrap gap-1.5">
@@ -163,19 +179,22 @@ function IncidentCard({ incident, tone }: { incident: PublicIncidentEntry; tone:
             </p>
           )}
         </div>
-        <Tag variant={tone === "active" ? incidentTagVariant[incident.status] : "neutral"}>
+        <Tag
+          variant={tone === "active" ? incidentTagVariant[incident.status] : "neutral"}
+          style={{ fontSize: "11.5px", fontWeight: 700, padding: "4px 10px" }}
+        >
           {tone === "active" ? incidentLabel[incident.status] : "Resolvido"}
         </Tag>
       </div>
 
       {expanded ? (
-        <div className="flex flex-col gap-2 border-t border-divider pt-2">
+        <div className="ml-1 flex flex-col gap-3.5 border-l-2 border-divider pl-4">
           {incident.updates.map((u, i) => (
-            <div key={i} className="flex gap-2">
-              <span className="min-w-[96px] whitespace-nowrap text-[11.5px] text-neutral-400">
+            <div key={i} className="flex flex-col gap-0.5">
+              <span className="text-[11px] font-semibold text-neutral-400">
                 {formatDateTime(u.created_at)}
               </span>
-              <p className="text-[13px] text-neutral-200">{u.body}</p>
+              <p className="text-[12.5px] leading-relaxed text-neutral-200">{u.body}</p>
             </div>
           ))}
         </div>
@@ -183,7 +202,7 @@ function IncidentCard({ incident, tone }: { incident: PublicIncidentEntry; tone:
 
       <button
         type="button"
-        className="cursor-pointer self-start text-xs text-accent hover:underline"
+        className="cursor-pointer self-start text-[12.5px] font-semibold text-accent"
         onClick={() => setExpanded((v) => !v)}
       >
         {expanded ? "Ocultar linha do tempo" : "Ver linha do tempo"}
@@ -208,10 +227,16 @@ function LoadingSkeleton() {
 // the request's own hostname on the Go side). useParams() naturally
 // returns undefined for :id when this is mounted outside that route.
 export function PublicStatusPage() {
+  const { t } = useTranslation();
   const { id } = useParams();
   const [range, setRange] = useState<RangeKey>("24h");
   const { data, isLoading, isError, hasMoreResolved, loadMoreResolvedIncidents } = usePublicStatusPage(id, range);
   const [loadingMore, setLoadingMore] = useState(false);
+  // Theme scoped to this page only (PUBSTATUS-07..10) - default light,
+  // independent of the app's own `vane:theme`. Applied via `data-theme` on
+  // this component's own root wrapper below, never on
+  // document.documentElement.
+  const { theme, toggleTheme } = usePublicStatusTheme();
 
   // This is the one page in the SPA the public internet actually lands on
   // (search results, shared links, embedded status badges) - index.html's
@@ -253,13 +278,26 @@ export function PublicStatusPage() {
     }
   }
 
-  if (isLoading) return <LoadingSkeleton />;
+  // data-theme applied here (not document.documentElement) so tokens.css's
+  // existing [data-theme="dark"] rule cascades only within this subtree -
+  // isolates the toggle to this one page (PUBSTATUS-08).
+  const themeAttr = theme === "dark" ? "dark" : undefined;
+
+  if (isLoading) {
+    return (
+      <div data-theme={themeAttr} data-testid="public-status-theme-root" className="min-h-screen bg-bg">
+        <LoadingSkeleton />
+      </div>
+    );
+  }
 
   if (isError || !data) {
     return (
-      <div className="mx-auto flex w-full max-w-[720px] flex-col items-center gap-2 px-4 py-24 text-center">
-        <p className="text-text">Página não encontrada.</p>
-        <p className="text-sm text-neutral-400">Verifique o endereço e tente novamente.</p>
+      <div data-theme={themeAttr} data-testid="public-status-theme-root" className="min-h-screen bg-bg">
+        <div className="mx-auto flex w-full max-w-[720px] flex-col items-center gap-2 px-4 py-24 text-center">
+          <p className="text-text">Página não encontrada.</p>
+          <p className="text-sm text-neutral-400">Verifique o endereço e tente novamente.</p>
+        </div>
       </div>
     );
   }
@@ -268,35 +306,42 @@ export function PublicStatusPage() {
   const overallInfo = overallCopy[overall];
 
   return (
-    <div className="mx-auto flex w-full max-w-[720px] flex-col gap-7 px-4 py-11">
-      <header className="flex flex-wrap items-baseline justify-between gap-3">
+    <div data-theme={themeAttr} data-testid="public-status-theme-root" className="min-h-screen bg-bg">
+    <div className="mx-auto flex w-full max-w-[720px] flex-col gap-7 px-[24px] pt-[56px] pb-[80px]">
+      <header className="flex flex-wrap items-center justify-between gap-3">
         {data.logo_url ? (
           <img src={resolveAssetUrl(data.logo_url)!} alt={data.company_name} className="h-11 w-auto" />
         ) : (
-          <span className="text-[15px] font-medium tracking-tight text-text">{data.company_name}</span>
+          <span className="text-[17px] font-semibold tracking-tight text-text">{data.company_name}</span>
         )}
-        <div className="flex items-center gap-1.5 text-xs text-neutral-400">
-          {data.stale ? <ClockIcon /> : null}
-          <span>Atualizado {formatRelativeTime(data.updated_at)}</span>
+        <div className="flex items-center gap-3">
+          <button
+            type="button"
+            onClick={toggleTheme}
+            aria-label={t("topbar.toggleTheme")}
+            className="flex cursor-pointer items-center text-neutral-400 hover:text-text"
+          >
+            {theme === "dark" ? <SunIcon /> : <MoonIcon />}
+          </button>
+          <div className="flex items-center gap-1.5 text-xs text-neutral-400">
+            {data.stale ? <ClockIcon /> : null}
+            <span>Atualizado {formatRelativeTime(data.updated_at)}</span>
+          </div>
         </div>
       </header>
 
       <div
-        className="flex items-center gap-3 rounded-md p-4"
+        className="flex items-center gap-3 rounded-md p-[18px_22px]"
         style={{
-          background: `color-mix(in oklch, var(${overallInfo.colorVar}) 10%, var(--color-neutral-900))`,
-          border: `1px solid color-mix(in oklch, var(${overallInfo.colorVar}) 25%, var(--color-divider))`,
+          background: `color-mix(in oklch, var(${overallInfo.colorVar}) 14%, var(--color-surface))`,
         }}
       >
         <div
-          className="h-[11px] w-[11px] flex-none rounded-full"
-          style={{
-            background: `var(${overallInfo.colorVar})`,
-            boxShadow: `0 0 12px color-mix(in oklch, var(${overallInfo.colorVar}) 60%, transparent)`,
-          }}
+          className="h-[10px] w-[10px] flex-none rounded-full"
+          style={{ background: `var(${overallInfo.colorVar})` }}
         />
         <div className="flex flex-col gap-0.5">
-          <p className="font-medium text-text">{overallInfo.label}</p>
+          <p className="text-base font-bold text-text">{overallInfo.label}</p>
           {data.stale ? (
             <p className="text-xs text-neutral-400">
               Mostrando o último dado disponível — atualização em andamento.
@@ -324,24 +369,24 @@ export function PublicStatusPage() {
             aria-label="Selecionar período"
           />
         </div>
-        <Card elevation="elev-sm" className="overflow-hidden p-0">
-          {data.services.map((service, index) => (
-            <div
+        <div className="flex flex-col gap-2.5">
+          {data.services.map((service) => (
+            <Card
               key={service.name}
-              className={`flex flex-col gap-2 px-4 py-3 ${index < data.services.length - 1 ? "border-b border-divider" : ""}`}
+              className="flex flex-col gap-2.5 rounded-md border border-divider p-[16px_20px]"
             >
               <div className="flex items-center justify-between gap-3">
-                <div className="flex items-center gap-2">
+                <div className="flex min-w-0 items-center gap-2.5">
                   <span
-                    className="h-2 w-2 flex-none rounded-full"
+                    className="h-[7px] w-[7px] flex-none rounded-full"
                     style={{ background: `var(${overallCopy[service.status].colorVar})` }}
                   />
-                  <span className="text-sm text-text">{service.name}</span>
+                  <span className="truncate text-sm font-bold text-text">{service.name}</span>
                   {!service.last_updated_at ? (
                     <span className="text-xs text-neutral-500">(sem dados)</span>
                   ) : null}
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex flex-shrink-0 items-center gap-2.5">
                   <span className="text-xs text-neutral-400" data-testid={`uptime-${service.name}`}>
                     {formatUptimePercent(service.uptime_percent)}
                   </span>
@@ -353,6 +398,7 @@ export function PublicStatusPage() {
                       non-degraded status. */}
                   <Tag
                     variant={serviceTagVariant[service.status]}
+                    style={{ fontSize: "11.5px", fontWeight: 700, padding: "3px 10px" }}
                     {...(service.status === "degraded" && service.status_analysis
                       ? { title: service.status_analysis, tabIndex: 0 }
                       : {})}
@@ -361,27 +407,32 @@ export function PublicStatusPage() {
                   </Tag>
                 </div>
               </div>
-              <div className="flex flex-col gap-0.5">
-                <div className="flex gap-px">
+              <div className="flex flex-col gap-1.5">
+                <div className="flex gap-[2px]">
                   {service.history.map((bucket, i) => (
                     <div
                       key={i}
                       title={hourlyTooltip(bucket)}
                       tabIndex={0}
-                      className="h-[22px] flex-1 rounded-[1.5px]"
-                      style={{ background: `var(${hourlyColorVar[bucket.status]})` }}
+                      className="h-[24px] flex-1 rounded-[2px]"
+                      style={{
+                        background:
+                          bucket.status === "no_data"
+                            ? `color-mix(in oklch, var(${hourlyColorVar.no_data}) 40%, var(--color-surface))`
+                            : `var(${hourlyColorVar[bucket.status]})`,
+                      }}
                       data-testid={`hourly-bar-${service.name}-${i}`}
                     />
                   ))}
                 </div>
-                <div className="flex justify-between text-[10px] text-neutral-500">
+                <div className="flex justify-between text-[10.5px] text-neutral-500">
                   <span>{rangeAgoLabel[range]}</span>
                   <span>agora</span>
                 </div>
               </div>
-            </div>
+            </Card>
           ))}
-        </Card>
+        </div>
       </section>
 
       <section className="flex flex-col gap-3">
@@ -407,9 +458,12 @@ export function PublicStatusPage() {
         )}
       </section>
 
-      <footer className="mt-3 text-center text-[11.5px] text-neutral-500">
+      <footer className="mt-[48px] text-center text-xs text-neutral-500">
+        Powered by <span className="font-semibold text-accent">Vane</span>
+        <span className="mx-1.5">·</span>
         Atualiza automaticamente a cada 2 minutos.
       </footer>
+    </div>
     </div>
   );
 }
