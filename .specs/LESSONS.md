@@ -362,6 +362,12 @@ Seen once or not yet corroborated. Tracked, not trusted.
 - evidence: INCPG-01 - IncidentsPage.test.tsx:221-228 (web/incidents)
 - last seen: 2026-09-15T14:57:40Z
 
+### L-059 - When a route gets a role gate (ownerOnly/RequireRole) in routes.go, add or extend a routes_test.go case that exercises it through the real buildAdminRouter — a role check proven only against a handler test's own hand-assembled router leaves the production wiring itself untested.
+- signal: `surviving_mutant` · recurrence: 1 feature(s) · scope: `routes` · harmful: 0
+- features: service-edit
+- evidence: internal/cli/routes.go:230 - mutant #3 removing ownerOnly from real route wiring survived internal/cli+internal/api test suites (routes)
+- last seen: 2026-09-16T22:21:28Z
+
 ## Quarantined (failed when applied - ignore)
 
 A confirmed lesson that recurred alongside failure. Kept for the maintainer to review.
