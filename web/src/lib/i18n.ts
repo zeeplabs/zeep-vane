@@ -187,6 +187,7 @@ const resources = {
         resendButton: "Reenviar e-mail de verificação",
         resendConfirmation: "E-mail de verificação reenviado.",
         resendError: "Não foi possível reenviar o e-mail. Tente novamente.",
+        terms: "Ao continuar, você concorda com os Termos de Uso e a Política de Privacidade.",
       },
       verifyEmail: {
         loading: "Verificando seu e-mail...",
@@ -669,6 +670,7 @@ const resources = {
         resendButton: "Resend verification email",
         resendConfirmation: "Verification email resent.",
         resendError: "Could not resend the email. Please try again.",
+        terms: "By continuing, you agree to the Terms of Service and Privacy Policy.",
       },
       verifyEmail: {
         loading: "Verifying your email...",

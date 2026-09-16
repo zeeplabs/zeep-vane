@@ -80,7 +80,7 @@ As telas públicas de autenticação (`LoginPage`, `BootstrapPage`, `SignupPage`
 **Acceptance Criteria**:
 
 1. `BootstrapPage` SHALL seguir a estrutura do mock (rótulo "Configuração inicial", campos de organização + administrador, botão "Criar administrador e continuar"), mantendo seu fluxo de submit/erro atual inalterado.
-2. `VerifyEmailPage` SHALL seguir a estrutura do mock (ícone, "Verifique seu email", e-mail em destaque, botão "Reenviar email"), mantendo seu comportamento atual inalterado.
+2. `VerifyEmailPage` SHALL usar o `AuthLayout` compartilhado nos seus 3 estados (carregando/verificado/inválido), mantendo seu comportamento atual inalterado. **Nota de correção pós-Verifier**: o botão "Reenviar email" do mock (estado `isSignupVerify`) já é implementado pelo estado `pendingEmail` de `SignupPage` (tela exibida logo após o cadastro, antes do clique no link) — não por `VerifyEmailPage`, que é a página de destino do clique no link (token na URL), sem equivalente no mock. Redação original desta AC mapeou incorretamente o botão para a página errada.
 3. `PasswordResetRequestPage` SHALL seguir a estrutura do mock para os dois estados (formulário de e-mail → tela de confirmação de envio), mantendo seu fluxo atual inalterado.
 4. `PasswordResetConfirmPage` SHALL usar o `AuthLayout` compartilhado, preservando seu conteúdo de formulário (token, nova senha, confirmar senha) sem alteração de comportamento.
 
@@ -99,17 +99,17 @@ As telas públicas de autenticação (`LoginPage`, `BootstrapPage`, `SignupPage`
 
 | Requirement ID | Story | Phase | Status |
 | --- | --- | --- | --- |
-| AUTHPG-01 | P1: AuthLayout compartilhado | - | Implementing |
-| AUTHPG-02 | P1: AuthLayout compartilhado | - | Implementing |
-| AUTHPG-03 | P1: AuthLayout compartilhado | - | Implementing |
-| AUTHPG-04 | P1: Login e Signup | - | Implementing |
-| AUTHPG-05 | P1: Login e Signup | - | Implementing |
-| AUTHPG-06 | P1: Login e Signup | - | Implementing |
-| AUTHPG-07 | P1: Login e Signup | - | Implementing |
-| AUTHPG-08 | P2: Bootstrap/verify/reset | - | Implementing |
-| AUTHPG-09 | P2: Bootstrap/verify/reset | - | Implementing |
-| AUTHPG-10 | P2: Bootstrap/verify/reset | - | Implementing |
-| AUTHPG-11 | P2: Bootstrap/verify/reset | - | Implementing |
+| AUTHPG-01 | P1: AuthLayout compartilhado | - | Verified |
+| AUTHPG-02 | P1: AuthLayout compartilhado | - | Verified |
+| AUTHPG-03 | P1: AuthLayout compartilhado | - | Verified |
+| AUTHPG-04 | P1: Login e Signup | - | Verified |
+| AUTHPG-05 | P1: Login e Signup | - | Verified |
+| AUTHPG-06 | P1: Login e Signup | - | Verified |
+| AUTHPG-07 | P1: Login e Signup | - | Verified |
+| AUTHPG-08 | P2: Bootstrap/verify/reset | - | Verified |
+| AUTHPG-09 | P2: Bootstrap/verify/reset | - | Verified |
+| AUTHPG-10 | P2: Bootstrap/verify/reset | - | Verified |
+| AUTHPG-11 | P2: Bootstrap/verify/reset | - | Verified |
 
 **ID format:** `AUTHPG-[NUMBER]`
 

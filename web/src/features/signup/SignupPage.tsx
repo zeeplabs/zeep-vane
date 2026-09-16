@@ -157,6 +157,10 @@ export function SignupPage() {
               {t("signup.submit")}
             </Button>
           </form>
+
+          <p className="mt-4 text-center text-[11.5px] leading-relaxed text-neutral-400">
+            {t("signup.terms")}
+          </p>
         </>
       )}
 
