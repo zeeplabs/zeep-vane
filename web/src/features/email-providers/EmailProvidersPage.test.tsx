@@ -2,7 +2,7 @@ import { describe, it, expect, afterEach } from "vitest";
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
-import { http, HttpResponse } from "msw";
+import { http, HttpResponse, delay } from "msw";
 import "../../lib/i18n";
 import { AuthProvider } from "../../auth/AuthProvider";
 import { TestQueryProvider } from "../../test/queryClient";
@@ -39,6 +39,36 @@ async function providerCard(name: string) {
 }
 
 describe("EmailProvidersPage", () => {
+  // SKEL-04/05: while /api/integrations/email is loading, the page shows
+  // skeleton cards (not the old "Carregando…" paragraph as visible
+  // content) inside an aria-busy container that still carries the sr-only
+  // loading string.
+  it("mostra skeletons (não o texto) enquanto /api/integrations/email carrega", async () => {
+    server.use(
+      http.get("/api/integrations/email", async () => {
+        await delay("infinite");
+        return HttpResponse.json({ active_provider: null, providers: [], total: 0, page: 1, page_size: 20 });
+      }),
+    );
+    await loginAs("owner@vane.app");
+    renderPage();
+
+    const srText = await screen.findByText("Carregando…");
+    expect(srText.className).toContain("sr-only");
+    expect(srText.closest('[aria-busy="true"]')).toBeInTheDocument();
+    expect(screen.getAllByTestId("skeleton").length).toBeGreaterThan(0);
+  });
+
+  // SKEL-06: once the fetch resolves, skeletons are gone and the real
+  // provider cards take over - loading and loaded are mutually exclusive.
+  it("remove os skeletons assim que /api/integrations/email termina de carregar", async () => {
+    await loginAs("owner@vane.app");
+    renderPage();
+
+    await screen.findByText("SendGrid");
+    expect(screen.queryAllByTestId("skeleton")).toHaveLength(0);
+  });
+
   it("mostra SendGrid e Resend como não conectados quando nada foi configurado", async () => {
     await loginAs("owner@vane.app");
     renderPage();
