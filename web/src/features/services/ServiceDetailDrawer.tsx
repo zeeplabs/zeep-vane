@@ -1,8 +1,12 @@
+import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import * as RadixDialog from "@radix-ui/react-dialog";
-import { MdOutlineWarningAmber, MdClose } from "react-icons/md";
+import { MdOutlineWarningAmber, MdClose, MdOutlineEdit, MdCheck } from "react-icons/md";
+import { useAuth } from "../../auth/AuthProvider";
+import { ApiError } from "../../lib/apiClient";
+import { Input } from "../../components/ui/Input";
 import type { HourlyBucket } from "../../types/api";
-import { useServiceDetail } from "./hooks";
+import { useServiceDetail, useUpdateService } from "./hooks";
 import { StatusTag } from "./StatusTag";
 import { serviceSubtitle } from "./statusMeta";
 
@@ -40,21 +44,56 @@ function Stat({ label, value }: StatProps) {
   );
 }
 
-/** Drawer somente-leitura com os stats de 30d, nota de degradação condicional
- * e a faixa de 24 barras de status (SVC-14..19). Sem "Pausar monitoramento"
- * nem "Editar configuração" - nenhum dos dois tem suporte no backend hoje
- * (spec.md Out of Scope).
+/** Drawer com os stats de 30d, nota de degradação condicional e a faixa de
+ * 24 barras de status (SVC-14..19), mais a ação de renomear (service-edit
+ * SVCEDIT-06, ownerOnly). Ainda sem "Pausar monitoramento" nem "Editar
+ * configuração" (monitor_mode/slo_id/poll_*) - fora de escopo de
+ * service-edit, ver seu spec.md.
  *
  * Não usa o <Drawer> compartilhado: seu título/descrição/rodapé sempre
  * vêm dentro de faixas com borda (border-b no cabeçalho, border-t no
  * rodapé) - o mock (`Servicos Monitorados.dc.html`'s `hasSelected` panel)
  * não tem nenhuma das duas, é um painel contínuo com badge+X no topo e
  * sem botão de rodapé nenhum. Radix Dialog usado diretamente para
- * reproduzir essa estrutura; `RadixDialog.Title` fica visualmente oculto
- * (sr-only) porque o nome do serviço já é renderizado como h2 visível. */
+ * reproduzir essa estrutura; `RadixDialog.Title` fica sempre sr-only
+ * (o nome do serviço é renderizado visualmente como h2 ou como o input de
+ * edição, nunca os dois ao mesmo tempo). */
 export function ServiceDetailDrawer({ serviceId, onClose }: ServiceDetailDrawerProps) {
   const { t } = useTranslation();
+  const { hasRole } = useAuth();
+  const canRename = hasRole(["owner"]);
   const { data: detail, isLoading } = useServiceDetail(serviceId);
+  const updateService = useUpdateService();
+
+  const [editing, setEditing] = useState(false);
+  const [nameDraft, setNameDraft] = useState("");
+  const [renameError, setRenameError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setEditing(false);
+    setRenameError(null);
+  }, [serviceId]);
+
+  function startEditing() {
+    setNameDraft(detail?.name ?? "");
+    setRenameError(null);
+    setEditing(true);
+  }
+
+  async function saveRename() {
+    const trimmed = nameDraft.trim();
+    if (!trimmed) {
+      setRenameError(t("services.detail.nameRequired"));
+      return;
+    }
+    setRenameError(null);
+    try {
+      await updateService.mutateAsync({ id: serviceId, name: trimmed });
+      setEditing(false);
+    } catch (err) {
+      setRenameError(err instanceof ApiError ? err.message : t("services.detail.renameError"));
+    }
+  }
 
   const showNote = detail?.current_status === "degraded" && !!detail?.status_analysis;
 
@@ -88,9 +127,60 @@ export function ServiceDetailDrawer({ serviceId, onClose }: ServiceDetailDrawerP
               </div>
 
               <div className="-mt-1">
-                <RadixDialog.Title asChild>
-                  <h2 className="text-[19px] font-bold text-text">{detail.name}</h2>
-                </RadixDialog.Title>
+                <RadixDialog.Title className="sr-only">{t("services.detail.detailTitle")}</RadixDialog.Title>
+                {editing ? (
+                  <div className="flex items-center gap-1.5">
+                    <Input
+                      autoFocus
+                      value={nameDraft}
+                      onChange={(e) => setNameDraft(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") void saveRename();
+                        if (e.key === "Escape") setEditing(false);
+                      }}
+                      aria-label={t("services.detail.namePlaceholder")}
+                      placeholder={t("services.detail.namePlaceholder")}
+                      className="text-[15px] font-bold"
+                      disabled={updateService.isPending}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => void saveRename()}
+                      disabled={updateService.isPending}
+                      aria-label={t("services.detail.save")}
+                      className="cursor-pointer text-success hover:opacity-80 disabled:opacity-50"
+                    >
+                      <MdCheck size={18} aria-hidden="true" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setEditing(false)}
+                      aria-label={t("services.detail.cancel")}
+                      className="cursor-pointer text-neutral-400 hover:text-text"
+                    >
+                      <MdClose size={18} aria-hidden="true" />
+                    </button>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-1.5">
+                    <h2 className="text-[19px] font-bold text-text">{detail.name}</h2>
+                    {canRename ? (
+                      <button
+                        type="button"
+                        onClick={startEditing}
+                        aria-label={t("services.detail.editName")}
+                        className="cursor-pointer text-neutral-400 hover:text-text"
+                      >
+                        <MdOutlineEdit size={15} aria-hidden="true" />
+                      </button>
+                    ) : null}
+                  </div>
+                )}
+                {renameError ? (
+                  <p role="alert" className="mt-1 text-xs text-critical">
+                    {renameError}
+                  </p>
+                ) : null}
                 <p className="mt-0.5 text-[13px] text-neutral-400">{serviceSubtitle(detail)}</p>
               </div>
 

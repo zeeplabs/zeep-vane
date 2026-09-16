@@ -71,9 +71,9 @@ The "Serviços monitorados" table (`ServiceListPage.tsx`) has no way to rename a
 | SVCEDIT-03 | P1: Rename a monitored service | Implementing | Implementing |
 | SVCEDIT-04 | P1: Rename a monitored service | Implementing | Implementing |
 | SVCEDIT-05 | P1: Rename a monitored service | Implementing | Implementing |
-| SVCEDIT-06 | P1: Rename a monitored service | Implementing | Pending |
+| SVCEDIT-06 | P1: Rename a monitored service | Implementing | Implementing |
 
-**Coverage:** 6 total, 5 mapped to tasks (repository + handler layers), 1 unmapped (frontend) ⚠️
+**Coverage:** 6 total, 6 mapped to tasks (repository + handler + frontend layers) ✅
 
 ---
 
