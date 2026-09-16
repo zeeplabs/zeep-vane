@@ -232,7 +232,7 @@ Note: T2–T18 each depend only on T1 (the shared primitive) — they are indepe
 **Where**: `web/src/features/status-pages/StatusPageDetail.tsx` (test file updated alongside, per co-location rule)
 **Depends on**: T1
 **Requirement**: SKEL-04, SKEL-05, SKEL-06, SKEL-07
-**Done when**: replaces the single `<p>Carregando…</p>` with a skeleton approximating the detail layout (header + a few content blocks).
+**Done when**: replaces the single `<p>Carregando…</p>` with a skeleton approximating the detail layout (header + a few content blocks). ✅ Done (2026-09-16): reuses the `statusPages.loading` key added in T10.
 **Tests**: unit
 **Gate**: quick
 **Commit**: `feat(status-pages): add loading skeleton to StatusPageDetail`
