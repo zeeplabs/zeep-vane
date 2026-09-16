@@ -1578,6 +1578,23 @@ export const handlers = [
     return HttpResponse.json(toServiceResponse(service));
   }),
 
+  // DELETE /api/services/:id (service-delete SVCDEL-01..05) - mirrors
+  // ServicesHandler.Delete: 409 fixed body if still attached to a status
+  // page, 404 fixed body for an unknown/already-deleted id, else 204 and
+  // removed from servicesState (soft delete, no history to touch here).
+  http.delete("/api/services/:id", ({ params }) => {
+    if (!sessionAdminId) return HttpResponse.json({ error: "unauthorized" }, { status: 401 });
+    const service = servicesState.find((s) => s.id === params.id);
+    if (!service) {
+      return HttpResponse.json({ error: "service not found" }, { status: 404 });
+    }
+    if (statusPagesState.some((p) => p.service_ids.includes(service.id))) {
+      return HttpResponse.json({ error: "service is still attached to a status page" }, { status: 409 });
+    }
+    servicesState = servicesState.filter((s) => s.id !== service.id);
+    return new HttpResponse(null, { status: 204 });
+  }),
+
   // GET /api/incidents (I16) - mirrors IncidentsHandler.List: most recently
   // created first, each with its service_ids.
   http.get("/api/incidents", ({ request }) => {

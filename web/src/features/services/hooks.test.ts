@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from "vitest";
 import { renderHook, waitFor } from "@testing-library/react";
 import { TestQueryProvider } from "../../test/queryClient";
 import { apiFetch, ApiError } from "../../lib/apiClient";
-import { useCreateService, useServiceDetail, useServices, useUpdateService } from "./hooks";
+import { useCreateService, useDeleteService, useServiceDetail, useServices, useUpdateService } from "./hooks";
 
 async function loginAsOwner() {
   await apiFetch("/api/auth/login", {
@@ -159,5 +159,36 @@ describe("services hooks", () => {
     const target = result.current.services.data!.items[0];
 
     await expect(result.current.update.mutateAsync({ id: target.id, name: "" })).rejects.toThrow(ApiError);
+  });
+
+  // service-delete SVCDEL-01/02/09: useDeleteService removes an unattached
+  // service and invalidates the list.
+  it("useDeleteService remove um serviço não vinculado e invalida a lista", async () => {
+    await loginAsOwner();
+    const { result } = renderHook(
+      () => ({ services: useServices(1), create: useCreateService(), del: useDeleteService() }),
+      { wrapper: TestQueryProvider }
+    );
+    await waitFor(() => expect(result.current.services.isSuccess).toBe(true));
+
+    const created = await result.current.create.mutateAsync({
+      name: "Serviço para excluir",
+      slo_id: "slo-delete-hook",
+    });
+
+    await result.current.del.mutateAsync(created.id);
+
+    await waitFor(() => expect(result.current.services.isFetching).toBe(false));
+    const ids = result.current.services.data!.items.map((s) => s.id);
+    expect(ids).not.toContain(created.id);
+  });
+
+  // service-delete SVCDEL-03: deleting a service still attached to a
+  // status page (fixture svc-1) rejects with ApiError (409).
+  it("useDeleteService em serviço vinculado a status page rejeita", async () => {
+    await loginAsOwner();
+    const { result } = renderHook(() => useDeleteService(), { wrapper: TestQueryProvider });
+
+    await expect(result.current.mutateAsync("svc-1")).rejects.toThrow(ApiError);
   });
 });

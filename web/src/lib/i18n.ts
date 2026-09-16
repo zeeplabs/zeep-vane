@@ -462,6 +462,11 @@ const resources = {
           cancel: "Cancelar",
           nameRequired: "O nome não pode ficar vazio.",
           renameError: "Não foi possível renomear o serviço.",
+          deleteAction: "Excluir serviço",
+          deleteConfirmTitle: "Excluir serviço",
+          deleteConfirmDescription:
+            "Excluir o serviço \"{{name}}\"? O histórico de verificações e incidentes é mantido, mas ele para de ser monitorado. Esta ação não pode ser desfeita.",
+          deleteError: "Não foi possível excluir o serviço.",
         },
         addDrawer: {
           monitorModeLabel: "Como monitorar",
@@ -959,6 +964,11 @@ const resources = {
           cancel: "Cancel",
           nameRequired: "Name cannot be empty.",
           renameError: "Could not rename the service.",
+          deleteAction: "Delete service",
+          deleteConfirmTitle: "Delete service",
+          deleteConfirmDescription:
+            "Delete the service \"{{name}}\"? Its check history and incidents are kept, but it stops being monitored. This action cannot be undone.",
+          deleteError: "Could not delete the service.",
         },
         addDrawer: {
           monitorModeLabel: "How to monitor",
