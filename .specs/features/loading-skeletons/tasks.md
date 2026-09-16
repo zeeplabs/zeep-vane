@@ -106,11 +106,11 @@ Note: T2–T18 each depend only on T1 (the shared primitive) — they are indepe
 **Requirement**: SKEL-04, SKEL-05, SKEL-06, SKEL-07
 
 **Done when**:
-- [ ] Loading branch renders skeleton rows (fixed count, 5) shaped like the real table's columns, wrapped in a container with `aria-busy="true"`.
-- [ ] The existing `t("...loading")` string (or an equivalent literal if no key exists yet) is rendered `sr-only` inside that container.
-- [ ] Real content and skeleton are mutually exclusive (same `isLoading ? A : B` shape already in the file).
-- [ ] Error branch (if any) untouched.
-- [ ] New test forces `isLoading: true` (MSW delayed response) and asserts `getAllByTestId("skeleton")` non-empty; existing tests still pass.
+- [x] Loading branch renders skeleton rows (fixed count, 5) shaped like the real table's columns, wrapped in a container with `aria-busy="true"`.
+- [x] The existing `t("...loading")` string (or an equivalent literal if no key exists yet) is rendered `sr-only` inside that container.
+- [x] Real content and skeleton are mutually exclusive (same `isLoading ? A : B` shape already in the file).
+- [x] Error branch (if any) untouched.
+- [x] New test forces `isLoading: true` (MSW delayed response) and asserts `getAllByTestId("skeleton")` non-empty; existing tests still pass.
 
 **Tests**: unit
 **Gate**: quick

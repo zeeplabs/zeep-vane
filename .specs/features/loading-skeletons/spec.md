@@ -89,10 +89,10 @@ Every screen that fetches data today (17 files rendering `useQuery`-backed conte
 | SKEL-01 | P1: Shared Skeleton primitive | Specified | Implementing |
 | SKEL-02 | P1: Shared Skeleton primitive | Specified | Implementing |
 | SKEL-03 | P1: Shared Skeleton primitive | Specified | Implementing |
-| SKEL-04 | P1: Replace text loading states across 17 screens | Specified | Pending |
-| SKEL-05 | P1: Replace text loading states across 17 screens | Specified | Pending |
-| SKEL-06 | P1: Replace text loading states across 17 screens | Specified | Pending |
-| SKEL-07 | P1: Replace text loading states across 17 screens | Specified | Pending |
+| SKEL-04 | P1: Replace text loading states across 17 screens | Specified | Implementing |
+| SKEL-05 | P1: Replace text loading states across 17 screens | Specified | Implementing |
+| SKEL-06 | P1: Replace text loading states across 17 screens | Specified | Implementing |
+| SKEL-07 | P1: Replace text loading states across 17 screens | Specified | Implementing |
 
 **Coverage:** 7 total, 7 mapped to tasks (shared primitive + 17 screens) ✅
 

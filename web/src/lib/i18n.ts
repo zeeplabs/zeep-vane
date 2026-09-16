@@ -7,6 +7,9 @@ const resources = {
       common: {
         close: "Fechar",
       },
+      admins: {
+        loading: "Carregando…",
+      },
       authLayout: {
         eyebrow: "Monitoramento em tempo real",
         headline: "Clareza total sobre a saúde da sua infraestrutura.",
@@ -511,6 +514,9 @@ const resources = {
     translation: {
       common: {
         close: "Close",
+      },
+      admins: {
+        loading: "Loading…",
       },
       authLayout: {
         eyebrow: "Real-time monitoring",
