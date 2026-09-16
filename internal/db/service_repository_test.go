@@ -628,3 +628,136 @@ func TestServiceRepository_Update_SameName_IsIdempotentNoError(t *testing.T) {
 		t.Errorf("Update() with unchanged name returned unexpected error: %v", err)
 	}
 }
+
+// TestServiceRepository_SoftDelete_SetsDeletedAtAndHidesFromReads covers
+// service-delete SVCDEL-01/02: deleted_at is set, and the service
+// disappears from Get/List/ListPaginated/ListPollingManual afterward.
+func TestServiceRepository_SoftDelete_SetsDeletedAtAndHidesFromReads(t *testing.T) {
+	repo, pool := newServiceRepoTestPool(t)
+	tenantID := seedPlainTenant(t, pool)
+	name := fmt.Sprintf("softdelete-%d", time.Now().UnixNano())
+	pollType, pollTarget, interval := "http", "https://example.com", 60
+	service := &Service{
+		Name: name, MonitorMode: "polling",
+		PollType: &pollType, PollTarget: &pollTarget, PollIntervalSeconds: &interval,
+	}
+	withTenantTx(t, pool, tenantID, func(ctx context.Context) {
+		if err := repo.Create(ctx, service); err != nil {
+			t.Fatalf("setup Create() returned unexpected error: %v", err)
+		}
+	})
+	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), "DELETE FROM services WHERE id = $1", service.ID) })
+
+	if err := repo.SoftDelete(context.Background(), service.ID); err != nil {
+		t.Fatalf("SoftDelete() returned unexpected error: %v", err)
+	}
+
+	var deletedAt *time.Time
+	if err := pool.QueryRow(context.Background(), "SELECT deleted_at FROM services WHERE id = $1", service.ID).Scan(&deletedAt); err != nil {
+		t.Fatalf("verify deleted_at query returned unexpected error: %v", err)
+	}
+	if deletedAt == nil {
+		t.Errorf("deleted_at = nil, want a timestamp after SoftDelete")
+	}
+
+	if _, found, err := repo.Get(context.Background(), service.ID); err != nil || found {
+		t.Errorf("Get() after SoftDelete = (found=%v, err=%v), want (found=false, err=nil)", found, err)
+	}
+
+	all, err := repo.List(context.Background())
+	if err != nil {
+		t.Fatalf("List() returned unexpected error: %v", err)
+	}
+	for _, s := range all {
+		if s.ID == service.ID {
+			t.Errorf("List() still returned soft-deleted service %s", service.ID)
+		}
+	}
+
+	polling, err := repo.ListPollingManual(context.Background())
+	if err != nil {
+		t.Fatalf("ListPollingManual() returned unexpected error: %v", err)
+	}
+	for _, s := range polling {
+		if s.ID == service.ID {
+			t.Errorf("ListPollingManual() still returned soft-deleted service %s", service.ID)
+		}
+	}
+}
+
+// TestServiceRepository_SoftDelete_AttachedToStatusPage_ReturnsErrServiceInUse
+// covers SVCDEL-03: a service still referenced by status_page_services is
+// not deleted.
+func TestServiceRepository_SoftDelete_AttachedToStatusPage_ReturnsErrServiceInUse(t *testing.T) {
+	repo, pool := newServiceRepoTestPool(t)
+	tenantID := seedPlainTenant(t, pool)
+	name := fmt.Sprintf("softdelete-inuse-%d", time.Now().UnixNano())
+	service := &Service{Name: name, SLOID: "slo-inuse"}
+	withTenantTx(t, pool, tenantID, func(ctx context.Context) {
+		if err := repo.Create(ctx, service); err != nil {
+			t.Fatalf("setup Create() returned unexpected error: %v", err)
+		}
+	})
+	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), "DELETE FROM services WHERE id = $1", service.ID) })
+
+	var statusPageID string
+	if err := pool.QueryRow(context.Background(),
+		"INSERT INTO status_pages (name, tenant_id) VALUES ($1, $2) RETURNING id",
+		"softdelete-inuse-page", tenantID,
+	).Scan(&statusPageID); err != nil {
+		t.Fatalf("setup status_pages INSERT returned unexpected error: %v", err)
+	}
+	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), "DELETE FROM status_pages WHERE id = $1", statusPageID) })
+	if _, err := pool.Exec(context.Background(),
+		"INSERT INTO status_page_services (status_page_id, service_id) VALUES ($1, $2)", statusPageID, service.ID,
+	); err != nil {
+		t.Fatalf("setup status_page_services INSERT returned unexpected error: %v", err)
+	}
+
+	err := repo.SoftDelete(context.Background(), service.ID)
+	if !errors.Is(err, ErrServiceInUse) {
+		t.Fatalf("SoftDelete() error = %v, want ErrServiceInUse", err)
+	}
+
+	got, found, getErr := repo.Get(context.Background(), service.ID)
+	if getErr != nil || !found {
+		t.Fatalf("Get() after blocked SoftDelete = (found=%v, err=%v), want (found=true, err=nil)", found, getErr)
+	}
+	if got.Name != name {
+		t.Errorf("got.Name = %q, want unchanged %q", got.Name, name)
+	}
+}
+
+// TestServiceRepository_SoftDelete_UnknownID_ReturnsErrNotFound covers
+// SVCDEL-04.
+func TestServiceRepository_SoftDelete_UnknownID_ReturnsErrNotFound(t *testing.T) {
+	repo, _ := newServiceRepoTestPool(t)
+
+	err := repo.SoftDelete(context.Background(), "00000000-0000-0000-0000-000000000000")
+	if !errors.Is(err, ErrNotFound) {
+		t.Errorf("SoftDelete() error = %v, want ErrNotFound", err)
+	}
+}
+
+// TestServiceRepository_SoftDelete_AlreadyDeleted_ReturnsErrNotFound covers
+// the spec.md Assumption: a second delete call is idempotent-as-404, not a
+// distinct success/error path.
+func TestServiceRepository_SoftDelete_AlreadyDeleted_ReturnsErrNotFound(t *testing.T) {
+	repo, pool := newServiceRepoTestPool(t)
+	tenantID := seedPlainTenant(t, pool)
+	name := fmt.Sprintf("softdelete-twice-%d", time.Now().UnixNano())
+	service := &Service{Name: name, SLOID: "slo-twice"}
+	withTenantTx(t, pool, tenantID, func(ctx context.Context) {
+		if err := repo.Create(ctx, service); err != nil {
+			t.Fatalf("setup Create() returned unexpected error: %v", err)
+		}
+	})
+	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), "DELETE FROM services WHERE id = $1", service.ID) })
+
+	if err := repo.SoftDelete(context.Background(), service.ID); err != nil {
+		t.Fatalf("first SoftDelete() returned unexpected error: %v", err)
+	}
+	if err := repo.SoftDelete(context.Background(), service.ID); !errors.Is(err, ErrNotFound) {
+		t.Errorf("second SoftDelete() error = %v, want ErrNotFound", err)
+	}
+}

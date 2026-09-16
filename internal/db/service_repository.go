@@ -58,6 +58,14 @@ type Service struct {
 	StatusAnalysis *string
 }
 
+// ErrServiceInUse is returned by SoftDelete when the service is still
+// referenced by a status_page_services row (service-delete spec.md
+// SVCDEL-03) - same "block, never silently unlink" convention
+// DomainRepository.Delete's ErrDomainInUse uses, except here there is no
+// natural FK-violation to catch (a soft delete never touches
+// status_page_services), so the check is explicit.
+var ErrServiceInUse = errors.New("db: service is still attached to a status page")
+
 // ServiceRepository accesses the services table.
 type ServiceRepository struct {
 	pool *Pool
@@ -109,7 +117,7 @@ func (r *ServiceRepository) Create(ctx context.Context, service *Service) error 
 func (r *ServiceRepository) Get(ctx context.Context, id string) (*Service, bool, error) {
 	var service Service
 	row := r.pool.QueryRow(ctx,
-		"SELECT id, name, COALESCE(slo_id, ''), slo_name, current_status, last_status_change_at, status_analysis FROM services WHERE id = $1",
+		"SELECT id, name, COALESCE(slo_id, ''), slo_name, current_status, last_status_change_at, status_analysis FROM services WHERE id = $1 AND deleted_at IS NULL",
 		id,
 	)
 	if err := row.Scan(&service.ID, &service.Name, &service.SLOID, &service.SLOName, &service.CurrentStatus, &service.LastStatusChangeAt, &service.StatusAnalysis); err != nil {
@@ -132,6 +140,7 @@ func (r *ServiceRepository) ListPaginated(ctx context.Context, page, pageSize in
 	rows, err := r.pool.Query(ctx,
 		`SELECT id, name, COALESCE(slo_id, ''), slo_name, current_status, last_status_change_at, COUNT(*) OVER() AS total
 		 FROM services
+		 WHERE deleted_at IS NULL
 		 ORDER BY name
 		 LIMIT $1 OFFSET $2`,
 		pageSize, offset,
@@ -167,7 +176,7 @@ func (r *ServiceRepository) ListPaginated(ctx context.Context, page, pageSize in
 // countServices is the zero-row fallback for ListPaginated's total (PAG-08).
 func (r *ServiceRepository) countServices(ctx context.Context) (int, error) {
 	var total int
-	row := r.pool.QueryRow(ctx, "SELECT COUNT(*) FROM services")
+	row := r.pool.QueryRow(ctx, "SELECT COUNT(*) FROM services WHERE deleted_at IS NULL")
 	if err := row.Scan(&total); err != nil {
 		return 0, fmt.Errorf("db: failed to count services: %w", err)
 	}
@@ -181,7 +190,7 @@ func (r *ServiceRepository) countServices(ctx context.Context) (int, error) {
 // this is the ServiceRepository/poller.go precedent, not a new deviation).
 func (r *ServiceRepository) List(ctx context.Context) ([]Service, error) {
 	rows, err := r.pool.Query(ctx,
-		"SELECT id, name, COALESCE(slo_id, ''), monitor_mode, current_status, last_status_change_at FROM services ORDER BY name")
+		"SELECT id, name, COALESCE(slo_id, ''), monitor_mode, current_status, last_status_change_at FROM services WHERE deleted_at IS NULL ORDER BY name")
 	if err != nil {
 		return nil, fmt.Errorf("db: failed to list services: %w", err)
 	}
@@ -212,7 +221,7 @@ func (r *ServiceRepository) ListPollingManual(ctx context.Context) ([]Service, e
 	rows, err := r.pool.Query(ctx,
 		`SELECT id, name, poll_type, poll_target, poll_interval_seconds, current_status, last_status_change_at
 		 FROM services
-		 WHERE monitor_mode = 'polling'
+		 WHERE monitor_mode = 'polling' AND deleted_at IS NULL
 		 ORDER BY name`)
 	if err != nil {
 		return nil, fmt.Errorf("db: failed to list polling-manual services: %w", err)
@@ -245,7 +254,7 @@ func (r *ServiceRepository) ListForStatusPage(ctx context.Context, statusPageID 
 		`SELECT s.id, s.name, COALESCE(s.slo_id, ''), s.current_status, s.last_status_change_at, s.status_analysis
 		 FROM services s
 		 JOIN status_page_services sps ON sps.service_id = s.id
-		 WHERE sps.status_page_id = $1
+		 WHERE sps.status_page_id = $1 AND s.deleted_at IS NULL
 		 ORDER BY s.name`,
 		statusPageID,
 	)
@@ -276,12 +285,49 @@ func (r *ServiceRepository) ListForStatusPage(ctx context.Context, statusPageID 
 // ErrNotFound if no service matches id, the same not-found convention
 // DomainRepository.Delete uses.
 func (r *ServiceRepository) Update(ctx context.Context, id, name string) error {
-	tag, err := r.pool.Exec(ctx, "UPDATE services SET name = $2 WHERE id = $1", id, name)
+	tag, err := r.pool.Exec(ctx, "UPDATE services SET name = $2 WHERE id = $1 AND deleted_at IS NULL", id, name)
 	if err != nil {
 		return fmt.Errorf("db: failed to update service: %w", err)
 	}
 	if tag.RowsAffected() == 0 {
 		return ErrNotFound
+	}
+	return nil
+}
+
+// SoftDelete marks the service identified by id as deleted (service-delete
+// SVCDEL-01/02/07): sets deleted_at, never removes the row or touches
+// status_intervals/incidents (no cascade). Blocked with ErrServiceInUse if
+// any status_page_services row still references id (SVCDEL-03) - checked
+// inside the same transaction as the update to avoid a race between the
+// check and the write. Returns ErrNotFound if id doesn't exist or is
+// already soft-deleted (idempotent: a second delete call 404s the same way
+// GET does, per spec.md Assumptions).
+func (r *ServiceRepository) SoftDelete(ctx context.Context, id string) error {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("db: failed to begin soft-delete transaction: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	var inUse bool
+	if err := tx.QueryRow(ctx, "SELECT EXISTS (SELECT 1 FROM status_page_services WHERE service_id = $1)", id).Scan(&inUse); err != nil {
+		return fmt.Errorf("db: failed to check status_page_services for service: %w", err)
+	}
+	if inUse {
+		return ErrServiceInUse
+	}
+
+	tag, err := tx.Exec(ctx, "UPDATE services SET deleted_at = now() WHERE id = $1 AND deleted_at IS NULL", id)
+	if err != nil {
+		return fmt.Errorf("db: failed to soft-delete service: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("db: failed to commit soft-delete transaction: %w", err)
 	}
 	return nil
 }

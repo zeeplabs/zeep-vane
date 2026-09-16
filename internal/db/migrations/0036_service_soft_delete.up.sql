@@ -1,0 +1,1 @@
+ALTER TABLE services ADD COLUMN deleted_at TIMESTAMPTZ;

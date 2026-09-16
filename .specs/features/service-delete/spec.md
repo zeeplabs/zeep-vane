@@ -76,17 +76,17 @@ There is no way to remove a monitored service today — `ServiceRepository`/`Ser
 
 | Requirement ID | Story | Phase | Status |
 | --- | --- | --- | --- |
-| SVCDEL-01 | P1: Soft-delete a monitored service | Design | Pending |
-| SVCDEL-02 | P1: Soft-delete a monitored service | Design | Pending |
-| SVCDEL-03 | P1: Soft-delete a monitored service | Design | Pending |
-| SVCDEL-04 | P1: Soft-delete a monitored service | Design | Pending |
-| SVCDEL-05 | P1: Soft-delete a monitored service | Design | Pending |
-| SVCDEL-06 | P1: Soft-delete a monitored service | Design | Pending |
-| SVCDEL-07 | P1: Soft-delete a monitored service | Design | Pending |
-| SVCDEL-08 | P1: Soft-delete a monitored service | Design | Pending |
-| SVCDEL-09 | P1: Soft-delete a monitored service | Design | Pending |
+| SVCDEL-01 | P1: Soft-delete a monitored service | Implementing | Implementing |
+| SVCDEL-02 | P1: Soft-delete a monitored service | Implementing | Implementing |
+| SVCDEL-03 | P1: Soft-delete a monitored service | Implementing | Implementing |
+| SVCDEL-04 | P1: Soft-delete a monitored service | Implementing | Implementing |
+| SVCDEL-05 | P1: Soft-delete a monitored service | Implementing | Pending |
+| SVCDEL-06 | P1: Soft-delete a monitored service | Implementing | Pending |
+| SVCDEL-07 | P1: Soft-delete a monitored service | Implementing | Implementing |
+| SVCDEL-08 | P1: Soft-delete a monitored service | Implementing | Implementing |
+| SVCDEL-09 | P1: Soft-delete a monitored service | Implementing | Pending |
 
-**Coverage:** 9 total, 0 mapped to tasks, 9 unmapped ⚠️
+**Coverage:** 9 total, 6 mapped to tasks (repository layer), 3 unmapped (handler/poller/frontend) ⚠️
 
 ---
 
