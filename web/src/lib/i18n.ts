@@ -16,6 +16,9 @@ const resources = {
       statusPages: {
         loading: "Carregando…",
       },
+      incidents: {
+        loading: "Carregando…",
+      },
       authLayout: {
         eyebrow: "Monitoramento em tempo real",
         headline: "Clareza total sobre a saúde da sua infraestrutura.",
@@ -529,6 +532,9 @@ const resources = {
         loading: "Loading…",
       },
       statusPages: {
+        loading: "Loading…",
+      },
+      incidents: {
         loading: "Loading…",
       },
       authLayout: {

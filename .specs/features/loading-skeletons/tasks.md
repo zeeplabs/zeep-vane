@@ -244,7 +244,7 @@ Note: T2–T18 each depend only on T1 (the shared primitive) — they are indepe
 **Where**: `web/src/features/incidents/IncidentsPage.tsx` (test file updated alongside, per co-location rule)
 **Depends on**: T1
 **Requirement**: SKEL-04, SKEL-05, SKEL-06, SKEL-07
-**Done when**: same shape as T2. Last task of Phase 3 — run the Build gate.
+**Done when**: same shape as T2. Last task of Phase 3 — run the Build gate. ✅ Done (2026-09-16): no pre-existing `incidents` i18n namespace - added `incidents.loading` (pt/en). `npx tsc -b --noEmit` clean, full suite 95 files / 617 tests green.
 **Tests**: unit
 **Gate**: build
 **Commit**: `feat(incidents): add loading skeleton to IncidentsPage`
