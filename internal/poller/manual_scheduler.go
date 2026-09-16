@@ -72,12 +72,23 @@ func NewManualScheduler(services pollingServiceLister, statuses serviceStatusUpd
 	}
 }
 
+// trackedService is what reconcile remembers about a service ID it has
+// already spawned a goroutine for: which tenant owns it (so a tenant whose
+// list call fails this round never has its services mistaken for deleted -
+// see reconcile) and the context.CancelFunc that stops its goroutine
+// (service-delete SVCDEL-06).
+type trackedService struct {
+	tenantID string
+	cancel   context.CancelFunc
+}
+
 // Run starts the reconciliation loop: an immediate first pass, then every
 // s.discoveryInterval, until ctx is canceled - the same immediate-first-
 // pass-then-tick shape as Poller.Run. Every per-service goroutine spawned
-// along the way is an explicit child of ctx (via a single context.WithCancel
-// wrapping this whole call) and is waited on before Run returns, so
-// canceling ctx deterministically leaves no goroutine running past this
+// along the way runs under its own context.WithCancel child of ctx (so
+// reconcile can stop one service's goroutine independently of the others
+// when it's soft-deleted, SVCDEL-06) and is waited on before Run returns,
+// so canceling ctx deterministically leaves no goroutine running past this
 // call (design.md Risks & Concerns: goroutine-leak guard) - callers never
 // need to guess how long shutdown takes.
 func (s *ManualScheduler) Run(ctx context.Context) {
@@ -87,13 +98,13 @@ func (s *ManualScheduler) Run(ctx context.Context) {
 	var wg sync.WaitGroup
 	defer wg.Wait()
 
-	known := make(map[string]bool)
+	tracked := make(map[string]trackedService)
 
 	select {
 	case <-ctx.Done():
 		return
 	default:
-		s.reconcile(runCtx, known, &wg)
+		s.reconcile(runCtx, tracked, &wg)
 	}
 
 	ticker := time.NewTicker(s.discoveryInterval)
@@ -104,28 +115,38 @@ func (s *ManualScheduler) Run(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			s.reconcile(runCtx, known, &wg)
+			s.reconcile(runCtx, tracked, &wg)
 		}
 	}
 }
 
 // reconcile lists every tenant, then that tenant's polling-manual services
 // (inside a short tenant-scoped transaction, TENANT-04 - services carries
-// RLS same as every other tenant-scoped table), and spawns one goroutine
-// per service ID not already in known. A tenant whose transaction or list
-// call fails is logged and skipped for this pass; it is retried on the
-// next reconciliation tick, same failure posture as Poller.pollCycle.
-func (s *ManualScheduler) reconcile(ctx context.Context, known map[string]bool, wg *sync.WaitGroup) {
+// RLS same as every other tenant-scoped table), spawns one goroutine per
+// service ID not already in tracked, and cancels the goroutine of any
+// tracked service ID that no longer appears in its tenant's live list
+// (service-delete SVCDEL-06: the service was soft-deleted, so
+// ListPollingManual - which filters deleted_at IS NULL - stopped returning
+// it). A tenant whose transaction or list call fails is logged and skipped
+// for this pass, same failure posture as Poller.pollCycle - its
+// already-tracked services are left untouched (neither respawned nor
+// canceled) rather than mistaken for deleted, since a failed list call
+// can't tell "deleted" apart from "transiently unreadable".
+func (s *ManualScheduler) reconcile(ctx context.Context, tracked map[string]trackedService, wg *sync.WaitGroup) {
 	tenants, err := s.tenants.List(ctx)
 	if err != nil {
 		s.logger.Error("manual_scheduler: failed to list tenants", zap.Error(err))
 		return
 	}
 
+	liveIDs := make(map[string]bool)
+	failedTenantIDs := make(map[string]bool)
+
 	for _, tenant := range tenants {
 		tenantCtx, commit, rollback, err := s.tenantTx(ctx, tenant.ID)
 		if err != nil {
 			s.logger.Error("manual_scheduler: failed to begin tenant transaction", zap.String("tenant_id", tenant.ID), zap.Error(err))
+			failedTenantIDs[tenant.ID] = true
 			continue
 		}
 
@@ -133,27 +154,40 @@ func (s *ManualScheduler) reconcile(ctx context.Context, known map[string]bool, 
 		if err != nil {
 			s.logger.Error("manual_scheduler: failed to list polling-manual services", zap.String("tenant_id", tenant.ID), zap.Error(err))
 			rollback(tenantCtx)
+			failedTenantIDs[tenant.ID] = true
 			continue
 		}
 
 		if err := commit(tenantCtx); err != nil {
 			s.logger.Error("manual_scheduler: failed to commit tenant transaction", zap.String("tenant_id", tenant.ID), zap.Error(err))
 			rollback(tenantCtx)
+			failedTenantIDs[tenant.ID] = true
 			continue
 		}
 
 		for _, svc := range services {
-			if known[svc.ID] {
+			liveIDs[svc.ID] = true
+			if _, ok := tracked[svc.ID]; ok {
 				continue
 			}
-			known[svc.ID] = true
+
+			svcCtx, svcCancel := context.WithCancel(ctx)
+			tracked[svc.ID] = trackedService{tenantID: tenant.ID, cancel: svcCancel}
 
 			wg.Add(1)
 			go func(tenantID string, svc db.Service) {
 				defer wg.Done()
-				s.runServiceLoop(ctx, tenantID, svc)
+				s.runServiceLoop(svcCtx, tenantID, svc)
 			}(tenant.ID, svc)
 		}
+	}
+
+	for id, svc := range tracked {
+		if liveIDs[id] || failedTenantIDs[svc.tenantID] {
+			continue
+		}
+		svc.cancel()
+		delete(tracked, id)
 	}
 }
 

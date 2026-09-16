@@ -362,6 +362,102 @@ func TestManualScheduler_Run_GoroutineCountReturnsToBaselineAfterCtxCancel(t *te
 	}
 }
 
+// mutableFakePollingServiceLister is fakePollingServiceLister plus a
+// mutex-guarded setter, used only by
+// TestManualScheduler_ServiceDisappearsFromList_GoroutineCanceledWithoutFullShutdown
+// to simulate a service being soft-deleted (service-delete SVCDEL-06)
+// mid-run - i.e. mutated concurrently with reconcile's own background
+// reads, unlike every other test here which sets servicesByTenant once
+// before Run starts.
+type mutableFakePollingServiceLister struct {
+	mu       sync.Mutex
+	byTenant map[string][]db.Service
+}
+
+func (f *mutableFakePollingServiceLister) ListPollingManual(ctx context.Context) ([]db.Service, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	tenantID, _ := ctx.Value(fakeTenantTxKey{}).(string)
+	return append([]db.Service(nil), f.byTenant[tenantID]...), nil
+}
+
+func (f *mutableFakePollingServiceLister) set(tenantID string, services []db.Service) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.byTenant[tenantID] = services
+}
+
+// TestManualScheduler_ServiceDisappearsFromList_GoroutineCanceledWithoutFullShutdown
+// covers service-delete SVCDEL-06: when a polling-manual service is
+// soft-deleted, ListPollingManual (which filters deleted_at IS NULL, see
+// ServiceRepository) stops returning it - and reconcile must cancel that
+// service's own goroutine on the very next tick, without requiring Run's
+// top-level ctx to be canceled (the goroutine-leak-guard test above only
+// proves cleanup on full shutdown; this proves per-service teardown).
+func TestManualScheduler_ServiceDisappearsFromList_GoroutineCanceledWithoutFullShutdown(t *testing.T) {
+	listener := newLocalListener(t)
+	acceptAndClose(listener)
+	addr := listener.Addr().String()
+	pollTypeTCP := "tcp"
+	pollInterval := 30
+	svc := db.Service{
+		ID: "svc-soft-deleted", CurrentStatus: "not_configured",
+		MonitorMode: "polling", PollType: &pollTypeTCP, PollTarget: &addr, PollIntervalSeconds: &pollInterval,
+	}
+
+	statuses := &fakeStatusUpdater{}
+	intervals := &fakeIntervalWriter{}
+	tx := &fakeTenantTx{beginErrForTenant: map[string]error{}, commitErrForTenant: map[string]error{}}
+	tenants := &fakeTenantLister{tenants: []db.Tenant{{ID: "tenant-a"}}}
+	services := &mutableFakePollingServiceLister{byTenant: map[string][]db.Service{"tenant-a": {svc}}}
+
+	s := newTestManualScheduler(services, statuses, intervals, tenants, tx.fn)
+	s.discoveryInterval = 10 * time.Millisecond
+
+	runtime.GC()
+	baseline := runtime.NumGoroutine()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan struct{})
+	go func() {
+		s.Run(ctx)
+		close(done)
+	}()
+	t.Cleanup(func() {
+		cancel()
+		<-done
+	})
+
+	// Let discovery spawn the service's goroutine.
+	time.Sleep(80 * time.Millisecond)
+	afterSpawn := runtime.NumGoroutine()
+	if afterSpawn <= baseline {
+		t.Fatalf("NumGoroutine() after spawn = %d, want > baseline %d", afterSpawn, baseline)
+	}
+
+	// Simulate the service being soft-deleted: it stops appearing in
+	// ListPollingManual's result.
+	services.set("tenant-a", nil)
+
+	// Let a few more discovery ticks run so reconcile observes the removal
+	// and cancels the goroutine - without ever canceling ctx.
+	var afterRemoval int
+	ok := false
+	for i := 0; i < 30; i++ {
+		time.Sleep(20 * time.Millisecond)
+		runtime.GC()
+		afterRemoval = runtime.NumGoroutine()
+		if afterRemoval <= baseline+1 {
+			ok = true
+			break
+		}
+	}
+	if !ok {
+		t.Errorf("NumGoroutine() after service removed from list = %d, want back near baseline %d (goroutine not torn down)", afterRemoval, baseline)
+	}
+}
+
 // TestManualScheduler_Reconcile_TenantListError_LoggedNoPanic asserts
 // reconcile's own failure posture mirrors Poller.pollCycle: a tenant-list
 // error is logged and the pass is skipped, never a panic.
@@ -380,8 +476,8 @@ func TestManualScheduler_Reconcile_TenantListError_LoggedNoPanic(t *testing.T) {
 
 	s := newTestManualScheduler(services, statuses, intervals, tenants, tx.fn)
 	var wg sync.WaitGroup
-	known := make(map[string]bool)
-	s.reconcile(context.Background(), known, &wg)
+	tracked := make(map[string]trackedService)
+	s.reconcile(context.Background(), tracked, &wg)
 	wg.Wait()
 
 	if len(tx.beginCalls) != 0 {
