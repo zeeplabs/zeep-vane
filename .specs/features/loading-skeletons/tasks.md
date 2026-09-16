@@ -172,7 +172,7 @@ Note: T2–T18 each depend only on T1 (the shared primitive) — they are indepe
 **Where**: `web/src/features/settings/SettingsPage.tsx` (test file updated alongside, per co-location rule)
 **Depends on**: T1
 **Requirement**: SKEL-04, SKEL-05, SKEL-06, SKEL-07
-**Done when**: same shape as T2, scoped to this page's form/card layout. Last task of Phase 2 — run the Build gate.
+**Done when**: same shape as T2, scoped to this page's form/card layout. Last task of Phase 2 — run the Build gate. ✅ Done (2026-09-16): `npx tsc -b --noEmit` clean, full suite 94 files / 605 tests green.
 **Tests**: unit
 **Gate**: build
 **Commit**: `feat(settings): add loading skeleton to SettingsPage`

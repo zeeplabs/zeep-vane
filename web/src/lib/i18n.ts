@@ -209,6 +209,7 @@ const resources = {
       settingsPage: {
         title: "Configurações",
         subtitle: "Perfil da empresa e dados fiscais usados nas faturas da conta.",
+        loading: "Carregando…",
         saved: "Alterações salvas",
         discard: "Descartar",
         save: "Salvar alterações",
@@ -718,6 +719,7 @@ const resources = {
       settingsPage: {
         title: "Settings",
         subtitle: "Company profile and fiscal data used on the account's invoices.",
+        loading: "Loading…",
         saved: "Changes saved",
         discard: "Discard",
         save: "Save changes",
