@@ -433,6 +433,31 @@ func adminManagementRouteCases() []routeCase {
 	}
 }
 
+// serviceOwnerOnlyRouteCases lists service-edit/service-delete's two
+// ownerOnly routes (SVCEDIT-05, SVCDEL-05) - a stricter gate than the
+// writeRoles used by POST/GET on /api/services above. Kept as its own
+// table rather than folded into adminManagementRouteCases: these aren't
+// admin-management routes, they just happen to share the same role tier.
+func serviceOwnerOnlyRouteCases() []routeCase {
+	return []routeCase{
+		{
+			name:   "PATCH /api/services/{id}",
+			method: http.MethodPatch,
+			path:   "/api/services/" + routesTestNonexistentID,
+			body: func() []byte {
+				b, _ := json.Marshal(map[string]string{"name": "cli-routes-test-renamed"})
+				return b
+			},
+		},
+		{
+			name:   "DELETE /api/services/{id}",
+			method: http.MethodDelete,
+			path:   "/api/services/" + routesTestNonexistentID,
+			body:   func() []byte { return nil },
+		},
+	}
+}
+
 func doRouteRequest(t *testing.T, r http.Handler, token string, rt routeCase) *httptest.ResponseRecorder {
 	t.Helper()
 	req := httptest.NewRequest(rt.method, rt.path, bytes.NewReader(rt.body()))
@@ -527,6 +552,46 @@ func TestAdminRouter_Owner_AdminManagementRoutes_PassAuthorization(t *testing.T)
 	token := issueRoutesTestToken(t, admins, pool, tenantID, db.RoleOwner)
 
 	for _, rt := range adminManagementRouteCases() {
+		t.Run(rt.name, func(t *testing.T) {
+			rec := doRouteRequest(t, r, token, rt)
+			if rec.Code == http.StatusUnauthorized || rec.Code == http.StatusForbidden {
+				t.Errorf("status = %d, want not 401/403 for owner, body = %s", rec.Code, rec.Body.String())
+			}
+		})
+	}
+}
+
+// TestAdminRouter_OperatorAndViewer_ServiceOwnerOnlyRoutes_403 covers
+// service-edit SVCEDIT-05 / service-delete SVCDEL-05 through the real
+// router built by buildAdminRouter, not just the hand-mirrored router in
+// internal/api/services_handler_test.go - closing the exact gap a prior
+// Verifier pass flagged for PATCH /api/services/{id} (validation.md).
+func TestAdminRouter_OperatorAndViewer_ServiceOwnerOnlyRoutes_403(t *testing.T) {
+	r, pool, admins, tenantID := newAdminRouterAndTenantForTest(t)
+
+	for _, role := range []string{db.RoleOperator, db.RoleViewer} {
+		role := role
+		t.Run(role, func(t *testing.T) {
+			token := issueRoutesTestToken(t, admins, pool, tenantID, role)
+			for _, rt := range serviceOwnerOnlyRouteCases() {
+				t.Run(rt.name, func(t *testing.T) {
+					rec := doRouteRequest(t, r, token, rt)
+					if rec.Code != http.StatusForbidden {
+						t.Errorf("status = %d, want %d, body = %s", rec.Code, http.StatusForbidden, rec.Body.String())
+					}
+				})
+			}
+		})
+	}
+}
+
+// TestAdminRouter_Owner_ServiceOwnerOnlyRoutes_PassAuthorization covers the
+// owner-passes-through half of the same gap.
+func TestAdminRouter_Owner_ServiceOwnerOnlyRoutes_PassAuthorization(t *testing.T) {
+	r, pool, admins, tenantID := newAdminRouterAndTenantForTest(t)
+	token := issueRoutesTestToken(t, admins, pool, tenantID, db.RoleOwner)
+
+	for _, rt := range serviceOwnerOnlyRouteCases() {
 		t.Run(rt.name, func(t *testing.T) {
 			rec := doRouteRequest(t, r, token, rt)
 			if rec.Code == http.StatusUnauthorized || rec.Code == http.StatusForbidden {
