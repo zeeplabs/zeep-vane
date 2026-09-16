@@ -3,7 +3,7 @@
   "promote_threshold": 2,
   "window_days": 45,
   "quarantine_threshold": 2,
-  "next_id": 60,
+  "next_id": 62,
   "lessons": [
     {
       "id": "L-001",
@@ -1066,6 +1066,42 @@
       ],
       "created": "2026-09-16T22:21:28Z",
       "last_seen": "2026-09-16T22:21:28Z"
+    },
+    {
+      "id": "L-060",
+      "key": "surviving_mutant::when a reconcile gc loop tracks per tenant or per owner failure state to avoid tearing down live resources on a transient error add a test that fails one tracked tenant s list call while another tenant s tracked resource stays live removing the failed tenant guard must be provably caught not just the top level all tenants fail case",
+      "text": "When a reconcile/GC loop tracks per-tenant (or per-owner) failure state to avoid tearing down live resources on a transient error, add a test that fails ONE tracked tenant's list call while another tenant's tracked resource stays live - removing the failed-tenant guard must be provably caught, not just the top-level all-tenants-fail case.",
+      "signal": "surviving_mutant",
+      "scope": "internal/poller",
+      "status": "candidate",
+      "features": [
+        "service-delete"
+      ],
+      "recurrence": 1,
+      "harmful": 0,
+      "evidence": [
+        "internal/poller/manual_scheduler.go:186 (internal/poller)"
+      ],
+      "created": "2026-09-16T22:32:47Z",
+      "last_seen": "2026-09-16T22:32:47Z"
+    },
+    {
+      "id": "L-061",
+      "key": "spec_precision_gap::a check then write inside one transaction comment does not by itself prevent a race against a concurrent transaction it only guarantees atomicity within that one transaction true race safety against a concurrent writer e g an attach happening between the check and the commit requires an explicit row lock select for update taken by both sides since postgres s implicit fk lock for key share does not conflict with a plain update for no key update on the referenced row",
+      "text": "A 'check-then-write inside one transaction' comment does not by itself prevent a race against a CONCURRENT transaction - it only guarantees atomicity within that one transaction. True race-safety against a concurrent writer (e.g. an attach happening between the check and the commit) requires an explicit row lock (SELECT ... FOR UPDATE) taken by BOTH sides, since Postgres's implicit FK lock (FOR KEY SHARE) does not conflict with a plain UPDATE (FOR NO KEY UPDATE) on the referenced row.",
+      "signal": "spec_precision_gap",
+      "scope": "internal/db",
+      "status": "candidate",
+      "features": [
+        "service-delete"
+      ],
+      "recurrence": 1,
+      "harmful": 0,
+      "evidence": [
+        "internal/db/service_repository.go:306-333 (internal/db)"
+      ],
+      "created": "2026-09-16T22:32:47Z",
+      "last_seen": "2026-09-16T22:32:47Z"
     }
   ]
 }

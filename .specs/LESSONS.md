@@ -368,6 +368,18 @@ Seen once or not yet corroborated. Tracked, not trusted.
 - evidence: internal/cli/routes.go:230 - mutant #3 removing ownerOnly from real route wiring survived internal/cli+internal/api test suites (routes)
 - last seen: 2026-09-16T22:21:28Z
 
+### L-060 - When a reconcile/GC loop tracks per-tenant (or per-owner) failure state to avoid tearing down live resources on a transient error, add a test that fails ONE tracked tenant's list call while another tenant's tracked resource stays live - removing the failed-tenant guard must be provably caught, not just the top-level all-tenants-fail case.
+- signal: `surviving_mutant` · recurrence: 1 feature(s) · scope: `internal/poller` · harmful: 0
+- features: service-delete
+- evidence: internal/poller/manual_scheduler.go:186 (internal/poller)
+- last seen: 2026-09-16T22:32:47Z
+
+### L-061 - A 'check-then-write inside one transaction' comment does not by itself prevent a race against a CONCURRENT transaction - it only guarantees atomicity within that one transaction. True race-safety against a concurrent writer (e.g. an attach happening between the check and the commit) requires an explicit row lock (SELECT ... FOR UPDATE) taken by BOTH sides, since Postgres's implicit FK lock (FOR KEY SHARE) does not conflict with a plain UPDATE (FOR NO KEY UPDATE) on the referenced row.
+- signal: `spec_precision_gap` · recurrence: 1 feature(s) · scope: `internal/db` · harmful: 0
+- features: service-delete
+- evidence: internal/db/service_repository.go:306-333 (internal/db)
+- last seen: 2026-09-16T22:32:47Z
+
 ## Quarantined (failed when applied - ignore)
 
 A confirmed lesson that recurred alongside failure. Kept for the maintainer to review.

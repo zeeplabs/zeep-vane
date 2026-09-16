@@ -81,8 +81,8 @@ There is no way to remove a monitored service today — `ServiceRepository`/`Ser
 | SVCDEL-03 | P1: Soft-delete a monitored service | Implementing | Verified |
 | SVCDEL-04 | P1: Soft-delete a monitored service | Implementing | Verified |
 | SVCDEL-05 | P1: Soft-delete a monitored service | Implementing | Verified |
-| SVCDEL-06 | P1: Soft-delete a monitored service | Implementing | Implementing (fix applied: `failedTenantIDs` guard test added, `TestManualScheduler_Reconcile_TenantListFailsOnLaterRound_DoesNotTearDownTrackedServices` - pending re-verify) |
-| SVCDEL-07 | P1: Soft-delete a monitored service | Implementing | Implementing (fix applied: `TestServiceRepository_SoftDelete_PreservesStatusIntervalsAndIncidents` added - pending re-verify) |
+| SVCDEL-06 | P1: Soft-delete a monitored service | Implementing | Verified |
+| SVCDEL-07 | P1: Soft-delete a monitored service | Implementing | Verified |
 | SVCDEL-08 | P1: Soft-delete a monitored service | Implementing | Verified |
 | SVCDEL-09 | P1: Soft-delete a monitored service | Implementing | Verified |
 
