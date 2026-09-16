@@ -7,8 +7,8 @@ import { Button } from "../../components/ui/Button";
 import { useAuth, type TwoFactorFactor } from "../../auth/AuthProvider";
 import { LoginTwoFactorStep } from "./LoginTwoFactorStep";
 import { ApiError } from "../../lib/apiClient";
-import { useBrandLogoUrl } from "../../lib/branding";
-import vaneLogo from "../../assets/vane-logo.webp";
+import { AuthLayout } from "./AuthLayout";
+import { OAuthButtons } from "./OAuthButtons";
 
 function EyeIcon({ crossed }: { crossed: boolean }) {
   return crossed ? <MdOutlineVisibilityOff size={18} aria-hidden="true" /> : <MdOutlineVisibility size={18} aria-hidden="true" />;
@@ -18,7 +18,6 @@ export function LoginPage() {
   const { t } = useTranslation();
   const { login, verifyTwoFactor } = useAuth();
   const navigate = useNavigate();
-  const logoUrl = useBrandLogoUrl();
 
   const [step, setStep] = useState<"credentials" | "twoFactor">("credentials");
   // The challenge token lives only here, in component memory - never in the
@@ -80,72 +79,28 @@ export function LoginPage() {
   }
 
   return (
-    <div className="grid min-h-screen w-full grid-cols-1 bg-bg lg:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)]">
-      <div className="relative hidden overflow-hidden border-r border-divider lg:flex lg:flex-col lg:justify-between lg:p-12">
-        <div
-          aria-hidden="true"
-          className="pointer-events-none absolute -left-40 -top-40 h-[520px] w-[520px] rounded-full opacity-40 blur-3xl"
-          style={{
-            background:
-              "radial-gradient(circle, var(--color-accent) 0%, var(--color-accent-2) 45%, transparent 70%)",
-          }}
+    <AuthLayout>
+      {step === "twoFactor" ? (
+        <LoginTwoFactorStep
+          submitting={submitting}
+          error={error}
+          onSubmit={handleVerify}
+          onBack={handleBackToCredentials}
+          onMethodChange={() => setError(null)}
         />
-        <div
-          aria-hidden="true"
-          className="pointer-events-none absolute -bottom-56 -right-24 h-[420px] w-[420px] rounded-full opacity-25 blur-3xl"
-          style={{ background: "radial-gradient(circle, var(--color-accent-2) 0%, transparent 70%)" }}
-        />
-
-        <div className="relative flex items-center gap-2">
-          <img src={logoUrl ?? vaneLogo} alt="Company logo" className="w-[180px] object-contain" />
-        </div>
-
-        <div className="relative flex flex-col gap-4">
-          <h1 className="max-w-md text-[32px] font-medium leading-tight text-text">
-            Status e incidentes, sob controle.
-          </h1>
-          <p className="max-w-sm text-[14.5px] leading-relaxed text-neutral-300">
-            Monitore integrações, comunique incidentes e mantenha suas status pages sempre
-            atualizadas — tudo em um painel só.
-          </p>
-        </div>
-
-        <p className="relative text-xs text-neutral-500">© {new Date().getFullYear()} Vane. Todos os direitos reservados.</p>
-      </div>
-
-      <div
-        className="flex w-full items-center justify-center px-4 py-12"
-        style={{ background: "color-mix(in srgb, var(--color-bg) 80%, black)" }}
-      >
-        <div className="w-full max-w-[380px]">
-          <div className="mb-8 flex flex-col gap-1 lg:hidden">
-            <div className="flex items-center gap-2">
-              {logoUrl ? (
-                <>
-                  <img src={logoUrl} alt="" className="h-5 w-5 object-contain" />
-                  <span className="text-[15px] font-medium tracking-tight text-text">Vane</span>
-                </>
-              ) : (
-                <img src={vaneLogo} alt="Vane" className="h-6 object-contain" />
-              )}
-            </div>
+      ) : (
+        <>
+          <div className="mb-6">
+            <h1 className="mb-1.5 text-[22px] font-bold tracking-tight text-text">{t("login.title")}</h1>
+            <p className="text-[13.5px] leading-relaxed text-neutral-400">{t("login.subtitle")}</p>
           </div>
 
-          {step === "twoFactor" ? (
-            <LoginTwoFactorStep
-              submitting={submitting}
-              error={error}
-              onSubmit={handleVerify}
-              onBack={handleBackToCredentials}
-              onMethodChange={() => setError(null)}
-            />
-          ) : (
-            <>
-          <div className="mb-7">
-            <h3 className="text-text">{t("login.title")}</h3>
-            <p className="mt-1 text-[13.5px] text-neutral-400">
-              Entre com suas credenciais para acessar o painel.
-            </p>
+          <OAuthButtons />
+
+          <div className="mb-5 flex items-center gap-2.5">
+            <div className="h-px flex-1 bg-divider" />
+            <span className="text-[11.5px] text-neutral-400">{t("auth.oauth.divider")}</span>
+            <div className="h-px flex-1 bg-divider" />
           </div>
 
           <form onSubmit={handleSubmit} className="flex flex-col gap-4">
@@ -190,10 +145,12 @@ export function LoginPage() {
               {t("login.submit")}
             </Button>
           </form>
-            </>
-          )}
-        </div>
-      </div>
-    </div>
+
+          <p className="mt-5 text-center text-[13px] text-neutral-400">
+            {t("login.noAccount")} <Link to="/signup" className="font-semibold text-accent hover:underline">{t("login.createAccount")}</Link>
+          </p>
+        </>
+      )}
+    </AuthLayout>
   );
 }

@@ -2,8 +2,7 @@ import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { apiFetch } from "../../lib/apiClient";
-import { useBrandLogoUrl } from "../../lib/branding";
-import vaneLogo from "../../assets/vane-logo.webp";
+import { AuthLayout } from "../auth/AuthLayout";
 
 type VerifyState = "loading" | "verified" | "invalid";
 
@@ -17,7 +16,6 @@ type VerifyState = "loading" | "verified" | "invalid";
 // backend's own contract (verifying never issues a session).
 export function VerifyEmailPage() {
   const { t } = useTranslation();
-  const logoUrl = useBrandLogoUrl();
   const { token } = useParams<{ token: string }>();
 
   const [state, setState] = useState<VerifyState>("loading");
@@ -41,37 +39,30 @@ export function VerifyEmailPage() {
   }, [token]);
 
   return (
-    <div
-      className="flex min-h-screen w-full items-center justify-center bg-bg px-4"
-      style={{ background: "color-mix(in srgb, var(--color-bg) 80%, black)" }}
-    >
-      <div className="w-full max-w-[380px] text-center">
-        <img src={logoUrl ?? vaneLogo} alt="Vane" className="mx-auto mb-6 h-8 object-contain" />
+    <AuthLayout>
+      {state === "loading" ? <p className="text-sm text-neutral-300">{t("verifyEmail.loading")}</p> : null}
 
-        {state === "loading" ? <p className="text-sm text-neutral-300">{t("verifyEmail.loading")}</p> : null}
+      {state === "verified" ? (
+        <>
+          <h1 className="mb-1.5 text-[22px] font-bold tracking-tight text-text">{t("verifyEmail.successTitle")}</h1>
+          <p className="text-[13.5px] leading-relaxed text-neutral-400">{t("verifyEmail.successSubtitle")}</p>
+        </>
+      ) : null}
 
-        {state === "verified" ? (
-          <>
-            <h3 className="text-text">{t("verifyEmail.successTitle")}</h3>
-            <p className="mt-1 text-[13.5px] text-neutral-400">{t("verifyEmail.successSubtitle")}</p>
-          </>
-        ) : null}
+      {state === "invalid" ? (
+        <>
+          <h1 className="mb-1.5 text-[22px] font-bold tracking-tight text-text">{t("verifyEmail.invalidTitle")}</h1>
+          <p role="alert" className="text-[13.5px] leading-relaxed text-critical">
+            {t("verifyEmail.invalidSubtitle")}
+          </p>
+        </>
+      ) : null}
 
-        {state === "invalid" ? (
-          <>
-            <h3 className="text-text">{t("verifyEmail.invalidTitle")}</h3>
-            <p role="alert" className="mt-1 text-[13.5px] text-critical">
-              {t("verifyEmail.invalidSubtitle")}
-            </p>
-          </>
-        ) : null}
-
-        {state !== "loading" ? (
-          <Link to="/login" className="mt-4 inline-block text-[12.5px] text-accent hover:underline">
-            {t("verifyEmail.goToLogin")}
-          </Link>
-        ) : null}
-      </div>
-    </div>
+      {state !== "loading" ? (
+        <Link to="/login" className="mt-4 inline-block text-[12.5px] text-accent hover:underline">
+          {t("verifyEmail.goToLogin")}
+        </Link>
+      ) : null}
+    </AuthLayout>
   );
 }

@@ -7,13 +7,30 @@ const resources = {
       common: {
         close: "Fechar",
       },
+      authLayout: {
+        eyebrow: "Monitoramento em tempo real",
+        headline: "Clareza total sobre a saúde da sua infraestrutura.",
+        statusTitle: "Todos os sistemas operacionais",
+        uptime: "99.98% uptime · últimos 30 dias",
+      },
+      auth: {
+        oauth: {
+          google: "Google",
+          microsoft: "Microsoft",
+          comingSoon: "Login social em breve.",
+          divider: "ou continue com email",
+        },
+      },
       login: {
         title: "Entrar",
+        subtitle: "Acesse o painel de monitoramento da sua organização.",
         email: "E-mail",
         password: "Senha",
         submit: "Entrar",
         forgotPassword: "Esqueci minha senha",
         invalidCredentials: "E-mail ou senha inválidos.",
+        noAccount: "Não tem uma conta?",
+        createAccount: "Criar conta",
         twoFactor: {
           title: "Verificação em duas etapas",
           subtitle: "Digite o código de 6 dígitos do seu aplicativo autenticador.",
@@ -68,6 +85,7 @@ const resources = {
         cta: "Ir para o login",
       },
       bootstrap: {
+        eyebrow: "Configuração inicial",
         title: "Crie a conta do primeiro administrador",
         subtitle: "Esta instância ainda não tem nenhum administrador. Crie a conta owner para começar.",
         name: "Nome",
@@ -473,13 +491,30 @@ const resources = {
       common: {
         close: "Close",
       },
+      authLayout: {
+        eyebrow: "Real-time monitoring",
+        headline: "Total clarity over your infrastructure's health.",
+        statusTitle: "All systems operational",
+        uptime: "99.98% uptime · last 30 days",
+      },
+      auth: {
+        oauth: {
+          google: "Google",
+          microsoft: "Microsoft",
+          comingSoon: "Social login coming soon.",
+          divider: "or continue with email",
+        },
+      },
       login: {
         title: "Sign in",
+        subtitle: "Access your organization's monitoring dashboard.",
         email: "Email",
         password: "Password",
         submit: "Sign in",
         forgotPassword: "Forgot my password",
         invalidCredentials: "Invalid email or password.",
+        noAccount: "Don't have an account?",
+        createAccount: "Create account",
         twoFactor: {
           title: "Two-factor verification",
           subtitle: "Enter the 6-digit code from your authenticator app.",
@@ -534,6 +569,7 @@ const resources = {
         cta: "Go to login",
       },
       bootstrap: {
+        eyebrow: "Initial setup",
         title: "Create the first administrator account",
         subtitle: "This instance has no administrator yet. Create the owner account to get started.",
         name: "Name",
