@@ -246,6 +246,11 @@ function Shortcuts() {
   );
 }
 
+// Disabled (2026-09-15, Julio) - not rendered anywhere below. No
+// Tenant.Plan/billing model exists yet (same pause as AD-025's seat-limit
+// banner in the Usuários screen), so showing this would advertise an
+// upgrade the backend can't actually sell. Kept in the file, unused, so
+// it's a one-line uncomment away once real billing exists.
 function UpsellBanner() {
   const { t } = useTranslation();
   return (
@@ -342,10 +347,11 @@ function SummaryGrid({ data, t }: { data: OverviewResponse; t: (key: string, opt
 // OverviewPage is the authenticated landing screen (dashboard-overview-page
 // OVW-01/02). Layout matches handoff-new-layout/Visao Geral.dc.html: 4
 // summary cards (fixed semantic color per card), a 1.4fr/1fr chart+incidents
-// row, a 4-up shortcuts row, and an activity card. The upsell banner and the
-// "Atividade recente do time" card are static placeholders (2026-09-14
-// decision: no Tenant.Plan/billing model and no ActivityEvent model exist
-// yet) - they render fixed example content, not real tenant state.
+// row, a 4-up shortcuts row, and an activity card. The "Atividade recente do
+// time" card is a static placeholder (2026-09-14 decision: no ActivityEvent
+// model exists yet) - renders fixed example content, not real tenant state.
+// The upsell banner is disabled entirely (2026-09-15) - see UpsellBanner's
+// own comment below.
 export function OverviewPage() {
   const { t } = useTranslation();
   const { data, isLoading, isError } = useOverview();
@@ -357,7 +363,11 @@ export function OverviewPage() {
         <p className="m-0 text-[13.5px] text-neutral-400">{t("overview.subtitle")}</p>
       </div>
 
-      <UpsellBanner />
+      {/* UpsellBanner desativado (2026-09-15, pedido do Julio): sem
+          Tenant.Plan/billing real por trás (mesma pausa de AD-025 do
+          seat-limit de Usuários), mostrar isso induziria a um upgrade que
+          não existe. Componente mantido no arquivo, só não renderizado -
+          reativar quando billing real existir. */}
 
       {isLoading ? (
         <p className="text-neutral-400">{t("overview.loading")}</p>

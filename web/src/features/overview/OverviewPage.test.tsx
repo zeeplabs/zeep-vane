@@ -61,10 +61,12 @@ describe("OverviewPage", () => {
     expect(screen.getByText("1 crítico, 0 monitorando")).toBeInTheDocument();
     expect(screen.getByText("de 6 serviços monitorados")).toBeInTheDocument();
     expect(screen.getByText("1 pendente de verificação")).toBeInTheDocument();
-    // 2026-09-14 decision: banner and activity feed are static placeholders
-    // (no Tenant.Plan/billing or ActivityEvent model yet), always rendered.
+    // 2026-09-14 decision: activity feed is a static placeholder (no
+    // ActivityEvent model yet), always rendered.
     expect(screen.getByText(/Atividade recente do time/i)).toBeInTheDocument();
-    expect(screen.getByText(/plano Free/i)).toBeInTheDocument();
+    // 2026-09-15: upsell banner disabled (no Tenant.Plan/billing behind it)
+    // - must never render.
+    expect(screen.queryByText(/plano Free/i)).not.toBeInTheDocument();
   });
 
   it("tenant vazio mostra '—' no uptime, 0 nos counts e o estado vazio de incidentes", async () => {
