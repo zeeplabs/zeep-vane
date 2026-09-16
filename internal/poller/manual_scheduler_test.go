@@ -484,3 +484,52 @@ func TestManualScheduler_Reconcile_TenantListError_LoggedNoPanic(t *testing.T) {
 		t.Errorf("beginCalls = %v, want none when listing tenants fails", tx.beginCalls)
 	}
 }
+
+// TestManualScheduler_Reconcile_TenantListFailsOnLaterRound_DoesNotTearDownTrackedServices
+// covers the Verifier finding in service-delete validation.md (M1):
+// reconcile's failedTenantIDs guard must stop a transiently-failing
+// tenant's already-tracked services from being mistaken for deleted and
+// torn down. Without the guard, ListPollingManual failing for a tenant
+// would empty that tenant's contribution to liveIDs, and every service
+// already tracked for it would be canceled - a real orphaned-goroutine
+// bug indistinguishable, from the outside, from an actual deletion.
+func TestManualScheduler_Reconcile_TenantListFailsOnLaterRound_DoesNotTearDownTrackedServices(t *testing.T) {
+	listener := newLocalListener(t)
+	acceptAndClose(listener)
+	addr := listener.Addr().String()
+	pollTypeTCP := "tcp"
+	pollInterval := 30
+	svc := db.Service{
+		ID: "svc-transient-fail", CurrentStatus: "not_configured",
+		MonitorMode: "polling", PollType: &pollTypeTCP, PollTarget: &addr, PollIntervalSeconds: &pollInterval,
+	}
+
+	tenants := &fakeTenantLister{tenants: []db.Tenant{{ID: "tenant-a"}}}
+	tx := &fakeTenantTx{beginErrForTenant: map[string]error{}, commitErrForTenant: map[string]error{}}
+	services := &fakePollingServiceLister{servicesByTenant: map[string][]db.Service{"tenant-a": {svc}}}
+	statuses := &fakeStatusUpdater{}
+	intervals := &fakeIntervalWriter{}
+
+	s := newTestManualScheduler(services, statuses, intervals, tenants, tx.fn)
+	var wg sync.WaitGroup
+	defer wg.Wait()
+	tracked := make(map[string]trackedService)
+
+	// First round: discovers and spawns the service.
+	s.reconcile(context.Background(), tracked, &wg)
+	if _, ok := tracked["svc-transient-fail"]; !ok {
+		t.Fatalf("tracked map after first reconcile = %v, want svc-transient-fail present", tracked)
+	}
+
+	// Second round: tenant-a's list call now fails transiently. The
+	// service must stay tracked - not canceled - since a failed list can't
+	// tell "deleted" apart from "transiently unreadable".
+	services.err = errors.New("transient list failure")
+	s.reconcile(context.Background(), tracked, &wg)
+
+	tracked2, ok := tracked["svc-transient-fail"]
+	if !ok {
+		t.Fatalf("tracked map after failed-tenant reconcile lost svc-transient-fail (want it preserved, not torn down)")
+	}
+	tracked2.cancel()
+}

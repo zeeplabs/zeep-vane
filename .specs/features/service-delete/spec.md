@@ -76,15 +76,15 @@ There is no way to remove a monitored service today — `ServiceRepository`/`Ser
 
 | Requirement ID | Story | Phase | Status |
 | --- | --- | --- | --- |
-| SVCDEL-01 | P1: Soft-delete a monitored service | Implementing | Implementing |
-| SVCDEL-02 | P1: Soft-delete a monitored service | Implementing | Implementing |
-| SVCDEL-03 | P1: Soft-delete a monitored service | Implementing | Implementing |
-| SVCDEL-04 | P1: Soft-delete a monitored service | Implementing | Implementing |
-| SVCDEL-05 | P1: Soft-delete a monitored service | Implementing | Implementing |
-| SVCDEL-06 | P1: Soft-delete a monitored service | Implementing | Implementing |
-| SVCDEL-07 | P1: Soft-delete a monitored service | Implementing | Implementing |
-| SVCDEL-08 | P1: Soft-delete a monitored service | Implementing | Implementing |
-| SVCDEL-09 | P1: Soft-delete a monitored service | Implementing | Implementing |
+| SVCDEL-01 | P1: Soft-delete a monitored service | Implementing | Verified |
+| SVCDEL-02 | P1: Soft-delete a monitored service | Implementing | Verified |
+| SVCDEL-03 | P1: Soft-delete a monitored service | Implementing | Verified |
+| SVCDEL-04 | P1: Soft-delete a monitored service | Implementing | Verified |
+| SVCDEL-05 | P1: Soft-delete a monitored service | Implementing | Verified |
+| SVCDEL-06 | P1: Soft-delete a monitored service | Implementing | Implementing (fix applied: `failedTenantIDs` guard test added, `TestManualScheduler_Reconcile_TenantListFailsOnLaterRound_DoesNotTearDownTrackedServices` - pending re-verify) |
+| SVCDEL-07 | P1: Soft-delete a monitored service | Implementing | Implementing (fix applied: `TestServiceRepository_SoftDelete_PreservesStatusIntervalsAndIncidents` added - pending re-verify) |
+| SVCDEL-08 | P1: Soft-delete a monitored service | Implementing | Verified |
+| SVCDEL-09 | P1: Soft-delete a monitored service | Implementing | Verified |
 
 **Coverage:** 9 total, 9 mapped to tasks (repository + handler + poller + frontend layers) ✅
 
