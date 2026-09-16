@@ -19,6 +19,15 @@ const resources = {
       incidents: {
         loading: "Carregando…",
       },
+      poller: {
+        loading: "Carregando…",
+      },
+      publicStatus: {
+        loading: "Carregando…",
+      },
+      emailProviders: {
+        loading: "Carregando…",
+      },
       authLayout: {
         eyebrow: "Monitoramento em tempo real",
         headline: "Clareza total sobre a saúde da sua infraestrutura.",
@@ -151,6 +160,7 @@ const resources = {
         title: "Análise por IA",
         subtitle: "Conecte um provedor de IA para gerar análises automáticas de degradação e incidentes.",
         providerLabel: "OpenAI",
+        loading: "Carregando…",
         notConnected: "Nenhuma integração conectada",
         connected: "Conectado",
         active: "Ativo",
@@ -537,6 +547,15 @@ const resources = {
       incidents: {
         loading: "Loading…",
       },
+      poller: {
+        loading: "Loading…",
+      },
+      publicStatus: {
+        loading: "Loading…",
+      },
+      emailProviders: {
+        loading: "Loading…",
+      },
       authLayout: {
         eyebrow: "Real-time monitoring",
         headline: "Total clarity over your infrastructure's health.",
@@ -668,6 +687,7 @@ const resources = {
         title: "AI analysis",
         subtitle: "Connect an AI provider to generate automatic degradation and incident analyses.",
         providerLabel: "OpenAI",
+        loading: "Loading…",
         notConnected: "No integration connected",
         connected: "Connected",
         active: "Active",

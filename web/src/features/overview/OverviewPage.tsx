@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import { Bar, BarChart, ResponsiveContainer } from "recharts";
 import { MdOutlineAdd, MdOutlineWeb, MdOutlineGroupAdd, MdOutlinePublic, MdOutlineBolt } from "react-icons/md";
 import { Card } from "../../components/ui/Card";
+import { Skeleton } from "../../components/ui/Skeleton";
 import type { OverviewIncident, OverviewResponse, OverviewUptimeBucket } from "../../types/api";
 import { useOverview } from "./hooks";
 
@@ -370,7 +371,28 @@ export function OverviewPage() {
           reativar quando billing real existir. */}
 
       {isLoading ? (
-        <p className="text-neutral-400">{t("overview.loading")}</p>
+        <div aria-busy="true" className="flex flex-col gap-6">
+          <span className="sr-only">{t("overview.loading")}</span>
+          <div className="grid grid-cols-2 gap-3.5 lg:grid-cols-4">
+            {Array.from({ length: 4 }).map((_, i) => (
+              <Card key={i} elevation="none" className="border border-divider flex flex-col gap-2 p-4">
+                <Skeleton width={90} height={12} />
+                <Skeleton width={60} height={24} />
+              </Card>
+            ))}
+          </div>
+          <div className="grid gap-4 lg:grid-cols-[1.4fr_1fr]">
+            <Card elevation="none" className="border border-divider p-5">
+              <Skeleton width="100%" height={180} />
+            </Card>
+            <Card elevation="none" className="border border-divider flex flex-col gap-3 p-5">
+              <Skeleton width={120} height={14} />
+              <Skeleton width="100%" height={40} />
+              <Skeleton width="100%" height={40} />
+              <Skeleton width="100%" height={40} />
+            </Card>
+          </div>
+        </div>
       ) : isError || !data ? (
         <p role="alert" className="text-critical">
           {t("overview.loadError")}

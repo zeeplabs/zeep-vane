@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
-import { http, HttpResponse } from "msw";
+import { http, HttpResponse, delay } from "msw";
 import "../../lib/i18n";
 import { TestQueryProvider } from "../../test/queryClient";
 import { server } from "../../test/msw/server";
@@ -46,6 +46,35 @@ function emptyOverview(): OverviewResponse {
 }
 
 describe("OverviewPage", () => {
+  // SKEL-04/05: while /api/overview is loading, the page shows skeleton
+  // cards (not the old "Carregando…" paragraph as visible content) inside
+  // an aria-busy container that still carries the sr-only loading string.
+  it("mostra skeletons (não o texto) enquanto /api/overview carrega", async () => {
+    server.use(
+      http.get("/api/overview", async () => {
+        await delay("infinite");
+        return HttpResponse.json(emptyOverview());
+      }),
+    );
+    await loginAsOwner();
+    renderPage();
+
+    const srText = await screen.findByText("Carregando…");
+    expect(srText.className).toContain("sr-only");
+    expect(srText.closest('[aria-busy="true"]')).toBeInTheDocument();
+    expect(screen.getAllByTestId("skeleton").length).toBeGreaterThan(0);
+  });
+
+  // SKEL-06: once the fetch resolves, skeletons are gone and the real
+  // summary cards take over - loading and loaded are mutually exclusive.
+  it("remove os skeletons assim que /api/overview termina de carregar", async () => {
+    await loginAsOwner();
+    renderPage();
+
+    await waitFor(() => expect(screen.getByTestId("overview-card-uptime")).toBeInTheDocument());
+    expect(screen.queryAllByTestId("skeleton")).toHaveLength(0);
+  });
+
   it("renderiza os 4 cards com os valores reais do endpoint", async () => {
     await loginAsOwner();
     renderPage();

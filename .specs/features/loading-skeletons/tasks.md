@@ -256,7 +256,7 @@ Note: T2–T18 each depend only on T1 (the shared primitive) — they are indepe
 **Where**: `web/src/features/overview/OverviewPage.tsx` (test file updated alongside, per co-location rule)
 **Depends on**: T1
 **Requirement**: SKEL-04, SKEL-05, SKEL-06, SKEL-07
-**Done when**: skeleton approximates the summary-grid + chart + recent-incidents card layout (a few skeleton cards, not a single block). `isError` branch untouched (SKEL-07).
+**Done when**: skeleton approximates the summary-grid + chart + recent-incidents card layout (a few skeleton cards, not a single block). `isError` branch untouched (SKEL-07). ✅ Done (2026-09-16): 4 summary-card skeletons + chart/incidents card skeletons, `isError` branch untouched.
 **Tests**: unit
 **Gate**: quick
 **Commit**: `feat(overview): add loading skeleton to OverviewPage`
