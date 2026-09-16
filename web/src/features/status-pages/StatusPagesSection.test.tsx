@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach } from "vitest";
-import { http, HttpResponse } from "msw";
+import { http, HttpResponse, delay } from "msw";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
@@ -35,6 +35,35 @@ function renderSection() {
 }
 
 describe("StatusPagesSection", () => {
+  // SKEL-04/05: while /api/status-pages is loading, skeleton rows render
+  // (not the old "Carregando…" paragraph as visible content) inside an
+  // aria-busy container that still carries the sr-only loading string.
+  it("mostra skeletons (não o texto) enquanto /api/status-pages carrega", async () => {
+    server.use(
+      http.get("/api/status-pages", async () => {
+        await delay("infinite");
+        return HttpResponse.json({ items: [], total: 0, page: 1, page_size: 20 });
+      }),
+    );
+    await loginAsOwner();
+    renderSection();
+
+    const srText = await screen.findByText("Carregando…");
+    expect(srText.className).toContain("sr-only");
+    expect(srText.closest('[aria-busy="true"]')).toBeInTheDocument();
+    expect(screen.getAllByTestId("skeleton").length).toBeGreaterThan(0);
+  });
+
+  // SKEL-06: once the fetch resolves, skeletons are gone and the real
+  // content takes over.
+  it("remove os skeletons assim que /api/status-pages termina de carregar", async () => {
+    await loginAsOwner();
+    renderSection();
+
+    await screen.findByText("Status Beta");
+    expect(screen.queryAllByTestId("skeleton")).toHaveLength(0);
+  });
+
   it("formulário de criação não tem campos de domínio/subdomínio (SPD-01)", async () => {
     await loginAsOwner();
     renderSection();

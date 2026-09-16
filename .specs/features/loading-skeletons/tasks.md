@@ -208,7 +208,7 @@ Note: T2–T18 each depend only on T1 (the shared primitive) — they are indepe
 **Where**: `web/src/features/status-pages/StatusPagesSection.tsx` (test file updated alongside, per co-location rule)
 **Depends on**: T1
 **Requirement**: SKEL-04, SKEL-05, SKEL-06, SKEL-07
-**Done when**: same shape as T2.
+**Done when**: same shape as T2. ✅ Done (2026-09-16): no pre-existing `statusPages` i18n namespace - added `statusPages.loading` (pt/en) in `web/src/lib/i18n.ts`.
 **Tests**: unit
 **Gate**: quick
 **Commit**: `feat(status-pages): add loading skeleton to StatusPagesSection`
