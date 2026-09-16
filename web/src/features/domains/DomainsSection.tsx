@@ -1,4 +1,5 @@
 import { useState, type FormEvent } from "react";
+import { useTranslation } from "react-i18next";
 import { MdOutlinePublic, MdOutlineDeleteOutline, MdOutlineAdd } from "react-icons/md";
 import { Button } from "../../components/ui/Button";
 import { Field } from "../../components/ui/Field";
@@ -6,6 +7,7 @@ import { Card } from "../../components/ui/Card";
 import { Dialog } from "../../components/ui/Dialog";
 import { Pager } from "../../components/ui/Pager";
 import { Tooltip } from "../../components/ui/Tooltip";
+import { Skeleton } from "../../components/ui/Skeleton";
 import { useAuth } from "../../auth/AuthProvider";
 import { ApiError } from "../../lib/apiClient";
 import type { Domain } from "../../types/api";
@@ -25,6 +27,7 @@ function TrashIcon() {
 
 /** Tabela + form de domínios. Compartilhada entre `DomainsStatusPagesPage` (handoff mostra as duas seções na mesma tela) e `DomainsPage` (rota própria, mesmo padrão de `ServicesSection`). */
 export function DomainsSection() {
+  const { t } = useTranslation();
   const { hasRole } = useAuth();
   const canManage = hasRole(["owner", "operator"]);
   const [page, setPage] = useState(1);
@@ -103,7 +106,16 @@ export function DomainsSection() {
 
       <div>
         {isLoading ? (
-          <p className="text-neutral-400">Carregando…</p>
+          <div aria-busy="true" className="overflow-hidden rounded-md border border-divider divide-y divide-divider">
+            <span className="sr-only">{t("domains.loading")}</span>
+            {Array.from({ length: 4 }).map((_, i) => (
+              <div key={i} className="flex items-center gap-3 px-4 py-3.5">
+                <Skeleton width={36} height={36} radius={10} />
+                <Skeleton height={14} className="flex-1" />
+                <Skeleton width={90} height={28} />
+              </div>
+            ))}
+          </div>
         ) : (
           <>
             <Card elevation="none" className="border border-divider divide-y divide-divider overflow-hidden">

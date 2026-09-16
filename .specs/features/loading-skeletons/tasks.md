@@ -124,7 +124,7 @@ Note: T2–T18 each depend only on T1 (the shared primitive) — they are indepe
 **Where**: `web/src/features/domains/DomainsSection.tsx` (test file updated alongside, per co-location rule)
 **Depends on**: T1
 **Requirement**: SKEL-04, SKEL-05, SKEL-06, SKEL-07
-**Done when**: same shape as T2, scoped to this file's own loaded layout (domain rows).
+**Done when**: same shape as T2, scoped to this file's own loaded layout (domain rows). ✅ Done (2026-09-16).
 **Tests**: unit
 **Gate**: quick
 **Commit**: `feat(domains): add loading skeleton to DomainsSection`

@@ -10,6 +10,9 @@ const resources = {
       admins: {
         loading: "Carregando…",
       },
+      domains: {
+        loading: "Carregando…",
+      },
       authLayout: {
         eyebrow: "Monitoramento em tempo real",
         headline: "Clareza total sobre a saúde da sua infraestrutura.",
@@ -516,6 +519,9 @@ const resources = {
         close: "Close",
       },
       admins: {
+        loading: "Loading…",
+      },
+      domains: {
         loading: "Loading…",
       },
       authLayout: {
