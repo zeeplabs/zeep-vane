@@ -280,7 +280,7 @@ Note: T2–T18 each depend only on T1 (the shared primitive) — they are indepe
 **Where**: `web/src/features/public-status/PublicStatusPage.tsx` (test file updated alongside, per co-location rule)
 **Depends on**: T1
 **Requirement**: SKEL-04, SKEL-05, SKEL-06, SKEL-07
-**Done when**: skeleton approximates the banner + service-list layout. `isError` branch untouched (SKEL-07). Public unauthenticated page — verify the new sr-only string doesn't require an i18n key that doesn't exist yet (reuse or add one following this file's existing i18n usage).
+**Done when**: skeleton approximates the banner + service-list layout. `isError` branch untouched (SKEL-07). Public unauthenticated page — verify the new sr-only string doesn't require an i18n key that doesn't exist yet (reuse or add one following this file's existing i18n usage). ✅ Done (2026-09-16): file already had a bespoke `LoadingSkeleton` (hand-rolled `animate-pulse` divs, no `aria-busy`, no sr-only text) - migrated it to compose the shared `Skeleton` primitive and added `aria-busy`/sr-only wiring; added `publicStatus.loading` (pt/en), no existing key covered this file. `isError` branch untouched.
 **Tests**: unit
 **Gate**: quick
 **Commit**: `feat(public-status): add loading skeleton to PublicStatusPage`
