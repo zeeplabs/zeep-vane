@@ -304,7 +304,7 @@ Note: T2–T18 each depend only on T1 (the shared primitive) — they are indepe
 **Where**: `web/src/features/settings/AISettings.tsx` (test file updated alongside, per co-location rule)
 **Depends on**: T1
 **Requirement**: SKEL-04, SKEL-05, SKEL-06, SKEL-07
-**Done when**: same shape as T2. Last task of the feature — run the Build gate, then this triggers feature-level Verifier dispatch (Execute step 9).
+**Done when**: same shape as T2. Last task of the feature — run the Build gate, then this triggers feature-level Verifier dispatch (Execute step 9). ✅ Done (2026-09-16): added `aiSettings.loading` (pt/en); single provider-row skeleton card (matches the fixed single-provider layout). `npx tsc -b --noEmit` clean, full suite 95 files / 627 tests green.
 **Tests**: unit
 **Gate**: build
 **Commit**: `feat(settings): add loading skeleton to AISettings`

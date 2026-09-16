@@ -5,6 +5,7 @@ import { Field } from "../../components/ui/Field";
 import { Button } from "../../components/ui/Button";
 import { Pager } from "../../components/ui/Pager";
 import { Tag } from "../../components/ui/Tag";
+import { Skeleton } from "../../components/ui/Skeleton";
 import { useAuth } from "../../auth/AuthProvider";
 import { ApiError } from "../../lib/apiClient";
 import { modelAllowlist, type LLMProviderName, type LLMProviderStatus } from "../../lib/llmProviders";
@@ -42,7 +43,21 @@ export function AISettings() {
   const [error, setError] = useState<string | null>(null);
 
   if (isLoading) {
-    return <p className="text-neutral-400">Carregando…</p>;
+    return (
+      <div aria-busy="true" className="mx-auto flex w-full max-w-[1280px] flex-col gap-4">
+        <span className="sr-only">{t("aiSettings.loading")}</span>
+        <Card elevation="none" className="border border-divider flex flex-col gap-3 p-4">
+          <div className="flex items-center gap-3">
+            <div className="flex-1">
+              <Skeleton width={100} height={16} className="mb-1.5" />
+              <Skeleton width={220} height={12} />
+            </div>
+            <Skeleton width={80} height={22} radius={999} />
+            <Skeleton width={90} height={32} />
+          </div>
+        </Card>
+      </div>
+    );
   }
 
   const status: LLMProviderStatus | undefined = data?.providers.find((p) => p.provider === PROVIDER_ID);
