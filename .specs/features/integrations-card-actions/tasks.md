@@ -139,9 +139,9 @@ T5 → T6
 **Tools**: MCP: NONE / Skill: NONE
 
 **Done when**:
-- [ ] Grep for both names across `web/src` returns nothing.
-- [ ] The four files are deleted.
-- [ ] Gate check passes: quick (confirms nothing else imported them)
+- [x] Grep for both names across `web/src` returns nothing (also fixed a stale comment mention in `lib/llmProviders.ts` that named `AISettings.tsx`).
+- [x] The four files are deleted.
+- [x] Gate check passes: quick (confirms nothing else imported them)
 
 **Tests**: none (removal verified by grep + the quick gate not failing on a missing import)
 **Gate**: quick
