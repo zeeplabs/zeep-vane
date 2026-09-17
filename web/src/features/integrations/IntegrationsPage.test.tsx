@@ -177,6 +177,106 @@ describe("IntegrationsPage", () => {
     expect(await within(sendgridCard).findByText("Verificado")).toBeInTheDocument();
   });
 
+  it("owner ativa Resend conectado-mas-inativo clicando em Ativar (INTGCARD-01)", async () => {
+    await loginAs("owner@vane.app");
+    await apiFetch("/api/integrations/email/resend", {
+      method: "POST",
+      body: JSON.stringify({ api_key: "re-key", from_email: "a@b.com", from_name: "A" }),
+    });
+    renderPage();
+
+    const resendCard = await cardOf("Resend");
+    await within(resendCard).findByText("Verificado");
+    await userEvent.click(within(resendCard).getByRole("button", { name: "Ativar" }));
+
+    await waitFor(async () => expect(await within(resendCard).findByText("Ativo")).toBeInTheDocument());
+    expect(within(resendCard).queryByRole("button", { name: "Ativar" })).not.toBeInTheDocument();
+  });
+
+  it("owner ativa SendGrid conectado-mas-inativo clicando em Ativar (INTGCARD-01)", async () => {
+    await loginAs("owner@vane.app");
+    await apiFetch("/api/integrations/email/sendgrid", {
+      method: "POST",
+      body: JSON.stringify({ api_key: "sg-key", from_email: "a@b.com", from_name: "A" }),
+    });
+    renderPage();
+
+    const sendgridCard = await cardOf("SendGrid");
+    await within(sendgridCard).findByText("Verificado");
+    await userEvent.click(within(sendgridCard).getByRole("button", { name: "Ativar" }));
+
+    await waitFor(async () => expect(await within(sendgridCard).findByText("Ativo")).toBeInTheDocument());
+  });
+
+  it("botão Desconectar some quando não conectado e some Ativar quando já ativo (INTGCARD-03)", async () => {
+    await loginAs("owner@vane.app");
+    renderPage();
+
+    const resendCard = await cardOf("Resend");
+    await within(resendCard).findByText("Não conectado");
+    expect(within(resendCard).queryByRole("button", { name: "Desconectar" })).not.toBeInTheDocument();
+  });
+
+  it("owner cancela o diálogo de desconectar do Resend - card continua conectado (INTGCARD-04)", async () => {
+    await loginAs("owner@vane.app");
+    await apiFetch("/api/integrations/email/resend", {
+      method: "POST",
+      body: JSON.stringify({ api_key: "re-key", from_email: "a@b.com", from_name: "A" }),
+    });
+    renderPage();
+
+    const resendCard = await cardOf("Resend");
+    await within(resendCard).findByText("Verificado");
+    await userEvent.click(within(resendCard).getByRole("button", { name: "Desconectar" }));
+
+    const dialogTitle = await screen.findByRole("heading", { name: /desconectar/i });
+    const dialog = dialogTitle.closest('[role="dialog"]') as HTMLElement;
+    await userEvent.click(within(dialog).getByRole("button", { name: /cancelar/i }));
+
+    await waitFor(() => expect(screen.queryByRole("heading", { name: /desconectar/i })).not.toBeInTheDocument());
+    expect(within(await cardOf("Resend")).getByText("Verificado")).toBeInTheDocument();
+  });
+
+  it("owner confirma o diálogo de desconectar do Resend - card volta a Não conectado (INTGCARD-04)", async () => {
+    await loginAs("owner@vane.app");
+    await apiFetch("/api/integrations/email/resend", {
+      method: "POST",
+      body: JSON.stringify({ api_key: "re-key", from_email: "a@b.com", from_name: "A" }),
+    });
+    renderPage();
+
+    const resendCard = await cardOf("Resend");
+    await within(resendCard).findByText("Verificado");
+    await userEvent.click(within(resendCard).getByRole("button", { name: "Desconectar" }));
+
+    const dialogTitle = await screen.findByRole("heading", { name: /desconectar/i });
+    const dialog = dialogTitle.closest('[role="dialog"]') as HTMLElement;
+    await userEvent.click(within(dialog).getByRole("button", { name: "Desconectar" }));
+
+    await waitFor(() => expect(screen.queryByRole("heading", { name: /desconectar/i })).not.toBeInTheDocument());
+    expect(within(await cardOf("Resend")).getByText("Não conectado")).toBeInTheDocument();
+  });
+
+  it("viewer não vê Ativar nem Desconectar no card de e-mail conectado (INTGCARD-01/03)", async () => {
+    await apiFetch("/api/auth/login", {
+      method: "POST",
+      body: JSON.stringify({ email: "owner@vane.app", password: "demo1234" }),
+    });
+    await apiFetch("/api/integrations/email/resend", {
+      method: "POST",
+      body: JSON.stringify({ api_key: "re-key", from_email: "a@b.com", from_name: "A" }),
+    });
+    await apiFetch("/api/auth/logout", { method: "POST" });
+
+    await loginAs("viewer@vane.app");
+    renderPage();
+
+    const resendCard = await cardOf("Resend");
+    await within(resendCard).findByText("Verificado");
+    expect(within(resendCard).queryByRole("button", { name: "Ativar" })).not.toBeInTheDocument();
+    expect(within(resendCard).queryByRole("button", { name: "Desconectar" })).not.toBeInTheDocument();
+  });
+
   it("erro ao carregar Datadog fica isolado - LLM e e-mail continuam normais", async () => {
     server.use(http.get("/api/integrations/datadog/status", () => HttpResponse.json({ error: "boom" }, { status: 500 })));
     await loginAs("owner@vane.app");

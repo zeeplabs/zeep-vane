@@ -77,11 +77,11 @@ T5 → T6
 **Tools**: MCP: NONE / Skill: NONE
 
 **Done when**:
-- [ ] "Ativar" button shown only when connected && not active; calls the activate mutation; card updates to the active indicator on success.
-- [ ] "Desconectar" button shown whenever connected; opens confirmation dialog naming the provider; cancel makes no call; confirm calls the disconnect mutation and the card reverts to not-connected on success.
-- [ ] Activate/disconnect failure shows an error state, card unchanged.
-- [ ] Test added/extended in `IntegrationsPage.test.tsx` covering all of the above for both `resend` and `sendgrid`.
-- [ ] Gate check passes: quick
+- [x] "Ativar" button shown only when connected && not active; calls the activate mutation; card updates to the active indicator on success.
+- [x] "Desconectar" button shown whenever connected; opens confirmation dialog naming the provider; cancel makes no call; confirm calls the disconnect mutation and the card reverts to not-connected on success.
+- [x] Activate/disconnect failure shows an error state, card unchanged (inline alert, mirrors EmailProvidersPage's posture).
+- [x] Test added/extended in `IntegrationsPage.test.tsx` covering all of the above for both `resend` and `sendgrid`.
+- [x] Gate check passes: quick
 
 **Tests**: unit
 **Gate**: quick
