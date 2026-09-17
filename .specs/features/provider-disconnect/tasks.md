@@ -245,9 +245,9 @@ T12 → T13.
 - Skill: NONE
 
 **Done when**:
-- [ ] Route registered under `writeRoles`.
-- [ ] Test added/extended in `internal/api/llm_providers_audit_integration_test.go` mirroring T6's audit test.
-- [ ] Gate check passes: full
+- [x] Route registered under `writeRoles`.
+- [x] Test added/extended in `internal/api/llm_providers_audit_integration_test.go` mirroring T6's audit test. Passes cleanly, both alone and inside the full suite (`internal/api` package reports `ok`).
+- [x] Gate check passes: full, EXCEPT for the same pre-existing, unrelated `internal/db` failure documented under T6 (reproduced identically here; confirmed unrelated to this task).
 
 **Tests**: integration (audit)
 **Gate**: full

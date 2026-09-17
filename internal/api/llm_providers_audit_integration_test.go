@@ -49,6 +49,7 @@ func newLLMProvidersIntegrationRouter(t *testing.T) (http.Handler, *db.Pool, *db
 		protected.Use(TenantContext(pool, db.NewTenantMembershipRepository(pool), zap.NewNop()))
 		protected.Post("/api/integrations/llm/{provider}", handler.Connect)
 		protected.Post("/api/integrations/llm/{provider}/activate", handler.Activate)
+		protected.Delete("/api/integrations/llm/{provider}", handler.Disconnect)
 	})
 	return r, pool, admins
 }
@@ -66,6 +67,15 @@ func doAuthedLLMConnectRequest(t *testing.T, r http.Handler, token, provider str
 func doAuthedLLMActivateRequest(t *testing.T, r http.Handler, token, provider string) *httptest.ResponseRecorder {
 	t.Helper()
 	req := httptest.NewRequest(http.MethodPost, "/api/integrations/llm/"+provider+"/activate", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+	return rec
+}
+
+func doAuthedLLMDisconnectRequest(t *testing.T, r http.Handler, token, provider string) *httptest.ResponseRecorder {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodDelete, "/api/integrations/llm/"+provider, nil)
 	req.Header.Set("Authorization", "Bearer "+token)
 	rec := httptest.NewRecorder()
 	r.ServeHTTP(rec, req)
@@ -120,5 +130,54 @@ func TestActivateLLMProvider_ValidRequest_RecordsLLMProviderActivatedAudit(t *te
 	}
 	if gotTargetLabel != "OpenAI" {
 		t.Errorf("admin_audit_log target_label = %q, want %q", gotTargetLabel, "OpenAI")
+	}
+}
+
+// TestDisconnectLLMProvider_ValidRequest_RecordsLLMProviderDisconnectedAudit
+// covers PROVDISC-04 AC5/PROVDISC-06: disconnecting a connected provider
+// through the real router (route wired in T8) produces exactly one
+// llm_provider_disconnected audit row.
+func TestDisconnectLLMProvider_ValidRequest_RecordsLLMProviderDisconnectedAudit(t *testing.T) {
+	r, pool, admins := newLLMProvidersIntegrationRouter(t)
+	token := issueTestSessionTokenWithTenant(t, admins, pool)
+	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), "DELETE FROM llm_providers WHERE provider = 'openai'") })
+
+	connectRec := doAuthedLLMConnectRequest(t, r, token, "openai", []byte(`{"api_key":"k","model":"gpt-4o-mini"}`))
+	if connectRec.Code != http.StatusCreated {
+		t.Fatalf("setup connect status = %d, want %d, body = %s", connectRec.Code, http.StatusCreated, connectRec.Body.String())
+	}
+
+	rec := doAuthedLLMDisconnectRequest(t, r, token, "openai")
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusNoContent, rec.Body.String())
+	}
+
+	var auditRowCount int
+	countRow := pool.QueryRow(context.Background(),
+		"SELECT count(*) FROM admin_audit_log WHERE action = 'llm_provider_disconnected'")
+	if err := countRow.Scan(&auditRowCount); err != nil {
+		t.Fatalf("Scan() returned unexpected error: %v", err)
+	}
+	if auditRowCount != 1 {
+		t.Fatalf("admin_audit_log rows with action=llm_provider_disconnected = %d, want exactly 1", auditRowCount)
+	}
+
+	var gotDisconnectTargetLabel string
+	disconnectRow := pool.QueryRow(context.Background(),
+		"SELECT target_label FROM admin_audit_log WHERE action = 'llm_provider_disconnected' ORDER BY created_at DESC LIMIT 1")
+	if err := disconnectRow.Scan(&gotDisconnectTargetLabel); err != nil {
+		t.Fatalf("Scan() returned unexpected error: %v", err)
+	}
+	if gotDisconnectTargetLabel != "OpenAI" {
+		t.Errorf("admin_audit_log target_label = %q, want %q", gotDisconnectTargetLabel, "OpenAI")
+	}
+
+	var rowCount int
+	rowCountRow := pool.QueryRow(context.Background(), "SELECT count(*) FROM llm_providers WHERE provider = 'openai'")
+	if err := rowCountRow.Scan(&rowCount); err != nil {
+		t.Fatalf("Scan() returned unexpected error: %v", err)
+	}
+	if rowCount != 0 {
+		t.Errorf("llm_providers row count for openai = %d, want 0 after disconnect", rowCount)
 	}
 }
