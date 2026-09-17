@@ -9,6 +9,7 @@ import (
 
 	"go.uber.org/zap"
 
+	"github.com/zeeplabs/zeep-vane/internal/audit"
 	"github.com/zeeplabs/zeep-vane/internal/connectors/datadog"
 	"github.com/zeeplabs/zeep-vane/internal/crypto"
 	"github.com/zeeplabs/zeep-vane/internal/db"
@@ -20,6 +21,12 @@ type datadogIntegrationUpserter interface {
 	UpsertDatadog(ctx context.Context, encryptedAPIKey, encryptedAppKey []byte) error
 	GetDatadog(ctx context.Context) (*db.Integration, error)
 }
+
+// datadogAuditTargetLabel is the fixed target_label for datadog_connected
+// audit entries - the Datadog integration is a single row per tenant with
+// no user-facing name of its own (AUDITEXP-08), unlike a service/status
+// page/domain which has a real name/hostname to show.
+const datadogAuditTargetLabel = "Datadog"
 
 // validateDatadogCredentials checks that an API key + App key pair is valid
 // and has SLO read permission, without needing a specific SLO ID (SP-01.2).
@@ -44,6 +51,7 @@ type IntegrationsHandler struct {
 	validate     validateDatadogCredentials
 	search       searchDatadogSLOs
 	poller       pollerRestarter
+	audit        *audit.Log
 	masterKey    string
 	logger       *zap.Logger
 }
@@ -55,8 +63,8 @@ type IntegrationsHandler struct {
 // poller is (re)started after every successful connect/rotate so the
 // change takes effect immediately, without restarting the process
 // (PLD-01, PLD-05).
-func NewIntegrationsHandler(integrations datadogIntegrationUpserter, validate validateDatadogCredentials, search searchDatadogSLOs, poller pollerRestarter, masterKey string, logger *zap.Logger) *IntegrationsHandler {
-	return &IntegrationsHandler{integrations: integrations, validate: validate, search: search, poller: poller, masterKey: masterKey, logger: logger}
+func NewIntegrationsHandler(integrations datadogIntegrationUpserter, validate validateDatadogCredentials, search searchDatadogSLOs, poller pollerRestarter, auditLog *audit.Log, masterKey string, logger *zap.Logger) *IntegrationsHandler {
+	return &IntegrationsHandler{integrations: integrations, validate: validate, search: search, poller: poller, audit: auditLog, masterKey: masterKey, logger: logger}
 }
 
 type connectDatadogRequest struct {
@@ -113,6 +121,14 @@ func (h *IntegrationsHandler) ConnectDatadog(w http.ResponseWriter, r *http.Requ
 	// /api/integrations/datadog/status once a poll cycle actually runs.
 	if _, err := h.poller.Restart(r.Context()); err != nil {
 		h.logger.Error("integrations: failed to restart poller after connecting datadog", zap.Error(err))
+	}
+
+	if actor, ok := UserFromContext(r.Context()); ok {
+		if integration, err := h.integrations.GetDatadog(r.Context()); err == nil {
+			if err := h.audit.Record(r.Context(), actor.ID, integration.ID, datadogAuditTargetLabel, "datadog_connected"); err != nil {
+				h.logger.Error("integrations: failed to record audit entry", zap.Error(err))
+			}
+		}
 	}
 
 	w.Header().Set("Content-Type", "application/json")

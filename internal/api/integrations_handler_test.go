@@ -16,6 +16,7 @@ import (
 	"go.uber.org/zap"
 	"go.uber.org/zap/zaptest/observer"
 
+	"github.com/zeeplabs/zeep-vane/internal/audit"
 	"github.com/zeeplabs/zeep-vane/internal/connectors/datadog"
 	"github.com/zeeplabs/zeep-vane/internal/crypto"
 	"github.com/zeeplabs/zeep-vane/internal/db"
@@ -62,7 +63,7 @@ func newIntegrationsRouterWithSearch(t *testing.T, validate validateDatadogCrede
 	admins := db.NewUserRepository(authPool)
 
 	repo := db.NewIntegrationRepository(pool)
-	handler := NewIntegrationsHandler(repo, validate, search, &spyPollerRestarter{}, testMasterKey, logger)
+	handler := NewIntegrationsHandler(repo, validate, search, &spyPollerRestarter{}, audit.NewLog(pool), testMasterKey, logger)
 
 	r := chi.NewRouter()
 	r.With(RequireAuth(middlewareTestSecret, admins, db.NewSessionRepository(pool), zap.NewNop()), TenantContext(pool, db.NewTenantMembershipRepository(pool), logger)).Post("/api/integrations/datadog", handler.ConnectDatadog)
@@ -94,7 +95,7 @@ func newIntegrationsRouterWithPoller(t *testing.T, validate validateDatadogCrede
 	admins := db.NewUserRepository(authPool)
 
 	repo := db.NewIntegrationRepository(pool)
-	handler := NewIntegrationsHandler(repo, validate, alwaysEmptySearch, poller, testMasterKey, logger)
+	handler := NewIntegrationsHandler(repo, validate, alwaysEmptySearch, poller, audit.NewLog(pool), testMasterKey, logger)
 
 	r := chi.NewRouter()
 	r.With(RequireAuth(middlewareTestSecret, admins, db.NewSessionRepository(pool), zap.NewNop()), TenantContext(pool, db.NewTenantMembershipRepository(pool), logger)).Post("/api/integrations/datadog", handler.ConnectDatadog)
@@ -490,5 +491,53 @@ func TestConnectDatadog_PollerRestartFails_StillReturns201(t *testing.T) {
 	}
 	if !found {
 		t.Error("no log entry recorded for the poller restart failure, want it logged even though the response still succeeds")
+	}
+}
+
+// TestConnectDatadog_ValidCredentials_RecordsDatadogConnectedAudit covers
+// AUDITEXP-08.
+func TestConnectDatadog_ValidCredentials_RecordsDatadogConnectedAudit(t *testing.T) {
+	alwaysValid := func(ctx context.Context, apiKey, appKey string) error { return nil }
+	r, pool, admins := newIntegrationsRouter(t, alwaysValid, zap.NewNop())
+	token := issueTestSessionToken(t, admins)
+
+	rec := postConnectDatadog(t, r, token, "audit-api-key", "audit-app-key")
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusCreated, rec.Body.String())
+	}
+
+	var gotAction, gotTargetLabel string
+	row := pool.QueryRow(context.Background(),
+		"SELECT action, target_label FROM admin_audit_log WHERE action = 'datadog_connected' ORDER BY created_at DESC LIMIT 1")
+	if err := row.Scan(&gotAction, &gotTargetLabel); err != nil {
+		t.Fatalf("Scan() returned unexpected error: %v", err)
+	}
+	if gotTargetLabel != "Datadog" {
+		t.Errorf("admin_audit_log target_label = %q, want %q", gotTargetLabel, "Datadog")
+	}
+}
+
+// TestConnectDatadog_InvalidCredentials_NoAuditRecorded covers AUDITEXP-16.
+func TestConnectDatadog_InvalidCredentials_NoAuditRecorded(t *testing.T) {
+	alwaysInvalid := func(ctx context.Context, apiKey, appKey string) error { return datadog.ErrUnauthorized }
+	r, pool, admins := newIntegrationsRouter(t, alwaysInvalid, zap.NewNop())
+	token := issueTestSessionToken(t, admins)
+
+	var before int
+	if err := pool.QueryRow(context.Background(), "SELECT count(*) FROM admin_audit_log WHERE action = 'datadog_connected'").Scan(&before); err != nil {
+		t.Fatalf("Scan() returned unexpected error: %v", err)
+	}
+
+	rec := postConnectDatadog(t, r, token, "bad-api-key", "bad-app-key")
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusUnprocessableEntity, rec.Body.String())
+	}
+
+	var after int
+	if err := pool.QueryRow(context.Background(), "SELECT count(*) FROM admin_audit_log WHERE action = 'datadog_connected'").Scan(&after); err != nil {
+		t.Fatalf("Scan() returned unexpected error: %v", err)
+	}
+	if after != before {
+		t.Errorf("admin_audit_log datadog_connected count went from %d to %d, want unchanged after invalid credentials", before, after)
 	}
 }
