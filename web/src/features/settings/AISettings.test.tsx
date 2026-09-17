@@ -2,7 +2,9 @@ import { describe, it, expect, afterEach } from "vitest";
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
+import { http, HttpResponse, delay } from "msw";
 import i18n from "../../lib/i18n";
+import { server } from "../../test/msw/server";
 import { AuthProvider } from "../../auth/AuthProvider";
 import { TestQueryProvider } from "../../test/queryClient";
 import { apiFetch } from "../../lib/apiClient";
@@ -32,6 +34,36 @@ function renderPage() {
 }
 
 describe("AISettings", () => {
+  // SKEL-04/05: while /api/integrations/llm is loading, the page shows a
+  // skeleton card (not the old "Carregando…" paragraph as visible content)
+  // inside an aria-busy container that still carries the sr-only loading
+  // string.
+  it("mostra skeletons (não o texto) enquanto /api/integrations/llm carrega", async () => {
+    server.use(
+      http.get("/api/integrations/llm", async () => {
+        await delay("infinite");
+        return HttpResponse.json({ active_provider: null, providers: [], total: 0, page: 1, page_size: 20 });
+      }),
+    );
+    await loginAs("owner@vane.app");
+    renderPage();
+
+    const srText = await screen.findByText("Carregando…");
+    expect(srText.className).toContain("sr-only");
+    expect(srText.closest('[aria-busy="true"]')).toBeInTheDocument();
+    expect(screen.getAllByTestId("skeleton").length).toBeGreaterThan(0);
+  });
+
+  // SKEL-06: once the fetch resolves, skeletons are gone and the real
+  // provider card takes over - loading and loaded are mutually exclusive.
+  it("remove os skeletons assim que /api/integrations/llm termina de carregar", async () => {
+    await loginAs("owner@vane.app");
+    renderPage();
+
+    await screen.findByText("OpenAI");
+    expect(screen.queryAllByTestId("skeleton")).toHaveLength(0);
+  });
+
   it("mostra OpenAI como não conectado quando nada foi configurado (empty state)", async () => {
     await loginAs("owner@vane.app");
     renderPage();
@@ -123,6 +155,7 @@ describe("AISettings", () => {
       "apiKeyLabel",
       "modelLabel",
       "keyHint",
+      "loading",
       "lastChecked",
       "genericConnectError",
       "genericActivateError",

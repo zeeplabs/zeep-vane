@@ -4,6 +4,7 @@ import { useTranslation } from "react-i18next";
 import { MdOutlineSchedule, MdOutlineWbSunny, MdOutlineNightlight } from "react-icons/md";
 import { Card } from "../../components/ui/Card";
 import { Button } from "../../components/ui/Button";
+import { Skeleton } from "../../components/ui/Skeleton";
 import { Tag } from "../../components/ui/Tag";
 import type { TagVariant } from "../../components/ui/Tag";
 import { Seg } from "../../components/ui/Seg";
@@ -211,13 +212,15 @@ function IncidentCard({ incident, tone }: { incident: PublicIncidentEntry; tone:
   );
 }
 
-function LoadingSkeleton() {
+function LoadingSkeleton({ loadingLabel }: { loadingLabel: string }) {
   return (
-    <div className="mx-auto flex w-full max-w-[720px] flex-col gap-4 px-4 py-14">
-      <div className="h-6 w-56 animate-pulse rounded-md bg-neutral-800" />
-      <div className="h-16 w-full animate-pulse rounded-md bg-neutral-800" />
-      <div className="h-12 w-full animate-pulse rounded-md bg-neutral-800" />
-      <div className="h-12 w-full animate-pulse rounded-md bg-neutral-800" />
+    <div aria-busy="true" className="mx-auto flex w-full max-w-[720px] flex-col gap-4 px-4 py-14">
+      <span className="sr-only">{loadingLabel}</span>
+      <Skeleton width={224} height={24} />
+      <Skeleton width="100%" height={64} />
+      <Skeleton width="100%" height={48} />
+      <Skeleton width="100%" height={48} />
+      <Skeleton width="100%" height={48} />
     </div>
   );
 }
@@ -286,7 +289,7 @@ export function PublicStatusPage() {
   if (isLoading) {
     return (
       <div data-theme={themeAttr} data-testid="public-status-theme-root" className="min-h-screen bg-bg">
-        <LoadingSkeleton />
+        <LoadingSkeleton loadingLabel={t("publicStatus.loading")} />
       </div>
     );
   }

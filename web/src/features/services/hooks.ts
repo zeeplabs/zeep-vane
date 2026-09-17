@@ -97,6 +97,41 @@ function toServiceDetail(raw: ServiceDetailResponse): ServiceDetail {
   };
 }
 
+// useUpdateService renames a service via PATCH /api/services/{id}
+// (service-edit SVCEDIT-01..05). Invalidates both the list and the detail
+// query for id so the drawer and the list row pick up the new name without
+// a full page reload (SVCEDIT-06).
+export function useUpdateService() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, name }: { id: string; name: string }): Promise<Service> => {
+      const raw = await apiFetch<ServiceResponse>(`/api/services/${id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ name }),
+      });
+      return toService(raw);
+    },
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({ queryKey: ["services"] });
+      queryClient.invalidateQueries({ queryKey: ["services", "detail", variables.id] });
+    },
+  });
+}
+
+// useDeleteService soft-deletes a service via DELETE /api/services/{id}
+// (service-delete SVCDEL-01..05, 09). Invalidates the list so the row
+// disappears without a full page reload. A 409 (still attached to a
+// status page) or 404 propagates as an ApiError for the caller to surface.
+export function useDeleteService() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => apiFetch<void>(`/api/services/${id}`, { method: "DELETE" }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["services"] });
+    },
+  });
+}
+
 // useServiceDetail fetches the monitored-services-page detail drawer's data
 // (SVC-14..19). `id` is nullable so the drawer's "no service selected" state
 // can call this hook unconditionally without triggering a request.

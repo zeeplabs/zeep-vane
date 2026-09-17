@@ -1,4 +1,5 @@
 import { useMemo, useState, type FormEvent } from "react";
+import { useTranslation } from "react-i18next";
 import { MdOutlineAdd, MdChevronRight, MdCheck } from "react-icons/md";
 import { Card } from "../../components/ui/Card";
 import { Tag } from "../../components/ui/Tag";
@@ -7,6 +8,7 @@ import { Field } from "../../components/ui/Field";
 import { Textarea } from "../../components/ui/Textarea";
 import { Drawer, drawerFooterPrimaryStyle, drawerFooterSecondaryStyle } from "../../components/ui/Drawer";
 import { Pager } from "../../components/ui/Pager";
+import { Skeleton } from "../../components/ui/Skeleton";
 import { useAuth } from "../../auth/AuthProvider";
 import { ApiError } from "../../lib/apiClient";
 import type { IncidentSeverity, IncidentStatus } from "../../types/api";
@@ -36,6 +38,7 @@ function formatOpenedAt(iso: string): string {
 }
 
 export function IncidentsPage() {
+  const { t } = useTranslation();
   const { hasRole } = useAuth();
   const canManage = hasRole(["owner", "operator"]);
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
@@ -145,7 +148,23 @@ export function IncidentsPage() {
       </div>
 
       {isLoading ? (
-        <p className="text-neutral-400">Carregando…</p>
+        <div aria-busy="true" className="overflow-hidden rounded-md border border-divider">
+          <span className="sr-only">{t("incidents.loading")}</span>
+          {Array.from({ length: 5 }).map((_, i) => (
+            <div
+              key={i}
+              className="grid grid-cols-[130px_1fr_140px_100px_130px_90px_20px] items-center gap-3 border-b border-divider px-5 py-3.5 last:border-b-0"
+            >
+              <Skeleton width={90} height={20} radius={999} />
+              <Skeleton width={200} height={14} />
+              <Skeleton width={110} height={12} />
+              <Skeleton width={70} height={12} />
+              <Skeleton width={100} height={12} />
+              <Skeleton width={60} height={12} />
+              <Skeleton width={16} height={16} />
+            </div>
+          ))}
+        </div>
       ) : (
         <Card elevation="none" className="overflow-hidden border border-divider">
           <div className="grid grid-cols-[130px_1fr_140px_100px_130px_90px_20px] items-center gap-3 border-b border-divider bg-card-header-bg px-5 py-2.5">

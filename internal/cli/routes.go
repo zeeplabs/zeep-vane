@@ -107,6 +107,7 @@ func buildAdminRouter(pool *db.Pool, cfg config.Config, logger *zap.Logger, poll
 	logoFileHandler := api.NewLogoFileHandler(tenantsRepo)
 	instanceConfigHandler := api.NewInstanceConfigHandler(cfg.PublicDNSTarget, tenantsRepo, logger)
 	overviewHandler := api.NewOverviewHandler(db.NewServiceRepository(pool), db.NewStatusIntervalRepository(pool), db.NewIncidentRepository(pool), db.NewDomainRepository(pool), logger)
+	auditLogHandler := api.NewAuditLogHandler(db.NewAuditLogRepository(pool), logger)
 
 	requireAuth := api.RequireAuth(cfg.SessionSecret, users, sessions, logger)
 	writeRoles := api.RequireRole(db.RoleOwner, db.RoleOperator)
@@ -224,6 +225,12 @@ func buildAdminRouter(pool *db.Pool, cfg config.Config, logger *zap.Logger, poll
 		// mvp-core write routes - owner and operator (ADM-10).
 		protected.With(writeRoles).Post("/api/domains", domainsHandler.Create)
 		protected.With(writeRoles).Post("/api/services", servicesHandler.Create)
+		// service-edit SVCEDIT-05: rename is ownerOnly, same tier as
+		// DELETE /api/admins/{id} - a stricter gate than the writeRoles
+		// used for Create/List/Get above.
+		protected.With(ownerOnly).Patch("/api/services/{id}", servicesHandler.Update)
+		// service-delete SVCDEL-05: ownerOnly, same tier as the rename above.
+		protected.With(ownerOnly).Delete("/api/services/{id}", servicesHandler.Delete)
 		protected.With(writeRoles).Post("/api/integrations/datadog", integrationsHandler.ConnectDatadog)
 		protected.With(writeRoles).Post("/api/integrations/email/{provider}", emailProvidersHandler.Connect)
 		protected.With(writeRoles).Post("/api/integrations/email/{provider}/activate", emailProvidersHandler.Activate)
@@ -271,6 +278,11 @@ func buildAdminRouter(pool *db.Pool, cfg config.Config, logger *zap.Logger, poll
 		// gate as the other tenant-wide read routes above; the page is the
 		// authenticated landing screen for every role (spec P2 AC5).
 		protected.With(anyRole).Get("/api/overview", overviewHandler.Get)
+		// Overview's "Atividade recente do time" card (recent-team-activity
+		// ACTIVITY-06/07) - same anyRole gate as /api/overview above: the
+		// card is visible to every role, and audit entries carry no
+		// secrets (design.md: AuditLogHandler).
+		protected.With(anyRole).Get("/api/audit-log", auditLogHandler.Get)
 	})
 
 	// Serves the embedded SPA (with client-route fallback) for any path

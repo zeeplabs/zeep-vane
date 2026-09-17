@@ -1,11 +1,12 @@
 import { describe, it, expect, afterEach } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { http, HttpResponse } from "msw";
 import { server } from "../../test/msw/server";
 import "../../lib/i18n";
 import { TestQueryProvider } from "../../test/queryClient";
 import { apiFetch } from "../../lib/apiClient";
+import { AuthProvider } from "../../auth/AuthProvider";
 import { ServiceDetailDrawer } from "./ServiceDetailDrawer";
 import type { ServiceStatus } from "../../types/api";
 
@@ -65,7 +66,9 @@ afterEach(async () => {
 function renderDrawer(onClose: () => void = () => {}) {
   return render(
     <TestQueryProvider>
-      <ServiceDetailDrawer serviceId="svc-detail-1" onClose={onClose} />
+      <AuthProvider>
+        <ServiceDetailDrawer serviceId="svc-detail-1" onClose={onClose} />
+      </AuthProvider>
     </TestQueryProvider>
   );
 }
@@ -179,5 +182,129 @@ describe("ServiceDetailDrawer", () => {
     await screen.findByText("Checkout");
     expect(screen.queryByText(/Pausar monitoramento/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/Editar configuração/i)).not.toBeInTheDocument();
+  });
+
+  // service-edit SVCEDIT-06: owner sees the rename control and can rename
+  // the service, which reflects in the drawer without a full page reload.
+  it("owner consegue renomear o serviço pelo drawer (SVCEDIT-06)", async () => {
+    mockDetail();
+    await loginAsOwner();
+    server.use(
+      http.patch("/api/services/:id", async ({ request }) => {
+        const body = (await request.json()) as { name: string };
+        return HttpResponse.json({ ...mockDetail({ name: body.name }), name: body.name });
+      })
+    );
+    renderDrawer();
+
+    await screen.findByText("Checkout");
+    await userEvent.click(screen.getByRole("button", { name: "Renomear serviço" }));
+
+    const input = screen.getByPlaceholderText("Nome do serviço");
+    await userEvent.clear(input);
+    await userEvent.type(input, "Checkout renomeado");
+    await userEvent.click(screen.getByRole("button", { name: "Salvar" }));
+
+    expect(await screen.findByText("Checkout renomeado")).toBeInTheDocument();
+  });
+
+  it("nome vazio mostra erro e não salva (SVCEDIT-03)", async () => {
+    mockDetail();
+    await loginAsOwner();
+    renderDrawer();
+
+    await screen.findByText("Checkout");
+    await userEvent.click(screen.getByRole("button", { name: "Renomear serviço" }));
+    const input = screen.getByPlaceholderText("Nome do serviço");
+    await userEvent.clear(input);
+    await userEvent.click(screen.getByRole("button", { name: "Salvar" }));
+
+    expect(await screen.findByText("O nome não pode ficar vazio.")).toBeInTheDocument();
+    // Still in editing mode (save was rejected client-side) - the input,
+    // not the h2, is what's on screen; the point of this test is that no
+    // PATCH was sent and the original name wasn't touched.
+    expect(screen.getByPlaceholderText("Nome do serviço")).toBeInTheDocument();
+  });
+
+  it("cancelar edição descarta o rascunho e mantém o nome original", async () => {
+    mockDetail();
+    await loginAsOwner();
+    renderDrawer();
+
+    await screen.findByText("Checkout");
+    await userEvent.click(screen.getByRole("button", { name: "Renomear serviço" }));
+    const input = screen.getByPlaceholderText("Nome do serviço");
+    await userEvent.type(input, " draft");
+    await userEvent.click(screen.getByRole("button", { name: "Cancelar" }));
+
+    expect(screen.getByText("Checkout")).toBeInTheDocument();
+    expect(screen.queryByPlaceholderText("Nome do serviço")).not.toBeInTheDocument();
+  });
+
+  it("viewer não vê o botão de renomear", async () => {
+    mockDetail();
+    await apiFetch("/api/auth/login", {
+      method: "POST",
+      body: JSON.stringify({ email: "viewer@vane.app", password: "demo1234" }),
+    });
+    renderDrawer();
+
+    await screen.findByText("Checkout");
+    expect(screen.queryByRole("button", { name: "Renomear serviço" })).not.toBeInTheDocument();
+  });
+
+  // service-delete SVCDEL-09: owner sees the delete action, confirms, and
+  // the drawer closes on success.
+  it("owner consegue excluir o serviço após confirmar (SVCDEL-09)", async () => {
+    mockDetail();
+    await loginAsOwner();
+    server.use(http.delete("/api/services/:id", () => new HttpResponse(null, { status: 204 })));
+    let closeCalls = 0;
+    renderDrawer(() => {
+      closeCalls += 1;
+    });
+
+    await screen.findByText("Checkout");
+    await userEvent.click(screen.getByRole("button", { name: "Excluir serviço" }));
+    // Confirm dialog title uses the same i18n string as the trigger button
+    // - the button with the trigger's own aria-label disambiguates it.
+    const dialogDeleteButtons = await screen.findAllByRole("button", { name: "Excluir serviço" });
+    await userEvent.click(dialogDeleteButtons[dialogDeleteButtons.length - 1]);
+
+    await waitFor(() => expect(closeCalls).toBe(1));
+  });
+
+  it("delete bloqueado (409) mostra erro e não fecha o drawer", async () => {
+    mockDetail();
+    await loginAsOwner();
+    server.use(
+      http.delete("/api/services/:id", () =>
+        HttpResponse.json({ error: "service is still attached to a status page" }, { status: 409 })
+      )
+    );
+    let closeCalls = 0;
+    renderDrawer(() => {
+      closeCalls += 1;
+    });
+
+    await screen.findByText("Checkout");
+    await userEvent.click(screen.getByRole("button", { name: "Excluir serviço" }));
+    const dialogDeleteButtons = await screen.findAllByRole("button", { name: "Excluir serviço" });
+    await userEvent.click(dialogDeleteButtons[dialogDeleteButtons.length - 1]);
+
+    expect(await screen.findByText("service is still attached to a status page")).toBeInTheDocument();
+    expect(closeCalls).toBe(0);
+  });
+
+  it("viewer não vê o botão de excluir", async () => {
+    mockDetail();
+    await apiFetch("/api/auth/login", {
+      method: "POST",
+      body: JSON.stringify({ email: "viewer@vane.app", password: "demo1234" }),
+    });
+    renderDrawer();
+
+    await screen.findByText("Checkout");
+    expect(screen.queryByRole("button", { name: "Excluir serviço" })).not.toBeInTheDocument();
   });
 });

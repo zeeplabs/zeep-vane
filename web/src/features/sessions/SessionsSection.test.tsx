@@ -3,7 +3,7 @@ import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { Toaster } from "sonner";
-import { http, HttpResponse } from "msw";
+import { http, HttpResponse, delay } from "msw";
 import "../../lib/i18n";
 import { AuthProvider } from "../../auth/AuthProvider";
 import { TestQueryProvider } from "../../test/queryClient";
@@ -144,6 +144,35 @@ describe("SessionsSection", () => {
     renderSection();
 
     expect(await screen.findByTestId("sessions-empty")).toHaveTextContent("Nenhuma sessão ativa.");
+  });
+
+  // SKEL-04/05: while /api/auth/sessions is loading, skeleton rows render
+  // (not the old "Carregando sessões..." paragraph as visible content)
+  // inside an aria-busy container that still carries the sr-only string.
+  it("mostra skeletons (não o texto) enquanto /api/auth/sessions carrega", async () => {
+    server.use(
+      http.get("/api/auth/sessions", async () => {
+        await delay("infinite");
+        return HttpResponse.json([]);
+      }),
+    );
+    await loginAsOwner();
+    renderSection();
+
+    const srText = await screen.findByText("Carregando sessões...");
+    expect(srText.className).toContain("sr-only");
+    expect(srText.closest('[aria-busy="true"]')).toBeInTheDocument();
+    expect(screen.getAllByTestId("skeleton").length).toBeGreaterThan(0);
+  });
+
+  // SKEL-06/07: once the fetch resolves, skeletons are gone; the isError
+  // branch stays untouched as verified by the existing error test below.
+  it("remove os skeletons assim que /api/auth/sessions termina de carregar", async () => {
+    await loginAsOwner();
+    renderSection();
+
+    await screen.findAllByTestId("session-row");
+    expect(screen.queryAllByTestId("skeleton")).toHaveLength(0);
   });
 
   it("renderiza a mensagem de erro de carregamento (não a de encerrar) quando o GET falha", async () => {

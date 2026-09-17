@@ -2,7 +2,7 @@ import { describe, it, expect, afterEach } from "vitest";
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
-import { http, HttpResponse } from "msw";
+import { http, HttpResponse, delay } from "msw";
 import "../../lib/i18n";
 import { server } from "../../test/msw/server";
 import { resetDeploymentMode, setDeploymentMode } from "../../test/msw/handlers";
@@ -37,6 +37,35 @@ function renderPage() {
 }
 
 describe("SettingsPage", () => {
+  // SKEL-04/05: while /api/company-settings is loading, skeleton blocks
+  // render (not the old "Carregando…" paragraph as visible content)
+  // inside an aria-busy container that still carries the sr-only string.
+  it("mostra skeletons (não o texto) enquanto /api/company-settings carrega", async () => {
+    server.use(
+      http.get("/api/company-settings", async () => {
+        await delay("infinite");
+        return HttpResponse.json({});
+      }),
+    );
+    await loginAsOwner();
+    renderPage();
+
+    const srText = await screen.findByText("Carregando…");
+    expect(srText.className).toContain("sr-only");
+    expect(srText.closest('[aria-busy="true"]')).toBeInTheDocument();
+    expect(screen.getAllByTestId("skeleton").length).toBeGreaterThan(0);
+  });
+
+  // SKEL-06: once the fetch resolves, skeletons are gone and the real form
+  // takes over.
+  it("remove os skeletons assim que /api/company-settings termina de carregar", async () => {
+    await loginAsOwner();
+    renderPage();
+
+    await screen.findByDisplayValue("Sua Empresa Ltda.");
+    expect(screen.queryAllByTestId("skeleton")).toHaveLength(0);
+  });
+
   it("carrega e exibe o perfil da empresa persistido (nome/site/fuso/idioma)", async () => {
     await loginAsOwner();
     renderPage();

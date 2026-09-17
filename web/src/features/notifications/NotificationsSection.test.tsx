@@ -75,6 +75,37 @@ describe("NotificationsSection", () => {
     expect(screen.getByRole("switch", { name: "Resumo semanal" })).toBeDisabled();
   });
 
+  // SKEL-04/05: while the initial request is in flight, the toggle rows'
+  // label/hint text is replaced by skeleton blocks inside an aria-busy
+  // container carrying the sr-only loading string.
+  it("mostra skeletons no lugar do texto enquanto as preferências carregam", async () => {
+    await loginAsOwner();
+    server.use(
+      http.get("/api/auth/notification-preferences", async () => {
+        await delay("infinite");
+        return HttpResponse.json({});
+      }),
+    );
+
+    renderSection();
+
+    const srText = await screen.findByText("Carregando notificações...");
+    expect(srText.className).toContain("sr-only");
+    expect(srText.closest('[aria-busy="true"]')).toBeInTheDocument();
+    expect(screen.getAllByTestId("skeleton").length).toBeGreaterThan(0);
+    expect(screen.queryByText("Novo incidente")).not.toBeInTheDocument();
+  });
+
+  // SKEL-06: once the fetch resolves, skeletons are gone and the real
+  // labels take over.
+  it("remove os skeletons assim que as preferências terminam de carregar", async () => {
+    await loginAsOwner();
+    renderSection();
+
+    await screen.findByText("Novo incidente");
+    expect(screen.queryAllByTestId("skeleton")).toHaveLength(0);
+  });
+
   // NOTIFPREF-16: an initial-load failure shows an inline error without
   // breaking the rest of the card.
   it("shows an inline error and disables the switches when the load fails", async () => {
@@ -152,7 +183,7 @@ describe("NotificationsSection", () => {
     renderSection();
 
     expect(await screen.findByText("Notifications")).toBeInTheDocument();
-    expect(screen.getByText("New incident")).toBeInTheDocument();
+    expect(await screen.findByText("New incident")).toBeInTheDocument();
     expect(screen.getByText("Incident resolved")).toBeInTheDocument();
     expect(screen.getByText("Weekly digest")).toBeInTheDocument();
   });

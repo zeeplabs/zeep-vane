@@ -3,8 +3,10 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -38,6 +40,8 @@ type serviceCreatorLister interface {
 	Create(ctx context.Context, service *db.Service) error
 	ListPaginated(ctx context.Context, page, pageSize int) ([]db.Service, int, error)
 	Get(ctx context.Context, id string) (*db.Service, bool, error)
+	Update(ctx context.Context, id, name string) error
+	SoftDelete(ctx context.Context, id string) error
 }
 
 // serviceIncidentCounter is the subset of *db.IncidentRepository the
@@ -372,6 +376,97 @@ func (h *ServicesHandler) Get(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	_ = json.NewEncoder(w).Encode(resp)
+}
+
+type updateServiceRequest struct {
+	Name string `json:"name"`
+}
+
+// Update handles PATCH /api/services/{id} (service-edit SVCEDIT-01..05):
+// renames a service, leaving monitor_mode/slo_id/slo_name/poll_*/
+// current_status untouched. ownerOnly (routes.go), same tier as
+// DELETE /api/admins/{id}. Returns the full updated serviceResponse on
+// success (SVCEDIT-02), a fixed generic 422 for an empty name (SVCEDIT-03),
+// and a fixed generic 404 for an unknown id (SVCEDIT-04) - never leaking
+// whether the id is malformed vs. absent, same convention as Get.
+func (h *ServicesHandler) Update(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+
+	var req updateServiceRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || strings.TrimSpace(req.Name) == "" {
+		writeAdminError(w, http.StatusUnprocessableEntity, invalidServiceRequestBody)
+		return
+	}
+
+	if err := h.services.Update(r.Context(), id, req.Name); err != nil {
+		if errors.Is(err, db.ErrNotFound) {
+			writeAdminError(w, http.StatusNotFound, serviceNotFoundBody)
+			return
+		}
+		h.logger.Error("services: failed to update service", zap.Error(err))
+		writeInternalError(w)
+		return
+	}
+
+	ctx := r.Context()
+	service, found, err := h.services.Get(ctx, id)
+	if err != nil {
+		h.logger.Error("services: failed to get service after update", zap.Error(err))
+		writeInternalError(w)
+		return
+	}
+	if !found {
+		writeAdminError(w, http.StatusNotFound, serviceNotFoundBody)
+		return
+	}
+
+	now := time.Now()
+	windowStart := now.AddDate(0, 0, -servicesUptimeWindowDays)
+	overlapping, err := h.intervals.ListOverlapping(ctx, []string{id}, windowStart, now)
+	if err != nil {
+		h.logger.Error("services: failed to list overlapping status intervals after update", zap.Error(err))
+		writeInternalError(w)
+		return
+	}
+	uptime30d, lastSeenAt := uptimeAndLastSeen(overlapping, windowStart, now)
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(toServiceResponse(service, uptime30d, lastSeenAt))
+}
+
+// serviceInUseBody is the fixed generic 409 body for a delete blocked by a
+// status_page_services reference (service-delete SVCDEL-03) - never leaks
+// which status page, same "generic body, log the real error server-side"
+// posture as every other admin error response (AGENTS.md §4).
+const serviceInUseBody = `{"error":"service is still attached to a status page"}`
+
+// Delete handles DELETE /api/services/{id} (service-delete SVCDEL-01..05):
+// soft-deletes a service (sets deleted_at, never removes the row or its
+// status_intervals/incidents history). ownerOnly (routes.go). 409 with a
+// fixed generic body if the service is still attached to a status page
+// (SVCDEL-03) - the operator must detach it first, same "block, don't
+// silently unlink" posture DomainsHandler.Delete already uses. 404 fixed
+// generic body for an unknown or already-deleted id (SVCDEL-04), same
+// convention as Get/Update.
+func (h *ServicesHandler) Delete(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+
+	if err := h.services.SoftDelete(r.Context(), id); err != nil {
+		if errors.Is(err, db.ErrServiceInUse) {
+			writeAdminError(w, http.StatusConflict, serviceInUseBody)
+			return
+		}
+		if errors.Is(err, db.ErrNotFound) {
+			writeAdminError(w, http.StatusNotFound, serviceNotFoundBody)
+			return
+		}
+		h.logger.Error("services: failed to delete service", zap.Error(err))
+		writeInternalError(w)
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // toHourlyBucketResponses maps history.Bucket rows into the JSON response

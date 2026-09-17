@@ -272,6 +272,51 @@ func TestPollerManager_RunLeaderLoop_ManualScheduler_StartsWithoutDatadogIntegra
 	}
 }
 
+// TestPollerManager_RunLeaderLoop_IntegrationConnectedAfterAcquisition_HeartbeatStartsPoller
+// covers AD-034: RunLeaderLoop's own Restart call at leadership acquisition
+// is a one-shot attempt, so a Datadog credential connected afterward -
+// including via IntegrationsHandler.ConnectDatadog landing on a different,
+// non-leading replica, where Restart is a documented no-op - must still
+// reach the real leader without it ever losing and re-acquiring the lock or
+// the process restarting. Deliberately acquires leadership with no
+// integration stored (so the acquisition-time Restart is the "not started"
+// no-op this bug leaves stuck forever), stores one afterward exactly like a
+// separate replica's successful connect would, and asserts the leader picks
+// it up on its own within a couple of heartbeat ticks.
+func TestPollerManager_RunLeaderLoop_IntegrationConnectedAfterAcquisition_HeartbeatStartsPoller(t *testing.T) {
+	pool := newServeTestPool(t)
+	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), "DELETE FROM integrations WHERE provider = 'datadog'") })
+	// Deliberately no storeTestDatadogIntegration call yet.
+
+	ctx, cancel := context.WithCancel(context.Background())
+
+	mgr := leaderTestPollerManager(t, ctx, pool, testDatabaseURL(t))
+	go mgr.RunLeaderLoop(ctx)
+	t.Cleanup(func() {
+		cancel()
+		waitUntil(2*time.Second, func() bool { return !mgr.leading.Load() })
+		mgr.Stop()
+		waitForLeaderLockReleased(t, pool)
+	})
+
+	if !waitUntil(3*time.Second, func() bool { return mgr.leading.Load() }) {
+		t.Fatal("single-replica RunLeaderLoop did not acquire leadership within 3s")
+	}
+	if isLeading(mgr) {
+		t.Fatal("poller tracked as running before any integration was ever stored")
+	}
+
+	// Simulates a Datadog connect succeeding on some other replica: nothing
+	// here calls mgr.Restart directly, only the stored row changes underneath
+	// this already-leading manager - the heartbeat retry is the only thing
+	// that can notice it.
+	storeTestDatadogIntegration(t, pool)
+
+	if !waitUntil(2*time.Second, func() bool { return isLeading(mgr) }) {
+		t.Fatal("leader did not start the poller after an integration appeared post-acquisition, want the heartbeat loop to retry Restart until one is found (AD-034)")
+	}
+}
+
 // TestPollerManager_ManualScheduler_StopsOnStop covers the manual
 // scheduler's own stop path: PollerManager.Stop() must tear it down and
 // wait for it to exit, same guarantee already made for the Datadog poller.

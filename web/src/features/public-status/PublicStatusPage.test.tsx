@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { http, HttpResponse } from "msw";
+import { http, HttpResponse, delay } from "msw";
 import { MemoryRouter, Routes, Route } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import "../../lib/i18n";
@@ -190,6 +190,38 @@ describe("PublicStatusPage - tema local (PUBSTATUS-07..11)", () => {
 });
 
 describe("PublicStatusPage", () => {
+  // SKEL-04/05: while the public-preview fetch is loading, the page shows
+  // skeleton blocks (not the old bespoke pulsing divs) inside an aria-busy
+  // container that still carries the sr-only loading string.
+  it("mostra skeletons (não o texto) enquanto a página pública carrega", async () => {
+    server.use(
+      http.get("/api/status-pages/:id/public-preview", async () => {
+        await delay("infinite");
+        return HttpResponse.json({
+          company: { name: "Acme Status", logo_url: null },
+          services: [],
+          incidents: { active: [], resolved: { items: [], total: 0, page: 1, page_size: 10 } },
+        });
+      }),
+    );
+    await renderAt("/status/sp-4");
+
+    const srText = await screen.findByText("Carregando…");
+    expect(srText.className).toContain("sr-only");
+    expect(srText.closest('[aria-busy="true"]')).toBeInTheDocument();
+    expect(screen.getAllByTestId("skeleton").length).toBeGreaterThan(0);
+  });
+
+  // SKEL-06: once the fetch resolves, skeletons are gone and the real
+  // page (banner + services) takes over - loading and loaded are mutually
+  // exclusive.
+  it("remove os skeletons assim que a página pública termina de carregar", async () => {
+    await renderAt("/status/sp-4");
+
+    await screen.findByText("Todos os sistemas operacionais");
+    expect(screen.queryAllByTestId("skeleton")).toHaveLength(0);
+  });
+
   it("página sem incidentes mostra banda de operacional e nenhum incidente ativo", async () => {
     await renderAt("/status/sp-4");
 

@@ -219,7 +219,7 @@ func (h *AdminsHandler) Invite(w http.ResponseWriter, r *http.Request) {
 
 	emailSent := h.sendAdminInviteEmail(r, invite.ID, req.Email, req.Role, rawToken)
 
-	if err := h.audit.Record(r.Context(), actor.ID, invite.ID, "invited"); err != nil {
+	if err := h.audit.Record(r.Context(), actor.ID, invite.ID, req.Email, "invited"); err != nil {
 		h.logger.Error("admins: failed to record invite audit entry", zap.Error(err))
 	}
 
@@ -481,7 +481,7 @@ func (h *AdminsHandler) ResendInvite(w http.ResponseWriter, r *http.Request) {
 
 	emailSent := h.sendAdminInviteEmail(r, invite.ID, invite.Email, invite.Role, rawToken)
 
-	if err := h.audit.Record(r.Context(), actor.ID, invite.ID, "resent"); err != nil {
+	if err := h.audit.Record(r.Context(), actor.ID, invite.ID, invite.Email, "resent"); err != nil {
 		h.logger.Error("admins: failed to record resend audit entry", zap.Error(err))
 	}
 
@@ -505,7 +505,8 @@ func (h *AdminsHandler) CancelInvite(w http.ResponseWriter, r *http.Request) {
 	}
 	tenantID, _ := ActiveTenantIDFromContext(r.Context())
 
-	if err := h.invites.Cancel(r.Context(), tenantID, id); err != nil {
+	canceledInvite, err := h.invites.Cancel(r.Context(), tenantID, id)
+	if err != nil {
 		if errors.Is(err, db.ErrNotFound) {
 			writeAdminError(w, http.StatusNotFound, inviteNotFoundBody)
 			return
@@ -515,7 +516,7 @@ func (h *AdminsHandler) CancelInvite(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.audit.Record(r.Context(), actor.ID, id, "canceled"); err != nil {
+	if err := h.audit.Record(r.Context(), actor.ID, id, canceledInvite.Email, "canceled"); err != nil {
 		h.logger.Error("admins: failed to record cancel audit entry", zap.Error(err))
 	}
 
@@ -605,7 +606,21 @@ func (h *AdminsHandler) UpdateRole(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.audit.Record(ctx, actor.ID, targetID, "role_changed"); err != nil {
+	// The role change itself already succeeded above - the audit label is
+	// best-effort, so a concurrently-deleted target (GetByID failing) falls
+	// back to an empty label rather than failing the whole request, matching
+	// every other Record call site's fire-and-forget error-logging-only
+	// posture.
+	var targetLabel string
+	if targetUser, err := h.users.GetByID(ctx, targetID); err != nil {
+		h.logger.Error("admins: failed to look up target admin for role-change audit label", zap.Error(err))
+	} else if targetUser.Name != "" {
+		targetLabel = targetUser.Name
+	} else {
+		targetLabel = targetUser.Email
+	}
+
+	if err := h.audit.Record(ctx, actor.ID, targetID, targetLabel, "role_changed"); err != nil {
 		h.logger.Error("admins: failed to record role-change audit entry", zap.Error(err))
 	}
 
@@ -647,6 +662,22 @@ func (h *AdminsHandler) Delete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// The target's audit label must be captured before h.users.Delete below
+	// can run (spec.md AC4) - once that delete succeeds the row is gone and
+	// a later lookup would always come back empty. Best-effort: same
+	// fire-and-forget error-logging-only posture as every other Record call
+	// site, so a failed lookup (e.g. the target was already concurrently
+	// deleted) falls back to an empty label rather than failing the removal
+	// itself.
+	var targetLabel string
+	if targetUser, err := h.users.GetByID(ctx, targetID); err != nil {
+		h.logger.Error("admins: failed to look up target admin for removal audit label", zap.Error(err))
+	} else if targetUser.Name != "" {
+		targetLabel = targetUser.Name
+	} else {
+		targetLabel = targetUser.Email
+	}
+
 	// Per-session revocation (same rationale as UpdateRole above).
 	// RevokeAllForUser is a bulk UPDATE - it returns no error when the
 	// target user has no sessions to revoke (0 rows affected is a
@@ -672,7 +703,7 @@ func (h *AdminsHandler) Delete(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	if err := h.audit.Record(ctx, actor.ID, targetID, "removed"); err != nil {
+	if err := h.audit.Record(ctx, actor.ID, targetID, targetLabel, "removed"); err != nil {
 		h.logger.Error("admins: failed to record removal audit entry", zap.Error(err))
 	}
 

@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach, vi } from "vitest";
-import { http, HttpResponse } from "msw";
+import { http, HttpResponse, delay } from "msw";
 import { render, screen, act } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Routes, Route } from "react-router-dom";
@@ -52,6 +52,36 @@ function renderDetail(id: string) {
 }
 
 describe("StatusPageDetail", () => {
+  // SKEL-04/05: while /api/status-pages is loading, a skeleton
+  // (header + content blocks) renders instead of the old "Carregando…"
+  // paragraph as visible content, inside an aria-busy container that
+  // still carries the sr-only loading string.
+  it("mostra skeletons (não o texto) enquanto a status page carrega", async () => {
+    await loginAsOwner();
+    server.use(
+      http.get("/api/status-pages", async () => {
+        await delay("infinite");
+        return HttpResponse.json({ items: [], total: 0, page: 1, page_size: 20 });
+      }),
+    );
+    renderDetail("sp-1");
+
+    const srText = await screen.findByText("Carregando…");
+    expect(srText.className).toContain("sr-only");
+    expect(srText.closest('[aria-busy="true"]')).toBeInTheDocument();
+    expect(screen.getAllByTestId("skeleton").length).toBeGreaterThan(0);
+  });
+
+  // SKEL-06: once the fetch resolves, skeletons are gone and the real
+  // editor content takes over.
+  it("remove os skeletons assim que a status page termina de carregar", async () => {
+    await loginAsOwner();
+    renderDetail("sp-1");
+
+    expect(await screen.findByText("Publicada")).toBeInTheDocument();
+    expect(screen.queryAllByTestId("skeleton")).toHaveLength(0);
+  });
+
   it("estado published exibe a URL pública, o link de preview e não faz polling adicional", async () => {
     await loginAsOwner();
     const spy = vi.spyOn(apiClient, "apiFetch");
@@ -136,6 +166,20 @@ describe("StatusPageDetail", () => {
     // do painel de forma não-racy, já que ele desmonta no mesmo instante).
     expect(await screen.findByText("Publicada")).toBeInTheDocument();
     expect(screen.queryByText("Configuração DNS")).not.toBeInTheDocument();
+  });
+
+  it("botão de copiar CNAME copia o valor exibido pra área de transferência (SPD-10)", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.assign(navigator, { clipboard: { writeText } });
+
+    await loginAsOwner();
+    renderDetail("sp-2");
+    await screen.findByText("Aguardando validação de DNS/certificado");
+
+    expect(await screen.findByText("203.0.113.10")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Copiar valor do CNAME" }));
+
+    expect(writeText).toHaveBeenCalledWith("203.0.113.10");
   });
 
   it("resultado de verificação com DNS incorreto/certificado inválido é exibido sem publicar a página", async () => {

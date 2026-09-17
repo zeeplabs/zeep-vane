@@ -1,9 +1,11 @@
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import { MdOutlineSchedule, MdOutlineAdd } from "react-icons/md";
 import { Card } from "../../components/ui/Card";
 import { Button } from "../../components/ui/Button";
 import { Pager } from "../../components/ui/Pager";
 import { Tag } from "../../components/ui/Tag";
+import { Skeleton } from "../../components/ui/Skeleton";
 import { useAuth } from "../../auth/AuthProvider";
 import type { Service } from "../../types/api";
 import { useServices } from "./hooks";
@@ -20,6 +22,7 @@ function ClockIcon() {
 
 /** Tabela + drawer de vínculo de serviço a SLO. Compartilhada entre `IntegrationsPage` (handoff mostra as duas seções na mesma tela) e `ServicesPage` (rota própria, decisão registrada em design.md). */
 export function ServicesSection() {
+  const { t } = useTranslation();
   const { hasRole } = useAuth();
   const canManage = hasRole(["owner", "operator"]);
   const [page, setPage] = useState(1);
@@ -47,7 +50,20 @@ export function ServicesSection() {
 
       <div>
         {isLoading ? (
-          <p className="text-neutral-400">Carregando…</p>
+          <div aria-busy="true" className="rounded-md border border-divider divide-y divide-divider overflow-hidden">
+            <span className="sr-only">{t("services.loading")}</span>
+            {Array.from({ length: 3 }).map((_, i) => (
+              <div key={i} className="flex items-center gap-3 px-4 py-3.5">
+                <Skeleton width={8} height={8} radius={999} />
+                <div className="flex-1">
+                  <Skeleton width={140} height={14} />
+                  <Skeleton width={100} height={12} className="mt-1.5" />
+                </div>
+                <Skeleton width={90} height={28} />
+                <Skeleton width={70} height={20} radius={999} />
+              </div>
+            ))}
+          </div>
         ) : (
           <>
             <Card elevation="none" className="border border-divider divide-y divide-divider overflow-hidden">

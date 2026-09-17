@@ -1,7 +1,8 @@
 import { describe, it, expect, afterEach } from "vitest";
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { http, HttpResponse } from "msw";
+import { http, HttpResponse, delay } from "msw";
+import "../../lib/i18n";
 import { server } from "../../test/msw/server";
 import { TestQueryProvider } from "../../test/queryClient";
 import { apiFetch } from "../../lib/apiClient";
@@ -52,6 +53,36 @@ function renderTable(onSelect: (domain: Domain) => void = () => {}) {
 }
 
 describe("DomainsTable", () => {
+  // SKEL-04/05: while /api/domains is loading, skeleton rows render (not
+  // the old "Carregando…" paragraph as visible content) inside an
+  // aria-busy container that still carries the sr-only loading string.
+  it("mostra skeletons (não o texto) enquanto /api/domains carrega", async () => {
+    server.use(
+      http.get("/api/domains", async () => {
+        await delay("infinite");
+        return HttpResponse.json({ items: [], total: 0, page: 1, page_size: 20 });
+      }),
+    );
+    await loginAsOwner();
+    renderTable();
+
+    const srText = await screen.findByText("Carregando…");
+    expect(srText.className).toContain("sr-only");
+    expect(srText.closest('[aria-busy="true"]')).toBeInTheDocument();
+    expect(screen.getAllByTestId("skeleton").length).toBeGreaterThan(0);
+  });
+
+  // SKEL-06: once the fetch resolves, skeletons are gone and the real
+  // table (or its empty state) takes over.
+  it("remove os skeletons assim que /api/domains termina de carregar", async () => {
+    mockDomainsPage([baseDomain({ id: "dom-loaded", hostname: "loaded.example.com" })]);
+    await loginAsOwner();
+    renderTable();
+
+    await screen.findByText("loaded.example.com");
+    expect(screen.queryAllByTestId("skeleton")).toHaveLength(0);
+  });
+
   it("renderiza Status/Tipo/SSL da linha (DSP-01)", async () => {
     mockDomainsPage([
       baseDomain({

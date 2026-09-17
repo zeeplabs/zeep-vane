@@ -122,4 +122,16 @@ describe("StatusPageDetailDrawer", () => {
     // not just that the empty-list "—" branch renders.
     expect(await screen.findByText("API pública")).toBeInTheDocument();
   });
+
+  it("mostra 'Pré-visualizar página pública' apontando pro endpoint de preview interno, mesmo sem domínio anexado", async () => {
+    mockDomainsPage([]);
+    await loginAsOwner();
+    const page = basePage({ id: "sp-preview", name: "Sem domínio ainda", domain_id: null, subdomain: null });
+    renderDrawer(page);
+
+    await screen.findByText("Sem domínio ainda");
+    const previewLink = screen.getByRole("link", { name: "Pré-visualizar página pública" });
+    expect(previewLink).toHaveAttribute("href", "/status/sp-preview");
+    expect(previewLink).toHaveAttribute("target", "_blank");
+  });
 });

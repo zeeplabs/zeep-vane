@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
-import { MdOutlineOpenInNew, MdCheck } from "react-icons/md";
+import { useTranslation } from "react-i18next";
+import { toast } from "sonner";
+import { MdOutlineOpenInNew, MdCheck, MdContentCopy } from "react-icons/md";
 import { Tag, type TagVariant } from "../../components/ui/Tag";
 import { Button, buttonBaseClasses, buttonVariantClasses } from "../../components/ui/Button";
 import { Field } from "../../components/ui/Field";
@@ -69,6 +71,13 @@ function StatusPagePill({ page }: StatusPagePillProps) {
 
 export interface StatusPageEditorContentProps {
   page: StatusPage;
+  /** Controla o link "Pré-visualizar página pública". Default `true` -
+   * necessário pra tela legada `/status-pages/{id}` (`StatusPageDetail.tsx`,
+   * sem drawer de detalhe separado, esse é seu único jeito de pré-visualizar).
+   * `EditStatusPageDrawer` do novo layout passa `false`: o link mudou para o
+   * `StatusPageDetailDrawer` ("visualizar detalhes"), a pedido do Julio -
+   * antes só existia no drawer de edição, o que era o lugar errado. */
+  showPreviewLink?: boolean;
 }
 
 /** Corpo real de edição de uma status page (status, anexar domínio,
@@ -82,7 +91,7 @@ export interface StatusPageEditorContentProps {
  * `AddStatusPageDrawer`): sem `Card`, seções separadas por `border-t`,
  * rótulos em uppercase 10.5px, checklist de serviço com checkbox quadrado
  * em vez do checkbox nativo redondo. */
-export function StatusPageEditorContent({ page }: StatusPageEditorContentProps) {
+export function StatusPageEditorContent({ page, showPreviewLink = true }: StatusPageEditorContentProps) {
   // SPEC_DEVIATION: fixed page 1 for now - Pager UI for the domains
   // dropdown is out of scope here (this reads domains only to resolve a
   // hostname/build a select list); T14/T16 (Pager) is a later phase not
@@ -162,15 +171,17 @@ export function StatusPageEditorContent({ page }: StatusPageEditorContentProps) 
 
       {page.state === "tls_failed" ? <p className="text-[13px] text-text-muted">{page.tls_last_error}</p> : null}
 
-      <a
-        href={`/status/${page.id}`}
-        target="_blank"
-        rel="noreferrer"
-        className={`${buttonBaseClasses} ${buttonVariantClasses.secondary} w-fit`}
-      >
-        <MdOutlineOpenInNew size={14} aria-hidden="true" />
-        Pré-visualizar página pública
-      </a>
+      {showPreviewLink ? (
+        <a
+          href={`/status/${page.id}`}
+          target="_blank"
+          rel="noreferrer"
+          className={`${buttonBaseClasses} ${buttonVariantClasses.secondary} w-fit`}
+        >
+          <MdOutlineOpenInNew size={14} aria-hidden="true" />
+          Pré-visualizar página pública
+        </a>
+      ) : null}
 
       {/* Painel fixo de configuração de DNS/certificado (mirrors o fluxo de
           domínio customizado de plataformas como Vercel/Render) - permanece
@@ -234,7 +245,7 @@ export function StatusPageEditorContent({ page }: StatusPageEditorContentProps) 
           <div className="flex items-center gap-3">
             <Button
               type="button"
-              variant="secondary"
+              variant="solid"
               disabled={!isDirty || setServices.isPending}
               onClick={handleSaveServices}
             >
@@ -271,9 +282,16 @@ interface DomainVerificationPanelProps {
 // Vercel/Render offer for custom domains. Table styling mirrors
 // DomainDetailDrawer's TIPO/VALOR DNS block.
 function DomainVerificationPanel({ statusPageId, fullHostname }: DomainVerificationPanelProps) {
+  const { t } = useTranslation();
   const { data: dnsTarget, isLoading: dnsTargetLoading } = useDNSTarget();
   const verifyDomain = useVerifyDomain();
   const result: VerifyDomainResult | undefined = verifyDomain.data;
+
+  async function handleCopyCname() {
+    if (!dnsTarget) return;
+    await navigator.clipboard.writeText(dnsTarget);
+    toast.success(t("statusPages.dns.copied"));
+  }
 
   return (
     <div className="flex flex-col gap-3">
@@ -294,7 +312,7 @@ function DomainVerificationPanel({ statusPageId, fullHostname }: DomainVerificat
           <span className="text-[11px] font-bold text-text-muted">TIPO</span>
           <span className="text-[11px] font-bold text-text-muted">VALOR</span>
         </div>
-        <div className="grid grid-cols-[70px_1fr] items-center gap-2 px-3.5 py-3">
+        <div className="grid grid-cols-[70px_1fr_auto] items-center gap-2 px-3.5 py-3">
           <span className="font-mono text-[12.5px] font-bold text-text">CNAME</span>
           {dnsTargetLoading ? (
             <span className="font-mono text-[12.5px] text-text-muted">Carregando…</span>
@@ -303,6 +321,17 @@ function DomainVerificationPanel({ statusPageId, fullHostname }: DomainVerificat
               {dnsTarget ?? "não configurado"}
             </span>
           )}
+          {dnsTarget ? (
+            <button
+              type="button"
+              onClick={handleCopyCname}
+              aria-label={t("statusPages.dns.copyCname")}
+              title={t("statusPages.dns.copyCname")}
+              className="flex-none cursor-pointer text-text-muted hover:text-text"
+            >
+              <MdContentCopy size={15} aria-hidden="true" />
+            </button>
+          ) : null}
         </div>
       </div>
       <p className="text-xs text-text-muted">

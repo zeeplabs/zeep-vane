@@ -1,7 +1,7 @@
 import { describe, it, expect, afterEach } from "vitest";
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { http, HttpResponse } from "msw";
+import { http, HttpResponse, delay } from "msw";
 import { MemoryRouter } from "react-router-dom";
 import "../../lib/i18n";
 import { AuthProvider } from "../../auth/AuthProvider";
@@ -38,6 +38,36 @@ async function openIncidentRow(title: string) {
 }
 
 describe("IncidentsPage", () => {
+  // SKEL-04/05: while /api/incidents is loading, skeleton rows matching
+  // the real grid template render (not the old "Carregando…" paragraph as
+  // visible content) inside an aria-busy container that still carries the
+  // sr-only loading string.
+  it("mostra skeletons (não o texto) enquanto /api/incidents carrega", async () => {
+    server.use(
+      http.get("/api/incidents", async () => {
+        await delay("infinite");
+        return HttpResponse.json({ items: [], total: 0, page: 1, page_size: 25 });
+      }),
+    );
+    await loginAs("owner@vane.app");
+    renderPage();
+
+    const srText = await screen.findByText("Carregando…");
+    expect(srText.className).toContain("sr-only");
+    expect(srText.closest('[aria-busy="true"]')).toBeInTheDocument();
+    expect(screen.getAllByTestId("skeleton").length).toBeGreaterThan(0);
+  });
+
+  // SKEL-06: once the fetch resolves, skeletons are gone and the real
+  // table takes over - loading and loaded are mutually exclusive.
+  it("remove os skeletons assim que /api/incidents termina de carregar", async () => {
+    await loginAs("owner@vane.app");
+    renderPage();
+
+    await screen.findByText("Latência elevada no Checkout");
+    expect(screen.queryAllByTestId("skeleton")).toHaveLength(0);
+  });
+
   it("tabela lista incidentes ativos e resolvidos juntos por padrão", async () => {
     await loginAs("owner@vane.app");
     renderPage();

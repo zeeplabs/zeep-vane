@@ -76,7 +76,7 @@ const makeNavItemClass =
 // (useSidebarPin, T7). TenantSwitcher (T9) sits at the top; LogoutConfirmDialog
 // (T8) replaces the modal this file used to inline.
 export function Sidebar() {
-  const { hasRole } = useAuth();
+  const { hasRole, deploymentMode } = useAuth();
   const { pinned, togglePinned } = useSidebarPin();
   const { t } = useTranslation();
   const location = useLocation();
@@ -172,11 +172,16 @@ export function Sidebar() {
         ) : null}
         {/* Billing showcase (billing-plans-page BILLPG-01): reachable by any
             authenticated role, unlike Usuários/Configurações above - it's
-            read-only, nothing mutates. */}
-        <NavLink to="/billing" className={navItemClass}>
-          <BillingIcon />
-          <span className={labelClass}>{t("sidebar.billing")}</span>
-        </NavLink>
+            read-only, nothing mutates. self_hosted-only hidden (2026-09-16):
+            there is no plan/upgrade flow to show yet in that mode - it
+            reappears once the license-purchase redirect (buy on the Vane
+            site, paste the key back here) ships. */}
+        {deploymentMode === "saas" ? (
+          <NavLink to="/billing" className={navItemClass}>
+            <BillingIcon />
+            <span className={labelClass}>{t("sidebar.billing")}</span>
+          </NavLink>
+        ) : null}
       </nav>
 
       <div className="mt-auto flex flex-col gap-2 pt-4">

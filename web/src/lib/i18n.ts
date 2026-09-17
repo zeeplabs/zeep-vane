@@ -7,6 +7,31 @@ const resources = {
       common: {
         close: "Fechar",
       },
+      admins: {
+        loading: "Carregando…",
+      },
+      domains: {
+        loading: "Carregando…",
+      },
+      statusPages: {
+        loading: "Carregando…",
+        dns: {
+          copyCname: "Copiar valor do CNAME",
+          copied: "Valor do CNAME copiado.",
+        },
+      },
+      incidents: {
+        loading: "Carregando…",
+      },
+      poller: {
+        loading: "Carregando…",
+      },
+      publicStatus: {
+        loading: "Carregando…",
+      },
+      emailProviders: {
+        loading: "Carregando…",
+      },
       authLayout: {
         eyebrow: "Monitoramento em tempo real",
         headline: "Clareza total sobre a saúde da sua infraestrutura.",
@@ -139,6 +164,7 @@ const resources = {
         title: "Análise por IA",
         subtitle: "Conecte um provedor de IA para gerar análises automáticas de degradação e incidentes.",
         providerLabel: "OpenAI",
+        loading: "Carregando…",
         notConnected: "Nenhuma integração conectada",
         connected: "Conectado",
         active: "Ativo",
@@ -203,6 +229,7 @@ const resources = {
       settingsPage: {
         title: "Configurações",
         subtitle: "Perfil da empresa e dados fiscais usados nas faturas da conta.",
+        loading: "Carregando…",
         saved: "Alterações salvas",
         discard: "Descartar",
         save: "Salvar alterações",
@@ -419,13 +446,31 @@ const resources = {
         },
         activity: {
           title: "Atividade recente do time",
-          resolvedIncident: 'resolveu o incidente "{{title}}"',
-          invitedMember: "foi convidado como Membro",
-          addedDomain: "adicionou o domínio {{domain}}",
-          updatedPlan: "atualizou o plano para {{plan}}",
-          days5: "há 5 dias",
-          yesterday: "ontem",
-          weekAgo: "há 1 semana",
+          removedUser: "Usuário removido",
+          empty: "Nenhuma atividade recente.",
+          loadError: "Não foi possível carregar a atividade recente. Tente novamente.",
+          actions: {
+            invited: "convidou {{target}}",
+            invitedWithoutTarget: "convidou um novo membro",
+            resent: "reenviou convite para {{target}}",
+            resentWithoutTarget: "reenviou um convite",
+            canceled: "cancelou convite de {{target}}",
+            canceledWithoutTarget: "cancelou um convite",
+            role_changed: "alterou o papel de {{target}}",
+            role_changedWithoutTarget: "alterou um papel",
+            removed: "removeu {{target}}",
+            removedWithoutTarget: "removeu um membro",
+            domain_verified: "verificou o domínio {{target}}",
+            domain_verifiedWithoutTarget: "verificou um domínio",
+            domain_deleted: "excluiu o domínio {{target}}",
+            domain_deletedWithoutTarget: "excluiu um domínio",
+            status_page_deleted: "excluiu a página {{target}}",
+            status_page_deletedWithoutTarget: "excluiu uma página",
+            status_page_domain_verified: "verificou o domínio da página {{target}}",
+            status_page_domain_verifiedWithoutTarget: "verificou o domínio de uma página",
+            unknown: "realizou {{action}} em {{target}}",
+            unknownWithoutTarget: "realizou {{action}}",
+          },
         },
       },
       services: {
@@ -455,6 +500,18 @@ const resources = {
           incidents: "Incidentes (30d)",
           history: "Últimas 24 verificações",
           close: "Fechar",
+          detailTitle: "Detalhe do serviço",
+          editName: "Renomear serviço",
+          namePlaceholder: "Nome do serviço",
+          save: "Salvar",
+          cancel: "Cancelar",
+          nameRequired: "O nome não pode ficar vazio.",
+          renameError: "Não foi possível renomear o serviço.",
+          deleteAction: "Excluir serviço",
+          deleteConfirmTitle: "Excluir serviço",
+          deleteConfirmDescription:
+            "Excluir o serviço \"{{name}}\"? O histórico de verificações e incidentes é mantido, mas ele para de ser monitorado. Esta ação não pode ser desfeita.",
+          deleteError: "Não foi possível excluir o serviço.",
         },
         addDrawer: {
           monitorModeLabel: "Como monitorar",
@@ -499,6 +556,31 @@ const resources = {
     translation: {
       common: {
         close: "Close",
+      },
+      admins: {
+        loading: "Loading…",
+      },
+      domains: {
+        loading: "Loading…",
+      },
+      statusPages: {
+        loading: "Loading…",
+        dns: {
+          copyCname: "Copy CNAME value",
+          copied: "CNAME value copied.",
+        },
+      },
+      incidents: {
+        loading: "Loading…",
+      },
+      poller: {
+        loading: "Loading…",
+      },
+      publicStatus: {
+        loading: "Loading…",
+      },
+      emailProviders: {
+        loading: "Loading…",
       },
       authLayout: {
         eyebrow: "Real-time monitoring",
@@ -631,6 +713,7 @@ const resources = {
         title: "AI analysis",
         subtitle: "Connect an AI provider to generate automatic degradation and incident analyses.",
         providerLabel: "OpenAI",
+        loading: "Loading…",
         notConnected: "No integration connected",
         connected: "Connected",
         active: "Active",
@@ -694,6 +777,7 @@ const resources = {
       settingsPage: {
         title: "Settings",
         subtitle: "Company profile and fiscal data used on the account's invoices.",
+        loading: "Loading…",
         saved: "Changes saved",
         discard: "Discard",
         save: "Save changes",
@@ -909,13 +993,31 @@ const resources = {
         },
         activity: {
           title: "Recent team activity",
-          resolvedIncident: 'resolved the incident "{{title}}"',
-          invitedMember: "was invited as a Member",
-          addedDomain: "added the domain {{domain}}",
-          updatedPlan: "updated the plan to {{plan}}",
-          days5: "5 days ago",
-          yesterday: "yesterday",
-          weekAgo: "1 week ago",
+          removedUser: "Removed user",
+          empty: "No recent activity.",
+          loadError: "Could not load recent activity. Please try again.",
+          actions: {
+            invited: "invited {{target}}",
+            invitedWithoutTarget: "invited a new member",
+            resent: "resent the invite to {{target}}",
+            resentWithoutTarget: "resent an invite",
+            canceled: "canceled the invite for {{target}}",
+            canceledWithoutTarget: "canceled an invite",
+            role_changed: "changed {{target}}'s role",
+            role_changedWithoutTarget: "changed a role",
+            removed: "removed {{target}}",
+            removedWithoutTarget: "removed a member",
+            domain_verified: "verified the domain {{target}}",
+            domain_verifiedWithoutTarget: "verified a domain",
+            domain_deleted: "deleted the domain {{target}}",
+            domain_deletedWithoutTarget: "deleted a domain",
+            status_page_deleted: "deleted the page {{target}}",
+            status_page_deletedWithoutTarget: "deleted a page",
+            status_page_domain_verified: "verified the domain for page {{target}}",
+            status_page_domain_verifiedWithoutTarget: "verified the domain for a page",
+            unknown: "performed {{action}} on {{target}}",
+            unknownWithoutTarget: "performed {{action}}",
+          },
         },
       },
       services: {
@@ -945,6 +1047,18 @@ const resources = {
           incidents: "Incidents (30d)",
           history: "Last 24 checks",
           close: "Close",
+          detailTitle: "Service detail",
+          editName: "Rename service",
+          namePlaceholder: "Service name",
+          save: "Save",
+          cancel: "Cancel",
+          nameRequired: "Name cannot be empty.",
+          renameError: "Could not rename the service.",
+          deleteAction: "Delete service",
+          deleteConfirmTitle: "Delete service",
+          deleteConfirmDescription:
+            "Delete the service \"{{name}}\"? Its check history and incidents are kept, but it stops being monitored. This action cannot be undone.",
+          deleteError: "Could not delete the service.",
         },
         addDrawer: {
           monitorModeLabel: "How to monitor",

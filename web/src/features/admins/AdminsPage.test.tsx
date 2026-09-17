@@ -3,9 +3,11 @@ import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { Toaster } from "sonner";
+import { http, HttpResponse, delay } from "msw";
 import "../../lib/i18n";
 import { AuthProvider } from "../../auth/AuthProvider";
 import { TestQueryProvider } from "../../test/queryClient";
+import { server } from "../../test/msw/server";
 import { apiFetch } from "../../lib/apiClient";
 import { seedExpiredAdminInvite } from "../../test/msw/handlers";
 import { AdminsPage } from "./AdminsPage";
@@ -44,6 +46,36 @@ function rowFor(email: string): HTMLElement {
 }
 
 describe("AdminsPage", () => {
+  // SKEL-04/05: while /api/admins is loading, the page shows skeleton rows
+  // (not the old "Carregando…" paragraph as visible content) inside an
+  // aria-busy container that still carries the sr-only loading string.
+  it("mostra skeletons (não o texto) enquanto /api/admins carrega", async () => {
+    server.use(
+      http.get("/api/admins", async () => {
+        await delay("infinite");
+        return HttpResponse.json({ items: [], total: 0, page: 1, page_size: 20 });
+      }),
+    );
+    await loginAsOwner();
+    renderPage();
+
+    const srText = await screen.findByText("Carregando…");
+    expect(srText.className).toContain("sr-only");
+    expect(srText.closest('[aria-busy="true"]')).toBeInTheDocument();
+    expect(screen.getAllByTestId("skeleton").length).toBeGreaterThan(0);
+  });
+
+  // SKEL-06: once the fetch resolves, skeletons are gone and the real table
+  // (or its empty state) takes over - loading and loaded are mutually
+  // exclusive.
+  it("remove os skeletons assim que /api/admins termina de carregar", async () => {
+    await loginAsOwner();
+    renderPage();
+
+    await screen.findByText("owner@vane.app");
+    expect(screen.queryAllByTestId("skeleton")).toHaveLength(0);
+  });
+
   it("lista todos os usuários (ativos e pendentes) numa única tabela (USRPG-01)", async () => {
     await loginAsOwner();
     renderPage();

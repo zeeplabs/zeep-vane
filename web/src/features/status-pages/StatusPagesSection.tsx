@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from "react";
 import { Link } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 import { MdOutlineWeb, MdOutlineDeleteOutline, MdOutlineAdd } from "react-icons/md";
 import { Card } from "../../components/ui/Card";
 import { Dialog } from "../../components/ui/Dialog";
@@ -9,6 +10,7 @@ import { Button } from "../../components/ui/Button";
 import { Field } from "../../components/ui/Field";
 import { Tag } from "../../components/ui/Tag";
 import { Tooltip } from "../../components/ui/Tooltip";
+import { Skeleton } from "../../components/ui/Skeleton";
 import { useAuth } from "../../auth/AuthProvider";
 import { ApiError } from "../../lib/apiClient";
 import type { StatusPage } from "../../types/api";
@@ -35,6 +37,7 @@ function publicUrl(page: StatusPage, hostname: string | undefined): string | nul
 
 /** Tabela + dialog de status pages. Compartilhada entre `DomainsStatusPagesPage` (handoff mostra as duas seções na mesma tela) e `StatusPagesPage` (rota própria, mesmo padrão de `ServicesSection`). */
 export function StatusPagesSection() {
+  const { t } = useTranslation();
   const { hasRole } = useAuth();
   const canManage = hasRole(["owner", "operator"]);
   const [page, setPage] = useState(1);
@@ -176,7 +179,19 @@ export function StatusPagesSection() {
 
       <div>
         {isLoading ? (
-          <p className="text-neutral-400">Carregando…</p>
+          <div aria-busy="true" className="rounded-md border border-divider divide-y divide-divider overflow-hidden">
+            <span className="sr-only">{t("statusPages.loading")}</span>
+            {Array.from({ length: 3 }).map((_, i) => (
+              <div key={i} className="flex items-center gap-3 px-4 py-3.5">
+                <Skeleton width={36} height={36} radius={10} />
+                <div className="flex-1">
+                  <Skeleton width={140} height={14} />
+                  <Skeleton width={90} height={12} className="mt-1.5" />
+                </div>
+                <Skeleton width={80} height={20} radius={999} />
+              </div>
+            ))}
+          </div>
         ) : (
           <>
             <Card elevation="none" className="border border-divider divide-y divide-divider overflow-hidden">

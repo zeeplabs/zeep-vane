@@ -433,6 +433,31 @@ func adminManagementRouteCases() []routeCase {
 	}
 }
 
+// serviceOwnerOnlyRouteCases lists service-edit/service-delete's two
+// ownerOnly routes (SVCEDIT-05, SVCDEL-05) - a stricter gate than the
+// writeRoles used by POST/GET on /api/services above. Kept as its own
+// table rather than folded into adminManagementRouteCases: these aren't
+// admin-management routes, they just happen to share the same role tier.
+func serviceOwnerOnlyRouteCases() []routeCase {
+	return []routeCase{
+		{
+			name:   "PATCH /api/services/{id}",
+			method: http.MethodPatch,
+			path:   "/api/services/" + routesTestNonexistentID,
+			body: func() []byte {
+				b, _ := json.Marshal(map[string]string{"name": "cli-routes-test-renamed"})
+				return b
+			},
+		},
+		{
+			name:   "DELETE /api/services/{id}",
+			method: http.MethodDelete,
+			path:   "/api/services/" + routesTestNonexistentID,
+			body:   func() []byte { return nil },
+		},
+	}
+}
+
 func doRouteRequest(t *testing.T, r http.Handler, token string, rt routeCase) *httptest.ResponseRecorder {
 	t.Helper()
 	req := httptest.NewRequest(rt.method, rt.path, bytes.NewReader(rt.body()))
@@ -536,6 +561,46 @@ func TestAdminRouter_Owner_AdminManagementRoutes_PassAuthorization(t *testing.T)
 	}
 }
 
+// TestAdminRouter_OperatorAndViewer_ServiceOwnerOnlyRoutes_403 covers
+// service-edit SVCEDIT-05 / service-delete SVCDEL-05 through the real
+// router built by buildAdminRouter, not just the hand-mirrored router in
+// internal/api/services_handler_test.go - closing the exact gap a prior
+// Verifier pass flagged for PATCH /api/services/{id} (validation.md).
+func TestAdminRouter_OperatorAndViewer_ServiceOwnerOnlyRoutes_403(t *testing.T) {
+	r, pool, admins, tenantID := newAdminRouterAndTenantForTest(t)
+
+	for _, role := range []string{db.RoleOperator, db.RoleViewer} {
+		role := role
+		t.Run(role, func(t *testing.T) {
+			token := issueRoutesTestToken(t, admins, pool, tenantID, role)
+			for _, rt := range serviceOwnerOnlyRouteCases() {
+				t.Run(rt.name, func(t *testing.T) {
+					rec := doRouteRequest(t, r, token, rt)
+					if rec.Code != http.StatusForbidden {
+						t.Errorf("status = %d, want %d, body = %s", rec.Code, http.StatusForbidden, rec.Body.String())
+					}
+				})
+			}
+		})
+	}
+}
+
+// TestAdminRouter_Owner_ServiceOwnerOnlyRoutes_PassAuthorization covers the
+// owner-passes-through half of the same gap.
+func TestAdminRouter_Owner_ServiceOwnerOnlyRoutes_PassAuthorization(t *testing.T) {
+	r, pool, admins, tenantID := newAdminRouterAndTenantForTest(t)
+	token := issueRoutesTestToken(t, admins, pool, tenantID, db.RoleOwner)
+
+	for _, rt := range serviceOwnerOnlyRouteCases() {
+		t.Run(rt.name, func(t *testing.T) {
+			rec := doRouteRequest(t, r, token, rt)
+			if rec.Code == http.StatusUnauthorized || rec.Code == http.StatusForbidden {
+				t.Errorf("status = %d, want not 401/403 for owner, body = %s", rec.Code, rec.Body.String())
+			}
+		})
+	}
+}
+
 // TestAdminRouter_Viewer_PollerStatus_200 is Fix 5 (ADM-13): viewer must be
 // able to read poller status through the real router (anyRole, not
 // writeRoles - validation.md M12).
@@ -576,6 +641,40 @@ func TestAdminRouter_Overview_NoSession_401(t *testing.T) {
 	r, _, _, _ := newAdminRouterAndTenantForTest(t)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/overview", nil)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Errorf("status = %d, want %d, body = %s", rec.Code, http.StatusUnauthorized, rec.Body.String())
+	}
+}
+
+// TestAdminRouter_Viewer_AuditLog_200 covers recent-team-activity's L-059
+// lesson (this session's own): prove GET /api/audit-log is reachable
+// through the real buildAdminRouter, not just a hand-mocked router in
+// internal/api's own handler-level tests - the route carries no role
+// gate beyond anyRole (design.md: AuditLogHandler), the same gate as
+// /api/overview and /api/poller/status above.
+func TestAdminRouter_Viewer_AuditLog_200(t *testing.T) {
+	r, pool, admins, tenantID := newAdminRouterAndTenantForTest(t)
+	token := issueRoutesTestToken(t, admins, pool, tenantID, db.RoleViewer)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/audit-log", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Errorf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+}
+
+// TestAdminRouter_AuditLog_NoSession_401 confirms an unauthenticated
+// request to /api/audit-log is rejected before the handler runs.
+func TestAdminRouter_AuditLog_NoSession_401(t *testing.T) {
+	r, _, _, _ := newAdminRouterAndTenantForTest(t)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/audit-log", nil)
 	rec := httptest.NewRecorder()
 	r.ServeHTTP(rec, req)
 

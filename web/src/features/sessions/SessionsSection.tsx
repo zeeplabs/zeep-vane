@@ -20,6 +20,7 @@ import { Button } from "../../components/ui/Button";
 import { Card } from "../../components/ui/Card";
 import { Dialog } from "../../components/ui/Dialog";
 import { Tag } from "../../components/ui/Tag";
+import { Skeleton } from "../../components/ui/Skeleton";
 import { useRevokeSession, useSessions } from "./hooks";
 
 function formatTimestamp(iso: string | null, locale: string): string {
@@ -81,9 +82,19 @@ export function SessionsSection() {
       </div>
       <div className="-mx-[24px] divide-y divide-divider border-t border-divider">
         {isLoading ? (
-          <p className="px-4 py-6 text-center text-neutral-400" data-testid="sessions-loading">
-            {t("sessions.loading")}
-          </p>
+          <div aria-busy="true" data-testid="sessions-loading">
+            <span className="sr-only">{t("sessions.loading")}</span>
+            {Array.from({ length: 3 }).map((_, i) => (
+              <div key={i} className="flex items-center gap-3 px-4 py-3.5">
+                <div className="flex-1">
+                  <Skeleton width={110} height={14} />
+                  <Skeleton width={160} height={12} className="mt-1.5" />
+                </div>
+                <Skeleton width={90} height={14} />
+                <Skeleton width={80} height={32} />
+              </div>
+            ))}
+          </div>
         ) : isError ? (
           <p className="px-4 py-6 text-center text-neutral-400" data-testid="sessions-error">
             {t("sessions.loadError")}

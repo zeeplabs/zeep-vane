@@ -1,5 +1,6 @@
 import { useMemo, useState, type FormEvent } from "react";
 import { toast } from "sonner";
+import { useTranslation } from "react-i18next";
 import * as RadixDialog from "@radix-ui/react-dialog";
 import { MdOutlineAdd, MdChevronRight, MdClose } from "react-icons/md";
 import { Card } from "../../components/ui/Card";
@@ -9,6 +10,7 @@ import { Field } from "../../components/ui/Field";
 import { PhoneField } from "../../components/ui/PhoneField";
 import { Tag } from "../../components/ui/Tag";
 import { Pager } from "../../components/ui/Pager";
+import { Skeleton } from "../../components/ui/Skeleton";
 import { Drawer, drawerFooterPrimaryStyle, drawerFooterSecondaryStyle } from "../../components/ui/Drawer";
 import { ApiError } from "../../lib/apiClient";
 import type { Role } from "../../types/api";
@@ -85,6 +87,7 @@ function RoleBoxes({ value, onChange }: { value: Role; onChange: (r: Role) => vo
 }
 
 export function AdminsPage() {
+  const { t } = useTranslation();
   const [page, setPage] = useState(1);
   const { data: adminsPage, isLoading } = useAdmins(page);
   const admins = useMemo(() => adminsPage?.items ?? [], [adminsPage]);
@@ -231,7 +234,24 @@ export function AdminsPage() {
       </div>
 
       {isLoading ? (
-        <p className="text-neutral-400">Carregando…</p>
+        <div aria-busy="true" className="overflow-hidden rounded-md border border-divider">
+          <span className="sr-only">{t("admins.loading")}</span>
+          {Array.from({ length: 5 }).map((_, i) => (
+            <div
+              key={i}
+              className="grid grid-cols-[minmax(220px,1fr)_110px_130px_130px_20px] items-center gap-3 border-b border-divider px-5 py-3 last:border-b-0"
+            >
+              <div className="flex min-w-0 items-center gap-2.5">
+                <Skeleton width={32} height={32} radius={8} />
+                <Skeleton width={140} height={14} />
+              </div>
+              <Skeleton width={70} height={20} radius={999} />
+              <Skeleton width={80} height={20} radius={999} />
+              <Skeleton width={90} height={14} />
+              <Skeleton width={16} height={16} />
+            </div>
+          ))}
+        </div>
       ) : (
         <Card elevation="none" className="overflow-hidden border border-divider">
           <div className="grid grid-cols-[minmax(220px,1fr)_110px_130px_130px_20px] items-center gap-3 border-b border-divider bg-card-header-bg px-5 py-2.5">

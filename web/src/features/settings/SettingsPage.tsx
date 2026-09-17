@@ -5,6 +5,7 @@ import { Card } from "../../components/ui/Card";
 import { Field } from "../../components/ui/Field";
 import { Button } from "../../components/ui/Button";
 import { Dialog } from "../../components/ui/Dialog";
+import { Skeleton } from "../../components/ui/Skeleton";
 import { ApiError, resolveAssetUrl } from "../../lib/apiClient";
 import { useAuth } from "../../auth/AuthProvider";
 import { useCompanySettings, useDeleteTenant, useUpdateCompanySettings, useUploadCompanyLogo } from "./hooks";
@@ -131,7 +132,36 @@ export function SettingsPage() {
   }
 
   if (isLoading) {
-    return <p className="text-neutral-400">Carregando…</p>;
+    return (
+      <div aria-busy="true" className="mx-auto flex w-full max-w-[1200px] flex-col gap-4">
+        <span className="sr-only">{t("settingsPage.loading")}</span>
+        <Skeleton width={220} height={22} />
+        <Card elevation="none" className="border border-divider p-6">
+          <div className="mb-5 flex items-center gap-4">
+            <Skeleton width={64} height={64} radius={999} />
+            <Skeleton width={160} height={14} />
+          </div>
+          <div className="mb-4 grid grid-cols-2 gap-4">
+            <Skeleton width="100%" height={36} />
+            <Skeleton width="100%" height={36} />
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <Skeleton width="100%" height={36} />
+            <Skeleton width="100%" height={36} />
+          </div>
+        </Card>
+        <Card elevation="none" className="border border-divider p-6">
+          <div className="mb-4 grid grid-cols-2 gap-4">
+            <Skeleton width="100%" height={36} />
+            <Skeleton width="100%" height={36} />
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <Skeleton width="100%" height={36} />
+            <Skeleton width="100%" height={36} />
+          </div>
+        </Card>
+      </div>
+    );
   }
 
   return (

@@ -1,8 +1,10 @@
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import { MdOutlineWarningAmber } from "react-icons/md";
 import { Card } from "../../components/ui/Card";
 import { Pager } from "../../components/ui/Pager";
 import { Tag } from "../../components/ui/Tag";
+import { Skeleton } from "../../components/ui/Skeleton";
 import { failureMessage, providerLabel, replicaLabel } from "./format";
 import { usePollerStatus } from "./hooks";
 
@@ -36,6 +38,7 @@ function AlertBanner({ children }: { children: React.ReactNode }) {
 }
 
 export function PollerStatusPage() {
+  const { t } = useTranslation();
   const [page, setPage] = useState(1);
   const { data, isLoading, isError } = usePollerStatus(page);
   const totalPages = Math.max(1, Math.ceil((data?.total ?? 0) / (data?.page_size ?? 20)));
@@ -58,7 +61,28 @@ export function PollerStatusPage() {
         <p className="m-0 text-[13.5px] text-text-muted">Estado real do poller ativo e das integrações conectadas.</p>
       </div>
       {isLoading ? (
-        <p className="text-text-muted">Carregando…</p>
+        <div aria-busy="true" className="flex flex-col gap-3.5">
+          <span className="sr-only">{t("poller.loading")}</span>
+          <div className="grid grid-cols-1 gap-3.5 sm:grid-cols-3">
+            {Array.from({ length: 3 }).map((_, i) => (
+              <div key={i} className="rounded-md border border-divider p-4">
+                <Skeleton width={80} height={10} className="mb-2" />
+                <Skeleton width={100} height={22} />
+              </div>
+            ))}
+          </div>
+          <Card elevation="none" className="divide-y divide-divider overflow-hidden border border-divider">
+            {Array.from({ length: 5 }).map((_, i) => (
+              <div key={i} className="flex items-center gap-3 px-4 py-3.5">
+                <Skeleton width={8} height={8} radius={999} />
+                <div className="flex-1">
+                  <Skeleton width={140} height={14} />
+                </div>
+                <Skeleton width={70} height={20} radius={999} />
+              </div>
+            ))}
+          </Card>
+        </div>
       ) : isError ? (
         <p className="text-text-muted">Não foi possível carregar o status do poller.</p>
       ) : (

@@ -372,7 +372,7 @@ func TestTenantInviteRepository_Refresh_AlreadyCanceled_ErrNotFound(t *testing.T
 	if err := repo.Create(ctx, invite); err != nil {
 		t.Fatalf("Create() returned unexpected error: %v", err)
 	}
-	if err := repo.Cancel(ctx, tenantID, invite.ID); err != nil {
+	if _, err := repo.Cancel(ctx, tenantID, invite.ID); err != nil {
 		t.Fatalf("Cancel() returned unexpected error: %v", err)
 	}
 
@@ -409,7 +409,7 @@ func TestTenantInviteRepository_Cancel_AlreadyAccepted_ErrNotFound(t *testing.T)
 		t.Fatalf("MarkUsed() returned unexpected error: %v", err)
 	}
 
-	if err := repo.Cancel(ctx, tenantID, invite.ID); !errors.Is(err, ErrNotFound) {
+	if _, err := repo.Cancel(ctx, tenantID, invite.ID); !errors.Is(err, ErrNotFound) {
 		t.Errorf("Cancel() on already-accepted invite error = %v, want ErrNotFound", err)
 	}
 }
@@ -428,11 +428,11 @@ func TestTenantInviteRepository_Cancel_AlreadyCanceled_ErrNotFound(t *testing.T)
 	if err := repo.Create(ctx, invite); err != nil {
 		t.Fatalf("Create() returned unexpected error: %v", err)
 	}
-	if err := repo.Cancel(ctx, tenantID, invite.ID); err != nil {
+	if _, err := repo.Cancel(ctx, tenantID, invite.ID); err != nil {
 		t.Fatalf("first Cancel() returned unexpected error: %v", err)
 	}
 
-	if err := repo.Cancel(ctx, tenantID, invite.ID); !errors.Is(err, ErrNotFound) {
+	if _, err := repo.Cancel(ctx, tenantID, invite.ID); !errors.Is(err, ErrNotFound) {
 		t.Errorf("Cancel() on already-canceled invite error = %v, want ErrNotFound", err)
 	}
 }
@@ -440,7 +440,7 @@ func TestTenantInviteRepository_Cancel_AlreadyCanceled_ErrNotFound(t *testing.T)
 func TestTenantInviteRepository_Cancel_MalformedID_ErrNotFound(t *testing.T) {
 	repo, _, _, tenantID := newTenantInviteRepositoryForTest(t)
 
-	err := repo.Cancel(context.Background(), tenantID, "not-a-uuid")
+	_, err := repo.Cancel(context.Background(), tenantID, "not-a-uuid")
 	if !errors.Is(err, ErrNotFound) {
 		t.Errorf("Cancel() with malformed id error = %v, want ErrNotFound", err)
 	}
@@ -461,8 +461,12 @@ func TestTenantInviteRepository_Cancel_Success(t *testing.T) {
 		t.Fatalf("Create() returned unexpected error: %v", err)
 	}
 
-	if err := repo.Cancel(ctx, tenantID, invite.ID); err != nil {
+	canceled, err := repo.Cancel(ctx, tenantID, invite.ID)
+	if err != nil {
 		t.Fatalf("Cancel() returned unexpected error: %v", err)
+	}
+	if canceled.Email != email {
+		t.Errorf("Cancel() returned invite email = %q, want %q", canceled.Email, email)
 	}
 
 	got, err := repo.GetByTokenHash(ctx, invite.TokenHash)
@@ -477,7 +481,7 @@ func TestTenantInviteRepository_Cancel_Success(t *testing.T) {
 func TestTenantInviteRepository_Cancel_UnknownID_ErrNotFound(t *testing.T) {
 	repo, _, _, tenantID := newTenantInviteRepositoryForTest(t)
 
-	err := repo.Cancel(context.Background(), tenantID, "00000000-0000-0000-0000-000000000000")
+	_, err := repo.Cancel(context.Background(), tenantID, "00000000-0000-0000-0000-000000000000")
 	if !errors.Is(err, ErrNotFound) {
 		t.Errorf("Cancel() error = %v, want ErrNotFound", err)
 	}
@@ -507,7 +511,7 @@ func TestTenantInviteRepository_RefreshCancel_Concurrent_OnlyOneSucceeds(t *test
 	}()
 	go func() {
 		defer wg.Done()
-		errs[1] = repo.Cancel(ctx, tenantID, invite.ID)
+		_, errs[1] = repo.Cancel(ctx, tenantID, invite.ID)
 	}()
 	wg.Wait()
 

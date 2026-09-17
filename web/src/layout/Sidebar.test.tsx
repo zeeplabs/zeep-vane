@@ -9,6 +9,7 @@ import { Sidebar } from "./Sidebar";
 import { apiFetch } from "../lib/apiClient";
 import { server } from "../test/msw/server";
 import { TestQueryProvider } from "../test/queryClient";
+import { setDeploymentMode, resetDeploymentMode } from "../test/msw/handlers";
 
 async function loginAs(email: string) {
   await apiFetch("/api/auth/login", {
@@ -24,6 +25,7 @@ afterEach(async () => {
     /* ignore */
   }
   window.localStorage.clear();
+  resetDeploymentMode();
 });
 
 function renderSidebar(initialPath = "/") {
@@ -74,6 +76,7 @@ describe("Sidebar", () => {
 
   // billing-plans-page BILLPG-01: this reverses the earlier "fora de
   // escopo" omission - the item now exists as a real (decorative) page.
+  // Visible here because the default MSW deploymentMode is saas.
   it("mostra 'Planos & Faturamento' no grupo Organização, apontando pra /billing", async () => {
     await loginAs("owner@vane.app");
     renderSidebar();
@@ -83,6 +86,24 @@ describe("Sidebar", () => {
 
   it("mostra 'Planos & Faturamento' também para non-owner (sem role gate)", async () => {
     await loginAs("viewer@vane.app");
+    renderSidebar();
+    expect(await screen.findByRole("link", { name: "Planos & Faturamento" })).toBeInTheDocument();
+  });
+
+  // 2026-09-16: reverses BILLPG-01's "reachable in any mode" - self_hosted
+  // has no plan/upgrade flow to show yet (license-purchase redirect is a
+  // future feature), so the item is hidden entirely in that mode.
+  it("esconde 'Planos & Faturamento' em self_hosted", async () => {
+    setDeploymentMode("self_hosted");
+    await loginAs("owner@vane.app");
+    renderSidebar();
+    await waitFor(() => expect(screen.getByText("Domínios & Status")).toBeInTheDocument());
+    expect(screen.queryByText("Planos & Faturamento")).not.toBeInTheDocument();
+  });
+
+  it("mostra 'Planos & Faturamento' em saas", async () => {
+    setDeploymentMode("saas");
+    await loginAs("owner@vane.app");
     renderSidebar();
     expect(await screen.findByRole("link", { name: "Planos & Faturamento" })).toBeInTheDocument();
   });

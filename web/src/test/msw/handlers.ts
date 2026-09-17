@@ -29,6 +29,7 @@ import type {
   CompanySettings,
   SessionView,
   Page,
+  AuditLogEntry,
 } from "../../types/api";
 import type { LLMProviderName } from "../../lib/llmProviders";
 
@@ -297,6 +298,22 @@ export function seedExpiredAdminInvite(email: string, role: Role): void {
     status: "pending",
     expires_at: new Date(Date.now() - 1000 * 60 * 60).toISOString(),
   });
+}
+
+// In-memory audit-log state (recent-team-activity, ACTIVITY-09), empty by
+// default - the previous Overview mock (ACTIVITY_FEED) is gone, and this
+// feature has no seed fixture the way domains/admins/etc. do; a test seeds
+// rows it needs via seedAuditLogEntries, mirroring emailProvidersState's
+// empty-by-default convention.
+let auditLogState: AuditLogEntry[] = [];
+
+export function resetAuditLog(): void {
+  auditLogState = [];
+}
+resetAuditLog();
+
+export function seedAuditLogEntries(entries: AuditLogEntry[]): void {
+  auditLogState = entries;
 }
 
 // In-memory company_settings state (SET-01, SET-07), seeded the same way
@@ -1561,6 +1578,40 @@ export const handlers = [
     });
   }),
 
+  // PATCH /api/services/:id (service-edit SVCEDIT-01..05) - mirrors
+  // ServicesHandler.Update: 422 on an empty name, 404 fixed body on an
+  // unknown id, else renames in place and returns the full serviceResponse.
+  http.patch("/api/services/:id", async ({ request, params }) => {
+    if (!sessionAdminId) return HttpResponse.json({ error: "unauthorized" }, { status: 401 });
+    const service = servicesState.find((s) => s.id === params.id);
+    if (!service) {
+      return HttpResponse.json({ error: "service not found" }, { status: 404 });
+    }
+    const body = (await request.json()) as { name?: string };
+    if (!body.name || !body.name.trim()) {
+      return HttpResponse.json({ error: "name and slo_id are required" }, { status: 422 });
+    }
+    service.name = body.name;
+    return HttpResponse.json(toServiceResponse(service));
+  }),
+
+  // DELETE /api/services/:id (service-delete SVCDEL-01..05) - mirrors
+  // ServicesHandler.Delete: 409 fixed body if still attached to a status
+  // page, 404 fixed body for an unknown/already-deleted id, else 204 and
+  // removed from servicesState (soft delete, no history to touch here).
+  http.delete("/api/services/:id", ({ params }) => {
+    if (!sessionAdminId) return HttpResponse.json({ error: "unauthorized" }, { status: 401 });
+    const service = servicesState.find((s) => s.id === params.id);
+    if (!service) {
+      return HttpResponse.json({ error: "service not found" }, { status: 404 });
+    }
+    if (statusPagesState.some((p) => p.service_ids.includes(service.id))) {
+      return HttpResponse.json({ error: "service is still attached to a status page" }, { status: 409 });
+    }
+    servicesState = servicesState.filter((s) => s.id !== service.id);
+    return new HttpResponse(null, { status: 204 });
+  }),
+
   // GET /api/incidents (I16) - mirrors IncidentsHandler.List: most recently
   // created first, each with its service_ids.
   http.get("/api/incidents", ({ request }) => {
@@ -2038,5 +2089,18 @@ export const handlers = [
   http.get("/api/overview", () => {
     if (!sessionAdminId) return HttpResponse.json({ error: "unauthorized" }, { status: 401 });
     return HttpResponse.json(overviewSeed());
+  }),
+
+  // GET /api/audit-log (recent-team-activity, ACTIVITY-06/07) - mirrors
+  // AuditLogHandler.Get: authenticated (any role, no gate), a plain array
+  // (not Page<T>) of the tenant's most recent entries. limit mirrors
+  // parseAuditLogLimit's edge cases: missing/invalid/<=0 falls back to 5,
+  // anything above 20 is capped at 20.
+  http.get("/api/audit-log", ({ request }) => {
+    if (!sessionAdminId) return HttpResponse.json({ error: "unauthorized" }, { status: 401 });
+    const rawLimit = new URL(request.url).searchParams.get("limit");
+    const parsed = rawLimit ? Number.parseInt(rawLimit, 10) : NaN;
+    const limit = Number.isFinite(parsed) && parsed > 0 ? Math.min(parsed, 20) : 5;
+    return HttpResponse.json(auditLogState.slice(0, limit));
   }),
 ];

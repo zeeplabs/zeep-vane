@@ -1,9 +1,11 @@
 import { useState, type FormEvent } from "react";
+import { useTranslation } from "react-i18next";
 import { Card } from "../../components/ui/Card";
 import { Field } from "../../components/ui/Field";
 import { Button } from "../../components/ui/Button";
 import { Pager } from "../../components/ui/Pager";
 import { Tag } from "../../components/ui/Tag";
+import { Skeleton } from "../../components/ui/Skeleton";
 import { useAuth } from "../../auth/AuthProvider";
 import { ApiError } from "../../lib/apiClient";
 import {
@@ -163,13 +165,30 @@ function ProviderRow({ id, label, status, isActive, canManage }: ProviderRowProp
 }
 
 export function EmailProvidersPage() {
+  const { t } = useTranslation();
   const { hasRole } = useAuth();
   const canManage = hasRole(["owner", "operator"]);
   const [page, setPage] = useState(1);
   const { data, isLoading } = useEmailProviders(page);
 
   if (isLoading) {
-    return <p className="text-neutral-400">Carregando…</p>;
+    return (
+      <div aria-busy="true" className="mx-auto flex w-full max-w-[1280px] flex-col gap-4">
+        <span className="sr-only">{t("emailProviders.loading")}</span>
+        {Array.from({ length: 2 }).map((_, i) => (
+          <Card key={i} elevation="none" className="border border-divider flex flex-col gap-3 p-4">
+            <div className="flex items-center gap-3">
+              <div className="flex-1">
+                <Skeleton width={100} height={16} className="mb-1.5" />
+                <Skeleton width={220} height={12} />
+              </div>
+              <Skeleton width={80} height={22} radius={999} />
+              <Skeleton width={90} height={32} />
+            </div>
+          </Card>
+        ))}
+      </div>
+    );
   }
 
   const byProvider = new Map(data?.providers.map((p) => [p.provider, p]));

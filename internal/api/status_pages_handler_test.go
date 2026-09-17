@@ -646,6 +646,38 @@ func TestVerifyDomain_ValidRequest_200ReturnsCheckResult(t *testing.T) {
 	}
 }
 
+// TestVerifyDomain_ValidRequest_RecordsStatusPageDomainVerifiedAuditLabel
+// covers ACTIVITY-03: the status_page_domain_verified audit entry's
+// target_label must carry the status page's own name, not a bare
+// target_id.
+func TestVerifyDomain_ValidRequest_RecordsStatusPageDomainVerifiedAuditLabel(t *testing.T) {
+	r, pool, admins := newStatusPagesRouter(t, func(h *StatusPagesHandler) {
+		h.verifier = &fakeDomainVerifier{result: domainVerificationResult{DNSResolved: true, TLSReachable: true, TLSCertValid: true}}
+	})
+	token := issueTestSessionToken(t, admins)
+	domainID := createTestDomain(t, pool)
+	pageID := createDomainlessStatusPageViaAPI(t, r, pool, token, "Verify Label Page")
+	attachRec := patchAttachDomain(t, r, token, pageID, attachDomainRequest{DomainID: domainID, Subdomain: "status"})
+	if attachRec.Code != http.StatusOK {
+		t.Fatalf("setup attach status = %d, want %d, body = %s", attachRec.Code, http.StatusOK, attachRec.Body.String())
+	}
+
+	rec := postVerifyDomain(t, r, token, pageID)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	var gotTargetLabel *string
+	row := pool.QueryRow(context.Background(),
+		"SELECT target_label FROM admin_audit_log WHERE target_id = $1 AND action = 'status_page_domain_verified'", pageID)
+	if err := row.Scan(&gotTargetLabel); err != nil {
+		t.Fatalf("Scan() returned unexpected error: %v", err)
+	}
+	if gotTargetLabel == nil || *gotTargetLabel != "Verify Label Page" {
+		t.Errorf("admin_audit_log target_label = %v, want %q", gotTargetLabel, "Verify Label Page")
+	}
+}
+
 // TestVerifyDomain_SecondCallWithinCooldown_429 asserts the per-hostname
 // cooldown (verifyDomainCooldown) rejects a second attempt made
 // immediately after the first, protecting against a client hammering the
@@ -846,6 +878,37 @@ func TestDeleteStatusPage_Existing_204RemovesItAndItsServiceLinks(t *testing.T) 
 	}
 	if count != 0 {
 		t.Errorf("status_page_services rows still exist after delete")
+	}
+}
+
+// TestDeleteStatusPage_Existing_RecordsStatusPageDeletedAuditLabelSurvivingDelete
+// covers ACTIVITY-03/ACTIVITY-04: the status_page_deleted audit entry's
+// target_label must be the page's name captured before Delete runs - by
+// the time this assertion runs, the status_pages row is already gone, so
+// a label fetched after the delete would always be empty.
+func TestDeleteStatusPage_Existing_RecordsStatusPageDeletedAuditLabelSurvivingDelete(t *testing.T) {
+	r, pool, admins := newStatusPagesRouter(t)
+	token := issueTestSessionToken(t, admins)
+
+	createRec := postCreateStatusPage(t, r, token, createStatusPageRequest{Name: "To Be Deleted With Label"})
+	if createRec.Code != http.StatusCreated {
+		t.Fatalf("setup create status = %d, want %d, body = %s", createRec.Code, http.StatusCreated, createRec.Body.String())
+	}
+	id := decodeStatusPageID(t, createRec)
+
+	rec := deleteStatusPage(t, r, token, id)
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusNoContent, rec.Body.String())
+	}
+
+	var gotTargetLabel *string
+	row := pool.QueryRow(context.Background(),
+		"SELECT target_label FROM admin_audit_log WHERE target_id = $1 AND action = 'status_page_deleted'", id)
+	if err := row.Scan(&gotTargetLabel); err != nil {
+		t.Fatalf("Scan() returned unexpected error: %v", err)
+	}
+	if gotTargetLabel == nil || *gotTargetLabel != "To Be Deleted With Label" {
+		t.Errorf("admin_audit_log target_label = %v, want %q (must survive the delete above)", gotTargetLabel, "To Be Deleted With Label")
 	}
 }
 
