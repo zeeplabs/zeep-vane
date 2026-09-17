@@ -94,13 +94,13 @@ The user wants: clicking a degraded hourly bar opens a popover listing the AI-ge
 
 | Requirement ID | Story | Phase | Status |
 | --- | --- | --- | --- |
-| DEGINT-01 | P1: Episódio degradado grava seu próprio motivo | - | Draft |
-| DEGINT-02 | P1: Episódio degradado grava seu próprio motivo | - | Draft |
-| DEGINT-03 | P1: Episódio degradado grava seu próprio motivo | - | Draft |
-| DEGINT-04 | P1: Episódio degradado grava seu próprio motivo | - | Draft |
-| DEGINT-05 | P1: Episódio degradado grava seu próprio motivo | - | Draft |
-| DEGINT-06 | P1: Episódio degradado grava seu próprio motivo | - | Draft |
-| DEGINT-07 | P1: Episódio degradado grava seu próprio motivo | - | Draft |
+| DEGINT-01 | P1: Episódio degradado grava seu próprio motivo | - | Implementing |
+| DEGINT-02 | P1: Episódio degradado grava seu próprio motivo | - | Implementing |
+| DEGINT-03 | P1: Episódio degradado grava seu próprio motivo | - | Implementing |
+| DEGINT-04 | P1: Episódio degradado grava seu próprio motivo | - | Implementing |
+| DEGINT-05 | P1: Episódio degradado grava seu próprio motivo | - | Implementing |
+| DEGINT-06 | P1: Episódio degradado grava seu próprio motivo | - | Implementing |
+| DEGINT-07 | P1: Episódio degradado grava seu próprio motivo | - | Implementing |
 | DEGINT-08 | P2: Histórico exposto por bucket na página de status pública | - | Draft |
 | DEGINT-09 | P2: Histórico exposto por bucket na página de status pública | - | Draft |
 | DEGINT-10 | P2: Histórico exposto por bucket na página de status pública | - | Draft |

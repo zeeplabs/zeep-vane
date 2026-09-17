@@ -2,7 +2,7 @@
 
 **Spec**: `.specs/features/degraded-interval-analysis/spec.md`
 **Design**: `.specs/features/degraded-interval-analysis/design.md`
-**Status**: Not started
+**Status**: In progress (T1-T4 done)
 
 ---
 
