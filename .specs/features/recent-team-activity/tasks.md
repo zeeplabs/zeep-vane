@@ -206,10 +206,10 @@ T15 → T16 → T17
 **Requirement**: ACTIVITY-03
 
 **Done when**:
-- [ ] Before `Record`, fetch `h.users.GetByID(ctx, targetID)` (only if not already available at this point in the function — check current variable scope first) to get the target's display name/email.
-- [ ] `h.audit.Record(ctx, actor.ID, targetID, targetUser.Name, "role_changed")` (or `.Email` if `Name` can be empty — pick whichever this codebase's other displays already prefer for a user identifier; check `AdminsPage`'s existing row rendering for precedent).
-- [ ] If `GetByID` fails (edge case — target concurrently deleted), fall back to an empty label rather than failing the whole role-change request (the role change itself already succeeded; the audit label is best-effort, matching the fire-and-forget error-logging-only posture every other `Record` call site already has).
-- [ ] Test asserts the label equals the target's name/email.
+- [x] Before `Record`, fetch `h.users.GetByID(ctx, targetID)` (only if not already available at this point in the function — check current variable scope first) to get the target's display name/email.
+- [x] `h.audit.Record(ctx, actor.ID, targetID, targetUser.Name, "role_changed")` (or `.Email` if `Name` can be empty — pick whichever this codebase's other displays already prefer for a user identifier; check `AdminsPage`'s existing row rendering for precedent). Implemented as `Name` if non-empty else `Email`, matching `AdminsPage.tsx`'s `a.name || a.email` precedent.
+- [x] If `GetByID` fails (edge case — target concurrently deleted), fall back to an empty label rather than failing the whole role-change request (the role change itself already succeeded; the audit label is best-effort, matching the fire-and-forget error-logging-only posture every other `Record` call site already has).
+- [x] Test asserts the label equals the target's name/email.
 
 **Tests**: unit
 **Gate**: quick

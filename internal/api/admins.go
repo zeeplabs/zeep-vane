@@ -606,7 +606,21 @@ func (h *AdminsHandler) UpdateRole(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.audit.Record(ctx, actor.ID, targetID, "role_changed"); err != nil {
+	// The role change itself already succeeded above - the audit label is
+	// best-effort, so a concurrently-deleted target (GetByID failing) falls
+	// back to an empty label rather than failing the whole request, matching
+	// every other Record call site's fire-and-forget error-logging-only
+	// posture.
+	var targetLabel string
+	if targetUser, err := h.users.GetByID(ctx, targetID); err != nil {
+		h.logger.Error("admins: failed to look up target admin for role-change audit label", zap.Error(err))
+	} else if targetUser.Name != "" {
+		targetLabel = targetUser.Name
+	} else {
+		targetLabel = targetUser.Email
+	}
+
+	if err := h.audit.Record(ctx, actor.ID, targetID, targetLabel, "role_changed"); err != nil {
 		h.logger.Error("admins: failed to record role-change audit entry", zap.Error(err))
 	}
 

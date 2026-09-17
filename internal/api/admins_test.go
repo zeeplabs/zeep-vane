@@ -1077,13 +1077,20 @@ func TestUpdateAdminRole_ValidChange_200_AppliesRoleRevokesSessionsAndAudits(t *
 	}
 
 	var gotActorID, gotAction string
+	var gotTargetLabel *string
 	auditRow := pool.QueryRow(ctx,
-		"SELECT actor_id, action FROM admin_audit_log WHERE target_id = $1 AND action = 'role_changed'", target.ID)
-	if err := auditRow.Scan(&gotActorID, &gotAction); err != nil {
+		"SELECT actor_id, target_label, action FROM admin_audit_log WHERE target_id = $1 AND action = 'role_changed'", target.ID)
+	if err := auditRow.Scan(&gotActorID, &gotTargetLabel, &gotAction); err != nil {
 		t.Fatalf("querying admin_audit_log returned unexpected error: %v", err)
 	}
 	if gotActorID != actor.ID {
 		t.Errorf("admin_audit_log actor_id = %q, want %q", gotActorID, actor.ID)
+	}
+	// target.Name is empty (createTenantMember only sets Email), so the
+	// label falls back to the target's email - same name/email precedent
+	// AdminsPage.tsx's row rendering already uses (a.name || a.email).
+	if gotTargetLabel == nil || *gotTargetLabel != target.Email {
+		t.Errorf("admin_audit_log target_label = %v, want %q", gotTargetLabel, target.Email)
 	}
 }
 
