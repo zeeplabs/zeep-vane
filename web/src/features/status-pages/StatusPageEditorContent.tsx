@@ -245,7 +245,7 @@ export function StatusPageEditorContent({ page, showPreviewLink = true }: Status
           <div className="flex items-center gap-3">
             <Button
               type="button"
-              variant="secondary"
+              variant="primary"
               disabled={!isDirty || setServices.isPending}
               onClick={handleSaveServices}
             >
