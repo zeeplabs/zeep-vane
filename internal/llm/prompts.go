@@ -15,22 +15,26 @@ type AnalysisInput struct {
 }
 
 // analysisSystemPrompt is shared by all three builders: it instructs a
-// short, factual, non-alarmist response, since every caller (a status
-// page tooltip, an incident description, a closing comment) is
-// visitor-facing text where an alarmist or verbose response would be
-// actively worse than no analysis at all.
-const analysisSystemPrompt = "You are writing a short, factual status update for a public status page. " +
-	"Respond in 1-2 sentences, in a calm and non-alarmist tone. Do not speculate about causes you cannot " +
-	"confirm from the data given, and do not use exclamation points or dramatic language."
+// short, factual, non-alarmist response in plain Portuguese aimed at a
+// non-technical reader, since every caller (a status page tooltip, an
+// incident description, a closing comment) is visitor-facing text read by
+// people outside engineering (HR, managers) - jargon or an alarmist/verbose
+// response would be actively worse than no analysis at all.
+const analysisSystemPrompt = "Você está escrevendo uma atualização curta e factual para uma página pública de status, " +
+	"em português do Brasil, para um leitor sem conhecimento técnico (ex: RH, gestor). " +
+	"Responda em 1-2 frases, em tom calmo e não alarmista, evitando jargão técnico (não use termos como " +
+	"\"SLO\", \"SLI\", \"error budget\", \"latência\" ou nomes internos de serviço) - descreva o impacto prático " +
+	"para quem está usando o produto. Não especule sobre causas que você não pode confirmar a partir dos dados " +
+	"fornecidos, e não use pontos de exclamação ou linguagem dramática."
 
 // buildDegradedTooltipPrompt builds the prompt for the short tooltip shown
 // when a service's SLO is degraded (approaching its error budget limit but
 // not yet breached).
 func buildDegradedTooltipPrompt(in AnalysisInput) (systemPrompt, userPrompt string) {
 	userPrompt = fmt.Sprintf(
-		"Service %q is currently in a degraded state. SLO state: %s. "+
-			"Current SLI: %.4f. Target: %.4f. Timeframe: %s. Error budget remaining: %.2f%%. "+
-			"Write a short tooltip explaining the degraded state to a status page visitor.",
+		"O serviço %q está atualmente em estado degradado. Estado do SLO: %s. "+
+			"SLI atual: %.4f. Meta: %.4f. Período: %s. Error budget restante: %.2f%%. "+
+			"Escreva um tooltip curto explicando o estado degradado para quem visita a página de status.",
 		in.ServiceName, in.SLOState, in.SLI, in.Target, in.Timeframe, in.ErrorBudgetRemaining,
 	)
 	return analysisSystemPrompt, userPrompt
@@ -40,9 +44,9 @@ func buildDegradedTooltipPrompt(in AnalysisInput) (systemPrompt, userPrompt stri
 // description when a service transitions into an outage (breached SLO).
 func buildOutageDescriptionPrompt(in AnalysisInput) (systemPrompt, userPrompt string) {
 	userPrompt = fmt.Sprintf(
-		"Service %q just transitioned to an outage. SLO state: %s. "+
-			"Current SLI: %.4f. Target: %.4f. Timeframe: %s. Error budget remaining: %.2f%%. "+
-			"Write a short incident description explaining what is happening to a status page visitor.",
+		"O serviço %q acabou de entrar em indisponibilidade. Estado do SLO: %s. "+
+			"SLI atual: %.4f. Meta: %.4f. Período: %s. Error budget restante: %.2f%%. "+
+			"Escreva uma descrição curta do incidente explicando o que está acontecendo para quem visita a página de status.",
 		in.ServiceName, in.SLOState, in.SLI, in.Target, in.Timeframe, in.ErrorBudgetRemaining,
 	)
 	return analysisSystemPrompt, userPrompt
@@ -53,9 +57,9 @@ func buildOutageDescriptionPrompt(in AnalysisInput) (systemPrompt, userPrompt st
 // still open for it.
 func buildClosingCommentPrompt(in AnalysisInput) (systemPrompt, userPrompt string) {
 	userPrompt = fmt.Sprintf(
-		"Service %q has recovered and returned to an operational state. SLO state: %s. "+
-			"Current SLI: %.4f. Target: %.4f. Timeframe: %s. Error budget remaining: %.2f%%. "+
-			"Write a short closing comment for the open incident, confirming the recovery to a status page visitor.",
+		"O serviço %q se recuperou e voltou ao estado operacional. Estado do SLO: %s. "+
+			"SLI atual: %.4f. Meta: %.4f. Período: %s. Error budget restante: %.2f%%. "+
+			"Escreva um comentário curto de encerramento do incidente, confirmando a recuperação para quem visita a página de status.",
 		in.ServiceName, in.SLOState, in.SLI, in.Target, in.Timeframe, in.ErrorBudgetRemaining,
 	)
 	return analysisSystemPrompt, userPrompt
