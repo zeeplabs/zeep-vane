@@ -119,6 +119,22 @@ type publicServiceResponse struct {
 type publicHistoryBucketResponse struct {
 	Start  time.Time `json:"start"`
 	Status string    `json:"status"`
+	// Episodes lists every degraded episode this bucket overlaps
+	// (degraded-interval-analysis DEGINT-11), most-recent-first - omitted
+	// (not null or []) when the bucket has none, whether because it never
+	// went degraded or because it did but this feature predates that
+	// episode (no analysis column value to report, still an empty slice
+	// only if history.BuildBuckets attached nothing).
+	Episodes []episodeResponse `json:"episodes,omitempty"`
+}
+
+// episodeResponse is one degraded episode a bucket overlaps.
+// Analysis is null when the AI-generated text is still pending, failed,
+// or predates this column (degraded-interval-analysis DEGINT-06).
+type episodeResponse struct {
+	StartsAt time.Time  `json:"starts_at"`
+	EndsAt   *time.Time `json:"ends_at"`
+	Analysis *string    `json:"analysis"`
 }
 
 type publicIncidentUpdateResponse struct {
@@ -318,7 +334,14 @@ func (h *PublicStatusHandler) composeResponse(ctx context.Context, statusPageID 
 func toPublicHistoryResponses(buckets []history.Bucket) []publicHistoryBucketResponse {
 	resp := make([]publicHistoryBucketResponse, len(buckets))
 	for i, bucket := range buckets {
-		resp[i] = publicHistoryBucketResponse{Start: bucket.Start, Status: bucket.Status}
+		var episodes []episodeResponse
+		if len(bucket.Episodes) > 0 {
+			episodes = make([]episodeResponse, len(bucket.Episodes))
+			for j, ep := range bucket.Episodes {
+				episodes[j] = episodeResponse{StartsAt: ep.StartsAt, EndsAt: ep.EndsAt, Analysis: ep.Analysis}
+			}
+		}
+		resp[i] = publicHistoryBucketResponse{Start: bucket.Start, Status: bucket.Status, Episodes: episodes}
 	}
 	return resp
 }
