@@ -20,6 +20,14 @@ func closedInterval(status string, startsAt, endsAt time.Time) db.StatusInterval
 	return db.StatusInterval{Status: status, StartsAt: startsAt, EndsAt: &e}
 }
 
+// closedIntervalWithAnalysis is closedInterval plus a non-nil Analysis, for
+// degraded-interval-analysis (DEGINT-08/09/10) tests.
+func closedIntervalWithAnalysis(status string, startsAt, endsAt time.Time, analysis string) db.StatusInterval {
+	si := closedInterval(status, startsAt, endsAt)
+	si.Analysis = &analysis
+	return si
+}
+
 func openInterval(status string, startsAt time.Time) db.StatusInterval {
 	return db.StatusInterval{Status: status, StartsAt: startsAt, EndsAt: nil}
 }
@@ -416,4 +424,148 @@ func TestBuildBuckets_OutOfWindowIntervalNearBoundary_DoesNotLeakIntoBucketZero(
 			}
 		}
 	})
+}
+
+// TestBuildBuckets_DegradedInterval_AttachesEpisode covers DEGINT-08: a
+// bucket overlapping one degraded interval gets exactly one Episode with
+// the right start/end/analysis.
+func TestBuildBuckets_DegradedInterval_AttachesEpisode(t *testing.T) {
+	loc := mustLoadSaoPaulo(t)
+	now := time.Date(2026, 8, 24, 14, 37, 0, 0, loc)
+
+	start := time.Date(2026, 8, 23, 15, 10, 0, 0, loc)
+	end := time.Date(2026, 8, 23, 15, 30, 0, 0, loc)
+	intervals := []db.StatusInterval{
+		closedIntervalWithAnalysis("degraded", start, end, "Latência elevada por alguns minutos."),
+	}
+
+	buckets := BuildBuckets(intervals, now, now, loc, 24, time.Hour)
+
+	if buckets[0].Status != "degraded" {
+		t.Fatalf("buckets[0].Status = %q, want %q", buckets[0].Status, "degraded")
+	}
+	if len(buckets[0].Episodes) != 1 {
+		t.Fatalf("len(buckets[0].Episodes) = %d, want 1", len(buckets[0].Episodes))
+	}
+	ep := buckets[0].Episodes[0]
+	if !ep.StartsAt.Equal(start) {
+		t.Errorf("Episode.StartsAt = %v, want %v", ep.StartsAt, start)
+	}
+	if ep.EndsAt == nil || !ep.EndsAt.Equal(end) {
+		t.Errorf("Episode.EndsAt = %v, want %v", ep.EndsAt, end)
+	}
+	if ep.Analysis == nil || *ep.Analysis != "Latência elevada por alguns minutos." {
+		t.Errorf("Episode.Analysis = %v, want %q", ep.Analysis, "Latência elevada por alguns minutos.")
+	}
+
+	for i := 1; i < len(buckets); i++ {
+		if len(buckets[i].Episodes) != 0 {
+			t.Errorf("buckets[%d].Episodes = %v, want none", i, buckets[i].Episodes)
+		}
+	}
+}
+
+// TestBuildBuckets_TwoDegradedEpisodesSameBucket_OrderedMostRecentFirst
+// covers DEGINT-09.
+func TestBuildBuckets_TwoDegradedEpisodesSameBucket_OrderedMostRecentFirst(t *testing.T) {
+	loc := mustLoadSaoPaulo(t)
+	now := time.Date(2026, 8, 24, 14, 37, 0, 0, loc)
+
+	older := closedIntervalWithAnalysis("degraded",
+		time.Date(2026, 8, 23, 15, 5, 0, 0, loc),
+		time.Date(2026, 8, 23, 15, 12, 0, 0, loc),
+		"Primeiro episódio.")
+	newer := closedIntervalWithAnalysis("degraded",
+		time.Date(2026, 8, 23, 15, 40, 0, 0, loc),
+		time.Date(2026, 8, 23, 15, 50, 0, 0, loc),
+		"Segundo episódio.")
+
+	buckets := BuildBuckets([]db.StatusInterval{older, newer}, now, now, loc, 24, time.Hour)
+
+	if len(buckets[0].Episodes) != 2 {
+		t.Fatalf("len(buckets[0].Episodes) = %d, want 2", len(buckets[0].Episodes))
+	}
+	if *buckets[0].Episodes[0].Analysis != "Segundo episódio." {
+		t.Errorf("Episodes[0].Analysis = %q, want the more recent episode first", *buckets[0].Episodes[0].Analysis)
+	}
+	if *buckets[0].Episodes[1].Analysis != "Primeiro episódio." {
+		t.Errorf("Episodes[1].Analysis = %q, want the older episode second", *buckets[0].Episodes[1].Analysis)
+	}
+}
+
+// TestBuildBuckets_OutageWinsColorButDegradedKeepsEpisode covers DEGINT-10:
+// a bucket whose resolved/displayed Status is "outage" (a higher-priority
+// interval also overlaps it) still carries its degraded interval's
+// Episode.
+func TestBuildBuckets_OutageWinsColorButDegradedKeepsEpisode(t *testing.T) {
+	loc := mustLoadSaoPaulo(t)
+	now := time.Date(2026, 8, 24, 14, 37, 0, 0, loc)
+
+	degraded := closedIntervalWithAnalysis("degraded",
+		time.Date(2026, 8, 23, 15, 5, 0, 0, loc),
+		time.Date(2026, 8, 23, 15, 20, 0, 0, loc),
+		"Degradação breve antes da interrupção.")
+	outage := closedInterval("outage",
+		time.Date(2026, 8, 23, 15, 20, 0, 0, loc),
+		time.Date(2026, 8, 23, 15, 45, 0, 0, loc))
+
+	buckets := BuildBuckets([]db.StatusInterval{degraded, outage}, now, now, loc, 24, time.Hour)
+
+	if buckets[0].Status != "outage" {
+		t.Fatalf("buckets[0].Status = %q, want %q (outage outprioritizes degraded)", buckets[0].Status, "outage")
+	}
+	if len(buckets[0].Episodes) != 1 {
+		t.Fatalf("len(buckets[0].Episodes) = %d, want 1 (the degraded interval's episode must still be attached)", len(buckets[0].Episodes))
+	}
+	if *buckets[0].Episodes[0].Analysis != "Degradação breve antes da interrupção." {
+		t.Errorf("Episodes[0].Analysis = %q, want the degraded interval's text", *buckets[0].Episodes[0].Analysis)
+	}
+}
+
+// TestBuildBuckets_NonDegradedInterval_NoEpisodes covers DEGINT-10's other
+// half: operational/outage intervals never produce episodes.
+func TestBuildBuckets_NonDegradedInterval_NoEpisodes(t *testing.T) {
+	loc := mustLoadSaoPaulo(t)
+	now := time.Date(2026, 8, 24, 14, 37, 0, 0, loc)
+
+	intervals := []db.StatusInterval{
+		closedInterval("operational",
+			time.Date(2026, 8, 23, 15, 0, 0, 0, loc),
+			time.Date(2026, 8, 23, 16, 0, 0, 0, loc)),
+		closedInterval("outage",
+			time.Date(2026, 8, 23, 16, 0, 0, 0, loc),
+			time.Date(2026, 8, 23, 17, 0, 0, 0, loc)),
+	}
+
+	buckets := BuildBuckets(intervals, now, now, loc, 24, time.Hour)
+
+	for i, b := range buckets {
+		if len(b.Episodes) != 0 {
+			t.Errorf("buckets[%d].Episodes = %v, want none for non-degraded intervals", i, b.Episodes)
+		}
+	}
+}
+
+// TestBuildBuckets_DegradedEpisode_OpenIntervalNilEndsAt covers the still-
+// open case: EndsAt stays nil rather than being fabricated from asOf.
+func TestBuildBuckets_DegradedEpisode_OpenIntervalNilEndsAt(t *testing.T) {
+	loc := mustLoadSaoPaulo(t)
+	now := time.Date(2026, 8, 23, 15, 20, 0, 0, loc)
+
+	start := time.Date(2026, 8, 23, 15, 5, 0, 0, loc)
+	analysis := "Ainda em andamento."
+	interval := openInterval("degraded", start)
+	interval.Analysis = &analysis
+
+	buckets := BuildBuckets([]db.StatusInterval{interval}, now, now, loc, 24, time.Hour)
+
+	// now is 15:20 the same day as start (15:05) - both land in the
+	// current (last) bucket, index 23, not bucket 0.
+	last := buckets[len(buckets)-1]
+	if len(last.Episodes) != 1 {
+		t.Fatalf("len(last.Episodes) = %d, want 1", len(last.Episodes))
+	}
+	if last.Episodes[0].EndsAt != nil {
+		t.Errorf("Episode.EndsAt = %v, want nil for a still-open interval", last.Episodes[0].EndsAt)
+	}
 }

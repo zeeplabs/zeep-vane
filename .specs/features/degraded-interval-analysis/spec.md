@@ -101,9 +101,9 @@ The user wants: clicking a degraded hourly bar opens a popover listing the AI-ge
 | DEGINT-05 | P1: Episódio degradado grava seu próprio motivo | - | Implementing |
 | DEGINT-06 | P1: Episódio degradado grava seu próprio motivo | - | Implementing |
 | DEGINT-07 | P1: Episódio degradado grava seu próprio motivo | - | Implementing |
-| DEGINT-08 | P2: Histórico exposto por bucket na página de status pública | - | Draft |
-| DEGINT-09 | P2: Histórico exposto por bucket na página de status pública | - | Draft |
-| DEGINT-10 | P2: Histórico exposto por bucket na página de status pública | - | Draft |
+| DEGINT-08 | P2: Histórico exposto por bucket na página de status pública | - | Implementing |
+| DEGINT-09 | P2: Histórico exposto por bucket na página de status pública | - | Implementing |
+| DEGINT-10 | P2: Histórico exposto por bucket na página de status pública | - | Implementing |
 | DEGINT-11 | P2: Histórico exposto por bucket na página de status pública | - | Draft |
 | DEGINT-12 | P2: Histórico exposto por bucket na página de status pública | - | Draft |
 | DEGINT-13 | P3: Popover de clique na barra degradada | - | Draft |
