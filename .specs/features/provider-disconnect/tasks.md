@@ -266,11 +266,11 @@ T12 → T13.
 - Skill: NONE
 
 **Done when**:
-- [ ] `go build ./...` passes.
-- [ ] `go test ./...` passes (full suite, not just the new packages).
-- [ ] `go vet ./...` passes.
-- [ ] `gofmt -l` reports no changed files needing formatting.
-- [ ] `make test-integration` passes (disposable container per AGENTS.md §3 - never `vane-dev-pg`).
+- [x] `go build ./...` passes.
+- [x] `go test ./...` passes (full suite, not just the new packages).
+- [x] `go vet ./...` passes.
+- [x] `gofmt -l` reports no changed files needing formatting (checked every .go file touched by T1-T8).
+- [x] `make test-integration` passes, EXCEPT for the same pre-existing `internal/db` leakage already documented under T6/T8 (`TestEmailProviderRepository_SetActiveProvider_UpdatesSingletonRow`, `TestLLMProviderRepository_SetActiveProvider_ThenGetActiveProvider_RoundTrips`), plus one additional pre-existing, unrelated failure found while running this gate: `TestPoller_PollOnce_HungLLMEnrichment_DoesNotDelayRemainingServices` (`internal/poller/poller_test.go`) fails consistently (reproduced 5/5 in isolation, `pollOnce()` taking 7-15s against a 2s budget) - a timing-threshold test for hung-LLM-enrichment poll behavior, in a package no T1-T8 commit touched (confirmed via `git log`/`git blame`). Not caused by, or fixable within, this feature's scope; flagged for the user separately rather than silently patched.
 
 **Tests**: none (verification task; matrix marks router wiring/build-gate work as "none" - build gate only)
 **Gate**: build
