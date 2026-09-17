@@ -15,6 +15,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] — 2026-09-16
+
+### Added
+
+- **Multi-tenancy** (AD-022): Vane now supports two distribution models on the same codebase — self-hosted (single auto-provisioned tenant, no billing) and SaaS (real multi-tenant, public signup, free/paid plans). Data isolation is shared-schema + mandatory `tenant_id` on every domain table, enforced by Postgres RLS (fail-closed, not just an application filter). A user (email) is a global identity that can hold a `tenant_membership` in N tenants; a tenant switcher and a full-page tenant-selection screen appear only when a user has more than one.
+- **SaaS public signup**: `POST /api/signup` + email verification + resend, IP rate-limited. A new `VANE_DEPLOYMENT_MODE` env var (`self_hosted` | `saas`, default `self_hosted`) gates signup: self-hosted installs 404 every signup route outright (AD-033), not just hide the UI link.
+- **Two-factor authentication (TOTP)**: enroll/confirm/disable from Meu Perfil, recovery codes, a second-factor step on login, and recovery-code login as a fallback.
+- **Per-device sessions** (AD-028): every login/invite-accept/bootstrap now creates a `sessions` row (`user_agent`/`ip`/`last_seen_at`); Meu Perfil lists and can revoke any of the user's own sessions (with confirmation), and admin role/removal events revoke per-session instead of a single global timestamp.
+- **New admin UI**: a full visual redesign against the new-layout handoff — collapsible Sidebar (72px/240px), Topbar, AvatarMenu/TenantSwitcher popovers, and a light/dark design-token system (AD-027) replacing the old Nocturne theme. Every screen was rebuilt against the mock: Visão geral (new overview dashboard), Usuários, Domínios & Status Pages (tabbed, drawer-based editing), Integrações (category grid), Serviços monitorados (filters, search, detail drawer), Meu Perfil, and Configurações.
+- **Configurações** page gained a full company profile (site, fuso horário, idioma), complete fiscal address fields, and a self-service "Excluir conta" (soft-delete) flow for SaaS owners — self-hosted installs never see it (AD-002 stays single-tenant per install; see Fixed).
+- **Planos & Faturamento**: a new decorative billing/plans showcase page (no real Stripe/license integration exists yet — every action is an honest "Em breve", never a fake-functional checkout).
+- **Manual polling mode**: services can be monitored via direct HTTP/TCP/Ping checks (SSRF-safe target validation) instead of requiring a Datadog SLO.
+- **Notifications**: incident-opened/resolved emails, a weekly digest (leader-elected, deduped), and per-admin notification preferences.
+- **Incident severity** and update authorship, shown in the incident timeline.
+- **Real poller leadership reporting**: the Poller Status page now reflects actual leader-election state and per-replica check activity instead of a placeholder.
+- **Domain verification**: DNS-based verification is now checked and persisted, not assumed.
+- **Security hardening**: TLS/ACME private keys are now encrypted at rest under `VANE_MASTER_KEY` (with an idempotent boot-time backfill for legacy plaintext keys); the IP rate limiter falls back to an in-memory store with a circuit breaker instead of failing open when Postgres is unavailable; the retention pruner is now leader-gated per tick to avoid duplicate runs across replicas.
+
+### Changed
+
+- All hand-rolled inline SVG icons were migrated to `react-icons/md` across the admin frontend (AD-032).
+
+### Fixed
+
+- **Excluir conta is SaaS-only**: self-hosted installs are single-tenant per install (AD-002) and run on the operator's own infrastructure — deleting "the tenant" would destroy the whole install, not close a SaaS account. The danger zone is now hidden and `DELETE /api/tenants/current` 404s under `self_hosted`.
+- The Overview page's upsell banner is disabled — no real billing model exists behind it yet.
+- A session token carrying an unexpected audience claim is now rejected instead of accepted.
+- The poller now bounds its per-tenant transaction lifetime and excludes the bootstrap placeholder tenant from iteration.
+- Numerous new-layout visual fixes across Incidents/Domains/Status Pages/Integrations/Services to match the handoff mocks exactly (contrast, drawer chrome, badge/severity styling, shadows).
+
 ## [0.2.5] — 2026-09-08
 
 ### Added
