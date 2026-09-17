@@ -143,9 +143,16 @@ func (r *LLMProviderRepository) countLLMProviders(ctx context.Context) (int, err
 // has one whose active_provider is NULL. The row is created lazily by
 // SetActiveProvider: since multi-tenancy-core there is one per tenant,
 // not one seeded singleton per installation.
+// GetActiveProvider filters explicitly by tenant_id rather than relying
+// solely on the tenant_isolation RLS policy - mirrors
+// EmailProviderRepository.GetActiveProvider's comment on why a
+// superuser/BYPASSRLS connection role would otherwise ignore RLS
+// entirely (including under FORCE ROW LEVEL SECURITY) and return an
+// arbitrary tenant's row.
 func (r *LLMProviderRepository) GetActiveProvider(ctx context.Context) (string, error) {
 	var activeProvider *string
-	row := r.pool.QueryRow(ctx, "SELECT active_provider FROM llm_settings")
+	row := r.pool.QueryRow(ctx,
+		"SELECT active_provider FROM llm_settings WHERE tenant_id = NULLIF(current_setting('app.tenant_id', true), '')::uuid")
 	if err := row.Scan(&activeProvider); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return "", nil
@@ -177,9 +184,12 @@ func (r *LLMProviderRepository) SetActiveProvider(ctx context.Context, provider 
 // EmailProviderRepository.DeleteProvider: idempotent (no error when zero
 // rows matched), and llm_settings.active_provider is cleared to NULL
 // automatically by the existing FK when the deleted row was active - no
-// separate step here.
+// separate step here. The tenant_id filter is explicit, not left to RLS
+// alone - see GetActiveProvider's comment above.
 func (r *LLMProviderRepository) DeleteProvider(ctx context.Context, provider string) error {
-	_, err := r.pool.Exec(ctx, "DELETE FROM llm_providers WHERE provider = $1", provider)
+	_, err := r.pool.Exec(ctx,
+		"DELETE FROM llm_providers WHERE provider = $1 AND tenant_id = NULLIF(current_setting('app.tenant_id', true), '')::uuid",
+		provider)
 	if err != nil {
 		return fmt.Errorf("db: failed to delete llm provider: %w", err)
 	}
