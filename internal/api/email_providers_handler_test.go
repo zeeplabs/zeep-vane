@@ -13,6 +13,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"go.uber.org/zap"
 
+	"github.com/zeeplabs/zeep-vane/internal/db"
 	"github.com/zeeplabs/zeep-vane/internal/email"
 )
 
@@ -20,13 +21,15 @@ import (
 // letting this handler suite run as a fast unit test independent of
 // email.Service's real dependencies (repository, provider factory).
 type fakeEmailProviderService struct {
-	connectErr  error
-	activateErr error
-	listResult  email.ListResult
-	listErr     error
+	connectErr    error
+	activateErr   error
+	listResult    email.ListResult
+	listErr       error
+	disconnectErr error
 
-	connectCalls  []connectCall
-	activateCalls []string
+	connectCalls    []connectCall
+	activateCalls   []string
+	disconnectCalls []string
 }
 
 type connectCall struct {
@@ -45,6 +48,42 @@ func (f *fakeEmailProviderService) Activate(ctx context.Context, provider string
 
 func (f *fakeEmailProviderService) List(ctx context.Context, page, pageSize int) (email.ListResult, error) {
 	return f.listResult, f.listErr
+}
+
+func (f *fakeEmailProviderService) Disconnect(ctx context.Context, provider string) error {
+	f.disconnectCalls = append(f.disconnectCalls, provider)
+	return f.disconnectErr
+}
+
+// fakeEmailProviderRowGetter is a no-DB double for emailProviderRowGetter,
+// letting the Disconnect handler's "fetch the row before deleting it"
+// precondition be observed without a real database - Disconnect gates its
+// record-audit branch on whether this Get call succeeds.
+type fakeEmailProviderRowGetter struct {
+	row      *db.EmailProvider
+	err      error
+	getCalls []string
+}
+
+func (f *fakeEmailProviderRowGetter) Get(ctx context.Context, provider string) (*db.EmailProvider, error) {
+	f.getCalls = append(f.getCalls, provider)
+	if f.err != nil {
+		return nil, f.err
+	}
+	return f.row, nil
+}
+
+// newEmailProvidersRouterWithRows extends newEmailProvidersRouter with a
+// wired rows getter and the DELETE disconnect route, for tests that need to
+// assert the handler's "capture the row before deleting" precondition.
+func newEmailProvidersRouterWithRows(svc emailProviderService, rows emailProviderRowGetter) http.Handler {
+	h := NewEmailProvidersHandler(svc, rows, nil, zap.NewNop())
+	r := chi.NewRouter()
+	r.Post("/api/integrations/email/{provider}", h.Connect)
+	r.Get("/api/integrations/email", h.List)
+	r.Post("/api/integrations/email/{provider}/activate", h.Activate)
+	r.Delete("/api/integrations/email/{provider}", h.Disconnect)
+	return r
 }
 
 // newEmailProvidersRouter wires no UserFromContext actor into the request
@@ -304,6 +343,93 @@ func TestList_ServiceError_500(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/api/integrations/email", nil)
 	rec := httptest.NewRecorder()
 	r.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusInternalServerError {
+		t.Errorf("status = %d, want %d, body = %s", rec.Code, http.StatusInternalServerError, rec.Body.String())
+	}
+}
+
+func doDisconnectRequest(t *testing.T, r http.Handler, provider string) *httptest.ResponseRecorder {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodDelete, "/api/integrations/email/"+provider, nil)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+	return rec
+}
+
+// TestDisconnect_UnknownProvider_404 covers PROVDISC-01 AC4: a {provider}
+// path segment other than sendgrid/resend is rejected before the service is
+// ever called, same unknown-provider body Connect/Activate use.
+func TestDisconnect_UnknownProvider_404(t *testing.T) {
+	fake := &fakeEmailProviderService{}
+	rows := &fakeEmailProviderRowGetter{err: db.ErrNotFound}
+	r := newEmailProvidersRouterWithRows(fake, rows)
+
+	rec := doDisconnectRequest(t, r, "mailgun")
+
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("status = %d, want %d, body = %s", rec.Code, http.StatusNotFound, rec.Body.String())
+	}
+	if len(fake.disconnectCalls) != 0 {
+		t.Errorf("Disconnect called %d times, want 0 for an unknown provider", len(fake.disconnectCalls))
+	}
+}
+
+// TestDisconnect_ConnectedProvider_204AndCapturesRowBeforeDelete covers
+// PROVDISC-01 AC1/AC6: disconnecting a connected provider responds 204 and
+// calls Disconnect with the path's provider. It also confirms the "capture
+// before mutate" precondition the audit entry depends on: h.rows.Get is
+// called (so the row's id/display name is available before the delete would
+// make it unresolvable) - actual admin_audit_log insertion is covered by
+// TestDisconnectEmailProvider_ValidRequest_RecordsEmailProviderDisconnectedAudit
+// (T6, real DB), same split as Connect/Activate's own audit assertions.
+func TestDisconnect_ConnectedProvider_204AndCapturesRowBeforeDelete(t *testing.T) {
+	fake := &fakeEmailProviderService{}
+	rows := &fakeEmailProviderRowGetter{row: &db.EmailProvider{ID: "row-1", Provider: "resend"}}
+	r := newEmailProvidersRouterWithRows(fake, rows)
+
+	rec := doDisconnectRequest(t, r, "resend")
+
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusNoContent, rec.Body.String())
+	}
+	if len(fake.disconnectCalls) != 1 || fake.disconnectCalls[0] != "resend" {
+		t.Errorf("disconnectCalls = %v, want [\"resend\"]", fake.disconnectCalls)
+	}
+	if len(rows.getCalls) != 1 || rows.getCalls[0] != "resend" {
+		t.Errorf("rows.Get calls = %v, want [\"resend\"] (row must be captured before delete for the audit entry)", rows.getCalls)
+	}
+}
+
+// TestDisconnect_NeverConnected_204Idempotent covers PROVDISC-02 AC5: a
+// recognized provider with no connected row still responds 204 (idempotent
+// delete), not 404 - and Disconnect is still called (the repository-level
+// delete of zero rows is itself the idempotent no-op, not a handler-level
+// short-circuit).
+func TestDisconnect_NeverConnected_204Idempotent(t *testing.T) {
+	fake := &fakeEmailProviderService{}
+	rows := &fakeEmailProviderRowGetter{err: db.ErrNotFound}
+	r := newEmailProvidersRouterWithRows(fake, rows)
+
+	rec := doDisconnectRequest(t, r, "sendgrid")
+
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusNoContent, rec.Body.String())
+	}
+	if len(fake.disconnectCalls) != 1 || fake.disconnectCalls[0] != "sendgrid" {
+		t.Errorf("disconnectCalls = %v, want [\"sendgrid\"]", fake.disconnectCalls)
+	}
+}
+
+// TestDisconnect_ServiceError_500 mirrors TestList_ServiceError_500: an
+// unexpected service-layer failure must not be reported as a 204/404,
+// same writeInternalError fallback every other handler in this package uses.
+func TestDisconnect_ServiceError_500(t *testing.T) {
+	fake := &fakeEmailProviderService{disconnectErr: context.DeadlineExceeded}
+	rows := &fakeEmailProviderRowGetter{row: &db.EmailProvider{ID: "row-1", Provider: "resend"}}
+	r := newEmailProvidersRouterWithRows(fake, rows)
+
+	rec := doDisconnectRequest(t, r, "resend")
 
 	if rec.Code != http.StatusInternalServerError {
 		t.Errorf("status = %d, want %d, body = %s", rec.Code, http.StatusInternalServerError, rec.Body.String())

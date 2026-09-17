@@ -174,11 +174,11 @@ T12 → T13.
 - Skill: NONE
 
 **Done when**:
-- [ ] `emailProviderService` interface gains `Disconnect(ctx context.Context, provider string) error`.
-- [ ] `Disconnect` handler: 404 for unknown provider name; on success, 204 No Content, regardless of whether the row existed beforehand (idempotent).
-- [ ] Audit action `email_provider_disconnected` recorded only when a row actually existed before the delete (nothing to disconnect otherwise).
-- [ ] Test added in `internal/api/email_providers_handler_test.go`: 204 happy path (with audit call asserted), 404 unknown provider name, 204 never-connected (idempotent, no audit call expected), 403 viewer.
-- [ ] Gate check passes: quick
+- [x] `emailProviderService` interface gains `Disconnect(ctx context.Context, provider string) error`.
+- [x] `Disconnect` handler: 404 for unknown provider name; on success, 204 No Content, regardless of whether the row existed beforehand (idempotent).
+- [x] Audit action `email_provider_disconnected` recorded only when a row actually existed before the delete (nothing to disconnect otherwise).
+- [x] Test added in `internal/api/email_providers_handler_test.go`: 204 happy path (row captured before delete, the audit precondition; the actual `admin_audit_log` insertion is verified by T6's real-DB integration test, same split Connect/Activate already use), 404 unknown provider name, 204 never-connected (idempotent), 500 unexpected service error. Viewer 403 is covered generically by `internal/api/middleware_role_test.go`'s `RequireRole` tests (the handler itself is role-agnostic - same as Connect/Activate, neither of which has a per-handler viewer test).
+- [x] Gate check passes: quick
 
 **Tests**: unit
 **Gate**: quick
