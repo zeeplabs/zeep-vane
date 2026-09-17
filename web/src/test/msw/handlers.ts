@@ -1489,6 +1489,24 @@ export const handlers = [
     return HttpResponse.json({ status: "active" });
   }),
 
+  // DELETE /api/integrations/llm/:provider (PROVDISC-04/05) - mirrors
+  // LLMProvidersHandler.Disconnect: unknown provider name 404, otherwise
+  // 204 No Content with no body regardless of whether a row existed
+  // (idempotent delete). Clears llmActiveProvider when the deleted
+  // provider was active, mirroring the real FK's ON DELETE SET NULL.
+  http.delete("/api/integrations/llm/:provider", ({ params }) => {
+    if (!sessionAdminId) return HttpResponse.json({ error: "unauthorized" }, { status: 401 });
+    const provider = params.provider as string;
+    if (provider !== "openai") {
+      return HttpResponse.json({ error: "unknown llm provider" }, { status: 404 });
+    }
+    llmProvidersState = llmProvidersState.filter((p) => p.provider !== provider);
+    if (llmActiveProvider === provider) {
+      llmActiveProvider = null;
+    }
+    return new HttpResponse(null, { status: 204 });
+  }),
+
   // GET /api/services (PAG-08) - mirrors ServicesHandler.List: ordered by
   // name, paginated 20 per page.
   http.get("/api/services", ({ request }) => {

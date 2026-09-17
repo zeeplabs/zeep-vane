@@ -340,10 +340,10 @@ T12 → T13.
 - Skill: NONE
 
 **Done when**:
-- [ ] Disconnect mutation hook mirrors T10 for the LLM endpoint.
-- [ ] MSW handler added/updated for the LLM DELETE route.
-- [ ] Test added in `web/src/features/settings/llmProviderHooks.test.ts` mirroring T10's coverage.
-- [ ] Gate check passes: quick (frontend)
+- [x] Disconnect mutation hook mirrors T10 for the LLM endpoint.
+- [x] MSW handler added/updated for the LLM DELETE route.
+- [x] Test added in `web/src/features/settings/llmProviderHooks.test.ts` mirroring T10's coverage.
+- [x] Gate check passes: quick (frontend)
 
 **Tests**: unit
 **Gate**: quick (frontend)

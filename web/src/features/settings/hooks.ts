@@ -140,3 +140,19 @@ export function useActivateLLMProvider() {
     },
   });
 }
+
+// The real backend's DELETE /api/integrations/llm/{provider} responds 204
+// No Content with no body, whether or not a row existed (idempotent
+// delete, PROVDISC-04/05) - mirrors useDisconnectEmailProvider.
+export function useDisconnectLLMProvider() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (provider: LLMProviderName) =>
+      apiFetch<void>(`/api/integrations/llm/${provider}`, {
+        method: "DELETE",
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["integrations", "llm"] });
+    },
+  });
+}
