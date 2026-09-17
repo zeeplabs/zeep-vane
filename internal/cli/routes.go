@@ -104,7 +104,7 @@ func buildAdminRouter(pool *db.Pool, cfg config.Config, logger *zap.Logger, poll
 	sessionsHandler := api.NewSessionsHandler(sessions, logger)
 	publicStatusHandler := api.NewPublicStatusHandler(db.NewServiceRepository(pool), db.NewStatusIntervalRepository(pool), db.NewIncidentRepository(pool), tenantsRepo, logger)
 	publicStatusPreviewHandler := api.NewPublicStatusPreviewHandler(db.NewStatusPageRepository(pool), publicStatusHandler, logger)
-	companySettingsHandler := api.NewCompanySettingsHandler(tenantsRepo, logger)
+	companySettingsHandler := api.NewCompanySettingsHandler(tenantsRepo, auditLog, logger)
 	tenantHandler := api.NewTenantHandler(tenantMembershipsRepo, tenantsRepo, logger)
 	logoFileHandler := api.NewLogoFileHandler(tenantsRepo)
 	instanceConfigHandler := api.NewInstanceConfigHandler(cfg.PublicDNSTarget, tenantsRepo, logger)

@@ -15,6 +15,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"go.uber.org/zap"
 
+	"github.com/zeeplabs/zeep-vane/internal/audit"
 	"github.com/zeeplabs/zeep-vane/internal/db"
 	"github.com/zeeplabs/zeep-vane/internal/dbtest"
 )
@@ -111,7 +112,7 @@ func newCompanySettingsTestPool(t *testing.T) (*db.Pool, *db.UserRepository) {
 }
 
 func buildCompanySettingsRouter(pool *db.Pool, admins *db.UserRepository, store companySettingsStore) http.Handler {
-	handler := NewCompanySettingsHandler(store, zap.NewNop())
+	handler := NewCompanySettingsHandler(store, audit.NewLog(pool), zap.NewNop())
 
 	r := chi.NewRouter()
 	r.Group(func(protected chi.Router) {
@@ -779,5 +780,51 @@ func TestUploadLogo_SecondValidUpload_OverwritesFirst(t *testing.T) {
 	}
 	if getResp.LogoURL == nil || *getResp.LogoURL != "/uploads/logo" {
 		t.Errorf("persisted LogoURL = %v, want %q", getResp.LogoURL, "/uploads/logo")
+	}
+}
+
+// TestCompanySettingsUpdate_ValidBody_RecordsCompanySettingsUpdatedAudit
+// covers AUDITEXP-13.
+func TestCompanySettingsUpdate_ValidBody_RecordsCompanySettingsUpdatedAudit(t *testing.T) {
+	r, pool, admins := newCompanySettingsRouter(t)
+	token := issueTestSessionToken(t, admins)
+
+	rec := patchCompanySettings(t, r, token, updateCompanySettingsRequest{Name: "Audit Co.", ContactEmail: "owner@audit.example.com"})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	var gotTargetLabel string
+	row := pool.QueryRow(context.Background(),
+		"SELECT target_label FROM admin_audit_log WHERE action = 'company_settings_updated' ORDER BY created_at DESC LIMIT 1")
+	if err := row.Scan(&gotTargetLabel); err != nil {
+		t.Fatalf("Scan() returned unexpected error: %v", err)
+	}
+	if gotTargetLabel != "Configurações da empresa" {
+		t.Errorf("admin_audit_log target_label = %q, want %q", gotTargetLabel, "Configurações da empresa")
+	}
+}
+
+// TestUploadLogo_ValidPNG_RecordsCompanyLogoUpdatedAudit covers
+// AUDITEXP-14.
+func TestUploadLogo_ValidPNG_RecordsCompanyLogoUpdatedAudit(t *testing.T) {
+	r, pool, admins := newCompanySettingsRouter(t)
+	token := issueTestSessionToken(t, admins)
+
+	req := buildMultipartLogoRequest(t, "logo.png", pngSignatureBytes, token)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	var gotTargetLabel string
+	row := pool.QueryRow(context.Background(),
+		"SELECT target_label FROM admin_audit_log WHERE action = 'company_logo_updated' ORDER BY created_at DESC LIMIT 1")
+	if err := row.Scan(&gotTargetLabel); err != nil {
+		t.Fatalf("Scan() returned unexpected error: %v", err)
+	}
+	if gotTargetLabel != "Configurações da empresa" {
+		t.Errorf("admin_audit_log target_label = %q, want %q", gotTargetLabel, "Configurações da empresa")
 	}
 }

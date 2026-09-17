@@ -11,8 +11,16 @@ import (
 
 	"go.uber.org/zap"
 
+	"github.com/zeeplabs/zeep-vane/internal/audit"
 	"github.com/zeeplabs/zeep-vane/internal/db"
 )
+
+// companySettingsAuditTargetLabel is the fixed target_label for
+// company_settings_updated/company_logo_updated audit entries - both
+// actions edit the same single tenant row, which has no separate
+// user-facing "name" distinct from what's already shown elsewhere
+// (AUDITEXP-13/14), unlike a service/status page/domain.
+const companySettingsAuditTargetLabel = "Configurações da empresa"
 
 // maxLogoBytes bounds an uploaded logo to 10 MB (SET-08) - an owner-only
 // endpoint, but still a bound against memory abuse (the logo is held in
@@ -33,13 +41,14 @@ type companySettingsStore interface {
 // /api/company-settings and POST /api/company-settings/logo.
 type CompanySettingsHandler struct {
 	settings companySettingsStore
+	audit    *audit.Log
 	logger   *zap.Logger
 }
 
 // NewCompanySettingsHandler builds a CompanySettingsHandler backed by
 // settings.
-func NewCompanySettingsHandler(settings companySettingsStore, logger *zap.Logger) *CompanySettingsHandler {
-	return &CompanySettingsHandler{settings: settings, logger: logger}
+func NewCompanySettingsHandler(settings companySettingsStore, auditLog *audit.Log, logger *zap.Logger) *CompanySettingsHandler {
+	return &CompanySettingsHandler{settings: settings, audit: auditLog, logger: logger}
 }
 
 // tenantBillingAddress is the typed shape settings-page CFGPG-06/07
@@ -198,6 +207,12 @@ func (h *CompanySettingsHandler) Update(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	if actor, ok := UserFromContext(r.Context()); ok {
+		if err := h.audit.Record(r.Context(), actor.ID, tenantID, companySettingsAuditTargetLabel, "company_settings_updated"); err != nil {
+			h.logger.Error("company-settings: failed to record audit entry", zap.Error(err))
+		}
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	_ = json.NewEncoder(w).Encode(toCompanySettingsResponse(settings))
@@ -261,6 +276,12 @@ func (h *CompanySettingsHandler) UploadLogo(w http.ResponseWriter, r *http.Reque
 		h.logger.Error("company-settings: failed to persist logo", zap.Error(err))
 		writeInternalError(w)
 		return
+	}
+
+	if actor, ok := UserFromContext(r.Context()); ok {
+		if err := h.audit.Record(r.Context(), actor.ID, tenantID, companySettingsAuditTargetLabel, "company_logo_updated"); err != nil {
+			h.logger.Error("company-settings: failed to record audit entry", zap.Error(err))
+		}
 	}
 
 	w.Header().Set("Content-Type", "application/json")
