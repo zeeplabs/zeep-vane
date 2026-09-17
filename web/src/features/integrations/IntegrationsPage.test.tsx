@@ -325,6 +325,92 @@ describe("IntegrationsPage", () => {
     expect(within(await cardOf("Resend")).getByText("Não conectado")).toBeInTheDocument();
   });
 
+  it("falha ao ativar Resend mostra erro no card e mantém estado conectado-inativo (INTGCARD-01 AC4)", async () => {
+    await loginAs("owner@vane.app");
+    await apiFetch("/api/integrations/email/resend", {
+      method: "POST",
+      body: JSON.stringify({ api_key: "re-key", from_email: "a@b.com", from_name: "A" }),
+    });
+    server.use(
+      http.post("/api/integrations/email/resend/activate", () => HttpResponse.json({ error: "boom" }, { status: 500 })),
+    );
+    renderPage();
+
+    const resendCard = await cardOf("Resend");
+    await within(resendCard).findByText("Verificado");
+    await userEvent.click(within(resendCard).getByRole("button", { name: "Ativar" }));
+
+    expect(await within(resendCard).findByRole("alert")).toHaveTextContent("boom");
+    expect(within(resendCard).getByText("Verificado")).toBeInTheDocument();
+    expect(within(resendCard).getByRole("button", { name: "Ativar" })).toBeInTheDocument();
+  });
+
+  it("falha ao ativar LLM Provider mostra erro no card e mantém estado conectado-inativo (INTGCARD-01 AC4)", async () => {
+    await loginAs("owner@vane.app");
+    await apiFetch("/api/integrations/llm/openai", {
+      method: "POST",
+      body: JSON.stringify({ api_key: "sk-real-key", model: "gpt-4o" }),
+    });
+    server.use(
+      http.post("/api/integrations/llm/openai/activate", () => HttpResponse.json({ error: "boom" }, { status: 500 })),
+    );
+    renderPage();
+
+    const llmCard = await cardOf("LLM Provider");
+    await within(llmCard).findByText("OpenAI · gpt-4o");
+    await userEvent.click(within(llmCard).getByRole("button", { name: "Ativar" }));
+
+    expect(await within(llmCard).findByRole("alert")).toHaveTextContent("boom");
+    expect(within(llmCard).getByText("OpenAI · gpt-4o")).toBeInTheDocument();
+    expect(within(llmCard).getByRole("button", { name: "Ativar" })).toBeInTheDocument();
+  });
+
+  it("falha ao desconectar Resend mostra erro no card e mantém estado conectado (INTGCARD-04 AC5)", async () => {
+    await loginAs("owner@vane.app");
+    await apiFetch("/api/integrations/email/resend", {
+      method: "POST",
+      body: JSON.stringify({ api_key: "re-key", from_email: "a@b.com", from_name: "A" }),
+    });
+    server.use(
+      http.delete("/api/integrations/email/resend", () => HttpResponse.json({ error: "boom" }, { status: 500 })),
+    );
+    renderPage();
+
+    const resendCard = await cardOf("Resend");
+    await within(resendCard).findByText("Verificado");
+    await userEvent.click(within(resendCard).getByRole("button", { name: "Desconectar" }));
+    const dialogTitle = await screen.findByRole("heading", { name: /desconectar/i });
+    const dialog = dialogTitle.closest('[role="dialog"]') as HTMLElement;
+    await userEvent.click(within(dialog).getByRole("button", { name: "Desconectar" }));
+
+    await waitFor(() => expect(screen.queryByRole("heading", { name: /desconectar/i })).not.toBeInTheDocument());
+    expect(await within(resendCard).findByRole("alert")).toHaveTextContent("boom");
+    expect(within(resendCard).getByText("Verificado")).toBeInTheDocument();
+  });
+
+  it("falha ao desconectar LLM Provider mostra erro no card e mantém estado conectado (INTGCARD-04 AC5)", async () => {
+    await loginAs("owner@vane.app");
+    await apiFetch("/api/integrations/llm/openai", {
+      method: "POST",
+      body: JSON.stringify({ api_key: "sk-real-key", model: "gpt-4o" }),
+    });
+    server.use(
+      http.delete("/api/integrations/llm/openai", () => HttpResponse.json({ error: "boom" }, { status: 500 })),
+    );
+    renderPage();
+
+    const llmCard = await cardOf("LLM Provider");
+    await within(llmCard).findByText("OpenAI · gpt-4o");
+    await userEvent.click(within(llmCard).getByRole("button", { name: "Desconectar" }));
+    const dialogTitle = await screen.findByRole("heading", { name: /desconectar/i });
+    const dialog = dialogTitle.closest('[role="dialog"]') as HTMLElement;
+    await userEvent.click(within(dialog).getByRole("button", { name: "Desconectar" }));
+
+    await waitFor(() => expect(screen.queryByRole("heading", { name: /desconectar/i })).not.toBeInTheDocument());
+    expect(await within(llmCard).findByRole("alert")).toHaveTextContent("boom");
+    expect(within(llmCard).getByText("OpenAI · gpt-4o")).toBeInTheDocument();
+  });
+
   it("viewer não vê Ativar nem Desconectar no card de e-mail conectado (INTGCARD-01/03)", async () => {
     await apiFetch("/api/auth/login", {
       method: "POST",
