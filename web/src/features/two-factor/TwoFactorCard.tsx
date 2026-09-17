@@ -46,7 +46,7 @@ export function TwoFactorCard() {
           {t("twoFactor.disableButton")}
         </Button>
       ) : (
-        <Button onClick={() => setDrawerOpen(true)} data-testid="two-factor-enable">
+        <Button variant="solid" onClick={() => setDrawerOpen(true)} data-testid="two-factor-enable">
           {t("twoFactor.enableButton")}
         </Button>
       )}

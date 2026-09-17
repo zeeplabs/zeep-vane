@@ -58,6 +58,7 @@ export function DisableDialog({ open, onOpenChange, onDisabled }: DisableDialogP
           </Button>
           <Button
             type="submit"
+            variant="solid"
             form="disable-2fa-form"
             disabled={disable.isPending}
             data-testid="two-factor-disable-confirm"
@@ -69,6 +70,7 @@ export function DisableDialog({ open, onOpenChange, onDisabled }: DisableDialogP
     >
       <form id="disable-2fa-form" onSubmit={handleSubmit}>
         <Field
+          variant="filled"
           type="password"
           label={t("twoFactor.disable.passwordLabel")}
           value={password}
