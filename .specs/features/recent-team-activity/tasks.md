@@ -241,7 +241,9 @@ T15 → T16 → T17
 **Depends on**: T2
 **Requirement**: ACTIVITY-03
 
-**Done when**: `h.audit.Record(r.Context(), actor.ID, id, domain.Domain, "domain_verified")` (verify the exact in-scope variable name at that line first); test asserts the label.
+**Done when**:
+- [x] `h.audit.Record(r.Context(), actor.ID, id, domain.Hostname, "domain_verified")` (field is `Hostname`, not `Domain` - verified against `db.Domain`).
+- [x] Test asserts the label (`TestVerifyDomain_Success_RecordsDomainVerifiedAuditLabel`).
 **Tests**: unit
 **Gate**: quick
 **Commit**: `feat(domains): record domain string as domain_verified audit label`

@@ -309,7 +309,7 @@ func (h *DomainsHandler) Verify(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if actor, ok := UserFromContext(r.Context()); ok {
-		if err := h.audit.Record(r.Context(), actor.ID, id, "domain_verified"); err != nil {
+		if err := h.audit.Record(r.Context(), actor.ID, id, domain.Hostname, "domain_verified"); err != nil {
 			h.logger.Error("domains: failed to record audit entry", zap.Error(err))
 		}
 	}

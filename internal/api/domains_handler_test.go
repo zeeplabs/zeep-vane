@@ -641,6 +641,34 @@ func TestVerifyDomain_Success_VerifiedActive(t *testing.T) {
 	}
 }
 
+// TestVerifyDomain_Success_RecordsDomainVerifiedAuditLabel covers
+// ACTIVITY-03: the domain_verified audit entry's target_label must carry
+// the domain's own hostname, not a bare target_id.
+func TestVerifyDomain_Success_RecordsDomainVerifiedAuditLabel(t *testing.T) {
+	r, pool, admins := newDomainsRouter(t, func(h *DomainsHandler) {
+		h.verifier = &fakeDomainVerifier{result: domainVerificationResult{
+			DNSResolved: true, TLSReachable: true, TLSCertValid: true,
+		}}
+	})
+	token := issueTestSessionToken(t, admins)
+	domain := createVerifiableTestDomain(t, r, pool, token)
+
+	rec := postDomainVerify(t, r, token, domain.ID)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	var gotTargetLabel *string
+	row := pool.QueryRow(context.Background(),
+		"SELECT target_label FROM admin_audit_log WHERE target_id = $1 AND action = 'domain_verified'", domain.ID)
+	if err := row.Scan(&gotTargetLabel); err != nil {
+		t.Fatalf("Scan() returned unexpected error: %v", err)
+	}
+	if gotTargetLabel == nil || *gotTargetLabel != domain.Hostname {
+		t.Errorf("admin_audit_log target_label = %v, want %q", gotTargetLabel, domain.Hostname)
+	}
+}
+
 // TestVerifyDomain_DNSFailure_ErrorWithLastError covers DOMVER-08: a DNS
 // resolution failure persists status=error with a populated last_error.
 func TestVerifyDomain_DNSFailure_ErrorWithLastError(t *testing.T) {
