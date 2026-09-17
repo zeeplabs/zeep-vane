@@ -160,8 +160,8 @@ T15 → T16 → T17
 **Requirement**: ACTIVITY-03
 
 **Done when**:
-- [ ] `h.audit.Record(r.Context(), actor.ID, invite.ID, req.Email, "invited")`.
-- [ ] Existing invite-creation test(s) updated/extended to assert the audit call (via the handler's existing fake/mock `audit.Log` double) received `req.Email` as the label.
+- [x] `h.audit.Record(r.Context(), actor.ID, invite.ID, req.Email, "invited")`.
+- [x] Existing invite-creation test(s) updated/extended to assert the audit call (via the handler's existing fake/mock `audit.Log` double) received `req.Email` as the label.
 
 **Tests**: unit
 **Gate**: quick

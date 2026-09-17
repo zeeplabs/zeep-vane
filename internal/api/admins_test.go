@@ -333,9 +333,10 @@ func TestInviteAdmin_Owner_201_CreatesInviteAndAuditEntry(t *testing.T) {
 	}
 
 	var gotActorID, gotAction string
+	var gotTargetLabel *string
 	row := pool.QueryRow(context.Background(),
-		"SELECT actor_id, action FROM admin_audit_log WHERE target_id = $1", invite.id)
-	if err := row.Scan(&gotActorID, &gotAction); err != nil {
+		"SELECT actor_id, target_label, action FROM admin_audit_log WHERE target_id = $1", invite.id)
+	if err := row.Scan(&gotActorID, &gotTargetLabel, &gotAction); err != nil {
 		t.Fatalf("querying admin_audit_log returned unexpected error: %v", err)
 	}
 	if gotActorID != inviter.ID {
@@ -343,6 +344,9 @@ func TestInviteAdmin_Owner_201_CreatesInviteAndAuditEntry(t *testing.T) {
 	}
 	if gotAction != "invited" {
 		t.Errorf("admin_audit_log action = %q, want %q", gotAction, "invited")
+	}
+	if gotTargetLabel == nil || *gotTargetLabel != email {
+		t.Errorf("admin_audit_log target_label = %v, want %q", gotTargetLabel, email)
 	}
 
 	var resp map[string]any

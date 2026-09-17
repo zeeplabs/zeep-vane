@@ -219,7 +219,7 @@ func (h *AdminsHandler) Invite(w http.ResponseWriter, r *http.Request) {
 
 	emailSent := h.sendAdminInviteEmail(r, invite.ID, req.Email, req.Role, rawToken)
 
-	if err := h.audit.Record(r.Context(), actor.ID, invite.ID, "invited"); err != nil {
+	if err := h.audit.Record(r.Context(), actor.ID, invite.ID, req.Email, "invited"); err != nil {
 		h.logger.Error("admins: failed to record invite audit entry", zap.Error(err))
 	}
 
