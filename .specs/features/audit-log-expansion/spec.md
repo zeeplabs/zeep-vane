@@ -86,9 +86,9 @@
 | AUDITEXP-01 | P1: Ações de recurso compartilhado aparecem na Atividade recente do time | - | Implementing |
 | AUDITEXP-02 | P1: Ações de recurso compartilhado aparecem na Atividade recente do time | - | Implementing |
 | AUDITEXP-03 | P1: Ações de recurso compartilhado aparecem na Atividade recente do time | - | Implementing |
-| AUDITEXP-04 | P1: Ações de recurso compartilhado aparecem na Atividade recente do time | - | Draft |
-| AUDITEXP-05 | P1: Ações de recurso compartilhado aparecem na Atividade recente do time | - | Draft |
-| AUDITEXP-06 | P1: Ações de recurso compartilhado aparecem na Atividade recente do time | - | Draft |
+| AUDITEXP-04 | P1: Ações de recurso compartilhado aparecem na Atividade recente do time | - | Implementing |
+| AUDITEXP-05 | P1: Ações de recurso compartilhado aparecem na Atividade recente do time | - | Implementing |
+| AUDITEXP-06 | P1: Ações de recurso compartilhado aparecem na Atividade recente do time | - | Implementing |
 | AUDITEXP-07 | P1: Ações de recurso compartilhado aparecem na Atividade recente do time | - | Draft |
 | AUDITEXP-08 | P1: Ações de recurso compartilhado aparecem na Atividade recente do time | - | Draft |
 | AUDITEXP-09 | P1: Ações de recurso compartilhado aparecem na Atividade recente do time | - | Draft |

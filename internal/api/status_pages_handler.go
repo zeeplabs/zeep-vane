@@ -149,6 +149,12 @@ func (h *StatusPagesHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if actor, ok := UserFromContext(r.Context()); ok {
+		if err := h.audit.Record(r.Context(), actor.ID, statusPage.ID, statusPage.Name, "status_page_created"); err != nil {
+			h.logger.Error("status-pages: failed to record audit entry", zap.Error(err))
+		}
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	_ = json.NewEncoder(w).Encode(toStatusPageResponse(statusPage))
@@ -204,6 +210,12 @@ func (h *StatusPagesHandler) AttachDomain(w http.ResponseWriter, r *http.Request
 		return
 	}
 
+	if actor, ok := UserFromContext(r.Context()); ok {
+		if err := h.audit.Record(r.Context(), actor.ID, statusPage.ID, statusPage.Name, "status_page_domain_attached"); err != nil {
+			h.logger.Error("status-pages: failed to record audit entry", zap.Error(err))
+		}
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	_ = json.NewEncoder(w).Encode(toStatusPageResponse(statusPage))
@@ -245,6 +257,12 @@ func (h *StatusPagesHandler) SetServices(w http.ResponseWriter, r *http.Request)
 		h.logger.Error("status-pages: failed to reload status page after setting services", zap.Error(err))
 		writeInternalError(w)
 		return
+	}
+
+	if actor, ok := UserFromContext(r.Context()); ok {
+		if err := h.audit.Record(r.Context(), actor.ID, statusPage.ID, statusPage.Name, "status_page_services_updated"); err != nil {
+			h.logger.Error("status-pages: failed to record audit entry", zap.Error(err))
+		}
 	}
 
 	w.Header().Set("Content-Type", "application/json")

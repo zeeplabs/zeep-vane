@@ -1,7 +1,7 @@
 # Audit Log Expansion Tasks
 
 **Spec**: `.specs/features/audit-log-expansion/spec.md`
-**Status**: In progress (T1 done)
+**Status**: In progress (T1-T2 done)
 
 No `design.md` — no new architecture/pattern, only repeating the existing `audit.Log.Record` call already used by `StatusPagesHandler`/`DomainsHandler` across handlers that don't have it yet, plus wiring `New*Handler` constructors + `routes.go`, plus frontend i18n strings.
 
