@@ -10,6 +10,8 @@ import (
 	"github.com/go-chi/chi/v5"
 	"go.uber.org/zap"
 
+	"github.com/zeeplabs/zeep-vane/internal/audit"
+	"github.com/zeeplabs/zeep-vane/internal/db"
 	"github.com/zeeplabs/zeep-vane/internal/llm"
 )
 
@@ -26,15 +28,38 @@ type llmProviderService interface {
 	List(ctx context.Context, page, pageSize int) (llm.ListResult, error)
 }
 
+// llmProviderRowGetter is the subset of *db.LLMProviderRepository
+// LLMProvidersHandler depends on to resolve a provider name to its row ID
+// for audit entries (AUDITEXP-11/12) - llm.Service's own ProviderRecord
+// doesn't expose the row ID, only provider-name-keyed operations (same
+// reasoning as emailProviderRowGetter).
+type llmProviderRowGetter interface {
+	Get(ctx context.Context, provider string) (*db.LLMProvider, error)
+}
+
 // LLMProvidersHandler serves the /api/integrations/llm/* admin routes.
 type LLMProvidersHandler struct {
 	svc    llmProviderService
+	rows   llmProviderRowGetter
+	audit  *audit.Log
 	logger *zap.Logger
 }
 
 // NewLLMProvidersHandler builds an LLMProvidersHandler.
-func NewLLMProvidersHandler(svc llmProviderService, logger *zap.Logger) *LLMProvidersHandler {
-	return &LLMProvidersHandler{svc: svc, logger: logger}
+func NewLLMProvidersHandler(svc llmProviderService, rows llmProviderRowGetter, auditLog *audit.Log, logger *zap.Logger) *LLMProvidersHandler {
+	return &LLMProvidersHandler{svc: svc, rows: rows, audit: auditLog, logger: logger}
+}
+
+// llmProviderDisplayName maps a provider key to the human-readable name
+// used in audit target_label (AUDITEXP-11/12), same reasoning as
+// providerDisplayName for email providers.
+func llmProviderDisplayName(provider string) string {
+	switch provider {
+	case "openai":
+		return "OpenAI"
+	default:
+		return provider
+	}
 }
 
 // isKnownLLMProvider is the LLM equivalent of isKnownEmailProvider - only
@@ -86,6 +111,14 @@ func (h *LLMProvidersHandler) Connect(w http.ResponseWriter, r *http.Request) {
 		h.logger.Error("llm providers: failed to connect provider", zap.String("provider", provider), zap.Error(err))
 		writeInternalError(w)
 		return
+	}
+
+	if actor, ok := UserFromContext(r.Context()); ok {
+		if row, err := h.rows.Get(r.Context(), provider); err == nil {
+			if err := h.audit.Record(r.Context(), actor.ID, row.ID, llmProviderDisplayName(provider), "llm_provider_connected"); err != nil {
+				h.logger.Error("llm providers: failed to record audit entry", zap.Error(err))
+			}
+		}
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -149,6 +182,14 @@ func (h *LLMProvidersHandler) Activate(w http.ResponseWriter, r *http.Request) {
 		h.logger.Error("llm providers: failed to activate provider", zap.String("provider", provider), zap.Error(err))
 		writeInternalError(w)
 		return
+	}
+
+	if actor, ok := UserFromContext(r.Context()); ok {
+		if row, err := h.rows.Get(r.Context(), provider); err == nil {
+			if err := h.audit.Record(r.Context(), actor.ID, row.ID, llmProviderDisplayName(provider), "llm_provider_activated"); err != nil {
+				h.logger.Error("llm providers: failed to record audit entry", zap.Error(err))
+			}
+		}
 	}
 
 	w.Header().Set("Content-Type", "application/json")

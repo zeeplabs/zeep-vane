@@ -59,7 +59,7 @@ func (f *fakeLLMProviderService) List(ctx context.Context, page, pageSize int) (
 }
 
 func newLLMProvidersRouter(svc llmProviderService) http.Handler {
-	h := NewLLMProvidersHandler(svc, zap.NewNop())
+	h := NewLLMProvidersHandler(svc, nil, nil, zap.NewNop())
 	r := chi.NewRouter()
 	r.Post("/api/integrations/llm/{provider}", h.Connect)
 	r.Post("/api/integrations/llm/{provider}/model", h.SetModel)

@@ -74,8 +74,9 @@ func buildAdminRouter(pool *db.Pool, cfg config.Config, logger *zap.Logger, poll
 	}
 	emailProvidersHandler := api.NewEmailProvidersHandler(emailService, emailProviderRepo, auditLog, logger)
 
-	llmService := llm.NewService(db.NewLLMProviderStore(db.NewLLMProviderRepository(pool)), llmProviderFactory, cfg.MasterKey, logger)
-	llmProvidersHandler := api.NewLLMProvidersHandler(llmService, logger)
+	llmProviderRepo := db.NewLLMProviderRepository(pool)
+	llmService := llm.NewService(db.NewLLMProviderStore(llmProviderRepo), llmProviderFactory, cfg.MasterKey, logger)
+	llmProvidersHandler := api.NewLLMProvidersHandler(llmService, llmProviderRepo, auditLog, logger)
 
 	// Per-device session row repository (user-sessions): every issued
 	// session token corresponds to a real sessions-table row, looked up
