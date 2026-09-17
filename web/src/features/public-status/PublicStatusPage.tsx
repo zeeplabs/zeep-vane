@@ -9,7 +9,9 @@ import { Tag } from "../../components/ui/Tag";
 import type { TagVariant } from "../../components/ui/Tag";
 import { Seg } from "../../components/ui/Seg";
 import type { SegOption } from "../../components/ui/Seg";
+import { Popover } from "../../components/ui/Popover";
 import type {
+  PublicDegradedEpisode,
   PublicHistoryBucket,
   PublicHourlyStatus,
   PublicIncidentEntry,
@@ -77,6 +79,33 @@ function hourlyTooltip(bucket: PublicHistoryBucket): string {
   const startHour = Number(get("hour")) % 24;
   const endHour = (startHour + 1) % 24;
   return `${day}/${month}, ${startHour}h–${endHour}h · ${hourlyLabel[bucket.status]}`;
+}
+
+// EPISODE_TIME_FORMATTER formats a degraded episode's start/end with
+// minute precision (unlike HOURLY_TOOLTIP_FORMATTER above, which only
+// needs hour precision for a whole bucket) - degraded-interval-analysis
+// episodes can start/end at any minute within a bucket.
+const EPISODE_TIME_FORMATTER = new Intl.DateTimeFormat("pt-BR", {
+  day: "2-digit",
+  month: "2-digit",
+  hour: "2-digit",
+  minute: "2-digit",
+  hour12: false,
+  timeZone: "America/Sao_Paulo",
+});
+
+// episodeTimeRange formats one degraded episode's start-end range
+// (degraded-interval-analysis DEGINT-13), always in America/Sao_Paulo -
+// same fixed-timezone convention as hourlyTooltip above. A null ends_at
+// (still open as of the response) renders as "em andamento" instead of a
+// fabricated end time.
+function episodeTimeRange(episode: PublicDegradedEpisode): string {
+  const starts = EPISODE_TIME_FORMATTER.format(new Date(episode.starts_at));
+  if (!episode.ends_at) {
+    return `${starts} – em andamento`;
+  }
+  const ends = EPISODE_TIME_FORMATTER.format(new Date(episode.ends_at));
+  return `${starts} – ${ends}`;
 }
 
 // RANGE_OPTIONS feeds the Seg range selector (public-status-time-range-
@@ -412,21 +441,59 @@ export function PublicStatusPage() {
               </div>
               <div className="flex flex-col gap-1.5">
                 <div className="flex gap-[2px]">
-                  {service.history.map((bucket, i) => (
-                    <div
-                      key={i}
-                      title={hourlyTooltip(bucket)}
-                      tabIndex={0}
-                      className="h-[24px] flex-1 rounded-[2px]"
-                      style={{
-                        background:
-                          bucket.status === "no_data"
-                            ? `color-mix(in oklch, var(${hourlyColorVar.no_data}) 40%, var(--color-surface))`
-                            : `var(${hourlyColorVar[bucket.status]})`,
-                      }}
-                      data-testid={`hourly-bar-${service.name}-${i}`}
-                    />
-                  ))}
+                  {service.history.map((bucket, i) => {
+                    const barStyle = {
+                      background:
+                        bucket.status === "no_data"
+                          ? `color-mix(in oklch, var(${hourlyColorVar.no_data}) 40%, var(--color-surface))`
+                          : `var(${hourlyColorVar[bucket.status]})`,
+                    };
+                    // Degraded-interval-analysis (DEGINT-13/14/15/16): only
+                    // a bucket carrying at least one episode becomes a real
+                    // click target (Popover); every other bucket keeps its
+                    // existing hover-title-only behavior unchanged.
+                    if (bucket.episodes && bucket.episodes.length > 0) {
+                      const episodes = bucket.episodes;
+                      return (
+                        <Popover
+                          key={i}
+                          trigger={
+                            <button
+                              type="button"
+                              title={hourlyTooltip(bucket)}
+                              className="h-[24px] flex-1 rounded-[2px] cursor-pointer border-0 p-0"
+                              style={barStyle}
+                              data-testid={`hourly-bar-${service.name}-${i}`}
+                            />
+                          }
+                        >
+                          <p className="m-0 mb-2 text-xs font-bold text-text">
+                            {t("publicStatus.episodePopover.heading")}
+                          </p>
+                          <div className="flex flex-col gap-2">
+                            {episodes.map((episode, j) => (
+                              <div key={j}>
+                                <p className="m-0 text-[11px] text-neutral-400">{episodeTimeRange(episode)}</p>
+                                <p className="m-0 text-xs text-text">
+                                  {episode.analysis ?? t("publicStatus.episodePopover.noReasonRecorded")}
+                                </p>
+                              </div>
+                            ))}
+                          </div>
+                        </Popover>
+                      );
+                    }
+                    return (
+                      <div
+                        key={i}
+                        title={hourlyTooltip(bucket)}
+                        tabIndex={0}
+                        className="h-[24px] flex-1 rounded-[2px]"
+                        style={barStyle}
+                        data-testid={`hourly-bar-${service.name}-${i}`}
+                      />
+                    );
+                  })}
                 </div>
                 <div className="flex justify-between text-[10.5px] text-neutral-500">
                   <span>{rangeAgoLabel[range]}</span>

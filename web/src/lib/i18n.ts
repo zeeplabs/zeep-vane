@@ -28,6 +28,10 @@ const resources = {
       },
       publicStatus: {
         loading: "Carregando…",
+        episodePopover: {
+          heading: "Degradação registrada",
+          noReasonRecorded: "Motivo não disponível para este período.",
+        },
       },
       emailProviders: {
         loading: "Carregando…",
@@ -608,6 +612,10 @@ const resources = {
       },
       publicStatus: {
         loading: "Loading…",
+        episodePopover: {
+          heading: "Degradation recorded",
+          noReasonRecorded: "No reason available for this period.",
+        },
       },
       emailProviders: {
         loading: "Loading…",
