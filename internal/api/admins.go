@@ -481,7 +481,7 @@ func (h *AdminsHandler) ResendInvite(w http.ResponseWriter, r *http.Request) {
 
 	emailSent := h.sendAdminInviteEmail(r, invite.ID, invite.Email, invite.Role, rawToken)
 
-	if err := h.audit.Record(r.Context(), actor.ID, invite.ID, "resent"); err != nil {
+	if err := h.audit.Record(r.Context(), actor.ID, invite.ID, invite.Email, "resent"); err != nil {
 		h.logger.Error("admins: failed to record resend audit entry", zap.Error(err))
 	}
 

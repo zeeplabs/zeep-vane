@@ -175,7 +175,7 @@ T15 → T16 → T17
 **Depends on**: T2
 **Requirement**: ACTIVITY-03
 
-**Done when**: `h.audit.Record(r.Context(), actor.ID, invite.ID, invite.Email, "resent")`; test asserts the label.
+**Done when**: [x] `h.audit.Record(r.Context(), actor.ID, invite.ID, invite.Email, "resent")`; test asserts the label.
 **Tests**: unit
 **Gate**: quick
 **Commit**: `feat(admins): record invite email as resent audit label`
