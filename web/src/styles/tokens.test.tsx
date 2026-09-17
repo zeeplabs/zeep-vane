@@ -54,10 +54,18 @@ describe("tokens.css", () => {
   // themes - OKLCH is no longer the format the spec mandates, so the
   // assertion is updated to match the new spec rather than the old
   // implementation it used to describe.
-  it("define os 3 tokens semânticos com os valores hex do handoff, idênticos nos dois temas", () => {
+  //
+  // --color-warning further deviates from the handoff's original #b45309
+  // (a burnt amber whose hue, ~26°, sits close enough to --color-critical's
+  // ~347° that the two were hard to tell apart in solid-fill contexts like
+  // the public status page's hourly bars - reported live against a real
+  // deploy). Shifted to #a16207 (~35° hue, same ballpark luminance so text
+  // contrast on both light and dark surfaces is unaffected), a clearer
+  // yellow/gold distinct from red without touching success/critical.
+  it("define os 3 tokens semânticos com os valores hex esperados, idênticos nos dois temas", () => {
     const css = compiledCss();
     expect(css).toMatch(/--color-success:\s*#1a9e6b/i);
-    expect(css).toMatch(/--color-warning:\s*#b45309/i);
+    expect(css).toMatch(/--color-warning:\s*#a16207/i);
     expect(css).toMatch(/--color-critical:\s*#d6395b/i);
   });
 
