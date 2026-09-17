@@ -201,4 +201,108 @@ describe("EmailProvidersPage", () => {
     await screen.findByText(/erro página 2/);
     expect(screen.getByText("Página 2 de 2")).toBeInTheDocument();
   });
+
+  // PROVDISC-07/08: Disconnect button + confirmation dialog. Seeds a
+  // connected sendgrid row through the real connect flow (not a
+  // server.use() override), consistent with the other seeded-state tests
+  // in this file.
+  describe("Disconnect", () => {
+    async function seedConnectedSendgrid() {
+      await apiFetch("/api/integrations/email/sendgrid", {
+        method: "POST",
+        body: JSON.stringify({
+          api_key: "sg-real-key",
+          from_email: "noreply@acme.example.com",
+          from_name: "Acme",
+        }),
+      });
+    }
+
+    it("clicar em Desconectar abre o diálogo de confirmação nomeando o provider, sem chamar a API", async () => {
+      await loginAs("owner@vane.app");
+      await seedConnectedSendgrid();
+      renderPage();
+
+      const card = await providerCard("SendGrid");
+      expect(await within(card).findByText("Conectado")).toBeInTheDocument();
+      await userEvent.click(within(card).getByRole("button", { name: "Desconectar" }));
+
+      const dialog = await screen.findByRole("dialog");
+      expect(within(dialog).getByText("Desconectar provedor")).toBeInTheDocument();
+      expect(within(dialog).getByText(/SendGrid/)).toBeInTheDocument();
+      // Still connected - no API call made yet (background hidden from the
+      // a11y tree by Radix while the modal is open, so assert via the DOM
+      // node directly rather than a hidden-respecting query).
+      expect(card.textContent).toContain("Conectado");
+    });
+
+    it("cancelar o diálogo não chama a API e mantém o provider conectado", async () => {
+      await loginAs("owner@vane.app");
+      await seedConnectedSendgrid();
+      renderPage();
+
+      const card = await providerCard("SendGrid");
+      await userEvent.click(within(card).getByRole("button", { name: "Desconectar" }));
+      const dialog = await screen.findByRole("dialog");
+
+      await userEvent.click(within(dialog).getByRole("button", { name: "Cancelar" }));
+
+      await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+      expect(within(card).getByText("Conectado")).toBeInTheDocument();
+    });
+
+    it("confirmar o diálogo chama a API e remove o provider da lista", async () => {
+      await loginAs("owner@vane.app");
+      await seedConnectedSendgrid();
+      renderPage();
+
+      const card = await providerCard("SendGrid");
+      await userEvent.click(within(card).getByRole("button", { name: "Desconectar" }));
+      const dialog = await screen.findByRole("dialog");
+
+      await userEvent.click(within(dialog).getByRole("button", { name: "Desconectar" }));
+
+      await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+      await waitFor(() => expect(within(card).getByText("Não conectado")).toBeInTheDocument());
+    });
+
+    it("desabilita o botão Desconectar do diálogo enquanto a mutação está pendente", async () => {
+      server.use(
+        http.delete("/api/integrations/email/:provider", async () => {
+          await delay("infinite");
+          return new HttpResponse(null, { status: 204 });
+        })
+      );
+      await loginAs("owner@vane.app");
+      await seedConnectedSendgrid();
+      renderPage();
+
+      const card = await providerCard("SendGrid");
+      await userEvent.click(within(card).getByRole("button", { name: "Desconectar" }));
+      const dialog = await screen.findByRole("dialog");
+      const confirmButton = within(dialog).getByRole("button", { name: "Desconectar" });
+      await userEvent.click(confirmButton);
+
+      await waitFor(() => expect(confirmButton).toBeDisabled());
+    });
+
+    it("mostra mensagem de erro e mantém o provider na lista quando a desconexão falha", async () => {
+      server.use(
+        http.delete("/api/integrations/email/:provider", () =>
+          HttpResponse.json({ error: "erro inesperado" }, { status: 500 })
+        )
+      );
+      await loginAs("owner@vane.app");
+      await seedConnectedSendgrid();
+      renderPage();
+
+      const card = await providerCard("SendGrid");
+      await userEvent.click(within(card).getByRole("button", { name: "Desconectar" }));
+      const dialog = await screen.findByRole("dialog");
+      await userEvent.click(within(dialog).getByRole("button", { name: "Desconectar" }));
+
+      expect(await within(card).findByRole("alert")).toHaveTextContent(/erro inesperado/);
+      expect(within(card).getByText("Conectado")).toBeInTheDocument();
+    });
+  });
 });

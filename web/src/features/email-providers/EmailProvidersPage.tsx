@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from "react";
 import { useTranslation } from "react-i18next";
 import { Card } from "../../components/ui/Card";
+import { Dialog } from "../../components/ui/Dialog";
 import { Field } from "../../components/ui/Field";
 import { Button } from "../../components/ui/Button";
 import { Pager } from "../../components/ui/Pager";
@@ -11,6 +12,7 @@ import { ApiError } from "../../lib/apiClient";
 import {
   useActivateEmailProvider,
   useConnectEmailProvider,
+  useDisconnectEmailProvider,
   useEmailProviders,
   type EmailProviderName,
   type EmailProviderStatus,
@@ -35,14 +37,17 @@ interface ProviderRowProps {
 }
 
 function ProviderRow({ id, label, status, isActive, canManage }: ProviderRowProps) {
+  const { t } = useTranslation();
   const connectMutation = useConnectEmailProvider(id);
   const activateMutation = useActivateEmailProvider();
+  const disconnectMutation = useDisconnectEmailProvider();
 
   const [formOpen, setFormOpen] = useState(false);
   const [apiKey, setApiKey] = useState("");
   const [fromEmail, setFromEmail] = useState("");
   const [fromName, setFromName] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [disconnectDialogOpen, setDisconnectDialogOpen] = useState(false);
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -66,6 +71,21 @@ function ProviderRow({ id, label, status, isActive, canManage }: ProviderRowProp
     } catch (err) {
       if (err instanceof ApiError) setError(err.message);
       else setError(`Não foi possível ativar o ${label}.`);
+    }
+  }
+
+  async function handleConfirmDisconnect() {
+    setError(null);
+    try {
+      await disconnectMutation.mutateAsync(id);
+    } catch (err) {
+      if (err instanceof ApiError) setError(err.message);
+      else setError(t("emailProviders.genericDisconnectError"));
+    } finally {
+      // Same posture as the Activate button (AGENTS.md-listed task note):
+      // the error surfaces in the row's existing inline alert, not inside
+      // the dialog, so the dialog closes regardless of outcome.
+      setDisconnectDialogOpen(false);
     }
   }
 
@@ -104,6 +124,17 @@ function ProviderRow({ id, label, status, isActive, canManage }: ProviderRowProp
           </Button>
         ) : null}
 
+        {canManage && status ? (
+          <Button
+            variant="secondary"
+            className="!border-critical !text-critical"
+            onClick={() => setDisconnectDialogOpen(true)}
+            disabled={disconnectMutation.isPending}
+          >
+            {t("emailProviders.disconnectButton")}
+          </Button>
+        ) : null}
+
         {canManage ? (
           <Button variant={status ? "secondary" : "primary"} onClick={() => setFormOpen((open) => !open)}>
             {status ? "Reconectar" : "Conectar"}
@@ -116,6 +147,29 @@ function ProviderRow({ id, label, status, isActive, canManage }: ProviderRowProp
           {error}
         </p>
       ) : null}
+
+      <Dialog
+        open={disconnectDialogOpen}
+        onOpenChange={setDisconnectDialogOpen}
+        title={t("emailProviders.disconnectDialog.title")}
+        description={t("emailProviders.disconnectDialog.body", { provider: label })}
+        footer={
+          <>
+            <Button type="button" variant="secondary" onClick={() => setDisconnectDialogOpen(false)}>
+              {t("emailProviders.disconnectDialog.cancel")}
+            </Button>
+            <Button
+              type="button"
+              variant="solid"
+              className="!border-critical !bg-critical hover:!bg-critical"
+              onClick={handleConfirmDisconnect}
+              disabled={disconnectMutation.isPending}
+            >
+              {t("emailProviders.disconnectDialog.confirm")}
+            </Button>
+          </>
+        }
+      />
 
       {formOpen && canManage ? (
         <>

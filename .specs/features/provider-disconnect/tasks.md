@@ -314,13 +314,13 @@ T12 → T13.
 - Skill: NONE
 
 **Done when**:
-- [ ] Clicking "Disconnect" opens a confirmation dialog naming the provider; no API call yet.
-- [ ] Cancel closes the dialog with no API call, provider still shown as connected.
-- [ ] Confirm calls `useDisconnectEmailProvider`'s mutation; on success the provider disappears from the list (query invalidation refetches).
-- [ ] Button is disabled while the mutation is pending (same pattern as `activateMutation.isPending`).
-- [ ] On mutation failure, an error message is shown and the provider list is left unchanged.
-- [ ] Test added/extended in `EmailProvidersPage.test.tsx`: open dialog, cancel (no call), confirm (call + row removed), pending disables button, error path shows message.
-- [ ] Gate check passes: quick (frontend)
+- [x] Clicking "Disconnect" opens a confirmation dialog naming the provider; no API call yet.
+- [x] Cancel closes the dialog with no API call, provider still shown as connected.
+- [x] Confirm calls `useDisconnectEmailProvider`'s mutation; on success the provider disappears from the list (query invalidation refetches).
+- [x] Button is disabled while the mutation is pending (same pattern as `activateMutation.isPending`).
+- [x] On mutation failure, an error message is shown and the provider list is left unchanged.
+- [x] Test added/extended in `EmailProvidersPage.test.tsx`: open dialog, cancel (no call), confirm (call + row removed), pending disables button, error path shows message.
+- [x] Gate check passes: quick (frontend)
 
 **Tests**: unit
 **Gate**: quick (frontend)

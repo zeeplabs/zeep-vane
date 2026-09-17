@@ -35,6 +35,14 @@ const resources = {
       },
       emailProviders: {
         loading: "Carregando…",
+        disconnectButton: "Desconectar",
+        genericDisconnectError: "Não foi possível desconectar o provedor.",
+        disconnectDialog: {
+          title: "Desconectar provedor",
+          body: "Tem certeza que deseja desconectar o {{provider}}? A chave de API armazenada será removida e não poderá ser recuperada - será necessário reconectar para usá-lo novamente.",
+          confirm: "Desconectar",
+          cancel: "Cancelar",
+        },
       },
       authLayout: {
         eyebrow: "Monitoramento em tempo real",
@@ -619,6 +627,14 @@ const resources = {
       },
       emailProviders: {
         loading: "Loading…",
+        disconnectButton: "Disconnect",
+        genericDisconnectError: "Could not disconnect the provider.",
+        disconnectDialog: {
+          title: "Disconnect provider",
+          body: "Are you sure you want to disconnect {{provider}}? The stored API key will be removed and cannot be recovered - you'll need to reconnect to use it again.",
+          confirm: "Disconnect",
+          cancel: "Cancel",
+        },
       },
       authLayout: {
         eyebrow: "Real-time monitoring",
