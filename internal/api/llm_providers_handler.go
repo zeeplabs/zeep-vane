@@ -26,6 +26,7 @@ type llmProviderService interface {
 	SetModel(ctx context.Context, provider, model string) error
 	Activate(ctx context.Context, provider string) error
 	List(ctx context.Context, page, pageSize int) (llm.ListResult, error)
+	Disconnect(ctx context.Context, provider string) error
 }
 
 // llmProviderRowGetter is the subset of *db.LLMProviderRepository
@@ -195,6 +196,41 @@ func (h *LLMProvidersHandler) Activate(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write([]byte(`{"status":"active"}`))
+}
+
+// Disconnect handles DELETE /api/integrations/llm/{provider}
+// (provider-disconnect PROVDISC-04/05/06). Mirrors
+// EmailProvidersHandler.Disconnect exactly: an unknown provider name
+// responds 404; otherwise always 204 No Content, whether or not the
+// provider had a connected row (idempotent delete, PROVDISC-05). The row
+// is fetched via h.rows.Get *before* calling svc.Disconnect (it won't
+// resolve afterward), so the audit entry's target_label is captured
+// beforehand. The llm_provider_disconnected audit entry is recorded only
+// when a row actually existed before the delete.
+func (h *LLMProvidersHandler) Disconnect(w http.ResponseWriter, r *http.Request) {
+	provider := chi.URLParam(r, "provider")
+	if !isKnownLLMProvider(provider) {
+		writeUnknownLLMProvider(w)
+		return
+	}
+
+	row, rowErr := h.rows.Get(r.Context(), provider)
+
+	if err := h.svc.Disconnect(r.Context(), provider); err != nil {
+		h.logger.Error("llm providers: failed to disconnect provider", zap.String("provider", provider), zap.Error(err))
+		writeInternalError(w)
+		return
+	}
+
+	if rowErr == nil {
+		if actor, ok := UserFromContext(r.Context()); ok {
+			if err := h.audit.Record(r.Context(), actor.ID, row.ID, llmProviderDisplayName(provider), "llm_provider_disconnected"); err != nil {
+				h.logger.Error("llm providers: failed to record audit entry", zap.Error(err))
+			}
+		}
+	}
+
+	w.WriteHeader(http.StatusNoContent)
 }
 
 type llmProviderResponse struct {

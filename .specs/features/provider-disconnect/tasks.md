@@ -222,10 +222,10 @@ T12 → T13.
 - Skill: NONE
 
 **Done when**:
-- [ ] `llmProviderService` interface gains `Disconnect`.
-- [ ] `Disconnect` handler mirrors T5's behavior for LLM providers.
-- [ ] Test added in `internal/api/llm_providers_handler_test.go` mirroring T5's four cases.
-- [ ] Gate check passes: quick
+- [x] `llmProviderService` interface gains `Disconnect`.
+- [x] `Disconnect` handler mirrors T5's behavior for LLM providers.
+- [x] Test added in `internal/api/llm_providers_handler_test.go` mirroring T5's four cases.
+- [x] Gate check passes: quick
 
 **Tests**: unit
 **Gate**: quick
