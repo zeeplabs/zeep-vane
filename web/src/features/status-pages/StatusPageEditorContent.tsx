@@ -69,6 +69,13 @@ function StatusPagePill({ page }: StatusPagePillProps) {
 
 export interface StatusPageEditorContentProps {
   page: StatusPage;
+  /** Controla o link "Pré-visualizar página pública". Default `true` -
+   * necessário pra tela legada `/status-pages/{id}` (`StatusPageDetail.tsx`,
+   * sem drawer de detalhe separado, esse é seu único jeito de pré-visualizar).
+   * `EditStatusPageDrawer` do novo layout passa `false`: o link mudou para o
+   * `StatusPageDetailDrawer` ("visualizar detalhes"), a pedido do Julio -
+   * antes só existia no drawer de edição, o que era o lugar errado. */
+  showPreviewLink?: boolean;
 }
 
 /** Corpo real de edição de uma status page (status, anexar domínio,
@@ -82,7 +89,7 @@ export interface StatusPageEditorContentProps {
  * `AddStatusPageDrawer`): sem `Card`, seções separadas por `border-t`,
  * rótulos em uppercase 10.5px, checklist de serviço com checkbox quadrado
  * em vez do checkbox nativo redondo. */
-export function StatusPageEditorContent({ page }: StatusPageEditorContentProps) {
+export function StatusPageEditorContent({ page, showPreviewLink = true }: StatusPageEditorContentProps) {
   // SPEC_DEVIATION: fixed page 1 for now - Pager UI for the domains
   // dropdown is out of scope here (this reads domains only to resolve a
   // hostname/build a select list); T14/T16 (Pager) is a later phase not
@@ -162,15 +169,17 @@ export function StatusPageEditorContent({ page }: StatusPageEditorContentProps) 
 
       {page.state === "tls_failed" ? <p className="text-[13px] text-text-muted">{page.tls_last_error}</p> : null}
 
-      <a
-        href={`/status/${page.id}`}
-        target="_blank"
-        rel="noreferrer"
-        className={`${buttonBaseClasses} ${buttonVariantClasses.secondary} w-fit`}
-      >
-        <MdOutlineOpenInNew size={14} aria-hidden="true" />
-        Pré-visualizar página pública
-      </a>
+      {showPreviewLink ? (
+        <a
+          href={`/status/${page.id}`}
+          target="_blank"
+          rel="noreferrer"
+          className={`${buttonBaseClasses} ${buttonVariantClasses.secondary} w-fit`}
+        >
+          <MdOutlineOpenInNew size={14} aria-hidden="true" />
+          Pré-visualizar página pública
+        </a>
+      ) : null}
 
       {/* Painel fixo de configuração de DNS/certificado (mirrors o fluxo de
           domínio customizado de plataformas como Vercel/Render) - permanece

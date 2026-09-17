@@ -1,5 +1,5 @@
 import * as RadixDialog from "@radix-ui/react-dialog";
-import { MdClose } from "react-icons/md";
+import { MdClose, MdOutlineOpenInNew } from "react-icons/md";
 import { buttonVariantClasses, buttonBaseClasses } from "../../components/ui/Button";
 import type { StatusPage } from "../../types/api";
 import { useDomains } from "../domains/hooks";
@@ -24,8 +24,11 @@ export interface StatusPageDetailDrawerProps {
 
 /** Drawer de detalhe (somente leitura) da aba Status Pages (spec.md
  * DSP-14/17): lista de serviços anexados, domínio vinculado, link "Ver
- * página pública" (ausente sem domínio) e "Editar página" que abre o
- * `EditStatusPageDrawer` (edição em drawer, mesmo modelo do de criação).
+ * página pública" (ausente sem domínio), "Pré-visualizar página pública"
+ * (endpoint de preview autenticado, funciona mesmo sem domínio anexado ou
+ * antes de publicar - AD-008; movido pra cá em 2026-09-17, a pedido do
+ * Julio: antes só existia no drawer de edição) e "Editar página" que abre
+ * o `EditStatusPageDrawer` (edição em drawer, mesmo modelo do de criação).
  *
  * Não usa o <Drawer> compartilhado, mesmo motivo de `DomainDetailDrawer`/
  * `ServiceDetailDrawer`: o mock não tem título/rodapé com borda, é um
@@ -115,6 +118,16 @@ export function StatusPageDetailDrawer({ page, onClose, onEdit }: StatusPageDeta
                 </div>
                 <div className="font-mono text-sm font-semibold text-text">{domain?.hostname ?? "—"}</div>
               </div>
+
+              <a
+                href={`/status/${page.id}`}
+                target="_blank"
+                rel="noreferrer"
+                className={`${buttonBaseClasses} ${buttonVariantClasses.secondary} w-fit`}
+              >
+                <MdOutlineOpenInNew size={14} aria-hidden="true" />
+                Pré-visualizar página pública
+              </a>
 
               <div className="flex gap-2.5">
                 {url ? (

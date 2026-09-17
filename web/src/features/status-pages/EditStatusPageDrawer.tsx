@@ -14,7 +14,13 @@ export interface EditStatusPageDrawerProps {
  * legal". Reusa o mesmo corpo de edição (`StatusPageEditorContent`) que a
  * tela legada usa, só troca o wrapper - todas as ações reais (anexar
  * domínio, verificar DNS/certificado, salvar serviços) continuam
- * idênticas, não é um formulário único com um botão de submit. */
+ * idênticas, não é um formulário único com um botão de submit.
+ *
+ * `showPreviewLink={false}`: o link "Pré-visualizar página pública" saiu
+ * daqui (2026-09-17, pedido do Julio) - ficava só no drawer de edição, e
+ * o lugar certo é o `StatusPageDetailDrawer` ("visualizar detalhes"). A
+ * tela legada `/status-pages/{id}` continua mostrando (default `true`),
+ * já que ela não tem um drawer de detalhe separado. */
 export function EditStatusPageDrawer({ pageId, onClose }: EditStatusPageDrawerProps) {
   const { data: page } = useStatusPage(pageId ?? "");
 
@@ -28,7 +34,7 @@ export function EditStatusPageDrawer({ pageId, onClose }: EditStatusPageDrawerPr
       description="Gerencie domínio, verificação e serviços exibidos nesta página."
       closeLabel="Fechar"
     >
-      {page ? <StatusPageEditorContent page={page} /> : null}
+      {page ? <StatusPageEditorContent page={page} showPreviewLink={false} /> : null}
     </Drawer>
   );
 }
