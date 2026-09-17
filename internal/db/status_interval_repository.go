@@ -29,6 +29,12 @@ type StatusInterval struct {
 	StartsAt             time.Time
 	LastSeenAt           time.Time
 	EndsAt               *time.Time
+	// Analysis is the AI-generated reason text for this specific interval
+	// (degraded-interval-analysis DEGINT-01), set only for a "degraded"
+	// interval whose enrichment goroutine finished successfully - nil
+	// otherwise (pending, failed, non-degraded interval, or an interval
+	// that predates this column).
+	Analysis *string
 }
 
 // StatusIntervalRepository accesses the status_intervals table.
@@ -57,10 +63,16 @@ func NewStatusIntervalRepository(pool *Pool) *StatusIntervalRepository {
 // ErrIntervalRaceLost (SHU-05) - the losing writer's error is surfaced to
 // the caller, never silently swallowed, and no duplicate open interval is
 // ever left behind.
-func (r *StatusIntervalRepository) OpenOrExtend(ctx context.Context, serviceID, status string, errorBudgetRemaining float64, at time.Time) error {
+// OpenOrExtend's second return value is the ID of the interval that ends up
+// open after this call - the one just inserted, or the existing one that
+// was extended (degraded-interval-analysis DEGINT-02). The caller uses this
+// to associate an asynchronously-generated analysis text with the exact
+// interval that triggered its generation (SetIntervalAnalysis), never
+// "whichever interval happens to be open" once that generation finishes.
+func (r *StatusIntervalRepository) OpenOrExtend(ctx context.Context, serviceID, status string, errorBudgetRemaining float64, at time.Time) (string, error) {
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
-		return fmt.Errorf("db: failed to begin open-or-extend transaction: %w", err)
+		return "", fmt.Errorf("db: failed to begin open-or-extend transaction: %w", err)
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
@@ -74,38 +86,61 @@ func (r *StatusIntervalRepository) OpenOrExtend(ctx context.Context, serviceID, 
 		if errors.Is(err, pgx.ErrNoRows) {
 			hasOpen = false
 		} else {
-			return fmt.Errorf("db: failed to lock open status interval: %w", err)
+			return "", fmt.Errorf("db: failed to lock open status interval: %w", err)
 		}
 	}
 
+	var intervalID string
 	switch {
 	case !hasOpen:
-		if err := insertOpenInterval(ctx, tx, serviceID, status, errorBudgetRemaining, at); err != nil {
-			return err
+		id, err := insertOpenInterval(ctx, tx, serviceID, status, errorBudgetRemaining, at)
+		if err != nil {
+			return "", err
 		}
+		intervalID = id
 	case open.Status == status:
 		if _, err := tx.Exec(ctx,
 			"UPDATE status_intervals SET error_budget_remaining = $1, last_seen_at = $2 WHERE id = $3",
 			errorBudgetRemaining, at, open.ID,
 		); err != nil {
-			return fmt.Errorf("db: failed to extend open status interval: %w", err)
+			return "", fmt.Errorf("db: failed to extend open status interval: %w", err)
 		}
+		intervalID = open.ID
 	default:
 		if _, err := tx.Exec(ctx,
 			"UPDATE status_intervals SET ends_at = $1 WHERE id = $2",
 			at, open.ID,
 		); err != nil {
-			return fmt.Errorf("db: failed to close open status interval: %w", err)
+			return "", fmt.Errorf("db: failed to close open status interval: %w", err)
 		}
-		if err := insertOpenInterval(ctx, tx, serviceID, status, errorBudgetRemaining, at); err != nil {
-			return err
+		id, err := insertOpenInterval(ctx, tx, serviceID, status, errorBudgetRemaining, at)
+		if err != nil {
+			return "", err
 		}
+		intervalID = id
 	}
 
 	if err := tx.Commit(ctx); err != nil {
-		return fmt.Errorf("db: failed to commit open-or-extend transaction: %w", err)
+		return "", fmt.Errorf("db: failed to commit open-or-extend transaction: %w", err)
 	}
 
+	return intervalID, nil
+}
+
+// SetIntervalAnalysis persists analysis (degraded-interval-analysis
+// DEGINT-04) against intervalID unconditionally - it does not check
+// whether the interval is still open, since the enrichment goroutine that
+// calls this may finish well after that interval has closed (DEGINT-05).
+// An intervalID matching zero rows (the interval was somehow deleted,
+// which nothing in this codebase does) is not an error - same best-effort
+// posture as every other post-hoc write in this codebase.
+func (r *StatusIntervalRepository) SetIntervalAnalysis(ctx context.Context, intervalID, analysis string) error {
+	if _, err := r.pool.Exec(ctx,
+		"UPDATE status_intervals SET analysis = $1 WHERE id = $2",
+		analysis, intervalID,
+	); err != nil {
+		return fmt.Errorf("db: failed to set status interval analysis: %w", err)
+	}
 	return nil
 }
 
@@ -115,7 +150,7 @@ func (r *StatusIntervalRepository) OpenOrExtend(ctx context.Context, serviceID, 
 // with only closed rows) simply has no entry in the returned map.
 func (r *StatusIntervalRepository) OpenIntervalsByService(ctx context.Context) (map[string]StatusInterval, error) {
 	rows, err := r.pool.Query(ctx,
-		"SELECT id, service_id, status, error_budget_remaining, starts_at, last_seen_at, ends_at FROM status_intervals WHERE ends_at IS NULL",
+		"SELECT id, service_id, status, error_budget_remaining, starts_at, last_seen_at, ends_at, analysis FROM status_intervals WHERE ends_at IS NULL",
 	)
 	if err != nil {
 		return nil, fmt.Errorf("db: failed to query open status intervals: %w", err)
@@ -125,7 +160,7 @@ func (r *StatusIntervalRepository) OpenIntervalsByService(ctx context.Context) (
 	open := map[string]StatusInterval{}
 	for rows.Next() {
 		var si StatusInterval
-		if err := rows.Scan(&si.ID, &si.ServiceID, &si.Status, &si.ErrorBudgetRemaining, &si.StartsAt, &si.LastSeenAt, &si.EndsAt); err != nil {
+		if err := rows.Scan(&si.ID, &si.ServiceID, &si.Status, &si.ErrorBudgetRemaining, &si.StartsAt, &si.LastSeenAt, &si.EndsAt, &si.Analysis); err != nil {
 			return nil, fmt.Errorf("db: failed to scan open status interval: %w", err)
 		}
 		open[si.ServiceID] = si
@@ -148,7 +183,7 @@ func (r *StatusIntervalRepository) ListOverlapping(ctx context.Context, serviceI
 	}
 
 	rows, err := r.pool.Query(ctx,
-		"SELECT id, service_id, status, error_budget_remaining, starts_at, last_seen_at, ends_at FROM status_intervals "+
+		"SELECT id, service_id, status, error_budget_remaining, starts_at, last_seen_at, ends_at, analysis FROM status_intervals "+
 			"WHERE service_id = ANY($1) AND starts_at < $2 AND (ends_at IS NULL OR ends_at > $3) "+
 			"ORDER BY service_id, starts_at ASC",
 		serviceIDs, now, windowStart,
@@ -161,7 +196,7 @@ func (r *StatusIntervalRepository) ListOverlapping(ctx context.Context, serviceI
 	intervals := []StatusInterval{}
 	for rows.Next() {
 		var si StatusInterval
-		if err := rows.Scan(&si.ID, &si.ServiceID, &si.Status, &si.ErrorBudgetRemaining, &si.StartsAt, &si.LastSeenAt, &si.EndsAt); err != nil {
+		if err := rows.Scan(&si.ID, &si.ServiceID, &si.Status, &si.ErrorBudgetRemaining, &si.StartsAt, &si.LastSeenAt, &si.EndsAt, &si.Analysis); err != nil {
 			return nil, fmt.Errorf("db: failed to scan overlapping status interval: %w", err)
 		}
 		intervals = append(intervals, si)
@@ -206,16 +241,18 @@ func (r *StatusIntervalRepository) CountUpdatedSince(ctx context.Context, since 
 // insertOpenInterval inserts a new open interval (starts_at == last_seen_at
 // == at, ends_at NULL) for serviceID within tx, translating a unique
 // partial index violation into ErrIntervalRaceLost.
-func insertOpenInterval(ctx context.Context, tx pgx.Tx, serviceID, status string, errorBudgetRemaining float64, at time.Time) error {
-	if _, err := tx.Exec(ctx,
-		"INSERT INTO status_intervals (service_id, status, error_budget_remaining, starts_at, last_seen_at) VALUES ($1, $2, $3, $4, $4)",
+func insertOpenInterval(ctx context.Context, tx pgx.Tx, serviceID, status string, errorBudgetRemaining float64, at time.Time) (string, error) {
+	var id string
+	row := tx.QueryRow(ctx,
+		"INSERT INTO status_intervals (service_id, status, error_budget_remaining, starts_at, last_seen_at) VALUES ($1, $2, $3, $4, $4) RETURNING id",
 		serviceID, status, errorBudgetRemaining, at,
-	); err != nil {
+	)
+	if err := row.Scan(&id); err != nil {
 		var pgErr *pgconn.PgError
 		if errors.As(err, &pgErr) && pgErr.Code == pgerrcode.UniqueViolation {
-			return fmt.Errorf("db: failed to open status interval: %w", ErrIntervalRaceLost)
+			return "", fmt.Errorf("db: failed to open status interval: %w", ErrIntervalRaceLost)
 		}
-		return fmt.Errorf("db: failed to insert open status interval: %w", err)
+		return "", fmt.Errorf("db: failed to insert open status interval: %w", err)
 	}
-	return nil
+	return id, nil
 }
