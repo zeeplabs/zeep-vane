@@ -216,7 +216,17 @@ func TestPollService_BreachStreak_ResetByAnIntermediateOKWindow(t *testing.T) {
 	}
 }
 
-func TestPollService_FirstPollLowVolume_StaysNotConfigured(t *testing.T) {
+// TestPollService_FirstPollLowVolume_ClassifiesInsteadOfStayingNotConfigured
+// is the SLOTRAF-01 root-fix test: a service still on the "not_configured"
+// seed gets a real first classification even when RequestCount is far below
+// minRecentWindowRequests, since any real reading beats a placeholder
+// backed by zero data. Target is left at its zero value here so the
+// pre-existing Target<=0 branch (classifyByState) is what actually
+// classifies - that branch already ignored the traffic floor before this
+// fix (spec.md Assumptions), so this test's outcome changes only because
+// the low-volume case above it no longer intercepts a not_configured
+// service first.
+func TestPollService_FirstPollLowVolume_ClassifiesInsteadOfStayingNotConfigured(t *testing.T) {
 	provider := &fakeProvider{
 		errs:   []error{nil},
 		status: datadog.SLOStatus{State: "ok", RequestCount: 1},
@@ -229,8 +239,52 @@ func TestPollService_FirstPollLowVolume_StaysNotConfigured(t *testing.T) {
 		t.Fatalf("pollService() returned unexpected error: %v", err)
 	}
 
-	if len(statuses.calls) != 1 || statuses.calls[0].status != "not_configured" {
-		t.Errorf("UpdateStatus calls = %+v, want carry-forward of %q, no special-cased default", statuses.calls, "not_configured")
+	if len(statuses.calls) != 1 || statuses.calls[0].status != "operational" {
+		t.Errorf("UpdateStatus calls = %+v, want %q (first-ever classification, no more carry-forward of the not_configured seed)", statuses.calls, "operational")
+	}
+}
+
+// TestPollService_FirstPollLowVolume_UsableTarget_ClassifiesViaBreachBound
+// covers the same SLOTRAF-01 scenario through the breachBound branch
+// instead of classifyByState: a usable Target means the window-rescaled
+// comparison runs, not the Target<=0 fallback.
+func TestPollService_FirstPollLowVolume_UsableTarget_ClassifiesViaBreachBound(t *testing.T) {
+	provider := &fakeProvider{
+		errs:   []error{nil},
+		status: datadog.SLOStatus{State: "ok", SLI: 99.9, Target: 99.5, RequestCount: 3},
+	}
+	intervals := &fakeIntervalWriter{}
+	statuses := &fakeStatusUpdater{}
+	p := newTestPoller(provider, time.Hour, intervals, statuses)
+
+	if err := p.pollService(t.Context(), db.Service{ID: "svc-1", SLOID: "slo-1", CurrentStatus: "not_configured"}); err != nil {
+		t.Fatalf("pollService() returned unexpected error: %v", err)
+	}
+
+	if len(statuses.calls) != 1 || statuses.calls[0].status != "operational" {
+		t.Errorf("UpdateStatus calls = %+v, want %q (usable target, healthy SLI, first-ever classification despite low RequestCount)", statuses.calls, "operational")
+	}
+}
+
+// TestPollService_LowVolumeAfterFirstClassification_StillCarriesForward is
+// the SLOTRAF-02 regression guard: once a service has left not_configured,
+// the traffic floor applies exactly as before - a low-volume cycle carries
+// the already-classified status forward, it does not reclassify.
+func TestPollService_LowVolumeAfterFirstClassification_StillCarriesForward(t *testing.T) {
+	provider := &fakeProvider{
+		errs:   []error{nil},
+		status: datadog.SLOStatus{State: "breached", RequestCount: 1},
+	}
+	intervals := &fakeIntervalWriter{}
+	statuses := &fakeStatusUpdater{}
+	p := newTestPoller(provider, time.Hour, intervals, statuses)
+
+	if err := p.pollService(t.Context(), db.Service{ID: "svc-1", SLOID: "slo-1", CurrentStatus: "operational"}); err != nil {
+		t.Fatalf("pollService() returned unexpected error: %v", err)
+	}
+
+	if len(statuses.calls) != 1 || statuses.calls[0].status != "operational" {
+		t.Errorf("UpdateStatus calls = %+v, want carry-forward of %q, no reclassification once already classified", statuses.calls, "operational")
 	}
 }
 

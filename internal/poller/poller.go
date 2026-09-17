@@ -320,10 +320,16 @@ func (p *Poller) pollService(ctx context.Context, svc db.Service) error {
 
 	var current string
 	switch {
-	case status.RequestCount < minRecentWindowRequests:
+	case status.RequestCount < minRecentWindowRequests && svc.CurrentStatus != "not_configured":
 		// Too little traffic in this window to trust a recompute - carry the
 		// previous status forward rather than let a handful of requests
-		// flip the public page (AD-019).
+		// flip the public page (AD-019). This floor is skipped for a
+		// service's first-ever classification (still "not_configured"):
+		// any real reading beats a placeholder backed by zero data
+		// (SLOTRAF-01) - a low-traffic service would otherwise carry
+		// "not_configured" forward forever, indistinguishable from one
+		// with no slo_id at all. Once classified, this floor applies
+		// normally to every subsequent cycle (SLOTRAF-02).
 		current = svc.CurrentStatus
 	case status.Target <= 0:
 		// The response carried no usable threshold, so no honest
