@@ -107,19 +107,19 @@
 
 | Requirement ID | Story | Phase | Status |
 | --- | --- | --- | --- |
-| ACTIVITY-01 | P1: Persist a human-readable label with every audit entry | Specified | Implementing |
-| ACTIVITY-02 | P1: Persist a human-readable label with every audit entry | Specified | Implementing |
-| ACTIVITY-03 | P1: Persist a human-readable label with every audit entry | Specified | Complete |
-| ACTIVITY-04 | P1: Persist a human-readable label with every audit entry | Specified | Complete |
-| ACTIVITY-05 | P1: Persist a human-readable label with every audit entry | Specified | Implementing |
-| ACTIVITY-06 | P1: Read endpoint for recent activity | Specified | Complete |
-| ACTIVITY-07 | P1: Read endpoint for recent activity | Specified | Complete |
-| ACTIVITY-08 | P1: Read endpoint for recent activity | Specified | Complete |
-| ACTIVITY-09 | P1: Wire the Overview card to real data | Specified | Implementing |
-| ACTIVITY-10 | P1: Wire the Overview card to real data | Specified | Implementing |
-| ACTIVITY-11 | P1: Wire the Overview card to real data | Specified | Implementing |
-| ACTIVITY-12 | P1: Wire the Overview card to real data | Specified | Implementing |
-| ACTIVITY-13 | P1: Wire the Overview card to real data | Specified | Implementing |
+| ACTIVITY-01 | P1: Persist a human-readable label with every audit entry | Specified | Verified |
+| ACTIVITY-02 | P1: Persist a human-readable label with every audit entry | Specified | Verified |
+| ACTIVITY-03 | P1: Persist a human-readable label with every audit entry | Specified | Verified |
+| ACTIVITY-04 | P1: Persist a human-readable label with every audit entry | Specified | Verified |
+| ACTIVITY-05 | P1: Persist a human-readable label with every audit entry | Specified | Verified |
+| ACTIVITY-06 | P1: Read endpoint for recent activity | Specified | Verified |
+| ACTIVITY-07 | P1: Read endpoint for recent activity | Specified | Verified |
+| ACTIVITY-08 | P1: Read endpoint for recent activity | Specified | Verified |
+| ACTIVITY-09 | P1: Wire the Overview card to real data | Specified | Verified |
+| ACTIVITY-10 | P1: Wire the Overview card to real data | Specified | Verified |
+| ACTIVITY-11 | P1: Wire the Overview card to real data | Specified | Verified |
+| ACTIVITY-12 | P1: Wire the Overview card to real data | Specified | Verified |
+| ACTIVITY-13 | P1: Wire the Overview card to real data | Specified | Verified |
 
 **Coverage:** 13 total, 13 mapped to tasks (migration + audit package + 8 call sites + repository + handler + frontend) ✅
 
