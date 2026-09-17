@@ -15,6 +15,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.1] — 2026-09-17
+
+### Changed
+
+- AI-generated public status page text (degraded-service tooltips, incident descriptions, incident closing comments) is now written in Portuguese with non-technical wording, instead of English text that assumed a technical reader. The prompt now explicitly avoids jargon (SLO, SLI, error budget) in favor of plain-language impact descriptions.
+
 ## [0.4.0] — 2026-09-17
 
 ### Added
