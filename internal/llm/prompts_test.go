@@ -58,7 +58,7 @@ func TestBuildClosingCommentPrompt_IncludesServiceNameAndSLOState(t *testing.T) 
 // TestPromptBuilders_SystemPromptsAreShortFactualNonAlarmist confirms all
 // three builders share the same instruction, per design's requirement
 // that the system prompt instructs a short (1-2 sentence), factual,
-// non-alarmist output.
+// non-alarmist, non-technical output in Portuguese.
 func TestPromptBuilders_SystemPromptsAreShortFactualNonAlarmist(t *testing.T) {
 	in := testAnalysisInput()
 	builders := []func(AnalysisInput) (string, string){
@@ -67,8 +67,8 @@ func TestPromptBuilders_SystemPromptsAreShortFactualNonAlarmist(t *testing.T) {
 
 	for _, build := range builders {
 		systemPrompt, _ := build(in)
-		if !containsAll(systemPrompt, "1-2 sentence", "factual", "non-alarmist") {
-			t.Errorf("systemPrompt = %q, want it to instruct a short, factual, non-alarmist response", systemPrompt)
+		if !containsAll(systemPrompt, "1-2 frases", "factual", "não alarmista", "sem conhecimento técnico") {
+			t.Errorf("systemPrompt = %q, want it to instruct a short, factual, non-alarmist, non-technical response in Portuguese", systemPrompt)
 		}
 	}
 }
