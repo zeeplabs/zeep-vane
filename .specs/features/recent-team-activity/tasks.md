@@ -306,11 +306,11 @@ T15 → T16 → T17
 **Requirement**: ACTIVITY-06, ACTIVITY-08
 
 **Done when**:
-- [ ] `ListRecent` query per design.md: `LEFT JOIN users`, `ORDER BY created_at DESC LIMIT $1`, `actor_deleted` computed from `u.id IS NULL`.
-- [ ] Integration test: seeds rows across two tenants, confirms only the caller's tenant's rows return (RLS) — spec AC8.
-- [ ] Integration test: seeds >20 rows, confirms `ListRecent(ctx, 20)` returns exactly 20 in `created_at DESC` order.
-- [ ] Integration test: seeds a row whose actor's user was then hard-deleted, confirms `actor_deleted: true` and empty `actor_name`.
-- [ ] Integration test: seeds a row with `target_label = NULL` (pre-feature style), confirms it comes back as a Go `nil`/empty, not an error.
+- [x] `ListRecent` query per design.md: `LEFT JOIN users`, `ORDER BY created_at DESC LIMIT $1`, `actor_deleted` computed from `u.id IS NULL`.
+- [x] Integration test: seeds rows across two tenants, confirms only the caller's tenant's rows return (RLS) — spec AC8. Uses a dedicated non-superuser test role (`auditLogRLSTestRole`, mirroring `rls_test.go`'s established pattern) since the disposable container's bootstrap user is a superuser and bypasses RLS unconditionally (`TestAuditLogRepository_ListRecent_TenantIsolation`).
+- [x] Integration test: seeds >20 rows, confirms `ListRecent(ctx, 20)` returns exactly 20 in `created_at DESC` order (`TestAuditLogRepository_ListRecent_CapsAtLimitOrderedByCreatedAtDesc`).
+- [x] Integration test: seeds a row whose actor's user was then hard-deleted, confirms `actor_deleted: true` and empty `actor_name` (`TestAuditLogRepository_ListRecent_ActorHardDeleted`).
+- [x] Integration test: seeds a row with `target_label = NULL` (pre-feature style), confirms it comes back as a Go `nil`/empty, not an error (`TestAuditLogRepository_ListRecent_NullTargetLabel`).
 
 **Tests**: integration
 **Gate**: full
