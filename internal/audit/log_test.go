@@ -63,15 +63,16 @@ func TestLog_Record_InsertsRowWithTimestamp(t *testing.T) {
 	})
 
 	before := time.Now().Add(-1 * time.Second)
-	if err := log.Record(ctx, actor.ID, target.ID, "invited"); err != nil {
+	if err := log.Record(ctx, actor.ID, target.ID, "target@example.com", "invited"); err != nil {
 		t.Fatalf("Record() returned unexpected error: %v", err)
 	}
 
 	var gotActorID, gotTargetID, gotAction string
+	var gotTargetLabel *string
 	var gotCreatedAt time.Time
 	row := pool.QueryRow(ctx,
-		"SELECT actor_id, target_id, action, created_at FROM admin_audit_log WHERE actor_id = $1", actor.ID)
-	if err := row.Scan(&gotActorID, &gotTargetID, &gotAction, &gotCreatedAt); err != nil {
+		"SELECT actor_id, target_id, target_label, action, created_at FROM admin_audit_log WHERE actor_id = $1", actor.ID)
+	if err := row.Scan(&gotActorID, &gotTargetID, &gotTargetLabel, &gotAction, &gotCreatedAt); err != nil {
 		t.Fatalf("querying inserted row returned unexpected error: %v", err)
 	}
 
@@ -81,11 +82,43 @@ func TestLog_Record_InsertsRowWithTimestamp(t *testing.T) {
 	if gotTargetID != target.ID {
 		t.Errorf("target_id = %q, want %q", gotTargetID, target.ID)
 	}
+	if gotTargetLabel == nil || *gotTargetLabel != "target@example.com" {
+		t.Errorf("target_label = %v, want %q", gotTargetLabel, "target@example.com")
+	}
 	if gotAction != "invited" {
 		t.Errorf("action = %q, want %q", gotAction, "invited")
 	}
 	if gotCreatedAt.Before(before) {
 		t.Errorf("created_at = %v, want a timestamp at or after %v", gotCreatedAt, before)
+	}
+}
+
+// TestLog_Record_EmptyTargetLabelPersistsAsNull confirms Record's
+// nilIfEmpty-style conversion: an empty targetLabel (a call site with no
+// label available) is stored as SQL NULL, not the literal empty string -
+// spec.md's Assumptions table treats NULL as the honest "unknown" state,
+// distinct from an empty string.
+func TestLog_Record_EmptyTargetLabelPersistsAsNull(t *testing.T) {
+	log, pool := newLogForTest(t)
+	ctx := context.Background()
+	actor := createTestAdminForAudit(t, pool)
+	target := createTestAdminForAudit(t, pool)
+	t.Cleanup(func() {
+		_, _ = pool.Exec(ctx, "DELETE FROM admin_audit_log WHERE actor_id = $1", actor.ID)
+		_, _ = pool.Exec(ctx, "DELETE FROM users WHERE id IN ($1, $2)", actor.ID, target.ID)
+	})
+
+	if err := log.Record(ctx, actor.ID, target.ID, "", "invited"); err != nil {
+		t.Fatalf("Record() returned unexpected error: %v", err)
+	}
+
+	var gotTargetLabel *string
+	row := pool.QueryRow(ctx, "SELECT target_label FROM admin_audit_log WHERE actor_id = $1", actor.ID)
+	if err := row.Scan(&gotTargetLabel); err != nil {
+		t.Fatalf("querying inserted row returned unexpected error: %v", err)
+	}
+	if gotTargetLabel != nil {
+		t.Errorf("target_label = %q, want NULL for an empty targetLabel", *gotTargetLabel)
 	}
 }
 
@@ -98,7 +131,7 @@ func TestLog_Record_SurvivesReferencedAdminRemoval(t *testing.T) {
 		_, _ = pool.Exec(ctx, "DELETE FROM admin_audit_log WHERE actor_id = $1", actor.ID)
 	})
 
-	if err := log.Record(ctx, actor.ID, target.ID, "removed"); err != nil {
+	if err := log.Record(ctx, actor.ID, target.ID, "target admin", "removed"); err != nil {
 		t.Fatalf("Record() returned unexpected error: %v", err)
 	}
 

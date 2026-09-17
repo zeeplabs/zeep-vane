@@ -123,10 +123,10 @@ T15 → T16 → T17
 **Requirement**: ACTIVITY-02
 
 **Done when**:
-- [ ] `Record(ctx, actorID, targetID, targetLabel, action string) error` — updated signature.
-- [ ] `targetLabel == ""` inserts SQL `NULL` for `target_label`, matching this codebase's existing `nilIfEmpty`-style convention for optional text columns.
-- [ ] Non-empty `targetLabel` persists verbatim.
-- [ ] Unit test (in-memory/fake pool or the package's existing test double — check `log_test.go`'s current approach) covers both branches.
+- [x] `Record(ctx, actorID, targetID, targetLabel, action string) error` — updated signature.
+- [x] `targetLabel == ""` inserts SQL `NULL` for `target_label`, matching this codebase's existing `nilIfEmpty`-style convention for optional text columns.
+- [x] Non-empty `targetLabel` persists verbatim.
+- [x] Unit test (in-memory/fake pool or the package's existing test double — check `log_test.go`'s current approach) covers both branches.
 
 **Tests**: unit
 **Gate**: quick (Go, non-DB) — plus a one-off integration check that the real column accepts both cases (fold into T1's DB-touching gate if convenient, or verify manually; the package's own unit test does not require a live DB per its existing pattern — check `log_test.go` first)

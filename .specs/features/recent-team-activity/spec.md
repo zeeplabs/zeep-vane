@@ -108,7 +108,7 @@
 | Requirement ID | Story | Phase | Status |
 | --- | --- | --- | --- |
 | ACTIVITY-01 | P1: Persist a human-readable label with every audit entry | Specified | Implementing |
-| ACTIVITY-02 | P1: Persist a human-readable label with every audit entry | Specified | Pending |
+| ACTIVITY-02 | P1: Persist a human-readable label with every audit entry | Specified | Implementing |
 | ACTIVITY-03 | P1: Persist a human-readable label with every audit entry | Specified | Pending |
 | ACTIVITY-04 | P1: Persist a human-readable label with every audit entry | Specified | Pending |
 | ACTIVITY-05 | P1: Persist a human-readable label with every audit entry | Specified | Pending |
