@@ -15,6 +15,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] — 2026-09-17
+
+### Added
+
+- **Service rename and delete**: monitored services can now be renamed inline and soft-deleted from the service detail drawer, with poller goroutines torn down cleanly on delete and delete/attach races serialized against each other.
+- **Loading skeletons**: every list/detail screen (Usuários, Domínios, Status Pages, Serviços, Incidentes, Visão geral, Poller, Notificações, Sessões, Configurações, Integrações — AI settings and email providers) now shows a real loading skeleton instead of a "Carregando…" text placeholder, via a new shared `Skeleton` primitive.
+- **Recent team activity**: the Visão geral overview's "Atividade recente do time" card now shows real data from the admin audit log (`GET /api/audit-log`) instead of a hardcoded mock. The audit log gained a `target_label` snapshot column so entries survive the deletion of their target (a removed admin, a deleted domain or status page).
+- A copy-to-clipboard button next to the DNS CNAME target value in the status page editor's domain verification panel.
+
+### Changed
+
+- The public-preview link for a status page moved from the edit drawer to the view-details drawer.
+- The "Salvar serviços" button in the status page editor now uses the `solid` (filled) button variant instead of the outline `primary` variant.
+- "Planos & Faturamento" is now hidden from the sidebar in self-hosted deployment mode — it only shows in `saas` mode.
+
+### Fixed
+
+- The `Skeleton` component no longer follows the OS's `prefers-color-scheme` (Tailwind `dark:` variant) — it now follows the app's own light/dark theme toggle like every other themed color.
+- The poller manager now retries starting the poller on every leader heartbeat instead of only once, closing a gap where a late Datadog-integration connect could leave a service stuck in `not_configured`.
+- Minor style fixes: auth layout no longer overrides the form panel background with a hardcoded color-mix; add-service drawer no longer uses a hardcoded dark hover on SLO options; the service list's STATUS badge no longer overlaps the service name column.
+
 ## [0.3.0] — 2026-09-16
 
 ### Added
