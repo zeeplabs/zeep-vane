@@ -83,21 +83,21 @@
 
 | Requirement ID | Story | Phase | Status |
 | --- | --- | --- | --- |
-| AUDITEXP-01 | P1: Ações de recurso compartilhado aparecem na Atividade recente do time | - | Implementing |
-| AUDITEXP-02 | P1: Ações de recurso compartilhado aparecem na Atividade recente do time | - | Implementing |
-| AUDITEXP-03 | P1: Ações de recurso compartilhado aparecem na Atividade recente do time | - | Implementing |
-| AUDITEXP-04 | P1: Ações de recurso compartilhado aparecem na Atividade recente do time | - | Implementing |
-| AUDITEXP-05 | P1: Ações de recurso compartilhado aparecem na Atividade recente do time | - | Implementing |
-| AUDITEXP-06 | P1: Ações de recurso compartilhado aparecem na Atividade recente do time | - | Implementing |
-| AUDITEXP-07 | P1: Ações de recurso compartilhado aparecem na Atividade recente do time | - | Implementing |
-| AUDITEXP-08 | P1: Ações de recurso compartilhado aparecem na Atividade recente do time | - | Implementing |
-| AUDITEXP-09 | P1: Ações de recurso compartilhado aparecem na Atividade recente do time | - | Implementing |
-| AUDITEXP-10 | P1: Ações de recurso compartilhado aparecem na Atividade recente do time | - | Implementing |
-| AUDITEXP-11 | P1: Ações de recurso compartilhado aparecem na Atividade recente do time | - | Implementing |
-| AUDITEXP-12 | P1: Ações de recurso compartilhado aparecem na Atividade recente do time | - | Implementing |
-| AUDITEXP-13 | P1: Ações de recurso compartilhado aparecem na Atividade recente do time | - | Implementing |
-| AUDITEXP-14 | P1: Ações de recurso compartilhado aparecem na Atividade recente do time | - | Implementing |
-| AUDITEXP-15 | P1: Ações de recurso compartilhado aparecem na Atividade recente do time | - | Implementing |
-| AUDITEXP-16 | P1: Ações de recurso compartilhado aparecem na Atividade recente do time | - | Implementing |
-| AUDITEXP-17 | P1: Ações de recurso compartilhado aparecem na Atividade recente do time | - | Implementing |
-| AUDITEXP-18 | P1: Ações de recurso compartilhado aparecem na Atividade recente do time | - | Implementing |
+| AUDITEXP-01 | P1: Ações de recurso compartilhado aparecem na Atividade recente do time | - | Verified |
+| AUDITEXP-02 | P1: Ações de recurso compartilhado aparecem na Atividade recente do time | - | Verified |
+| AUDITEXP-03 | P1: Ações de recurso compartilhado aparecem na Atividade recente do time | - | Verified |
+| AUDITEXP-04 | P1: Ações de recurso compartilhado aparecem na Atividade recente do time | - | Verified |
+| AUDITEXP-05 | P1: Ações de recurso compartilhado aparecem na Atividade recente do time | - | Verified |
+| AUDITEXP-06 | P1: Ações de recurso compartilhado aparecem na Atividade recente do time | - | Verified |
+| AUDITEXP-07 | P1: Ações de recurso compartilhado aparecem na Atividade recente do time | - | Verified |
+| AUDITEXP-08 | P1: Ações de recurso compartilhado aparecem na Atividade recente do time | - | Verified |
+| AUDITEXP-09 | P1: Ações de recurso compartilhado aparecem na Atividade recente do time | - | Verified |
+| AUDITEXP-10 | P1: Ações de recurso compartilhado aparecem na Atividade recente do time | - | Verified |
+| AUDITEXP-11 | P1: Ações de recurso compartilhado aparecem na Atividade recente do time | - | Verified |
+| AUDITEXP-12 | P1: Ações de recurso compartilhado aparecem na Atividade recente do time | - | Verified |
+| AUDITEXP-13 | P1: Ações de recurso compartilhado aparecem na Atividade recente do time | - | Verified |
+| AUDITEXP-14 | P1: Ações de recurso compartilhado aparecem na Atividade recente do time | - | Verified |
+| AUDITEXP-15 | P1: Ações de recurso compartilhado aparecem na Atividade recente do time | - | Verified |
+| AUDITEXP-16 | P1: Ações de recurso compartilhado aparecem na Atividade recente do time | - | Verified |
+| AUDITEXP-17 | P1: Ações de recurso compartilhado aparecem na Atividade recente do time | - | Verified |
+| AUDITEXP-18 | P1: Ações de recurso compartilhado aparecem na Atividade recente do time | - | Verified |
