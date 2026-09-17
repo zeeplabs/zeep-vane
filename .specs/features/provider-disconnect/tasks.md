@@ -152,9 +152,9 @@ T12 → T13.
 - Skill: NONE
 
 **Done when**:
-- [ ] `llm.Service.Disconnect` mirrors T3.
-- [ ] Test added in `internal/llm/service_test.go` mirroring T3's cases.
-- [ ] Gate check passes: quick
+- [x] `llm.Service.Disconnect` mirrors T3.
+- [x] Test added in `internal/llm/service_test.go` mirroring T3's cases.
+- [x] Gate check passes: quick
 
 **Tests**: unit
 **Gate**: quick

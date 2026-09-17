@@ -25,10 +25,12 @@ type fakeStore struct {
 	markInvalidErr          error
 	markCheckedErr          error
 	markTransientFailureErr error
+	deleteErr               error
 
 	markInvalidCalls          []string // provider
 	markCheckedCalls          []string // provider
 	markTransientFailureCalls []string // provider
+	deleteCalls               []string // provider
 }
 
 func newFakeStore() *fakeStore {
@@ -138,6 +140,22 @@ func (f *fakeStore) MarkTransientFailure(_ context.Context, provider, lastError 
 	f.markTransientFailureCalls = append(f.markTransientFailureCalls, provider)
 	if row, ok := f.rows[provider]; ok {
 		row.LastError = &lastError
+	}
+	return nil
+}
+
+// DeleteProvider mirrors the real repository's idempotent delete, including
+// the FK's ON DELETE SET NULL behavior on llm_settings.active_provider - so
+// a test asserting Disconnect clears the active provider through this fake
+// exercises the same observable behavior as the real database constraint.
+func (f *fakeStore) DeleteProvider(_ context.Context, provider string) error {
+	if f.deleteErr != nil {
+		return f.deleteErr
+	}
+	f.deleteCalls = append(f.deleteCalls, provider)
+	delete(f.rows, provider)
+	if f.activeProvider == provider {
+		f.activeProvider = ""
 	}
 	return nil
 }
@@ -360,5 +378,62 @@ func TestList_NeverLeaksKeyMaterial(t *testing.T) {
 	}
 	if result.Providers[0].Provider != "openai" || result.Providers[0].Model != "gpt-4o" {
 		t.Errorf("Providers[0] = %+v, want provider=openai model=gpt-4o", result.Providers[0])
+	}
+}
+
+// TestDisconnect_ConnectedProvider_RemovesRow covers provider-disconnect
+// PROVDISC-04 AC1: Disconnect deletes the provider's row.
+func TestDisconnect_ConnectedProvider_RemovesRow(t *testing.T) {
+	store := newFakeStore()
+	factory := func(provider, apiKey, model string) (Provider, error) { return &fakeProvider{}, nil }
+	svc := newTestService(store, factory)
+
+	if err := svc.Connect(t.Context(), "openai", "real-api-key", ""); err != nil {
+		t.Fatalf("Connect() returned unexpected error: %v", err)
+	}
+
+	if err := svc.Disconnect(t.Context(), "openai"); err != nil {
+		t.Fatalf("Disconnect() returned unexpected error: %v", err)
+	}
+	if _, ok := store.rows["openai"]; ok {
+		t.Error("Disconnect() did not remove the provider row")
+	}
+	if len(store.deleteCalls) != 1 || store.deleteCalls[0] != "openai" {
+		t.Errorf("deleteCalls = %v, want [\"openai\"] (Disconnect must delegate to the repository)", store.deleteCalls)
+	}
+}
+
+// TestDisconnect_ActiveProvider_ClearsActiveProvider covers PROVDISC-04
+// AC2: disconnecting the active provider leaves active_provider cleared -
+// via the repository, not a manual Service-level clear.
+func TestDisconnect_ActiveProvider_ClearsActiveProvider(t *testing.T) {
+	store := newFakeStore()
+	factory := func(provider, apiKey, model string) (Provider, error) { return &fakeProvider{}, nil }
+	svc := newTestService(store, factory)
+
+	if err := svc.Connect(t.Context(), "openai", "real-api-key", ""); err != nil {
+		t.Fatalf("Connect() returned unexpected error: %v", err)
+	}
+	if err := svc.Activate(t.Context(), "openai"); err != nil {
+		t.Fatalf("Activate() returned unexpected error: %v", err)
+	}
+
+	if err := svc.Disconnect(t.Context(), "openai"); err != nil {
+		t.Fatalf("Disconnect() returned unexpected error: %v", err)
+	}
+	if store.activeProvider != "" {
+		t.Errorf("activeProvider = %q, want \"\" after disconnecting the active provider", store.activeProvider)
+	}
+}
+
+// TestDisconnect_NeverConnected_NoError covers PROVDISC-05 AC4: disconnecting
+// a provider with no row is a no-op success, not an error.
+func TestDisconnect_NeverConnected_NoError(t *testing.T) {
+	store := newFakeStore()
+	factory := func(provider, apiKey, model string) (Provider, error) { return &fakeProvider{}, nil }
+	svc := newTestService(store, factory)
+
+	if err := svc.Disconnect(t.Context(), "openai"); err != nil {
+		t.Fatalf("Disconnect() on never-connected provider returned unexpected error: %v, want nil (idempotent)", err)
 	}
 }
