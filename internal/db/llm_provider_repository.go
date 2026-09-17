@@ -172,6 +172,21 @@ func (r *LLMProviderRepository) SetActiveProvider(ctx context.Context, provider 
 	return nil
 }
 
+// DeleteProvider removes provider's row from llm_providers
+// (provider-disconnect PROVDISC-04/05), mirroring
+// EmailProviderRepository.DeleteProvider: idempotent (no error when zero
+// rows matched), and llm_settings.active_provider is cleared to NULL
+// automatically by the existing FK when the deleted row was active - no
+// separate step here.
+func (r *LLMProviderRepository) DeleteProvider(ctx context.Context, provider string) error {
+	_, err := r.pool.Exec(ctx, "DELETE FROM llm_providers WHERE provider = $1", provider)
+	if err != nil {
+		return fmt.Errorf("db: failed to delete llm provider: %w", err)
+	}
+
+	return nil
+}
+
 // UpdateModel updates only provider's model column, leaving status and
 // every other column untouched (AI-04) - email providers have no model
 // concept, so this method has no EmailProviderRepository equivalent.
@@ -322,4 +337,8 @@ func (a *llmProviderStoreAdapter) MarkChecked(ctx context.Context, provider stri
 
 func (a *llmProviderStoreAdapter) MarkTransientFailure(ctx context.Context, provider, lastError string) error {
 	return a.repo.MarkTransientFailure(ctx, provider, lastError)
+}
+
+func (a *llmProviderStoreAdapter) DeleteProvider(ctx context.Context, provider string) error {
+	return a.repo.DeleteProvider(ctx, provider)
 }

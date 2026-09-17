@@ -107,9 +107,9 @@ T12 → T13.
 - Skill: NONE
 
 **Done when**:
-- [ ] `DeleteProvider` mirrors T1's behavior for `llm_providers`.
-- [ ] Test added in `internal/db/llm_provider_repository_test.go` mirroring T1's three cases.
-- [ ] Gate check passes: quick
+- [x] `DeleteProvider` mirrors T1's behavior for `llm_providers`.
+- [x] Test added in `internal/db/llm_provider_repository_test.go` mirroring T1's three cases.
+- [x] Gate check passes: quick
 
 **Tests**: unit (real Postgres)
 **Gate**: quick
