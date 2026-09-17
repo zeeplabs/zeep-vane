@@ -3,7 +3,7 @@
   "promote_threshold": 2,
   "window_days": 45,
   "quarantine_threshold": 2,
-  "next_id": 63,
+  "next_id": 65,
   "lessons": [
     {
       "id": "L-001",
@@ -1120,6 +1120,42 @@
       ],
       "created": "2026-09-17T20:32:50Z",
       "last_seen": "2026-09-17T20:32:50Z"
+    },
+    {
+      "id": "L-063",
+      "key": "ac_gap::when migrating tested behavior hooks mutations error handling from an orphaned component into a live one port the failure path tests too not just the happy path deleting the old test file drops that coverage if it isn t carried forward",
+      "text": "When migrating tested behavior (hooks, mutations, error handling) from an orphaned component into a live one, port the failure-path tests too, not just the happy path - deleting the old test file drops that coverage if it isn't carried forward.",
+      "signal": "ac_gap",
+      "scope": "frontend",
+      "status": "candidate",
+      "features": [
+        "integrations-card-actions"
+      ],
+      "recurrence": 1,
+      "harmful": 0,
+      "evidence": [
+        "spec.md P1 Disconnect story AC5 / IntegrationsPage.test.tsx (no failure-path test) (frontend)"
+      ],
+      "created": "2026-09-17T20:57:40Z",
+      "last_seen": "2026-09-17T20:57:40Z"
+    },
+    {
+      "id": "L-064",
+      "key": "ac_gap::every if the call fails then show error leave state unchanged acceptance criterion needs its own msw error response test do not assume the happy path test for the same action also proves the failure posture",
+      "text": "Every 'IF the call fails THEN show error, leave state unchanged' acceptance criterion needs its own MSW-error-response test - do not assume the happy-path test for the same action also proves the failure posture.",
+      "signal": "ac_gap",
+      "scope": "frontend",
+      "status": "candidate",
+      "features": [
+        "integrations-card-actions"
+      ],
+      "recurrence": 1,
+      "harmful": 0,
+      "evidence": [
+        "spec.md P1 Activate story AC4 / IntegrationsPage.test.tsx (no failure-path test) (frontend)"
+      ],
+      "created": "2026-09-17T20:57:40Z",
+      "last_seen": "2026-09-17T20:57:40Z"
     }
   ]
 }
