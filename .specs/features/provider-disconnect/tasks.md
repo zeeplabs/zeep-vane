@@ -129,10 +129,10 @@ T12 → T13.
 - Skill: NONE
 
 **Done when**:
-- [ ] `EmailProviderStore` interface (in `service.go`) gains `DeleteProvider(ctx context.Context, provider string) error`.
-- [ ] `Service.Disconnect` calls it and returns any error wrapped, no special-casing for "not found" (idempotent per spec).
-- [ ] Test added in `internal/email/service_test.go`: happy path, provider was active (no error, delegates to repo), never-connected (no error).
-- [ ] Gate check passes: quick
+- [x] `EmailProviderStore` interface (in `service.go`) gains `DeleteProvider(ctx context.Context, provider string) error`.
+- [x] `Service.Disconnect` calls it and returns any error wrapped, no special-casing for "not found" (idempotent per spec).
+- [x] Test added in `internal/email/service_test.go`: happy path, provider was active (no error, delegates to repo), never-connected (no error).
+- [x] Gate check passes: quick
 
 **Tests**: unit - 1:1 to PROVDISC-01/02 branches
 **Gate**: quick

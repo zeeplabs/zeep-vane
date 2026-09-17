@@ -23,6 +23,9 @@ type fakeStore struct {
 	listErr        error
 	getActiveErr   error
 	setActiveErr   error
+	deleteErr      error
+
+	deleteCalls []string // provider
 }
 
 func newFakeStore() *fakeStore {
@@ -87,6 +90,23 @@ func (f *fakeStore) SetActiveProvider(_ context.Context, provider string) error 
 		return f.setActiveErr
 	}
 	f.activeProvider = provider
+	return nil
+}
+
+// DeleteProvider mirrors the real repository's idempotent delete, including
+// the FK's ON DELETE SET NULL behavior on email_settings.active_provider -
+// so a test asserting Disconnect clears the active provider through this
+// fake actually exercises the same observable behavior as the real
+// database constraint, not just a call being made.
+func (f *fakeStore) DeleteProvider(_ context.Context, provider string) error {
+	if f.deleteErr != nil {
+		return f.deleteErr
+	}
+	f.deleteCalls = append(f.deleteCalls, provider)
+	delete(f.rows, provider)
+	if f.activeProvider == provider {
+		f.activeProvider = ""
+	}
 	return nil
 }
 
@@ -866,5 +886,59 @@ func TestSendWeeklyDigest_EmptyTenantName_SubjectIsGeneric(t *testing.T) {
 	}
 	if sentProvider.lastMessage.Subject != "Weekly digest" {
 		t.Errorf("Message.Subject = %q, want %q for an empty tenant name", sentProvider.lastMessage.Subject, "Weekly digest")
+	}
+}
+
+// TestDisconnect_ConnectedProvider_RemovesRow covers provider-disconnect
+// PROVDISC-01 AC1: Disconnect deletes the provider's row.
+func TestDisconnect_ConnectedProvider_RemovesRow(t *testing.T) {
+	store := newFakeStore()
+	svc := newTestService(t, store, func(provider, apiKey string) (Provider, error) { return &fakeProvider{}, nil })
+
+	if err := svc.Connect(t.Context(), "sendgrid", "api-key", "owner@example.com", "Owner"); err != nil {
+		t.Fatalf("Connect() returned unexpected error: %v", err)
+	}
+
+	if err := svc.Disconnect(t.Context(), "sendgrid"); err != nil {
+		t.Fatalf("Disconnect() returned unexpected error: %v", err)
+	}
+	if _, ok := store.rows["sendgrid"]; ok {
+		t.Error("Disconnect() did not remove the provider row")
+	}
+	if len(store.deleteCalls) != 1 || store.deleteCalls[0] != "sendgrid" {
+		t.Errorf("deleteCalls = %v, want [\"sendgrid\"] (Disconnect must delegate to the repository)", store.deleteCalls)
+	}
+}
+
+// TestDisconnect_ActiveProvider_ClearsActiveProvider covers PROVDISC-01
+// AC2: disconnecting the active provider leaves active_provider cleared -
+// via the repository, not a manual Service-level clear.
+func TestDisconnect_ActiveProvider_ClearsActiveProvider(t *testing.T) {
+	store := newFakeStore()
+	svc := newTestService(t, store, func(provider, apiKey string) (Provider, error) { return &fakeProvider{}, nil })
+
+	if err := svc.Connect(t.Context(), "sendgrid", "api-key", "owner@example.com", "Owner"); err != nil {
+		t.Fatalf("Connect() returned unexpected error: %v", err)
+	}
+	if err := svc.Activate(t.Context(), "sendgrid"); err != nil {
+		t.Fatalf("Activate() returned unexpected error: %v", err)
+	}
+
+	if err := svc.Disconnect(t.Context(), "sendgrid"); err != nil {
+		t.Fatalf("Disconnect() returned unexpected error: %v", err)
+	}
+	if store.activeProvider != "" {
+		t.Errorf("activeProvider = %q, want \"\" after disconnecting the active provider", store.activeProvider)
+	}
+}
+
+// TestDisconnect_NeverConnected_NoError covers PROVDISC-02 AC5: disconnecting
+// a provider with no row is a no-op success, not an error.
+func TestDisconnect_NeverConnected_NoError(t *testing.T) {
+	store := newFakeStore()
+	svc := newTestService(t, store, func(provider, apiKey string) (Provider, error) { return &fakeProvider{}, nil })
+
+	if err := svc.Disconnect(t.Context(), "sendgrid"); err != nil {
+		t.Fatalf("Disconnect() on never-connected provider returned unexpected error: %v, want nil (idempotent)", err)
 	}
 }
