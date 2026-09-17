@@ -307,6 +307,41 @@ func TestDeleteDomain_Existing_204(t *testing.T) {
 	}
 }
 
+// TestDeleteDomain_Existing_RecordsDomainDeletedAuditLabelSurvivingDelete
+// covers ACTIVITY-03/ACTIVITY-04: the domain_deleted audit entry's
+// target_label must be the hostname captured before Delete runs - by the
+// time this assertion runs, the domains row is already gone, so a label
+// fetched after the delete would always be empty.
+func TestDeleteDomain_Existing_RecordsDomainDeletedAuditLabelSurvivingDelete(t *testing.T) {
+	r, pool, admins := newDomainsRouter(t)
+	token := issueTestSessionToken(t, admins)
+	hostname := uniqueHostname(t)
+
+	createRec := postCreateDomain(t, r, token, hostname)
+	if createRec.Code != http.StatusCreated {
+		t.Fatalf("setup create status = %d, want %d", createRec.Code, http.StatusCreated)
+	}
+	var created domainResponse
+	if err := json.Unmarshal(createRec.Body.Bytes(), &created); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+
+	rec := deleteDomain(t, r, token, created.ID)
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusNoContent, rec.Body.String())
+	}
+
+	var gotTargetLabel *string
+	row := pool.QueryRow(context.Background(),
+		"SELECT target_label FROM admin_audit_log WHERE target_id = $1 AND action = 'domain_deleted'", created.ID)
+	if err := row.Scan(&gotTargetLabel); err != nil {
+		t.Fatalf("Scan() returned unexpected error: %v", err)
+	}
+	if gotTargetLabel == nil || *gotTargetLabel != hostname {
+		t.Errorf("admin_audit_log target_label = %v, want %q (must survive the delete above)", gotTargetLabel, hostname)
+	}
+}
+
 func TestDeleteDomain_NotFound_404(t *testing.T) {
 	r, _, admins := newDomainsRouter(t)
 	token := issueTestSessionToken(t, admins)

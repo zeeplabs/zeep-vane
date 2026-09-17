@@ -329,6 +329,14 @@ const domainInUseBody = `{"error":"domain is still attached to a status page"}`
 func (h *DomainsHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 
+	// Captured before Delete runs (spec AC4/ACTIVITY-04): once the delete
+	// succeeds the domains row is gone, so a hostname fetched afterward
+	// would always be empty.
+	var hostname string
+	if domain, err := h.domains.GetByID(r.Context(), id); err == nil {
+		hostname = domain.Hostname
+	}
+
 	if err := h.domains.Delete(r.Context(), id); err != nil {
 		if errors.Is(err, db.ErrNotFound) {
 			http.NotFound(w, r)
@@ -346,7 +354,7 @@ func (h *DomainsHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if actor, ok := UserFromContext(r.Context()); ok {
-		if err := h.audit.Record(r.Context(), actor.ID, id, "domain_deleted"); err != nil {
+		if err := h.audit.Record(r.Context(), actor.ID, id, hostname, "domain_deleted"); err != nil {
 			h.logger.Error("domains: failed to record audit entry", zap.Error(err))
 		}
 	}

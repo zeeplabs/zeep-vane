@@ -256,7 +256,10 @@ T15 → T16 → T17
 **Depends on**: T2
 **Requirement**: ACTIVITY-03, ACTIVITY-04
 
-**Done when**: Domain string captured before the delete call runs (same ordering concern as T8); `Record(..., domainString, "domain_deleted")`; test covers the label surviving the delete.
+**Done when**:
+- [x] Domain hostname captured (via `h.domains.GetByID`) before the delete call runs (same ordering concern as T8).
+- [x] `h.audit.Record(r.Context(), actor.ID, id, hostname, "domain_deleted")`.
+- [x] Test covers the label surviving the delete (`TestDeleteDomain_Existing_RecordsDomainDeletedAuditLabelSurvivingDelete`).
 **Tests**: unit
 **Gate**: quick
 **Commit**: `feat(domains): record domain string as domain_deleted audit label`
