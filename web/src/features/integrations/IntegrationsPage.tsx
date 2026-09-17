@@ -131,28 +131,30 @@ const EMAIL_PROVIDER_META: Record<
 function EmailProviderCard({
   id,
   status,
+  isActive,
   canManage,
   isError,
   onConnect,
 }: {
   id: EmailProviderName;
   status?: EmailProviderStatus;
+  isActive: boolean;
   canManage: boolean;
   isError: boolean;
   onConnect: () => void;
 }) {
-  const meta = EMAIL_PROVIDER_META[id];
+  const providerMeta = EMAIL_PROVIDER_META[id];
   const connected = status?.status === "connected";
   const kind: IntegrationStatusKind = connected ? "connected" : "not_connected";
 
   return (
     <IntegrationCard
-      icon={meta.icon}
-      bannerBg={meta.bannerBg}
+      icon={providerMeta.icon}
+      bannerBg={providerMeta.bannerBg}
       status={kind}
-      title={meta.title}
-      description={meta.description}
-      meta={isError ? "Não foi possível carregar" : connected ? "Verificado" : "Não configurado"}
+      title={providerMeta.title}
+      description={providerMeta.description}
+      meta={isError ? "Não foi possível carregar" : connected ? (isActive ? "Ativo" : "Verificado") : "Não configurado"}
       action={isError ? null : actionButton(canManage, connected, onConnect)}
     />
   );
@@ -190,6 +192,7 @@ export function IntegrationsPage() {
         <EmailProviderCard
           id="resend"
           status={byProvider.get("resend")}
+          isActive={emailData?.active_provider === "resend"}
           canManage={canManage}
           isError={emailIsError}
           onConnect={() => setEmailDrawerProvider("resend")}
@@ -197,6 +200,7 @@ export function IntegrationsPage() {
         <EmailProviderCard
           id="sendgrid"
           status={byProvider.get("sendgrid")}
+          isActive={emailData?.active_provider === "sendgrid"}
           canManage={canManage}
           isError={emailIsError}
           onConnect={() => setEmailDrawerProvider("sendgrid")}

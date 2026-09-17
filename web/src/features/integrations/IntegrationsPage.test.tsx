@@ -157,6 +157,26 @@ describe("IntegrationsPage", () => {
     expect(await screen.findByRole("heading", { name: "Conectar LLM Provider" })).toBeInTheDocument();
   });
 
+  it("provedor de e-mail ativo mostra meta 'Ativo'; conectado-mas-inativo mostra 'Verificado' (INTGCARD-02)", async () => {
+    await loginAs("owner@vane.app");
+    await apiFetch("/api/integrations/email/resend", {
+      method: "POST",
+      body: JSON.stringify({ api_key: "re-key", from_email: "a@b.com", from_name: "A" }),
+    });
+    await apiFetch("/api/integrations/email/sendgrid", {
+      method: "POST",
+      body: JSON.stringify({ api_key: "sg-key", from_email: "a@b.com", from_name: "A" }),
+    });
+    await apiFetch("/api/integrations/email/resend/activate", { method: "POST" });
+    renderPage();
+
+    const resendCard = await cardOf("Resend");
+    expect(await within(resendCard).findByText("Ativo")).toBeInTheDocument();
+
+    const sendgridCard = await cardOf("SendGrid");
+    expect(await within(sendgridCard).findByText("Verificado")).toBeInTheDocument();
+  });
+
   it("erro ao carregar Datadog fica isolado - LLM e e-mail continuam normais", async () => {
     server.use(http.get("/api/integrations/datadog/status", () => HttpResponse.json({ error: "boom" }, { status: 500 })));
     await loginAs("owner@vane.app");
