@@ -290,11 +290,11 @@ T12 → T13.
 - Skill: NONE
 
 **Done when**:
-- [ ] `useDisconnectEmailProvider()` returns a mutation whose `mutationFn` calls `apiFetch` with `method: "DELETE"` against the correct URL, no request body.
-- [ ] `onSuccess` invalidates `["integrations", "email"]`.
-- [ ] MSW handler added/updated for the DELETE route (204, no body).
-- [ ] Test added in `web/src/features/email-providers/hooks.test.ts`: mutation calls correct method/URL, query invalidated on success.
-- [ ] Gate check passes: quick (frontend)
+- [x] `useDisconnectEmailProvider()` returns a mutation whose `mutationFn` calls `apiFetch` with `method: "DELETE"` against the correct URL, no request body.
+- [x] `onSuccess` invalidates `["integrations", "email"]`.
+- [x] MSW handler added/updated for the DELETE route (204, no body).
+- [x] Test added in `web/src/features/email-providers/hooks.test.ts`: mutation calls correct method/URL, query invalidated on success.
+- [x] Gate check passes: quick (frontend)
 
 **Tests**: unit
 **Gate**: quick (frontend)

@@ -1376,6 +1376,24 @@ export const handlers = [
     return HttpResponse.json({ status: "active" });
   }),
 
+  // DELETE /api/integrations/email/:provider (PROVDISC-01/02) - mirrors
+  // EmailProvidersHandler.Disconnect: unknown provider name 404, otherwise
+  // 204 No Content with no body regardless of whether a row existed
+  // (idempotent delete). Clears emailActiveProvider when the deleted
+  // provider was active, mirroring the real FK's ON DELETE SET NULL.
+  http.delete("/api/integrations/email/:provider", ({ params }) => {
+    if (!sessionAdminId) return HttpResponse.json({ error: "unauthorized" }, { status: 401 });
+    const provider = params.provider as string;
+    if (provider !== "sendgrid" && provider !== "resend") {
+      return HttpResponse.json({ error: "unknown email provider" }, { status: 404 });
+    }
+    emailProvidersState = emailProvidersState.filter((p) => p.provider !== provider);
+    if (emailActiveProvider === provider) {
+      emailActiveProvider = null;
+    }
+    return new HttpResponse(null, { status: 204 });
+  }),
+
   // GET /api/integrations/llm (AI-01..06) - mirrors LLMProvidersHandler.List:
   // never a 404, empty list + null active_provider when nothing has ever
   // been connected. Same shape/pagination convention as

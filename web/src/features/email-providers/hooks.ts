@@ -76,3 +76,20 @@ export function useActivateEmailProvider() {
     },
   });
 }
+
+// The real backend's DELETE /api/integrations/email/{provider} responds
+// 204 No Content with no body, whether or not a row existed (idempotent
+// delete, PROVDISC-01/02) - apiFetch<void> resolves to undefined for an
+// empty response body.
+export function useDisconnectEmailProvider() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (provider: EmailProviderName) =>
+      apiFetch<void>(`/api/integrations/email/${provider}`, {
+        method: "DELETE",
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["integrations", "email"] });
+    },
+  });
+}

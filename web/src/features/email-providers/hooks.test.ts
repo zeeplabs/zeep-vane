@@ -2,7 +2,13 @@ import { describe, it, expect } from "vitest";
 import { renderHook, waitFor } from "@testing-library/react";
 import { TestQueryProvider } from "../../test/queryClient";
 import { apiFetch, ApiError } from "../../lib/apiClient";
-import { useConnectEmailProvider, useActivateEmailProvider, useEmailProviders } from "./hooks";
+import {
+  useConnectEmailProvider,
+  useActivateEmailProvider,
+  useDisconnectEmailProvider,
+  useEmailProviders,
+  type EmailProviderName,
+} from "./hooks";
 
 async function loginAsOwner() {
   await apiFetch("/api/auth/login", {
@@ -77,5 +83,51 @@ describe("email-providers hooks", () => {
     const { result } = renderHook(() => useActivateEmailProvider(), { wrapper: TestQueryProvider });
 
     await expect(result.current.mutateAsync("sendgrid")).rejects.toBeInstanceOf(ApiError);
+  });
+
+  // PROVDISC-07/08: mirrors useActivateEmailProvider's own coverage - a
+  // DELETE with no body, invalidating the same ["integrations", "email"]
+  // query key on success so the disconnected row disappears from the list.
+  it("useDisconnectEmailProvider desconecta um provider conectado e invalida a lista", async () => {
+    await loginAsOwner();
+    const { result } = renderHook(
+      () => ({
+        list: useEmailProviders(1),
+        connect: useConnectEmailProvider("sendgrid"),
+        disconnect: useDisconnectEmailProvider(),
+      }),
+      { wrapper: TestQueryProvider }
+    );
+    await waitFor(() => expect(result.current.list.isSuccess).toBe(true));
+    await result.current.connect.mutateAsync({
+      api_key: "sg-real-key",
+      from_email: "noreply@acme.example.com",
+      from_name: "Acme",
+    });
+    await waitFor(() =>
+      expect(result.current.list.data?.providers.some((p) => p.provider === "sendgrid")).toBe(true)
+    );
+
+    await result.current.disconnect.mutateAsync("sendgrid");
+
+    await waitFor(() =>
+      expect(result.current.list.data?.providers.some((p) => p.provider === "sendgrid")).toBe(false)
+    );
+  });
+
+  it("useDisconnectEmailProvider é idempotente - desconectar um provider nunca conectado ainda resolve com sucesso", async () => {
+    await loginAsOwner();
+    const { result } = renderHook(() => useDisconnectEmailProvider(), { wrapper: TestQueryProvider });
+
+    await expect(result.current.mutateAsync("resend")).resolves.toBeUndefined();
+  });
+
+  it("useDisconnectEmailProvider propaga ApiError 404 para um nome de provider desconhecido", async () => {
+    await loginAsOwner();
+    const { result } = renderHook(() => useDisconnectEmailProvider(), { wrapper: TestQueryProvider });
+
+    await expect(
+      result.current.mutateAsync("mailgun" as EmailProviderName)
+    ).rejects.toBeInstanceOf(ApiError);
   });
 });
