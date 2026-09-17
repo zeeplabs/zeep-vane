@@ -160,11 +160,109 @@ describe("AISettings", () => {
       "genericConnectError",
       "genericActivateError",
       "genericModelError",
+      "disconnectButton",
+      "genericDisconnectError",
+      "disconnectDialog.title",
+      "disconnectDialog.body",
+      "disconnectDialog.confirm",
+      "disconnectDialog.cancel",
     ];
     for (const lng of ["pt", "en"]) {
       for (const key of keys) {
         expect(i18n.getResource(lng, "translation", `aiSettings.${key}`)).toBeTruthy();
       }
     }
+  });
+
+  // PROVDISC-07/08: Disconnect button + confirmation dialog, mirroring
+  // EmailProvidersPage's own coverage for the same feature.
+  describe("Disconnect", () => {
+    async function seedConnectedOpenai() {
+      await apiFetch("/api/integrations/llm/openai", {
+        method: "POST",
+        body: JSON.stringify({ api_key: "sk-real-key" }),
+      });
+    }
+
+    it("clicar em Desconectar abre o diálogo de confirmação nomeando o provider, sem chamar a API", async () => {
+      await loginAs("owner@vane.app");
+      await seedConnectedOpenai();
+      renderPage();
+
+      expect(await screen.findByText("Conectado")).toBeInTheDocument();
+      await userEvent.click(screen.getByRole("button", { name: "Desconectar" }));
+
+      const dialog = await screen.findByRole("dialog");
+      expect(within(dialog).getByText("Desconectar provedor")).toBeInTheDocument();
+      expect(within(dialog).getByText(/OpenAI/)).toBeInTheDocument();
+      expect(screen.getByText("Conectado")).toBeInTheDocument();
+    });
+
+    it("cancelar o diálogo não chama a API e mantém o provider conectado", async () => {
+      await loginAs("owner@vane.app");
+      await seedConnectedOpenai();
+      renderPage();
+
+      await userEvent.click(await screen.findByRole("button", { name: "Desconectar" }));
+      const dialog = await screen.findByRole("dialog");
+
+      await userEvent.click(within(dialog).getByRole("button", { name: "Cancelar" }));
+
+      await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+      expect(screen.getByText("Conectado")).toBeInTheDocument();
+    });
+
+    it("confirmar o diálogo chama a API e remove o provider da lista", async () => {
+      await loginAs("owner@vane.app");
+      await seedConnectedOpenai();
+      renderPage();
+
+      await userEvent.click(await screen.findByRole("button", { name: "Desconectar" }));
+      const dialog = await screen.findByRole("dialog");
+
+      await userEvent.click(within(dialog).getByRole("button", { name: "Desconectar" }));
+
+      await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+      await waitFor(() =>
+        expect(screen.getAllByText("Nenhuma integração conectada").length).toBeGreaterThan(0)
+      );
+    });
+
+    it("desabilita o botão Desconectar do diálogo enquanto a mutação está pendente", async () => {
+      server.use(
+        http.delete("/api/integrations/llm/:provider", async () => {
+          await delay("infinite");
+          return new HttpResponse(null, { status: 204 });
+        })
+      );
+      await loginAs("owner@vane.app");
+      await seedConnectedOpenai();
+      renderPage();
+
+      await userEvent.click(await screen.findByRole("button", { name: "Desconectar" }));
+      const dialog = await screen.findByRole("dialog");
+      const confirmButton = within(dialog).getByRole("button", { name: "Desconectar" });
+      await userEvent.click(confirmButton);
+
+      await waitFor(() => expect(confirmButton).toBeDisabled());
+    });
+
+    it("mostra mensagem de erro e mantém o provider na lista quando a desconexão falha", async () => {
+      server.use(
+        http.delete("/api/integrations/llm/:provider", () =>
+          HttpResponse.json({ error: "erro inesperado" }, { status: 500 })
+        )
+      );
+      await loginAs("owner@vane.app");
+      await seedConnectedOpenai();
+      renderPage();
+
+      await userEvent.click(await screen.findByRole("button", { name: "Desconectar" }));
+      const dialog = await screen.findByRole("dialog");
+      await userEvent.click(within(dialog).getByRole("button", { name: "Desconectar" }));
+
+      expect(await screen.findByRole("alert")).toHaveTextContent(/erro inesperado/);
+      expect(screen.getByText("Conectado")).toBeInTheDocument();
+    });
   });
 });

@@ -193,6 +193,14 @@ const resources = {
         genericConnectError: "Não foi possível conectar ao provedor.",
         genericActivateError: "Não foi possível ativar o provedor.",
         genericModelError: "Não foi possível atualizar o modelo.",
+        disconnectButton: "Desconectar",
+        genericDisconnectError: "Não foi possível desconectar o provedor.",
+        disconnectDialog: {
+          title: "Desconectar provedor",
+          body: "Tem certeza que deseja desconectar o {{provider}}? A chave de API armazenada será removida e não poderá ser recuperada - será necessário reconectar para usá-lo novamente.",
+          confirm: "Desconectar",
+          cancel: "Cancelar",
+        },
       },
       incidentDetail: {
         pendingCloseBannerLabel: "Comentário de encerramento sugerido pela IA",
@@ -784,6 +792,14 @@ const resources = {
         genericConnectError: "Could not connect to the provider.",
         genericActivateError: "Could not activate the provider.",
         genericModelError: "Could not update the model.",
+        disconnectButton: "Disconnect",
+        genericDisconnectError: "Could not disconnect the provider.",
+        disconnectDialog: {
+          title: "Disconnect provider",
+          body: "Are you sure you want to disconnect {{provider}}? The stored API key will be removed and cannot be recovered - you'll need to reconnect to use it again.",
+          confirm: "Disconnect",
+          cancel: "Cancel",
+        },
       },
       incidentDetail: {
         pendingCloseBannerLabel: "AI-suggested closing comment",

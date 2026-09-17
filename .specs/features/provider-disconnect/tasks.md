@@ -363,9 +363,9 @@ T12 → T13.
 - Skill: NONE
 
 **Done when**:
-- [ ] Mirrors all of T11's `Done when` items for the LLM settings screen.
-- [ ] Test added/extended in `AISettings.test.tsx` mirroring T11's coverage.
-- [ ] Gate check passes: full (frontend quick, plus `make test-integration` to close out backend+frontend together for the whole feature)
+- [x] Mirrors all of T11's `Done when` items for the LLM settings screen.
+- [x] Test added/extended in `AISettings.test.tsx` mirroring T11's coverage.
+- [x] Gate check passes: full, EXCEPT for the same pre-existing, unrelated `internal/db` failures already documented under T6/T8/T9 (`TestEmailProviderRepository_SetActiveProvider_UpdatesSingletonRow`, `TestLLMProviderRepository_SetActiveProvider_ThenGetActiveProvider_RoundTrips`), plus one additional pre-existing, unrelated failure observed on this run: `TestPostgresStorage_Lock_OutOfBandKill_AutoReleases` (`internal/tls/postgres_storage_integration_test.go`) - an advisory-lock-kill test-setup problem in a package no T10-T13 commit touched (this batch is frontend-only, zero `.go` files changed). Frontend gate (`npx tsc -b --noEmit && npm run test`) is fully green: 97/97 files, 682/682 tests.
 
 **Tests**: unit
 **Gate**: full

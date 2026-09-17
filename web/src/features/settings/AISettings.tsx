@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from "react";
 import { useTranslation } from "react-i18next";
 import { Card } from "../../components/ui/Card";
+import { Dialog } from "../../components/ui/Dialog";
 import { Field } from "../../components/ui/Field";
 import { Button } from "../../components/ui/Button";
 import { Pager } from "../../components/ui/Pager";
@@ -12,6 +13,7 @@ import { modelAllowlist, type LLMProviderName, type LLMProviderStatus } from "..
 import {
   useActivateLLMProvider,
   useConnectLLMProvider,
+  useDisconnectLLMProvider,
   useLLMProviders,
   useSetLLMProviderModel,
 } from "./hooks";
@@ -36,11 +38,13 @@ export function AISettings() {
   const connectMutation = useConnectLLMProvider(PROVIDER_ID);
   const setModelMutation = useSetLLMProviderModel(PROVIDER_ID);
   const activateMutation = useActivateLLMProvider();
+  const disconnectMutation = useDisconnectLLMProvider();
 
   const [formOpen, setFormOpen] = useState(false);
   const [apiKey, setApiKey] = useState("");
   const [model, setModel] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [disconnectDialogOpen, setDisconnectDialogOpen] = useState(false);
 
   if (isLoading) {
     return (
@@ -95,6 +99,21 @@ export function AISettings() {
     } catch (err) {
       if (err instanceof ApiError) setError(err.message);
       else setError(t("aiSettings.genericActivateError"));
+    }
+  }
+
+  async function handleConfirmDisconnect() {
+    setError(null);
+    try {
+      await disconnectMutation.mutateAsync(PROVIDER_ID);
+    } catch (err) {
+      if (err instanceof ApiError) setError(err.message);
+      else setError(t("aiSettings.genericDisconnectError"));
+    } finally {
+      // Same posture as the Activate button: the error surfaces in the
+      // existing inline alert, not inside the dialog, so the dialog closes
+      // regardless of outcome.
+      setDisconnectDialogOpen(false);
     }
   }
 
@@ -155,6 +174,17 @@ export function AISettings() {
             </Button>
           ) : null}
 
+          {canManage && status ? (
+            <Button
+              variant="secondary"
+              className="!border-critical !text-critical"
+              onClick={() => setDisconnectDialogOpen(true)}
+              disabled={disconnectMutation.isPending}
+            >
+              {t("aiSettings.disconnectButton")}
+            </Button>
+          ) : null}
+
           {canManage ? (
             <Button variant={status ? "secondary" : "primary"} onClick={() => setFormOpen((open) => !open)}>
               {status ? t("aiSettings.reconnectButton") : t("aiSettings.connectButton")}
@@ -167,6 +197,29 @@ export function AISettings() {
             {error}
           </p>
         ) : null}
+
+        <Dialog
+          open={disconnectDialogOpen}
+          onOpenChange={setDisconnectDialogOpen}
+          title={t("aiSettings.disconnectDialog.title")}
+          description={t("aiSettings.disconnectDialog.body", { provider: t("aiSettings.providerLabel") })}
+          footer={
+            <>
+              <Button type="button" variant="secondary" onClick={() => setDisconnectDialogOpen(false)}>
+                {t("aiSettings.disconnectDialog.cancel")}
+              </Button>
+              <Button
+                type="button"
+                variant="solid"
+                className="!border-critical !bg-critical hover:!bg-critical"
+                onClick={handleConfirmDisconnect}
+                disabled={disconnectMutation.isPending}
+              >
+                {t("aiSettings.disconnectDialog.confirm")}
+              </Button>
+            </>
+          }
+        />
 
         {formOpen && canManage ? (
           <>
