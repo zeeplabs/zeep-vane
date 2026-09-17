@@ -14,6 +14,7 @@
   --color-accent-hover: #4c3aae;
   --color-accent-2: #a7a1db;
   --color-divider: #ece9f2;
+  --color-skeleton: #e4e7f5;
 
   /* Shell-only tokens (light defaults) */
   --color-sidebar-bg: #fafafc;
@@ -96,6 +97,7 @@
   --color-text: #edebf3;
   --color-text-muted: #9a93b0;
   --color-divider: #2c2645;
+  --color-skeleton: #362f52;
 
   --color-sidebar-bg: #1b1730;
   --color-sidebar-hover-bg: rgba(255, 255, 255, 0.06);

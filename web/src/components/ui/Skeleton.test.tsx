@@ -17,11 +17,11 @@ describe("Skeleton", () => {
     expect(el.className).toContain("motion-reduce:animate-none");
   });
 
-  it("aplica bg-neutral-200 dark:bg-neutral-800 (SKEL-01, tema)", () => {
+  it("usa o token bg-skeleton, theme-aware via [data-theme] em vez do dark: do Tailwind (SKEL-01, tema)", () => {
     render(<Skeleton width={40} height={40} />);
     const el = screen.getByTestId("skeleton");
-    expect(el.className).toContain("bg-neutral-200");
-    expect(el.className).toContain("dark:bg-neutral-800");
+    expect(el.className).toContain("bg-skeleton");
+    expect(el.className).not.toContain("dark:");
   });
 
   it("usa rounded-md por padrão quando radius não é informado", () => {

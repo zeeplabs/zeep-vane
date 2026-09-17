@@ -13,7 +13,9 @@ export interface SkeletonProps {
 /** Shared pulsing placeholder block used by every in-scope screen's loading
  * state (loading-skeletons spec, SKEL-01..03). Screens compose their own
  * loaded-layout shape from one or more of these instead of reimplementing a
- * pulsing div. */
+ * pulsing div. Uses the theme-aware `--color-skeleton` token ([data-theme]
+ * driven) instead of Tailwind's `dark:` variant, which keys off OS
+ * prefers-color-scheme and would ignore the app's own theme toggle. */
 export function Skeleton({ width, height, radius, className = "" }: SkeletonProps) {
   const style: CSSProperties = {};
   if (width !== undefined) style.width = width;
@@ -24,7 +26,7 @@ export function Skeleton({ width, height, radius, className = "" }: SkeletonProp
     <div
       data-testid="skeleton"
       style={style}
-      className={`bg-neutral-200 dark:bg-neutral-800 animate-pulse motion-reduce:animate-none ${
+      className={`bg-skeleton animate-pulse motion-reduce:animate-none ${
         radius === undefined ? "rounded-md" : ""
       } ${className}`.trim()}
     />
