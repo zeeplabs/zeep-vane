@@ -146,6 +146,19 @@ describe("IntegrationsPage", () => {
     expect(within(llmCard).getByRole("button", { name: "Editar conexão" })).toBeInTheDocument();
   });
 
+  it("LLM Provider ativo mostra meta prefixada com 'Ativo' (INTGCARD-02)", async () => {
+    await loginAs("owner@vane.app");
+    await apiFetch("/api/integrations/llm/openai", {
+      method: "POST",
+      body: JSON.stringify({ api_key: "sk-real-key", model: "gpt-4o" }),
+    });
+    await apiFetch("/api/integrations/llm/openai/activate", { method: "POST" });
+    renderPage();
+
+    const llmCard = await cardOf("LLM Provider");
+    expect(await within(llmCard).findByText("Ativo · OpenAI · gpt-4o")).toBeInTheDocument();
+  });
+
   it("owner clica em Conectar no LLM Provider e abre o drawer padrão", async () => {
     await loginAs("owner@vane.app");
     renderPage();

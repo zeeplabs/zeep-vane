@@ -101,9 +101,16 @@ function LLMProviderCard({ canManage, onConnect }: { canManage: boolean; onConne
   const { data, isLoading, isError } = useLLMProviders(1);
   const status = data?.providers.find((p) => p.provider === "openai");
   const connected = status?.status === "connected";
+  const isActive = data?.active_provider === "openai";
   const kind: IntegrationStatusKind = connected ? "connected" : "not_connected";
 
-  let meta = isLoading ? "Carregando…" : connected ? `OpenAI · ${status?.model}` : "Não configurado";
+  let meta = isLoading
+    ? "Carregando…"
+    : connected
+      ? isActive
+        ? `Ativo · OpenAI · ${status?.model}`
+        : `OpenAI · ${status?.model}`
+      : "Não configurado";
   if (isError) meta = "Não foi possível carregar";
 
   return (

@@ -99,9 +99,9 @@ T5 → T6
 **Tools**: MCP: NONE / Skill: NONE
 
 **Done when**:
-- [ ] `LLMProviderCard` shows the active indicator when `openai` is `active_provider`, plain connected meta otherwise.
-- [ ] Test added in `IntegrationsPage.test.tsx` mirroring T1's cases for the LLM card.
-- [ ] Gate check passes: quick
+- [x] `LLMProviderCard` shows the active indicator when `openai` is `active_provider`, plain connected meta otherwise.
+- [x] Test added in `IntegrationsPage.test.tsx` mirroring T1's cases for the LLM card.
+- [x] Gate check passes: quick
 
 **Tests**: unit
 **Gate**: quick
