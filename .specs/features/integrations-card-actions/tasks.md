@@ -159,9 +159,9 @@ T5 → T6
 **Tools**: MCP: NONE / Skill: NONE
 
 **Done when**:
-- [ ] `npx tsc -b --noEmit` passes.
-- [ ] `npm run test` passes, full suite.
-- [ ] `grep -rn "EmailProvidersPage\|AISettings" web/src` returns nothing.
+- [x] `npx tsc -b --noEmit` passes.
+- [x] `npm run test` passes, full suite (95 files, 666 tests).
+- [x] `grep -rn "EmailProvidersPage\|AISettings" web/src` returns nothing.
 
 **Tests**: none (verification task)
 **Gate**: build
