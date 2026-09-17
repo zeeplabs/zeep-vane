@@ -364,10 +364,10 @@ T15 → T16 → T17
 **Requirement**: ACTIVITY-10, ACTIVITY-11
 
 **Done when**:
-- [ ] All 8 actions map to their pt-BR/en phrases per `context.md`'s table, added as new `i18n.ts` keys (`overview.activity.<action>` or similar, following the file's existing nesting convention).
-- [ ] An action string not in the map renders the generic fallback phrase (spec AC10, edge case).
-- [ ] A `null`/missing `target_label` renders the phrase gracefully, omitting the target clause — never the literal string `"null"`/`"undefined"` (spec AC11).
-- [ ] Unit tests cover: all 8 known actions render their exact phrase, one unknown action renders the fallback, one `null`-label entry renders gracefully per action type.
+- [x] All 8 actions map to their pt-BR/en phrases per `context.md`'s table, added as new `i18n.ts` keys (`overview.activity.actions.<action>`, following the file's existing nesting convention).
+- [x] An action string not in the map renders the generic fallback phrase (spec AC10, edge case).
+- [x] A `null`/missing `target_label` renders the phrase gracefully, omitting the target clause — never the literal string `"null"`/`"undefined"` (spec AC11).
+- [x] Unit tests cover: all 8 known actions render their exact phrase, one unknown action renders the fallback, one `null`-label entry renders gracefully per action type.
 
 **Tests**: unit
 **Gate**: quick (frontend)
