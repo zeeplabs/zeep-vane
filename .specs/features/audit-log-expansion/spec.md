@@ -100,4 +100,4 @@
 | AUDITEXP-15 | P1: Ações de recurso compartilhado aparecem na Atividade recente do time | - | Implementing |
 | AUDITEXP-16 | P1: Ações de recurso compartilhado aparecem na Atividade recente do time | - | Implementing |
 | AUDITEXP-17 | P1: Ações de recurso compartilhado aparecem na Atividade recente do time | - | Implementing |
-| AUDITEXP-18 | P1: Ações de recurso compartilhado aparecem na Atividade recente do time | - | Draft |
+| AUDITEXP-18 | P1: Ações de recurso compartilhado aparecem na Atividade recente do time | - | Implementing |

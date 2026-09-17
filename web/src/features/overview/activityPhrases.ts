@@ -1,7 +1,8 @@
 import type { AuditLogEntry } from "../../types/api";
 
-// KNOWN_ACTIVITY_ACTIONS is the 8 audit.Log actions this codebase records
-// today (recent-team-activity, context.md's action->phrase table). Each
+// KNOWN_ACTIVITY_ACTIONS is every audit.Log action this codebase records
+// today (recent-team-activity, context.md's action->phrase table, extended
+// by audit-log-expansion's AUDITEXP-18 with 15 more entity actions). Each
 // maps to an i18n key under overview.activity.actions.<action> - the
 // RecentActivity component renders the actor's (bolded) name separately,
 // same as the mock it replaces, so these phrases cover only the
@@ -16,6 +17,21 @@ const KNOWN_ACTIVITY_ACTIONS = [
   "domain_deleted",
   "status_page_deleted",
   "status_page_domain_verified",
+  "service_created",
+  "service_updated",
+  "service_deleted",
+  "status_page_created",
+  "status_page_domain_attached",
+  "status_page_services_updated",
+  "domain_created",
+  "datadog_connected",
+  "email_provider_connected",
+  "email_provider_activated",
+  "llm_provider_connected",
+  "llm_provider_activated",
+  "company_settings_updated",
+  "company_logo_updated",
+  "tenant_deleted",
 ] as const;
 
 type KnownActivityAction = (typeof KNOWN_ACTIVITY_ACTIONS)[number];

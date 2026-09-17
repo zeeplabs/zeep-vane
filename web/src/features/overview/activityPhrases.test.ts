@@ -19,6 +19,17 @@ describe("activityPhraseKey", () => {
       "Status Acme",
       "verificou o domínio da página Status Acme",
     ],
+    // audit-log-expansion (AUDITEXP-18): one phrase per entity group added
+    // by that feature - not exhaustive over all 15 new actions, just proof
+    // each group's i18n key resolves to a readable phrase.
+    ["service_created", "checkout-api", "criou o serviço checkout-api"],
+    ["status_page_created", "Status Acme", "criou a página Status Acme"],
+    ["domain_created", "painel.acme.health", "cadastrou o domínio painel.acme.health"],
+    ["datadog_connected", "Datadog", "conectou a integração com o Datadog"],
+    ["email_provider_connected", "SendGrid", "conectou o provedor de e-mail SendGrid"],
+    ["llm_provider_activated", "OpenAI", "ativou o provedor de IA OpenAI"],
+    ["company_settings_updated", "Configurações da empresa", "atualizou as configurações da empresa"],
+    ["tenant_deleted", "Acme Health", "excluiu a conta Acme Health"],
   ])("renders the exact phrase for %s", (action, target, expected) => {
     const { key, values } = activityPhraseKey({ action, target_label: target });
     expect(i18n.t(key, values)).toBe(expected);
