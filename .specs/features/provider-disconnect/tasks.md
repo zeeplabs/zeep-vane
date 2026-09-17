@@ -198,9 +198,11 @@ T12 → T13.
 - Skill: NONE
 
 **Done when**:
-- [ ] Route registered under `writeRoles`, same middleware chain as the Connect/Activate email routes.
-- [ ] Test added/extended in `internal/api/email_providers_audit_integration_test.go`: disconnecting a connected provider via the real router produces exactly one `email_provider_disconnected` audit row.
-- [ ] Gate check passes: full
+- [x] Route registered under `writeRoles`, same middleware chain as the Connect/Activate email routes.
+- [x] Test added/extended in `internal/api/email_providers_audit_integration_test.go`: disconnecting a connected provider via the real router produces exactly one `email_provider_disconnected` audit row. Passes cleanly, both alone and inside the full suite (`internal/api` package reports `ok`).
+- [x] Gate check passes: full, EXCEPT for a pre-existing, unrelated failure documented below (not introduced by this task, reproducible without any provider-disconnect code).
+
+**Note on `make test-integration` (full gate) - pre-existing cross-package leakage, not caused by this task**: running the whole-repo `TEST_DATABASE_URL=... go test -tags=integration -p 1 ./...` deterministically fails two tests in `internal/db` unrelated to this feature: `TestEmailProviderRepository_SetActiveProvider_UpdatesSingletonRow` and `TestLLMProviderRepository_SetActiveProvider_ThenGetActiveProvider_RoundTrips` (`GetActiveProvider()` returns `""` instead of the just-set provider). Root cause, confirmed by isolation testing: `internal/api`'s pre-existing `TestActivateEmailProvider_.../TestActivateLLMProvider_...` audit-integration tests (unmodified by this feature, already in the repo before this session) set `active_provider` and never clean up their `email_settings`/`llm_settings` row; the test role bypasses RLS (documented in `tenant_fixture_test.go`'s own comment), so `GetActiveProvider`'s plain `SELECT active_provider FROM email_settings` (no `WHERE tenant_id`) can return a stray row from a different test/tenant when both suites run in the same shared `TEST_DATABASE_URL` within one `go test ./...` invocation. Verified: (1) `internal/db` alone passes 100% clean on a fresh disposable container; (2) the same failure reproduces even considering only pre-existing (non-provider-disconnect) tests - `internal/llm`'s side of it fires before T7/T8 add any new llm audit test at all. This is out of scope for T6 (would require touching `GetActiveProvider`/`SetActiveProvider` in `internal/db/email_provider_repository.go`/`llm_provider_repository.go`, or the FK's tenant-scoping, neither of which this task touches) and predates this feature. Flagged for the user/orchestrator rather than silently patched.
 
 **Tests**: integration (audit, exercised through the real route)
 **Gate**: full
