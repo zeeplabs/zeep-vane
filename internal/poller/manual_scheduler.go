@@ -287,7 +287,7 @@ func (s *ManualScheduler) runCheck(ctx context.Context, tenantID, serviceID, pol
 		return currentStatus
 	}
 
-	if err := s.statusIntervals.OpenOrExtend(tenantCtx, serviceID, status, 0, time.Now()); err != nil {
+	if _, err := s.statusIntervals.OpenOrExtend(tenantCtx, serviceID, status, 0, time.Now()); err != nil {
 		s.logger.Error("manual_scheduler: failed to open or extend status interval", zap.String("service_id", serviceID), zap.Error(err))
 		rollback(tenantCtx)
 		return currentStatus

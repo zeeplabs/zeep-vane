@@ -669,7 +669,7 @@ func TestListServices_MixedNotConfiguredAndPolled_SamePage(t *testing.T) {
 
 	intervals := db.NewStatusIntervalRepository(pool)
 	polledAt := time.Now().Add(-time.Hour)
-	if err := intervals.OpenOrExtend(context.Background(), polledCreated.ID, "operational", 100, polledAt); err != nil {
+	if _, err := intervals.OpenOrExtend(context.Background(), polledCreated.ID, "operational", 100, polledAt); err != nil {
 		t.Fatalf("setup OpenOrExtend() returned unexpected error: %v", err)
 	}
 

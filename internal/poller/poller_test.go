@@ -55,7 +55,7 @@ func newTestPool(t *testing.T) (*db.Pool, string) {
 // pollService's now-required analyzer field to be non-nil.
 func newTestSLOAnalyzer(pool *db.Pool, services *db.ServiceRepository) *SLOAnalyzer {
 	incidents := db.NewIncidentRepository(pool)
-	return NewSLOAnalyzer(incidents, services, &fakeLLMGenerator{}, time.Second, zap.NewNop())
+	return NewSLOAnalyzer(incidents, services, &fakeIntervalAnalysisWriter{}, &fakeLLMGenerator{}, time.Second, zap.NewNop())
 }
 
 // seedTestTenant creates a throwaway tenant so fixtures (services, ...) can
@@ -501,7 +501,7 @@ func TestPoller_PollOnce_HungLLMEnrichment_DoesNotDelayRemainingServices(t *test
 	// below) - if the hang somehow did propagate into pollOnce, this test
 	// would time out waiting for pollOnce to return, not just fail an
 	// assertion.
-	analyzer := NewSLOAnalyzer(incidents, services, &fakeLLMGenerator{block: true}, 10*time.Second, zap.NewNop())
+	analyzer := NewSLOAnalyzer(incidents, services, &fakeIntervalAnalysisWriter{}, &fakeLLMGenerator{block: true}, 10*time.Second, zap.NewNop())
 	p := NewPoller(services, services, statusIntervals, integrations, provider, time.Hour, analyzer, zap.NewNop())
 
 	start := time.Now()

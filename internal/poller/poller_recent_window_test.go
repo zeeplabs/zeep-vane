@@ -2,6 +2,7 @@ package poller
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -11,21 +12,31 @@ import (
 	"github.com/zeeplabs/zeep-vane/internal/db"
 )
 
-// fakeIntervalWriter records every OpenOrExtend call it receives.
+// fakeIntervalWriter records every OpenOrExtend/SetIntervalAnalysis call it
+// receives, doubling as both statusIntervalWriter and intervalAnalysisWriter
+// (same *db.StatusIntervalRepository backs both roles in production).
 type fakeIntervalWriter struct {
 	calls []struct {
 		serviceID, status string
 		errorBudget       float64
 		at                time.Time
 	}
+	nextID        int
+	analysisCalls []struct{ intervalID, analysis string }
 }
 
-func (f *fakeIntervalWriter) OpenOrExtend(ctx context.Context, serviceID, status string, errorBudgetRemaining float64, at time.Time) error {
+func (f *fakeIntervalWriter) OpenOrExtend(ctx context.Context, serviceID, status string, errorBudgetRemaining float64, at time.Time) (string, error) {
 	f.calls = append(f.calls, struct {
 		serviceID, status string
 		errorBudget       float64
 		at                time.Time
 	}{serviceID, status, errorBudgetRemaining, at})
+	f.nextID++
+	return fmt.Sprintf("fake-interval-%d", f.nextID), nil
+}
+
+func (f *fakeIntervalWriter) SetIntervalAnalysis(ctx context.Context, intervalID, analysis string) error {
+	f.analysisCalls = append(f.analysisCalls, struct{ intervalID, analysis string }{intervalID, analysis})
 	return nil
 }
 
@@ -42,7 +53,7 @@ func (f *fakeStatusUpdater) UpdateStatus(ctx context.Context, serviceID, status 
 }
 
 func newTestPoller(provider datadog.SLOProvider, interval time.Duration, intervals *fakeIntervalWriter, statuses *fakeStatusUpdater) *Poller {
-	analyzer := NewSLOAnalyzer(&fakeIncidentStore{openIncidents: map[string]string{}}, &fakeStatusAnalysisWriter{}, &fakeLLMGenerator{}, time.Second, zap.NewNop())
+	analyzer := NewSLOAnalyzer(&fakeIncidentStore{openIncidents: map[string]string{}}, &fakeStatusAnalysisWriter{}, intervals, &fakeLLMGenerator{}, time.Second, zap.NewNop())
 	return &Poller{
 		statuses:        statuses,
 		statusIntervals: intervals,

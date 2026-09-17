@@ -58,7 +58,7 @@ func createPublicStatusServiceFixture(t *testing.T, pool *db.Pool, status string
 		t.Fatalf("setup UpdateStatus() returned unexpected error: %v", err)
 	}
 	intervals := db.NewStatusIntervalRepository(pool)
-	if err := intervals.OpenOrExtend(ctx, service.ID, status, 0.5, lastSeenAt); err != nil {
+	if _, err := intervals.OpenOrExtend(ctx, service.ID, status, 0.5, lastSeenAt); err != nil {
 		t.Fatalf("setup OpenOrExtend() returned unexpected error: %v", err)
 	}
 
@@ -336,7 +336,7 @@ func TestPublicStatusGet_UptimePercent_OutageWindowComputesExpectedValue(t *test
 	// the H7 asOf clamp (public_status_handler.go) would see the fixture's
 	// still-open interval as last confirmed at openedAt (48h ago) and clip
 	// the uptime denominator there, which this test isn't exercising.
-	if err := db.NewStatusIntervalRepository(pool).OpenOrExtend(context.Background(), serviceID, "operational", 0.5, time.Now()); err != nil {
+	if _, err := db.NewStatusIntervalRepository(pool).OpenOrExtend(context.Background(), serviceID, "operational", 0.5, time.Now()); err != nil {
 		t.Fatalf("setup post-outage OpenOrExtend() returned unexpected error: %v", err)
 	}
 
@@ -390,7 +390,7 @@ func TestPublicStatusGet_LastUpdatedAt_AdvancesOnRepeatedSameStatusPoll(t *testi
 	// probability).
 	secondSeenAt := time.Now().Add(-1 * time.Hour).Truncate(time.Microsecond)
 	intervals := db.NewStatusIntervalRepository(pool)
-	if err := intervals.OpenOrExtend(context.Background(), serviceID, "operational", 0.5, secondSeenAt); err != nil {
+	if _, err := intervals.OpenOrExtend(context.Background(), serviceID, "operational", 0.5, secondSeenAt); err != nil {
 		t.Fatalf("setup second OpenOrExtend() returned unexpected error: %v", err)
 	}
 
@@ -438,7 +438,7 @@ func TestPublicStatusGet_StalledPoller_CurrentHourNotFabricatedOperational(t *te
 	// (simulating a dead poller, not a reconnect).
 	staleAt := time.Now().Add(-10 * time.Hour)
 	intervals := db.NewStatusIntervalRepository(pool)
-	if err := intervals.OpenOrExtend(context.Background(), serviceID, "operational", 0.5, staleAt); err != nil {
+	if _, err := intervals.OpenOrExtend(context.Background(), serviceID, "operational", 0.5, staleAt); err != nil {
 		t.Fatalf("setup second OpenOrExtend() returned unexpected error: %v", err)
 	}
 
@@ -917,7 +917,7 @@ func seedPublicStatusRangeFixture(t *testing.T, pool *db.Pool) (serviceID, statu
 
 	// Keep the open interval's last_seen_at fresh so the H7 asOf clamp
 	// doesn't clip the window before every tier's own windowStart.
-	if err := db.NewStatusIntervalRepository(pool).OpenOrExtend(context.Background(), serviceID, "operational", 0.5, time.Now()); err != nil {
+	if _, err := db.NewStatusIntervalRepository(pool).OpenOrExtend(context.Background(), serviceID, "operational", 0.5, time.Now()); err != nil {
 		t.Fatalf("setup post-outage OpenOrExtend() returned unexpected error: %v", err)
 	}
 
@@ -1416,7 +1416,7 @@ func TestPublicStatusGet_Range90d_PartialCoverageLeadingBucketsNoData(t *testing
 	// Keep the interval's last_seen_at fresh so the H7 asOf clamp doesn't
 	// clip the trailing (most recent) bucket to no_data too - this test is
 	// only exercising the leading, out-of-coverage buckets.
-	if err := db.NewStatusIntervalRepository(pool).OpenOrExtend(context.Background(), serviceID, "operational", 0.5, time.Now()); err != nil {
+	if _, err := db.NewStatusIntervalRepository(pool).OpenOrExtend(context.Background(), serviceID, "operational", 0.5, time.Now()); err != nil {
 		t.Fatalf("setup OpenOrExtend() returned unexpected error: %v", err)
 	}
 

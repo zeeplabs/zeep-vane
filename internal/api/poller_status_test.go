@@ -367,7 +367,7 @@ func TestPollerStatus_ChecksLastMinute_ReflectsRecentStatusIntervalActivity(t *t
 	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), "DELETE FROM services WHERE id = $1", service.ID) })
 
 	intervals := db.NewStatusIntervalRepository(pool)
-	if err := intervals.OpenOrExtend(context.Background(), service.ID, "operational", 95.0, time.Now()); err != nil {
+	if _, err := intervals.OpenOrExtend(context.Background(), service.ID, "operational", 95.0, time.Now()); err != nil {
 		t.Fatalf("OpenOrExtend() returned unexpected error: %v", err)
 	}
 
