@@ -380,6 +380,12 @@ Seen once or not yet corroborated. Tracked, not trusted.
 - evidence: internal/db/service_repository.go:306-333 (internal/db)
 - last seen: 2026-09-16T22:32:47Z
 
+### L-062 - When a spec AC says 'X stays unchanged' or 'role Y is forbidden', write a test that directly asserts that exact case (not just its positive counterpart or a generic middleware test) - mirroring an existing pattern (Connect/Activate) silently inherits its coverage gaps.
+- signal: `spec_precision_gap` · recurrence: 1 feature(s) · scope: `internal/api,internal/email,internal/llm testing conventions` · harmful: 0
+- features: provider-disconnect
+- evidence: spec.md P1-email AC3 / P1-email AC7 / P1-llm AC6 (internal/api,internal/email,internal/llm testing conventions)
+- last seen: 2026-09-17T20:32:50Z
+
 ## Quarantined (failed when applied - ignore)
 
 A confirmed lesson that recurred alongside failure. Kept for the maintainer to review.

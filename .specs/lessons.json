@@ -3,7 +3,7 @@
   "promote_threshold": 2,
   "window_days": 45,
   "quarantine_threshold": 2,
-  "next_id": 62,
+  "next_id": 63,
   "lessons": [
     {
       "id": "L-001",
@@ -1102,6 +1102,24 @@
       ],
       "created": "2026-09-16T22:32:47Z",
       "last_seen": "2026-09-16T22:32:47Z"
+    },
+    {
+      "id": "L-062",
+      "key": "spec_precision_gap::when a spec ac says x stays unchanged or role y is forbidden write a test that directly asserts that exact case not just its positive counterpart or a generic middleware test mirroring an existing pattern connect activate silently inherits its coverage gaps",
+      "text": "When a spec AC says 'X stays unchanged' or 'role Y is forbidden', write a test that directly asserts that exact case (not just its positive counterpart or a generic middleware test) - mirroring an existing pattern (Connect/Activate) silently inherits its coverage gaps.",
+      "signal": "spec_precision_gap",
+      "scope": "internal/api,internal/email,internal/llm testing conventions",
+      "status": "candidate",
+      "features": [
+        "provider-disconnect"
+      ],
+      "recurrence": 1,
+      "harmful": 0,
+      "evidence": [
+        "spec.md P1-email AC3 / P1-email AC7 / P1-llm AC6 (internal/api,internal/email,internal/llm testing conventions)"
+      ],
+      "created": "2026-09-17T20:32:50Z",
+      "last_seen": "2026-09-17T20:32:50Z"
     }
   ]
 }
