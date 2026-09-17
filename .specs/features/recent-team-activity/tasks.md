@@ -224,10 +224,10 @@ T15 → T16 → T17
 **Requirement**: ACTIVITY-03, ACTIVITY-04
 
 **Done when**:
-- [ ] Fetch `h.users.GetByID(ctx, targetID)` for the label BEFORE the `if remaining == 0 { h.users.Delete(...) }` block (spec AC4 — label must be captured before the row can disappear).
-- [ ] `h.audit.Record(ctx, actor.ID, targetID, removedUser.Name, "removed")`.
-- [ ] Same best-effort fallback as T7 if the lookup fails.
-- [ ] Test explicitly covers the case where `remaining == 0` (user IS hard-deleted) and confirms the label was still captured correctly — this is the discriminating case the Verifier's sensor should target (a mutation moving the fetch after the delete should make this specific test fail).
+- [x] Fetch `h.users.GetByID(ctx, targetID)` for the label BEFORE the `if remaining == 0 { h.users.Delete(...) }` block (spec AC4 — label must be captured before the row can disappear).
+- [x] `h.audit.Record(ctx, actor.ID, targetID, removedUser.Name, "removed")`.
+- [x] Same best-effort fallback as T7 if the lookup fails.
+- [x] Test explicitly covers the case where `remaining == 0` (user IS hard-deleted) and confirms the label was still captured correctly — this is the discriminating case the Verifier's sensor should target (a mutation moving the fetch after the delete should make this specific test fail). `TestDeleteAdmin_ValidRemoval_200_RevokesSessionsDeletesAndAudits` already exercises `remaining == 0` (target has only one membership) and now asserts `target_label` survives the hard delete.
 
 **Tests**: unit
 **Gate**: build (last task of Phase 3 — run `go build ./... && go vet ./... && gofmt -l <changed> && go test ./...`)

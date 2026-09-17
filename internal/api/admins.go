@@ -662,6 +662,22 @@ func (h *AdminsHandler) Delete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// The target's audit label must be captured before h.users.Delete below
+	// can run (spec.md AC4) - once that delete succeeds the row is gone and
+	// a later lookup would always come back empty. Best-effort: same
+	// fire-and-forget error-logging-only posture as every other Record call
+	// site, so a failed lookup (e.g. the target was already concurrently
+	// deleted) falls back to an empty label rather than failing the removal
+	// itself.
+	var targetLabel string
+	if targetUser, err := h.users.GetByID(ctx, targetID); err != nil {
+		h.logger.Error("admins: failed to look up target admin for removal audit label", zap.Error(err))
+	} else if targetUser.Name != "" {
+		targetLabel = targetUser.Name
+	} else {
+		targetLabel = targetUser.Email
+	}
+
 	// Per-session revocation (same rationale as UpdateRole above).
 	// RevokeAllForUser is a bulk UPDATE - it returns no error when the
 	// target user has no sessions to revoke (0 rows affected is a
@@ -687,7 +703,7 @@ func (h *AdminsHandler) Delete(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	if err := h.audit.Record(ctx, actor.ID, targetID, "removed"); err != nil {
+	if err := h.audit.Record(ctx, actor.ID, targetID, targetLabel, "removed"); err != nil {
 		h.logger.Error("admins: failed to record removal audit entry", zap.Error(err))
 	}
 

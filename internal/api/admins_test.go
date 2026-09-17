@@ -1182,18 +1182,30 @@ func TestDeleteAdmin_ValidRemoval_200_RevokesSessionsDeletesAndAudits(t *testing
 		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
 	}
 
+	// target had only this one tenant's membership (createTenantMember),
+	// so CountForUser returns 0 and Delete hard-deletes the users row here -
+	// this is the remaining==0 case spec.md AC4 cares about: the label must
+	// have been captured BEFORE this delete ran, since the row is
+	// confirmed gone by the assertion below.
 	if _, err := admins.GetByID(ctx, target.ID); !errors.Is(err, db.ErrNotFound) {
 		t.Errorf("GetByID() after Delete = %v, want ErrNotFound", err)
 	}
 
 	var gotActorID, gotAction string
+	var gotTargetLabel *string
 	row := pool.QueryRow(ctx,
-		"SELECT actor_id, action FROM admin_audit_log WHERE target_id = $1 AND action = 'removed'", target.ID)
-	if err := row.Scan(&gotActorID, &gotAction); err != nil {
+		"SELECT actor_id, target_label, action FROM admin_audit_log WHERE target_id = $1 AND action = 'removed'", target.ID)
+	if err := row.Scan(&gotActorID, &gotTargetLabel, &gotAction); err != nil {
 		t.Fatalf("querying admin_audit_log returned unexpected error: %v", err)
 	}
 	if gotActorID != actor.ID {
 		t.Errorf("admin_audit_log actor_id = %q, want %q", gotActorID, actor.ID)
+	}
+	// target.Name is empty (createTenantMember only sets Email), so the
+	// label falls back to the target's email, and it must still be
+	// present even though the users row itself is now hard-deleted.
+	if gotTargetLabel == nil || *gotTargetLabel != target.Email {
+		t.Errorf("admin_audit_log target_label = %v, want %q (must survive the hard delete above)", gotTargetLabel, target.Email)
 	}
 }
 
