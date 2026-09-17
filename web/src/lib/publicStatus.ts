@@ -11,9 +11,23 @@ export type PublicServiceStatus = "operational" | "degraded" | "outage";
 // from any real observed status.
 export type PublicHourlyStatus = PublicServiceStatus | "no_data";
 
+// PublicDegradedEpisode is one "degraded"-status interval a bucket overlaps
+// (degraded-interval-analysis DEGINT-11), most-recent-first within a
+// bucket's episodes array. analysis is null while the AI-generated text is
+// still pending, failed, or predates this feature - never omitted (unlike
+// PublicServiceEntry.status_analysis, which is entirely absent when unset).
+export interface PublicDegradedEpisode {
+  starts_at: string;
+  ends_at: string | null;
+  analysis: string | null;
+}
+
 export interface PublicHistoryBucket {
   start: string;
   status: PublicHourlyStatus;
+  // episodes lists every degraded episode this bucket overlaps - absent
+  // (matches the backend's omitempty) when the bucket has none.
+  episodes?: PublicDegradedEpisode[];
 }
 
 // RangeKey is the set of selectable time-range tiers for the public status

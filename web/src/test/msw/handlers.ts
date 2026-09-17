@@ -523,12 +523,29 @@ function resolveFixtureBucketCount(requestUrl: string): number {
 // internal/history.BuildBuckets). Every bucket mirrors the service's
 // current status, giving PublicStatusPage.test.tsx real fixture data to
 // render bucketCount same-colored bars against.
+// degraded-interval-analysis (DEGINT-11): the current (last) bucket of a
+// degraded service's fixture history carries one episode, mirroring the
+// real backend's shape - never on any other bucket, matching
+// history.BuildBuckets attaching episodes only where a degraded interval
+// actually overlaps.
 function buildFixtureHistory(status: Service["current_status"], bucketCount: number) {
   const now = Date.now();
-  return Array.from({ length: bucketCount }, (_, i) => ({
-    start: new Date(now - (bucketCount - 1 - i) * 60 * 60 * 1000).toISOString(),
-    status: status === "not_configured" ? "no_data" : status,
-  }));
+  return Array.from({ length: bucketCount }, (_, i) => {
+    const bucket: { start: string; status: string; episodes?: { starts_at: string; ends_at: string | null; analysis: string | null }[] } = {
+      start: new Date(now - (bucketCount - 1 - i) * 60 * 60 * 1000).toISOString(),
+      status: status === "not_configured" ? "no_data" : status,
+    };
+    if (status === "degraded" && i === bucketCount - 1) {
+      bucket.episodes = [
+        {
+          starts_at: new Date(now - 15 * 60 * 1000).toISOString(),
+          ends_at: null,
+          analysis: null,
+        },
+      ];
+    }
+    return bucket;
+  });
 }
 
 // defaultMembershipsFor mirrors the real backend's every-day case
