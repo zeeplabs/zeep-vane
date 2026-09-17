@@ -236,6 +236,10 @@ func buildAdminRouter(pool *db.Pool, cfg config.Config, logger *zap.Logger, poll
 		protected.With(writeRoles).Post("/api/integrations/datadog", integrationsHandler.ConnectDatadog)
 		protected.With(writeRoles).Post("/api/integrations/email/{provider}", emailProvidersHandler.Connect)
 		protected.With(writeRoles).Post("/api/integrations/email/{provider}/activate", emailProvidersHandler.Activate)
+		// provider-disconnect PROVDISC-01/02/03: same writeRoles gate as
+		// Connect/Activate above - disconnect is the same write/destructive
+		// action class.
+		protected.With(writeRoles).Delete("/api/integrations/email/{provider}", emailProvidersHandler.Disconnect)
 		protected.With(writeRoles).Post("/api/integrations/llm/{provider}", llmProvidersHandler.Connect)
 		protected.With(writeRoles).Post("/api/integrations/llm/{provider}/model", llmProvidersHandler.SetModel)
 		protected.With(writeRoles).Post("/api/integrations/llm/{provider}/activate", llmProvidersHandler.Activate)

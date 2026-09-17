@@ -82,6 +82,13 @@ func (f *fakeEmailProviderStore) SetActiveProvider(_ context.Context, provider s
 	f.activeProvider = provider
 	return nil
 }
+func (f *fakeEmailProviderStore) DeleteProvider(_ context.Context, provider string) error {
+	delete(f.rows, provider)
+	if f.activeProvider == provider {
+		f.activeProvider = ""
+	}
+	return nil
+}
 
 // fakeEmailProvider is an email.Provider double recording Send calls.
 // notifySent, when non-nil, receives after each Send call - needed by

@@ -54,6 +54,7 @@ func newEmailProvidersIntegrationRouter(t *testing.T) (http.Handler, *db.Pool, *
 		protected.Use(TenantContext(pool, db.NewTenantMembershipRepository(pool), zap.NewNop()))
 		protected.Post("/api/integrations/email/{provider}", handler.Connect)
 		protected.Post("/api/integrations/email/{provider}/activate", handler.Activate)
+		protected.Delete("/api/integrations/email/{provider}", handler.Disconnect)
 	})
 	return r, pool, admins
 }
@@ -71,6 +72,15 @@ func doAuthedConnectRequest(t *testing.T, r http.Handler, token, provider string
 func doAuthedActivateRequest(t *testing.T, r http.Handler, token, provider string) *httptest.ResponseRecorder {
 	t.Helper()
 	req := httptest.NewRequest(http.MethodPost, "/api/integrations/email/"+provider+"/activate", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+	return rec
+}
+
+func doAuthedDisconnectRequest(t *testing.T, r http.Handler, token, provider string) *httptest.ResponseRecorder {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodDelete, "/api/integrations/email/"+provider, nil)
 	req.Header.Set("Authorization", "Bearer "+token)
 	rec := httptest.NewRecorder()
 	r.ServeHTTP(rec, req)
@@ -129,5 +139,56 @@ func TestActivateEmailProvider_ValidRequest_RecordsEmailProviderActivatedAudit(t
 	}
 	if gotTargetLabel != "Resend" {
 		t.Errorf("admin_audit_log target_label = %q, want %q", gotTargetLabel, "Resend")
+	}
+}
+
+// TestDisconnectEmailProvider_ValidRequest_RecordsEmailProviderDisconnectedAudit
+// covers PROVDISC-01 AC6/PROVDISC-03: disconnecting a connected provider
+// through the real router (route wired in T6) produces exactly one
+// email_provider_disconnected audit row.
+func TestDisconnectEmailProvider_ValidRequest_RecordsEmailProviderDisconnectedAudit(t *testing.T) {
+	r, pool, admins := newEmailProvidersIntegrationRouter(t)
+	token := issueTestSessionTokenWithTenant(t, admins, pool)
+	t.Cleanup(func() {
+		_, _ = pool.Exec(context.Background(), "DELETE FROM email_providers WHERE provider = 'sendgrid'")
+	})
+
+	connectRec := doAuthedConnectRequest(t, r, token, "sendgrid", []byte(`{"api_key":"k","from_email":"a@b.com","from_name":"Vane"}`))
+	if connectRec.Code != http.StatusCreated {
+		t.Fatalf("setup connect status = %d, want %d, body = %s", connectRec.Code, http.StatusCreated, connectRec.Body.String())
+	}
+
+	rec := doAuthedDisconnectRequest(t, r, token, "sendgrid")
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusNoContent, rec.Body.String())
+	}
+
+	var auditRowCount int
+	countRow := pool.QueryRow(context.Background(),
+		"SELECT count(*) FROM admin_audit_log WHERE action = 'email_provider_disconnected'")
+	if err := countRow.Scan(&auditRowCount); err != nil {
+		t.Fatalf("Scan() returned unexpected error: %v", err)
+	}
+	if auditRowCount != 1 {
+		t.Fatalf("admin_audit_log rows with action=email_provider_disconnected = %d, want exactly 1", auditRowCount)
+	}
+
+	var gotTargetLabel string
+	row := pool.QueryRow(context.Background(),
+		"SELECT target_label FROM admin_audit_log WHERE action = 'email_provider_disconnected' ORDER BY created_at DESC LIMIT 1")
+	if err := row.Scan(&gotTargetLabel); err != nil {
+		t.Fatalf("Scan() returned unexpected error: %v", err)
+	}
+	if gotTargetLabel != "SendGrid" {
+		t.Errorf("admin_audit_log target_label = %q, want %q", gotTargetLabel, "SendGrid")
+	}
+
+	var rowCount int
+	rowCountRow := pool.QueryRow(context.Background(), "SELECT count(*) FROM email_providers WHERE provider = 'sendgrid'")
+	if err := rowCountRow.Scan(&rowCount); err != nil {
+		t.Fatalf("Scan() returned unexpected error: %v", err)
+	}
+	if rowCount != 0 {
+		t.Errorf("email_providers row count for sendgrid = %d, want 0 after disconnect", rowCount)
 	}
 }

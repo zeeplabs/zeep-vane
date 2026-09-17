@@ -104,8 +104,8 @@ The user wants: clicking a degraded hourly bar opens a popover listing the AI-ge
 | DEGINT-08 | P2: Histórico exposto por bucket na página de status pública | - | Implementing |
 | DEGINT-09 | P2: Histórico exposto por bucket na página de status pública | - | Implementing |
 | DEGINT-10 | P2: Histórico exposto por bucket na página de status pública | - | Implementing |
-| DEGINT-11 | P2: Histórico exposto por bucket na página de status pública | - | Draft |
-| DEGINT-12 | P2: Histórico exposto por bucket na página de status pública | - | Draft |
+| DEGINT-11 | P2: Histórico exposto por bucket na página de status pública | - | Implementing (pending re-gate, blocked by unrelated concurrent-session build state) |
+| DEGINT-12 | P2: Histórico exposto por bucket na página de status pública | - | Implementing |
 | DEGINT-13 | P3: Popover de clique na barra degradada | - | Draft |
 | DEGINT-14 | P3: Popover de clique na barra degradada | - | Draft |
 | DEGINT-15 | P3: Popover de clique na barra degradada | - | Draft |

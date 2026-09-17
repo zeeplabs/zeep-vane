@@ -2,7 +2,7 @@
 
 **Spec**: `.specs/features/degraded-interval-analysis/spec.md`
 **Design**: `.specs/features/degraded-interval-analysis/design.md`
-**Status**: In progress (T1-T5 done)
+**Status**: In progress (T1-T6 done, T6 gate re-check pending unrelated concurrent-session build fix)
 
 ---
 
