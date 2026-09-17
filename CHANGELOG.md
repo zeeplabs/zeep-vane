@@ -5,6 +5,19 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+## [0.5.0] — 2026-09-17
+
+### Added
+
+- **Disconnect an email or LLM provider**: owners/operators can now disconnect a connected SendGrid, Resend, or OpenAI integration directly from the Integrations page, with a confirmation dialog before the stored API key is removed. Disconnecting the currently active provider is allowed — it clears cleanly with no dangling active-provider reference.
+- The Integrations page's email/LLM provider cards now show an "Ativar" action when a provider is connected but not the active one, and a distinct "Ativo" indicator when it is — this state existed in the backend already but had no reachable UI before this release.
+
+### Removed
+
+- Two admin pages (`EmailProvidersPage`, `AISettings`) that were fully built and tested but never mounted on any route — dead, unreachable code. Their behavior now lives in the Integrations page's provider cards instead.
+
 ## [0.2.6] — 2026-09-09
 
 
