@@ -382,14 +382,14 @@ T15 → T16 → T17
 **Requirement**: ACTIVITY-09, ACTIVITY-12, ACTIVITY-13
 
 **Done when**:
-- [ ] `ACTIVITY_FEED` hardcoded array deleted entirely (spec AC9 — not just unused).
-- [ ] `RecentActivity` uses `useRecentActivity()` + the T16 phrase mapping.
-- [ ] Loading state uses the shared `Skeleton` primitive (spec AC12; reuse the same pattern the loading-skeletons feature already established for this exact page's other cards, e.g. `OverviewPage.tsx`'s summary-card skeletons).
-- [ ] Error state matches the page's existing error-row pattern (spec AC12).
-- [ ] Zero-entries state renders an explicit empty-state message, not a blank card (spec AC13).
-- [ ] Test suite covers: real entries render with correct phrasing (including a `null`-label entry), loading shows skeleton, error shows the error row, empty tenant shows the empty-state message.
-- [ ] Build gate (last task of the entire feature): `go build ./... && go vet ./... && gofmt -l <changed> && go test ./...` (Go side, in case any Go file was touched incidentally — expected to be none in this task) AND `npx tsc -b --noEmit && npm run test` (frontend, full suite).
-- [ ] Feature-level Verifier dispatch (Execute step 9) — mandatory, not prompted.
+- [x] `ACTIVITY_FEED` hardcoded array deleted entirely (spec AC9 — not just unused).
+- [x] `RecentActivity` uses `useRecentActivity()` + the T16 phrase mapping.
+- [x] Loading state uses the shared `Skeleton` primitive (spec AC12; reuse the same pattern the loading-skeletons feature already established for this exact page's other cards, e.g. `OverviewPage.tsx`'s summary-card skeletons).
+- [x] Error state matches the page's existing error-row pattern (spec AC12).
+- [x] Zero-entries state renders an explicit empty-state message, not a blank card (spec AC13).
+- [x] Test suite covers: real entries render with correct phrasing (including a `null`-label entry), loading shows skeleton, error shows the error row, empty tenant shows the empty-state message.
+- [x] Build gate (last task of the entire feature): `go build ./... && go vet ./... && gofmt -l <changed> && go test ./...` (Go side, in case any Go file was touched incidentally — expected to be none in this task) AND `npx tsc -b --noEmit && npm run test` (frontend, full suite).
+- [x] Feature-level Verifier dispatch (Execute step 9) — mandatory, not prompted.
 
 **Tests**: unit
 **Gate**: build

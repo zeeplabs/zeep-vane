@@ -4,8 +4,9 @@ import { Bar, BarChart, ResponsiveContainer } from "recharts";
 import { MdOutlineAdd, MdOutlineWeb, MdOutlineGroupAdd, MdOutlinePublic, MdOutlineBolt } from "react-icons/md";
 import { Card } from "../../components/ui/Card";
 import { Skeleton } from "../../components/ui/Skeleton";
-import type { OverviewIncident, OverviewResponse, OverviewUptimeBucket } from "../../types/api";
-import { useOverview } from "./hooks";
+import type { AuditLogEntry, OverviewIncident, OverviewResponse, OverviewUptimeBucket } from "../../types/api";
+import { useOverview, useRecentActivity } from "./hooks";
+import { activityPhraseKey } from "./activityPhrases";
 
 // bucketColorVar mirrors handoff-new-layout/Visao Geral.dc.html's chartBars
 // color rule: v < 98.5 -> warning, v < 99.5 -> accent, else success. null (no
@@ -60,17 +61,6 @@ const SHORTCUTS = [
   { key: "createStatusPage", to: "/domains" },
   { key: "inviteUser", to: "/admins" },
   { key: "viewDomains", to: "/domains" },
-] as const;
-
-// ACTIVITY_FEED is a static placeholder (no ActivityEvent backend model
-// exists yet - user decision 2026-09-14: hardcode visually, don't fabricate
-// a live feed). Mirrors handoff-new-layout/Visao Geral.dc.html's ACTIVITY
-// fixture exactly (4 entries) - example data, not real tenant state.
-const ACTIVITY_FEED = [
-  { initials: "AS", name: "Ana Silva", action: "overview.activity.resolvedIncident", values: { title: "Timeout no Auth Service" }, when: "overview.activity.days5" },
-  { initials: "RN", name: "Rafael Nunes", action: "overview.activity.invitedMember", values: undefined, when: "overview.activity.yesterday" },
-  { initials: "DR", name: "Diego Rocha", action: "overview.activity.addedDomain", values: { domain: "painel.acme.health" }, when: "overview.activity.days5" },
-  { initials: "AS", name: "Ana Silva", action: "overview.activity.updatedPlan", values: { plan: "Free" }, when: "overview.activity.weekAgo" },
 ] as const;
 
 function trendLabel(t: (key: string, opts?: Record<string, unknown>) => string, current: number | null, prior: number | null): string | null {
@@ -273,26 +263,85 @@ function UpsellBanner() {
   );
 }
 
+// activityInitials derives a 1-2 letter avatar badge from a display name -
+// same avatar-badge look the mock feed used, now computed from a real
+// actor_name (or the "Usuário removido"/"Removed user" placeholder) instead
+// of a fixture-authored literal.
+function activityInitials(name: string): string {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return "?";
+  const first = parts[0][0] ?? "";
+  const second = parts.length > 1 ? (parts[1][0] ?? "") : (parts[0][1] ?? "");
+  return (first + second).toUpperCase();
+}
+
+function ActivityRow({ entry, actorName, t, locale }: {
+  entry: AuditLogEntry;
+  actorName: string;
+  t: (key: string, opts?: Record<string, unknown>) => string;
+  locale: string;
+}) {
+  const { key, values } = activityPhraseKey(entry);
+  return (
+    <div className="flex items-start gap-3">
+      <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-accent-100 text-[11px] font-bold text-accent-700">
+        {activityInitials(actorName)}
+      </span>
+      <div className="min-w-0">
+        <div className="text-[12.5px] text-text">
+          <span className="font-bold">{actorName}</span> {t(key, values)}
+        </div>
+        <div className="mt-0.5 text-[11.5px] text-text-muted">{formatTimestamp(entry.created_at, locale)}</div>
+      </div>
+    </div>
+  );
+}
+
+// RecentActivity fetches its own data (useRecentActivity, independent of
+// useOverview - design.md's "one card, one hook" idiom) instead of
+// rendering the old ACTIVITY_FEED mock array (recent-team-activity,
+// ACTIVITY-09). Loading uses the shared Skeleton primitive, error mirrors
+// OverviewPage's own top-level role="alert"/text-critical pattern, and a
+// zero-entries tenant gets an explicit empty-state message instead of a
+// blank card (ACTIVITY-12/13).
 function RecentActivity() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
+  const { data, isLoading, isError } = useRecentActivity();
+
   return (
     <Card elevation="none" className="border border-divider flex flex-col gap-3.5 p-5">
       <h3 className="m-0 text-[13.5px] font-bold text-text">{t("overview.activity.title")}</h3>
-      <div className="flex flex-col gap-3.5">
-        {ACTIVITY_FEED.map((entry, i) => (
-          <div key={i} className="flex items-start gap-3">
-            <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-accent-100 text-[11px] font-bold text-accent-700">
-              {entry.initials}
-            </span>
-            <div className="min-w-0">
-              <div className="text-[12.5px] text-text">
-                <span className="font-bold">{entry.name}</span> {t(entry.action, entry.values)}
+      {isLoading ? (
+        <div className="flex flex-col gap-3.5">
+          {Array.from({ length: 3 }).map((_, i) => (
+            <div key={i} className="flex items-start gap-3">
+              <Skeleton width={28} height={28} />
+              <div className="flex flex-1 flex-col gap-1.5">
+                <Skeleton width="70%" height={12} />
+                <Skeleton width="40%" height={10} />
               </div>
-              <div className="mt-0.5 text-[11.5px] text-text-muted">{t(entry.when)}</div>
             </div>
-          </div>
-        ))}
-      </div>
+          ))}
+        </div>
+      ) : isError || !data ? (
+        <p role="alert" className="m-0 text-[12.5px] text-critical">
+          {t("overview.activity.loadError")}
+        </p>
+      ) : data.length === 0 ? (
+        <p className="m-0 text-[13px] text-text-muted">{t("overview.activity.empty")}</p>
+      ) : (
+        <div className="flex flex-col gap-3.5">
+          {data.map((entry, i) => (
+            <ActivityRow
+              key={`${entry.created_at}-${i}`}
+              entry={entry}
+              actorName={entry.actor_deleted ? t("overview.activity.removedUser") : entry.actor_name}
+              t={t}
+              locale={i18n.language}
+            />
+          ))}
+        </div>
+      )}
     </Card>
   );
 }
@@ -349,8 +398,9 @@ function SummaryGrid({ data, t }: { data: OverviewResponse; t: (key: string, opt
 // OVW-01/02). Layout matches handoff-new-layout/Visao Geral.dc.html: 4
 // summary cards (fixed semantic color per card), a 1.4fr/1fr chart+incidents
 // row, a 4-up shortcuts row, and an activity card. The "Atividade recente do
-// time" card is a static placeholder (2026-09-14 decision: no ActivityEvent
-// model exists yet) - renders fixed example content, not real tenant state.
+// time" card renders real tenant audit-log data via its own query
+// (recent-team-activity, ACTIVITY-09) - the previous static ACTIVITY_FEED
+// mock (2026-09-14 decision) is gone.
 // The upsell banner is disabled entirely (2026-09-15) - see UpsellBanner's
 // own comment below.
 export function OverviewPage() {

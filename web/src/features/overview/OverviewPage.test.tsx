@@ -5,9 +5,10 @@ import { http, HttpResponse, delay } from "msw";
 import "../../lib/i18n";
 import { TestQueryProvider } from "../../test/queryClient";
 import { server } from "../../test/msw/server";
+import { seedAuditLogEntries } from "../../test/msw/handlers";
 import { apiFetch } from "../../lib/apiClient";
 import { OverviewPage } from "./OverviewPage";
-import type { OverviewResponse } from "../../types/api";
+import type { AuditLogEntry, OverviewResponse } from "../../types/api";
 
 async function loginAsOwner() {
   await apiFetch("/api/auth/login", {
@@ -67,11 +68,15 @@ describe("OverviewPage", () => {
 
   // SKEL-06: once the fetch resolves, skeletons are gone and the real
   // summary cards take over - loading and loaded are mutually exclusive.
+  // "Atividade recente do time" (recent-team-activity) runs its own
+  // independent useRecentActivity query, so this also waits for its
+  // empty-state text before asserting zero skeletons page-wide.
   it("remove os skeletons assim que /api/overview termina de carregar", async () => {
     await loginAsOwner();
     renderPage();
 
     await waitFor(() => expect(screen.getByTestId("overview-card-uptime")).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText("Nenhuma atividade recente.")).toBeInTheDocument());
     expect(screen.queryAllByTestId("skeleton")).toHaveLength(0);
   });
 
@@ -175,5 +180,83 @@ describe("OverviewPage", () => {
         "Não foi possível carregar o resumo. Tente novamente.",
       ),
     );
+  });
+
+  // recent-team-activity T17: "Atividade recente do time" is wired to
+  // GET /api/audit-log (ACTIVITY-09) instead of the deleted ACTIVITY_FEED
+  // mock array.
+  describe("Atividade recente do time (audit-log)", () => {
+    function entry(overrides: Partial<AuditLogEntry>): AuditLogEntry {
+      return {
+        action: "invited",
+        target_label: "novo@acme.health",
+        actor_name: "Ana Silva",
+        actor_deleted: false,
+        created_at: "2026-09-10T12:00:00Z",
+        ...overrides,
+      };
+    }
+
+    it("renderiza entradas reais com a frase correta, incluindo uma entrada com target_label nulo", async () => {
+      seedAuditLogEntries([
+        entry({ action: "invited", target_label: "novo@acme.health", actor_name: "Ana Silva" }),
+        entry({ action: "role_changed", target_label: null, actor_name: "Rafael Nunes" }),
+      ]);
+      await loginAsOwner();
+      renderPage();
+
+      expect(await screen.findByText(/convidou novo@acme.health/)).toBeInTheDocument();
+      expect(screen.getByText("Ana Silva")).toBeInTheDocument();
+      // ACTIVITY-11: null target_label omits the target clause gracefully,
+      // never the literal "null"/"undefined".
+      expect(screen.getByText("alterou um papel")).toBeInTheDocument();
+      expect(screen.queryByText(/null/)).not.toBeInTheDocument();
+      expect(screen.queryByText(/undefined/)).not.toBeInTheDocument();
+    });
+
+    it("mostra o placeholder de usuário removido quando actor_deleted é true", async () => {
+      seedAuditLogEntries([entry({ actor_deleted: true, actor_name: "" })]);
+      await loginAsOwner();
+      renderPage();
+
+      expect(await screen.findByText("Usuário removido")).toBeInTheDocument();
+    });
+
+    it("mostra skeletons enquanto /api/audit-log carrega", async () => {
+      server.use(
+        http.get("/api/audit-log", async () => {
+          await delay("infinite");
+          return HttpResponse.json([]);
+        }),
+      );
+      await loginAsOwner();
+      renderPage();
+
+      await waitFor(() => expect(screen.getByTestId("overview-card-uptime")).toBeInTheDocument());
+      expect(screen.getAllByTestId("skeleton").length).toBeGreaterThan(0);
+    });
+
+    it("mostra a linha de erro quando /api/audit-log falha", async () => {
+      server.use(
+        http.get("/api/audit-log", () =>
+          HttpResponse.json({ error: "internal server error" }, { status: 500 }),
+        ),
+      );
+      await loginAsOwner();
+      renderPage();
+
+      await waitFor(() =>
+        expect(screen.getAllByRole("alert").map((el) => el.textContent)).toContain(
+          "Não foi possível carregar a atividade recente. Tente novamente.",
+        ),
+      );
+    });
+
+    it("mostra o estado vazio quando o tenant não tem nenhuma atividade", async () => {
+      await loginAsOwner();
+      renderPage();
+
+      expect(await screen.findByText("Nenhuma atividade recente.")).toBeInTheDocument();
+    });
   });
 });
