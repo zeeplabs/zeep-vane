@@ -360,7 +360,7 @@ func (h *StatusPagesHandler) VerifyDomain(w http.ResponseWriter, r *http.Request
 	}
 
 	if actor, ok := UserFromContext(r.Context()); ok {
-		if err := h.audit.Record(r.Context(), actor.ID, id, "status_page_domain_verified"); err != nil {
+		if err := h.audit.Record(r.Context(), actor.ID, id, statusPage.Name, "status_page_domain_verified"); err != nil {
 			h.logger.Error("status-pages: failed to record audit entry", zap.Error(err))
 		}
 	}

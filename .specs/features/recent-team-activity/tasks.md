@@ -288,7 +288,10 @@ T15 → T16 → T17
 **Depends on**: T2
 **Requirement**: ACTIVITY-03
 
-**Done when**: `Record(..., pageName, "status_page_domain_verified")`; test asserts the label. Last task of Phase 4 — run the Build gate.
+**Done when**:
+- [x] `h.audit.Record(r.Context(), actor.ID, id, statusPage.Name, "status_page_domain_verified")`.
+- [x] Test asserts the label (`TestVerifyDomain_ValidRequest_RecordsStatusPageDomainVerifiedAuditLabel`).
+- [x] Last task of Phase 4 — Build gate run: `go build ./...`, `go vet ./...`, `gofmt -l` clean on changed files, `go test ./...` green, plus the full DB-touching integration gate (disposable Postgres container) since this phase's tests query `admin_audit_log` directly. All 8 `Record` call sites now pass `targetLabel`.
 **Tests**: unit
 **Gate**: build
 **Commit**: `feat(status-pages): record page name as status_page_domain_verified audit label`
