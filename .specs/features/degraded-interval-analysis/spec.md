@@ -94,19 +94,19 @@ The user wants: clicking a degraded hourly bar opens a popover listing the AI-ge
 
 | Requirement ID | Story | Phase | Status |
 | --- | --- | --- | --- |
-| DEGINT-01 | P1: Episódio degradado grava seu próprio motivo | - | Implementing |
-| DEGINT-02 | P1: Episódio degradado grava seu próprio motivo | - | Implementing |
-| DEGINT-03 | P1: Episódio degradado grava seu próprio motivo | - | Implementing |
-| DEGINT-04 | P1: Episódio degradado grava seu próprio motivo | - | Implementing |
-| DEGINT-05 | P1: Episódio degradado grava seu próprio motivo | - | Implementing |
-| DEGINT-06 | P1: Episódio degradado grava seu próprio motivo | - | Implementing |
-| DEGINT-07 | P1: Episódio degradado grava seu próprio motivo | - | Implementing |
-| DEGINT-08 | P2: Histórico exposto por bucket na página de status pública | - | Implementing |
-| DEGINT-09 | P2: Histórico exposto por bucket na página de status pública | - | Implementing |
-| DEGINT-10 | P2: Histórico exposto por bucket na página de status pública | - | Implementing |
-| DEGINT-11 | P2: Histórico exposto por bucket na página de status pública | - | Implementing (pending re-gate, blocked by unrelated concurrent-session build state) |
-| DEGINT-12 | P2: Histórico exposto por bucket na página de status pública | - | Implementing |
-| DEGINT-13 | P3: Popover de clique na barra degradada | - | Draft |
-| DEGINT-14 | P3: Popover de clique na barra degradada | - | Draft |
-| DEGINT-15 | P3: Popover de clique na barra degradada | - | Draft |
-| DEGINT-16 | P3: Popover de clique na barra degradada | - | Draft |
+| DEGINT-01 | P1: Episódio degradado grava seu próprio motivo | - | Verified |
+| DEGINT-02 | P1: Episódio degradado grava seu próprio motivo | - | Verified |
+| DEGINT-03 | P1: Episódio degradado grava seu próprio motivo | - | Verified |
+| DEGINT-04 | P1: Episódio degradado grava seu próprio motivo | - | Verified |
+| DEGINT-05 | P1: Episódio degradado grava seu próprio motivo | - | Verified |
+| DEGINT-06 | P1: Episódio degradado grava seu próprio motivo | - | Verified |
+| DEGINT-07 | P1: Episódio degradado grava seu próprio motivo | - | Verified |
+| DEGINT-08 | P2: Histórico exposto por bucket na página de status pública | - | Verified |
+| DEGINT-09 | P2: Histórico exposto por bucket na página de status pública | - | Verified |
+| DEGINT-10 | P2: Histórico exposto por bucket na página de status pública | - | Verified |
+| DEGINT-11 | P2: Histórico exposto por bucket na página de status pública | - | Verified |
+| DEGINT-12 | P2: Histórico exposto por bucket na página de status pública | - | Verified |
+| DEGINT-13 | P3: Popover de clique na barra degradada | - | Verified |
+| DEGINT-14 | P3: Popover de clique na barra degradada | - | Verified |
+| DEGINT-15 | P3: Popover de clique na barra degradada | - | Verified |
+| DEGINT-16 | P3: Popover de clique na barra degradada | - | Verified |
