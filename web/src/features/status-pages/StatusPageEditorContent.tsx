@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
-import { MdOutlineOpenInNew, MdCheck } from "react-icons/md";
+import { useTranslation } from "react-i18next";
+import { toast } from "sonner";
+import { MdOutlineOpenInNew, MdCheck, MdContentCopy } from "react-icons/md";
 import { Tag, type TagVariant } from "../../components/ui/Tag";
 import { Button, buttonBaseClasses, buttonVariantClasses } from "../../components/ui/Button";
 import { Field } from "../../components/ui/Field";
@@ -280,9 +282,16 @@ interface DomainVerificationPanelProps {
 // Vercel/Render offer for custom domains. Table styling mirrors
 // DomainDetailDrawer's TIPO/VALOR DNS block.
 function DomainVerificationPanel({ statusPageId, fullHostname }: DomainVerificationPanelProps) {
+  const { t } = useTranslation();
   const { data: dnsTarget, isLoading: dnsTargetLoading } = useDNSTarget();
   const verifyDomain = useVerifyDomain();
   const result: VerifyDomainResult | undefined = verifyDomain.data;
+
+  async function handleCopyCname() {
+    if (!dnsTarget) return;
+    await navigator.clipboard.writeText(dnsTarget);
+    toast.success(t("statusPages.dns.copied"));
+  }
 
   return (
     <div className="flex flex-col gap-3">
@@ -303,7 +312,7 @@ function DomainVerificationPanel({ statusPageId, fullHostname }: DomainVerificat
           <span className="text-[11px] font-bold text-text-muted">TIPO</span>
           <span className="text-[11px] font-bold text-text-muted">VALOR</span>
         </div>
-        <div className="grid grid-cols-[70px_1fr] items-center gap-2 px-3.5 py-3">
+        <div className="grid grid-cols-[70px_1fr_auto] items-center gap-2 px-3.5 py-3">
           <span className="font-mono text-[12.5px] font-bold text-text">CNAME</span>
           {dnsTargetLoading ? (
             <span className="font-mono text-[12.5px] text-text-muted">Carregando…</span>
@@ -312,6 +321,17 @@ function DomainVerificationPanel({ statusPageId, fullHostname }: DomainVerificat
               {dnsTarget ?? "não configurado"}
             </span>
           )}
+          {dnsTarget ? (
+            <button
+              type="button"
+              onClick={handleCopyCname}
+              aria-label={t("statusPages.dns.copyCname")}
+              title={t("statusPages.dns.copyCname")}
+              className="flex-none cursor-pointer text-text-muted hover:text-text"
+            >
+              <MdContentCopy size={15} aria-hidden="true" />
+            </button>
+          ) : null}
         </div>
       </div>
       <p className="text-xs text-text-muted">

@@ -168,6 +168,20 @@ describe("StatusPageDetail", () => {
     expect(screen.queryByText("Configuração DNS")).not.toBeInTheDocument();
   });
 
+  it("botão de copiar CNAME copia o valor exibido pra área de transferência (SPD-10)", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.assign(navigator, { clipboard: { writeText } });
+
+    await loginAsOwner();
+    renderDetail("sp-2");
+    await screen.findByText("Aguardando validação de DNS/certificado");
+
+    expect(await screen.findByText("203.0.113.10")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Copiar valor do CNAME" }));
+
+    expect(writeText).toHaveBeenCalledWith("203.0.113.10");
+  });
+
   it("resultado de verificação com DNS incorreto/certificado inválido é exibido sem publicar a página", async () => {
     await loginAsOwner();
     server.use(

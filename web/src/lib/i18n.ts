@@ -15,6 +15,10 @@ const resources = {
       },
       statusPages: {
         loading: "Carregando…",
+        dns: {
+          copyCname: "Copiar valor do CNAME",
+          copied: "Valor do CNAME copiado.",
+        },
       },
       incidents: {
         loading: "Carregando…",
@@ -561,6 +565,10 @@ const resources = {
       },
       statusPages: {
         loading: "Loading…",
+        dns: {
+          copyCname: "Copy CNAME value",
+          copied: "CNAME value copied.",
+        },
       },
       incidents: {
         loading: "Loading…",
