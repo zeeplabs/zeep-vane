@@ -176,3 +176,19 @@ func (r *EmailProviderRepository) SetActiveProvider(ctx context.Context, provide
 
 	return nil
 }
+
+// DeleteProvider removes provider's row from email_providers
+// (provider-disconnect PROVDISC-01/02). It is idempotent: deleting a
+// provider with no row (never connected, or already disconnected) still
+// returns nil, matching the spec's "second disconnect call is a no-op
+// success" decision. If provider was the active one, email_settings'
+// active_provider is cleared to NULL automatically by the existing FK
+// (ON DELETE SET NULL, 0016_email_providers.up.sql) - no separate step here.
+func (r *EmailProviderRepository) DeleteProvider(ctx context.Context, provider string) error {
+	_, err := r.pool.Exec(ctx, "DELETE FROM email_providers WHERE provider = $1", provider)
+	if err != nil {
+		return fmt.Errorf("db: failed to delete email provider: %w", err)
+	}
+
+	return nil
+}

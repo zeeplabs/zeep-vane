@@ -199,3 +199,54 @@ func TestEmailProviderRepository_SetActiveProvider_UpdatesSingletonRow(t *testin
 		t.Fatalf("GetActiveProvider() after switch = %q, want %q", active, "resend")
 	}
 }
+
+func TestEmailProviderRepository_DeleteProvider_ExistingRow_RemovesIt(t *testing.T) {
+	repo, _ := newEmailProviderRepoForTest(t)
+	ctx := context.Background()
+
+	if err := repo.UpsertProvider(ctx, "sendgrid", []byte("cipher"), "a@example.com", "Alice"); err != nil {
+		t.Fatalf("UpsertProvider() returned unexpected error: %v", err)
+	}
+
+	if err := repo.DeleteProvider(ctx, "sendgrid"); err != nil {
+		t.Fatalf("DeleteProvider() returned unexpected error: %v", err)
+	}
+
+	_, err := repo.Get(ctx, "sendgrid")
+	if !errors.Is(err, ErrNotFound) {
+		t.Fatalf("Get() after DeleteProvider() error = %v, want ErrNotFound", err)
+	}
+}
+
+func TestEmailProviderRepository_DeleteProvider_NeverConnected_NoError(t *testing.T) {
+	repo, _ := newEmailProviderRepoForTest(t)
+	ctx := context.Background()
+
+	if err := repo.DeleteProvider(ctx, "sendgrid"); err != nil {
+		t.Fatalf("DeleteProvider() on never-connected provider returned unexpected error: %v, want nil (idempotent)", err)
+	}
+}
+
+func TestEmailProviderRepository_DeleteProvider_ActiveProvider_ClearsActiveProviderViaFK(t *testing.T) {
+	repo, _ := newEmailProviderRepoForTest(t)
+	ctx := context.Background()
+
+	if err := repo.UpsertProvider(ctx, "sendgrid", []byte("cipher"), "a@example.com", "Alice"); err != nil {
+		t.Fatalf("UpsertProvider() returned unexpected error: %v", err)
+	}
+	if err := repo.SetActiveProvider(ctx, "sendgrid"); err != nil {
+		t.Fatalf("SetActiveProvider() returned unexpected error: %v", err)
+	}
+
+	if err := repo.DeleteProvider(ctx, "sendgrid"); err != nil {
+		t.Fatalf("DeleteProvider() returned unexpected error: %v", err)
+	}
+
+	active, err := repo.GetActiveProvider(ctx)
+	if err != nil {
+		t.Fatalf("GetActiveProvider() returned unexpected error: %v", err)
+	}
+	if active != "" {
+		t.Errorf("GetActiveProvider() after deleting the active provider = %q, want \"\" (cleared by ON DELETE SET NULL)", active)
+	}
+}
