@@ -12,6 +12,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"go.uber.org/zap"
 
+	"github.com/zeeplabs/zeep-vane/internal/audit"
 	"github.com/zeeplabs/zeep-vane/internal/auth"
 	"github.com/zeeplabs/zeep-vane/internal/db"
 	"github.com/zeeplabs/zeep-vane/internal/dbtest"
@@ -21,7 +22,7 @@ import (
 // TenantContext only, no RequireRole - RBAC for /api/tenants/current is
 // asserted at the routes.go wiring level (internal/cli), not here.
 func buildTenantRouter(pool *db.Pool, admins *db.UserRepository) http.Handler {
-	handler := NewTenantHandler(db.NewTenantMembershipRepository(pool), db.NewTenantRepository(pool), zap.NewNop())
+	handler := NewTenantHandler(db.NewTenantMembershipRepository(pool), db.NewTenantRepository(pool), audit.NewLog(pool), zap.NewNop())
 
 	r := chi.NewRouter()
 	r.Group(func(protected chi.Router) {
@@ -159,6 +160,71 @@ func TestDeleteTenant_SecondActiveTenantExists_200SoftDeletes(t *testing.T) {
 	}
 	if otherStatus != "active" {
 		t.Errorf("other tenant status = %q, want unchanged %q", otherStatus, "active")
+	}
+}
+
+// TestDeleteTenant_SecondActiveTenantExists_RecordsTenantDeletedAuditLabelSurvivingDelete
+// covers AUDITEXP-15: the audit entry's target_label survives the delete
+// (captured before it runs), same pattern already verified for
+// service_deleted/status_page_deleted.
+func TestDeleteTenant_SecondActiveTenantExists_RecordsTenantDeletedAuditLabelSurvivingDelete(t *testing.T) {
+	pool, admins := newCompanySettingsTestPool(t)
+	r := buildTenantRouter(pool, admins)
+	tenantID := apiTestTenantID(t)
+	token, userID := seedOwnerSession(t, admins, tenantID)
+	otherTenantID := seedSecondTenant(t, pool)
+	seedMembership(t, userID, otherTenantID, db.RoleOwner)
+
+	// Give the fixture tenant a real name first: its default/reset state
+	// (shared with company_settings_handler_test.go's fixture) is an empty
+	// name, which the audit log persists as SQL NULL (audit.Log.Record's
+	// documented nilIfEmpty convention) rather than exercising the
+	// surviving-label assertion this test is actually for.
+	wantName := "Audit Delete Tenant " + tenantID
+	if _, err := pool.Exec(context.Background(), "UPDATE tenants SET name = $1 WHERE id = $2", wantName, tenantID); err != nil {
+		t.Fatalf("seeding tenant name returned unexpected error: %v", err)
+	}
+
+	rec := deleteCurrentTenant(t, r, token)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	var gotTargetLabel string
+	row := pool.QueryRow(context.Background(),
+		"SELECT target_label FROM admin_audit_log WHERE target_id = $1 AND action = 'tenant_deleted'", tenantID)
+	if err := row.Scan(&gotTargetLabel); err != nil {
+		t.Fatalf("Scan() returned unexpected error: %v", err)
+	}
+	if gotTargetLabel != wantName {
+		t.Errorf("admin_audit_log target_label = %q, want %q (must survive the delete above)", gotTargetLabel, wantName)
+	}
+}
+
+// TestDeleteTenant_OnlyActiveTenant_NoAuditRecorded covers AUDITEXP-16: the
+// 409 "last active tenant" path records nothing.
+func TestDeleteTenant_OnlyActiveTenant_NoAuditRecorded(t *testing.T) {
+	pool, admins := newCompanySettingsTestPool(t)
+	r := buildTenantRouter(pool, admins)
+	tenantID := apiTestTenantID(t)
+	token, _ := seedOwnerSession(t, admins, tenantID)
+
+	var before int
+	if err := pool.QueryRow(context.Background(), "SELECT count(*) FROM admin_audit_log WHERE action = 'tenant_deleted'").Scan(&before); err != nil {
+		t.Fatalf("Scan() returned unexpected error: %v", err)
+	}
+
+	rec := deleteCurrentTenant(t, r, token)
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusConflict, rec.Body.String())
+	}
+
+	var after int
+	if err := pool.QueryRow(context.Background(), "SELECT count(*) FROM admin_audit_log WHERE action = 'tenant_deleted'").Scan(&after); err != nil {
+		t.Fatalf("Scan() returned unexpected error: %v", err)
+	}
+	if after != before {
+		t.Errorf("admin_audit_log tenant_deleted count went from %d to %d, want unchanged after a 409", before, after)
 	}
 }
 

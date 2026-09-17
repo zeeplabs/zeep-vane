@@ -7,6 +7,7 @@ import (
 
 	"go.uber.org/zap"
 
+	"github.com/zeeplabs/zeep-vane/internal/audit"
 	"github.com/zeeplabs/zeep-vane/internal/db"
 )
 
@@ -18,8 +19,10 @@ type tenantMembershipLister interface {
 }
 
 // tenantSoftDeleter is the subset of *db.TenantRepository TenantHandler
-// depends on.
+// depends on. Get is used only to fetch the tenant's name for the
+// tenant_deleted audit entry (AUDITEXP-15) before SoftDelete runs.
 type tenantSoftDeleter interface {
+	Get(ctx context.Context, tenantID string) (*db.Tenant, error)
 	SoftDelete(ctx context.Context, tenantID string) error
 }
 
@@ -28,12 +31,13 @@ type tenantSoftDeleter interface {
 type TenantHandler struct {
 	memberships tenantMembershipLister
 	tenants     tenantSoftDeleter
+	audit       *audit.Log
 	logger      *zap.Logger
 }
 
 // NewTenantHandler builds a TenantHandler.
-func NewTenantHandler(memberships tenantMembershipLister, tenants tenantSoftDeleter, logger *zap.Logger) *TenantHandler {
-	return &TenantHandler{memberships: memberships, tenants: tenants, logger: logger}
+func NewTenantHandler(memberships tenantMembershipLister, tenants tenantSoftDeleter, auditLog *audit.Log, logger *zap.Logger) *TenantHandler {
+	return &TenantHandler{memberships: memberships, tenants: tenants, audit: auditLog, logger: logger}
 }
 
 const lastActiveTenantResponseBody = `{"error":"this is your only active account - it cannot be deleted"}`
@@ -67,10 +71,23 @@ func (h *TenantHandler) Delete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Captured before SoftDelete runs (same reasoning as
+	// StatusPagesHandler/ServicesHandler.Delete): the audit entry needs a
+	// human-readable name, and a name fetched after the delete would see
+	// the tenant already in its deleted state.
+	var name string
+	if tenant, err := h.tenants.Get(r.Context(), tenantID); err == nil {
+		name = tenant.Name
+	}
+
 	if err := h.tenants.SoftDelete(r.Context(), tenantID); err != nil {
 		h.logger.Error("tenants: failed to soft-delete tenant", zap.Error(err))
 		writeInternalError(w)
 		return
+	}
+
+	if err := h.audit.Record(r.Context(), user.ID, tenantID, name, "tenant_deleted"); err != nil {
+		h.logger.Error("tenants: failed to record audit entry", zap.Error(err))
 	}
 
 	w.Header().Set("Content-Type", "application/json")
