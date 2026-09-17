@@ -112,9 +112,9 @@
 | ACTIVITY-03 | P1: Persist a human-readable label with every audit entry | Specified | Complete |
 | ACTIVITY-04 | P1: Persist a human-readable label with every audit entry | Specified | Complete |
 | ACTIVITY-05 | P1: Persist a human-readable label with every audit entry | Specified | Implementing |
-| ACTIVITY-06 | P1: Read endpoint for recent activity | Specified | Implementing |
-| ACTIVITY-07 | P1: Read endpoint for recent activity | Specified | Pending |
-| ACTIVITY-08 | P1: Read endpoint for recent activity | Specified | Implementing |
+| ACTIVITY-06 | P1: Read endpoint for recent activity | Specified | Complete |
+| ACTIVITY-07 | P1: Read endpoint for recent activity | Specified | Complete |
+| ACTIVITY-08 | P1: Read endpoint for recent activity | Specified | Complete |
 | ACTIVITY-09 | P1: Wire the Overview card to real data | Specified | Pending |
 | ACTIVITY-10 | P1: Wire the Overview card to real data | Specified | Pending |
 | ACTIVITY-11 | P1: Wire the Overview card to real data | Specified | Pending |

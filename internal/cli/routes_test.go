@@ -649,6 +649,40 @@ func TestAdminRouter_Overview_NoSession_401(t *testing.T) {
 	}
 }
 
+// TestAdminRouter_Viewer_AuditLog_200 covers recent-team-activity's L-059
+// lesson (this session's own): prove GET /api/audit-log is reachable
+// through the real buildAdminRouter, not just a hand-mocked router in
+// internal/api's own handler-level tests - the route carries no role
+// gate beyond anyRole (design.md: AuditLogHandler), the same gate as
+// /api/overview and /api/poller/status above.
+func TestAdminRouter_Viewer_AuditLog_200(t *testing.T) {
+	r, pool, admins, tenantID := newAdminRouterAndTenantForTest(t)
+	token := issueRoutesTestToken(t, admins, pool, tenantID, db.RoleViewer)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/audit-log", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Errorf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+}
+
+// TestAdminRouter_AuditLog_NoSession_401 confirms an unauthenticated
+// request to /api/audit-log is rejected before the handler runs.
+func TestAdminRouter_AuditLog_NoSession_401(t *testing.T) {
+	r, _, _, _ := newAdminRouterAndTenantForTest(t)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/audit-log", nil)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Errorf("status = %d, want %d, body = %s", rec.Code, http.StatusUnauthorized, rec.Body.String())
+	}
+}
+
 // TestAdminRouter_Viewer_EmailProvidersList_200 asserts EMAIL-06: viewer
 // must be able to read GET /api/integrations/email (anyRole), the same
 // read/write role split as the existing Datadog integration routes

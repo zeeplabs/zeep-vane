@@ -326,12 +326,13 @@ T15 → T16 → T17
 **Requirement**: ACTIVITY-06, ACTIVITY-07
 
 **Done when**:
-- [ ] `limit` query param: default 5, invalid/≤0 → 5, >20 → 20 (spec AC6, edge cases).
-- [ ] `401` with no session (spec AC7).
-- [ ] `200` with the mapped JSON shape (`action`, `target_label`, `actor_name`, `actor_deleted`, `created_at`) for a valid session, any role.
-- [ ] Route registered in `internal/cli/routes.go` under `protected` (no `ownerOnly`/role wrapper).
-- [ ] Handler test covers: 401, default limit, explicit limit, limit>20 capping, invalid limit fallback, response shape for a known fixture.
-- [ ] Build gate: `go build ./... && go vet ./... && gofmt -l <changed> && go test ./...` plus the full DB-touching integration gate (disposable Postgres container) since this phase's T13 touches the DB layer.
+- [x] `limit` query param: default 5, invalid/≤0 → 5, >20 → 20 (spec AC6, edge cases).
+- [x] `401` with no session (spec AC7).
+- [x] `200` with the mapped JSON shape (`action`, `target_label`, `actor_name`, `actor_deleted`, `created_at`) for a valid session, any role.
+- [x] Route registered in `internal/cli/routes.go` under `protected`, gated by `anyRole` (owner/operator/viewer - this codebase's established "no meaningful role restriction beyond auth" idiom, same as `/api/overview`/`/api/poller/status`; there is no plain-`protected`-with-zero-role-check precedent for a tenant-scoped resource in this router).
+- [x] Handler test covers: 401, default limit, explicit limit, limit>20 capping, invalid limit fallback, response shape for a known fixture (`internal/api/audit_log_handler_test.go`, unit - fake repository + fake userLoader/sessionLoader, no DB).
+- [x] Real-router reachability test added to `internal/cli/routes_test.go` (`TestAdminRouter_Viewer_AuditLog_200`, `TestAdminRouter_AuditLog_NoSession_401`) - proves the route is wired through the real `buildAdminRouter`, per this session's L-059 lesson.
+- [x] Build gate: `go build ./... && go vet ./... && gofmt -l <changed> && go test ./...` green, plus the full DB-touching integration gate (disposable Postgres container) green, since this phase's T13 touches the DB layer.
 
 **Tests**: unit (handler, against a fake repository) + the integration coverage T13 already provides at the repository layer
 **Gate**: build
