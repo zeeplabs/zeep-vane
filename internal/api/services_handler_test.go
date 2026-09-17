@@ -15,6 +15,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"go.uber.org/zap"
 
+	"github.com/zeeplabs/zeep-vane/internal/audit"
 	"github.com/zeeplabs/zeep-vane/internal/db"
 )
 
@@ -25,7 +26,7 @@ func newServicesRouter(t *testing.T) (http.Handler, *db.Pool, *db.UserRepository
 
 	repo := db.NewServiceRepository(pool)
 	admins := db.NewUserRepository(pool)
-	handler := NewServicesHandler(repo, db.NewStatusIntervalRepository(pool), db.NewIncidentRepository(pool), zap.NewNop())
+	handler := NewServicesHandler(repo, db.NewStatusIntervalRepository(pool), db.NewIncidentRepository(pool), audit.NewLog(pool), zap.NewNop())
 
 	r := chi.NewRouter()
 	r.Group(func(protected chi.Router) {
@@ -1132,5 +1133,110 @@ func TestDeleteService_NonOwner_403NotDeleted(t *testing.T) {
 	getRec := getServiceDetail(t, r, ownerToken, created.ID)
 	if getRec.Code != http.StatusOK {
 		t.Errorf("GET after 403'd delete: status = %d, want %d - service must still exist", getRec.Code, http.StatusOK)
+	}
+}
+
+// TestCreateService_ValidRequest_RecordsServiceCreatedAudit covers
+// AUDITEXP-01: a successful create writes a service_created entry with the
+// service's name as target_label.
+func TestCreateService_ValidRequest_RecordsServiceCreatedAudit(t *testing.T) {
+	r, pool, admins := newServicesRouter(t)
+	token := issueTestSessionTokenWithTenant(t, admins, pool)
+	name := uniqueServiceName(t)
+	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), "DELETE FROM services WHERE name = $1", name) })
+
+	rec := postCreateService(t, r, token, name, "slo-audit-create")
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusCreated, rec.Body.String())
+	}
+
+	var gotAction, gotTargetLabel string
+	row := pool.QueryRow(context.Background(),
+		"SELECT action, target_label FROM admin_audit_log WHERE target_label = $1 ORDER BY created_at DESC LIMIT 1", name)
+	if err := row.Scan(&gotAction, &gotTargetLabel); err != nil {
+		t.Fatalf("Scan() returned unexpected error: %v", err)
+	}
+	if gotAction != "service_created" || gotTargetLabel != name {
+		t.Errorf("admin_audit_log (action, target_label) = (%q, %q), want (%q, %q)", gotAction, gotTargetLabel, "service_created", name)
+	}
+}
+
+// TestCreateService_MissingName_422_NoAuditRecorded covers AUDITEXP-16: a
+// failed create writes nothing to admin_audit_log.
+func TestCreateService_MissingName_422_NoAuditRecorded(t *testing.T) {
+	r, pool, admins := newServicesRouter(t)
+	token := issueTestSessionTokenWithTenant(t, admins, pool)
+
+	var before int
+	if err := pool.QueryRow(context.Background(), "SELECT count(*) FROM admin_audit_log WHERE action = 'service_created'").Scan(&before); err != nil {
+		t.Fatalf("Scan() returned unexpected error: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/services", bytes.NewBufferString(`{"slo_id":"slo-x"}`))
+	req.Header.Set("Authorization", "Bearer "+token)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusUnprocessableEntity, rec.Body.String())
+	}
+
+	var after int
+	if err := pool.QueryRow(context.Background(), "SELECT count(*) FROM admin_audit_log WHERE action = 'service_created'").Scan(&after); err != nil {
+		t.Fatalf("Scan() returned unexpected error: %v", err)
+	}
+	if after != before {
+		t.Errorf("admin_audit_log service_created count went from %d to %d, want unchanged after a failed create", before, after)
+	}
+}
+
+// TestUpdateService_ValidRequest_RecordsServiceUpdatedAudit covers
+// AUDITEXP-02: a successful rename writes a service_updated entry with the
+// new (post-rename) name as target_label.
+func TestUpdateService_ValidRequest_RecordsServiceUpdatedAudit(t *testing.T) {
+	r, pool, admins := newServicesRouter(t)
+	token := issueTestSessionTokenWithTenant(t, admins, pool)
+	oldName := uniqueServiceName(t)
+	created := createServiceForDetail(t, r, pool, token, oldName, "slo-audit-update", "")
+
+	newName := oldName + "-renamed"
+	rec := patchServiceName(t, r, token, created.ID, newName)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	var gotAction, gotTargetLabel string
+	row := pool.QueryRow(context.Background(),
+		"SELECT action, target_label FROM admin_audit_log WHERE target_id = $1 AND action = 'service_updated'", created.ID)
+	if err := row.Scan(&gotAction, &gotTargetLabel); err != nil {
+		t.Fatalf("Scan() returned unexpected error: %v", err)
+	}
+	if gotTargetLabel != newName {
+		t.Errorf("admin_audit_log target_label = %q, want the new name %q", gotTargetLabel, newName)
+	}
+}
+
+// TestDeleteService_Unattached_RecordsServiceDeletedAuditLabelSurvivingDelete
+// covers AUDITEXP-03: the service_deleted audit entry's target_label must
+// survive the soft-delete (captured before it runs), same pattern already
+// verified for status_page_deleted.
+func TestDeleteService_Unattached_RecordsServiceDeletedAuditLabelSurvivingDelete(t *testing.T) {
+	r, pool, admins := newServicesRouter(t)
+	token := issueTestSessionTokenWithTenant(t, admins, pool)
+	name := uniqueServiceName(t)
+	created := createServiceForDetail(t, r, pool, token, name, "slo-audit-delete", "")
+
+	rec := deleteService(t, r, token, created.ID)
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusNoContent, rec.Body.String())
+	}
+
+	var gotTargetLabel string
+	row := pool.QueryRow(context.Background(),
+		"SELECT target_label FROM admin_audit_log WHERE target_id = $1 AND action = 'service_deleted'", created.ID)
+	if err := row.Scan(&gotTargetLabel); err != nil {
+		t.Fatalf("Scan() returned unexpected error: %v", err)
+	}
+	if gotTargetLabel != name {
+		t.Errorf("admin_audit_log target_label = %q, want %q (must survive the delete above)", gotTargetLabel, name)
 	}
 }
