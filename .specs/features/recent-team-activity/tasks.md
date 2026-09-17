@@ -347,9 +347,9 @@ T15 → T16 → T17
 **Requirement**: ACTIVITY-09
 
 **Done when**:
-- [ ] `useRecentActivity()` — `useQuery({ queryKey: ["audit-log"], queryFn: () => apiFetch("/api/audit-log?limit=5") })` (or the codebase's established hook-wrapping convention — check an existing simple hook like `useOverview` first).
-- [ ] MSW handler added for `GET /api/audit-log` in `web/src/test/msw/handlers.ts`, mirroring the real backend's response shape exactly (per AGENTS.md §5 — this is the exact class of bug that rule exists to prevent).
-- [ ] Test covers the happy path and an error path.
+- [x] `useRecentActivity()` — `useQuery({ queryKey: ["audit-log"], queryFn: () => apiFetch("/api/audit-log?limit=5") })` (or the codebase's established hook-wrapping convention — check an existing simple hook like `useOverview` first).
+- [x] MSW handler added for `GET /api/audit-log` in `web/src/test/msw/handlers.ts`, mirroring the real backend's response shape exactly (per AGENTS.md §5 — this is the exact class of bug that rule exists to prevent).
+- [x] Test covers the happy path and an error path.
 
 **Tests**: unit
 **Gate**: quick (frontend)

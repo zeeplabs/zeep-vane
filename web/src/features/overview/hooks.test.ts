@@ -3,8 +3,9 @@ import { renderHook, waitFor } from "@testing-library/react";
 import { http, HttpResponse } from "msw";
 import { TestQueryProvider } from "../../test/queryClient";
 import { server } from "../../test/msw/server";
+import { seedAuditLogEntries } from "../../test/msw/handlers";
 import { apiFetch } from "../../lib/apiClient";
-import { useOverview } from "./hooks";
+import { useOverview, useRecentActivity } from "./hooks";
 
 async function loginAsOwner() {
   await apiFetch("/api/auth/login", {
@@ -38,6 +39,46 @@ describe("overview hooks", () => {
     );
 
     const { result } = renderHook(() => useOverview(), { wrapper: TestQueryProvider });
+    await waitFor(() => expect(result.current.isError).toBe(true));
+  });
+
+  // recent-team-activity T15/ACTIVITY-09: useRecentActivity fetches
+  // GET /api/audit-log?limit=5 as its own query, independent of useOverview.
+  it("useRecentActivity retorna as entradas de audit-log da fixture", async () => {
+    await loginAsOwner();
+    seedAuditLogEntries([
+      {
+        action: "invited",
+        target_label: "novo.membro@acme.health",
+        actor_name: "Ana Silva",
+        actor_deleted: false,
+        created_at: "2026-09-10T12:00:00Z",
+      },
+    ]);
+
+    const { result } = renderHook(() => useRecentActivity(), { wrapper: TestQueryProvider });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+    expect(result.current.data).toEqual([
+      {
+        action: "invited",
+        target_label: "novo.membro@acme.health",
+        actor_name: "Ana Silva",
+        actor_deleted: false,
+        created_at: "2026-09-10T12:00:00Z",
+      },
+    ]);
+  });
+
+  it("useRecentActivity surfaceia isError quando o endpoint responde 500", async () => {
+    await loginAsOwner();
+    server.use(
+      http.get("/api/audit-log", () =>
+        HttpResponse.json({ error: "internal server error" }, { status: 500 }),
+      ),
+    );
+
+    const { result } = renderHook(() => useRecentActivity(), { wrapper: TestQueryProvider });
     await waitFor(() => expect(result.current.isError).toBe(true));
   });
 });

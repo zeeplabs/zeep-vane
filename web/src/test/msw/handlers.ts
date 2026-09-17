@@ -29,6 +29,7 @@ import type {
   CompanySettings,
   SessionView,
   Page,
+  AuditLogEntry,
 } from "../../types/api";
 import type { LLMProviderName } from "../../lib/llmProviders";
 
@@ -297,6 +298,22 @@ export function seedExpiredAdminInvite(email: string, role: Role): void {
     status: "pending",
     expires_at: new Date(Date.now() - 1000 * 60 * 60).toISOString(),
   });
+}
+
+// In-memory audit-log state (recent-team-activity, ACTIVITY-09), empty by
+// default - the previous Overview mock (ACTIVITY_FEED) is gone, and this
+// feature has no seed fixture the way domains/admins/etc. do; a test seeds
+// rows it needs via seedAuditLogEntries, mirroring emailProvidersState's
+// empty-by-default convention.
+let auditLogState: AuditLogEntry[] = [];
+
+export function resetAuditLog(): void {
+  auditLogState = [];
+}
+resetAuditLog();
+
+export function seedAuditLogEntries(entries: AuditLogEntry[]): void {
+  auditLogState = entries;
 }
 
 // In-memory company_settings state (SET-01, SET-07), seeded the same way
@@ -2072,5 +2089,18 @@ export const handlers = [
   http.get("/api/overview", () => {
     if (!sessionAdminId) return HttpResponse.json({ error: "unauthorized" }, { status: 401 });
     return HttpResponse.json(overviewSeed());
+  }),
+
+  // GET /api/audit-log (recent-team-activity, ACTIVITY-06/07) - mirrors
+  // AuditLogHandler.Get: authenticated (any role, no gate), a plain array
+  // (not Page<T>) of the tenant's most recent entries. limit mirrors
+  // parseAuditLogLimit's edge cases: missing/invalid/<=0 falls back to 5,
+  // anything above 20 is capped at 20.
+  http.get("/api/audit-log", ({ request }) => {
+    if (!sessionAdminId) return HttpResponse.json({ error: "unauthorized" }, { status: 401 });
+    const rawLimit = new URL(request.url).searchParams.get("limit");
+    const parsed = rawLimit ? Number.parseInt(rawLimit, 10) : NaN;
+    const limit = Number.isFinite(parsed) && parsed > 0 ? Math.min(parsed, 20) : 5;
+    return HttpResponse.json(auditLogState.slice(0, limit));
   }),
 ];

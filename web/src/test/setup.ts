@@ -15,6 +15,7 @@ import {
   resetLLMProviders,
   resetPasswordResetTokens,
   resetSignupState,
+  resetAuditLog,
 } from "./msw/handlers";
 
 // jsdom has no ResizeObserver and never lays out real pixel sizes, so
@@ -62,5 +63,6 @@ afterEach(() => {
   resetLLMProviders();
   resetPasswordResetTokens();
   resetSignupState();
+  resetAuditLog();
 });
 afterAll(() => server.close());

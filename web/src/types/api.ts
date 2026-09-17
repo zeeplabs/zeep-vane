@@ -299,3 +299,19 @@ export interface OverviewIncident {
   status: string;
   created_at: string;
 }
+
+// AuditLogEntry mirrors internal/api/audit_log_handler.go's
+// auditLogEntryResponse (recent-team-activity, ACTIVITY-06/09). Returned
+// by GET /api/audit-log as a plain array, not a Page<T> envelope - a
+// fixed-size (<=20) summary feed, not a paginated list screen. target_label
+// is null for historical pre-feature rows; actor_name is "" with
+// actor_deleted true when the actor's user row was hard-deleted (the
+// frontend substitutes a localized placeholder, never the raw empty
+// string or a UUID).
+export interface AuditLogEntry {
+  action: string;
+  target_label: string | null;
+  actor_name: string;
+  actor_deleted: boolean;
+  created_at: string;
+}

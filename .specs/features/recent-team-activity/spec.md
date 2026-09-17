@@ -115,7 +115,7 @@
 | ACTIVITY-06 | P1: Read endpoint for recent activity | Specified | Complete |
 | ACTIVITY-07 | P1: Read endpoint for recent activity | Specified | Complete |
 | ACTIVITY-08 | P1: Read endpoint for recent activity | Specified | Complete |
-| ACTIVITY-09 | P1: Wire the Overview card to real data | Specified | Pending |
+| ACTIVITY-09 | P1: Wire the Overview card to real data | Specified | Implementing |
 | ACTIVITY-10 | P1: Wire the Overview card to real data | Specified | Pending |
 | ACTIVITY-11 | P1: Wire the Overview card to real data | Specified | Pending |
 | ACTIVITY-12 | P1: Wire the Overview card to real data | Specified | Pending |
