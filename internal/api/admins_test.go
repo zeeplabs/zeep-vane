@@ -1657,13 +1657,17 @@ func TestCancelInvite_Owner_200_TokenRejectedAfterCancel(t *testing.T) {
 	}
 
 	var gotActorID, gotAction string
+	var gotTargetLabel *string
 	row := pool.QueryRow(context.Background(),
-		"SELECT actor_id, action FROM admin_audit_log WHERE target_id = $1 AND action = 'canceled'", inviteID)
-	if err := row.Scan(&gotActorID, &gotAction); err != nil {
+		"SELECT actor_id, target_label, action FROM admin_audit_log WHERE target_id = $1 AND action = 'canceled'", inviteID)
+	if err := row.Scan(&gotActorID, &gotTargetLabel, &gotAction); err != nil {
 		t.Fatalf("querying admin_audit_log returned unexpected error: %v", err)
 	}
 	if gotActorID != inviter.ID {
 		t.Errorf("admin_audit_log actor_id = %q, want %q", gotActorID, inviter.ID)
+	}
+	if gotTargetLabel == nil || *gotTargetLabel != email {
+		t.Errorf("admin_audit_log target_label = %v, want %q", gotTargetLabel, email)
 	}
 }
 

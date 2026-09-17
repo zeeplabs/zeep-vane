@@ -505,7 +505,8 @@ func (h *AdminsHandler) CancelInvite(w http.ResponseWriter, r *http.Request) {
 	}
 	tenantID, _ := ActiveTenantIDFromContext(r.Context())
 
-	if err := h.invites.Cancel(r.Context(), tenantID, id); err != nil {
+	canceledInvite, err := h.invites.Cancel(r.Context(), tenantID, id)
+	if err != nil {
 		if errors.Is(err, db.ErrNotFound) {
 			writeAdminError(w, http.StatusNotFound, inviteNotFoundBody)
 			return
@@ -515,7 +516,7 @@ func (h *AdminsHandler) CancelInvite(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.audit.Record(r.Context(), actor.ID, id, "canceled"); err != nil {
+	if err := h.audit.Record(r.Context(), actor.ID, id, canceledInvite.Email, "canceled"); err != nil {
 		h.logger.Error("admins: failed to record cancel audit entry", zap.Error(err))
 	}
 

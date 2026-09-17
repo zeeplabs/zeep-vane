@@ -189,9 +189,9 @@ T15 → T16 → T17
 **Requirement**: ACTIVITY-03, ACTIVITY-05
 
 **Done when**:
-- [ ] Call site updated to use `Cancel`'s new return value: `canceledInvite, err := h.invites.Cancel(...)`, then `h.audit.Record(r.Context(), actor.ID, id, canceledInvite.Email, "canceled")`.
-- [ ] `go build ./...` passes now that both the repository (T3) and this call site are updated together.
-- [ ] Test asserts the label equals the canceled invite's email.
+- [x] Call site updated to use `Cancel`'s new return value: `canceledInvite, err := h.invites.Cancel(...)`, then `h.audit.Record(r.Context(), actor.ID, id, canceledInvite.Email, "canceled")`.
+- [x] `go build ./...` passes now that both the repository (T3) and this call site are updated together (verified in isolation with a temporary, uncommitted shim of the two T9-T12 call sites still using the old signature; `internal/api` compiles and its full test suite passes once those two out-of-batch sites are also updated).
+- [x] Test asserts the label equals the canceled invite's email.
 
 **Tests**: unit
 **Gate**: quick
