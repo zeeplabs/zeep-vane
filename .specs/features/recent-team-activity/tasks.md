@@ -142,10 +142,10 @@ T15 → T16 → T17
 **Requirement**: ACTIVITY-05
 
 **Done when**:
-- [ ] `Cancel` returns the full canceled `*TenantInvite` (including `Email`) plus `error`.
-- [ ] `db.ErrNotFound` behavior unchanged (still returned when the invite doesn't exist).
-- [ ] Existing test(s) for `Cancel` updated to the new signature; new assertion confirms the returned invite's `Email` matches what was canceled.
-- [ ] The method's only call site (`internal/api/admins.go`, `canceled` action) is NOT yet updated in this task (that's T6) — this task only changes the repository method and its own tests; `go build ./...` will fail here until T6 lands, which is expected and acceptable since T3→T6 both land within the same Execute session before any intermediate push (AGENTS.md: local commits may accumulate).
+- [x] `Cancel` returns the full canceled `*TenantInvite` (including `Email`) plus `error`.
+- [x] `db.ErrNotFound` behavior unchanged (still returned when the invite doesn't exist).
+- [x] Existing test(s) for `Cancel` updated to the new signature; new assertion confirms the returned invite's `Email` matches what was canceled.
+- [x] The method's only call site (`internal/api/admins.go`, `canceled` action) is NOT yet updated in this task (that's T6) — this task only changes the repository method and its own tests; `go build ./...` will fail here until T6 lands, which is expected and acceptable since T3→T6 both land within the same Execute session before any intermediate push (AGENTS.md: local commits may accumulate).
 
 **Tests**: integration (DB-touching repository)
 **Gate**: full

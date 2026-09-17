@@ -111,7 +111,7 @@
 | ACTIVITY-02 | P1: Persist a human-readable label with every audit entry | Specified | Implementing |
 | ACTIVITY-03 | P1: Persist a human-readable label with every audit entry | Specified | Pending |
 | ACTIVITY-04 | P1: Persist a human-readable label with every audit entry | Specified | Pending |
-| ACTIVITY-05 | P1: Persist a human-readable label with every audit entry | Specified | Pending |
+| ACTIVITY-05 | P1: Persist a human-readable label with every audit entry | Specified | Implementing |
 | ACTIVITY-06 | P1: Read endpoint for recent activity | Specified | Pending |
 | ACTIVITY-07 | P1: Read endpoint for recent activity | Specified | Pending |
 | ACTIVITY-08 | P1: Read endpoint for recent activity | Specified | Pending |

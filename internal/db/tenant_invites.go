@@ -169,22 +169,32 @@ func (r *TenantInviteRepository) Refresh(ctx context.Context, tenantID, id, newT
 // unacceptable) without creating an account for it, returning ErrNotFound
 // if no unused invite with the given id exists for tenantID (including a
 // malformed, non-uuid id - see isInvalidUUIDText, or an id that belongs to
-// a different tenant - T13, TENANT-14/17).
-func (r *TenantInviteRepository) Cancel(ctx context.Context, tenantID, id string) error {
-	tag, err := r.pool.Exec(ctx,
-		"UPDATE tenant_invites SET used_at = now() WHERE id = $1 AND tenant_id = $2 AND used_at IS NULL", id, tenantID,
+// a different tenant - T13, TENANT-14/17). It returns the canceled invite
+// (via the same RETURNING shape Refresh already uses) so a caller has its
+// Email in hand without a separate lookup - recent-team-activity's
+// "canceled" audit action needs it as the entry's target_label, and
+// Cancel's original error-only shape left no invite data in scope at that
+// call site.
+func (r *TenantInviteRepository) Cancel(ctx context.Context, tenantID, id string) (*TenantInvite, error) {
+	row := r.pool.QueryRow(ctx,
+		`UPDATE tenant_invites SET used_at = now()
+		 WHERE id = $1 AND tenant_id = $2 AND used_at IS NULL
+		 RETURNING id, tenant_id, email, role, name, phone, token_hash, invited_by_id, expires_at, used_at, created_at`,
+		id, tenantID,
 	)
-	if err != nil {
-		if isInvalidUUIDText(err) {
-			return ErrNotFound
+
+	var invite TenantInvite
+	if err := row.Scan(
+		&invite.ID, &invite.TenantID, &invite.Email, &invite.Role, &invite.Name, &invite.Phone, &invite.TokenHash,
+		&invite.InvitedByID, &invite.ExpiresAt, &invite.UsedAt, &invite.CreatedAt,
+	); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) || isInvalidUUIDText(err) {
+			return nil, ErrNotFound
 		}
-		return fmt.Errorf("db: failed to cancel tenant invite: %w", err)
-	}
-	if tag.RowsAffected() == 0 {
-		return ErrNotFound
+		return nil, fmt.Errorf("db: failed to cancel tenant invite: %w", err)
 	}
 
-	return nil
+	return &invite, nil
 }
 
 // MarkUsed sets used_at on the invite with the given ID to now, returning
