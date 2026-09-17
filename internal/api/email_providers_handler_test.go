@@ -47,8 +47,12 @@ func (f *fakeEmailProviderService) List(ctx context.Context, page, pageSize int)
 	return f.listResult, f.listErr
 }
 
+// newEmailProvidersRouter wires no UserFromContext actor into the request
+// (no auth middleware here, unlike the integration test suite), so audit
+// recording's actor lookup never succeeds - nil rows/auditLog are safe,
+// since the handler only dereferences them inside that same guarded branch.
 func newEmailProvidersRouter(svc emailProviderService) http.Handler {
-	h := NewEmailProvidersHandler(svc, zap.NewNop())
+	h := NewEmailProvidersHandler(svc, nil, nil, zap.NewNop())
 	r := chi.NewRouter()
 	r.Post("/api/integrations/email/{provider}", h.Connect)
 	r.Get("/api/integrations/email", h.List)

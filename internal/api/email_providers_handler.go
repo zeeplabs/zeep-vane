@@ -10,6 +10,8 @@ import (
 	"github.com/go-chi/chi/v5"
 	"go.uber.org/zap"
 
+	"github.com/zeeplabs/zeep-vane/internal/audit"
+	"github.com/zeeplabs/zeep-vane/internal/db"
 	"github.com/zeeplabs/zeep-vane/internal/email"
 )
 
@@ -27,15 +29,39 @@ type emailProviderService interface {
 	List(ctx context.Context, page, pageSize int) (email.ListResult, error)
 }
 
+// emailProviderRowGetter is the subset of *db.EmailProviderRepository
+// EmailProvidersHandler depends on to resolve a provider name to its row
+// ID for audit entries (AUDITEXP-09/10) - email.Service's own interface
+// doesn't expose the row ID, only provider-name-keyed operations.
+type emailProviderRowGetter interface {
+	Get(ctx context.Context, provider string) (*db.EmailProvider, error)
+}
+
 // EmailProvidersHandler serves the /api/integrations/email/* admin routes.
 type EmailProvidersHandler struct {
 	svc    emailProviderService
+	rows   emailProviderRowGetter
+	audit  *audit.Log
 	logger *zap.Logger
 }
 
 // NewEmailProvidersHandler builds an EmailProvidersHandler.
-func NewEmailProvidersHandler(svc emailProviderService, logger *zap.Logger) *EmailProvidersHandler {
-	return &EmailProvidersHandler{svc: svc, logger: logger}
+func NewEmailProvidersHandler(svc emailProviderService, rows emailProviderRowGetter, auditLog *audit.Log, logger *zap.Logger) *EmailProvidersHandler {
+	return &EmailProvidersHandler{svc: svc, rows: rows, audit: auditLog, logger: logger}
+}
+
+// providerDisplayName maps a provider key to the human-readable name used
+// in audit target_label (AUDITEXP-09/10) - "sendgrid"/"resend" are internal
+// identifiers, not what a reader of "Atividade recente do time" expects.
+func providerDisplayName(provider string) string {
+	switch provider {
+	case "sendgrid":
+		return "SendGrid"
+	case "resend":
+		return "Resend"
+	default:
+		return provider
+	}
 }
 
 // knownEmailProviders are the only provider names this feature accepts
@@ -86,6 +112,14 @@ func (h *EmailProvidersHandler) Connect(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	if actor, ok := UserFromContext(r.Context()); ok {
+		if row, err := h.rows.Get(r.Context(), provider); err == nil {
+			if err := h.audit.Record(r.Context(), actor.ID, row.ID, providerDisplayName(provider), "email_provider_connected"); err != nil {
+				h.logger.Error("email providers: failed to record audit entry", zap.Error(err))
+			}
+		}
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	_, _ = w.Write([]byte(`{"status":"connected"}`))
@@ -110,6 +144,14 @@ func (h *EmailProvidersHandler) Activate(w http.ResponseWriter, r *http.Request)
 		h.logger.Error("email providers: failed to activate provider", zap.String("provider", provider), zap.Error(err))
 		writeInternalError(w)
 		return
+	}
+
+	if actor, ok := UserFromContext(r.Context()); ok {
+		if row, err := h.rows.Get(r.Context(), provider); err == nil {
+			if err := h.audit.Record(r.Context(), actor.ID, row.ID, providerDisplayName(provider), "email_provider_activated"); err != nil {
+				h.logger.Error("email providers: failed to record audit entry", zap.Error(err))
+			}
+		}
 	}
 
 	w.Header().Set("Content-Type", "application/json")

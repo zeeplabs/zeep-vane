@@ -61,7 +61,8 @@ func buildAdminRouter(pool *db.Pool, cfg config.Config, logger *zap.Logger, poll
 	// pattern used above for the Datadog integration
 	// (validateDatadogCredentials/searchDatadogSLOs), keeping internal/email
 	// decoupled from which concrete connector packages exist (design.md).
-	emailService, err := email.NewService(db.NewEmailProviderRepository(pool), emailProviderFactory, cfg.MasterKey, logger)
+	emailProviderRepo := db.NewEmailProviderRepository(pool)
+	emailService, err := email.NewService(emailProviderRepo, emailProviderFactory, cfg.MasterKey, logger)
 	if err != nil {
 		// NewService only errors if the embedded admin-invite templates
 		// fail to parse (fail-fast-at-boot, design.md) - that source is
@@ -71,7 +72,7 @@ func buildAdminRouter(pool *db.Pool, cfg config.Config, logger *zap.Logger, poll
 		// (matches this package's existing boot-assembly style).
 		logger.Fatal("cli: failed to build email service", zap.Error(err))
 	}
-	emailProvidersHandler := api.NewEmailProvidersHandler(emailService, logger)
+	emailProvidersHandler := api.NewEmailProvidersHandler(emailService, emailProviderRepo, auditLog, logger)
 
 	llmService := llm.NewService(db.NewLLMProviderStore(db.NewLLMProviderRepository(pool)), llmProviderFactory, cfg.MasterKey, logger)
 	llmProvidersHandler := api.NewLLMProvidersHandler(llmService, logger)
