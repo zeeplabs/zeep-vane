@@ -849,6 +849,37 @@ func TestDeleteStatusPage_Existing_204RemovesItAndItsServiceLinks(t *testing.T) 
 	}
 }
 
+// TestDeleteStatusPage_Existing_RecordsStatusPageDeletedAuditLabelSurvivingDelete
+// covers ACTIVITY-03/ACTIVITY-04: the status_page_deleted audit entry's
+// target_label must be the page's name captured before Delete runs - by
+// the time this assertion runs, the status_pages row is already gone, so
+// a label fetched after the delete would always be empty.
+func TestDeleteStatusPage_Existing_RecordsStatusPageDeletedAuditLabelSurvivingDelete(t *testing.T) {
+	r, pool, admins := newStatusPagesRouter(t)
+	token := issueTestSessionToken(t, admins)
+
+	createRec := postCreateStatusPage(t, r, token, createStatusPageRequest{Name: "To Be Deleted With Label"})
+	if createRec.Code != http.StatusCreated {
+		t.Fatalf("setup create status = %d, want %d, body = %s", createRec.Code, http.StatusCreated, createRec.Body.String())
+	}
+	id := decodeStatusPageID(t, createRec)
+
+	rec := deleteStatusPage(t, r, token, id)
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusNoContent, rec.Body.String())
+	}
+
+	var gotTargetLabel *string
+	row := pool.QueryRow(context.Background(),
+		"SELECT target_label FROM admin_audit_log WHERE target_id = $1 AND action = 'status_page_deleted'", id)
+	if err := row.Scan(&gotTargetLabel); err != nil {
+		t.Fatalf("Scan() returned unexpected error: %v", err)
+	}
+	if gotTargetLabel == nil || *gotTargetLabel != "To Be Deleted With Label" {
+		t.Errorf("admin_audit_log target_label = %v, want %q (must survive the delete above)", gotTargetLabel, "To Be Deleted With Label")
+	}
+}
+
 func TestDeleteStatusPage_NotFound_404(t *testing.T) {
 	r, _, admins := newStatusPagesRouter(t)
 	token := issueTestSessionToken(t, admins)

@@ -258,6 +258,14 @@ func (h *StatusPagesHandler) SetServices(w http.ResponseWriter, r *http.Request)
 func (h *StatusPagesHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 
+	// Captured before Delete runs (spec AC4/ACTIVITY-04): once the delete
+	// succeeds the status_pages row is gone, so a name fetched afterward
+	// would always be empty.
+	var name string
+	if statusPage, err := h.statusPages.GetByID(r.Context(), id); err == nil {
+		name = statusPage.Name
+	}
+
 	if err := h.statusPages.Delete(r.Context(), id); err != nil {
 		if errors.Is(err, db.ErrNotFound) {
 			http.NotFound(w, r)
@@ -269,7 +277,7 @@ func (h *StatusPagesHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if actor, ok := UserFromContext(r.Context()); ok {
-		if err := h.audit.Record(r.Context(), actor.ID, id, "status_page_deleted"); err != nil {
+		if err := h.audit.Record(r.Context(), actor.ID, id, name, "status_page_deleted"); err != nil {
 			h.logger.Error("status-pages: failed to record audit entry", zap.Error(err))
 		}
 	}

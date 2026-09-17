@@ -272,7 +272,10 @@ T15 → T16 → T17
 **Depends on**: T2
 **Requirement**: ACTIVITY-03, ACTIVITY-04
 
-**Done when**: Status page name captured before the delete call runs; `Record(..., pageName, "status_page_deleted")`; test covers the label surviving the delete.
+**Done when**:
+- [x] Status page name captured (via `h.statusPages.GetByID`) before the delete call runs.
+- [x] `h.audit.Record(r.Context(), actor.ID, id, name, "status_page_deleted")`.
+- [x] Test covers the label surviving the delete (`TestDeleteStatusPage_Existing_RecordsStatusPageDeletedAuditLabelSurvivingDelete`).
 **Tests**: unit
 **Gate**: quick
 **Commit**: `feat(status-pages): record page name as status_page_deleted audit label`
