@@ -23,7 +23,7 @@ import {
   type EmailProviderName,
   type EmailProviderStatus,
 } from "../email-providers/hooks";
-import { useLLMProviders } from "../settings/hooks";
+import { useActivateLLMProvider, useDisconnectLLMProvider, useLLMProviders } from "../settings/hooks";
 
 const cardHeaderBg = "var(--color-card-header-bg)";
 const textMuted = "var(--color-text-muted)";
@@ -98,11 +98,16 @@ function NewRelicCard() {
 }
 
 function LLMProviderCard({ canManage, onConnect }: { canManage: boolean; onConnect: () => void }) {
+  const { t } = useTranslation();
   const { data, isLoading, isError } = useLLMProviders(1);
   const status = data?.providers.find((p) => p.provider === "openai");
   const connected = status?.status === "connected";
   const isActive = data?.active_provider === "openai";
   const kind: IntegrationStatusKind = connected ? "connected" : "not_connected";
+  const activateMutation = useActivateLLMProvider();
+  const disconnectMutation = useDisconnectLLMProvider();
+  const [error, setError] = useState<string | null>(null);
+  const [disconnectDialogOpen, setDisconnectDialogOpen] = useState(false);
 
   let meta = isLoading
     ? "Carregando…"
@@ -113,16 +118,81 @@ function LLMProviderCard({ canManage, onConnect }: { canManage: boolean; onConne
       : "Não configurado";
   if (isError) meta = "Não foi possível carregar";
 
+  async function handleActivate() {
+    setError(null);
+    try {
+      await activateMutation.mutateAsync("openai");
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : t("aiSettings.genericActivateError"));
+    }
+  }
+
+  async function handleConfirmDisconnect() {
+    setError(null);
+    try {
+      await disconnectMutation.mutateAsync("openai");
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : t("aiSettings.genericDisconnectError"));
+    } finally {
+      setDisconnectDialogOpen(false);
+    }
+  }
+
   return (
-    <IntegrationCard
-      icon={<MdOutlineSmartToy size={24} color="#B45309" aria-hidden="true" />}
-      bannerBg="#FBF4E9"
-      status={kind}
-      title="LLM Provider"
-      description="Geração de resumos e fechamento assistido de incidentes com IA."
-      meta={meta}
-      action={isLoading || isError ? null : actionButton(canManage, connected, onConnect)}
-    />
+    <>
+      <IntegrationCard
+        icon={<MdOutlineSmartToy size={24} color="#B45309" aria-hidden="true" />}
+        bannerBg="#FBF4E9"
+        status={kind}
+        title="LLM Provider"
+        description="Geração de resumos e fechamento assistido de incidentes com IA."
+        meta={meta}
+        action={
+          isLoading || isError ? null : (
+            <div className="flex flex-col gap-2">
+              {error ? (
+                <p role="alert" className="m-0 text-xs text-critical">
+                  {error}
+                </p>
+              ) : null}
+              {canManage && connected ? (
+                <div className="flex gap-2">
+                  {!isActive ? (
+                    <Button
+                      variant="secondary"
+                      className="flex-1"
+                      onClick={handleActivate}
+                      disabled={activateMutation.isPending}
+                    >
+                      {t("aiSettings.activateButton")}
+                    </Button>
+                  ) : null}
+                  <Button
+                    variant="secondary"
+                    className="flex-1 !border-critical !text-critical"
+                    onClick={() => setDisconnectDialogOpen(true)}
+                    disabled={disconnectMutation.isPending}
+                  >
+                    {t("aiSettings.disconnectButton")}
+                  </Button>
+                </div>
+              ) : null}
+              {actionButton(canManage, connected, onConnect)}
+            </div>
+          )
+        }
+      />
+      <DisconnectConfirmDialog
+        open={disconnectDialogOpen}
+        onOpenChange={setDisconnectDialogOpen}
+        onConfirm={handleConfirmDisconnect}
+        pending={disconnectMutation.isPending}
+        title={t("aiSettings.disconnectDialog.title")}
+        description={t("aiSettings.disconnectDialog.body", { provider: t("aiSettings.providerLabel") })}
+        cancelLabel={t("aiSettings.disconnectDialog.cancel")}
+        confirmLabel={t("aiSettings.disconnectDialog.confirm")}
+      />
+    </>
   );
 }
 
@@ -232,43 +302,49 @@ function EmailProviderCard({
           )
         }
       />
-      <EmailDisconnectDialog
+      <DisconnectConfirmDialog
         open={disconnectDialogOpen}
         onOpenChange={setDisconnectDialogOpen}
         onConfirm={handleConfirmDisconnect}
         pending={disconnectMutation.isPending}
-        providerLabel={providerMeta.title}
-        t={t}
+        title={t("emailProviders.disconnectDialog.title")}
+        description={t("emailProviders.disconnectDialog.body", { provider: providerMeta.title })}
+        cancelLabel={t("emailProviders.disconnectDialog.cancel")}
+        confirmLabel={t("emailProviders.disconnectDialog.confirm")}
       />
     </>
   );
 }
 
-function EmailDisconnectDialog({
+function DisconnectConfirmDialog({
   open,
   onOpenChange,
   onConfirm,
   pending,
-  providerLabel,
-  t,
+  title,
+  description,
+  cancelLabel,
+  confirmLabel,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onConfirm: () => void;
   pending: boolean;
-  providerLabel: string;
-  t: (key: string, opts?: Record<string, unknown>) => string;
+  title: string;
+  description: string;
+  cancelLabel: string;
+  confirmLabel: string;
 }) {
   return (
     <Dialog
       open={open}
       onOpenChange={onOpenChange}
-      title={t("emailProviders.disconnectDialog.title")}
-      description={t("emailProviders.disconnectDialog.body", { provider: providerLabel })}
+      title={title}
+      description={description}
       footer={
         <>
           <Button type="button" variant="secondary" onClick={() => onOpenChange(false)}>
-            {t("emailProviders.disconnectDialog.cancel")}
+            {cancelLabel}
           </Button>
           <Button
             type="button"
@@ -277,7 +353,7 @@ function EmailDisconnectDialog({
             onClick={onConfirm}
             disabled={pending}
           >
-            {t("emailProviders.disconnectDialog.confirm")}
+            {confirmLabel}
           </Button>
         </>
       }

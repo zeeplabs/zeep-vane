@@ -119,9 +119,9 @@ T5 → T6
 **Tools**: MCP: NONE / Skill: NONE
 
 **Done when**:
-- [ ] Mirrors all of T2's `Done when` items for the LLM card.
-- [ ] Test added/extended in `IntegrationsPage.test.tsx` mirroring T2's coverage for `openai`.
-- [ ] Gate check passes: quick
+- [x] Mirrors all of T2's `Done when` items for the LLM card.
+- [x] Test added/extended in `IntegrationsPage.test.tsx` mirroring T2's coverage for `openai`.
+- [x] Gate check passes: quick (refactored the shared dialog into `DisconnectConfirmDialog`, taking resolved strings instead of a translate-function param, so both email and LLM cards reuse it cleanly without key-remapping tricks)
 
 **Tests**: unit
 **Gate**: quick

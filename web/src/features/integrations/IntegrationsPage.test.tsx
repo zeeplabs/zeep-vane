@@ -159,6 +159,61 @@ describe("IntegrationsPage", () => {
     expect(await within(llmCard).findByText("Ativo · OpenAI · gpt-4o")).toBeInTheDocument();
   });
 
+  it("owner ativa LLM Provider conectado-mas-inativo clicando em Ativar (INTGCARD-01)", async () => {
+    await loginAs("owner@vane.app");
+    await apiFetch("/api/integrations/llm/openai", {
+      method: "POST",
+      body: JSON.stringify({ api_key: "sk-real-key", model: "gpt-4o" }),
+    });
+    renderPage();
+
+    const llmCard = await cardOf("LLM Provider");
+    await within(llmCard).findByText("OpenAI · gpt-4o");
+    await userEvent.click(within(llmCard).getByRole("button", { name: "Ativar" }));
+
+    await waitFor(async () => expect(await within(llmCard).findByText(/^Ativo/)).toBeInTheDocument());
+  });
+
+  it("owner confirma o diálogo de desconectar do LLM Provider - card volta a Não conectado (INTGCARD-04)", async () => {
+    await loginAs("owner@vane.app");
+    await apiFetch("/api/integrations/llm/openai", {
+      method: "POST",
+      body: JSON.stringify({ api_key: "sk-real-key", model: "gpt-4o" }),
+    });
+    renderPage();
+
+    const llmCard = await cardOf("LLM Provider");
+    await within(llmCard).findByText("OpenAI · gpt-4o");
+    await userEvent.click(within(llmCard).getByRole("button", { name: "Desconectar" }));
+
+    const dialogTitle = await screen.findByRole("heading", { name: /desconectar/i });
+    const dialog = dialogTitle.closest('[role="dialog"]') as HTMLElement;
+    await userEvent.click(within(dialog).getByRole("button", { name: "Desconectar" }));
+
+    await waitFor(() => expect(screen.queryByRole("heading", { name: /desconectar/i })).not.toBeInTheDocument());
+    expect(within(await cardOf("LLM Provider")).getByText("Não configurado")).toBeInTheDocument();
+  });
+
+  it("owner cancela o diálogo de desconectar do LLM Provider - card continua conectado (INTGCARD-04)", async () => {
+    await loginAs("owner@vane.app");
+    await apiFetch("/api/integrations/llm/openai", {
+      method: "POST",
+      body: JSON.stringify({ api_key: "sk-real-key", model: "gpt-4o" }),
+    });
+    renderPage();
+
+    const llmCard = await cardOf("LLM Provider");
+    await within(llmCard).findByText("OpenAI · gpt-4o");
+    await userEvent.click(within(llmCard).getByRole("button", { name: "Desconectar" }));
+
+    const dialogTitle = await screen.findByRole("heading", { name: /desconectar/i });
+    const dialog = dialogTitle.closest('[role="dialog"]') as HTMLElement;
+    await userEvent.click(within(dialog).getByRole("button", { name: /cancelar/i }));
+
+    await waitFor(() => expect(screen.queryByRole("heading", { name: /desconectar/i })).not.toBeInTheDocument());
+    expect(within(await cardOf("LLM Provider")).getByText("OpenAI · gpt-4o")).toBeInTheDocument();
+  });
+
   it("owner clica em Conectar no LLM Provider e abre o drawer padrão", async () => {
     await loginAs("owner@vane.app");
     renderPage();
