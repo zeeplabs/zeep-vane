@@ -13,6 +13,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"go.uber.org/zap"
 
+	"github.com/zeeplabs/zeep-vane/internal/db"
 	"github.com/zeeplabs/zeep-vane/internal/llm"
 )
 
@@ -20,15 +21,17 @@ import (
 // letting this handler suite run as a fast unit test independent of
 // llm.Service's real dependencies (repository, provider factory).
 type fakeLLMProviderService struct {
-	connectErr  error
-	setModelErr error
-	activateErr error
-	listResult  llm.ListResult
-	listErr     error
+	connectErr    error
+	setModelErr   error
+	activateErr   error
+	listResult    llm.ListResult
+	listErr       error
+	disconnectErr error
 
-	connectCalls  []connectLLMCall
-	setModelCalls []setModelCall
-	activateCalls []string
+	connectCalls    []connectLLMCall
+	setModelCalls   []setModelCall
+	activateCalls   []string
+	disconnectCalls []string
 }
 
 type connectLLMCall struct {
@@ -58,13 +61,50 @@ func (f *fakeLLMProviderService) List(ctx context.Context, page, pageSize int) (
 	return f.listResult, f.listErr
 }
 
+func (f *fakeLLMProviderService) Disconnect(ctx context.Context, provider string) error {
+	f.disconnectCalls = append(f.disconnectCalls, provider)
+	return f.disconnectErr
+}
+
+// fakeLLMProviderRowGetter is a no-DB double for llmProviderRowGetter,
+// letting the Disconnect handler's "fetch the row before deleting it"
+// precondition be observed without a real database - mirrors
+// fakeEmailProviderRowGetter in email_providers_handler_test.go.
+type fakeLLMProviderRowGetter struct {
+	row      *db.LLMProvider
+	err      error
+	getCalls []string
+}
+
+func (f *fakeLLMProviderRowGetter) Get(ctx context.Context, provider string) (*db.LLMProvider, error) {
+	f.getCalls = append(f.getCalls, provider)
+	if f.err != nil {
+		return nil, f.err
+	}
+	return f.row, nil
+}
+
 func newLLMProvidersRouter(svc llmProviderService) http.Handler {
-	h := NewLLMProvidersHandler(svc, zap.NewNop())
+	h := NewLLMProvidersHandler(svc, nil, nil, zap.NewNop())
 	r := chi.NewRouter()
 	r.Post("/api/integrations/llm/{provider}", h.Connect)
 	r.Post("/api/integrations/llm/{provider}/model", h.SetModel)
 	r.Post("/api/integrations/llm/{provider}/activate", h.Activate)
 	r.Get("/api/integrations/llm", h.List)
+	return r
+}
+
+// newLLMProvidersRouterWithRows extends newLLMProvidersRouter with a wired
+// rows getter and the DELETE disconnect route, for tests that need to
+// assert the handler's "capture the row before deleting" precondition.
+func newLLMProvidersRouterWithRows(svc llmProviderService, rows llmProviderRowGetter) http.Handler {
+	h := NewLLMProvidersHandler(svc, rows, nil, zap.NewNop())
+	r := chi.NewRouter()
+	r.Post("/api/integrations/llm/{provider}", h.Connect)
+	r.Post("/api/integrations/llm/{provider}/model", h.SetModel)
+	r.Post("/api/integrations/llm/{provider}/activate", h.Activate)
+	r.Get("/api/integrations/llm", h.List)
+	r.Delete("/api/integrations/llm/{provider}", h.Disconnect)
 	return r
 }
 
@@ -362,6 +402,90 @@ func TestLLMList_WithProviders_ShapeAndNoKeyMaterial(t *testing.T) {
 	}
 	if resp.Total != 1 || resp.Page != 1 || resp.PageSize != llmProvidersPageSize {
 		t.Errorf("pagination envelope = total:%d page:%d page_size:%d, want 1/1/%d", resp.Total, resp.Page, resp.PageSize, llmProvidersPageSize)
+	}
+}
+
+func doLLMDisconnectRequest(t *testing.T, r http.Handler, provider string) *httptest.ResponseRecorder {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodDelete, "/api/integrations/llm/"+provider, nil)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+	return rec
+}
+
+// TestLLMDisconnect_UnknownProvider_404 covers PROVDISC-04 AC3: a
+// {provider} path segment other than "openai" is rejected before the
+// service is ever called, same unknown-provider body Connect/Activate use.
+func TestLLMDisconnect_UnknownProvider_404(t *testing.T) {
+	fake := &fakeLLMProviderService{}
+	rows := &fakeLLMProviderRowGetter{err: db.ErrNotFound}
+	r := newLLMProvidersRouterWithRows(fake, rows)
+
+	rec := doLLMDisconnectRequest(t, r, "anthropic")
+
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("status = %d, want %d, body = %s", rec.Code, http.StatusNotFound, rec.Body.String())
+	}
+	if len(fake.disconnectCalls) != 0 {
+		t.Errorf("Disconnect called %d times, want 0 for an unknown provider", len(fake.disconnectCalls))
+	}
+}
+
+// TestLLMDisconnect_ConnectedProvider_204AndCapturesRowBeforeDelete covers
+// PROVDISC-04 AC1/PROVDISC-06 AC5: disconnecting a connected provider
+// responds 204 and calls Disconnect with the path's provider. It also
+// confirms the "capture before mutate" precondition the audit entry
+// depends on - actual admin_audit_log insertion is covered by
+// TestDisconnectLLMProvider_ValidRequest_RecordsLLMProviderDisconnectedAudit
+// (T8, real DB), same split as Connect/Activate's own audit assertions.
+func TestLLMDisconnect_ConnectedProvider_204AndCapturesRowBeforeDelete(t *testing.T) {
+	fake := &fakeLLMProviderService{}
+	rows := &fakeLLMProviderRowGetter{row: &db.LLMProvider{ID: "row-1", Provider: "openai"}}
+	r := newLLMProvidersRouterWithRows(fake, rows)
+
+	rec := doLLMDisconnectRequest(t, r, "openai")
+
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusNoContent, rec.Body.String())
+	}
+	if len(fake.disconnectCalls) != 1 || fake.disconnectCalls[0] != "openai" {
+		t.Errorf("disconnectCalls = %v, want [\"openai\"]", fake.disconnectCalls)
+	}
+	if len(rows.getCalls) != 1 || rows.getCalls[0] != "openai" {
+		t.Errorf("rows.Get calls = %v, want [\"openai\"] (row must be captured before delete for the audit entry)", rows.getCalls)
+	}
+}
+
+// TestLLMDisconnect_NeverConnected_204Idempotent covers PROVDISC-05 AC4: a
+// recognized provider with no connected row still responds 204 (idempotent
+// delete), not 404.
+func TestLLMDisconnect_NeverConnected_204Idempotent(t *testing.T) {
+	fake := &fakeLLMProviderService{}
+	rows := &fakeLLMProviderRowGetter{err: db.ErrNotFound}
+	r := newLLMProvidersRouterWithRows(fake, rows)
+
+	rec := doLLMDisconnectRequest(t, r, "openai")
+
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusNoContent, rec.Body.String())
+	}
+	if len(fake.disconnectCalls) != 1 || fake.disconnectCalls[0] != "openai" {
+		t.Errorf("disconnectCalls = %v, want [\"openai\"]", fake.disconnectCalls)
+	}
+}
+
+// TestLLMDisconnect_ServiceError_500 mirrors the email handler's equivalent
+// test: an unexpected service-layer failure must not be reported as a
+// 204/404, same writeInternalError fallback every other handler uses.
+func TestLLMDisconnect_ServiceError_500(t *testing.T) {
+	fake := &fakeLLMProviderService{disconnectErr: context.DeadlineExceeded}
+	rows := &fakeLLMProviderRowGetter{row: &db.LLMProvider{ID: "row-1", Provider: "openai"}}
+	r := newLLMProvidersRouterWithRows(fake, rows)
+
+	rec := doLLMDisconnectRequest(t, r, "openai")
+
+	if rec.Code != http.StatusInternalServerError {
+		t.Errorf("status = %d, want %d, body = %s", rec.Code, http.StatusInternalServerError, rec.Body.String())
 	}
 }
 

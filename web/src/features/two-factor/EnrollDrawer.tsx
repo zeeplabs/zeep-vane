@@ -95,7 +95,7 @@ export function EnrollDrawer({ open, onOpenChange, onEnabled }: EnrollDrawerProp
 
   const footer =
     step === "scan" ? (
-      <Button onClick={() => setStep("verify")} disabled={!enroll.data}>
+      <Button variant="solid" onClick={() => setStep("verify")} disabled={!enroll.data}>
         {t("twoFactor.scan.continueButton")}
       </Button>
     ) : step === "verify" ? (
@@ -103,12 +103,12 @@ export function EnrollDrawer({ open, onOpenChange, onEnabled }: EnrollDrawerProp
         <Button variant="secondary" onClick={() => setStep("scan")}>
           {t("twoFactor.verify.back")}
         </Button>
-        <Button onClick={handleVerify} disabled={confirm.isPending}>
+        <Button variant="solid" onClick={handleVerify} disabled={confirm.isPending}>
           {t("twoFactor.verify.submit")}
         </Button>
       </>
     ) : (
-      <Button onClick={handleFinish}>{t("twoFactor.codes.finish")}</Button>
+      <Button variant="solid" onClick={handleFinish}>{t("twoFactor.codes.finish")}</Button>
     );
 
   return (
@@ -130,7 +130,7 @@ export function EnrollDrawer({ open, onOpenChange, onEnabled }: EnrollDrawerProp
           ) : null}
           <div className="w-full">
             <p className="m-0 mb-1 text-xs text-neutral-400">{t("twoFactor.scan.manualHint")}</p>
-            <code data-testid="enroll-secret" className="block break-all rounded-sm bg-neutral-900 px-3 py-2 text-sm text-text">
+            <code data-testid="enroll-secret" className="block break-all rounded-sm bg-card-header-bg px-3 py-2 text-sm text-text">
               {enroll.data?.secret ?? ""}
             </code>
           </div>
@@ -139,6 +139,7 @@ export function EnrollDrawer({ open, onOpenChange, onEnabled }: EnrollDrawerProp
         <form onSubmit={handleVerify} className="flex flex-col gap-4">
           <p className="m-0 text-sm text-neutral-400">{t("twoFactor.verify.instructions")}</p>
           <Field
+            variant="filled"
             label={t("twoFactor.verify.title")}
             placeholder={t("twoFactor.verify.placeholder")}
             value={code}
@@ -158,7 +159,7 @@ export function EnrollDrawer({ open, onOpenChange, onEnabled }: EnrollDrawerProp
               <li
                 key={recoveryCode}
                 data-testid="recovery-code"
-                className="list-none rounded-sm bg-neutral-900 px-3 py-1.5 text-center font-mono text-sm text-text"
+                className="list-none rounded-sm bg-card-header-bg px-3 py-1.5 text-center font-mono text-sm text-text"
               >
                 {recoveryCode}
               </li>

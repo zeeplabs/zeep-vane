@@ -40,6 +40,7 @@ type EmailProviderStore interface {
 	ListPaginated(ctx context.Context, page, pageSize int) ([]db.EmailProvider, int, error)
 	GetActiveProvider(ctx context.Context) (string, error)
 	SetActiveProvider(ctx context.Context, provider string) error
+	DeleteProvider(ctx context.Context, provider string) error
 }
 
 // ProviderStatus is one connected provider's observable state - never
@@ -137,6 +138,20 @@ func (s *Service) Activate(ctx context.Context, provider string) error {
 
 	if err := s.repo.SetActiveProvider(ctx, provider); err != nil {
 		return fmt.Errorf("email: failed to set active provider: %w", err)
+	}
+
+	return nil
+}
+
+// Disconnect removes provider's stored credentials (provider-disconnect
+// PROVDISC-01/02). It delegates straight to the repository's idempotent
+// DeleteProvider - never-connected/already-disconnected is success, not an
+// error, so there is no special-casing here. If provider was active,
+// email_settings.active_provider is cleared to NULL by the repository's
+// underlying FK, not by any code in this method.
+func (s *Service) Disconnect(ctx context.Context, provider string) error {
+	if err := s.repo.DeleteProvider(ctx, provider); err != nil {
+		return fmt.Errorf("email: failed to disconnect provider: %w", err)
 	}
 
 	return nil

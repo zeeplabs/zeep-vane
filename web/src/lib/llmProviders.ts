@@ -8,7 +8,7 @@ export type LLMProviderName = "openai";
 
 // modelAllowlist mirrors internal/llm/service.go's modelAllowlist exactly -
 // the fixed set of models Connect/SetModel will accept for "openai". Kept
-// here (not fabricated ad hoc in AISettings.tsx) so the model dropdown
+// here (not fabricated ad hoc in the connect-provider drawer) so the model dropdown
 // can never drift from the backend's own allowlist.
 export const modelAllowlist: Record<LLMProviderName, string[]> = {
   openai: ["gpt-4o-mini", "gpt-4o", "gpt-4.1-mini", "gpt-4.1"],

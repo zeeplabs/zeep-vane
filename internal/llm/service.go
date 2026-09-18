@@ -100,6 +100,9 @@ type LLMProviderStore interface {
 	// transient failure (timeout, 5xx) is not evidence the credentials
 	// are valid, so it must never overwrite a prior MarkInvalid.
 	MarkTransientFailure(ctx context.Context, provider, lastError string) error
+	// DeleteProvider removes provider's stored row (provider-disconnect
+	// PROVDISC-04/05) - idempotent, no error when zero rows matched.
+	DeleteProvider(ctx context.Context, provider string) error
 }
 
 // ProviderStatus is one connected provider's observable state - never
@@ -225,6 +228,19 @@ func (s *Service) Activate(ctx context.Context, provider string) error {
 
 	if err := s.repo.SetActiveProvider(ctx, provider); err != nil {
 		return fmt.Errorf("llm: failed to set active provider: %w", err)
+	}
+
+	return nil
+}
+
+// Disconnect removes provider's stored credentials (provider-disconnect
+// PROVDISC-04/05). It delegates straight to the repository's idempotent
+// DeleteProvider - never-connected/already-disconnected is success, not an
+// error. If provider was active, llm_settings.active_provider is cleared to
+// NULL by the repository's underlying FK, not by any code in this method.
+func (s *Service) Disconnect(ctx context.Context, provider string) error {
+	if err := s.repo.DeleteProvider(ctx, provider); err != nil {
+		return fmt.Errorf("llm: failed to disconnect provider: %w", err)
 	}
 
 	return nil

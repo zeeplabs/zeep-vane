@@ -94,7 +94,7 @@ func (f *fakeIntegrationUpdater) MarkDatadogChecked(ctx context.Context) error {
 
 func newTenantIterationPoller(t *testing.T, tenants tenantLister, tenantTx TenantTxFunc, services serviceLister, statuses serviceStatusUpdater, intervals statusIntervalWriter, integrations integrationStatusUpdater) *Poller {
 	t.Helper()
-	analyzer := NewSLOAnalyzer(&fakeIncidentStore{openIncidents: map[string]string{}}, &fakeStatusAnalysisWriter{}, &fakeLLMGenerator{}, time.Second, zap.NewNop())
+	analyzer := NewSLOAnalyzer(&fakeIncidentStore{openIncidents: map[string]string{}}, &fakeStatusAnalysisWriter{}, &fakeIntervalAnalysisWriter{}, &fakeLLMGenerator{}, time.Second, zap.NewNop())
 	p := &Poller{
 		services:        services,
 		statuses:        statuses,
@@ -232,7 +232,7 @@ func TestPollCycle_TenantIterationDisabled_FallsBackToAmbientPollOnce(t *testing
 	statuses := &fakeStatusUpdater{}
 	intervals := &fakeIntervalWriter{}
 	integrations := &fakeIntegrationUpdater{}
-	analyzer := NewSLOAnalyzer(&fakeIncidentStore{openIncidents: map[string]string{}}, &fakeStatusAnalysisWriter{}, &fakeLLMGenerator{}, time.Second, zap.NewNop())
+	analyzer := NewSLOAnalyzer(&fakeIncidentStore{openIncidents: map[string]string{}}, &fakeStatusAnalysisWriter{}, &fakeIntervalAnalysisWriter{}, &fakeLLMGenerator{}, time.Second, zap.NewNop())
 
 	p := NewPoller(services, statuses, intervals, integrations,
 		&fakeProvider{errs: []error{nil}, status: datadog.SLOStatus{State: "ok", RequestCount: 10}},

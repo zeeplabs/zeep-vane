@@ -4,6 +4,7 @@
 package history
 
 import (
+	"sort"
 	"time"
 
 	"github.com/zeeplabs/zeep-vane/internal/db"
@@ -23,8 +24,20 @@ var statusPriority = map[string]int{
 
 // Bucket is one bucket's resolved status in a service's uptime history.
 type Bucket struct {
-	Start  time.Time
-	Status string
+	Start    time.Time
+	Status   string
+	Episodes []Episode
+}
+
+// Episode is one "degraded"-status interval overlapping a bucket
+// (degraded-interval-analysis DEGINT-08) - attached independent of which
+// status "wins" the bucket's displayed color (DEGINT-10): a bucket whose
+// resolved Status is "outage" because a higher-priority interval also
+// overlaps it still carries its degraded interval's Episode(s).
+type Episode struct {
+	StartsAt time.Time
+	EndsAt   *time.Time // nil = still open as of asOf
+	Analysis *string
 }
 
 // BuildBuckets returns exactly bucketCount buckets, each bucketWidth wide,
@@ -117,7 +130,20 @@ func BuildBuckets(intervals []db.StatusInterval, now, asOf time.Time, loc *time.
 			if statusPriority[interval.Status] > statusPriority[buckets[i].Status] {
 				buckets[i].Status = interval.Status
 			}
+			if interval.Status == "degraded" {
+				buckets[i].Episodes = append(buckets[i].Episodes, Episode{
+					StartsAt: interval.StartsAt,
+					EndsAt:   interval.EndsAt,
+					Analysis: interval.Analysis,
+				})
+			}
 		}
+	}
+
+	for i := range buckets {
+		sort.Slice(buckets[i].Episodes, func(a, b int) bool {
+			return buckets[i].Episodes[a].StartsAt.After(buckets[i].Episodes[b].StartsAt)
+		})
 	}
 
 	return buckets

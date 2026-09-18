@@ -84,15 +84,16 @@ export function PersonalInfoCard() {
         </div>
         <div className="grid grid-cols-2 gap-4">
           <Field
+            variant="filled"
             label={t("profile.personalInfo.nameLabel")}
             value={name}
             onChange={(e) => setName(e.target.value)}
             error={error ?? undefined}
           />
-          <Field label={t("profile.personalInfo.emailLabel")} value={admin.email} readOnly />
+          <Field variant="filled" label={t("profile.personalInfo.emailLabel")} value={admin.email} readOnly />
         </div>
         <div>
-          <Button type="submit" disabled={update.isPending}>
+          <Button type="submit" variant="solid" disabled={update.isPending}>
             {t("profile.personalInfo.saveButton")}
           </Button>
         </div>

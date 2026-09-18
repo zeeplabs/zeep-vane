@@ -81,7 +81,7 @@ func TestPublicStatusPreview_AuthenticatedByID_200SameShapeAsProduction(t *testi
 	// fixture as last confirmed in March, deeply predating windowStart, and
 	// correctly report UptimePercent as undefined rather than the 100% this
 	// test wants to assert.
-	if err := db.NewStatusIntervalRepository(pool).OpenOrExtend(context.Background(), serviceID, "operational", 0.5, time.Now()); err != nil {
+	if _, err := db.NewStatusIntervalRepository(pool).OpenOrExtend(context.Background(), serviceID, "operational", 0.5, time.Now()); err != nil {
 		t.Fatalf("setup OpenOrExtend() returned unexpected error: %v", err)
 	}
 	if _, err := pool.Exec(context.Background(), "UPDATE status_pages SET state = 'published' WHERE id = $1", statusPageID); err != nil {
@@ -321,7 +321,7 @@ func TestPublicStatusPreview_Range90d_SameBucketShapeAsProduction(t *testing.T) 
 	serviceID, cleanup := createPublicStatusServiceFixture(t, pool, "operational", openedAt)
 	t.Cleanup(cleanup)
 	statusPageID := createPublicStatusPageFixture(t, pool, serviceID)
-	if err := db.NewStatusIntervalRepository(pool).OpenOrExtend(context.Background(), serviceID, "operational", 0.5, time.Now()); err != nil {
+	if _, err := db.NewStatusIntervalRepository(pool).OpenOrExtend(context.Background(), serviceID, "operational", 0.5, time.Now()); err != nil {
 		t.Fatalf("setup OpenOrExtend() returned unexpected error: %v", err)
 	}
 

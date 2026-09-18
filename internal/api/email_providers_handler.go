@@ -10,6 +10,8 @@ import (
 	"github.com/go-chi/chi/v5"
 	"go.uber.org/zap"
 
+	"github.com/zeeplabs/zeep-vane/internal/audit"
+	"github.com/zeeplabs/zeep-vane/internal/db"
 	"github.com/zeeplabs/zeep-vane/internal/email"
 )
 
@@ -25,17 +27,42 @@ type emailProviderService interface {
 	Connect(ctx context.Context, provider, apiKey, fromEmail, fromName string) error
 	Activate(ctx context.Context, provider string) error
 	List(ctx context.Context, page, pageSize int) (email.ListResult, error)
+	Disconnect(ctx context.Context, provider string) error
+}
+
+// emailProviderRowGetter is the subset of *db.EmailProviderRepository
+// EmailProvidersHandler depends on to resolve a provider name to its row
+// ID for audit entries (AUDITEXP-09/10) - email.Service's own interface
+// doesn't expose the row ID, only provider-name-keyed operations.
+type emailProviderRowGetter interface {
+	Get(ctx context.Context, provider string) (*db.EmailProvider, error)
 }
 
 // EmailProvidersHandler serves the /api/integrations/email/* admin routes.
 type EmailProvidersHandler struct {
 	svc    emailProviderService
+	rows   emailProviderRowGetter
+	audit  *audit.Log
 	logger *zap.Logger
 }
 
 // NewEmailProvidersHandler builds an EmailProvidersHandler.
-func NewEmailProvidersHandler(svc emailProviderService, logger *zap.Logger) *EmailProvidersHandler {
-	return &EmailProvidersHandler{svc: svc, logger: logger}
+func NewEmailProvidersHandler(svc emailProviderService, rows emailProviderRowGetter, auditLog *audit.Log, logger *zap.Logger) *EmailProvidersHandler {
+	return &EmailProvidersHandler{svc: svc, rows: rows, audit: auditLog, logger: logger}
+}
+
+// providerDisplayName maps a provider key to the human-readable name used
+// in audit target_label (AUDITEXP-09/10) - "sendgrid"/"resend" are internal
+// identifiers, not what a reader of "Atividade recente do time" expects.
+func providerDisplayName(provider string) string {
+	switch provider {
+	case "sendgrid":
+		return "SendGrid"
+	case "resend":
+		return "Resend"
+	default:
+		return provider
+	}
 }
 
 // knownEmailProviders are the only provider names this feature accepts
@@ -86,6 +113,14 @@ func (h *EmailProvidersHandler) Connect(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	if actor, ok := UserFromContext(r.Context()); ok {
+		if row, err := h.rows.Get(r.Context(), provider); err == nil {
+			if err := h.audit.Record(r.Context(), actor.ID, row.ID, providerDisplayName(provider), "email_provider_connected"); err != nil {
+				h.logger.Error("email providers: failed to record audit entry", zap.Error(err))
+			}
+		}
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	_, _ = w.Write([]byte(`{"status":"connected"}`))
@@ -112,9 +147,54 @@ func (h *EmailProvidersHandler) Activate(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
+	if actor, ok := UserFromContext(r.Context()); ok {
+		if row, err := h.rows.Get(r.Context(), provider); err == nil {
+			if err := h.audit.Record(r.Context(), actor.ID, row.ID, providerDisplayName(provider), "email_provider_activated"); err != nil {
+				h.logger.Error("email providers: failed to record audit entry", zap.Error(err))
+			}
+		}
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write([]byte(`{"status":"active"}`))
+}
+
+// Disconnect handles DELETE /api/integrations/email/{provider}
+// (provider-disconnect PROVDISC-01/02/03). An unknown provider name
+// responds 404 (same writeUnknownEmailProvider body as Connect/Activate);
+// otherwise it always responds 204 No Content, whether or not the provider
+// had a connected row - the underlying delete is idempotent (PROVDISC-02).
+// The row is fetched via h.rows.Get *before* calling svc.Disconnect (it
+// won't resolve afterward), so the audit entry's target_label is captured
+// beforehand - same "capture before mutate" reasoning as
+// ServicesHandler.Delete. The email_provider_disconnected audit entry is
+// recorded only when a row actually existed before the delete (nothing to
+// disconnect otherwise, so nothing to audit).
+func (h *EmailProvidersHandler) Disconnect(w http.ResponseWriter, r *http.Request) {
+	provider := chi.URLParam(r, "provider")
+	if !isKnownEmailProvider(provider) {
+		writeUnknownEmailProvider(w)
+		return
+	}
+
+	row, rowErr := h.rows.Get(r.Context(), provider)
+
+	if err := h.svc.Disconnect(r.Context(), provider); err != nil {
+		h.logger.Error("email providers: failed to disconnect provider", zap.String("provider", provider), zap.Error(err))
+		writeInternalError(w)
+		return
+	}
+
+	if rowErr == nil {
+		if actor, ok := UserFromContext(r.Context()); ok {
+			if err := h.audit.Record(r.Context(), actor.ID, row.ID, providerDisplayName(provider), "email_provider_disconnected"); err != nil {
+				h.logger.Error("email providers: failed to record audit entry", zap.Error(err))
+			}
+		}
+	}
+
+	w.WriteHeader(http.StatusNoContent)
 }
 
 type emailProviderResponse struct {

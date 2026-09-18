@@ -833,3 +833,31 @@ func TestVerifyDomain_NoAuth_401(t *testing.T) {
 		t.Errorf("status = %d, want %d", rec.Code, http.StatusUnauthorized)
 	}
 }
+
+// TestCreateDomain_NewHostname_RecordsDomainCreatedAudit covers
+// AUDITEXP-07.
+func TestCreateDomain_NewHostname_RecordsDomainCreatedAudit(t *testing.T) {
+	r, pool, admins := newDomainsRouter(t)
+	token := issueTestSessionToken(t, admins)
+	hostname := uniqueHostname(t)
+	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), "DELETE FROM domains WHERE hostname = $1", hostname) })
+
+	rec := postCreateDomain(t, r, token, hostname)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusCreated, rec.Body.String())
+	}
+	var created domainResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &created); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+
+	var gotTargetLabel string
+	row := pool.QueryRow(context.Background(),
+		"SELECT target_label FROM admin_audit_log WHERE target_id = $1 AND action = 'domain_created'", created.ID)
+	if err := row.Scan(&gotTargetLabel); err != nil {
+		t.Fatalf("Scan() returned unexpected error: %v", err)
+	}
+	if gotTargetLabel != hostname {
+		t.Errorf("admin_audit_log target_label = %q, want %q", gotTargetLabel, hostname)
+	}
+}

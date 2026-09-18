@@ -42,7 +42,7 @@ func createStatusIntervalRepositoryTestService(t *testing.T, pool *Pool, name st
 func selectIntervalsByService(t *testing.T, pool *Pool, serviceID string) []StatusInterval {
 	t.Helper()
 	rows, err := pool.Query(context.Background(),
-		"SELECT id, service_id, status, error_budget_remaining, starts_at, last_seen_at, ends_at FROM status_intervals WHERE service_id = $1 ORDER BY starts_at ASC",
+		"SELECT id, service_id, status, error_budget_remaining, starts_at, last_seen_at, ends_at, analysis FROM status_intervals WHERE service_id = $1 ORDER BY starts_at ASC",
 		serviceID,
 	)
 	if err != nil {
@@ -53,7 +53,7 @@ func selectIntervalsByService(t *testing.T, pool *Pool, serviceID string) []Stat
 	var intervals []StatusInterval
 	for rows.Next() {
 		var si StatusInterval
-		if err := rows.Scan(&si.ID, &si.ServiceID, &si.Status, &si.ErrorBudgetRemaining, &si.StartsAt, &si.LastSeenAt, &si.EndsAt); err != nil {
+		if err := rows.Scan(&si.ID, &si.ServiceID, &si.Status, &si.ErrorBudgetRemaining, &si.StartsAt, &si.LastSeenAt, &si.EndsAt, &si.Analysis); err != nil {
 			t.Fatalf("scan status interval returned unexpected error: %v", err)
 		}
 		intervals = append(intervals, si)
@@ -70,7 +70,7 @@ func TestOpenOrExtend_FirstObservation_InsertsOneOpenInterval(t *testing.T) {
 	repo := NewStatusIntervalRepository(pool)
 
 	at := time.Now().UTC().Truncate(time.Millisecond)
-	if err := repo.OpenOrExtend(context.Background(), serviceID, "operational", 95.0, at); err != nil {
+	if _, err := repo.OpenOrExtend(context.Background(), serviceID, "operational", 95.0, at); err != nil {
 		t.Fatalf("OpenOrExtend() returned unexpected error: %v", err)
 	}
 
@@ -96,12 +96,12 @@ func TestOpenOrExtend_SameStatus_UpdatesOpenIntervalInPlace(t *testing.T) {
 	repo := NewStatusIntervalRepository(pool)
 
 	first := time.Now().UTC().Truncate(time.Millisecond)
-	if err := repo.OpenOrExtend(context.Background(), serviceID, "operational", 95.0, first); err != nil {
+	if _, err := repo.OpenOrExtend(context.Background(), serviceID, "operational", 95.0, first); err != nil {
 		t.Fatalf("first OpenOrExtend() returned unexpected error: %v", err)
 	}
 
 	second := first.Add(1 * time.Minute)
-	if err := repo.OpenOrExtend(context.Background(), serviceID, "operational", 90.0, second); err != nil {
+	if _, err := repo.OpenOrExtend(context.Background(), serviceID, "operational", 90.0, second); err != nil {
 		t.Fatalf("second OpenOrExtend() returned unexpected error: %v", err)
 	}
 
@@ -130,12 +130,12 @@ func TestOpenOrExtend_DifferentStatus_ClosesOldRowAndOpensNew(t *testing.T) {
 	repo := NewStatusIntervalRepository(pool)
 
 	first := time.Now().UTC().Truncate(time.Millisecond)
-	if err := repo.OpenOrExtend(context.Background(), serviceID, "operational", 95.0, first); err != nil {
+	if _, err := repo.OpenOrExtend(context.Background(), serviceID, "operational", 95.0, first); err != nil {
 		t.Fatalf("first OpenOrExtend() returned unexpected error: %v", err)
 	}
 
 	second := first.Add(1 * time.Minute)
-	if err := repo.OpenOrExtend(context.Background(), serviceID, "outage", 40.0, second); err != nil {
+	if _, err := repo.OpenOrExtend(context.Background(), serviceID, "outage", 40.0, second); err != nil {
 		t.Fatalf("second OpenOrExtend() returned unexpected error: %v", err)
 	}
 
@@ -196,7 +196,8 @@ func TestOpenOrExtend_ConcurrentWriters_RaceLoserGetsError(t *testing.T) {
 
 	done := make(chan error, 1)
 	go func() {
-		done <- repo.OpenOrExtend(context.Background(), serviceID, "outage", 40.0, at)
+		_, err := repo.OpenOrExtend(context.Background(), serviceID, "outage", 40.0, at)
+		done <- err
 	}()
 
 	select {
@@ -244,13 +245,13 @@ func TestOpenIntervalsByService_ReturnsOnlyServicesWithOpenInterval(t *testing.T
 	_ = noIntervalsService
 
 	at := time.Now().UTC().Truncate(time.Millisecond)
-	if err := repo.OpenOrExtend(ctx, openService, "operational", 95.0, at); err != nil {
+	if _, err := repo.OpenOrExtend(ctx, openService, "operational", 95.0, at); err != nil {
 		t.Fatalf("OpenOrExtend(openService) returned unexpected error: %v", err)
 	}
 
 	// closedOnlyService has an interval that transitions and closes, leaving
 	// no currently-open row (simulate by opening then closing directly).
-	if err := repo.OpenOrExtend(ctx, closedOnlyService, "operational", 95.0, at); err != nil {
+	if _, err := repo.OpenOrExtend(ctx, closedOnlyService, "operational", 95.0, at); err != nil {
 		t.Fatalf("OpenOrExtend(closedOnlyService) returned unexpected error: %v", err)
 	}
 	if _, err := pool.Exec(ctx, "UPDATE status_intervals SET ends_at = $1 WHERE service_id = $2", at.Add(time.Minute), closedOnlyService); err != nil {
@@ -375,7 +376,7 @@ func TestDeleteClosedBefore_DeletesOnlyClosedRowsOlderThanCutoff(t *testing.T) {
 	repo := NewStatusIntervalRepository(pool)
 	// The service's open interval, regardless of age, must never be deleted.
 	veryOldOpenStart := now.Add(-100 * 24 * time.Hour)
-	if err := repo.OpenOrExtend(ctx, serviceID, "outage", 10.0, veryOldOpenStart); err != nil {
+	if _, err := repo.OpenOrExtend(ctx, serviceID, "outage", 10.0, veryOldOpenStart); err != nil {
 		t.Fatalf("OpenOrExtend() returned unexpected error: %v", err)
 	}
 
@@ -423,7 +424,7 @@ func TestCountUpdatedSince_CountsOnlyRowsInsideWindow(t *testing.T) {
 		t.Fatalf("CountUpdatedSince() (baseline) returned unexpected error: %v", err)
 	}
 
-	if err := repo.OpenOrExtend(ctx, outsideService, "operational", 95.0, outside); err != nil {
+	if _, err := repo.OpenOrExtend(ctx, outsideService, "operational", 95.0, outside); err != nil {
 		t.Fatalf("OpenOrExtend() (outside) returned unexpected error: %v", err)
 	}
 	afterOutside, err := repo.CountUpdatedSince(ctx, cutoff)
@@ -434,7 +435,7 @@ func TestCountUpdatedSince_CountsOnlyRowsInsideWindow(t *testing.T) {
 		t.Errorf("count went from %d to %d after a row outside the window, want unchanged", baseline, afterOutside)
 	}
 
-	if err := repo.OpenOrExtend(ctx, insideService, "operational", 95.0, inside); err != nil {
+	if _, err := repo.OpenOrExtend(ctx, insideService, "operational", 95.0, inside); err != nil {
 		t.Fatalf("OpenOrExtend() (inside) returned unexpected error: %v", err)
 	}
 	afterInside, err := repo.CountUpdatedSince(ctx, cutoff)
@@ -466,7 +467,7 @@ func TestCountUpdatedSince_StaleRowOutsideWindow_DoesNotIncreaseCount(t *testing
 
 	serviceID := createStatusIntervalRepositoryTestService(t, pool, "count-updated-since-stale")
 	old := time.Now().UTC().Add(-1 * time.Hour)
-	if err := repo.OpenOrExtend(ctx, serviceID, "operational", 95.0, old); err != nil {
+	if _, err := repo.OpenOrExtend(ctx, serviceID, "operational", 95.0, old); err != nil {
 		t.Fatalf("OpenOrExtend() returned unexpected error: %v", err)
 	}
 
@@ -495,7 +496,7 @@ func TestCountUpdatedSince_ExactBoundary_Included(t *testing.T) {
 		t.Fatalf("CountUpdatedSince() (baseline) returned unexpected error: %v", err)
 	}
 
-	if err := repo.OpenOrExtend(ctx, serviceID, "operational", 95.0, cutoff); err != nil {
+	if _, err := repo.OpenOrExtend(ctx, serviceID, "operational", 95.0, cutoff); err != nil {
 		t.Fatalf("OpenOrExtend() returned unexpected error: %v", err)
 	}
 
@@ -505,5 +506,123 @@ func TestCountUpdatedSince_ExactBoundary_Included(t *testing.T) {
 	}
 	if count != baseline+1 {
 		t.Errorf("count = %d, want %d (a row whose last_seen_at exactly equals cutoff must be included)", count, baseline+1)
+	}
+}
+
+// TestOpenOrExtend_ReturnsCorrectIntervalID covers DEGINT-02 across all 3
+// branches: a fresh insert, an in-place extend, and a close-then-insert.
+func TestOpenOrExtend_ReturnsCorrectIntervalID(t *testing.T) {
+	pool := newStatusIntervalRepositoryTestPool(t)
+	serviceID := createStatusIntervalRepositoryTestService(t, pool, "open-or-extend-returns-id")
+	repo := NewStatusIntervalRepository(pool)
+	ctx := context.Background()
+
+	first := time.Now().UTC().Truncate(time.Millisecond)
+	firstID, err := repo.OpenOrExtend(ctx, serviceID, "operational", 95.0, first)
+	if err != nil {
+		t.Fatalf("first OpenOrExtend() returned unexpected error: %v", err)
+	}
+	if firstID == "" {
+		t.Fatal("first OpenOrExtend() returned empty ID, want the new interval's ID")
+	}
+
+	second := first.Add(1 * time.Minute)
+	extendID, err := repo.OpenOrExtend(ctx, serviceID, "operational", 90.0, second)
+	if err != nil {
+		t.Fatalf("extend OpenOrExtend() returned unexpected error: %v", err)
+	}
+	if extendID != firstID {
+		t.Errorf("extend OpenOrExtend() ID = %q, want the same interval ID %q (same status, no new row)", extendID, firstID)
+	}
+
+	third := second.Add(1 * time.Minute)
+	newID, err := repo.OpenOrExtend(ctx, serviceID, "degraded", 40.0, third)
+	if err != nil {
+		t.Fatalf("close-and-open OpenOrExtend() returned unexpected error: %v", err)
+	}
+	if newID == firstID || newID == "" {
+		t.Errorf("close-and-open OpenOrExtend() ID = %q, want a new, non-empty ID distinct from %q", newID, firstID)
+	}
+
+	intervals := selectIntervalsByService(t, pool, serviceID)
+	if len(intervals) != 2 {
+		t.Fatalf("intervals count = %d, want 2", len(intervals))
+	}
+	if intervals[0].ID != firstID {
+		t.Errorf("closed interval ID = %q, want %q", intervals[0].ID, firstID)
+	}
+	if intervals[1].ID != newID {
+		t.Errorf("open interval ID = %q, want %q", intervals[1].ID, newID)
+	}
+}
+
+// TestSetIntervalAnalysis_OpenInterval_Persists covers DEGINT-04.
+func TestSetIntervalAnalysis_OpenInterval_Persists(t *testing.T) {
+	pool := newStatusIntervalRepositoryTestPool(t)
+	serviceID := createStatusIntervalRepositoryTestService(t, pool, "set-analysis-open")
+	repo := NewStatusIntervalRepository(pool)
+	ctx := context.Background()
+
+	intervalID, err := repo.OpenOrExtend(ctx, serviceID, "degraded", 40.0, time.Now().UTC().Truncate(time.Millisecond))
+	if err != nil {
+		t.Fatalf("OpenOrExtend() returned unexpected error: %v", err)
+	}
+
+	if err := repo.SetIntervalAnalysis(ctx, intervalID, "Serviço lento por alguns minutos."); err != nil {
+		t.Fatalf("SetIntervalAnalysis() returned unexpected error: %v", err)
+	}
+
+	intervals := selectIntervalsByService(t, pool, serviceID)
+	if len(intervals) != 1 {
+		t.Fatalf("intervals count = %d, want 1", len(intervals))
+	}
+	if intervals[0].Analysis == nil || *intervals[0].Analysis != "Serviço lento por alguns minutos." {
+		t.Errorf("Analysis = %v, want %q", intervals[0].Analysis, "Serviço lento por alguns minutos.")
+	}
+}
+
+// TestSetIntervalAnalysis_ClosedInterval_StillPersists is the DEGINT-05
+// discriminating test: the enrichment goroutine may finish after the
+// interval it targeted has already closed (a newer transition happened) -
+// SetIntervalAnalysis must still write to that same, now-closed row by ID,
+// never silently no-op.
+func TestSetIntervalAnalysis_ClosedInterval_StillPersists(t *testing.T) {
+	pool := newStatusIntervalRepositoryTestPool(t)
+	serviceID := createStatusIntervalRepositoryTestService(t, pool, "set-analysis-closed")
+	repo := NewStatusIntervalRepository(pool)
+	ctx := context.Background()
+
+	first := time.Now().UTC().Truncate(time.Millisecond)
+	degradedID, err := repo.OpenOrExtend(ctx, serviceID, "degraded", 40.0, first)
+	if err != nil {
+		t.Fatalf("OpenOrExtend(degraded) returned unexpected error: %v", err)
+	}
+
+	// Simulates the service recovering before the LLM enrichment for the
+	// degraded episode above finished.
+	second := first.Add(1 * time.Minute)
+	if _, err := repo.OpenOrExtend(ctx, serviceID, "operational", 95.0, second); err != nil {
+		t.Fatalf("OpenOrExtend(operational) returned unexpected error: %v", err)
+	}
+
+	if err := repo.SetIntervalAnalysis(ctx, degradedID, "Latência elevada, já normalizada."); err != nil {
+		t.Fatalf("SetIntervalAnalysis() returned unexpected error: %v", err)
+	}
+
+	intervals := selectIntervalsByService(t, pool, serviceID)
+	var degraded *StatusInterval
+	for i := range intervals {
+		if intervals[i].ID == degradedID {
+			degraded = &intervals[i]
+		}
+	}
+	if degraded == nil {
+		t.Fatal("could not find the degraded interval by ID")
+	}
+	if degraded.EndsAt == nil {
+		t.Fatal("degraded interval EndsAt = nil, want it closed (test setup invariant)")
+	}
+	if degraded.Analysis == nil || *degraded.Analysis != "Latência elevada, já normalizada." {
+		t.Errorf("Analysis = %v, want %q even though the interval is already closed", degraded.Analysis, "Latência elevada, já normalizada.")
 	}
 }

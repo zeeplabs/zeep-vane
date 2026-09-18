@@ -930,3 +930,80 @@ func TestDeleteStatusPage_NoAuth_401(t *testing.T) {
 		t.Errorf("status = %d, want %d", rec.Code, http.StatusUnauthorized)
 	}
 }
+
+// TestCreateStatusPage_ValidRequest_RecordsStatusPageCreatedAudit covers
+// AUDITEXP-04.
+func TestCreateStatusPage_ValidRequest_RecordsStatusPageCreatedAudit(t *testing.T) {
+	r, pool, admins := newStatusPagesRouter(t)
+	token := issueTestSessionToken(t, admins)
+
+	rec := postCreateStatusPage(t, r, token, createStatusPageRequest{Name: "Audit Create Page"})
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusCreated, rec.Body.String())
+	}
+	var created statusPageResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &created); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+	cleanupStatusPage(t, pool, created.ID)
+
+	var gotTargetLabel string
+	row := pool.QueryRow(context.Background(),
+		"SELECT target_label FROM admin_audit_log WHERE target_id = $1 AND action = 'status_page_created'", created.ID)
+	if err := row.Scan(&gotTargetLabel); err != nil {
+		t.Fatalf("Scan() returned unexpected error: %v", err)
+	}
+	if gotTargetLabel != "Audit Create Page" {
+		t.Errorf("admin_audit_log target_label = %q, want %q", gotTargetLabel, "Audit Create Page")
+	}
+}
+
+// TestAttachDomain_ValidRequest_RecordsStatusPageDomainAttachedAudit covers
+// AUDITEXP-05.
+func TestAttachDomain_ValidRequest_RecordsStatusPageDomainAttachedAudit(t *testing.T) {
+	r, pool, admins := newStatusPagesRouter(t)
+	token := issueTestSessionToken(t, admins)
+	domainID := createTestDomain(t, pool)
+	pageID := createDomainlessStatusPageViaAPI(t, r, pool, token, "Audit Attach Page")
+	cleanupStatusPage(t, pool, pageID)
+
+	rec := patchAttachDomain(t, r, token, pageID, attachDomainRequest{DomainID: domainID, Subdomain: "audit-status"})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	var gotTargetLabel string
+	row := pool.QueryRow(context.Background(),
+		"SELECT target_label FROM admin_audit_log WHERE target_id = $1 AND action = 'status_page_domain_attached'", pageID)
+	if err := row.Scan(&gotTargetLabel); err != nil {
+		t.Fatalf("Scan() returned unexpected error: %v", err)
+	}
+	if gotTargetLabel != "Audit Attach Page" {
+		t.Errorf("admin_audit_log target_label = %q, want %q", gotTargetLabel, "Audit Attach Page")
+	}
+}
+
+// TestSetServices_ReplacesLinkedSet_RecordsStatusPageServicesUpdatedAudit
+// covers AUDITEXP-06.
+func TestSetServices_ReplacesLinkedSet_RecordsStatusPageServicesUpdatedAudit(t *testing.T) {
+	r, pool, admins := newStatusPagesRouter(t)
+	token := issueTestSessionToken(t, admins)
+	serviceA := createTestService(t, pool)
+	pageID := createDomainlessStatusPageViaAPI(t, r, pool, token, "Audit SetServices Page")
+	cleanupStatusPage(t, pool, pageID)
+
+	rec := patchSetServices(t, r, token, pageID, setServicesRequest{ServiceIDs: []string{serviceA}})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	var gotTargetLabel string
+	row := pool.QueryRow(context.Background(),
+		"SELECT target_label FROM admin_audit_log WHERE target_id = $1 AND action = 'status_page_services_updated'", pageID)
+	if err := row.Scan(&gotTargetLabel); err != nil {
+		t.Fatalf("Scan() returned unexpected error: %v", err)
+	}
+	if gotTargetLabel != "Audit SetServices Page" {
+		t.Errorf("admin_audit_log target_label = %q, want %q", gotTargetLabel, "Audit SetServices Page")
+	}
+}

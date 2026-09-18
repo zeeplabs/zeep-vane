@@ -61,7 +61,8 @@ func buildAdminRouter(pool *db.Pool, cfg config.Config, logger *zap.Logger, poll
 	// pattern used above for the Datadog integration
 	// (validateDatadogCredentials/searchDatadogSLOs), keeping internal/email
 	// decoupled from which concrete connector packages exist (design.md).
-	emailService, err := email.NewService(db.NewEmailProviderRepository(pool), emailProviderFactory, cfg.MasterKey, logger)
+	emailProviderRepo := db.NewEmailProviderRepository(pool)
+	emailService, err := email.NewService(emailProviderRepo, emailProviderFactory, cfg.MasterKey, logger)
 	if err != nil {
 		// NewService only errors if the embedded admin-invite templates
 		// fail to parse (fail-fast-at-boot, design.md) - that source is
@@ -71,10 +72,11 @@ func buildAdminRouter(pool *db.Pool, cfg config.Config, logger *zap.Logger, poll
 		// (matches this package's existing boot-assembly style).
 		logger.Fatal("cli: failed to build email service", zap.Error(err))
 	}
-	emailProvidersHandler := api.NewEmailProvidersHandler(emailService, logger)
+	emailProvidersHandler := api.NewEmailProvidersHandler(emailService, emailProviderRepo, auditLog, logger)
 
-	llmService := llm.NewService(db.NewLLMProviderStore(db.NewLLMProviderRepository(pool)), llmProviderFactory, cfg.MasterKey, logger)
-	llmProvidersHandler := api.NewLLMProvidersHandler(llmService, logger)
+	llmProviderRepo := db.NewLLMProviderRepository(pool)
+	llmService := llm.NewService(db.NewLLMProviderStore(llmProviderRepo), llmProviderFactory, cfg.MasterKey, logger)
+	llmProvidersHandler := api.NewLLMProvidersHandler(llmService, llmProviderRepo, auditLog, logger)
 
 	// Per-device session row repository (user-sessions): every issued
 	// session token corresponds to a real sessions-table row, looked up
@@ -90,8 +92,8 @@ func buildAdminRouter(pool *db.Pool, cfg config.Config, logger *zap.Logger, poll
 	passwordResetHandler := api.NewPasswordResetHandler(users, db.NewPasswordResetRepository(pool), emailService, tenantsRepo, logger, cfg.DevTokenLogging, cfg.AdminBaseURL)
 	adminsHandler := api.NewAdminsHandler(pool, users, tenantMembershipsRepo, invites, emailService, tenantsRepo, sessions, auditLog, logger, cfg.DevTokenLogging, cfg.AdminBaseURL, cfg.SessionSecret, cfg.SecureCookies)
 	domainsHandler := api.NewDomainsHandler(db.NewDomainRepository(pool), db.NewStatusPageRepository(pool), auditLog, cfg.PublicDNSTarget, logger)
-	servicesHandler := api.NewServicesHandler(db.NewServiceRepository(pool), db.NewStatusIntervalRepository(pool), db.NewIncidentRepository(pool), logger)
-	integrationsHandler := api.NewIntegrationsHandler(db.NewIntegrationRepository(pool), validateDatadogCredentials, searchDatadogSLOs, pollerManager, cfg.MasterKey, logger)
+	servicesHandler := api.NewServicesHandler(db.NewServiceRepository(pool), db.NewStatusIntervalRepository(pool), db.NewIncidentRepository(pool), auditLog, logger)
+	integrationsHandler := api.NewIntegrationsHandler(db.NewIntegrationRepository(pool), validateDatadogCredentials, searchDatadogSLOs, pollerManager, auditLog, cfg.MasterKey, logger)
 	incidentsHandler := api.NewIncidentsHandler(
 		db.NewIncidentRepository(pool),
 		notify.NewService(db.NewTenantMembershipRepository(pool), db.NewNotificationPreferenceRepository(pool), emailService, cfg.AdminBaseURL, logger),
@@ -102,8 +104,8 @@ func buildAdminRouter(pool *db.Pool, cfg config.Config, logger *zap.Logger, poll
 	sessionsHandler := api.NewSessionsHandler(sessions, logger)
 	publicStatusHandler := api.NewPublicStatusHandler(db.NewServiceRepository(pool), db.NewStatusIntervalRepository(pool), db.NewIncidentRepository(pool), tenantsRepo, logger)
 	publicStatusPreviewHandler := api.NewPublicStatusPreviewHandler(db.NewStatusPageRepository(pool), publicStatusHandler, logger)
-	companySettingsHandler := api.NewCompanySettingsHandler(tenantsRepo, logger)
-	tenantHandler := api.NewTenantHandler(tenantMembershipsRepo, tenantsRepo, logger)
+	companySettingsHandler := api.NewCompanySettingsHandler(tenantsRepo, auditLog, logger)
+	tenantHandler := api.NewTenantHandler(tenantMembershipsRepo, tenantsRepo, auditLog, logger)
 	logoFileHandler := api.NewLogoFileHandler(tenantsRepo)
 	instanceConfigHandler := api.NewInstanceConfigHandler(cfg.PublicDNSTarget, tenantsRepo, logger)
 	overviewHandler := api.NewOverviewHandler(db.NewServiceRepository(pool), db.NewStatusIntervalRepository(pool), db.NewIncidentRepository(pool), db.NewDomainRepository(pool), logger)
@@ -234,9 +236,16 @@ func buildAdminRouter(pool *db.Pool, cfg config.Config, logger *zap.Logger, poll
 		protected.With(writeRoles).Post("/api/integrations/datadog", integrationsHandler.ConnectDatadog)
 		protected.With(writeRoles).Post("/api/integrations/email/{provider}", emailProvidersHandler.Connect)
 		protected.With(writeRoles).Post("/api/integrations/email/{provider}/activate", emailProvidersHandler.Activate)
+		// provider-disconnect PROVDISC-01/02/03: same writeRoles gate as
+		// Connect/Activate above - disconnect is the same write/destructive
+		// action class.
+		protected.With(writeRoles).Delete("/api/integrations/email/{provider}", emailProvidersHandler.Disconnect)
 		protected.With(writeRoles).Post("/api/integrations/llm/{provider}", llmProvidersHandler.Connect)
 		protected.With(writeRoles).Post("/api/integrations/llm/{provider}/model", llmProvidersHandler.SetModel)
 		protected.With(writeRoles).Post("/api/integrations/llm/{provider}/activate", llmProvidersHandler.Activate)
+		// provider-disconnect PROVDISC-04/05/06: same writeRoles gate as
+		// the email disconnect route above (T6).
+		protected.With(writeRoles).Delete("/api/integrations/llm/{provider}", llmProvidersHandler.Disconnect)
 		protected.With(writeRoles).Post("/api/incidents", incidentsHandler.Create)
 		protected.With(writeRoles).Post("/api/incidents/{id}/updates", incidentsHandler.AddUpdate)
 		protected.With(writeRoles).Patch("/api/incidents/{id}", incidentsHandler.Transition)

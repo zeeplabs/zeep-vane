@@ -92,7 +92,7 @@ type serviceStatusUpdater interface {
 // poller depends on to persist an observed status as an open/extended
 // interval.
 type statusIntervalWriter interface {
-	OpenOrExtend(ctx context.Context, serviceID, status string, errorBudgetRemaining float64, at time.Time) error
+	OpenOrExtend(ctx context.Context, serviceID, status string, errorBudgetRemaining float64, at time.Time) (string, error)
 }
 
 // integrationStatusUpdater is the subset of *db.IntegrationRepository the
@@ -320,10 +320,16 @@ func (p *Poller) pollService(ctx context.Context, svc db.Service) error {
 
 	var current string
 	switch {
-	case status.RequestCount < minRecentWindowRequests:
+	case status.RequestCount < minRecentWindowRequests && svc.CurrentStatus != "not_configured":
 		// Too little traffic in this window to trust a recompute - carry the
 		// previous status forward rather than let a handful of requests
-		// flip the public page (AD-019).
+		// flip the public page (AD-019). This floor is skipped for a
+		// service's first-ever classification (still "not_configured"):
+		// any real reading beats a placeholder backed by zero data
+		// (SLOTRAF-01) - a low-traffic service would otherwise carry
+		// "not_configured" forward forever, indistinguishable from one
+		// with no slo_id at all. Once classified, this floor applies
+		// normally to every subsequent cycle (SLOTRAF-02).
 		current = svc.CurrentStatus
 	case status.Target <= 0:
 		// The response carried no usable threshold, so no honest
@@ -354,7 +360,8 @@ func (p *Poller) pollService(ctx context.Context, svc db.Service) error {
 
 	transitioned := current != svc.CurrentStatus
 
-	if err := p.statusIntervals.OpenOrExtend(ctx, svc.ID, current, status.ErrorBudgetRemaining, time.Now()); err != nil {
+	intervalID, err := p.statusIntervals.OpenOrExtend(ctx, svc.ID, current, status.ErrorBudgetRemaining, time.Now())
+	if err != nil {
 		p.logger.Error("poller: failed to open or extend status interval",
 			zap.String("service_id", svc.ID), zap.Error(err))
 		return err
@@ -378,7 +385,7 @@ func (p *Poller) pollService(ctx context.Context, svc db.Service) error {
 	// cycle until the write finally succeeds - persisting first makes the
 	// transition idempotent from HandleTransition's point of view.
 	if transitioned {
-		p.analyzer.HandleTransition(ctx, svc, svc.CurrentStatus, current, status)
+		p.analyzer.HandleTransition(ctx, svc, svc.CurrentStatus, current, status, intervalID)
 	}
 
 	return nil

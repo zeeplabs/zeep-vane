@@ -8,7 +8,7 @@ import "../../lib/i18n";
 import { server } from "../../test/msw/server";
 import { apiFetch } from "../../lib/apiClient";
 import { PublicStatusPage } from "./PublicStatusPage";
-import type { PublicHourlyStatus } from "../../lib/publicStatus";
+import type { PublicHistoryBucket, PublicHourlyStatus } from "../../lib/publicStatus";
 
 // The preview endpoint (I12) sits behind requireAuth - unlike the real
 // production public page (served by the Go backend directly via Host
@@ -314,6 +314,52 @@ describe("PublicStatusPage", () => {
 
     const bars = await screen.findAllByTestId(/^hourly-bar-Serviço Tooltip-\d+$/);
     expect(bars[0].title).toBe("24/08, 14h–15h · Degradado");
+  });
+
+  // degraded-interval-analysis DEGINT-13: a bucket carrying episodes opens
+  // a popover on click, listing the episode's time range and analysis.
+  it("clicar numa barra com episódio degradado abre popover com o motivo", async () => {
+    const history: PublicHistoryBucket[] = Array.from({ length: 24 }, () =>
+      bucket("2026-08-24T17:00:00.000Z", "operational" as PublicHourlyStatus),
+    );
+    history[10] = {
+      start: "2026-08-24T17:00:00.000Z",
+      status: "degraded",
+      episodes: [
+        {
+          starts_at: "2026-08-24T17:05:00.000Z",
+          ends_at: "2026-08-24T17:20:00.000Z",
+          analysis: "Latência elevada no checkout.",
+        },
+      ],
+    };
+    mockPublicPreview("Serviço Episódio", history);
+
+    await renderAt("/status/hourly-episode-test");
+
+    const bars = await screen.findAllByTestId(/^hourly-bar-Serviço Episódio-\d+$/);
+    expect(screen.queryByText("Latência elevada no checkout.")).not.toBeInTheDocument();
+
+    await userEvent.click(bars[10]);
+
+    expect(await screen.findByText("Latência elevada no checkout.")).toBeInTheDocument();
+  });
+
+  // degraded-interval-analysis DEGINT-15: a bucket with no episodes stays
+  // non-interactive - clicking it does nothing, same as before this
+  // feature.
+  it("barra sem episódio degradado não é clicável", async () => {
+    const history: ReturnType<typeof bucket>[] = Array.from({ length: 24 }, () =>
+      bucket("2026-08-24T17:00:00.000Z", "operational" as PublicHourlyStatus),
+    );
+    mockPublicPreview("Serviço Sem Episódio", history);
+
+    await renderAt("/status/hourly-no-episode-test");
+
+    const bars = await screen.findAllByTestId(/^hourly-bar-Serviço Sem Episódio-\d+$/);
+    expect(bars[0].tagName).toBe("DIV");
+    await userEvent.click(bars[0]);
+    expect(screen.queryByText("Degradação registrada")).not.toBeInTheDocument();
   });
 
   // UPT-06: a service with no observed data ever still renders all 24

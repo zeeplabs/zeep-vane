@@ -289,7 +289,7 @@ func newPollerFromStoredIntegration(ctx context.Context, pool *db.Pool, cfg conf
 
 	incidents := db.NewIncidentRepository(pool)
 	llmSvc := llm.NewService(db.NewLLMProviderStore(db.NewLLMProviderRepository(pool)), llmProviderFactory, cfg.MasterKey, logger)
-	analyzer := poller.NewSLOAnalyzer(incidents, services, llmSvc, poller.AnalysisTimeout, logger)
+	analyzer := poller.NewSLOAnalyzer(incidents, services, intervals, llmSvc, poller.AnalysisTimeout, logger)
 
 	// Auto-created outage incidents bypass the HTTP handler, so the analyzer
 	// needs its own notifier to fire the incident-opened email

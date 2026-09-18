@@ -141,10 +141,10 @@ func TestOverviewHandler_Get_RealData_ReturnsAllAggregates(t *testing.T) {
 	if err := services.UpdateStatus(ctx, svcOK.ID, "operational"); err != nil {
 		t.Fatalf("UpdateStatus() returned unexpected error: %v", err)
 	}
-	if err := intervals.OpenOrExtend(ctx, svcOK.ID, "operational", 0, now.AddDate(0, 0, -30)); err != nil {
+	if _, err := intervals.OpenOrExtend(ctx, svcOK.ID, "operational", 0, now.AddDate(0, 0, -30)); err != nil {
 		t.Fatalf("OpenOrExtend() returned unexpected error: %v", err)
 	}
-	if err := intervals.OpenOrExtend(ctx, svcOK.ID, "operational", 0, now); err != nil {
+	if _, err := intervals.OpenOrExtend(ctx, svcOK.ID, "operational", 0, now); err != nil {
 		t.Fatalf("OpenOrExtend() returned unexpected error: %v", err)
 	}
 
@@ -154,13 +154,13 @@ func TestOverviewHandler_Get_RealData_ReturnsAllAggregates(t *testing.T) {
 	if err := services.UpdateStatus(ctx, svcBad.ID, "outage"); err != nil {
 		t.Fatalf("UpdateStatus() returned unexpected error: %v", err)
 	}
-	if err := intervals.OpenOrExtend(ctx, svcBad.ID, "outage", 0, now.AddDate(0, 0, -10)); err != nil {
+	if _, err := intervals.OpenOrExtend(ctx, svcBad.ID, "outage", 0, now.AddDate(0, 0, -10)); err != nil {
 		t.Fatalf("OpenOrExtend() returned unexpected error: %v", err)
 	}
-	if err := intervals.OpenOrExtend(ctx, svcBad.ID, "operational", 0, now.AddDate(0, 0, -9)); err != nil {
+	if _, err := intervals.OpenOrExtend(ctx, svcBad.ID, "operational", 0, now.AddDate(0, 0, -9)); err != nil {
 		t.Fatalf("OpenOrExtend() returned unexpected error: %v", err)
 	}
-	if err := intervals.OpenOrExtend(ctx, svcBad.ID, "operational", 0, now); err != nil {
+	if _, err := intervals.OpenOrExtend(ctx, svcBad.ID, "operational", 0, now); err != nil {
 		t.Fatalf("OpenOrExtend() returned unexpected error: %v", err)
 	}
 
@@ -347,14 +347,14 @@ func TestOverviewHandler_Get_UptimePrior_AveragesSixtyToThirtyDaysAgo(t *testing
 		t.Fatalf("UpdateStatus() returned unexpected error: %v", err)
 	}
 	// Prior window (60d-30d ago): outage the whole time -> 0%.
-	if err := intervals.OpenOrExtend(ctx, svc.ID, "outage", 0, now.AddDate(0, 0, -60)); err != nil {
+	if _, err := intervals.OpenOrExtend(ctx, svc.ID, "outage", 0, now.AddDate(0, 0, -60)); err != nil {
 		t.Fatalf("OpenOrExtend() (prior) returned unexpected error: %v", err)
 	}
 	// Current window (30d ago-now): operational the whole time -> 100%.
-	if err := intervals.OpenOrExtend(ctx, svc.ID, "operational", 0, now.AddDate(0, 0, -30)); err != nil {
+	if _, err := intervals.OpenOrExtend(ctx, svc.ID, "operational", 0, now.AddDate(0, 0, -30)); err != nil {
 		t.Fatalf("OpenOrExtend() (current) returned unexpected error: %v", err)
 	}
-	if err := intervals.OpenOrExtend(ctx, svc.ID, "operational", 0, now); err != nil {
+	if _, err := intervals.OpenOrExtend(ctx, svc.ID, "operational", 0, now); err != nil {
 		t.Fatalf("OpenOrExtend() (close) returned unexpected error: %v", err)
 	}
 
@@ -380,10 +380,10 @@ func TestOverviewHandler_Get_UptimeSeries_IsFourteenConsecutiveLocalDays(t *test
 	ctx := context.Background()
 	intervals := db.NewStatusIntervalRepository(pool)
 	svc := createOverviewService(t, pool, "overview-series")
-	if err := intervals.OpenOrExtend(ctx, svc.ID, "operational", 0, time.Now().AddDate(0, 0, -30)); err != nil {
+	if _, err := intervals.OpenOrExtend(ctx, svc.ID, "operational", 0, time.Now().AddDate(0, 0, -30)); err != nil {
 		t.Fatalf("OpenOrExtend() returned unexpected error: %v", err)
 	}
-	if err := intervals.OpenOrExtend(ctx, svc.ID, "operational", 0, time.Now()); err != nil {
+	if _, err := intervals.OpenOrExtend(ctx, svc.ID, "operational", 0, time.Now()); err != nil {
 		t.Fatalf("OpenOrExtend() returned unexpected error: %v", err)
 	}
 

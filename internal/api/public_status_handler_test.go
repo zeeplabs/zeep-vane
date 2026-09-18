@@ -58,7 +58,7 @@ func createPublicStatusServiceFixture(t *testing.T, pool *db.Pool, status string
 		t.Fatalf("setup UpdateStatus() returned unexpected error: %v", err)
 	}
 	intervals := db.NewStatusIntervalRepository(pool)
-	if err := intervals.OpenOrExtend(ctx, service.ID, status, 0.5, lastSeenAt); err != nil {
+	if _, err := intervals.OpenOrExtend(ctx, service.ID, status, 0.5, lastSeenAt); err != nil {
 		t.Fatalf("setup OpenOrExtend() returned unexpected error: %v", err)
 	}
 
@@ -336,7 +336,7 @@ func TestPublicStatusGet_UptimePercent_OutageWindowComputesExpectedValue(t *test
 	// the H7 asOf clamp (public_status_handler.go) would see the fixture's
 	// still-open interval as last confirmed at openedAt (48h ago) and clip
 	// the uptime denominator there, which this test isn't exercising.
-	if err := db.NewStatusIntervalRepository(pool).OpenOrExtend(context.Background(), serviceID, "operational", 0.5, time.Now()); err != nil {
+	if _, err := db.NewStatusIntervalRepository(pool).OpenOrExtend(context.Background(), serviceID, "operational", 0.5, time.Now()); err != nil {
 		t.Fatalf("setup post-outage OpenOrExtend() returned unexpected error: %v", err)
 	}
 
@@ -390,7 +390,7 @@ func TestPublicStatusGet_LastUpdatedAt_AdvancesOnRepeatedSameStatusPoll(t *testi
 	// probability).
 	secondSeenAt := time.Now().Add(-1 * time.Hour).Truncate(time.Microsecond)
 	intervals := db.NewStatusIntervalRepository(pool)
-	if err := intervals.OpenOrExtend(context.Background(), serviceID, "operational", 0.5, secondSeenAt); err != nil {
+	if _, err := intervals.OpenOrExtend(context.Background(), serviceID, "operational", 0.5, secondSeenAt); err != nil {
 		t.Fatalf("setup second OpenOrExtend() returned unexpected error: %v", err)
 	}
 
@@ -438,7 +438,7 @@ func TestPublicStatusGet_StalledPoller_CurrentHourNotFabricatedOperational(t *te
 	// (simulating a dead poller, not a reconnect).
 	staleAt := time.Now().Add(-10 * time.Hour)
 	intervals := db.NewStatusIntervalRepository(pool)
-	if err := intervals.OpenOrExtend(context.Background(), serviceID, "operational", 0.5, staleAt); err != nil {
+	if _, err := intervals.OpenOrExtend(context.Background(), serviceID, "operational", 0.5, staleAt); err != nil {
 		t.Fatalf("setup second OpenOrExtend() returned unexpected error: %v", err)
 	}
 
@@ -917,7 +917,7 @@ func seedPublicStatusRangeFixture(t *testing.T, pool *db.Pool) (serviceID, statu
 
 	// Keep the open interval's last_seen_at fresh so the H7 asOf clamp
 	// doesn't clip the window before every tier's own windowStart.
-	if err := db.NewStatusIntervalRepository(pool).OpenOrExtend(context.Background(), serviceID, "operational", 0.5, time.Now()); err != nil {
+	if _, err := db.NewStatusIntervalRepository(pool).OpenOrExtend(context.Background(), serviceID, "operational", 0.5, time.Now()); err != nil {
 		t.Fatalf("setup post-outage OpenOrExtend() returned unexpected error: %v", err)
 	}
 
@@ -1416,7 +1416,7 @@ func TestPublicStatusGet_Range90d_PartialCoverageLeadingBucketsNoData(t *testing
 	// Keep the interval's last_seen_at fresh so the H7 asOf clamp doesn't
 	// clip the trailing (most recent) bucket to no_data too - this test is
 	// only exercising the leading, out-of-coverage buckets.
-	if err := db.NewStatusIntervalRepository(pool).OpenOrExtend(context.Background(), serviceID, "operational", 0.5, time.Now()); err != nil {
+	if _, err := db.NewStatusIntervalRepository(pool).OpenOrExtend(context.Background(), serviceID, "operational", 0.5, time.Now()); err != nil {
 		t.Fatalf("setup OpenOrExtend() returned unexpected error: %v", err)
 	}
 
@@ -1449,5 +1449,81 @@ func TestPublicStatusGet_Range90d_PartialCoverageLeadingBucketsNoData(t *testing
 	}
 	if found.History[len(found.History)-1].Status == "no_data" {
 		t.Errorf("trailing (most recent) bucket Status = %q, want real data, not no_data", found.History[len(found.History)-1].Status)
+	}
+}
+
+// TestPublicStatusGet_DegradedBucket_IncludesEpisodes covers DEGINT-11: a
+// bucket overlapping a degraded interval with a generated analysis text
+// exposes it in the response's episodes array.
+func TestPublicStatusGet_DegradedBucket_IncludesEpisodes(t *testing.T) {
+	r, pool := newPublicStatusRouter(t)
+	openedAt := time.Now().Add(-5 * time.Minute)
+	serviceID, cleanup := createPublicStatusServiceFixture(t, pool, "degraded", openedAt)
+	t.Cleanup(cleanup)
+	statusPageID := createPublicStatusPageFixture(t, pool, serviceID)
+
+	// A second poll confirming the same "degraded" status a few minutes
+	// later extends last_seen_at without touching starts_at, giving the
+	// interval real (non-zero) duration - a freshly-opened interval whose
+	// starts_at equals its own last_seen_at/asOf is deliberately skipped by
+	// history.BuildBuckets's zero-duration guard.
+	intervals := db.NewStatusIntervalRepository(pool)
+	intervalID, err := intervals.OpenOrExtend(context.Background(), serviceID, "degraded", 0.5, time.Now())
+	if err != nil {
+		t.Fatalf("setup second OpenOrExtend() returned unexpected error: %v", err)
+	}
+	if err := intervals.SetIntervalAnalysis(context.Background(), intervalID, "Latência elevada no checkout."); err != nil {
+		t.Fatalf("setup SetIntervalAnalysis() returned unexpected error: %v", err)
+	}
+
+	req := withStatusPageContext(httptest.NewRequest(http.MethodGet, "/", nil), statusPageID)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	var body publicStatusResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+	allServices, err := db.NewServiceRepository(pool).List(context.Background())
+	if err != nil {
+		t.Fatalf("List() returned unexpected error: %v", err)
+	}
+	found := findPublicService(body.Services, serviceID, allServices)
+	if found == nil {
+		t.Fatalf("service %s not present in public response", serviceID)
+	}
+
+	last := found.History[len(found.History)-1]
+	if len(last.Episodes) != 1 {
+		t.Fatalf("len(episodes) = %d, want 1", len(last.Episodes))
+	}
+	if last.Episodes[0].Analysis == nil || *last.Episodes[0].Analysis != "Latência elevada no checkout." {
+		t.Errorf("episode Analysis = %v, want %q", last.Episodes[0].Analysis, "Latência elevada no checkout.")
+	}
+}
+
+// TestPublicStatusGet_OperationalBucket_OmitsEpisodesField covers DEGINT-11:
+// a bucket with no degraded episode omits the episodes field (not null,
+// not an empty array) - json.Marshal's omitempty on a nil slice omits the
+// key entirely, asserted here via the raw response body.
+func TestPublicStatusGet_OperationalBucket_OmitsEpisodesField(t *testing.T) {
+	r, pool := newPublicStatusRouter(t)
+	serviceID, cleanup := createPublicStatusServiceFixture(t, pool, "operational", time.Now())
+	t.Cleanup(cleanup)
+	statusPageID := createPublicStatusPageFixture(t, pool, serviceID)
+
+	req := withStatusPageContext(httptest.NewRequest(http.MethodGet, "/", nil), statusPageID)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	if strings.Contains(rec.Body.String(), `"episodes"`) {
+		t.Errorf("response body contains an \"episodes\" key for a bucket with no degraded episode: %s", rec.Body.String())
 	}
 }

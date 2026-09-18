@@ -12,6 +12,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"go.uber.org/zap"
 
+	"github.com/zeeplabs/zeep-vane/internal/audit"
 	"github.com/zeeplabs/zeep-vane/internal/checks"
 	"github.com/zeeplabs/zeep-vane/internal/db"
 	"github.com/zeeplabs/zeep-vane/internal/history"
@@ -55,6 +56,7 @@ type ServicesHandler struct {
 	services   serviceCreatorLister
 	intervals  statusIntervalReader
 	incidents  serviceIncidentCounter
+	audit      *audit.Log
 	logger     *zap.Logger
 	historyLoc *time.Location
 }
@@ -64,12 +66,12 @@ type ServicesHandler struct {
 // tzdata assumption and load-once-panic-on-failure pattern as
 // NewOverviewHandler): a load failure is a build defect, so it panics at
 // construction rather than turning every request into a 500.
-func NewServicesHandler(services serviceCreatorLister, intervals statusIntervalReader, incidents serviceIncidentCounter, logger *zap.Logger) *ServicesHandler {
+func NewServicesHandler(services serviceCreatorLister, intervals statusIntervalReader, incidents serviceIncidentCounter, auditLog *audit.Log, logger *zap.Logger) *ServicesHandler {
 	loc, err := time.LoadLocation("America/Sao_Paulo")
 	if err != nil {
 		panic(fmt.Sprintf("services: failed to load America/Sao_Paulo location: %v", err))
 	}
-	return &ServicesHandler{services: services, intervals: intervals, incidents: incidents, logger: logger, historyLoc: loc}
+	return &ServicesHandler{services: services, intervals: intervals, incidents: incidents, audit: auditLog, logger: logger, historyLoc: loc}
 }
 
 type createServiceRequest struct {
@@ -205,6 +207,12 @@ func (h *ServicesHandler) Create(w http.ResponseWriter, r *http.Request) {
 		h.logger.Error("services: failed to create service", zap.Error(err))
 		writeInternalError(w)
 		return
+	}
+
+	if actor, ok := UserFromContext(r.Context()); ok {
+		if err := h.audit.Record(r.Context(), actor.ID, service.ID, service.Name, "service_created"); err != nil {
+			h.logger.Error("services: failed to record audit entry", zap.Error(err))
+		}
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -430,6 +438,12 @@ func (h *ServicesHandler) Update(w http.ResponseWriter, r *http.Request) {
 	}
 	uptime30d, lastSeenAt := uptimeAndLastSeen(overlapping, windowStart, now)
 
+	if actor, ok := UserFromContext(ctx); ok {
+		if err := h.audit.Record(ctx, actor.ID, service.ID, service.Name, "service_updated"); err != nil {
+			h.logger.Error("services: failed to record audit entry", zap.Error(err))
+		}
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	_ = json.NewEncoder(w).Encode(toServiceResponse(service, uptime30d, lastSeenAt))
@@ -452,6 +466,15 @@ const serviceInUseBody = `{"error":"service is still attached to a status page"}
 func (h *ServicesHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 
+	// Captured before SoftDelete runs (same reasoning as
+	// StatusPagesHandler.Delete): the audit entry needs a human-readable
+	// name, and a name fetched after a successful delete could differ from
+	// what was actually removed if the row is later hard-purged.
+	var name string
+	if service, found, err := h.services.Get(r.Context(), id); err == nil && found {
+		name = service.Name
+	}
+
 	if err := h.services.SoftDelete(r.Context(), id); err != nil {
 		if errors.Is(err, db.ErrServiceInUse) {
 			writeAdminError(w, http.StatusConflict, serviceInUseBody)
@@ -464,6 +487,12 @@ func (h *ServicesHandler) Delete(w http.ResponseWriter, r *http.Request) {
 		h.logger.Error("services: failed to delete service", zap.Error(err))
 		writeInternalError(w)
 		return
+	}
+
+	if actor, ok := UserFromContext(r.Context()); ok {
+		if err := h.audit.Record(r.Context(), actor.ID, id, name, "service_deleted"); err != nil {
+			h.logger.Error("services: failed to record audit entry", zap.Error(err))
+		}
 	}
 
 	w.WriteHeader(http.StatusNoContent)

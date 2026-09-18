@@ -148,9 +148,16 @@ func (r *EmailProviderRepository) countEmailProviders(ctx context.Context) (int,
 // has one whose active_provider is NULL. The row is created lazily by
 // SetActiveProvider: since multi-tenancy-core there is one per tenant,
 // not one seeded singleton per installation.
+// GetActiveProvider filters explicitly by tenant_id rather than relying
+// solely on the tenant_isolation RLS policy: a superuser (or any
+// BYPASSRLS) connection role ignores RLS entirely, including under
+// FORCE ROW LEVEL SECURITY (which only binds the table owner), so an
+// unfiltered SELECT could return an arbitrary tenant's row instead of
+// erroring or returning nothing.
 func (r *EmailProviderRepository) GetActiveProvider(ctx context.Context) (string, error) {
 	var activeProvider *string
-	row := r.pool.QueryRow(ctx, "SELECT active_provider FROM email_settings")
+	row := r.pool.QueryRow(ctx,
+		"SELECT active_provider FROM email_settings WHERE tenant_id = NULLIF(current_setting('app.tenant_id', true), '')::uuid")
 	if err := row.Scan(&activeProvider); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return "", nil
@@ -172,6 +179,27 @@ func (r *EmailProviderRepository) SetActiveProvider(ctx context.Context, provide
 		provider)
 	if err != nil {
 		return fmt.Errorf("db: failed to set active email provider: %w", err)
+	}
+
+	return nil
+}
+
+// DeleteProvider removes provider's row from email_providers
+// (provider-disconnect PROVDISC-01/02). It is idempotent: deleting a
+// provider with no row (never connected, or already disconnected) still
+// returns nil, matching the spec's "second disconnect call is a no-op
+// success" decision. If provider was the active one, email_settings'
+// active_provider is cleared to NULL automatically by the existing FK
+// (ON DELETE SET NULL, 0016_email_providers.up.sql) - no separate step here.
+// The tenant_id filter is explicit, not left to RLS alone - see
+// GetActiveProvider's comment on why a superuser/BYPASSRLS connection
+// role would otherwise let this delete a different tenant's row.
+func (r *EmailProviderRepository) DeleteProvider(ctx context.Context, provider string) error {
+	_, err := r.pool.Exec(ctx,
+		"DELETE FROM email_providers WHERE provider = $1 AND tenant_id = NULLIF(current_setting('app.tenant_id', true), '')::uuid",
+		provider)
+	if err != nil {
+		return fmt.Errorf("db: failed to delete email provider: %w", err)
 	}
 
 	return nil

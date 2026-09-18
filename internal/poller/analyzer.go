@@ -35,6 +35,15 @@ type statusAnalysisWriter interface {
 	UpdateStatusAnalysis(ctx context.Context, serviceID string, analysis *string) error
 }
 
+// intervalAnalysisWriter is the subset of *db.StatusIntervalRepository
+// SLOAnalyzer depends on to persist a degraded episode's AI-generated text
+// against the specific status_intervals row it describes
+// (degraded-interval-analysis DEGINT-04), independent of and in parallel
+// with statusAnalysisWriter's service-level column above.
+type intervalAnalysisWriter interface {
+	SetIntervalAnalysis(ctx context.Context, intervalID, analysis string) error
+}
+
 // llmGenerator is the subset of *llm.Service SLOAnalyzer depends on to
 // generate SLO analysis text. Narrowed to the three Generate* methods, same
 // convention as every other narrow interface in this package.
@@ -107,11 +116,12 @@ func buildAnalysisInput(svc db.Service, sloStatus datadog.SLOStatus) llm.Analysi
 // fallback description, status_analysis clearing) and the detached,
 // timeout-bounded LLM enrichment that refines that text afterwards.
 type SLOAnalyzer struct {
-	incidents incidentStore
-	services  statusAnalysisWriter
-	llmSvc    llmGenerator
-	timeout   time.Duration
-	logger    *zap.Logger
+	incidents       incidentStore
+	services        statusAnalysisWriter
+	statusIntervals intervalAnalysisWriter
+	llmSvc          llmGenerator
+	timeout         time.Duration
+	logger          *zap.Logger
 
 	// notifier sends the incident-opened email for an auto-created outage
 	// incident (notification-preferences NOTIFPREF-04). Optional: nil (the
@@ -139,15 +149,16 @@ func (a *SLOAnalyzer) SetNotifier(n incidentNotifier) {
 // NewSLOAnalyzer builds an SLOAnalyzer. timeout bounds every async LLM
 // enrichment call HandleTransition dispatches (see AnalysisTimeout for the
 // recommended value and its rationale).
-func NewSLOAnalyzer(incidents incidentStore, services statusAnalysisWriter, llmSvc llmGenerator, timeout time.Duration, logger *zap.Logger) *SLOAnalyzer {
+func NewSLOAnalyzer(incidents incidentStore, services statusAnalysisWriter, statusIntervals intervalAnalysisWriter, llmSvc llmGenerator, timeout time.Duration, logger *zap.Logger) *SLOAnalyzer {
 	return &SLOAnalyzer{
-		incidents:    incidents,
-		services:     services,
-		llmSvc:       llmSvc,
-		timeout:      timeout,
-		logger:       logger,
-		sem:          make(chan struct{}, maxConcurrentEnrichments),
-		lastDispatch: map[string]time.Time{},
+		incidents:       incidents,
+		services:        services,
+		statusIntervals: statusIntervals,
+		llmSvc:          llmSvc,
+		timeout:         timeout,
+		logger:          logger,
+		sem:             make(chan struct{}, maxConcurrentEnrichments),
+		lastDispatch:    map[string]time.Time{},
 	}
 }
 
@@ -193,7 +204,7 @@ func (a *SLOAnalyzer) release() {
 // context.WithTimeout(context.WithoutCancel(ctx), a.timeout) - the same
 // shape AD-014 established for the password-reset email send - so this
 // method always returns well before the goroutine's result is known.
-func (a *SLOAnalyzer) HandleTransition(ctx context.Context, svc db.Service, previousStatus, newStatus string, sloStatus datadog.SLOStatus) {
+func (a *SLOAnalyzer) HandleTransition(ctx context.Context, svc db.Service, previousStatus, newStatus string, sloStatus datadog.SLOStatus, intervalID string) {
 	if previousStatus == newStatus {
 		return
 	}
@@ -213,7 +224,7 @@ func (a *SLOAnalyzer) HandleTransition(ctx context.Context, svc db.Service, prev
 		}
 	}
 	if enteringDegraded {
-		a.dispatchDegradedEnrichment(ctx, svc, sloStatus)
+		a.dispatchDegradedEnrichment(ctx, svc, sloStatus, intervalID)
 	}
 
 	if newStatus == "outage" {
@@ -308,12 +319,20 @@ func (a *SLOAnalyzer) handleRecoveryTransition(ctx context.Context, svc db.Servi
 
 // dispatchDegradedEnrichment kicks off the detached, timeout-bounded
 // goroutine that generates the degraded-state tooltip text and stores it
-// via UpdateStatusAnalysis (AI-14). On any failure or timeout it logs and
-// leaves status_analysis NULL - the fallback state HandleTransition's
-// synchronous clear already left it in (AI-16), never an error string.
-// Gated by tryAcquire (maxConcurrentEnrichments/enrichmentCooldown) - a
-// refused dispatch simply leaves that NULL fallback in place.
-func (a *SLOAnalyzer) dispatchDegradedEnrichment(ctx context.Context, svc db.Service, sloStatus datadog.SLOStatus) {
+// via UpdateStatusAnalysis (AI-14), plus (degraded-interval-analysis
+// DEGINT-03/04) SetIntervalAnalysis against intervalID - the specific
+// status_intervals row that triggered this dispatch, captured by the
+// caller before the goroutine starts. The goroutine always writes to that
+// same ID, never "whichever interval is open now" - if it has since
+// closed (or a second degraded interval has already opened) by the time
+// this call finishes, the write still lands on intervalID (DEGINT-05).
+// On any failure or timeout it logs and leaves both status_analysis and
+// this interval's analysis NULL - the fallback state HandleTransition's
+// synchronous clear already left status_analysis in (AI-16), never an
+// error string. Gated by tryAcquire (maxConcurrentEnrichments/
+// enrichmentCooldown) - a refused dispatch simply leaves both NULL
+// fallbacks in place.
+func (a *SLOAnalyzer) dispatchDegradedEnrichment(ctx context.Context, svc db.Service, sloStatus datadog.SLOStatus, intervalID string) {
 	key := "degraded:" + svc.ID
 	if !a.tryAcquire(key) {
 		a.logger.Warn("slo-analyzer: skipping degraded enrichment (cooldown or concurrency limit)",
@@ -345,6 +364,10 @@ func (a *SLOAnalyzer) dispatchDegradedEnrichment(ctx context.Context, svc db.Ser
 		if err := a.services.UpdateStatusAnalysis(dctx, svc.ID, &analysis); err != nil {
 			a.logger.Error("slo-analyzer: failed to persist generated degraded analysis",
 				zap.String("service_id", svc.ID), zap.Error(err))
+		}
+		if err := a.statusIntervals.SetIntervalAnalysis(dctx, intervalID, analysis); err != nil {
+			a.logger.Error("slo-analyzer: failed to persist generated degraded analysis on interval",
+				zap.String("service_id", svc.ID), zap.String("interval_id", intervalID), zap.Error(err))
 		}
 	}()
 }

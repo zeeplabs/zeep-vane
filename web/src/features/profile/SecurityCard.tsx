@@ -65,6 +65,7 @@ export function SecurityCard() {
 
       <form onSubmit={handleSubmit} className="flex flex-col gap-4">
         <Field
+          variant="filled"
           type="password"
           label={t("profile.security.currentPassword")}
           value={currentPassword}
@@ -73,6 +74,7 @@ export function SecurityCard() {
         />
         <div className="grid grid-cols-2 gap-4">
           <Field
+            variant="filled"
             type="password"
             label={t("profile.security.newPassword")}
             value={newPassword}
@@ -80,6 +82,7 @@ export function SecurityCard() {
             autoComplete="new-password"
           />
           <Field
+            variant="filled"
             type="password"
             label={t("profile.security.confirmPassword")}
             value={confirmPassword}
@@ -93,7 +96,7 @@ export function SecurityCard() {
           </p>
         ) : null}
         <div>
-          <Button type="submit" disabled={change.isPending}>
+          <Button type="submit" variant="solid" disabled={change.isPending}>
             {t("profile.security.updatePassword")}
           </Button>
         </div>

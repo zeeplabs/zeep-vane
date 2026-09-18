@@ -143,6 +143,12 @@ func (h *DomainsHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if actor, ok := UserFromContext(r.Context()); ok {
+		if err := h.audit.Record(r.Context(), actor.ID, domain.ID, domain.Hostname, "domain_created"); err != nil {
+			h.logger.Error("domains: failed to record audit entry", zap.Error(err))
+		}
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	_ = json.NewEncoder(w).Encode(toDomainResponse(domain))

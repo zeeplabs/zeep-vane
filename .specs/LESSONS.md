@@ -380,6 +380,24 @@ Seen once or not yet corroborated. Tracked, not trusted.
 - evidence: internal/db/service_repository.go:306-333 (internal/db)
 - last seen: 2026-09-16T22:32:47Z
 
+### L-062 - When a spec AC says 'X stays unchanged' or 'role Y is forbidden', write a test that directly asserts that exact case (not just its positive counterpart or a generic middleware test) - mirroring an existing pattern (Connect/Activate) silently inherits its coverage gaps.
+- signal: `spec_precision_gap` · recurrence: 1 feature(s) · scope: `internal/api,internal/email,internal/llm testing conventions` · harmful: 0
+- features: provider-disconnect
+- evidence: spec.md P1-email AC3 / P1-email AC7 / P1-llm AC6 (internal/api,internal/email,internal/llm testing conventions)
+- last seen: 2026-09-17T20:32:50Z
+
+### L-063 - When migrating tested behavior (hooks, mutations, error handling) from an orphaned component into a live one, port the failure-path tests too, not just the happy path - deleting the old test file drops that coverage if it isn't carried forward.
+- signal: `ac_gap` · recurrence: 1 feature(s) · scope: `frontend` · harmful: 0
+- features: integrations-card-actions
+- evidence: spec.md P1 Disconnect story AC5 / IntegrationsPage.test.tsx (no failure-path test) (frontend)
+- last seen: 2026-09-17T20:57:40Z
+
+### L-064 - Every 'IF the call fails THEN show error, leave state unchanged' acceptance criterion needs its own MSW-error-response test - do not assume the happy-path test for the same action also proves the failure posture.
+- signal: `ac_gap` · recurrence: 1 feature(s) · scope: `frontend` · harmful: 0
+- features: integrations-card-actions
+- evidence: spec.md P1 Activate story AC4 / IntegrationsPage.test.tsx (no failure-path test) (frontend)
+- last seen: 2026-09-17T20:57:40Z
+
 ## Quarantined (failed when applied - ignore)
 
 A confirmed lesson that recurred alongside failure. Kept for the maintainer to review.

@@ -5,9 +5,11 @@ import { apiFetch, ApiError } from "../../lib/apiClient";
 import {
   useActivateLLMProvider,
   useConnectLLMProvider,
+  useDisconnectLLMProvider,
   useLLMProviders,
   useSetLLMProviderModel,
 } from "./hooks";
+import type { LLMProviderName } from "../../lib/llmProviders";
 
 async function loginAsOwner() {
   await apiFetch("/api/auth/login", {
@@ -121,5 +123,45 @@ describe("LLM provider hooks", () => {
     const { result } = renderHook(() => useActivateLLMProvider(), { wrapper: TestQueryProvider });
 
     await expect(result.current.mutateAsync("openai")).rejects.toBeInstanceOf(ApiError);
+  });
+
+  // PROVDISC-07/08: mirrors useDisconnectEmailProvider's own coverage - a
+  // DELETE with no body, invalidating the same ["integrations", "llm"]
+  // query key on success so the disconnected row disappears from the list.
+  it("useDisconnectLLMProvider desconecta um provider conectado e invalida a lista", async () => {
+    await loginAsOwner();
+    const { result } = renderHook(
+      () => ({
+        list: useLLMProviders(1),
+        connect: useConnectLLMProvider("openai"),
+        disconnect: useDisconnectLLMProvider(),
+      }),
+      { wrapper: TestQueryProvider }
+    );
+    await waitFor(() => expect(result.current.list.isSuccess).toBe(true));
+    await result.current.connect.mutateAsync({ api_key: "sk-real-key" });
+    await waitFor(() =>
+      expect(result.current.list.data?.providers.some((p) => p.provider === "openai")).toBe(true)
+    );
+
+    await result.current.disconnect.mutateAsync("openai");
+
+    await waitFor(() =>
+      expect(result.current.list.data?.providers.some((p) => p.provider === "openai")).toBe(false)
+    );
+  });
+
+  it("useDisconnectLLMProvider é idempotente - desconectar um provider nunca conectado ainda resolve com sucesso", async () => {
+    await loginAsOwner();
+    const { result } = renderHook(() => useDisconnectLLMProvider(), { wrapper: TestQueryProvider });
+
+    await expect(result.current.mutateAsync("openai")).resolves.toBeUndefined();
+  });
+
+  it("useDisconnectLLMProvider propaga ApiError 404 para um nome de provider desconhecido", async () => {
+    await loginAsOwner();
+    const { result } = renderHook(() => useDisconnectLLMProvider(), { wrapper: TestQueryProvider });
+
+    await expect(result.current.mutateAsync("bogus" as LLMProviderName)).rejects.toBeInstanceOf(ApiError);
   });
 });
