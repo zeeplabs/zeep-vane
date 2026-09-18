@@ -547,14 +547,15 @@ func TestPollService_ZeroRequestWindow_OperationalCarriesForwardUnchanged(t *tes
 	}
 }
 
-// TestPollService_ZeroRequestWindow_NeitherAdvancesNorResetsBreachStreak is
-// the ZEROREQ-04 test: a zero-request cycle must not touch breachStreak in
-// either direction. Sequence: two real breached windows flip the service to
-// "outage" (streak=2); a zero-request window reclassifies it via state to
-// "degraded" without touching the streak; a further real breached window
-// must then flip immediately back to "outage" (streak becomes 3, already
-// >=2) rather than needing a fresh two-cycle climb from a reset streak (which
-// would instead carry "degraded" forward on that same cycle).
+// TestPollService_ZeroRequestWindow_NeitherAdvancesNorResetsBreachStreak
+// covers the breachStreak-untouched clause of ZEROREQ-01/ZEROREQ-02: a
+// zero-request cycle must not touch breachStreak in either direction.
+// Sequence: two real breached windows flip the service to "outage"
+// (streak=2); a zero-request window reclassifies it via state to "degraded"
+// without touching the streak; a further real breached window must then flip
+// immediately back to "outage" (streak becomes 3, already >=2) rather than
+// needing a fresh two-cycle climb from a reset streak (which would instead
+// carry "degraded" forward on that same cycle).
 func TestPollService_ZeroRequestWindow_NeitherAdvancesNorResetsBreachStreak(t *testing.T) {
 	provider := &fakeProvider{
 		errs: []error{nil, nil, nil, nil},
