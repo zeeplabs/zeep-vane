@@ -15,6 +15,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.1] — 2026-09-17
+
+### Fixed
+
+- A service whose Datadog SLO receives zero requests in a poll window could be falsely classified as `outage` — a window with no requests was compared against the breach threshold with an SLI of 0, always registering as a breach even though no request ever failed. A service already latched into a false `outage`/`degraded` by this gap self-corrects on its first poll after this release.
+
 ## [0.5.0] — 2026-09-17
 
 ### Added
