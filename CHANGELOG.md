@@ -15,6 +15,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0] — 2026-09-17
+
+### Added
+
+- **Disconnect an email or LLM provider**: owners/operators can now disconnect a connected SendGrid, Resend, or OpenAI integration directly from the Integrations page, with a confirmation dialog before the stored API key is removed. Disconnecting the currently active provider is allowed — it clears cleanly with no dangling active-provider reference.
+- The Integrations page's email/LLM provider cards now show an "Ativar" action when a provider is connected but not the active one, and a distinct "Ativo" indicator when it is — this state existed in the backend already but had no reachable UI before this release.
+
+### Security
+
+- `GetActiveProvider`/`DeleteProvider` for both email and LLM providers now filter explicitly by `tenant_id` instead of relying solely on the `tenant_isolation` RLS policy. A superuser (or any `BYPASSRLS`) database role bypasses row-level security entirely, even under `FORCE ROW LEVEL SECURITY` — which only binds the table owner, never a superuser — so under such a role these queries could read or delete a different tenant's row.
+
+### Removed
+
+- Two admin pages (`EmailProvidersPage`, `AISettings`) that were fully built and tested but never mounted on any route — dead, unreachable code. Their behavior now lives in the Integrations page's provider cards instead.
+
 ## [0.4.1] — 2026-09-17
 
 ### Changed
