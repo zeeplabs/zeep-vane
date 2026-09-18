@@ -439,3 +439,155 @@ func TestPollService_NoTarget_FallsBackToStateClassification(t *testing.T) {
 		t.Errorf("UpdateStatus calls = %+v, want fallback carry-forward %q then %q", statuses.calls, "operational", "outage")
 	}
 }
+
+// TestPollService_ZeroRequestFirstPoll_ClassifiesViaStateInsteadOfOutage is
+// the ZEROREQ-01 root-fix test: a zero-request window on a service's
+// first-ever classification must not reach the SLI<breachBound comparison
+// (SLI defaults to 0 with no data, always "below" any bound) - it must
+// classify via Datadog's own state instead, the same as the Target<=0
+// fallback would.
+func TestPollService_ZeroRequestFirstPoll_ClassifiesViaStateInsteadOfOutage(t *testing.T) {
+	provider := &fakeProvider{
+		errs:   []error{nil},
+		status: datadog.SLOStatus{State: "no_data", Target: 99.5, RequestCount: 0},
+	}
+	intervals := &fakeIntervalWriter{}
+	statuses := &fakeStatusUpdater{}
+	p := newTestPoller(provider, time.Hour, intervals, statuses)
+
+	if err := p.pollService(t.Context(), db.Service{ID: "svc-1", SLOID: "slo-1", CurrentStatus: "not_configured"}); err != nil {
+		t.Fatalf("pollService() returned unexpected error: %v", err)
+	}
+
+	if len(statuses.calls) != 1 || statuses.calls[0].status != "degraded" {
+		t.Errorf("UpdateStatus calls = %+v, want %q (no data means no evidence of health, never a breach latch)", statuses.calls, "degraded")
+	}
+}
+
+// TestPollService_ZeroRequestWindow_RecoversStuckOutage is the ZEROREQ-02
+// recovery test: a service already latched into "outage" by this same
+// zero-request gap (before this fix shipped) must self-correct on its next
+// poll instead of the low-volume guard freezing "outage" forward forever.
+func TestPollService_ZeroRequestWindow_RecoversStuckOutage(t *testing.T) {
+	provider := &fakeProvider{
+		errs:   []error{nil},
+		status: datadog.SLOStatus{State: "ok", Target: 99.5, RequestCount: 0},
+	}
+	intervals := &fakeIntervalWriter{}
+	statuses := &fakeStatusUpdater{}
+	p := newTestPoller(provider, time.Hour, intervals, statuses)
+
+	if err := p.pollService(t.Context(), db.Service{ID: "svc-1", SLOID: "slo-1", CurrentStatus: "outage"}); err != nil {
+		t.Fatalf("pollService() returned unexpected error: %v", err)
+	}
+
+	if len(statuses.calls) != 1 || statuses.calls[0].status != "operational" {
+		t.Errorf("UpdateStatus calls = %+v, want %q (self-corrects instead of freezing outage forward)", statuses.calls, "operational")
+	}
+}
+
+// TestPollService_ZeroRequestRecovery_StillDispatchesTransitionHandling
+// covers both the ZEROREQ-02 recovery path (from "degraded") and ZEROREQ-05
+// (the reclassification still fires p.analyzer.HandleTransition through the
+// existing, unmodified transitioned-dispatch mechanism - here observable via
+// the synchronous "leaving degraded" analysis clear).
+func TestPollService_ZeroRequestRecovery_StillDispatchesTransitionHandling(t *testing.T) {
+	provider := &fakeProvider{
+		errs:   []error{nil},
+		status: datadog.SLOStatus{State: "ok", Target: 99.5, RequestCount: 0},
+	}
+	intervals := &fakeIntervalWriter{}
+	statuses := &fakeStatusUpdater{}
+	incidents := &fakeIncidentStore{openIncidents: map[string]string{}}
+	services := &fakeStatusAnalysisWriter{}
+	analyzer := NewSLOAnalyzer(incidents, services, intervals, &fakeLLMGenerator{}, time.Second, zap.NewNop())
+	p := &Poller{
+		statuses:        statuses,
+		statusIntervals: intervals,
+		provider:        provider,
+		interval:        time.Hour,
+		analyzer:        analyzer,
+		logger:          zap.NewNop(),
+		breachStreak:    make(map[string]int),
+	}
+
+	if err := p.pollService(t.Context(), db.Service{ID: "svc-1", SLOID: "slo-1", CurrentStatus: "degraded"}); err != nil {
+		t.Fatalf("pollService() returned unexpected error: %v", err)
+	}
+
+	if len(statuses.calls) != 1 || statuses.calls[0].status != "operational" {
+		t.Fatalf("UpdateStatus calls = %+v, want %q (zero-request recovery via state)", statuses.calls, "operational")
+	}
+	calls := services.snapshot()
+	if len(calls) != 1 || calls[0] != nil {
+		t.Errorf("UpdateStatusAnalysis calls = %v, want exactly 1 call with nil (leaving degraded still dispatches HandleTransition through the unmodified mechanism)", calls)
+	}
+}
+
+// TestPollService_ZeroRequestWindow_OperationalCarriesForwardUnchanged is
+// the ZEROREQ-03 fence test: a zero-request window on an already-operational
+// service must keep using the pre-existing low-volume carry-forward guard,
+// never the new state-based reclassification - proven here by a state value
+// ("breached") that would flip the result if the new branch fired.
+func TestPollService_ZeroRequestWindow_OperationalCarriesForwardUnchanged(t *testing.T) {
+	provider := &fakeProvider{
+		errs:   []error{nil},
+		status: datadog.SLOStatus{State: "breached", Target: 99.5, RequestCount: 0},
+	}
+	intervals := &fakeIntervalWriter{}
+	statuses := &fakeStatusUpdater{}
+	p := newTestPoller(provider, time.Hour, intervals, statuses)
+
+	if err := p.pollService(t.Context(), db.Service{ID: "svc-1", SLOID: "slo-1", CurrentStatus: "operational"}); err != nil {
+		t.Fatalf("pollService() returned unexpected error: %v", err)
+	}
+
+	if len(statuses.calls) != 1 || statuses.calls[0].status != "operational" {
+		t.Errorf("UpdateStatus calls = %+v, want carry-forward of %q unaffected by state, unchanged from today", statuses.calls, "operational")
+	}
+}
+
+// TestPollService_ZeroRequestWindow_NeitherAdvancesNorResetsBreachStreak is
+// the ZEROREQ-04 test: a zero-request cycle must not touch breachStreak in
+// either direction. Sequence: two real breached windows flip the service to
+// "outage" (streak=2); a zero-request window reclassifies it via state to
+// "degraded" without touching the streak; a further real breached window
+// must then flip immediately back to "outage" (streak becomes 3, already
+// >=2) rather than needing a fresh two-cycle climb from a reset streak (which
+// would instead carry "degraded" forward on that same cycle).
+func TestPollService_ZeroRequestWindow_NeitherAdvancesNorResetsBreachStreak(t *testing.T) {
+	provider := &fakeProvider{
+		errs: []error{nil, nil, nil, nil},
+		statuses: []datadog.SLOStatus{
+			{State: "breached", RequestCount: 5000},
+			{State: "breached", RequestCount: 5000},
+			{State: "no_data", RequestCount: 0},
+			{State: "breached", RequestCount: 5000},
+		},
+	}
+	intervals := &fakeIntervalWriter{}
+	statuses := &fakeStatusUpdater{}
+	p := newTestPoller(provider, time.Hour, intervals, statuses)
+
+	svcs := []db.Service{
+		{ID: "svc-1", SLOID: "slo-1", CurrentStatus: "operational"},
+		{ID: "svc-1", SLOID: "slo-1", CurrentStatus: "operational"},
+		{ID: "svc-1", SLOID: "slo-1", CurrentStatus: "outage"},
+		{ID: "svc-1", SLOID: "slo-1", CurrentStatus: "degraded"},
+	}
+	for i, svc := range svcs {
+		if err := p.pollService(t.Context(), svc); err != nil {
+			t.Fatalf("pollService() call %d returned unexpected error: %v", i+1, err)
+		}
+	}
+
+	want := []string{"operational", "outage", "degraded", "outage"}
+	if len(statuses.calls) != len(want) {
+		t.Fatalf("UpdateStatus calls = %+v, want %d calls", statuses.calls, len(want))
+	}
+	for i, w := range want {
+		if statuses.calls[i].status != w {
+			t.Errorf("call %d status = %q, want %q (breach streak must survive the zero-request window untouched)", i+1, statuses.calls[i].status, w)
+		}
+	}
+}

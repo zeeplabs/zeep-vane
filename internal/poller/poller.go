@@ -320,6 +320,22 @@ func (p *Poller) pollService(ctx context.Context, svc db.Service) error {
 
 	var current string
 	switch {
+	case status.RequestCount <= 0 && (svc.CurrentStatus == "not_configured" || svc.CurrentStatus == "outage" || svc.CurrentStatus == "degraded"):
+		// A window with zero requests carries no signal at all - not even a
+		// failed request counts toward RequestCount (a failing request
+		// still hits the denominator), so a real outage always has
+		// RequestCount > 0. breachBound already documents this precondition
+		// ("callers still apply their own low-volume guards before relying
+		// on the result") but 086d678 (SLOTRAF-01) skipped exactly that
+		// guard for a service's first-ever classification, letting a
+		// zero-request window feed the SLI<breachBound comparison below
+		// with SLI=0 - always "below" any bound, latching to "outage" after
+		// breachHysteresisCycles purely from absent data. Classify by
+		// Datadog's own state instead (same as the Target<=0 fallback), and
+		// never touch breachStreak - this also self-corrects any service
+		// already stuck in "outage"/"degraded" from this same gap, on its
+		// first poll after this fix ships, without manual intervention.
+		current = normalizeStatus(status.State)
 	case status.RequestCount < minRecentWindowRequests && svc.CurrentStatus != "not_configured":
 		// Too little traffic in this window to trust a recompute - carry the
 		// previous status forward rather than let a handful of requests
