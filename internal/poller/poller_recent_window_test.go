@@ -277,6 +277,37 @@ func TestPollService_FirstPollLowVolume_UsableTarget_ClassifiesViaBreachBound(t 
 	}
 }
 
+// TestPollService_FirstPollLowVolumeNonZero_TrustsDatadogStateNotNoisySLI
+// covers the bug reported in production: a service's first-ever
+// classification with a small but nonzero RequestCount (below
+// minRecentWindowRequests) whose window happens to include one failed
+// request. The window's own SLI (50%, 1 of 2) falls well below both Target
+// and breachBound - not because the service is actually degraded, but
+// because n=2 has no statistical power - while Datadog's own aggregated
+// state ("ok") reports it healthy. pollService must trust the state, not
+// the noisy narrow-window SLI, exactly as it already does for the
+// RequestCount==0 case.
+func TestPollService_FirstPollLowVolumeNonZero_TrustsDatadogStateNotNoisySLI(t *testing.T) {
+	provider := &fakeProvider{
+		errs:   []error{nil},
+		status: datadog.SLOStatus{State: "ok", SLI: 50.0, Target: 99.5, RequestCount: 2},
+	}
+	intervals := &fakeIntervalWriter{}
+	statuses := &fakeStatusUpdater{}
+	p := newTestPoller(provider, time.Hour, intervals, statuses)
+
+	if err := p.pollService(t.Context(), db.Service{ID: "svc-1", SLOID: "slo-1", CurrentStatus: "not_configured"}); err != nil {
+		t.Fatalf("pollService() returned unexpected error: %v", err)
+	}
+
+	if len(statuses.calls) != 1 || statuses.calls[0].status != "operational" {
+		t.Errorf("UpdateStatus calls = %+v, want %q (first-ever classification trusts Datadog's aggregated state over a 2-request window's noisy SLI)", statuses.calls, "operational")
+	}
+	if p.breachStreak["svc-1"] != 0 {
+		t.Errorf("breachStreak[svc-1] = %d, want 0 (this branch must never touch breachStreak)", p.breachStreak["svc-1"])
+	}
+}
+
 // TestPollService_LowVolumeAfterFirstClassification_StillCarriesForward is
 // the SLOTRAF-02 regression guard: once a service has left not_configured,
 // the traffic floor applies exactly as before - a low-volume cycle carries

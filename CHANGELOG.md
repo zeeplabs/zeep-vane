@@ -15,6 +15,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.2] — 2026-09-21
+
+### Fixed
+
+- A service just linked to a healthy Datadog SLO could show `degraded` on the public page while its traffic was still ramping up — with fewer than 10 requests in a poll window, a single failed request swings that window's own SLI far enough to trip the breach comparison, even though Datadog's own aggregated state reports the service healthy. A service's first-ever classification now trusts Datadog's state across the whole low-volume range instead of only the zero-request edge. A service already showing a false `degraded` from this gap self-corrects on its first poll after this release.
+
 ## [0.5.1] — 2026-09-17
 
 ### Fixed

@@ -320,7 +320,23 @@ func (p *Poller) pollService(ctx context.Context, svc db.Service) error {
 
 	var current string
 	switch {
-	case status.RequestCount <= 0 && (svc.CurrentStatus == "not_configured" || svc.CurrentStatus == "outage" || svc.CurrentStatus == "degraded"):
+	case svc.CurrentStatus == "not_configured" && status.RequestCount < minRecentWindowRequests:
+		// A service's first-ever classification (still "not_configured")
+		// must escape the placeholder on any real reading (SLOTRAF-01) -
+		// but a window with fewer than minRecentWindowRequests requests
+		// (0 included) is too sparse for its own SLI to be statistically
+		// meaningful: with n=1-9, a single failed request swings the
+		// window's SLI/breachBound comparison below by itself, latching
+		// this branch straight to "degraded" (or, at RequestCount<=0,
+		// SLI=0 always "below" any bound, straight to "outage" after
+		// breachHysteresisCycles) from noise that Datadog's own
+		// timeframe-aggregated state would never flag. Classify by that
+		// state instead (same fallback the Target<=0 branch already uses)
+		// and never touch breachStreak - the low-volume floor below still
+		// governs every subsequent cycle once this service has left
+		// "not_configured" (SLOTRAF-02).
+		current = normalizeStatus(status.State)
+	case status.RequestCount <= 0 && (svc.CurrentStatus == "outage" || svc.CurrentStatus == "degraded"):
 		// A window with zero requests carries no signal at all - not even a
 		// failed request counts toward RequestCount (a failing request
 		// still hits the denominator), so a real outage always has
@@ -336,16 +352,14 @@ func (p *Poller) pollService(ctx context.Context, svc db.Service) error {
 		// already stuck in "outage"/"degraded" from this same gap, on its
 		// first poll after this fix ships, without manual intervention.
 		current = normalizeStatus(status.State)
-	case status.RequestCount < minRecentWindowRequests && svc.CurrentStatus != "not_configured":
+	case status.RequestCount < minRecentWindowRequests:
 		// Too little traffic in this window to trust a recompute - carry the
 		// previous status forward rather than let a handful of requests
-		// flip the public page (AD-019). This floor is skipped for a
-		// service's first-ever classification (still "not_configured"):
-		// any real reading beats a placeholder backed by zero data
-		// (SLOTRAF-01) - a low-traffic service would otherwise carry
-		// "not_configured" forward forever, indistinguishable from one
-		// with no slo_id at all. Once classified, this floor applies
-		// normally to every subsequent cycle (SLOTRAF-02).
+		// flip the public page (AD-019). A service still "not_configured"
+		// never reaches this case (handled above); every other status
+		// already left "not_configured" via a real reading, so this floor
+		// applies normally to every subsequent low-volume cycle
+		// (SLOTRAF-02).
 		current = svc.CurrentStatus
 	case status.Target <= 0:
 		// The response carried no usable threshold, so no honest
