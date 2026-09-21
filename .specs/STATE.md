@@ -537,3 +537,12 @@
 **Backlog não-bloqueante herdado de AD-007** (fora de escopo desta integração): resend/cancel de convite de admin (hooks existem, endpoint não), company settings GET/PATCH (feature inteira sem endpoint, `SettingsPage` mockada), teste faltante de 404 em update de incidente inexistente (Etapa 3).
 
 **Next steps**: integração real backend↔frontend do `admin-frontend` está completa. Próximo trabalho pendente: os 2 itens de backlog acima (resend/cancel invite; company settings), se decidido priorizá-los — nenhum foi solicitado ainda nesta sessão.
+
+---
+
+**Backlog AD-007 — verificação final (2026-09-21)**: os 3 itens ainda citados como pendentes nos handoffs acima já estavam resolvidos em rodadas posteriores não referenciadas de volta aqui; confirmado por leitura direta do código nesta data, sem mudança de código necessária:
+- `company-settings` (GET/PATCH + upload de logo) — spec própria criada e executada, `validation.md` PASS em 2026-08-23; `CompanySettingsRepository`/`CompanySettingsHandler`/`logoFileHandler` presentes, `mockData.companySettings` fora de qualquer path de produção.
+- `admin-invite-resend-cancel` (resend/cancel de convite) — spec própria criada e executada, `validation.md` PASS em 2026-08-28; rotas `POST /api/admins/invites/{id}/resend` e `DELETE /api/admins/invites/{id}` montadas em `internal/cli/routes.go`, `useResendInvite`/`useCancelInvite` conectados em `AdminsPage.tsx`.
+- Teste 404 em update de incidente inexistente — `TestTransitionIncident_UnknownIncident_404` existe em `internal/api/incidents_handler_test.go:440`.
+
+Backlog AD-007 encerrado. Único item de infra ainda em aberto (não-bloqueante, decisão consciente de não corrigir): flake `dbtest: pg_advisory_lock failed: timeout` sob `go test` paralelo entre pacotes — não reproduz com `-p 1`, que é o modo já usado pelo gate oficial (`make test-integration`, `Makefile`).
