@@ -1,6 +1,22 @@
 # Incidents Page Validation
 
-**Result**: FAIL ❌ — 1 real regression (INCPG-01: severity badge/color mapping no longer implemented at all) + 1 spec-precision gap carried over from iteration 1 (INCPG-09: AI-summary visual distinctness untested) + 1 minor edge-case regression (unknown-severity fallback removed). INCPG-06 (empty-description path), previously the sole real gap, is now closed.
+**Result**: PASS ✅ (2026-09-21 fix pass) — all 3 fix items from iteration 2 closed.
+
+---
+
+## Fix Pass (2026-09-21)
+
+Julio asked to run the outstanding fix plan (3 items) from iteration 2, below.
+
+- **Fix 1 (INCPG-01, Major)** and **Fix 3 (unknown-severity fallback, Minor)** were already closed by commit `9cb88dd` (`fix(incidents): match detail drawer layout and fix severity color regression`, 2026-09-15) — a session after this report was written but never fed back into it. `severityColor`/`severityLabel` (`incidentStatusMeta.ts`) restore the mock's color mapping (as bold colored text, matching the mock exactly — not a `Tag`/badge as this report's Fix 1 originally suggested, a deliberate visual-parity choice) with a `?? severity` / `?? "var(--color-text-muted)"` fallback for unrecognized values. `IncidentsPage.test.tsx:252` (`mostra severidade colorida por linha na tabela (INCPG-01)`) now binds label to row and asserts `color` style; a dedicated edge-case test at `IncidentsPage.test.tsx:269` covers the fallback. Verified as still passing, not re-implemented.
+- **Fix 2 (INCPG-09, Minor)** — closed this pass. Discovered during the fix that the same `9cb88dd` session moved the AI-summary rendering: `IncidentDetailDrawer.tsx` now pulls any `is_ai_summary` update out of the regular timeline (`timelineUpdates = updates.filter((u) => !u.is_ai_summary)`) and renders it in its own accent-tinted box above "Linha do tempo" (`aiSummaryText`, sourced from `incident.pending_close_comment` or the resolved `is_ai_summary` entry) — the fix plan's original target, `TimelineEntry.tsx`'s `is_ai_summary` branch, is therefore dead code today (never reached, since the drawer filters those entries out before mapping to `TimelineEntry`). Added `data-testid="ai-summary-box"` to the real live container (`IncidentDetailDrawer.tsx`) and strengthened `IncidentsPage.test.tsx`'s INCPG-09..11 test to assert `backgroundColor`/`borderColor` on it, not just the label text.
+- `TimelineEntry.tsx`'s unreachable `is_ai_summary` branch left untouched — out of scope for this fix plan (not a listed finding), flagged here as a minor cleanup candidate for whoever next touches that file.
+
+**Gate**: `web/` — `npx tsc -b --noEmit` clean (0 errors); `npm run test -- --run` — **95 test files, 670 tests, all passed, 0 skipped**.
+
+---
+
+## Original Report (iteration 2, 2026-09-15) — superseded above
 
 **Date**: 2026-09-15
 **Spec**: `.specs/features/incidents-page/spec.md`

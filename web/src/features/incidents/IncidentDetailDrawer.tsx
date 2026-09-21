@@ -146,6 +146,7 @@ export function IncidentDetailDrawer({ incident, canManage, serviceName, onClose
 
               {aiSummaryText ? (
                 <div
+                  data-testid="ai-summary-box"
                   className="flex flex-col gap-2 rounded-md border px-3.5 py-3"
                   style={{
                     backgroundColor: "color-mix(in oklch, var(--color-accent) 10%, transparent)",

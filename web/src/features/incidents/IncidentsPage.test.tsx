@@ -409,6 +409,17 @@ describe("IncidentsPage", () => {
     expect(await screen.findByText("Resumo gerado por IA")).toBeInTheDocument();
     expect(screen.getAllByText("Equipe").length).toBeGreaterThan(0);
     expect(screen.getByText("Sistema")).toBeInTheDocument();
+
+    // INCPG-09: accent-tinted container proves "visually distinct", not
+    // just the label text - box lives above the timeline (drawer pulls the
+    // is_ai_summary entry out of the regular list into its own AI box, see
+    // IncidentDetailDrawer's `aiSummaryText`), so TimelineEntry's own
+    // is_ai_summary branch is unreachable in production and not asserted here.
+    const aiBox = screen.getByTestId("ai-summary-box");
+    expect(aiBox).toHaveStyle({
+      borderColor: "color-mix(in oklch, var(--color-accent) 40%, transparent)",
+      backgroundColor: "color-mix(in oklch, var(--color-accent) 10%, transparent)",
+    });
   });
 
   // Decision confirmed via AskUserQuestion: "Resolver com resumo de IA"
