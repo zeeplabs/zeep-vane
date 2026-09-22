@@ -111,7 +111,7 @@ type sloSearchResponse struct {
 				Data struct {
 					ID         string `json:"id"`
 					Attributes struct {
-						// Name: [Provável], not live-verified like ID above
+						// Name: [Likely], not live-verified like ID above
 						// (see SLOStatus doc) - inferred from the official
 						// client's SLOResponseData shape
 						// (github.com/DataDog/datadog-api-client-go,

@@ -14,11 +14,11 @@ export interface AddDomainDrawerProps {
 
 type DomainTypeChoice = "vane-subdomain" | "custom";
 
-/** Drawer de cadastro de domínio da aba Domínios (spec.md DSP-09..12):
- * escolha de tipo ("Subdomínio Vane" desabilitado/decorativo, "Domínio
- * próprio" selecionado por padrão e o único funcional) + hostname, enviado
- * via `useCreateDomain`. Segue o mesmo padrão de tile desabilitado do
- * `ModeCard` local de `AddServiceDrawer.tsx` (T8's Reuses). */
+/** Domain registration drawer for the Domínios tab (spec.md DSP-09..12):
+ * type choice ("Subdomínio Vane" disabled/decorative, "Domínio
+ * próprio" selected by default and the only functional one) + hostname, sent
+ * via `useCreateDomain`. Follows the same disabled-tile pattern as
+ * `AddServiceDrawer.tsx`'s local `ModeCard` (T8's Reuses). */
 export function AddDomainDrawer({ open, onOpenChange }: AddDomainDrawerProps) {
   const { t } = useTranslation();
   const [domainType, setDomainType] = useState<DomainTypeChoice>("custom");

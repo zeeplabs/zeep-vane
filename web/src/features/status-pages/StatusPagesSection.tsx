@@ -35,7 +35,7 @@ function publicUrl(page: StatusPage, hostname: string | undefined): string | nul
   return `https://${page.subdomain}.${hostname ?? "?"}`;
 }
 
-/** Tabela + dialog de status pages. Compartilhada entre `DomainsStatusPagesPage` (handoff mostra as duas seções na mesma tela) e `StatusPagesPage` (rota própria, mesmo padrão de `ServicesSection`). */
+/** Status pages table + dialog. Shared between `DomainsStatusPagesPage` (handoff shows both sections on the same screen) and `StatusPagesPage` (its own route, same pattern as `ServicesSection`). */
 export function StatusPagesSection() {
   const { t } = useTranslation();
   const { hasRole } = useAuth();
@@ -134,9 +134,9 @@ export function StatusPagesSection() {
         </div>
       );
     }
-    // SPD-12: sem domínio nenhum anexado ainda - distinto do "aguardando
-    // DNS/certificado" abaixo, com uma ação pra sair desse estado. Mesma
-    // lógica de StatusPageDetail.tsx, aplicada na lista.
+    // SPD-12: no domain attached yet - distinct from the "waiting for
+    // DNS/certificate" state below, with an action to leave this state.
+    // Same logic as StatusPageDetail.tsx, applied to the list.
     if (p.domain_id === null) {
       return (
         <div className="flex flex-col items-end gap-1">
@@ -149,9 +149,9 @@ export function StatusPagesSection() {
         </div>
       );
     }
-    // SPD-13: domínio anexado, mas o certificado ainda não foi emitido -
-    // substitui o antigo texto ambíguo "Emitindo certificado", que não
-    // distinguia esse caso do de "sem domínio" acima.
+    // SPD-13: domain attached, but the certificate hasn't been issued
+    // yet - replaces the old ambiguous "Issuing certificate" text, which
+    // didn't distinguish this case from "no domain" above.
     return (
       <Tag variant="accent" data-testid="pulsing-tag" className="animate-pulse">
         {t("statusPages.section.pendingTag")}

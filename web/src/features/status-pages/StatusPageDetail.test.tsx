@@ -56,7 +56,7 @@ describe("StatusPageDetail", () => {
   // (header + content blocks) renders instead of the old "Carregando…"
   // paragraph as visible content, inside an aria-busy container that
   // still carries the sr-only loading string.
-  it("mostra skeletons (não o texto) enquanto a status page carrega", async () => {
+  it("shows skeletons (not the text) while the status page is loading", async () => {
     await loginAsOwner();
     server.use(
       http.get("/api/status-pages", async () => {
@@ -74,7 +74,7 @@ describe("StatusPageDetail", () => {
 
   // SKEL-06: once the fetch resolves, skeletons are gone and the real
   // editor content takes over.
-  it("remove os skeletons assim que a status page termina de carregar", async () => {
+  it("removes the skeletons as soon as the status page finishes loading", async () => {
     await loginAsOwner();
     renderDetail("sp-1");
 
@@ -82,7 +82,7 @@ describe("StatusPageDetail", () => {
     expect(screen.queryAllByTestId("skeleton")).toHaveLength(0);
   });
 
-  it("estado published exibe a URL pública, o link de preview e não faz polling adicional", async () => {
+  it("published state shows the public URL, the preview link, and does no extra polling", async () => {
     await loginAsOwner();
     const spy = vi.spyOn(apiClient, "apiFetch");
     renderDetail("sp-1");
@@ -105,7 +105,7 @@ describe("StatusPageDetail", () => {
     expect(callsAfterWait).toBe(callsAfterLoad);
   });
 
-  it("estado tls_failed exibe o motivo da falha, o link de preview e não faz polling adicional", async () => {
+  it("tls_failed state shows the failure reason, the preview link, and does no extra polling", async () => {
     await loginAsOwner();
     const spy = vi.spyOn(apiClient, "apiFetch");
     renderDetail("sp-3");
@@ -127,7 +127,7 @@ describe("StatusPageDetail", () => {
     expect(callsAfterWait).toBe(callsAfterLoad);
   });
 
-  it("sem domínio (domain_id null) exibe label distinto e botão pra anexar domínio (SPD-12)", async () => {
+  it("no domain (domain_id null) shows a distinct label and an attach-domain button (SPD-12)", async () => {
     await loginAsOwner();
     const page = await createDomainlessPage("Detail Sem Domínio Test");
     renderDetail(page.id);
@@ -140,7 +140,7 @@ describe("StatusPageDetail", () => {
     expect(await screen.findByLabelText("Domínio")).toBeInTheDocument();
   });
 
-  it("domínio anexado + draft exibe o label de DNS/certificado pendente, distinto do 'sem domínio' (SPD-13)", async () => {
+  it("domain attached + draft shows the pending DNS/certificate label, distinct from 'no domain' (SPD-13)", async () => {
     await loginAsOwner();
     renderDetail("sp-2");
 
@@ -150,7 +150,7 @@ describe("StatusPageDetail", () => {
     expect(screen.getByRole("link", { name: "Pré-visualizar página pública" })).toBeInTheDocument();
   });
 
-  it("owner com página pending_tls vê o painel de verificação de DNS e pode acionar a checagem", async () => {
+  it("owner with a pending_tls page sees the DNS verification panel and can trigger the check", async () => {
     await loginAsOwner();
     renderDetail("sp-2");
     await screen.findByText("Aguardando validação de DNS/certificado");
@@ -160,15 +160,15 @@ describe("StatusPageDetail", () => {
 
     await userEvent.click(screen.getByRole("button", { name: "Verificar DNS/certificado" }));
 
-    // O mock de verify-domain publica a página (ver handlers.ts) - o painel
-    // some assim que a mutation invalida a query e o state vira
-    // "published" (não dá pra garantir observar o resultado intermediário
-    // do painel de forma não-racy, já que ele desmonta no mesmo instante).
+    // The verify-domain mock publishes the page (see handlers.ts) - the panel
+    // disappears as soon as the mutation invalidates the query and the state
+    // becomes "published" (there's no reliable, non-racy way to observe the
+    // intermediate result, since it unmounts at that same instant).
     expect(await screen.findByText("Publicada")).toBeInTheDocument();
     expect(screen.queryByText("Configuração DNS")).not.toBeInTheDocument();
   });
 
-  it("botão de copiar CNAME copia o valor exibido pra área de transferência (SPD-10)", async () => {
+  it("copy CNAME button copies the displayed value to the clipboard (SPD-10)", async () => {
     const writeText = vi.fn().mockResolvedValue(undefined);
     Object.assign(navigator, { clipboard: { writeText } });
 
@@ -182,7 +182,7 @@ describe("StatusPageDetail", () => {
     expect(writeText).toHaveBeenCalledWith("203.0.113.10");
   });
 
-  it("resultado de verificação com DNS incorreto/certificado inválido é exibido sem publicar a página", async () => {
+  it("verification result with wrong DNS/invalid certificate is shown without publishing the page", async () => {
     await loginAsOwner();
     server.use(
       http.post("/api/status-pages/:id/verify-domain", () =>
@@ -209,12 +209,12 @@ describe("StatusPageDetail", () => {
     expect(
       await screen.findByText(/Conexão HTTPS respondeu, mas o certificado não é válido/)
     ).toBeInTheDocument();
-    // Não publicou - painel continua visível pro admin tentar de novo.
+    // Did not publish - panel stays visible for the admin to try again.
     expect(screen.getByText("Configuração DNS")).toBeInTheDocument();
     expect(screen.queryByText("Publicada")).not.toBeInTheDocument();
   });
 
-  it("viewer não vê o painel de verificação de DNS (endpoints que ele usa são write-role-gated)", async () => {
+  it("viewer does not see the DNS verification panel (its endpoints are write-role-gated)", async () => {
     await loginAs("viewer@vane.app");
     renderDetail("sp-2");
 
@@ -223,13 +223,13 @@ describe("StatusPageDetail", () => {
     expect(screen.queryByRole("button", { name: "Verificar DNS/certificado" })).not.toBeInTheDocument();
   });
 
-  it("estado 'published' com domain_id/subdomain nulos (formato defendido, nunca produzido pelo fluxo real) não renderiza URL quebrada nem lança (mutante #5)", async () => {
+  it("'published' state with null domain_id/subdomain (defended shape, never produced by the real flow) doesn't render a broken URL or throw (mutant #5)", async () => {
     await loginAsOwner();
-    // Mesmo raciocínio de StatusPagesSection.test.tsx: MarkPublished só
-    // marca "published" via um JOIN por hostname que exige domain_id
-    // não-nulo, então isso nunca ocorre pelo fluxo real - mas o guard
-    // `if (!domainId || !subdomain) return null` em publicUrl() existe
-    // como defesa. Fixture forçado via override do MSW.
+    // Same reasoning as StatusPagesSection.test.tsx: MarkPublished only
+    // marks a page "published" via a JOIN by hostname that requires a
+    // non-null domain_id, so this never happens through the real flow - but
+    // the `if (!domainId || !subdomain) return null` guard in publicUrl()
+    // exists as a defense. Fixture forced via MSW override.
     const impossiblePublished: StatusPage = {
       id: "sp-impossible-published-detail",
       name: "Página Published Sem Domínio (impossível, detail)",
@@ -254,22 +254,22 @@ describe("StatusPageDetail", () => {
     expect(screen.queryByRole("link", { name: /^https:\/\//i })).not.toBeInTheDocument();
   });
 
-  it("exibe os serviços vinculados marcados e os demais desmarcados", async () => {
+  it("shows linked services checked and the rest unchecked", async () => {
     await loginAsOwner();
     renderDetail("sp-1");
 
     expect(await screen.findByText(/^Serviços vinculados/)).toBeInTheDocument();
-    // sp-1 fixture: service_ids = ["svc-1", "svc-2"] (API pública, Checkout).
-    // Vinculados aparecem marcados (aria-pressed) no grupo "Vinculados"; os
-    // demais aparecem desmarcados no grupo "Disponíveis" (SPD-16 redesign) -
-    // checklist de botão com checkbox visual, não <input type="checkbox">.
+    // sp-1 fixture: service_ids = ["svc-1", "svc-2"] ("API pública", "Checkout").
+    // Linked services show as checked (aria-pressed) in the "Vinculados" group;
+    // the rest show as unchecked in the "Disponíveis" group (SPD-16 redesign) -
+    // a button checklist with a visual checkbox, not <input type="checkbox">.
     expect(screen.getByRole("button", { name: "API pública" })).toHaveAttribute("aria-pressed", "true");
     expect(screen.getByRole("button", { name: "Checkout" })).toHaveAttribute("aria-pressed", "true");
     expect(screen.getByRole("button", { name: "Notificações" })).toHaveAttribute("aria-pressed", "false");
     expect(screen.getByRole("button", { name: "Fila de processamento" })).toHaveAttribute("aria-pressed", "false");
   });
 
-  it("owner alterna um serviço e salva, persistindo o novo conjunto via PATCH (SPD-15)", async () => {
+  it("owner toggles a service and saves, persisting the new set via PATCH (SPD-15)", async () => {
     await loginAsOwner();
     renderDetail("sp-1");
     await screen.findByText(/^Serviços vinculados/);
@@ -287,14 +287,14 @@ describe("StatusPageDetail", () => {
     expect(screen.getByRole("button", { name: "Checkout" })).toHaveAttribute("aria-pressed", "true");
     expect(screen.getByRole("button", { name: "Notificações" })).toHaveAttribute("aria-pressed", "true");
 
-    // Confirma que persistiu de fato (reflete o servidor, não só estado local
-    // otimista): reconsulta via GET /api/status-pages.
+    // Confirms it actually persisted (reflects the server, not just local
+    // optimistic state): re-fetches via GET /api/status-pages.
     const reloaded = await apiClient.apiFetch<Page<StatusPage>>("/api/status-pages?page=1");
     const page = reloaded.items.find((p) => p.id === "sp-1");
     expect(page?.service_ids.sort()).toEqual(["svc-1", "svc-2", "svc-3"]);
   });
 
-  it("desmarcar todos e salvar substitui o conjunto inteiro por vazio (replace-all, não incremental)", async () => {
+  it("unchecking all and saving replaces the whole set with empty (replace-all, not incremental)", async () => {
     await loginAsOwner();
     renderDetail("sp-1");
     await screen.findByText(/^Serviços vinculados/);
@@ -309,23 +309,23 @@ describe("StatusPageDetail", () => {
     });
   });
 
-  it("busca filtra o grupo Disponíveis sem afetar o grupo Vinculados (SPD-16)", async () => {
+  it("search filters the Disponíveis group without affecting the Vinculados group (SPD-16)", async () => {
     await loginAsOwner();
     renderDetail("sp-1");
     await screen.findByText(/^Serviços vinculados/);
 
-    // sp-1 fixture: vinculados = API pública, Checkout; disponíveis =
-    // Notificações, Fila de processamento.
+    // sp-1 fixture: linked ("Vinculados") = "API pública", "Checkout"; available
+    // ("Disponíveis") = "Notificações", "Fila de processamento".
     await userEvent.type(screen.getByLabelText("Disponíveis"), "notif");
 
     expect(screen.getByRole("button", { name: "Notificações" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Fila de processamento" })).not.toBeInTheDocument();
-    // Vinculados nunca é afetado pelo filtro, mesmo sem match no texto buscado.
+    // "Vinculados" is never affected by the filter, even with no match in the searched text.
     expect(screen.getByRole("button", { name: "API pública" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Checkout" })).toBeInTheDocument();
   });
 
-  it("viewer vê os serviços vinculados mas não pode alterá-los nem vê o botão salvar", async () => {
+  it("viewer sees the linked services but cannot change them or see the save button", async () => {
     await loginAs("viewer@vane.app");
     renderDetail("sp-1");
 
@@ -334,7 +334,7 @@ describe("StatusPageDetail", () => {
     expect(screen.queryByRole("button", { name: "Salvar serviços" })).not.toBeInTheDocument();
   });
 
-  it("renderiza em inglês quando o idioma ativo é en", async () => {
+  it("renders in English when the active language is en", async () => {
     await loginAsOwner();
     await i18n.changeLanguage("en");
 

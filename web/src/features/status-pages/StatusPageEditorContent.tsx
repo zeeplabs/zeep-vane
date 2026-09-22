@@ -54,13 +54,13 @@ interface StatusPagePillProps {
 // machine (SPD-12/13).
 function StatusPagePill({ page }: StatusPagePillProps) {
   const { t } = useTranslation();
-  // SPD-12: sem domínio nenhum anexado ainda - distinto de "draft" com
-  // domínio (que não deveria mais ocorrer, ver AD-017), mas o texto e a
-  // variante servem pros dois. "published"/"tls_failed" sempre vencem,
-  // mesmo no formato defendido/impossível de published sem domain_id
-  // (nunca produzido pelo fluxo real - MarkPublished exige domain_id via
-  // JOIN por hostname - mas publicUrl() e este pill continuam defendendo
-  // contra ele, mesmo raciocínio de StatusPagesSection.test.tsx).
+  // SPD-12: no domain attached yet - distinct from "draft" with a
+  // domain (which shouldn't happen anymore, see AD-017), but the text and
+  // variant serve both cases. "published"/"tls_failed" always win, even
+  // in the defensive/impossible shape of "published" with no domain_id
+  // (never produced by the real flow - MarkPublished requires domain_id
+  // via a hostname JOIN - but publicUrl() and this pill still guard
+  // against it, same reasoning as StatusPagesSection.test.tsx).
   const state: StatusPageState =
     page.domain_id === null && page.state !== "published" && page.state !== "tls_failed" ? "draft" : page.state;
   return (
@@ -73,26 +73,27 @@ function StatusPagePill({ page }: StatusPagePillProps) {
 
 export interface StatusPageEditorContentProps {
   page: StatusPage;
-  /** Controla o link "Pré-visualizar página pública". Default `true` -
-   * necessário pra tela legada `/status-pages/{id}` (`StatusPageDetail.tsx`,
-   * sem drawer de detalhe separado, esse é seu único jeito de pré-visualizar).
-   * `EditStatusPageDrawer` do novo layout passa `false`: o link mudou para o
-   * `StatusPageDetailDrawer` ("visualizar detalhes"), a pedido do Julio -
-   * antes só existia no drawer de edição, o que era o lugar errado. */
+  /** Controls the "Preview public page" link. Defaults to `true` -
+   * needed by the legacy `/status-pages/{id}` screen (`StatusPageDetail.tsx`,
+   * with no separate detail drawer, this is its only way to preview).
+   * The new layout's `EditStatusPageDrawer` passes `false`: the link moved
+   * to `StatusPageDetailDrawer` ("view details"), at Julio's request -
+   * it previously only existed in the edit drawer, which was the wrong
+   * place for it. */
   showPreviewLink?: boolean;
 }
 
-/** Corpo real de edição de uma status page (status, anexar domínio,
- * verificação de DNS/certificado, serviços vinculados) - extraído de
- * `StatusPageDetail.tsx` pra ser reusado tanto pela tela legada
- * `/status-pages/{id}` (ainda usada pelo fluxo pré-redesign) quanto pelo
- * `EditStatusPageDrawer` do novo layout, que substitui a navegação pra
- * tela separada por um drawer (mesmo modelo do de criação), por pedido
- * explícito do Julio: "em tela separada nao ficou legal". Layout alinhado
- * com os componentes já migrados (`DomainDetailDrawer`,
- * `AddStatusPageDrawer`): sem `Card`, seções separadas por `border-t`,
- * rótulos em uppercase 10.5px, checklist de serviço com checkbox quadrado
- * em vez do checkbox nativo redondo. */
+/** Actual editing body for a status page (status, attach domain,
+ * DNS/certificate verification, linked services) - extracted from
+ * `StatusPageDetail.tsx` to be reused both by the legacy
+ * `/status-pages/{id}` screen (still used by the pre-redesign flow) and by
+ * the new layout's `EditStatusPageDrawer`, which replaces navigation to a
+ * separate screen with a drawer (same pattern as creation), at Julio's
+ * explicit request: "didn't look good in a separate screen". Layout
+ * aligned with already-migrated components (`DomainDetailDrawer`,
+ * `AddStatusPageDrawer`): no `Card`, sections separated by `border-t`,
+ * 10.5px uppercase labels, service checklist with a square checkbox
+ * instead of the native round one. */
 export function StatusPageEditorContent({ page, showPreviewLink = true }: StatusPageEditorContentProps) {
   const { t } = useTranslation();
   // SPEC_DEVIATION: fixed page 1 for now - Pager UI for the domains
@@ -186,16 +187,17 @@ export function StatusPageEditorContent({ page, showPreviewLink = true }: Status
         </a>
       ) : null}
 
-      {/* Painel fixo de configuração de DNS/certificado (mirrors o fluxo de
-          domínio customizado de plataformas como Vercel/Render) - permanece
-          visível enquanto a página tem domínio anexado e ainda não está
-          publicada, mesmo que o polling automático (useStatusPage) já
-          esteja tentando detectar a transição sozinho a cada 10s. Restrito
-          a canManage: o endpoint que ele lê (GET /api/instance/dns-target)
-          e o que ele aciona (POST .../verify-domain) são ambos
-          write-role-gated no backend - um viewer só veria um 403
-          confuso/enganoso ("DNS não configurado" quando na verdade só não
-          teve permissão de ler) em vez de nada. */}
+      {/* Fixed DNS/certificate configuration panel (mirrors the custom
+          domain flow of platforms like Vercel/Render) - stays visible
+          while the page has a domain attached and isn't published yet,
+          even though the automatic polling (useStatusPage) is already
+          trying to detect the transition on its own every 10s. Restricted
+          to canManage: both the endpoint it reads (GET
+          /api/instance/dns-target) and the one it triggers (POST
+          .../verify-domain) are write-role-gated on the backend - a
+          viewer would just see a confusing/misleading 403 ("DNS not
+          configured" when really they just lacked read permission)
+          instead of nothing. */}
       {page.domain_id !== null && page.subdomain !== null && page.state !== "published" && canManage ? (
         <div className="flex flex-col gap-3 border-t border-divider pt-4">
           <DomainVerificationPanel statusPageId={page.id} fullHostname={`${page.subdomain}.${hostname ?? "?"}`} />
@@ -414,7 +416,7 @@ interface ServiceGroupProps {
 }
 
 // ServiceGroup renders one labeled block of service checklist rows
-// ("Vinculados" / "Disponíveis") - same checkbox-row composition
+// ("Linked" / "Available") - same checkbox-row composition
 // AddStatusPageDrawer's service checklist already established (16px
 // rounded-square checkbox + MdCheck), not the old native round
 // <input type="checkbox">.

@@ -28,7 +28,7 @@ async function fillForm(password: string, confirmPassword: string) {
 }
 
 describe("PasswordResetConfirmPage", () => {
-  it("submissão válida com senhas iguais mostra confirmação de sucesso", async () => {
+  it("valid submission with matching passwords shows success confirmation", async () => {
     seedPasswordResetToken("valid-token", "owner@vane.app");
     render(App("valid-token"));
 
@@ -38,7 +38,7 @@ describe("PasswordResetConfirmPage", () => {
     expect(await screen.findByText("Senha redefinida com sucesso.")).toBeInTheDocument();
   });
 
-  it("botão 'Ir para o login' após sucesso navega para /login", async () => {
+  it("'Ir para o login' button navigates to /login after success", async () => {
     seedPasswordResetToken("valid-token", "owner@vane.app");
     render(App("valid-token"));
 
@@ -50,7 +50,7 @@ describe("PasswordResetConfirmPage", () => {
     expect(await screen.findByText("login page")).toBeInTheDocument();
   });
 
-  it("senha e confirmação diferentes mostram erro de validação sem chamar a API", async () => {
+  it("mismatched password and confirmation show a validation error without calling the API", async () => {
     seedPasswordResetToken("valid-token", "owner@vane.app");
     const fetchSpy = vi.spyOn(global, "fetch");
     render(App("valid-token"));
@@ -65,7 +65,7 @@ describe("PasswordResetConfirmPage", () => {
     );
   });
 
-  it("token desconhecido/expirado (401) mostra mensagem genérica sem travar o formulário", async () => {
+  it("unknown/expired token (401) shows a generic message without locking the form", async () => {
     render(App("does-not-exist"));
 
     await fillForm("demo1234", "demo1234");
@@ -77,7 +77,7 @@ describe("PasswordResetConfirmPage", () => {
     expect(screen.getByRole("button", { name: "Redefinir senha" })).not.toBeDisabled();
   });
 
-  it("senha fraca (422) mostra mensagem traduzida, não o texto cru do servidor", async () => {
+  it("weak password (422) shows the translated message, not the raw server text", async () => {
     seedPasswordResetToken("valid-token", "owner@vane.app");
     render(App("valid-token"));
 
@@ -89,7 +89,7 @@ describe("PasswordResetConfirmPage", () => {
     );
   });
 
-  it("falha de rede mostra mensagem genérica de fallback", async () => {
+  it("network failure shows a generic fallback message", async () => {
     server.use(http.post("/api/auth/password-reset/confirm", () => HttpResponse.error()));
     render(App("valid-token"));
 
@@ -101,7 +101,7 @@ describe("PasswordResetConfirmPage", () => {
     );
   });
 
-  it("botão de envio fica desabilitado durante a submissão, evitando duplo clique", async () => {
+  it("submit button is disabled during submission, preventing a double click", async () => {
     let resolveResponse!: () => void;
     const responseGate = new Promise<void>((resolve) => {
       resolveResponse = resolve;
@@ -125,7 +125,7 @@ describe("PasswordResetConfirmPage", () => {
     await waitFor(() => expect(screen.getByText("Senha redefinida com sucesso.")).toBeInTheDocument());
   });
 
-  it("nunca envia o token bruto no corpo além do próprio campo esperado pelo backend", async () => {
+  it("never sends the raw token in the body beyond the field the backend expects", async () => {
     const rawToken = "raw-reset-token-must-not-leak";
     seedPasswordResetToken(rawToken, "owner@vane.app");
     let requestBody: unknown;
@@ -145,7 +145,7 @@ describe("PasswordResetConfirmPage", () => {
     expect(document.body.textContent).not.toContain(rawToken);
   });
 
-  it("campos de senha e confirmação são obrigatórios", () => {
+  it("password and confirmation fields are required", () => {
     render(App("valid-token"));
 
     expect(screen.getByLabelText("Nova senha")).toBeRequired();

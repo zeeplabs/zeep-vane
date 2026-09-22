@@ -27,7 +27,7 @@ function renderDrawer(onOpenChange: (open: boolean) => void = () => {}) {
 }
 
 describe("AddStatusPageDrawer", () => {
-  it("mostra 'Público' selecionado por padrão e 'Privado' desabilitado, sem onClick, sem mudar seleção ao clicar (DSP-15)", async () => {
+  it("shows 'Público' selected by default and 'Privado' disabled, with no onClick and no selection change on click (DSP-15)", async () => {
     await loginAsOwner();
     renderDrawer();
 
@@ -42,7 +42,7 @@ describe("AddStatusPageDrawer", () => {
     expect(screen.getByRole("button", { name: "Público" })).toHaveAttribute("aria-pressed", "true");
   });
 
-  it("envia nome e serviços marcados via POST /api/status-pages ao submeter", async () => {
+  it("sends the name and checked services via POST /api/status-pages on submit", async () => {
     await loginAsOwner();
     const servicesPage = await apiFetch<Page<Service>>("/api/services?page=1");
     const service = servicesPage.items[0];

@@ -4,7 +4,7 @@ import userEvent from "@testing-library/user-event";
 import { Dialog } from "./Dialog";
 
 describe("Dialog", () => {
-  it("renderiza título e conteúdo quando aberto", () => {
+  it("renders title and content when open", () => {
     render(
       <Dialog open onOpenChange={() => {}} title="Sair do painel">
         <p>corpo</p>
@@ -14,7 +14,7 @@ describe("Dialog", () => {
     expect(screen.getByText("corpo")).toBeInTheDocument();
   });
 
-  it("com disableBackdropDismiss, Escape não fecha o dialog", async () => {
+  it("with disableBackdropDismiss, Escape does not close the dialog", async () => {
     const onOpenChange = vi.fn();
     render(
       <Dialog open onOpenChange={onOpenChange} title="Sessão expirada" disableBackdropDismiss>
@@ -25,7 +25,7 @@ describe("Dialog", () => {
     expect(onOpenChange).not.toHaveBeenCalled();
   });
 
-  it("sem disableBackdropDismiss, Escape chama onOpenChange(false)", async () => {
+  it("without disableBackdropDismiss, Escape calls onOpenChange(false)", async () => {
     const onOpenChange = vi.fn();
     render(
       <Dialog open onOpenChange={onOpenChange} title="Confirmar">
@@ -36,7 +36,7 @@ describe("Dialog", () => {
     expect(onOpenChange).toHaveBeenCalledWith(false);
   });
 
-  it("footer fica alinhado à direita e separado do conteúdo por uma borda", () => {
+  it("footer is right-aligned and separated from the content by a border", () => {
     render(
       <Dialog
         open

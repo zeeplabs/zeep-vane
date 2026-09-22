@@ -41,50 +41,50 @@ function renderSidebar(initialPath = "/") {
 }
 
 describe("Sidebar", () => {
-  it("esconde 'Usuários' para non-owner", async () => {
+  it("hides 'Usuários' for non-owner", async () => {
     await loginAs("viewer@vane.app");
     renderSidebar();
     await waitFor(() => expect(screen.getByText("Domínios & Status")).toBeInTheDocument());
     expect(screen.queryByText("Usuários")).not.toBeInTheDocument();
   });
 
-  it("mostra 'Usuários' para owner", async () => {
+  it("shows 'Usuários' for owner", async () => {
     await loginAs("owner@vane.app");
     renderSidebar();
     await waitFor(() => expect(screen.getByText("Usuários")).toBeInTheDocument());
   });
 
-  it("esconde 'Configurações' para non-owner", async () => {
+  it("hides 'Configurações' for non-owner", async () => {
     await loginAs("viewer@vane.app");
     renderSidebar();
     await waitFor(() => expect(screen.getByText("Domínios & Status")).toBeInTheDocument());
     expect(screen.queryByText("Configurações")).not.toBeInTheDocument();
   });
 
-  it("mostra 'Configurações' para owner (role gate, outro lado)", async () => {
+  it("shows 'Configurações' for owner (role gate, other side)", async () => {
     await loginAs("owner@vane.app");
     renderSidebar();
     await waitFor(() => expect(screen.getByText("Configurações")).toBeInTheDocument());
   });
 
-  it("mostra link para Serviços monitorados apontando pra /services", async () => {
+  it("shows a link for Serviços monitorados pointing to /services", async () => {
     await loginAs("owner@vane.app");
     renderSidebar();
     const link = await screen.findByRole("link", { name: "Serviços monitorados" });
     expect(link).toHaveAttribute("href", "/services");
   });
 
-  // billing-plans-page BILLPG-01: this reverses the earlier "fora de
-  // escopo" omission - the item now exists as a real (decorative) page.
+  // billing-plans-page BILLPG-01: this reverses the earlier "out of scope"
+  // omission - the item now exists as a real (decorative) page.
   // Visible here because the default MSW deploymentMode is saas.
-  it("mostra 'Planos & Faturamento' no grupo Organização, apontando pra /billing", async () => {
+  it("shows 'Planos & Faturamento' in the Organização group, pointing to /billing", async () => {
     await loginAs("owner@vane.app");
     renderSidebar();
     const link = await screen.findByRole("link", { name: "Planos & Faturamento" });
     expect(link).toHaveAttribute("href", "/billing");
   });
 
-  it("mostra 'Planos & Faturamento' também para non-owner (sem role gate)", async () => {
+  it("shows 'Planos & Faturamento' for non-owner too (no role gate)", async () => {
     await loginAs("viewer@vane.app");
     renderSidebar();
     expect(await screen.findByRole("link", { name: "Planos & Faturamento" })).toBeInTheDocument();
@@ -93,7 +93,7 @@ describe("Sidebar", () => {
   // 2026-09-16: reverses BILLPG-01's "reachable in any mode" - self_hosted
   // has no plan/upgrade flow to show yet (license-purchase redirect is a
   // future feature), so the item is hidden entirely in that mode.
-  it("esconde 'Planos & Faturamento' em self_hosted", async () => {
+  it("hides 'Planos & Faturamento' in self_hosted", async () => {
     setDeploymentMode("self_hosted");
     await loginAs("owner@vane.app");
     renderSidebar();
@@ -101,14 +101,14 @@ describe("Sidebar", () => {
     expect(screen.queryByText("Planos & Faturamento")).not.toBeInTheDocument();
   });
 
-  it("mostra 'Planos & Faturamento' em saas", async () => {
+  it("shows 'Planos & Faturamento' in saas", async () => {
     setDeploymentMode("saas");
     await loginAs("owner@vane.app");
     renderSidebar();
     expect(await screen.findByRole("link", { name: "Planos & Faturamento" })).toBeInTheDocument();
   });
 
-  it("colapsada por padrão (72px), expande com mouseenter e recolapsa com mouseleave", async () => {
+  it("collapsed by default (72px), expands on mouseenter and collapses again on mouseleave", async () => {
     await loginAs("owner@vane.app");
     renderSidebar();
     const sidebar = await screen.findByTestId("sidebar");
@@ -121,7 +121,7 @@ describe("Sidebar", () => {
     expect(sidebar.className).toContain("w-[72px]");
   });
 
-  it("com o menu fixado, mouseleave não recolapsa a sidebar", async () => {
+  it("with the menu pinned, mouseleave does not collapse the sidebar", async () => {
     await loginAs("owner@vane.app");
     renderSidebar();
     const sidebar = await screen.findByTestId("sidebar");
@@ -134,7 +134,7 @@ describe("Sidebar", () => {
     expect(sidebar.className).toContain("w-[240px]");
   });
 
-  it("destaca o item de nav da rota atual com o fundo/texto de acento", async () => {
+  it("highlights the current route's nav item with the accent background/text", async () => {
     await loginAs("owner@vane.app");
     renderSidebar("/services");
     const link = await screen.findByRole("link", { name: "Serviços monitorados" });
@@ -142,7 +142,7 @@ describe("Sidebar", () => {
     expect(link.className).toContain("bg-[rgba(90,70,199,0.08)]");
   });
 
-  it("TenantSwitcher (>1 membership) renderiza no topo da sidebar, acima dos grupos de nav", async () => {
+  it("TenantSwitcher (>1 membership) renders at the top of the sidebar, above the nav groups", async () => {
     server.use(
       http.get("/api/auth/me", () =>
         HttpResponse.json({
@@ -171,7 +171,7 @@ describe("Sidebar", () => {
     expect(trigger.compareDocumentPosition(nav) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
-  it("'Fixar menu' persiste em localStorage entre montagens", async () => {
+  it("'Fixar menu' persists in localStorage across mounts", async () => {
     await loginAs("owner@vane.app");
     const { unmount } = renderSidebar();
     await screen.findByTestId("sidebar");
@@ -183,7 +183,7 @@ describe("Sidebar", () => {
     expect(sidebar.className).toContain("w-[240px]");
   });
 
-  it("mostra 'Visão geral' como primeiro item, acima dos grupos de nav (OVW-15)", async () => {
+  it("shows 'Visão geral' as the first item, above the nav groups (OVW-15)", async () => {
     await loginAs("owner@vane.app");
     renderSidebar();
 
@@ -194,7 +194,7 @@ describe("Sidebar", () => {
     expect(overviewLink.compareDocumentPosition(servicesLink) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
-  it("'Visão geral' fica ativo tanto em / quanto em /overview (OVW-16)", async () => {
+  it("'Visão geral' stays active on both / and /overview (OVW-16)", async () => {
     await loginAs("owner@vane.app");
     const { unmount } = renderSidebar("/");
     const atRoot = await screen.findByRole("link", { name: "Visão geral" });

@@ -38,7 +38,7 @@ describe("StatusPagesSection", () => {
   // SKEL-04/05: while /api/status-pages is loading, skeleton rows render
   // (not the old "Carregando…" paragraph as visible content) inside an
   // aria-busy container that still carries the sr-only loading string.
-  it("mostra skeletons (não o texto) enquanto /api/status-pages carrega", async () => {
+  it("shows skeletons (not the text) while /api/status-pages is loading", async () => {
     server.use(
       http.get("/api/status-pages", async () => {
         await delay("infinite");
@@ -56,7 +56,7 @@ describe("StatusPagesSection", () => {
 
   // SKEL-06: once the fetch resolves, skeletons are gone and the real
   // content takes over.
-  it("remove os skeletons assim que /api/status-pages termina de carregar", async () => {
+  it("removes the skeletons as soon as /api/status-pages finishes loading", async () => {
     await loginAsOwner();
     renderSection();
 
@@ -64,7 +64,7 @@ describe("StatusPagesSection", () => {
     expect(screen.queryAllByTestId("skeleton")).toHaveLength(0);
   });
 
-  it("formulário de criação não tem campos de domínio/subdomínio (SPD-01)", async () => {
+  it("creation form has no domain/subdomain fields (SPD-01)", async () => {
     await loginAsOwner();
     renderSection();
     await userEvent.click(await screen.findByRole("button", { name: "Criar status page" }));
@@ -74,7 +74,7 @@ describe("StatusPagesSection", () => {
     expect(screen.queryByLabelText("Domínio")).not.toBeInTheDocument();
   });
 
-  it("linha de uma página sem domínio renderiza sem URL quebrada (sem 'https://null')", async () => {
+  it("row for a page with no domain renders without a broken URL (no 'https://null')", async () => {
     await loginAsOwner();
     renderSection();
 
@@ -88,7 +88,7 @@ describe("StatusPagesSection", () => {
     expect(document.body.textContent).not.toContain("undefined");
   });
 
-  it("linha de uma página sem domínio mostra label distinto e CTA pra anexar domínio (SPD-12)", async () => {
+  it("row for a page with no domain shows a distinct label and a CTA to attach a domain (SPD-12)", async () => {
     await loginAsOwner();
     renderSection();
 
@@ -102,24 +102,24 @@ describe("StatusPagesSection", () => {
     expect(screen.getAllByRole("link", { name: "Anexar domínio" }).length).toBeGreaterThan(0);
   });
 
-  it("linha de uma página com domínio anexado + draft mostra label de DNS/certificado pendente, distinto do 'sem domínio' (SPD-13)", async () => {
+  it("row for a page with domain attached + draft shows the pending DNS/certificate label, distinct from 'no domain' (SPD-13)", async () => {
     await loginAsOwner();
     renderSection();
 
-    // sp-2 (fixture seedada): domain_id preenchido, state "draft".
+    // sp-2 (seeded fixture): domain_id set, state "draft".
     expect(await screen.findByText("Status Beta")).toBeInTheDocument();
     expect(screen.getByText("Aguardando validação de DNS/certificado")).toBeInTheDocument();
     expect(screen.queryByText("Emitindo certificado")).not.toBeInTheDocument();
     expect(screen.queryByText("Sem domínio configurado")).not.toBeInTheDocument();
   });
 
-  it("páginas published/tls_failed mantêm os labels de sempre na lista (SPD-14)", async () => {
+  it("published/tls_failed pages keep their usual labels in the list (SPD-14)", async () => {
     await loginAsOwner();
     renderSection();
 
-    // sp-1/sp-4 (fixtures seedadas): state "published".
+    // sp-1/sp-4 (seeded fixtures): state "published".
     expect((await screen.findAllByText("Publicada")).length).toBeGreaterThan(0);
-    // sp-3 (fixture seedada): state "tls_failed".
+    // sp-3 (seeded fixture): state "tls_failed".
     expect(screen.getByText("Falha")).toBeInTheDocument();
     expect(
       screen.getByText("Falha ao validar propriedade do domínio via DNS-01.")
@@ -127,16 +127,17 @@ describe("StatusPagesSection", () => {
     expect(screen.queryByText("Emitindo certificado")).not.toBeInTheDocument();
   });
 
-  it("linha 'published' com domain_id/subdomain nulos (formato defendido, nunca produzido pelo fluxo real) não renderiza URL quebrada nem lança (mutante #5)", async () => {
+  it("'published' row with null domain_id/subdomain (defended shape, never produced by the real flow) doesn't render a broken URL or throw (mutant #5)", async () => {
     await loginAsOwner();
-    // MarkPublished só marca "published" via um JOIN por hostname que exige
-    // domain_id não-nulo, então essa combinação nunca ocorre pelo fluxo real
-    // do app - mas o guard `if (!domain_id || !subdomain) return null` em
-    // publicUrl() existe como defesa. Este teste força esse fixture
-    // impossível-mas-defendido via override do MSW pra provar que o guard
-    // realmente funciona (sem isso, o mutante que remove o guard sobrevive:
-    // nenhum outro teste alcança publicUrl() com domain_id/subdomain nulos
-    // dentro do branch "published").
+    // MarkPublished only marks a page "published" via a JOIN by hostname
+    // that requires a non-null domain_id, so this combination never occurs
+    // through the app's real flow - but the
+    // `if (!domain_id || !subdomain) return null` guard in publicUrl()
+    // exists as a defense. This test forces this impossible-but-defended
+    // fixture via an MSW override to prove the guard actually works
+    // (without it, the mutant that removes the guard survives: no other
+    // test reaches publicUrl() with null domain_id/subdomain inside the
+    // "published" branch).
     const impossiblePublished: StatusPage = {
       id: "sp-impossible-published",
       name: "Página Published Sem Domínio (impossível)",

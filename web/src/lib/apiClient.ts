@@ -16,24 +16,24 @@ export function setUnauthorizedHandler(fn: UnauthorizedHandler | null): void {
   unauthorizedHandler = fn;
 }
 
-/** Dispara o handler de 401 registrado. Exposto para testes/simulação manual
- * de expiração de sessão — não é chamado automaticamente por timeout. */
+/** Fires the registered 401 handler. Exposed for tests/manual simulation
+ * of session expiry — never called automatically on a timeout. */
 export function triggerUnauthorized(): void {
   unauthorizedHandler?.();
 }
 
-// baseUrl vazio resolve contra a própria origem (embutido no mesmo binário
-// em produção, via internal/webui). Em dev, VITE_API_BASE_URL aponta pro
-// backend Go rodando à parte (ver web/.env.development).
+// An empty baseUrl resolves against the page's own origin (embedded in the
+// same binary in production, via internal/webui). In dev, VITE_API_BASE_URL
+// points at the separately-running Go backend (see web/.env.development).
 const baseUrl = import.meta.env.VITE_API_BASE_URL ?? "";
 
-// resolveAssetUrl prefixa uma URL relativa vinda do backend (ex.:
-// logo_url = "/uploads/logo") com o mesmo baseUrl usado por apiFetch -
-// necessário para <img src> etc., que o browser resolve contra a própria
-// origem da página, não contra o backend. Em produção baseUrl é vazio (SPA
-// e API na mesma origem) então isto é um no-op; em dev (front em :5173,
-// back em :8080) sem isto a imagem 404 silenciosamente. URLs absolutas
-// (http(s)://...) passam intactas.
+// resolveAssetUrl prefixes a relative URL coming from the backend (e.g.
+// logo_url = "/uploads/logo") with the same baseUrl used by apiFetch -
+// needed for <img src> etc., which the browser resolves against the page's
+// own origin, not the backend. In production baseUrl is empty (SPA and
+// API share an origin) so this is a no-op; in dev (frontend on :5173,
+// backend on :8080) without this the image silently 404s. Absolute URLs
+// (http(s)://...) pass through untouched.
 export function resolveAssetUrl(url: string | null): string | null {
   if (!url || /^https?:\/\//.test(url)) return url;
   return `${baseUrl}${url}`;
@@ -48,13 +48,13 @@ async function parseErrorMessage(res: Response): Promise<string> {
   }
 }
 
-// skipUnauthorizedHandler evita o modal global de "sessão expirada" em
-// chamadas cujo 401 é um resultado ESPERADO, não sinal de sessão que
-// morreu no meio do uso: o probe de boot em /api/auth/me (visitante
-// anônimo, inclusive na própria tela de login) e a tentativa de login em
-// si (credencial errada). Sem isto, abrir /login sem sessão alguma já
-// dispara o modal de sessão expirada, o que é sempre falso - nunca houve
-// sessão para expirar.
+// skipUnauthorizedHandler avoids the global "session expired" modal for
+// calls whose 401 is an EXPECTED outcome, not a sign that a session died
+// mid-use: the boot probe on /api/auth/me (anonymous visitor, including on
+// the login screen itself) and the login attempt itself (wrong
+// credentials). Without this, opening /login with no session at all
+// already triggers the session-expired modal, which is always false -
+// there was never a session to expire.
 interface ApiFetchInit extends RequestInit {
   skipUnauthorizedHandler?: boolean;
 }

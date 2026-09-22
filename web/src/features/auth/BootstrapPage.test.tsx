@@ -42,7 +42,7 @@ describe("BootstrapPage", () => {
     vi.restoreAllMocks();
   });
 
-  it("submissão válida com senhas iguais cria o admin e navega para a raiz (SHD-16/SHD-18)", async () => {
+  it("valid submission with matching passwords creates the admin and navigates to the root (SHD-16/SHD-18)", async () => {
     setBootstrapped(false);
     render(<App />);
 
@@ -52,7 +52,7 @@ describe("BootstrapPage", () => {
     await waitFor(() => expect(assignSpy).toHaveBeenCalledWith("/"));
   });
 
-  it("409 (já bootstrapado) mostra erro inline e link para /login, sem navegar (SHD-15)", async () => {
+  it("409 (already bootstrapped) shows an inline error and link to /login, without navigating (SHD-15)", async () => {
     setBootstrapped(true);
     render(<App />);
 
@@ -66,7 +66,7 @@ describe("BootstrapPage", () => {
     expect(assignSpy).not.toHaveBeenCalled();
   });
 
-  it("senha e confirmação diferentes mostram erro de validação sem chamar a API", async () => {
+  it("mismatched password and confirmation show a validation error without calling the API", async () => {
     setBootstrapped(false);
     const fetchSpy = vi.spyOn(global, "fetch");
     render(<App />);
@@ -81,7 +81,7 @@ describe("BootstrapPage", () => {
     expect(fetchSpy).not.toHaveBeenCalledWith("/api/bootstrap", expect.anything());
   });
 
-  it("campos nome/email/senha/confirmação são obrigatórios, seguindo a convenção do LoginPage", () => {
+  it("name/email/password/confirmation fields are required, following LoginPage's convention", () => {
     render(<App />);
 
     expect(screen.getByLabelText("Nome")).toBeRequired();

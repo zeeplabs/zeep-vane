@@ -34,8 +34,8 @@ function renderPage() {
 }
 
 describe("ProfilePage", () => {
-  // PROFPAGE-01: a página renderiza o cabeçalho e os três cards.
-  it("renderiza o cabeçalho e os três cards", async () => {
+  // PROFPAGE-01: the page renders the header and the three cards.
+  it("renders the header and the three cards", async () => {
     await loginAsOwner();
     renderPage();
 
@@ -46,9 +46,9 @@ describe("ProfilePage", () => {
     expect(await screen.findByText("Notificações")).toBeInTheDocument();
   });
 
-  // spec.md edge case: com locale en, todas as strings novas renderizam em
-  // inglês.
-  it("renderiza as strings em inglês quando o locale é en", async () => {
+  // spec.md edge case: with the en locale, all new strings render in
+  // English.
+  it("renders the strings in English when the locale is en", async () => {
     await loginAsOwner();
     await act(async () => {
       await i18n.changeLanguage("en");

@@ -413,11 +413,11 @@ export function OverviewPage() {
         <p className="m-0 text-[13.5px] text-neutral-400">{t("overview.subtitle")}</p>
       </div>
 
-      {/* UpsellBanner desativado (2026-09-15, pedido do Julio): sem
-          Tenant.Plan/billing real por trás (mesma pausa de AD-025 do
-          seat-limit de Usuários), mostrar isso induziria a um upgrade que
-          não existe. Componente mantido no arquivo, só não renderizado -
-          reativar quando billing real existir. */}
+      {/* UpsellBanner disabled (2026-09-15, Julio's request): with no
+          real Tenant.Plan/billing behind it (same pause as AD-025's
+          seat-limit in Usuários), showing this would induce an upgrade
+          that doesn't exist. Component kept in the file, just not
+          rendered - re-enable once real billing exists. */}
 
       {isLoading ? (
         <div aria-busy="true" className="flex flex-col gap-6">

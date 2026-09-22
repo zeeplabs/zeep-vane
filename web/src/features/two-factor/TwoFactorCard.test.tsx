@@ -32,9 +32,9 @@ function renderCard() {
 }
 
 describe("TwoFactorCard", () => {
-  // PROFPAGE-12: desativado mostra o badge "Desativada" e o botão "Ativar"
-  // que abre o drawer de enrollment.
-  it("estado desativado mostra Ativar e abre o drawer", async () => {
+  // PROFPAGE-12: disabled shows the "Desativada" badge and the "Ativar"
+  // button that opens the enrollment drawer.
+  it("disabled state shows Ativar and opens the drawer", async () => {
     const user = userEvent.setup();
     await loginAsOwner();
     renderCard();
@@ -45,9 +45,9 @@ describe("TwoFactorCard", () => {
     expect(await screen.findByTestId("enroll-qr")).toBeInTheDocument();
   });
 
-  // PROFPAGE-13: ativado mostra o badge "Ativada" e o botão "Desativar" que
-  // abre o diálogo.
-  it("estado ativado mostra Desativar e abre o diálogo", async () => {
+  // PROFPAGE-13: enabled shows the "Ativada" badge and the "Desativar"
+  // button that opens the dialog.
+  it("enabled state shows Desativar and opens the dialog", async () => {
     const user = userEvent.setup();
     await loginAsOwner();
     setTwoFactorEnabled(true);
@@ -59,8 +59,8 @@ describe("TwoFactorCard", () => {
     expect(await screen.findByTestId("two-factor-disable-confirm")).toBeInTheDocument();
   });
 
-  // PROFPAGE-17: desativar com sucesso faz o card re-derivar como desativado.
-  it("desativar com sucesso faz o card voltar para desativado", async () => {
+  // PROFPAGE-17: successfully disabling makes the card re-derive as disabled.
+  it("disabling successfully makes the card go back to disabled", async () => {
     const user = userEvent.setup();
     await loginAsOwner();
     setTwoFactorEnabled(true);

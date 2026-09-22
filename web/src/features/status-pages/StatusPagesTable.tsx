@@ -11,7 +11,7 @@ import type { StatusPage } from "../../types/api";
 import { useDomains } from "../domains/hooks";
 import { useStatusPages } from "./hooks";
 
-// publicUrl composes "URL pública" (spec.md DSP-13/17) from the page's own
+// publicUrl composes "Public URL" (spec.md DSP-13/17) from the page's own
 // domain_id/subdomain plus the attached domain's hostname - "—" when no
 // domain is attached, mirroring StatusPagesSection.tsx's existing
 // publicUrl()/DSP-17 null-safety guard.
@@ -21,14 +21,14 @@ function publicUrl(page: StatusPage, hostname: string | undefined): string {
 }
 
 export interface StatusPagesTableProps {
-  /** Chamado quando uma linha da tabela é selecionada (abre o
+  /** Called when a table row is selected (opens the
    * StatusPageDetailDrawer, T10). */
   onSelect: (page: StatusPage) => void;
 }
 
-/** Tabela redesenhada da aba Status Pages (spec.md DSP-13): Visib./Página/
- * URL pública/Serviços/Atualizado, mesma estrutura de grid/linha/Pager que
- * DomainsTable (T6) já estabeleceu. */
+/** Redesigned table for the Status Pages tab (spec.md DSP-13): Visib./Page/
+ * Public URL/Services/Updated, same grid/row/Pager structure that
+ * DomainsTable (T6) already established. */
 export function StatusPagesTable({ onSelect }: StatusPagesTableProps) {
   const { t, i18n } = useTranslation();
   const [page, setPage] = useState(1);
@@ -37,7 +37,7 @@ export function StatusPagesTable({ onSelect }: StatusPagesTableProps) {
   const totalPages = Math.max(1, Math.ceil((statusPagesPage?.total ?? 0) / (statusPagesPage?.page_size ?? 20)));
 
   // SPEC_DEVIATION: fixed page 1 for now - the domains dropdown here only
-  // resolves a hostname for the "URL pública" column, not a picker; Pager UI
+  // resolves a hostname for the "Public URL" column, not a picker; Pager UI
   // for it is out of scope. Mirrors the same deviation in
   // StatusPagesSection.tsx.
   const { data: domainsPage } = useDomains(1);

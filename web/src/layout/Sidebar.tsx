@@ -86,7 +86,7 @@ export function Sidebar() {
   const expanded = pinned || hovering;
 
   const domainsActive = location.pathname.startsWith("/domains") || location.pathname.startsWith("/status-pages");
-  // OVW-15/16: the standalone "Visão geral" item is active on both "/"
+  // OVW-15/16: the standalone "Overview" item is active on both "/"
   // (which redirects to /overview) and /overview itself.
   const overviewActive = location.pathname === "/" || location.pathname.startsWith("/overview");
 

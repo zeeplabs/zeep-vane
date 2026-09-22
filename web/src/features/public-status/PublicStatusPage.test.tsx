@@ -146,7 +146,7 @@ function mockManyResolvedIncidents(total: number) {
   );
 }
 
-describe("PublicStatusPage - tema local (PUBSTATUS-07..11)", () => {
+describe("PublicStatusPage - local theme (PUBSTATUS-07..11)", () => {
   beforeEach(() => {
     window.localStorage.removeItem("vane:publicStatusTheme");
     window.localStorage.removeItem("vane:theme");
@@ -159,9 +159,9 @@ describe("PublicStatusPage - tema local (PUBSTATUS-07..11)", () => {
     delete document.documentElement.dataset.theme;
   });
 
-  it("abre em light por padrão, independente de vane:theme (app) estar dark", async () => {
+  it("opens in light by default, regardless of vane:theme (app) being dark", async () => {
     window.localStorage.setItem("vane:theme", "dark");
-    document.documentElement.dataset.theme = "dark"; // simula admin logado com o app em dark
+    document.documentElement.dataset.theme = "dark"; // simulates a logged-in admin with the app in dark
 
     await renderAt("/status/sp-4");
     await screen.findByText("Todos os sistemas operacionais");
@@ -169,7 +169,7 @@ describe("PublicStatusPage - tema local (PUBSTATUS-07..11)", () => {
     expect(screen.getByTestId("public-status-theme-root")).not.toHaveAttribute("data-theme");
   });
 
-  it("alternar o tema muda o data-theme só do root desta página, sem tocar document.documentElement", async () => {
+  it("toggling the theme changes data-theme only on this page's root, without touching document.documentElement", async () => {
     await renderAt("/status/sp-4");
     await screen.findByText("Todos os sistemas operacionais");
 
@@ -180,7 +180,7 @@ describe("PublicStatusPage - tema local (PUBSTATUS-07..11)", () => {
     expect(document.documentElement.dataset.theme).toBeUndefined();
   });
 
-  it("persiste a escolha em localStorage sob chave própria, distinta de vane:theme", async () => {
+  it("persists the choice in localStorage under its own key, distinct from vane:theme", async () => {
     await renderAt("/status/sp-4");
     await screen.findByText("Todos os sistemas operacionais");
 
@@ -190,7 +190,7 @@ describe("PublicStatusPage - tema local (PUBSTATUS-07..11)", () => {
     expect(window.localStorage.getItem("vane:theme")).toBeNull();
   });
 
-  it("mostra o ícone de lua em light (oferece trocar pra dark) e de sol em dark (oferece voltar pra light)", async () => {
+  it("shows the moon icon in light (offers switching to dark) and the sun icon in dark (offers switching back to light)", async () => {
     await renderAt("/status/sp-4");
     await screen.findByText("Todos os sistemas operacionais");
 
@@ -208,7 +208,7 @@ describe("PublicStatusPage", () => {
   // SKEL-04/05: while the public-preview fetch is loading, the page shows
   // skeleton blocks (not the old bespoke pulsing divs) inside an aria-busy
   // container that still carries the sr-only loading string.
-  it("mostra skeletons (não o texto) enquanto a página pública carrega", async () => {
+  it("shows skeletons (not the text) while the public page is loading", async () => {
     server.use(
       http.get("/api/status-pages/:id/public-preview", async () => {
         await delay("infinite");
@@ -230,14 +230,14 @@ describe("PublicStatusPage", () => {
   // SKEL-06: once the fetch resolves, skeletons are gone and the real
   // page (banner + services) takes over - loading and loaded are mutually
   // exclusive.
-  it("remove os skeletons assim que a página pública termina de carregar", async () => {
+  it("removes the skeletons as soon as the public page finishes loading", async () => {
     await renderAt("/status/sp-4");
 
     await screen.findByText("Todos os sistemas operacionais");
     expect(screen.queryAllByTestId("skeleton")).toHaveLength(0);
   });
 
-  it("página sem incidentes mostra banda de operacional e nenhum incidente ativo", async () => {
+  it("page with no incidents shows the operational banner and no active incident", async () => {
     await renderAt("/status/sp-4");
 
     expect(await screen.findByText("Todos os sistemas operacionais")).toBeInTheDocument();
@@ -246,7 +246,7 @@ describe("PublicStatusPage", () => {
     expect(await screen.findByText("Nenhum incidente nos últimos 90 dias.")).toBeInTheDocument();
   });
 
-  it("página com incidente ativo mostra card no topo e permite expandir a linha do tempo", async () => {
+  it("page with an active incident shows the card at the top and allows expanding the timeline", async () => {
     await renderAt("/status/sp-1");
 
     expect(await screen.findByText("Incidente em andamento")).toBeInTheDocument();
@@ -259,7 +259,7 @@ describe("PublicStatusPage", () => {
     ).toBeInTheDocument();
   });
 
-  it("página com histórico resolvido mostra card de incidente resolvido", async () => {
+  it("page with resolved history shows the resolved incident card", async () => {
     await renderAt("/status/sp-1");
 
     expect(await screen.findByText("Indisponibilidade parcial da API")).toBeInTheDocument();
@@ -274,7 +274,7 @@ describe("PublicStatusPage", () => {
   // AI-09/AI-11/AI-18: inc-1's fixture (mockData.ts) has a description,
   // inc-2 doesn't - exercises both the present and title-only-fallback
   // cases on the public incident card.
-  it("incidente ativo com description mostra o texto; incidente resolvido sem description mostra só o título", async () => {
+  it("active incident with description shows the text; resolved incident without description shows only the title", async () => {
     await renderAt("/status/sp-1");
 
     expect(
@@ -283,7 +283,7 @@ describe("PublicStatusPage", () => {
     expect(screen.getByText("Indisponibilidade parcial da API")).toBeInTheDocument();
   });
 
-  it("status page inexistente ou não publicada mostra página não encontrada", async () => {
+  it("a nonexistent or unpublished status page shows page not found", async () => {
     await renderAt("/status/sp-2");
 
     expect(await screen.findByText("Página não encontrada.")).toBeInTheDocument();
@@ -292,7 +292,7 @@ describe("PublicStatusPage", () => {
   // UPT-01: exactly 24 hourly bars per service - covered against the
   // generic MSW fixture in test/msw/handlers.ts (already 24-length), not a
   // one-off override, so this also exercises the real fixture-building path.
-  it("renderiza exatamente 24 barras horárias por serviço", async () => {
+  it("renders exactly 24 hourly bars per service", async () => {
     await renderAt("/status/sp-4");
 
     expect(await screen.findByText("Fila de processamento")).toBeInTheDocument();
@@ -300,7 +300,7 @@ describe("PublicStatusPage", () => {
   });
 
   // UPT-02: each of the four statuses maps to its own bar color.
-  it("cada status horário renderiza com a cor correspondente", async () => {
+  it("each hourly status renders with its corresponding color", async () => {
     const now = Date.now();
     const history = Array.from({ length: 24 }, (_, i) =>
       bucket(new Date(now - (23 - i) * 3_600_000).toISOString(), "operational" as PublicHourlyStatus),
@@ -323,7 +323,7 @@ describe("PublicStatusPage", () => {
   // UPT-05: hovering/focusing a bar shows the correct local date, hour
   // range, and PT-BR status label, in America/Sao_Paulo regardless of the
   // test runner's own timezone.
-  it("cada barra tem tooltip com data, hora e status em português", async () => {
+  it("each bar has a tooltip with date, hour and status in Portuguese", async () => {
     const history: ReturnType<typeof bucket>[] = Array.from({ length: 24 }, () =>
       bucket("2026-08-24T17:00:00.000Z", "operational" as PublicHourlyStatus),
     );
@@ -338,7 +338,7 @@ describe("PublicStatusPage", () => {
 
   // degraded-interval-analysis DEGINT-13: a bucket carrying episodes opens
   // a popover on click, listing the episode's time range and analysis.
-  it("clicar numa barra com episódio degradado abre popover com o motivo", async () => {
+  it("clicking a bar with a degraded episode opens a popover with the reason", async () => {
     const history: PublicHistoryBucket[] = Array.from({ length: 24 }, () =>
       bucket("2026-08-24T17:00:00.000Z", "operational" as PublicHourlyStatus),
     );
@@ -368,7 +368,7 @@ describe("PublicStatusPage", () => {
   // degraded-interval-analysis DEGINT-15: a bucket with no episodes stays
   // non-interactive - clicking it does nothing, same as before this
   // feature.
-  it("barra sem episódio degradado não é clicável", async () => {
+  it("a bar with no degraded episode is not clickable", async () => {
     const history: ReturnType<typeof bucket>[] = Array.from({ length: 24 }, () =>
       bucket("2026-08-24T17:00:00.000Z", "operational" as PublicHourlyStatus),
     );
@@ -384,7 +384,7 @@ describe("PublicStatusPage", () => {
 
   // UPT-06: a service with no observed data ever still renders all 24
   // bars as gray no_data, never an empty or missing row.
-  it("serviço sem dados renderiza 24 barras cinzas, não uma linha vazia", async () => {
+  it("a service with no data renders 24 gray bars, not an empty row", async () => {
     const history = Array.from({ length: 24 }, () => bucket(new Date().toISOString(), "no_data" as PublicHourlyStatus));
     mockPublicPreview("Serviço Sem Dados", history);
 
@@ -399,7 +399,7 @@ describe("PublicStatusPage", () => {
 
   // list-pagination T20: resolved incidents load progressively, 10 at a
   // time, via a "Carregar mais" button - never all at once.
-  it("mostra 10 incidentes resolvidos e o botão Carregar mais quando há mais de 10", async () => {
+  it("shows 10 resolved incidents and the Load more button when there are more than 10", async () => {
     mockManyResolvedIncidents(11);
     await renderAt("/status/resolved-many-test");
 
@@ -409,7 +409,7 @@ describe("PublicStatusPage", () => {
     expect(screen.getByRole("button", { name: "Carregar mais" })).toBeInTheDocument();
   });
 
-  it("clicar em Carregar mais adiciona a página seguinte sem duplicar nem reordenar a primeira", async () => {
+  it("clicking Load more adds the next page without duplicating or reordering the first", async () => {
     mockManyResolvedIncidents(11);
     await renderAt("/status/resolved-many-test");
     await screen.findByText("Resolvido 1");
@@ -421,7 +421,7 @@ describe("PublicStatusPage", () => {
     expect(screen.getAllByText(/^Resolvido \d+$/)).toHaveLength(11);
   });
 
-  it("botão Carregar mais desaparece quando todos os incidentes resolvidos foram carregados", async () => {
+  it("the Load more button disappears once all resolved incidents have been loaded", async () => {
     mockManyResolvedIncidents(11);
     await renderAt("/status/resolved-many-test");
     await screen.findByText("Resolvido 1");
@@ -438,7 +438,7 @@ describe("PublicStatusPage", () => {
   // must restore both on unmount - a leftover title from the last status
   // page a visitor viewed must never bleed into whatever they navigate to
   // next in the same tab.
-  it("define document.title e a meta description com o nome da empresa, restaurando ambos ao desmontar", async () => {
+  it("sets document.title and the meta description with the company name, restoring both on unmount", async () => {
     const titleBefore = document.title;
     const metaDescription = document.createElement("meta");
     metaDescription.setAttribute("name", "description");
@@ -465,7 +465,7 @@ describe("PublicStatusPage", () => {
 
   // public-status-time-range-selector T8 / TRS-01: the page loads with 24h
   // selected by default and the existing 24-bar chart, unchanged from today.
-  it("carrega com 24h selecionado por padrão e o gráfico de 24 barras existente", async () => {
+  it("loads with 24h selected by default and the existing 24-bar chart", async () => {
     await renderAt("/status/sp-4");
 
     expect(await screen.findByText("Fila de processamento")).toBeInTheDocument();
@@ -483,7 +483,7 @@ describe("PublicStatusPage", () => {
     ["7d", "7 dias atrás", 28],
     ["30d", "30 dias atrás", 30],
     ["90d", "90 dias atrás", 90],
-  ] as const)("clicar em %s dispara nova busca e atualiza o rótulo para '%s'", async (rangeValue, expectedLabel, expectedBars) => {
+  ] as const)("clicking %s triggers a new fetch and updates the label to '%s'", async (rangeValue, expectedLabel, expectedBars) => {
     mockPublicPreviewMultiService(["Serviço Range"], { "24h": 24, "7d": 28, "30d": 30, "90d": 90 });
     await renderAt("/status/range-selector-test");
 
@@ -499,7 +499,7 @@ describe("PublicStatusPage", () => {
 
   // TRS-03: a range change updates every service's chart page-wide, not
   // just one - asserted with 2 services in the fixture.
-  it("mudar o período atualiza o gráfico de todos os serviços, não só um", async () => {
+  it("changing the period updates the chart for every service, not just one", async () => {
     mockPublicPreviewMultiService(
       ["Serviço A", "Serviço B"],
       { "24h": 24, "7d": 28, "30d": 30, "90d": 90 },
@@ -519,7 +519,7 @@ describe("PublicStatusPage", () => {
   // TRS-04: the displayed uptime_percent changes when range changes,
   // proving the figure rendered reflects data.services[].uptime_percent per
   // fetch, not a stale cached figure.
-  it("uptime_percent exibido muda quando o período muda", async () => {
+  it("the displayed uptime_percent changes when the period changes", async () => {
     mockPublicPreviewMultiService(
       ["Serviço Uptime"],
       { "24h": 24, "90d": 90 },
@@ -540,7 +540,7 @@ describe("PublicStatusPage", () => {
   // AI-16: a degraded service with a finished status_analysis shows it as a
   // native tooltip (title/tabIndex, mirroring hourlyTooltip's pattern) on
   // the status badge.
-  it("serviço degradado com status_analysis mostra tooltip no badge de status", async () => {
+  it("a degraded service with status_analysis shows a tooltip on the status badge", async () => {
     server.use(
       http.get("/api/status-pages/:id/public-preview", () =>
         HttpResponse.json({
@@ -572,7 +572,7 @@ describe("PublicStatusPage", () => {
   // AI-16/AI-18: absent status_analysis (still pending, or never generated)
   // shows the plain label with no tooltip attribute and no error text -
   // never a fabricated/placeholder tooltip.
-  it("serviço degradado sem status_analysis mostra label simples sem tooltip", async () => {
+  it("a degraded service without status_analysis shows a plain label with no tooltip", async () => {
     server.use(
       http.get("/api/status-pages/:id/public-preview", () =>
         HttpResponse.json({
@@ -601,7 +601,7 @@ describe("PublicStatusPage", () => {
   // Regression guard: a non-degraded service must never render a tooltip
   // on its status badge, even when status_analysis is (incorrectly, or
   // stale) present in the response.
-  it("serviço operacional nunca mostra tooltip no badge, mesmo com status_analysis presente", async () => {
+  it("an operational service never shows a tooltip on the badge, even with status_analysis present", async () => {
     server.use(
       http.get("/api/status-pages/:id/public-preview", () =>
         HttpResponse.json({
@@ -632,8 +632,8 @@ describe("PublicStatusPage", () => {
 // re-run in a second language): confirms the visitor-language routing
 // through the page's own isolated i18next instance (./i18n.ts) actually
 // renders English copy, not just that the admin SPA's shared instance can.
-describe("PublicStatusPage - idioma do visitante (isolado do vane:language do admin)", () => {
-  it("renderiza em inglês quando o idioma detectado do visitante é inglês", async () => {
+describe("PublicStatusPage - visitor language (isolated from the admin's vane:language)", () => {
+  it("renders in English when the visitor's detected language is English", async () => {
     await publicStatusI18n.changeLanguage("en");
 
     await renderAt("/status/sp-4");

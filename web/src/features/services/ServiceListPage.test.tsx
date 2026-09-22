@@ -107,7 +107,7 @@ describe("ServiceListPage", () => {
   // real grid template render (not the old "Carregando…" paragraph as
   // visible content) inside an aria-busy container that still carries the
   // sr-only loading string.
-  it("mostra skeletons (não o texto) enquanto /api/services carrega", async () => {
+  it("shows skeletons (not the text) while /api/services is loading", async () => {
     server.use(
       http.get("/api/services", async () => {
         await delay("infinite");
@@ -125,7 +125,7 @@ describe("ServiceListPage", () => {
 
   // SKEL-06: once the fetch resolves, skeletons are gone and the real table
   // takes over - loading and loaded are mutually exclusive.
-  it("remove os skeletons assim que /api/services termina de carregar", async () => {
+  it("removes the skeletons as soon as /api/services finishes loading", async () => {
     mockServicesPage(fourStatusFixture);
     await loginAsOwner();
     renderPage();
@@ -134,7 +134,7 @@ describe("ServiceListPage", () => {
     expect(screen.queryAllByTestId("skeleton")).toHaveLength(0);
   });
 
-  it("renderiza status/serviço/uptime/última verificação para cada serviço, sem coluna de latência (SVC-01/SVC-07)", async () => {
+  it("renders status/service/uptime/last checked for each service, with no latency column (SVC-01/SVC-07)", async () => {
     mockServicesPage(fourStatusFixture);
     await loginAsOwner();
     renderPage();
@@ -146,7 +146,7 @@ describe("ServiceListPage", () => {
     expect(screen.queryByText(/Latência/i)).not.toBeInTheDocument();
   });
 
-  it("renderiza o rótulo correto de badge para os 4 valores de CurrentStatus (SVC-02..05)", async () => {
+  it("renders the correct badge label for all 4 CurrentStatus values (SVC-02..05)", async () => {
     mockServicesPage(fourStatusFixture);
     await loginAsOwner();
     renderPage();
@@ -159,7 +159,7 @@ describe("ServiceListPage", () => {
     expect(within(rows[3]).getByText("Não configurado")).toBeInTheDocument();
   });
 
-  it("mostra '—' para uptime e última verificação quando o serviço nunca foi verificado (SVC-06)", async () => {
+  it("shows '—' for uptime and last checked when the service has never been checked (SVC-06)", async () => {
     mockServicesPage(fourStatusFixture);
     await loginAsOwner();
     renderPage();
@@ -170,7 +170,7 @@ describe("ServiceListPage", () => {
     expect(dashes).toHaveLength(2);
   });
 
-  it("filtra pelo chip de status clicado e 'Todos' mostra todos novamente (SVC-09)", async () => {
+  it("filters by the clicked status chip and 'Todos' shows all again (SVC-09)", async () => {
     mockServicesPage(fourStatusFixture);
     await loginAsOwner();
     renderPage();
@@ -185,7 +185,7 @@ describe("ServiceListPage", () => {
     expect(screen.getByText("Checkout")).toBeInTheDocument();
   });
 
-  it("cada chip mostra a contagem de serviços da página atual (SVC-13)", async () => {
+  it("each chip shows the count of services on the current page (SVC-13)", async () => {
     mockServicesPage(fourStatusFixture);
     await loginAsOwner();
     renderPage();
@@ -199,7 +199,7 @@ describe("ServiceListPage", () => {
     expect(chips.getByRole("button", { name: /Não configurado/ })).toHaveTextContent("1");
   });
 
-  it("busca por nome/SLO, case-insensitive, estreita a lista (SVC-10)", async () => {
+  it("searching by name/SLO, case-insensitive, narrows the list (SVC-10)", async () => {
     mockServicesPage(fourStatusFixture);
     await loginAsOwner();
     renderPage();
@@ -210,7 +210,7 @@ describe("ServiceListPage", () => {
     expect(screen.queryByText("API Gateway")).not.toBeInTheDocument();
   });
 
-  it("combina filtro de status e busca com AND (SVC-11)", async () => {
+  it("combines status filter and search with AND (SVC-11)", async () => {
     mockServicesPage(fourStatusFixture);
     await loginAsOwner();
     renderPage();
@@ -224,7 +224,7 @@ describe("ServiceListPage", () => {
     expect(screen.getByText("Nenhum serviço encontrado com esses filtros.")).toBeInTheDocument();
   });
 
-  it("mostra o estado vazio quando nenhum serviço casa com filtro/busca (SVC-12)", async () => {
+  it("shows the empty state when no service matches the filter/search (SVC-12)", async () => {
     mockServicesPage(fourStatusFixture);
     await loginAsOwner();
     renderPage();
@@ -234,7 +234,7 @@ describe("ServiceListPage", () => {
     expect(screen.getByText("Nenhum serviço encontrado com esses filtros.")).toBeInTheDocument();
   });
 
-  it("renderiza o Pager com totalPages = ceil(total/page_size) quando há mais de uma página (SVC-08)", async () => {
+  it("renders the Pager with totalPages = ceil(total/page_size) when there is more than one page (SVC-08)", async () => {
     mockServicesPage(fourStatusFixture, 25, 20);
     await loginAsOwner();
     renderPage();
@@ -243,7 +243,7 @@ describe("ServiceListPage", () => {
     expect(screen.getByText("Página 1 de 2")).toBeInTheDocument();
   });
 
-  it("clicar numa linha chama onSelectService com o id do serviço", async () => {
+  it("clicking a row calls onSelectService with the service id", async () => {
     mockServicesPage(fourStatusFixture);
     await loginAsOwner();
     let selected: string | null = null;
@@ -258,7 +258,7 @@ describe("ServiceListPage", () => {
 
   // manual-polling-monitoring T9: a polling-manual row (no slo_name/slo_id
   // at all) must show its poll_target as the row subtitle, not blank.
-  it("mostra poll_target como subtítulo da linha para um serviço monitor_mode=polling (T9)", async () => {
+  it("shows poll_target as the row subtitle for a monitor_mode=polling service (T9)", async () => {
     mockServicesPage([
       {
         id: "svc-polling",
@@ -281,7 +281,7 @@ describe("ServiceListPage", () => {
   });
 
   // Regression: an slo-mode row's subtitle is unchanged.
-  it("mantém slo_name como subtítulo da linha para serviços monitor_mode=slo (T9 regressão)", async () => {
+  it("keeps slo_name as the row subtitle for monitor_mode=slo services (T9 regression)", async () => {
     mockServicesPage(fourStatusFixture);
     await loginAsOwner();
     renderPage();
@@ -291,7 +291,7 @@ describe("ServiceListPage", () => {
     expect(screen.getByText("Checkout p95")).toBeInTheDocument();
   });
 
-  it("clicar em 'Adicionar serviço' chama onAddService", async () => {
+  it("clicking 'Adicionar serviço' calls onAddService", async () => {
     mockServicesPage(fourStatusFixture);
     await loginAsOwner();
     let addClicked = false;
@@ -304,7 +304,7 @@ describe("ServiceListPage", () => {
     expect(addClicked).toBe(true);
   });
 
-  it("renderiza em inglês quando o idioma ativo é en", async () => {
+  it("renders in English when the active language is en", async () => {
     mockServicesPage(fourStatusFixture);
     await loginAsOwner();
     await i18n.changeLanguage("en");

@@ -38,14 +38,14 @@ function renderSection() {
 }
 
 describe("SessionsSection", () => {
-  it("renderiza título e subtítulo em pt-BR", async () => {
+  it("renders the title and subtitle in pt-BR", async () => {
     await loginAsOwner();
     renderSection();
     expect(await screen.findByText("Sessões ativas")).toBeInTheDocument();
     expect(screen.getByText(/dispositivos conectados à sua conta/i)).toBeInTheDocument();
   });
 
-  it("lista as sessões do usuário logado, marca a atual com badge e esconde o botão Encerrar nela", async () => {
+  it("lists the logged-in user's sessions, badges the current one and hides its Encerrar button", async () => {
     await loginAsOwner();
     renderSection();
 
@@ -57,13 +57,13 @@ describe("SessionsSection", () => {
     expect(currentRow).toBeDefined();
     expect(otherRow).toBeDefined();
 
-    // A sessão atual carrega o badge "Esta sessão" e não expõe o botão.
+    // The current session carries the "Esta sessão" badge and doesn't expose the button.
     expect(currentRow!.querySelector('[data-testid="session-current-badge"]')).toHaveTextContent(
       "Esta sessão"
     );
     expect(currentRow!.querySelector('[data-testid="revoke-button"]')).toBeNull();
 
-    // A outra sessão tem o botão Encerrar.
+    // The other session has the Encerrar button.
     const revokeButton = otherRow!.querySelector(
       '[data-testid="revoke-button"]'
     ) as HTMLButtonElement;
@@ -71,7 +71,7 @@ describe("SessionsSection", () => {
     expect(revokeButton).toHaveTextContent("Encerrar");
   });
 
-  it("o idioma ativo muda o formato da data da sessão, não fica sempre em pt-BR", async () => {
+  it("the active language changes the session date format, not always pt-BR", async () => {
     await loginAsOwner();
     const { unmount } = renderSection();
     const [ptBRTimestamp] = await screen.findAllByTestId("session-last-seen");
@@ -86,7 +86,7 @@ describe("SessionsSection", () => {
     expect(enText).not.toBe(ptBRText);
   });
 
-  it("clicar em Encerrar abre o diálogo e confirmar revoga a sessão", async () => {
+  it("clicking Encerrar opens the dialog and confirming revokes the session", async () => {
     const user = userEvent.setup();
     await loginAsOwner();
     renderSection();
@@ -100,20 +100,20 @@ describe("SessionsSection", () => {
     ) as HTMLButtonElement;
     await user.click(revokeButton);
 
-    // Só o confirmar do diálogo dispara o DELETE; a lista ainda tem 2 linhas
-    // enquanto o diálogo está aberto.
+    // Only confirming the dialog fires the DELETE; the list still has 2
+    // rows while the dialog is open.
     await user.click(await screen.findByTestId("confirm-revoke-button"));
 
-    // Mock: DELETE marca revoked_at em sess-2; onSuccess invalida a query
-    // ["sessions"]; o refetch filtra a linha revogada e a UI re-renderiza
-    // com apenas a sessão atual.
+    // Mock: DELETE sets revoked_at on sess-2; onSuccess invalidates the
+    // ["sessions"] query; the refetch filters out the revoked row and the
+    // UI re-renders with only the current session.
     await waitFor(() => expect(screen.getAllByTestId("session-row")).toHaveLength(1));
     expect(screen.getByTestId("session-row").dataset.current).toBe("true");
   });
 
-  // PROFPAGE-20: abrir o diálogo não envia DELETE - a revogação só acontece
-  // no confirmar.
-  it("abrir o diálogo de encerrar não envia DELETE até confirmar", async () => {
+  // PROFPAGE-20: opening the dialog does not send DELETE - revocation only
+  // happens on confirm.
+  it("opening the Encerrar dialog does not send DELETE until confirmed", async () => {
     const user = userEvent.setup();
     await loginAsOwner();
     const spy = vi.fn();
@@ -133,8 +133,8 @@ describe("SessionsSection", () => {
     expect(spy).not.toHaveBeenCalled();
   });
 
-  // PROFPAGE-22: cancelar não envia DELETE e mantém a sessão listada.
-  it("cancelar o diálogo não envia DELETE e mantém a sessão", async () => {
+  // PROFPAGE-22: canceling does not send DELETE and keeps the session listed.
+  it("canceling the dialog does not send DELETE and keeps the session", async () => {
     const user = userEvent.setup();
     await loginAsOwner();
     const spy = vi.fn();
@@ -155,7 +155,7 @@ describe("SessionsSection", () => {
     await waitFor(() => expect(screen.getAllByTestId("session-row")).toHaveLength(2));
   });
 
-  it("renderiza o estado vazio quando o backend não retorna nenhuma sessão", async () => {
+  it("renders the empty state when the backend returns no sessions", async () => {
     server.use(http.get("/api/auth/sessions", () => HttpResponse.json([])));
     await loginAsOwner();
     renderSection();
@@ -166,7 +166,7 @@ describe("SessionsSection", () => {
   // SKEL-04/05: while /api/auth/sessions is loading, skeleton rows render
   // (not the old "Carregando sessões..." paragraph as visible content)
   // inside an aria-busy container that still carries the sr-only string.
-  it("mostra skeletons (não o texto) enquanto /api/auth/sessions carrega", async () => {
+  it("shows skeletons (not the text) while /api/auth/sessions is loading", async () => {
     server.use(
       http.get("/api/auth/sessions", async () => {
         await delay("infinite");
@@ -184,7 +184,7 @@ describe("SessionsSection", () => {
 
   // SKEL-06/07: once the fetch resolves, skeletons are gone; the isError
   // branch stays untouched as verified by the existing error test below.
-  it("remove os skeletons assim que /api/auth/sessions termina de carregar", async () => {
+  it("removes the skeletons as soon as /api/auth/sessions finishes loading", async () => {
     await loginAsOwner();
     renderSection();
 
@@ -192,7 +192,7 @@ describe("SessionsSection", () => {
     expect(screen.queryAllByTestId("skeleton")).toHaveLength(0);
   });
 
-  it("renderiza a mensagem de erro de carregamento (não a de encerrar) quando o GET falha", async () => {
+  it("renders the loading error message (not the Encerrar one) when the GET fails", async () => {
     server.use(
       http.get("/api/auth/sessions", () =>
         HttpResponse.json({ error: "boom" }, { status: 500 })

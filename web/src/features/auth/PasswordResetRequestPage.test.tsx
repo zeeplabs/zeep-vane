@@ -20,7 +20,7 @@ function App() {
 }
 
 describe("PasswordResetRequestPage", () => {
-  it("submeter e-mail mostra confirmação genérica e some com o form", async () => {
+  it("submitting the email shows a generic confirmation and dismisses the form", async () => {
     render(<App />);
     await userEvent.type(screen.getByLabelText("E-mail"), "owner@vane.app");
     await userEvent.click(screen.getByRole("button", { name: "Enviar instruções" }));
@@ -31,7 +31,7 @@ describe("PasswordResetRequestPage", () => {
     expect(screen.queryByLabelText("E-mail")).not.toBeInTheDocument();
   });
 
-  it("link 'Voltar para o login' navega para /login", async () => {
+  it("'Voltar para o login' link navigates to /login", async () => {
     render(<App />);
     await userEvent.click(screen.getByRole("link", { name: "Voltar para o login" }));
 

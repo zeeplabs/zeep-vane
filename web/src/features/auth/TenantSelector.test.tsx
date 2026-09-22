@@ -84,17 +84,17 @@ afterEach(async () => {
 });
 
 describe("TenantSelector", () => {
-  it("usuário com 1 membership nunca vê a tela de seleção - login vai direto para o dashboard (T17)", async () => {
+  it("user with 1 membership never sees the selection screen - login goes straight to the dashboard (T17)", async () => {
     renderAppAt("/login");
     await login();
 
     await waitFor(() => expect(screen.queryByText("Selecione uma organização")).not.toBeInTheDocument());
-    // Chegou em alguma rota autenticada normal (redirect da raiz para
-    // /domains, RootRoute + RequireAuth) - nunca preso em /select-tenant.
+    // Landed on some normal authenticated route (redirect from the root to
+    // /domains, RootRoute + RequireAuth) - never stuck on /select-tenant.
     await waitFor(() => expect(screen.queryByLabelText("E-mail")).not.toBeInTheDocument());
   });
 
-  it("usuário com >1 membership vê a lista de organizações após o login (T17, TENANT-19)", async () => {
+  it("user with >1 membership sees the organization list after login (T17, TENANT-19)", async () => {
     useMultiMembershipMe();
     renderAppAt("/login");
     await login();
@@ -104,7 +104,7 @@ describe("TenantSelector", () => {
     expect(screen.getByText("Beta Inc")).toBeInTheDocument();
   });
 
-  it("membership sem name usa tenant_id como fallback de exibição (new-layout-migration, SHELL-20 Edge Case)", async () => {
+  it("membership without a name uses tenant_id as the display fallback (new-layout-migration, SHELL-20 Edge Case)", async () => {
     server.use(
       http.get("/api/auth/me", () =>
         HttpResponse.json({ ...legacyMembershipMe, active_tenant_id: undefined })
@@ -118,7 +118,7 @@ describe("TenantSelector", () => {
     expect(screen.getByText("tenant-legacy")).toBeInTheDocument();
   });
 
-  it("selecionar uma organização chama switch-tenant e leva para o dashboard (T17, TENANT-20)", async () => {
+  it("selecting an organization calls switch-tenant and leads to the dashboard (T17, TENANT-20)", async () => {
     useMultiMembershipMe();
     renderAppAt("/login");
     await login();
@@ -129,18 +129,18 @@ describe("TenantSelector", () => {
     await waitFor(() => expect(screen.queryByText("Selecione uma organização")).not.toBeInTheDocument());
   });
 
-  it("visita direta a /select-tenant com 1 membership redireciona para fora da tela (T17)", async () => {
+  it("direct visit to /select-tenant with 1 membership redirects away from the screen (T17)", async () => {
     renderAppAt("/login");
     await login();
 
-    // Já autenticado com 1 membership só - uma navegação direta para
-    // /select-tenant não teria nada para listar, então SelectTenantRoute
-    // redireciona para "/" em vez de mostrar uma lista vazia.
+    // Already authenticated with only 1 membership - a direct navigation to
+    // /select-tenant would have nothing to list, so SelectTenantRoute
+    // redirects to "/" instead of showing an empty list.
     await waitFor(() => expect(screen.queryByLabelText("E-mail")).not.toBeInTheDocument());
     expect(screen.queryByText("Selecione uma organização")).not.toBeInTheDocument();
   });
 
-  it("erro do switch-tenant mostra mensagem inline sem navegar (T17, TENANT-21)", async () => {
+  it("switch-tenant error shows an inline message without navigating (T17, TENANT-21)", async () => {
     useMultiMembershipMe();
     server.use(
       http.post("/api/auth/switch-tenant", () =>

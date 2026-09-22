@@ -45,7 +45,7 @@ describe("PollerStatusPage", () => {
   // skeleton blocks (not the old "Carregando…" paragraph as visible
   // content) inside an aria-busy container that still carries the sr-only
   // loading string.
-  it("mostra skeletons (não o texto) enquanto /api/poller/status carrega", async () => {
+  it("shows skeletons (not the text) while /api/poller/status is loading", async () => {
     server.use(
       http.get("/api/poller/status", async () => {
         await delay("infinite");
@@ -63,7 +63,7 @@ describe("PollerStatusPage", () => {
 
   // SKEL-06: once the fetch resolves, skeletons are gone and the real
   // stat cards/list take over - loading and loaded are mutually exclusive.
-  it("remove os skeletons assim que /api/poller/status termina de carregar", async () => {
+  it("removes the skeletons as soon as /api/poller/status finishes loading", async () => {
     await loginAsOwner();
     renderPage();
 
@@ -71,7 +71,7 @@ describe("PollerStatusPage", () => {
     expect(screen.queryAllByTestId("skeleton")).toHaveLength(0);
   });
 
-  it("mostra integração, última execução e resultado, mensagem de erro só em falha", async () => {
+  it("shows integration, last run and result, error message only on failure", async () => {
     await loginAsOwner();
     renderPage();
     expect(await screen.findByText("Datadog")).toBeInTheDocument();
@@ -79,7 +79,7 @@ describe("PollerStatusPage", () => {
     expect(screen.getAllByText("Última execução").length).toBeGreaterThan(0);
   });
 
-  it("integração com falha mostra tag Falha e a mensagem de erro", async () => {
+  it("integration with a failure shows the Falha tag and the error message", async () => {
     pollerStatus[0].status = "invalid";
     pollerStatus[0].last_error = "Credenciais inválidas";
     await loginAsOwner();
@@ -89,7 +89,7 @@ describe("PollerStatusPage", () => {
     expect(screen.getByText("Credenciais inválidas")).toBeInTheDocument();
   });
 
-  it("renderiza Pager com Página 1 de 1 (fixture cabe em uma página)", async () => {
+  it("renders Pager with Página 1 de 1 (fixture fits on one page)", async () => {
     await loginAsOwner();
     renderPage();
 
@@ -99,7 +99,7 @@ describe("PollerStatusPage", () => {
     expect(screen.getByRole("button", { name: "Próximo" })).toBeDisabled();
   });
 
-  it("clicar em Próximo busca a próxima página com o provider correto", async () => {
+  it("clicking Próximo fetches the next page with the correct provider", async () => {
     server.use(
       http.get("/api/poller/status", ({ request }) => {
         const page = new URL(request.url).searchParams.get("page") === "2" ? 2 : 1;
@@ -128,7 +128,7 @@ describe("PollerStatusPage", () => {
     expect(screen.getByText("Página 2 de 2")).toBeInTheDocument();
   });
 
-  it("poller ativo mostra stat cards com dados reais (líder, verificações/min, integrações)", async () => {
+  it("active poller shows stat cards with real data (leader, checks/min, integrations)", async () => {
     await loginAsOwner();
     renderPage();
 
@@ -141,7 +141,7 @@ describe("PollerStatusPage", () => {
     expect(screen.getByText("1")).toBeInTheDocument();
   });
 
-  it("réplica com application_name unknown (HOSTNAME não setado) mostra réplica local", async () => {
+  it("replica with application_name unknown (HOSTNAME not set) shows local replica", async () => {
     pollerLeadership.replica = { application_name: "unknown", backend_start: new Date().toISOString() };
     await loginAsOwner();
     renderPage();
@@ -149,7 +149,7 @@ describe("PollerStatusPage", () => {
     expect(await screen.findByText("Ativo · réplica local")).toBeInTheDocument();
   });
 
-  it("checks_last_minute igual a 0 é valor válido, não estado de erro", async () => {
+  it("checks_last_minute equal to 0 is a valid value, not an error state", async () => {
     pollerLeadership.checks_last_minute = 0;
     await loginAsOwner();
     renderPage();
@@ -158,7 +158,7 @@ describe("PollerStatusPage", () => {
     expect(screen.getByText("0")).toBeInTheDocument();
   });
 
-  it("lista de integrações vazia mostra mensagem e stat cards continuam com 0/0", async () => {
+  it("empty integrations list shows a message and stat cards stay at 0/0", async () => {
     server.use(
       http.get("/api/poller/status", () =>
         HttpResponse.json({
@@ -181,7 +181,7 @@ describe("PollerStatusPage", () => {
     expect(screen.getAllByText("0")).toHaveLength(2);
   });
 
-  it("líder eleito sem integração Datadog mostra Aguardando integração e banner de alerta", async () => {
+  it("elected leader without a Datadog integration shows Aguardando integração and an alert banner", async () => {
     pollerLeadership.poller_running = false;
     await loginAsOwner();
     renderPage();
@@ -190,7 +190,7 @@ describe("PollerStatusPage", () => {
     expect(screen.getByText("Réplica líder ativa, mas nenhuma integração Datadog conectada.")).toBeInTheDocument();
   });
 
-  it("sem líder eleito mostra Sem líder no momento, sem nome de réplica", async () => {
+  it("no elected leader shows Sem líder no momento, with no replica name", async () => {
     pollerLeadership.leader_elected = false;
     pollerLeadership.poller_running = false;
     pollerLeadership.replica = null;
@@ -200,7 +200,7 @@ describe("PollerStatusPage", () => {
     await screen.findByText("Sem líder no momento");
   });
 
-  it("integração falhando mostra banner de alerta nomeando o provider", async () => {
+  it("failing integration shows an alert banner naming the provider", async () => {
     pollerStatus[0].status = "invalid";
     pollerStatus[0].last_error = "Credenciais inválidas";
     await loginAsOwner();
@@ -212,7 +212,7 @@ describe("PollerStatusPage", () => {
     ).toBeInTheDocument();
   });
 
-  it("líder sem integração conectada e integração falhando mostram os 2 banners simultaneamente", async () => {
+  it("leader with no connected integration and a failing integration show both banners simultaneously", async () => {
     pollerLeadership.poller_running = false;
     pollerStatus[0].status = "invalid";
     pollerStatus[0].last_error = "Credenciais inválidas";
@@ -225,7 +225,7 @@ describe("PollerStatusPage", () => {
     ).toBeInTheDocument();
   });
 
-  it("estado saudável não mostra nenhum banner de alerta", async () => {
+  it("healthy state shows no alert banner", async () => {
     await loginAsOwner();
     renderPage();
 
@@ -236,7 +236,7 @@ describe("PollerStatusPage", () => {
     expect(screen.queryByText(/Falha ao verificar/)).not.toBeInTheDocument();
   });
 
-  it("erro ao carregar status do poller mostra estado de erro isolado", async () => {
+  it("error loading poller status shows an isolated error state", async () => {
     server.use(http.get("/api/poller/status", () => HttpResponse.json({ error: "boom" }, { status: 500 })));
     await loginAsOwner();
     renderPage();
@@ -244,7 +244,7 @@ describe("PollerStatusPage", () => {
     expect(await screen.findByText("Não foi possível carregar o status do poller.")).toBeInTheDocument();
   });
 
-  it("renderiza em inglês quando o idioma ativo é en", async () => {
+  it("renders in English when the active language is en", async () => {
     await loginAsOwner();
     await i18n.changeLanguage("en");
 

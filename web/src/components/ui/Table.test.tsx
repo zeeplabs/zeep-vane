@@ -12,7 +12,7 @@ const columns = [
 ];
 
 describe("Table", () => {
-  it("renderiza header uppercase e linhas com hairline que desvanece (48px)", () => {
+  it("renders an uppercase header and rows with a fading hairline (48px)", () => {
     const rows: Row[] = [{ id: "1", name: "Domínio A" }, { id: "2", name: "Domínio B" }];
     render(<Table columns={columns} rows={rows} rowKey={(r) => r.id} />);
 
@@ -25,7 +25,7 @@ describe("Table", () => {
     });
   });
 
-  it("renderiza mensagem vazia quando não há linhas", () => {
+  it("renders the empty message when there are no rows", () => {
     render(<Table columns={columns} rows={[]} rowKey={(r) => r.id} emptyMessage="Vazio" />);
     expect(screen.getByText("Vazio")).toBeInTheDocument();
   });

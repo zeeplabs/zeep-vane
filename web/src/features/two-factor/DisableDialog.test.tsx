@@ -37,8 +37,8 @@ function renderDialog(onDisabled: () => void = () => {}) {
 }
 
 describe("DisableDialog", () => {
-  // PROFPAGE-17: senha correta desativa e chama onDisabled.
-  it("senha correta desativa e chama onDisabled", async () => {
+  // PROFPAGE-17: correct password disables and calls onDisabled.
+  it("correct password disables and calls onDisabled", async () => {
     const user = userEvent.setup();
     const onDisabled = vi.fn();
     await loginAsOwner();
@@ -52,8 +52,8 @@ describe("DisableDialog", () => {
     expect(onDisabled).toHaveBeenCalledTimes(1);
   });
 
-  // PROFPAGE-18: senha errada mostra erro inline e NÃO desativa.
-  it("senha errada mostra erro inline e não chama onDisabled", async () => {
+  // PROFPAGE-18: wrong password shows an inline error and does NOT disable.
+  it("wrong password shows an inline error and does not call onDisabled", async () => {
     const user = userEvent.setup();
     const onDisabled = vi.fn();
     await loginAsOwner();

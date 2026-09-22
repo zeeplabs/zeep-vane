@@ -21,7 +21,7 @@ export interface Admin {
   phone?: string;
   role: Role;
   status: "active" | "pending";
-  // last_access is users-page USRPG-05's "Último acesso" - the most
+  // last_access is users-page USRPG-05's "Last access" - the most
   // recent sessions.last_seen_at for this user, null when they never had
   // a session (pending invite, or an active member who never logged in).
   last_access?: string | null;
@@ -101,8 +101,8 @@ export interface ServiceDetail extends Service {
 // DomainType/DomainStatus/DomainSSLStatus mirror the backend's
 // domain-verification-state contract (internal/api/domains_handler.go's
 // domainResponse) - "custom" is the only domain_type value the backend
-// ever produces today (domains-status-pages-page's Assumptions: "Subdomínio
-// Vane" ships disabled/decorative, no backend support).
+// ever produces today (domains-status-pages-page's Assumptions: "Vane
+// subdomain" ships disabled/decorative, no backend support).
 export type DomainType = "custom";
 export type DomainStatus = "pending" | "verified" | "error";
 export type DomainSSLStatus = "pending" | "active" | "error";

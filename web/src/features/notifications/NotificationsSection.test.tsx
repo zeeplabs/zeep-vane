@@ -78,7 +78,7 @@ describe("NotificationsSection", () => {
   // SKEL-04/05: while the initial request is in flight, the toggle rows'
   // label/hint text is replaced by skeleton blocks inside an aria-busy
   // container carrying the sr-only loading string.
-  it("mostra skeletons no lugar do texto enquanto as preferências carregam", async () => {
+  it("shows skeletons in place of the text while preferences are loading", async () => {
     await loginAsOwner();
     server.use(
       http.get("/api/auth/notification-preferences", async () => {
@@ -98,7 +98,7 @@ describe("NotificationsSection", () => {
 
   // SKEL-06: once the fetch resolves, skeletons are gone and the real
   // labels take over.
-  it("remove os skeletons assim que as preferências terminam de carregar", async () => {
+  it("removes the skeletons as soon as preferences finish loading", async () => {
     await loginAsOwner();
     renderSection();
 

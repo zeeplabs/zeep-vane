@@ -14,14 +14,14 @@ async function loginAsOwner() {
 }
 
 describe("status-pages hooks", () => {
-  it("useStatusPages retorna a lista da fixture", async () => {
+  it("useStatusPages returns the list from the fixture", async () => {
     await loginAsOwner();
     const { result } = renderHook(() => useStatusPages(1), { wrapper: TestQueryProvider });
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(result.current.data!.items.length).toBeGreaterThan(0);
   });
 
-  it("useCreateStatusPage envia corpo sem campos de domínio e a nova página nasce sem domínio, em draft (SPD-01)", async () => {
+  it("useCreateStatusPage sends a body with no domain fields and the new page starts with no domain, in draft (SPD-01)", async () => {
     await loginAsOwner();
     const { result } = renderHook(
       () => ({ pages: useStatusPages(1), create: useCreateStatusPage() }),
@@ -42,7 +42,7 @@ describe("status-pages hooks", () => {
     );
   });
 
-  it("useAttachDomain caminho feliz seta domain_id/subdomain e invalida a lista (SPD-06)", async () => {
+  it("useAttachDomain happy path sets domain_id/subdomain and invalidates the list (SPD-06)", async () => {
     await loginAsOwner();
     const { result } = renderHook(
       () => ({ pages: useStatusPages(1), create: useCreateStatusPage(), attach: useAttachDomain() }),
@@ -68,7 +68,7 @@ describe("status-pages hooks", () => {
     );
   });
 
-  it("useAttachDomain em página já com domínio (sp-1) surge como ApiError 409", async () => {
+  it("useAttachDomain on a page that already has a domain (sp-1) surfaces as ApiError 409", async () => {
     await loginAsOwner();
     const { result } = renderHook(() => useAttachDomain(), { wrapper: TestQueryProvider });
 
@@ -77,7 +77,7 @@ describe("status-pages hooks", () => {
     ).rejects.toSatisfy((err: unknown) => err instanceof ApiError && err.status === 409);
   });
 
-  it("useAttachDomain com domain_id inexistente surge como ApiError 422", async () => {
+  it("useAttachDomain with a nonexistent domain_id surfaces as ApiError 422", async () => {
     await loginAsOwner();
     const { result } = renderHook(
       () => ({ create: useCreateStatusPage(), attach: useAttachDomain() }),
@@ -97,7 +97,7 @@ describe("status-pages hooks", () => {
     ).rejects.toSatisfy((err: unknown) => err instanceof ApiError && err.status === 422);
   });
 
-  it("useAttachDomain em status page inexistente surge como ApiError 404", async () => {
+  it("useAttachDomain on a nonexistent status page surfaces as ApiError 404", async () => {
     await loginAsOwner();
     const { result } = renderHook(() => useAttachDomain(), { wrapper: TestQueryProvider });
 
@@ -106,14 +106,14 @@ describe("status-pages hooks", () => {
     ).rejects.toSatisfy((err: unknown) => err instanceof ApiError && err.status === 404);
   });
 
-  it("useDNSTarget retorna o valor configurado (SPD-10)", async () => {
+  it("useDNSTarget returns the configured value (SPD-10)", async () => {
     await loginAsOwner();
     const { result } = renderHook(() => useDNSTarget(), { wrapper: TestQueryProvider });
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(result.current.data).toBe("203.0.113.10");
   });
 
-  it("useDNSTarget retorna null quando o operador nunca configurou PUBLIC_DNS_TARGET", async () => {
+  it("useDNSTarget returns null when the operator never configured PUBLIC_DNS_TARGET", async () => {
     server.use(
       http.get("/api/instance/dns-target", () => HttpResponse.json({ target: null })),
     );

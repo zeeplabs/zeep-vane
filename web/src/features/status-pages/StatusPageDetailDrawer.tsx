@@ -8,7 +8,7 @@ import { useServices } from "../services/hooks";
 
 // publicUrl mirrors StatusPagesTable.tsx's own publicUrl()/DSP-17
 // null-safety guard, but returns null (not "—") here since the caller uses
-// the null-ness to decide whether "Ver página pública" renders at all.
+// the null-ness to decide whether "View public page" renders at all.
 function publicUrl(page: StatusPage, hostname: string | undefined): string | null {
   if (!page.domain_id || !page.subdomain || !hostname) return null;
   return `https://${page.subdomain}.${hostname}`;
@@ -17,23 +17,24 @@ function publicUrl(page: StatusPage, hostname: string | undefined): string | nul
 export interface StatusPageDetailDrawerProps {
   page: StatusPage | null;
   onClose: () => void;
-  /** Abre o `EditStatusPageDrawer` para esta página - o drawer de detalhe
-   * não navega mais para a tela separada `/status-pages/{id}`, a pedido
-   * explícito do Julio ("em tela separada nao ficou legal"). */
+  /** Opens the `EditStatusPageDrawer` for this page - the detail drawer
+   * no longer navigates to the separate `/status-pages/{id}` screen, at
+   * Julio's explicit request ("didn't look good in a separate screen"). */
   onEdit: (pageId: string) => void;
 }
 
-/** Drawer de detalhe (somente leitura) da aba Status Pages (spec.md
- * DSP-14/17): lista de serviços anexados, domínio vinculado, link "Ver
- * página pública" (ausente sem domínio), "Pré-visualizar página pública"
- * (endpoint de preview autenticado, funciona mesmo sem domínio anexado ou
- * antes de publicar - AD-008; movido pra cá em 2026-09-17, a pedido do
- * Julio: antes só existia no drawer de edição) e "Editar página" que abre
- * o `EditStatusPageDrawer` (edição em drawer, mesmo modelo do de criação).
+/** Read-only detail drawer for the Status Pages tab (spec.md
+ * DSP-14/17): list of attached services, linked domain, "View public
+ * page" link (absent with no domain), "Preview public page"
+ * (authenticated preview endpoint, works even with no domain attached or
+ * before publishing - AD-008; moved here on 2026-09-17, at Julio's
+ * request: it previously only existed in the edit drawer) and "Edit page"
+ * which opens the `EditStatusPageDrawer` (drawer-based editing, same
+ * pattern as creation).
  *
- * Não usa o <Drawer> compartilhado, mesmo motivo de `DomainDetailDrawer`/
- * `ServiceDetailDrawer`: o mock não tem título/rodapé com borda, é um
- * painel contínuo com badge de visibilidade+X no topo. */
+ * Doesn't use the shared <Drawer>, same reason as `DomainDetailDrawer`/
+ * `ServiceDetailDrawer`: the mock has no bordered title/footer, it's a
+ * continuous panel with a visibility badge+X at the top. */
 export function StatusPageDetailDrawer({ page, onClose, onEdit }: StatusPageDetailDrawerProps) {
   const { t } = useTranslation();
   // SPEC_DEVIATION: fixed page 1 for now - only used to resolve

@@ -55,7 +55,7 @@ async function reachTwoFactorStep() {
 }
 
 describe("LoginPage", () => {
-  it("login correto redireciona para /", async () => {
+  it("correct login redirects to /", async () => {
     render(<App />);
     await userEvent.type(screen.getByLabelText("E-mail"), "owner@vane.app");
     await userEvent.type(screen.getByLabelText("Senha"), "demo1234");
@@ -64,25 +64,25 @@ describe("LoginPage", () => {
     expect(await screen.findByText("home page")).toBeInTheDocument();
   });
 
-  it("login falho mostra erro exato sem redirecionar", async () => {
+  it("failed login shows the exact error without redirecting", async () => {
     render(<App />);
     await userEvent.type(screen.getByLabelText("E-mail"), "owner@vane.app");
     await userEvent.type(screen.getByLabelText("Senha"), "senhaerrada");
     await userEvent.click(screen.getByRole("button", { name: "Entrar" }));
 
-    // Backend real (genericLoginErrorBody, internal/api/auth_handler.go) retorna
-    // essa mensagem em inglês, sem i18n - gap de UX conhecido, fora do escopo
-    // desta rodada de integração (ver AD-007 backlog).
+    // The real backend (genericLoginErrorBody, internal/api/auth_handler.go)
+    // returns this message in English, without i18n - a known UX gap, out of
+    // scope for this integration round (see AD-007 backlog).
     expect(await screen.findByRole("alert")).toHaveTextContent("invalid email or password");
     expect(screen.queryByText("home page")).not.toBeInTheDocument();
   });
 
-  it("não existe toggle de preview de erro (recurso só do protótipo Figma)", () => {
+  it("there is no error-preview toggle (a Figma-prototype-only feature)", () => {
     render(<App />);
     expect(screen.queryByText(/preview/i)).not.toBeInTheDocument();
   });
 
-  it("toggle de visibilidade da senha alterna o tipo do input", async () => {
+  it("password visibility toggle switches the input type", async () => {
     render(<App />);
     const passwordInput = screen.getByLabelText("Senha") as HTMLInputElement;
     expect(passwordInput.type).toBe("password");
@@ -90,8 +90,8 @@ describe("LoginPage", () => {
     expect(passwordInput.type).toBe("text");
   });
 
-  // LOGIN2FA-01: 2FA ativa troca o form pelo passo de verificação, sem sessão.
-  it("login com 2FA mostra o passo de verificação sem autenticar", async () => {
+  // LOGIN2FA-01: active 2FA swaps the form for the verification step, without a session.
+  it("login with 2FA shows the verification step without authenticating", async () => {
     setTwoFactorEnabled(true);
     render(<App />);
     await reachTwoFactorStep();
@@ -100,8 +100,8 @@ describe("LoginPage", () => {
     expect(screen.getByTestId("location")).toHaveTextContent("/login");
   });
 
-  // LOGIN2FA-02: código válido conclui o login.
-  it("código válido conclui o login", async () => {
+  // LOGIN2FA-02: a valid code completes the login.
+  it("valid code completes the login", async () => {
     setTwoFactorEnabled(true);
     render(<App />);
     await reachTwoFactorStep();
@@ -112,8 +112,8 @@ describe("LoginPage", () => {
     expect(await screen.findByText("home page")).toBeInTheDocument();
   });
 
-  // LOGIN2FA-03: código inválido mostra erro inline e mantém o passo.
-  it("código inválido mostra erro inline e mantém o passo", async () => {
+  // LOGIN2FA-03: invalid code shows an inline error and keeps the step.
+  it("invalid code shows an inline error and keeps the step", async () => {
     setTwoFactorEnabled(true);
     render(<App />);
     await reachTwoFactorStep();
@@ -128,8 +128,8 @@ describe("LoginPage", () => {
     expect(screen.getByLabelText("Código de verificação")).toBeInTheDocument();
   });
 
-  // LOGIN2FA-05: o código de recuperação válido também conclui o login.
-  it("código de recuperação válido conclui o login", async () => {
+  // LOGIN2FA-05: a valid recovery code also completes the login.
+  it("valid recovery code completes the login", async () => {
     seedRecoveryCode("REC-0001");
     setTwoFactorEnabled(true);
     render(<App />);
@@ -142,8 +142,8 @@ describe("LoginPage", () => {
     expect(await screen.findByText("home page")).toBeInTheDocument();
   });
 
-  // LOGIN2FA-06: código de recuperação inválido mostra erro e mantém o passo.
-  it("código de recuperação inválido mostra erro e mantém o passo", async () => {
+  // LOGIN2FA-06: invalid recovery code shows an error and keeps the step.
+  it("invalid recovery code shows an error and keeps the step", async () => {
     setTwoFactorEnabled(true);
     render(<App />);
     await reachTwoFactorStep();
@@ -158,8 +158,8 @@ describe("LoginPage", () => {
     expect(screen.getByLabelText("Código de recuperação")).toBeInTheDocument();
   });
 
-  // LOGIN2FA-07: alternar o método limpa o erro exibido.
-  it("alternar o método limpa o erro", async () => {
+  // LOGIN2FA-07: switching the method clears the displayed error.
+  it("switching the method clears the error", async () => {
     setTwoFactorEnabled(true);
     render(<App />);
     await reachTwoFactorStep();
@@ -173,9 +173,9 @@ describe("LoginPage", () => {
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
 
-  // LOGIN2FA-08/09: Voltar retorna às credenciais; o challenge token nunca vai
-  // para a URL nem para o armazenamento do navegador.
-  it("Voltar retorna às credenciais e o token não é persistido", async () => {
+  // LOGIN2FA-08/09: Back returns to the credentials; the challenge token never
+  // goes into the URL or into browser storage.
+  it("Back returns to the credentials and the token is not persisted", async () => {
     setTwoFactorEnabled(true);
     render(<App />);
     await reachTwoFactorStep();
@@ -189,8 +189,8 @@ describe("LoginPage", () => {
     expect(JSON.stringify(window.sessionStorage)).not.toContain("msw-2fa-challenge");
   });
 
-  // LOGIN2FA-04: usuário sem 2FA continua entrando direto.
-  it("login sem 2FA não mostra o passo de verificação", async () => {
+  // LOGIN2FA-04: a user without 2FA keeps logging in directly.
+  it("login without 2FA does not show the verification step", async () => {
     render(<App />);
     await userEvent.type(screen.getByLabelText("E-mail"), "owner@vane.app");
     await userEvent.type(screen.getByLabelText("Senha"), "demo1234");
@@ -200,8 +200,8 @@ describe("LoginPage", () => {
     expect(screen.queryByLabelText("Código de verificação")).not.toBeInTheDocument();
   });
 
-  // LOGIN2FA-12: todas as strings novas renderizam em inglês com locale en.
-  it("renderiza o passo de 2FA em inglês quando o locale é en", async () => {
+  // LOGIN2FA-12: all new strings render in English with the en locale.
+  it("renders the 2FA step in English when the locale is en", async () => {
     setTwoFactorEnabled(true);
     await act(async () => {
       await i18n.changeLanguage("en");
@@ -220,16 +220,16 @@ describe("LoginPage", () => {
     expect(screen.getByLabelText("Recovery code")).toBeInTheDocument();
   });
 
-  // DEPMODE-07/08: o link "Criar conta" só aparece quando a instalação
-  // aceita signup.
-  it("mostra o link 'Criar conta' em modo saas (AD-033)", async () => {
+  // DEPMODE-07/08: the "Criar conta" link only appears when the installation
+  // accepts signup.
+  it("shows the 'Criar conta' link in saas mode (AD-033)", async () => {
     setDeploymentMode("saas");
     render(<App />);
 
     expect(await screen.findByRole("link", { name: "Criar conta" })).toBeInTheDocument();
   });
 
-  it("oculta o link 'Criar conta' em modo self_hosted (AD-033)", async () => {
+  it("hides the 'Criar conta' link in self_hosted mode (AD-033)", async () => {
     setDeploymentMode("self_hosted");
     render(<App />);
 

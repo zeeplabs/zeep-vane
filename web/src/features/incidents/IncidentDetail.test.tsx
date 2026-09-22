@@ -36,7 +36,7 @@ function renderDetail(id: string) {
 }
 
 describe("IncidentDetail", () => {
-  it("timeline renderiza updates mais recente primeiro", async () => {
+  it("timeline renders updates most recent first", async () => {
     await loginAs("owner@vane.app");
     renderDetail("inc-1");
     await screen.findByText(/Identificamos aumento de latência/);
@@ -48,7 +48,7 @@ describe("IncidentDetail", () => {
     expect(bodies[1]).toHaveTextContent("Identificamos aumento de latência");
   });
 
-  it("adicionar 2 updates aparece em ordem cronológica reversa", async () => {
+  it("adding 2 updates appears in reverse chronological order", async () => {
     await loginAs("owner@vane.app");
     renderDetail("inc-1");
     await screen.findByText(/Identificamos aumento de latência/);
@@ -67,7 +67,7 @@ describe("IncidentDetail", () => {
     expect(bodies[1]).toHaveTextContent("Primeiro update novo");
   });
 
-  it("marcar como resolvido move o incidente pro histórico mantendo a timeline acessível", async () => {
+  it("marking as resolved moves the incident to history while keeping the timeline accessible", async () => {
     await loginAs("owner@vane.app");
     renderDetail("inc-1");
     await screen.findByText(/Identificamos aumento de latência/);
@@ -78,7 +78,7 @@ describe("IncidentDetail", () => {
     expect(screen.getByText(/Identificamos aumento de latência/)).toBeInTheDocument();
   });
 
-  it("viewer não vê formulário de update nem botões de transição", async () => {
+  it("viewer doesn't see the update form or transition buttons", async () => {
     await loginAs("viewer@vane.app");
     renderDetail("inc-1");
     await screen.findByText(/Identificamos aumento de latência/);
@@ -88,7 +88,7 @@ describe("IncidentDetail", () => {
 
   // AI-19/AI-20/AI-21/AI-22: inc-1's fixture (mockData.ts) already carries a
   // pending_close_comment, so the banner shows out of the box for an owner.
-  it("mostra banner de proposta de encerramento com botões confirmar/descartar (owner)", async () => {
+  it("shows the close proposal banner with confirm/discard buttons (owner)", async () => {
     await loginAs("owner@vane.app");
     renderDetail("inc-1");
 
@@ -97,7 +97,7 @@ describe("IncidentDetail", () => {
     expect(screen.getByRole("button", { name: "Descartar" })).toBeInTheDocument();
   });
 
-  it("inc-2, sem proposta pendente, não mostra o banner de encerramento", async () => {
+  it("inc-2, with no pending proposal, doesn't show the close banner", async () => {
     await loginAs("owner@vane.app");
     renderDetail("inc-2");
 
@@ -106,7 +106,7 @@ describe("IncidentDetail", () => {
     expect(screen.queryByRole("button", { name: "Descartar" })).not.toBeInTheDocument();
   });
 
-  it("viewer vê o banner de proposta mas não vê os botões confirmar/descartar", async () => {
+  it("viewer sees the proposal banner but not the confirm/discard buttons", async () => {
     await loginAs("viewer@vane.app");
     renderDetail("inc-1");
 
@@ -115,7 +115,7 @@ describe("IncidentDetail", () => {
     expect(screen.queryByRole("button", { name: "Descartar" })).not.toBeInTheDocument();
   });
 
-  it("confirmar encerramento resolve o incidente e o banner desaparece", async () => {
+  it("confirming close resolves the incident and the banner disappears", async () => {
     await loginAs("owner@vane.app");
     renderDetail("inc-1");
 
@@ -126,11 +126,11 @@ describe("IncidentDetail", () => {
       expect(screen.queryByRole("button", { name: "Confirmar encerramento" })).not.toBeInTheDocument()
     );
     expect(screen.getByText("Resolvido")).toBeInTheDocument();
-    // O comentário de encerramento é publicado como update final (AI-20).
+    // The close comment is published as the final update (AI-20).
     expect(screen.getByText(/Latência normalizada após rollback/)).toBeInTheDocument();
   });
 
-  it("descartar a proposta remove o banner sem alterar o status do incidente", async () => {
+  it("discarding the proposal removes the banner without changing the incident status", async () => {
     await loginAs("owner@vane.app");
     renderDetail("inc-1");
 
@@ -143,7 +143,7 @@ describe("IncidentDetail", () => {
     expect(screen.queryByText("Resolvido")).not.toBeInTheDocument();
   });
 
-  it("erro ao confirmar encerramento mostra alerta inline e mantém o banner", async () => {
+  it("error confirming close shows an inline alert and keeps the banner", async () => {
     server.use(
       http.post("/api/incidents/:id/confirm-close", () =>
         HttpResponse.json({ error: "incident has no pending close proposal" }, { status: 422 })
@@ -159,7 +159,7 @@ describe("IncidentDetail", () => {
     expect(screen.getByRole("button", { name: "Confirmar encerramento" })).toBeInTheDocument();
   });
 
-  it("erro ao descartar a proposta mostra alerta inline e mantém o banner", async () => {
+  it("error discarding the proposal shows an inline alert and keeps the banner", async () => {
     server.use(
       http.post("/api/incidents/:id/discard-close-proposal", () =>
         HttpResponse.json({ error: "incident has no pending close proposal" }, { status: 422 })

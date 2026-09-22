@@ -18,7 +18,7 @@ afterEach(async () => {
 });
 
 describe("usePublicStatusPage", () => {
-  it("retorna company_name/logo_url da resposta da API, não de mockData.companySettings", async () => {
+  it("returns company_name/logo_url from the API response, not from mockData.companySettings", async () => {
     server.use(
       http.get("/api/status-pages/:id/public-preview", () =>
         HttpResponse.json({
@@ -37,7 +37,7 @@ describe("usePublicStatusPage", () => {
     expect(result.current.data!.logo_url).toBe("/uploads/logo");
   });
 
-  it("logo_url null na resposta da API é preservado, nunca substituído por um placeholder", async () => {
+  it("logo_url null in the API response is preserved, never replaced by a placeholder", async () => {
     server.use(
       http.get("/api/status-pages/:id/public-preview", () =>
         HttpResponse.json({
@@ -84,7 +84,7 @@ describe("usePublicStatusPage", () => {
     );
   }
 
-  it("carrega apenas a página 1 (10 itens) dos incidentes resolvidos ao montar", async () => {
+  it("loads only page 1 (10 items) of resolved incidents on mount", async () => {
     mockManyResolvedIncidents(11);
     await loginAsOwner();
 
@@ -96,7 +96,7 @@ describe("usePublicStatusPage", () => {
     expect(result.current.hasMoreResolved).toBe(true);
   });
 
-  it("loadMoreResolvedIncidents adiciona a página 2 sem substituir/reordenar a página 1", async () => {
+  it("loadMoreResolvedIncidents adds page 2 without replacing/reordering page 1", async () => {
     mockManyResolvedIncidents(11);
     await loginAsOwner();
 
@@ -113,7 +113,7 @@ describe("usePublicStatusPage", () => {
 
   // public-status-time-range-selector T7: usePublicStatusPage threads its
   // `range` argument into the fetch URL and the React Query cache key.
-  it("usePublicStatusPage(id, '90d') busca ...&range=90d", async () => {
+  it("usePublicStatusPage(id, '90d') fetches ...&range=90d", async () => {
     let receivedRange: string | null = null;
     server.use(
       http.get("/api/status-pages/:id/public-preview", ({ request }) => {
@@ -133,7 +133,7 @@ describe("usePublicStatusPage", () => {
     expect(receivedRange).toBe("90d");
   });
 
-  it("default (sem range) preserva o comportamento de hoje: busca com range=24h", async () => {
+  it("default (no range) preserves today's behavior: fetches with range=24h", async () => {
     let receivedRange: string | null = null;
     server.use(
       http.get("/api/status-pages/:id/public-preview", ({ request }) => {
@@ -153,7 +153,7 @@ describe("usePublicStatusPage", () => {
     expect(receivedRange).toBe("24h");
   });
 
-  it("mudar range entre renders produz um queryKey/fetch distinto, não serve do cache do 24h", async () => {
+  it("changing range between renders produces a distinct queryKey/fetch, not served from the 24h cache", async () => {
     const requestedRanges: string[] = [];
     server.use(
       http.get("/api/status-pages/:id/public-preview", ({ request }) => {

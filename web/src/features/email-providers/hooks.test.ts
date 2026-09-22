@@ -18,7 +18,7 @@ async function loginAsOwner() {
 }
 
 describe("email-providers hooks", () => {
-  it("useEmailProviders retorna lista vazia e active_provider nulo quando nada foi conectado", async () => {
+  it("useEmailProviders returns an empty list and a null active_provider when nothing was connected", async () => {
     await loginAsOwner();
     const { result } = renderHook(() => useEmailProviders(1), { wrapper: TestQueryProvider });
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
@@ -26,7 +26,7 @@ describe("email-providers hooks", () => {
     expect(result.current.data?.providers).toEqual([]);
   });
 
-  it("useConnectEmailProvider conecta e invalida useEmailProviders em sucesso", async () => {
+  it("useConnectEmailProvider connects and invalidates useEmailProviders on success", async () => {
     await loginAsOwner();
     const { result } = renderHook(
       () => ({ list: useEmailProviders(1), connect: useConnectEmailProvider("sendgrid") }),
@@ -47,7 +47,7 @@ describe("email-providers hooks", () => {
     );
   });
 
-  it("useConnectEmailProvider propaga ApiError 422 numa chave inválida", async () => {
+  it("useConnectEmailProvider propagates ApiError 422 for an invalid key", async () => {
     await loginAsOwner();
     const { result } = renderHook(() => useConnectEmailProvider("resend"), { wrapper: TestQueryProvider });
 
@@ -56,7 +56,7 @@ describe("email-providers hooks", () => {
     ).rejects.toBeInstanceOf(ApiError);
   });
 
-  it("useActivateEmailProvider ativa um provider conectado e invalida a lista", async () => {
+  it("useActivateEmailProvider activates a connected provider and invalidates the list", async () => {
     await loginAsOwner();
     const { result } = renderHook(
       () => ({
@@ -78,7 +78,7 @@ describe("email-providers hooks", () => {
     await waitFor(() => expect(result.current.list.data?.active_provider).toBe("resend"));
   });
 
-  it("useActivateEmailProvider propaga ApiError 422 para um provider não conectado", async () => {
+  it("useActivateEmailProvider propagates ApiError 422 for a provider that isn't connected", async () => {
     await loginAsOwner();
     const { result } = renderHook(() => useActivateEmailProvider(), { wrapper: TestQueryProvider });
 
@@ -88,7 +88,7 @@ describe("email-providers hooks", () => {
   // PROVDISC-07/08: mirrors useActivateEmailProvider's own coverage - a
   // DELETE with no body, invalidating the same ["integrations", "email"]
   // query key on success so the disconnected row disappears from the list.
-  it("useDisconnectEmailProvider desconecta um provider conectado e invalida a lista", async () => {
+  it("useDisconnectEmailProvider disconnects a connected provider and invalidates the list", async () => {
     await loginAsOwner();
     const { result } = renderHook(
       () => ({
@@ -115,14 +115,14 @@ describe("email-providers hooks", () => {
     );
   });
 
-  it("useDisconnectEmailProvider é idempotente - desconectar um provider nunca conectado ainda resolve com sucesso", async () => {
+  it("useDisconnectEmailProvider is idempotent - disconnecting a provider that was never connected still resolves successfully", async () => {
     await loginAsOwner();
     const { result } = renderHook(() => useDisconnectEmailProvider(), { wrapper: TestQueryProvider });
 
     await expect(result.current.mutateAsync("resend")).resolves.toBeUndefined();
   });
 
-  it("useDisconnectEmailProvider propaga ApiError 404 para um nome de provider desconhecido", async () => {
+  it("useDisconnectEmailProvider propagates ApiError 404 for an unknown provider name", async () => {
     await loginAsOwner();
     const { result } = renderHook(() => useDisconnectEmailProvider(), { wrapper: TestQueryProvider });
 

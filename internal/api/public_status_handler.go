@@ -49,7 +49,7 @@ type companySettingsGetter interface {
 
 // incidentRetentionDays is the public status page's incident history
 // retention window (spec.md Assumptions: "Janela de retenção de histórico
-// de incidentes/uptime" - 90 dias).
+// de incidentes/uptime" - 90 days).
 const incidentRetentionDays = 90
 
 // publicResolvedIncidentsPageSize is the fixed page size for the public

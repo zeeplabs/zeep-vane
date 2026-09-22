@@ -69,7 +69,7 @@ function AdminEmailProbe() {
 }
 
 describe("TenantSwitcher", () => {
-  it("mostra a identidade do tenant sem dropdown pra usuário com 1 único membership (SHELL-10)", async () => {
+  it("shows the tenant identity with no dropdown for a user with a single membership (SHELL-10)", async () => {
     await loginAs("owner@vane.app");
     const { container } = render(
       <TestQueryProvider>
@@ -89,7 +89,7 @@ describe("TenantSwitcher", () => {
     expect(container.querySelector("[aria-haspopup]")).not.toBeInTheDocument();
   });
 
-  it("lista todos os memberships com nome e badge de plano, tenant ativo marcado (SHELL-11)", async () => {
+  it("lists all memberships with name and plan badge, active tenant marked (SHELL-11)", async () => {
     useMultiMembershipMe([
       { tenant_id: "tenant-1", role: "owner", name: "Acme Corp", plan_tier: "scale" },
       { tenant_id: "tenant-2", role: "operator", name: "Beta Inc", plan_tier: "" },
@@ -105,11 +105,11 @@ describe("TenantSwitcher", () => {
     expect(acmeOption).toHaveAttribute("aria-selected", "true");
     expect(betaOption).toHaveAttribute("aria-selected", "false");
     expect(acmeOption).toHaveTextContent("scale");
-    // plan_tier vazio mostra a pill "Free" (spec.md SHELL-21 / design.md Error Handling).
+    // empty plan_tier shows the "Free" pill (spec.md SHELL-21 / design.md Error Handling).
     expect(betaOption).toHaveTextContent("Free");
   });
 
-  it("selecionar outro tenant chama switchTenant e atualiza o tenant ativo (SHELL-11)", async () => {
+  it("selecting another tenant calls switchTenant and updates the active tenant (SHELL-11)", async () => {
     useMultiMembershipMe([
       { tenant_id: "tenant-1", role: "owner", name: "Acme Corp", plan_tier: "scale" },
       { tenant_id: "tenant-2", role: "operator", name: "Beta Inc", plan_tier: "" },
@@ -122,11 +122,11 @@ describe("TenantSwitcher", () => {
     await userEvent.click(screen.getByRole("option", { name: /Beta Inc/ }));
 
     await waitFor(() => expect(screen.getAllByText("Beta Inc").length).toBeGreaterThan(0));
-    // O trigger (fechado) agora mostra o novo tenant ativo.
+    // The (closed) trigger now shows the new active tenant.
     expect(screen.getByRole("button")).toHaveTextContent("Beta Inc");
   });
 
-  it("selecionar o tenant já ativo não chama switch-tenant novamente", async () => {
+  it("selecting the already-active tenant does not call switch-tenant again", async () => {
     let switchCalls = 0;
     server.use(
       http.get("/api/auth/me", () =>
@@ -157,7 +157,7 @@ describe("TenantSwitcher", () => {
     expect(switchCalls).toBe(0);
   });
 
-  it("membership sem name usa tenant_id como fallback de exibição (Edge Case)", async () => {
+  it("membership with no name uses tenant_id as the display fallback (Edge Case)", async () => {
     useMultiMembershipMe([
       { tenant_id: "tenant-legacy", role: "owner", name: "", plan_tier: "" },
       { tenant_id: "tenant-2", role: "operator", name: "Beta Inc", plan_tier: "" },

@@ -16,7 +16,7 @@ describe("applyBootTheme (SHELL-07)", () => {
     vi.restoreAllMocks();
   });
 
-  it("aplica data-theme=dark quando o tema persistido é dark", () => {
+  it("applies data-theme=dark when the persisted theme is dark", () => {
     vi.spyOn(window.localStorage.__proto__, "getItem").mockReturnValue("dark");
 
     applyBootTheme();
@@ -24,7 +24,7 @@ describe("applyBootTheme (SHELL-07)", () => {
     expect(document.documentElement.dataset.theme).toBe("dark");
   });
 
-  it("não define data-theme quando nada está persistido (padrão claro)", () => {
+  it("does not set data-theme when nothing is persisted (light default)", () => {
     vi.spyOn(window.localStorage.__proto__, "getItem").mockReturnValue(null);
 
     applyBootTheme();
@@ -32,7 +32,7 @@ describe("applyBootTheme (SHELL-07)", () => {
     expect(document.documentElement.dataset.theme).toBeUndefined();
   });
 
-  it("não define data-theme quando o persistido é light", () => {
+  it("does not set data-theme when the persisted value is light", () => {
     vi.spyOn(window.localStorage.__proto__, "getItem").mockReturnValue("light");
 
     applyBootTheme();
@@ -40,7 +40,7 @@ describe("applyBootTheme (SHELL-07)", () => {
     expect(document.documentElement.dataset.theme).toBeUndefined();
   });
 
-  it("não lança e mantém o padrão claro se localStorage falhar", () => {
+  it("does not throw and keeps the light default if localStorage fails", () => {
     vi.spyOn(window.localStorage.__proto__, "getItem").mockImplementation(() => {
       throw new Error("localStorage unavailable");
     });

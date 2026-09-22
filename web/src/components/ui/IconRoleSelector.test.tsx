@@ -5,7 +5,7 @@ import i18n from "../../lib/i18n";
 import { IconRoleSelector } from "./IconRoleSelector";
 
 describe("IconRoleSelector", () => {
-  it("marca o papel atual como ativo (accent) e os outros a 40% opacidade", () => {
+  it("marks the current role as active (accent) and the others at 40% opacity", () => {
     render(<IconRoleSelector role="operator" onSelect={() => {}} />);
     const owner = screen.getByRole("button", { name: "Owner" });
     const operator = screen.getByRole("button", { name: "Operator" });
@@ -18,7 +18,7 @@ describe("IconRoleSelector", () => {
     expect(viewer.className).toContain("opacity-40");
   });
 
-  it("clique dispara onSelect apenas com o papel correspondente ao ícone clicado", async () => {
+  it("clicking fires onSelect only with the role matching the clicked icon", async () => {
     const onSelect = vi.fn();
     render(<IconRoleSelector role="viewer" onSelect={onSelect} />);
     await userEvent.click(screen.getByRole("button", { name: "Owner" }));
@@ -29,7 +29,7 @@ describe("IconRoleSelector", () => {
     expect(onSelect).toHaveBeenCalledWith("operator");
   });
 
-  it("não exige confirmação embutida — onSelect dispara direto no clique", async () => {
+  it("does not require an inline confirmation — onSelect fires directly on click", async () => {
     const onSelect = vi.fn();
     render(<IconRoleSelector role="owner" onSelect={onSelect} />);
     await userEvent.click(screen.getByRole("button", { name: "Viewer" }));
@@ -37,7 +37,7 @@ describe("IconRoleSelector", () => {
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 
-  it("renderiza em inglês quando o idioma ativo é en", async () => {
+  it("renders in English when the active language is en", async () => {
     await i18n.changeLanguage("en");
 
     try {

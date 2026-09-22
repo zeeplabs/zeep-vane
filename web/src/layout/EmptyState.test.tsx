@@ -3,7 +3,7 @@ import { render, screen } from "@testing-library/react";
 import { EmptyState } from "./EmptyState";
 
 describe("EmptyState", () => {
-  it("renderiza título e CTA customizados", () => {
+  it("renders custom title and CTA", () => {
     render(
       <EmptyState
         title="Nenhum domínio cadastrado"

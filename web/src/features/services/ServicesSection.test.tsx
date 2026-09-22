@@ -36,7 +36,7 @@ describe("ServicesSection", () => {
   // SKEL-04/05: while /api/services is loading, skeleton rows render (not
   // the old "Carregando…" paragraph as visible content) inside an
   // aria-busy container that still carries the sr-only loading string.
-  it("mostra skeletons (não o texto) enquanto /api/services carrega", async () => {
+  it("shows skeletons (not the text) while /api/services is loading", async () => {
     server.use(
       http.get("/api/services", async () => {
         await delay("infinite");
@@ -54,7 +54,7 @@ describe("ServicesSection", () => {
 
   // SKEL-06: once the fetch resolves, skeletons are gone and the real
   // content (or its empty state) takes over.
-  it("remove os skeletons assim que /api/services termina de carregar", async () => {
+  it("removes the skeletons as soon as /api/services finishes loading", async () => {
     await loginAsOwner();
     renderSection();
 

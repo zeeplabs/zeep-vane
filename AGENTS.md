@@ -60,6 +60,7 @@ docker stop vane-test-pg
 - React Query `queryKey` for paginated data must include the page number (`["resource", page]`) so each page gets its own cache entry — omitting it causes stale/cross-page data bugs.
 - User-facing strings go through `react-i18next` — this app ships pt-BR and English. No hardcoded strings in components.
 - MSW (`web/src/test/msw/handlers.ts`) mocks must mirror the real backend response shape exactly, including the `Page<T>` envelope for paginated endpoints — a mock returning a bare array while the backend returns `{items,...}` will pass TypeScript (the frontend defines its own types) but crash at runtime. Use the existing `paginatedPage()` helper for new paginated mock endpoints instead of hand-rolling pagination logic.
+- All code-facing text is English, always — test `describe`/`it`/`test` names, code comments, commit messages, variable/function names, error messages logged server-side, everything that isn't a `t()`-routed user-facing string. `react-i18next` locale JSON files (`web/src/locales/*.json`) are the one exception, since pt-BR content there is the actual product. This applies to both `web/` (TS/TSX) and the Go backend.
 
 ## 6. Documentation that must stay in sync
 

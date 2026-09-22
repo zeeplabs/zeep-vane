@@ -36,7 +36,7 @@ function renderAvatarMenu() {
 }
 
 describe("AvatarMenu", () => {
-  it("mostra nome e e-mail do admin autenticado", async () => {
+  it("shows the authenticated admin's name and email", async () => {
     await loginAs("owner@vane.app");
     renderAvatarMenu();
     await userEvent.click(await screen.findByRole("button", { name: "Menu do usuário" }));
@@ -45,7 +45,7 @@ describe("AvatarMenu", () => {
     expect(screen.getByText("owner@vane.app")).toBeInTheDocument();
   });
 
-  it("mostra 'Configurações' para owner", async () => {
+  it("shows 'Configurações' for owner", async () => {
     await loginAs("owner@vane.app");
     renderAvatarMenu();
     await userEvent.click(await screen.findByRole("button", { name: "Menu do usuário" }));
@@ -53,7 +53,7 @@ describe("AvatarMenu", () => {
     expect(screen.getByRole("menuitem", { name: "Configurações" })).toHaveAttribute("href", "/settings");
   });
 
-  it("esconde 'Configurações' para non-owner", async () => {
+  it("hides 'Configurações' for non-owner", async () => {
     await loginAs("viewer@vane.app");
     renderAvatarMenu();
     await userEvent.click(await screen.findByRole("button", { name: "Menu do usuário" }));
@@ -61,8 +61,8 @@ describe("AvatarMenu", () => {
     expect(screen.queryByRole("menuitem", { name: "Configurações" })).not.toBeInTheDocument();
   });
 
-  // PROFPAGE-02: o link "Meu Perfil" aponta para /profile para qualquer papel.
-  it("mostra 'Meu Perfil' linkando para /profile para owner", async () => {
+  // PROFPAGE-02: the "Meu Perfil" link points to /profile for any role.
+  it("shows 'Meu Perfil' linking to /profile for owner", async () => {
     await loginAs("owner@vane.app");
     renderAvatarMenu();
     await userEvent.click(await screen.findByRole("button", { name: "Menu do usuário" }));
@@ -70,7 +70,7 @@ describe("AvatarMenu", () => {
     expect(screen.getByRole("menuitem", { name: "Meu Perfil" })).toHaveAttribute("href", "/profile");
   });
 
-  it("mostra 'Meu Perfil' para non-owner (qualquer papel)", async () => {
+  it("shows 'Meu Perfil' for non-owner (any role)", async () => {
     await loginAs("viewer@vane.app");
     renderAvatarMenu();
     await userEvent.click(await screen.findByRole("button", { name: "Menu do usuário" }));
@@ -78,7 +78,7 @@ describe("AvatarMenu", () => {
     expect(screen.getByRole("menuitem", { name: "Meu Perfil" })).toHaveAttribute("href", "/profile");
   });
 
-  it("'Sair' abre o LogoutConfirmDialog e confirmar chama logout", async () => {
+  it("'Sair' opens the LogoutConfirmDialog and confirming calls logout", async () => {
     await loginAs("owner@vane.app");
     renderAvatarMenu();
     await userEvent.click(await screen.findByRole("button", { name: "Menu do usuário" }));
@@ -87,8 +87,8 @@ describe("AvatarMenu", () => {
     expect(screen.getByText("Sair do painel")).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "Sair" }));
 
-    // logout() bem-sucedido leva o admin de volta a null - o botão de menu
-    // some (guard `if (!admin) return null`).
+    // A successful logout() brings admin back to null - the menu button
+    // disappears (guard `if (!admin) return null`).
     await waitFor(() => expect(screen.queryByRole("button", { name: "Menu do usuário" })).not.toBeInTheDocument());
   });
 });

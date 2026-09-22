@@ -49,7 +49,7 @@ describe("AdminsPage", () => {
   // SKEL-04/05: while /api/admins is loading, the page shows skeleton rows
   // (not the old "Carregando…" paragraph as visible content) inside an
   // aria-busy container that still carries the sr-only loading string.
-  it("mostra skeletons (não o texto) enquanto /api/admins carrega", async () => {
+  it("shows skeletons (not the text) while /api/admins loads", async () => {
     server.use(
       http.get("/api/admins", async () => {
         await delay("infinite");
@@ -68,7 +68,7 @@ describe("AdminsPage", () => {
   // SKEL-06: once the fetch resolves, skeletons are gone and the real table
   // (or its empty state) takes over - loading and loaded are mutually
   // exclusive.
-  it("remove os skeletons assim que /api/admins termina de carregar", async () => {
+  it("removes the skeletons as soon as /api/admins finishes loading", async () => {
     await loginAsOwner();
     renderPage();
 
@@ -76,7 +76,7 @@ describe("AdminsPage", () => {
     expect(screen.queryAllByTestId("skeleton")).toHaveLength(0);
   });
 
-  it("lista todos os usuários (ativos e pendentes) numa única tabela (USRPG-01)", async () => {
+  it("lists all users (active and pending) in a single table (USRPG-01)", async () => {
     await loginAsOwner();
     renderPage();
 
@@ -87,7 +87,7 @@ describe("AdminsPage", () => {
     expect(within(rowFor("novo-operador@vane.app")).getByText("Pendente")).toBeInTheDocument();
   });
 
-  it("rótulos de papel são Admin/Membro/Leitura, nunca owner/operator/viewer (USRPG-01)", async () => {
+  it("role labels are Admin/Membro/Leitura, never owner/operator/viewer (USRPG-01)", async () => {
     await loginAsOwner();
     renderPage();
     await screen.findByText("owner@vane.app");
@@ -98,7 +98,7 @@ describe("AdminsPage", () => {
     expect(screen.queryByText("owner", { exact: true })).not.toBeInTheDocument();
   });
 
-  it("chips de papel filtram a tabela com contagem correta (USRPG-02)", async () => {
+  it("role chips filter the table with the correct count (USRPG-02)", async () => {
     await loginAsOwner();
     renderPage();
     await screen.findByText("owner@vane.app");
@@ -110,7 +110,7 @@ describe("AdminsPage", () => {
     expect(screen.queryByText("viewer@vane.app")).not.toBeInTheDocument();
   });
 
-  it("busca filtra por nome ou e-mail (USRPG-03)", async () => {
+  it("search filters by name or email (USRPG-03)", async () => {
     await loginAsOwner();
     renderPage();
     await screen.findByText("owner@vane.app");
@@ -121,7 +121,7 @@ describe("AdminsPage", () => {
     expect(screen.queryByText("owner@vane.app")).not.toBeInTheDocument();
   });
 
-  it("filtro sem resultado mostra o estado vazio (USRPG-04)", async () => {
+  it("filter with no results shows the empty state (USRPG-04)", async () => {
     await loginAsOwner();
     renderPage();
     await screen.findByText("owner@vane.app");
@@ -131,7 +131,7 @@ describe("AdminsPage", () => {
     expect(await screen.findByText("Nenhum usuário encontrado com esses filtros.")).toBeInTheDocument();
   });
 
-  it("clicar numa linha abre o drawer de detalhe com papel e último acesso (USRPG-06)", async () => {
+  it("clicking a row opens the detail drawer with role and last access (USRPG-06)", async () => {
     await loginAsOwner();
     renderPage();
     await screen.findByText("owner@vane.app");
@@ -144,7 +144,7 @@ describe("AdminsPage", () => {
     expect(within(dialog).getByText(/há \d+/)).toBeInTheDocument();
   });
 
-  it("trocar papel no drawer chama a API e reflete na tabela (USRPG-07)", async () => {
+  it("changing role in the drawer calls the API and reflects in the table (USRPG-07)", async () => {
     await loginAsOwner();
     renderPage();
     await screen.findByText("operator@vane.app");
@@ -158,7 +158,7 @@ describe("AdminsPage", () => {
     });
   });
 
-  it("troca de papel rejeitada (409, último owner) mantém o papel anterior e mostra erro (USRPG-07)", async () => {
+  it("rejected role change (409, last owner) keeps the previous role and shows an error (USRPG-07)", async () => {
     await loginAsOwner();
     renderPage();
     await screen.findByText("owner@vane.app");
@@ -171,7 +171,7 @@ describe("AdminsPage", () => {
     expect(within(rowFor("owner@vane.app")).getByText("Admin")).toBeInTheDocument();
   });
 
-  it("drawer de convite pendente mostra Reenviar convite; ativo não mostra (USRPG-08)", async () => {
+  it("pending invite drawer shows Reenviar convite; active does not (USRPG-08)", async () => {
     await loginAsOwner();
     renderPage();
     await screen.findByText("novo-operador@vane.app");
@@ -186,7 +186,7 @@ describe("AdminsPage", () => {
     expect(within(dialog).queryByRole("button", { name: "Reenviar convite" })).not.toBeInTheDocument();
   });
 
-  it("remover usuário ativo pelo drawer remove a linha e mostra toast (USRPG-09)", async () => {
+  it("removing an active user from the drawer removes the row and shows a toast (USRPG-09)", async () => {
     await loginAsOwner();
     renderPage();
     await screen.findByText("operator@vane.app");
@@ -201,7 +201,7 @@ describe("AdminsPage", () => {
     expect(await screen.findByText("Acesso de operator@vane.app removido.")).toBeInTheDocument();
   });
 
-  it("cancelar convite pendente pelo drawer remove a linha e mostra toast (USRPG-09)", async () => {
+  it("cancelling a pending invite from the drawer removes the row and shows a toast (USRPG-09)", async () => {
     await loginAsOwner();
     renderPage();
     await screen.findByText("novo-operador@vane.app");
@@ -215,7 +215,7 @@ describe("AdminsPage", () => {
     expect(await screen.findByText("Convite de novo-operador@vane.app cancelado.")).toBeInTheDocument();
   });
 
-  it("último acesso ausente mostra travessão (USRPG-10)", async () => {
+  it("missing last access shows an em dash (USRPG-10)", async () => {
     await loginAsOwner();
     renderPage();
     await screen.findByText("novo-operador@vane.app");
@@ -223,7 +223,7 @@ describe("AdminsPage", () => {
     expect(within(rowFor("novo-operador@vane.app")).getByText("—")).toBeInTheDocument();
   });
 
-  it("convidar usuário via drawer exige nome, telefone opcional e papel (USRPG-11/12)", async () => {
+  it("inviting a user via the drawer requires name, optional phone, and role (USRPG-11/12)", async () => {
     await loginAsOwner();
     renderPage();
     await screen.findByText("owner@vane.app");
@@ -238,7 +238,7 @@ describe("AdminsPage", () => {
     expect(within(rowFor("novo-viewer@vane.app")).getByText("Pendente")).toBeInTheDocument();
   });
 
-  it("convite rejeitado (409, e-mail já ativo) mantém o drawer aberto e mostra o erro (USRPG-13)", async () => {
+  it("rejected invite (409, email already active) keeps the drawer open and shows the error (USRPG-13)", async () => {
     await loginAsOwner();
     renderPage();
     await screen.findByText("owner@vane.app");
@@ -252,7 +252,7 @@ describe("AdminsPage", () => {
     expect(screen.getByRole("button", { name: "Enviar convite" })).toBeInTheDocument();
   });
 
-  it("reenviar convite pendente mantém a linha e exibe toast de confirmação (INVITE-03)", async () => {
+  it("resending a pending invite keeps the row and shows a confirmation toast (INVITE-03)", async () => {
     await loginAsOwner();
     renderPage();
     await screen.findByText("novo-operador@vane.app");
@@ -264,7 +264,7 @@ describe("AdminsPage", () => {
     expect(await screen.findByText("Convite reenviado para novo-operador@vane.app.")).toBeInTheDocument();
   });
 
-  it("convite pendente expirado exibe tag Expirado além de Pendente (INVITE-07)", async () => {
+  it("expired pending invite shows the Expirado tag alongside Pendente (INVITE-07)", async () => {
     await loginAsOwner();
     seedExpiredAdminInvite("expirado@vane.app", "viewer");
     renderPage();
@@ -278,7 +278,7 @@ describe("AdminsPage", () => {
     expect(within(freshRow).queryByText("Expirado")).not.toBeInTheDocument();
   });
 
-  it("renderiza em inglês quando o idioma ativo é en", async () => {
+  it("renders in English when the active language is en", async () => {
     await loginAsOwner();
     await i18n.changeLanguage("en");
 

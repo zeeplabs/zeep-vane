@@ -14,14 +14,14 @@ async function loginAsOwner() {
 }
 
 describe("domains hooks", () => {
-  it("useDomains retorna a lista de domínios da fixture", async () => {
+  it("useDomains returns the fixture's list of domains", async () => {
     await loginAsOwner();
     const { result } = renderHook(() => useDomains(1), { wrapper: TestQueryProvider });
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(result.current.data!.items.length).toBeGreaterThan(0);
   });
 
-  it("useCreateDomain invalida a lista de domínios em sucesso", async () => {
+  it("useCreateDomain invalidates the list of domains on success", async () => {
     await loginAsOwner();
     const { result } = renderHook(
       () => ({ domains: useDomains(1), create: useCreateDomain() }),
@@ -35,7 +35,7 @@ describe("domains hooks", () => {
     await waitFor(() => expect(result.current.domains.data!.items.length).toBe(before + 1));
   });
 
-  it("useDomains(1) usa queryKey com a página e busca /api/domains?page=1, retornando o envelope Page completo", async () => {
+  it("useDomains(1) uses a queryKey with the page and fetches /api/domains?page=1, returning the full Page envelope", async () => {
     const fetchSpy = vi.spyOn(globalThis, "fetch");
     await loginAsOwner();
     const { result } = renderHook(() => useDomains(1), { wrapper: TestQueryProvider });
@@ -57,7 +57,7 @@ describe("domains hooks", () => {
   // real backend (domain_type/status/ssl_status/verified_at/last_error/
   // attached_page_name/attached_page_count) - asserting every new field
   // round-trips guards against that regressing silently again.
-  it("useDomains(1) retorna os campos domain_type/status/ssl_status/verified_at/last_error/attached_page_name/attached_page_count e dns_target no envelope", async () => {
+  it("useDomains(1) returns the domain_type/status/ssl_status/verified_at/last_error/attached_page_name/attached_page_count fields and dns_target in the envelope", async () => {
     await loginAsOwner();
     const { result } = renderHook(() => useDomains(1), { wrapper: TestQueryProvider });
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
@@ -85,7 +85,7 @@ describe("domains hooks", () => {
   // domains-status-pages-page T4: useRecheckDomain hits POST
   // /api/domains/{id}/verify (DomainsHandler.Verify), distinct from
   // status-pages/hooks.ts's useVerifyDomain (a different endpoint).
-  it("useRecheckDomain invalida a lista de domínios em sucesso", async () => {
+  it("useRecheckDomain invalidates the list of domains on success", async () => {
     await loginAsOwner();
     const { result } = renderHook(
       () => ({ domains: useDomains(1), recheck: useRecheckDomain() }),
@@ -103,7 +103,7 @@ describe("domains hooks", () => {
     });
   });
 
-  it("useRecheckDomain expõe ApiError em caso de erro", async () => {
+  it("useRecheckDomain exposes an ApiError on failure", async () => {
     await loginAsOwner();
     server.use(
       http.post("/api/domains/:id/verify", () => HttpResponse.json({ error: "internal error" }, { status: 500 }))

@@ -1,11 +1,11 @@
-// Fixtures usadas por testes e pelo seletor dev-only "Visualizando como"
-// (AuthProvider.setDevRole) - não é mais a camada de rede (I6 trocou
-// apiClient.ts por fetch real). Tipos vêm de src/types/api.ts (I9); este
-// arquivo só declara os dados de exemplo.
-// Contratos seguem `design.md` § Data Models; onde a UI precisa de algo que o
-// design documenta como "a API não retorna na leitura" (ex.: `service_ids` no
-// Incident lido de volta), a fixture inclui o campo mesmo assim para viabilizar
-// a tela em dev/teste.
+// Fixtures used by tests and by the dev-only "Viewing as" role selector
+// (AuthProvider.setDevRole) - this is no longer the network layer (I6
+// replaced apiClient.ts with real fetch). Types come from src/types/api.ts
+// (I9); this file only declares the sample data.
+// Contracts follow `design.md` § Data Models; where the UI needs something
+// the design docs describe as "not returned by the API on read" (e.g.
+// `service_ids` read back on an Incident), the fixture includes the field
+// anyway to make the screen usable in dev/test.
 
 import type {
   Admin,
@@ -93,7 +93,7 @@ export const adminInvites: AdminInvite[] = [
   },
 ];
 
-// -- Integração Datadog --------------------------------------------------------
+// -- Datadog integration --------------------------------------------------------
 
 export const datadogIntegration: { connected: boolean } & IntegrationStatus = {
   connected: true,
@@ -109,7 +109,7 @@ export const sloCatalog: SLOSummary[] = [
   { id: "slo-4", name: "Fila de notificações" },
 ];
 
-// -- Serviços -------------------------------------------------------------------
+// -- Services -------------------------------------------------------------------
 
 // uptime_30d/last_seen_at are always null in the seed rows below - the MSW
 // handler (toServiceResponse -> serviceUptimeAndLastSeen) computes the
@@ -195,7 +195,7 @@ export const services: Service[] = [
   },
 ];
 
-// -- Domínios ---------------------------------------------------------------
+// -- Domains ---------------------------------------------------------------
 
 export const domains: Domain[] = [
   {
@@ -269,9 +269,9 @@ export const statusPages: StatusPage[] = [
   },
 ];
 
-// Contador simulando quantas vezes um status page em emissão já foi consultado —
-// usado só para o mock avançar sozinho pra um estado terminal após algumas
-// consultas de polling, simulando o comportamento real de emissão de TLS.
+// Counter simulating how many times a status page in issuance has already been
+// polled — used only so the mock advances on its own to a terminal state after
+// a few polling requests, simulating the real behavior of TLS issuance.
 const statusPagePollCount = new Map<string, number>();
 
 export function advanceStatusPagePolling(page: StatusPage): StatusPage {
@@ -381,7 +381,7 @@ export const pollerLeadership: {
   checks_last_minute: 4,
 };
 
-// -- Configurações da empresa -----------------------------------------------------
+// -- Company settings -----------------------------------------------------
 
 export const companySettings: CompanySettings = {
   name: "Sua Empresa Ltda.",
@@ -398,7 +398,7 @@ export function nextId(prefix: string): string {
   return `${prefix}-${idCounter}`;
 }
 
-// -- Sessões ativas (per-device, user-sessions spec) ---------------------------
+// -- Active sessions (per-device, user-sessions spec) ---------------------------
 //
 // Seeding strategy (deterministic so tests can rely on it):
 //   - sess-1 + sess-2 belong to admin-1 (the most-used test user; lets

@@ -4,7 +4,7 @@ import { render, screen } from "@testing-library/react";
 import { IntegrationCard } from "./IntegrationCard";
 
 describe("IntegrationCard", () => {
-  it("renderiza badge Conectado e meta quando status é connected", () => {
+  it("renders the Conectado badge and meta when status is connected", () => {
     render(
       <IntegrationCard
         icon={<span>icon</span>}
@@ -19,21 +19,21 @@ describe("IntegrationCard", () => {
     expect(screen.getByText("Sincronizado há 12 min")).toBeInTheDocument();
   });
 
-  it("renderiza badge Não conectado quando status é not_connected", () => {
+  it("renders the Não conectado badge when status is not_connected", () => {
     render(
       <IntegrationCard icon={<span>icon</span>} bannerBg="#FAFAFC" status="not_connected" title="New Relic" description="desc" />,
     );
     expect(screen.getByText("Não conectado")).toBeInTheDocument();
   });
 
-  it("renderiza badge Em breve para integração decorativa (coming_soon)", () => {
+  it("renders the Em breve badge for a decorative integration (coming_soon)", () => {
     render(
       <IntegrationCard icon={<span>icon</span>} bannerBg="#FAFAFC" status="coming_soon" title="New Relic" description="desc" />,
     );
     expect(screen.getByText("Em breve")).toBeInTheDocument();
   });
 
-  it("não renderiza nenhum botão quando action é omitido (viewer/decorativo)", () => {
+  it("renders no button when action is omitted (viewer/decorative)", () => {
     render(
       <IntegrationCard icon={<span>icon</span>} bannerBg="#FAFAFC" status="not_connected" title="New Relic" description="desc" />,
     );
@@ -41,7 +41,7 @@ describe("IntegrationCard", () => {
     expect(screen.queryByRole("link")).not.toBeInTheDocument();
   });
 
-  it("renderiza a action recebida (ex.: botão Conectar)", () => {
+  it("renders the received action (e.g. the Conectar button)", () => {
     render(
       <IntegrationCard
         icon={<span>icon</span>}

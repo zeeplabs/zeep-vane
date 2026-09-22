@@ -26,7 +26,7 @@ function renderDrawer(onOpenChange: (open: boolean) => void = () => {}) {
 }
 
 describe("AddDomainDrawer", () => {
-  it("mostra as duas opções de tipo, com 'Domínio próprio' selecionado por padrão (DSP-09)", async () => {
+  it("shows both type options, with 'Domínio próprio' selected by default (DSP-09)", async () => {
     await loginAsOwner();
     renderDrawer();
 
@@ -36,7 +36,7 @@ describe("AddDomainDrawer", () => {
     expect(vaneTile).toHaveAttribute("aria-pressed", "false");
   });
 
-  it("o tile 'Subdomínio Vane' é desabilitado, sem onClick, e clicar nele não muda a seleção (DSP-10)", async () => {
+  it("the 'Subdomínio Vane' tile is disabled, with no onClick, and clicking it does not change the selection (DSP-10)", async () => {
     await loginAsOwner();
     renderDrawer();
 
@@ -52,7 +52,7 @@ describe("AddDomainDrawer", () => {
     expect(screen.getByLabelText("Hostname")).toBeInTheDocument();
   });
 
-  it("envia o hostname digitado via POST /api/domains quando 'Domínio próprio' está selecionado (DSP-11)", async () => {
+  it("sends the typed hostname via POST /api/domains when 'Domínio próprio' is selected (DSP-11)", async () => {
     await loginAsOwner();
     renderDrawer();
 
@@ -65,7 +65,7 @@ describe("AddDomainDrawer", () => {
     });
   });
 
-  it("hostname duplicado (409) mostra erro inline", async () => {
+  it("duplicate hostname (409) shows an inline error", async () => {
     await loginAsOwner();
     await apiFetch("/api/domains", {
       method: "POST",

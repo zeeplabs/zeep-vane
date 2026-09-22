@@ -41,7 +41,7 @@ describe("AcceptInvitePage", () => {
     vi.restoreAllMocks();
   });
 
-  it("submissão válida com senhas iguais aceita o convite e navega para a raiz (AIP-01/02)", async () => {
+  it("valid submission with matching passwords accepts the invite and navigates to the root (AIP-01/02)", async () => {
     seedAdminInviteToken("valid-token", "invitee@vane.app", "operator");
     render(App("valid-token"));
 
@@ -51,7 +51,7 @@ describe("AcceptInvitePage", () => {
     await waitFor(() => expect(assignSpy).toHaveBeenCalledWith("/"));
   });
 
-  it("senha e confirmação diferentes mostram erro de validação sem chamar a API (AIP-05/06)", async () => {
+  it("mismatched password and confirmation show a validation error without calling the API (AIP-05/06)", async () => {
     seedAdminInviteToken("valid-token", "invitee@vane.app", "operator");
     const fetchSpy = vi.spyOn(global, "fetch");
     render(App("valid-token"));
@@ -67,7 +67,7 @@ describe("AcceptInvitePage", () => {
     );
   });
 
-  it("token desconhecido/expirado (401) mostra mensagem genérica sem travar o formulário (AIP-07)", async () => {
+  it("unknown/expired token (401) shows a generic message without locking the form (AIP-07)", async () => {
     render(App("does-not-exist"));
 
     await fillForm("demo1234", "demo1234");
@@ -80,7 +80,7 @@ describe("AcceptInvitePage", () => {
     expect(screen.getByRole("button", { name: "Ativar conta" })).not.toBeDisabled();
   });
 
-  it("senha fraca (422) mostra mensagem traduzida, não o texto cru do servidor (AIP-08)", async () => {
+  it("weak password (422) shows the translated message, not the raw server text (AIP-08)", async () => {
     seedAdminInviteToken("valid-token", "invitee@vane.app", "operator");
     render(App("valid-token"));
 
@@ -93,7 +93,7 @@ describe("AcceptInvitePage", () => {
     expect(assignSpy).not.toHaveBeenCalled();
   });
 
-  it("falha de rede mostra mensagem genérica de fallback (AIP-09)", async () => {
+  it("network failure shows a generic fallback message (AIP-09)", async () => {
     // HttpResponse.error() simulates a genuine network failure (fetch()
     // itself rejects), unlike a 5xx HTTP response - the latter always
     // becomes an ApiError with a parsed message (apiClient.ts's
@@ -110,7 +110,7 @@ describe("AcceptInvitePage", () => {
     expect(assignSpy).not.toHaveBeenCalled();
   });
 
-  it("botão de envio fica desabilitado durante a submissão, evitando duplo clique (AIP-03)", async () => {
+  it("submit button is disabled during submission, preventing a double click (AIP-03)", async () => {
     // Holds the mock response open until the test explicitly resolves it, so
     // the disabled state can be observed *while the request is still in
     // flight* - not merely inferred from the eventual success.
@@ -138,7 +138,7 @@ describe("AcceptInvitePage", () => {
     await waitFor(() => expect(assignSpy).toHaveBeenCalledWith("/"));
   });
 
-  it("mensagem de erro anterior some ao reenviar o formulário corrigido (AIP-06)", async () => {
+  it("previous error message disappears when resubmitting the corrected form (AIP-06)", async () => {
     seedAdminInviteToken("valid-token", "invitee@vane.app", "operator");
     render(App("valid-token"));
 
@@ -156,7 +156,7 @@ describe("AcceptInvitePage", () => {
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
 
-  it("nunca exibe nem envia o token bruto além do próprio segmento de URL (AIP-04)", async () => {
+  it("never displays or sends the raw token beyond the URL segment itself (AIP-04)", async () => {
     const rawToken = "raw-invite-token-must-stay-in-url-only";
     seedAdminInviteToken(rawToken, "invitee@vane.app", "operator");
     let requestBody: unknown;
@@ -183,7 +183,7 @@ describe("AcceptInvitePage", () => {
     expect(document.body.textContent).not.toContain(rawToken);
   });
 
-  it("campos de senha e confirmação são obrigatórios", () => {
+  it("password and confirmation fields are required", () => {
     render(App("valid-token"));
 
     expect(screen.getByLabelText("Senha")).toBeRequired();

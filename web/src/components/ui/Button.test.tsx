@@ -4,7 +4,7 @@ import userEvent from "@testing-library/user-event";
 import { Button } from "./Button";
 
 describe("Button", () => {
-  it("renderiza variante primary sem preenchimento sólido (outline)", () => {
+  it("renders the primary variant without a solid fill (outline)", () => {
     render(<Button>Entrar</Button>);
     const btn = screen.getByRole("button", { name: "Entrar" });
     expect(btn).toHaveAttribute("data-variant", "primary");
@@ -12,7 +12,7 @@ describe("Button", () => {
     expect(btn.className).not.toContain("bg-accent ");
   });
 
-  it("renderiza variante secondary com borda divider", () => {
+  it("renders the secondary variant with a divider border", () => {
     render(<Button variant="secondary">Cancelar</Button>);
     expect(screen.getByRole("button", { name: "Cancelar" })).toHaveAttribute(
       "data-variant",
@@ -20,20 +20,20 @@ describe("Button", () => {
     );
   });
 
-  it("renderiza variante ghost sem borda", () => {
+  it("renders the ghost variant without a border", () => {
     render(<Button variant="ghost">Sair</Button>);
     const btn = screen.getByRole("button", { name: "Sair" });
     expect(btn.className).toContain("border-0");
   });
 
-  it("renderiza variante icon sem label, 36x36", () => {
+  it("renders the icon variant without a label, 36x36", () => {
     render(<Button variant="icon" aria-label="fechar" />);
     const btn = screen.getByRole("button", { name: "fechar" });
     expect(btn.className).toContain("w-9");
     expect(btn.className).toContain("h-9");
   });
 
-  it("respeita disabled e não dispara onClick", async () => {
+  it("respects disabled and does not fire onClick", async () => {
     const onClick = vi.fn();
     render(
       <Button disabled onClick={onClick}>

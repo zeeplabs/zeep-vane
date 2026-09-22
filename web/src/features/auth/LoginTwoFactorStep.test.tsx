@@ -21,7 +21,7 @@ function setup(error: string | null = null) {
 }
 
 describe("LoginTwoFactorStep", () => {
-  it("submete o código do aplicativo", async () => {
+  it("submits the app code", async () => {
     const { onSubmit } = setup();
     await userEvent.type(screen.getByLabelText("Código de verificação"), "123456");
     await userEvent.click(screen.getByRole("button", { name: "Verificar" }));
@@ -29,7 +29,7 @@ describe("LoginTwoFactorStep", () => {
     expect(onSubmit).toHaveBeenCalledWith({ code: "123456" });
   });
 
-  it("alternar para recuperação limpa o campo e notifica a página", async () => {
+  it("switching to recovery clears the field and notifies the page", async () => {
     const { onSubmit, onMethodChange } = setup();
     await userEvent.type(screen.getByLabelText("Código de verificação"), "123456");
 
@@ -43,7 +43,7 @@ describe("LoginTwoFactorStep", () => {
     expect(onSubmit).toHaveBeenCalledWith({ recoveryCode: "REC-0001" });
   });
 
-  it("alternar de volta para o aplicativo limpa o campo", async () => {
+  it("switching back to the app clears the field", async () => {
     setup();
     await userEvent.click(screen.getByRole("button", { name: "Usar um código de recuperação" }));
     await userEvent.type(screen.getByLabelText("Código de recuperação"), "REC-0001");
@@ -53,13 +53,13 @@ describe("LoginTwoFactorStep", () => {
     expect(screen.getByLabelText("Código de verificação")).toHaveValue("");
   });
 
-  it("Voltar chama onBack", async () => {
+  it("Back calls onBack", async () => {
     const { onBack } = setup();
     await userEvent.click(screen.getByRole("button", { name: "Voltar" }));
     expect(onBack).toHaveBeenCalledTimes(1);
   });
 
-  it("mostra o erro inline", () => {
+  it("shows the inline error", () => {
     setup("Código inválido ou expirado. Tente novamente.");
     expect(screen.getByRole("alert")).toHaveTextContent("Código inválido ou expirado. Tente novamente.");
   });

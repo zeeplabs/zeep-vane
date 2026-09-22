@@ -34,14 +34,14 @@ function renderBanner() {
 }
 
 describe("PollerBanner", () => {
-  it("não renderiza nada quando todas as integrações estão ativas", async () => {
+  it("renders nothing when all integrations are active", async () => {
     await loginAsOwner();
     renderBanner();
     await new Promise((r) => setTimeout(r, 500));
     expect(screen.queryByTestId("poller-banner")).not.toBeInTheDocument();
   });
 
-  it("falha simulada em uma integração exibe o banner", async () => {
+  it("a simulated failure in one integration shows the banner", async () => {
     pollerStatus[0].status = "invalid";
     pollerStatus[0].last_error = "Credenciais inválidas";
     await loginAsOwner();
@@ -51,7 +51,7 @@ describe("PollerBanner", () => {
     expect(screen.getByRole("button", { name: "Ver detalhes" })).toBeInTheDocument();
   });
 
-  it("renderiza em inglês quando o idioma ativo é en", async () => {
+  it("renders in English when the active language is en", async () => {
     pollerStatus[0].status = "invalid";
     pollerStatus[0].last_error = "Credenciais inválidas";
     await loginAsOwner();

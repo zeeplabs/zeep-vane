@@ -13,11 +13,11 @@ export interface AttachDomainDrawerProps {
   onOpenChange: (open: boolean) => void;
 }
 
-/** Painel "Anexar domínio" (SPD-06 through SPD-10) - abre a partir de
- * `StatusPageDetail` para uma status page sem domínio, escolhe um
- * `Domain` existente + subdomínio e mostra o registro DNS que o
- * operador precisa configurar. Mesmo padrão de `Drawer` já usado em
- * "Criar status page"/"Criar incidente". */
+/** "Attach domain" panel (SPD-06 through SPD-10) - opened from
+ * `StatusPageDetail` for a status page with no domain attached, picks an
+ * existing `Domain` + subdomain and shows the DNS record the operator
+ * needs to configure. Same `Drawer` pattern already used by
+ * "Create status page"/"Create incident". */
 export function AttachDomainDrawer({ statusPageId, open, onOpenChange }: AttachDomainDrawerProps) {
   const { t } = useTranslation();
   // SPEC_DEVIATION: fixed page 1 for now - Pager UI for the domains
@@ -33,8 +33,8 @@ export function AttachDomainDrawer({ statusPageId, open, onOpenChange }: AttachD
   const [subdomain, setSubdomain] = useState("");
   const [error, setError] = useState<string | null>(null);
 
-  // Reseta o formulário toda vez que o painel abre - evita reaproveitar
-  // estado (domínio/subdomínio/erro) de uma abertura anterior.
+  // Resets the form every time the panel opens - avoids reusing
+  // state (domain/subdomain/error) from a previous opening.
   useEffect(() => {
     if (open) {
       setDomainId(domains?.[0]?.id ?? "");

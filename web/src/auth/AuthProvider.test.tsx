@@ -76,11 +76,11 @@ function Probe() {
   );
 }
 
-// Sessão MSW resetada globalmente entre testes por src/test/setup.ts
-// (resetAuthSession, chamado no afterEach do server).
+// MSW session reset globally between tests by src/test/setup.ts
+// (resetAuthSession, called in the server's afterEach).
 
 describe("AuthProvider", () => {
-  it("boot sem sessão vira anonymous", async () => {
+  it("boot without a session becomes anonymous", async () => {
     render(
       <AuthProvider>
         <Probe />
@@ -89,7 +89,7 @@ describe("AuthProvider", () => {
     await waitFor(() => expect(screen.getByTestId("status")).toHaveTextContent("anonymous"));
   });
 
-  it("login com sucesso guarda apenas id/email/role, nunca token", async () => {
+  it("successful login stores only id/email/role, never a token", async () => {
     render(
       <AuthProvider>
         <Probe />
@@ -108,7 +108,7 @@ describe("AuthProvider", () => {
     expect(admin).not.toHaveProperty("token");
   });
 
-  it("login com falha mantém anonymous", async () => {
+  it("failed login keeps anonymous", async () => {
     render(
       <AuthProvider>
         <Probe />
@@ -124,7 +124,7 @@ describe("AuthProvider", () => {
     expect(screen.getByTestId("admin")).toHaveTextContent("null");
   });
 
-  it("hasRole correto para os 3 papéis após login como operator", async () => {
+  it("hasRole correct for the 3 roles after logging in as operator", async () => {
     render(
       <AuthProvider>
         <Probe />
@@ -133,7 +133,7 @@ describe("AuthProvider", () => {
     await waitFor(() => expect(screen.getByTestId("status")).toHaveTextContent("anonymous"));
 
     await act(async () => {
-      // reaproveita o botão de login-ok trocando por operator via direct apiFetch not needed;
+      // reuses the login-ok button, swapping for operator via direct apiFetch not needed;
       // login through context using owner then verify hasRole owner true, others false
       screen.getByText("login-ok").click();
     });
@@ -144,7 +144,7 @@ describe("AuthProvider", () => {
     expect(screen.getByTestId("has-viewer")).toHaveTextContent("false");
   });
 
-  it("logout limpa a sessão e volta pra anonymous", async () => {
+  it("logout clears the session and goes back to anonymous", async () => {
     render(
       <AuthProvider>
         <Probe />
@@ -165,7 +165,7 @@ describe("AuthProvider", () => {
     expect(screen.getByTestId("admin")).toHaveTextContent("null");
   });
 
-  it("setDevRole é no-op fora de DEV", async () => {
+  it("setDevRole is a no-op outside of DEV", async () => {
     vi.stubEnv("DEV", false);
     render(
       <AuthProvider>
@@ -183,7 +183,7 @@ describe("AuthProvider", () => {
     vi.unstubAllEnvs();
   });
 
-  it("setDevRole autentica com o papel escolhido em DEV", async () => {
+  it("setDevRole authenticates with the chosen role in DEV", async () => {
     render(
       <AuthProvider>
         <Probe />
@@ -200,7 +200,7 @@ describe("AuthProvider", () => {
     expect(admin.role).toBe("viewer");
   });
 
-  it("needsBootstrap é true quando GET /api/bootstrap/status retorna bootstrapped:false (SHD-19)", async () => {
+  it("needsBootstrap is true when GET /api/bootstrap/status returns bootstrapped:false (SHD-19)", async () => {
     server.use(
       http.get("/api/bootstrap/status", () => HttpResponse.json({ bootstrapped: false }))
     );
@@ -213,7 +213,7 @@ describe("AuthProvider", () => {
     await waitFor(() => expect(screen.getByTestId("needs-bootstrap")).toHaveTextContent("true"));
   });
 
-  it("needsBootstrap é false quando GET /api/bootstrap/status retorna bootstrapped:true (SHD-19)", async () => {
+  it("needsBootstrap is false when GET /api/bootstrap/status returns bootstrapped:true (SHD-19)", async () => {
     server.use(
       http.get("/api/bootstrap/status", () => HttpResponse.json({ bootstrapped: true }))
     );
@@ -229,7 +229,7 @@ describe("AuthProvider", () => {
 
   // DEPMODE-05/06: deploymentMode is read from the same boot fetch as
   // needsBootstrap, defaulting to "saas" (optimistic) until it resolves.
-  it("deploymentMode reflete self_hosted quando GET /api/bootstrap/status retorna deployment_mode: self_hosted (AD-033)", async () => {
+  it("deploymentMode reflects self_hosted when GET /api/bootstrap/status returns deployment_mode: self_hosted (AD-033)", async () => {
     server.use(
       http.get("/api/bootstrap/status", () =>
         HttpResponse.json({ bootstrapped: true, deployment_mode: "self_hosted" })
@@ -244,7 +244,7 @@ describe("AuthProvider", () => {
     await waitFor(() => expect(screen.getByTestId("deployment-mode")).toHaveTextContent("self_hosted"));
   });
 
-  it("deploymentMode reflete saas quando GET /api/bootstrap/status retorna deployment_mode: saas (AD-033)", async () => {
+  it("deploymentMode reflects saas when GET /api/bootstrap/status returns deployment_mode: saas (AD-033)", async () => {
     server.use(
       http.get("/api/bootstrap/status", () =>
         HttpResponse.json({ bootstrapped: true, deployment_mode: "saas" })
@@ -259,10 +259,10 @@ describe("AuthProvider", () => {
     await waitFor(() => expect(screen.getByTestId("deployment-mode")).toHaveTextContent("saas"));
   });
 
-  // PROFPAGE-12: o provider expõe two_factor_enabled de /me, e refreshAdmin
-  // re-hidrata a identidade sem reload (a mudança de estado feita nos
-  // handlers MSW chega ao componente via refreshAdmin).
-  it("expõe two_factor_enabled e refreshAdmin re-hidrata sem reload", async () => {
+  // PROFPAGE-12: the provider exposes two_factor_enabled from /me, and refreshAdmin
+  // re-hydrates the identity without a reload (the state change made in the
+  // MSW handlers reaches the component via refreshAdmin).
+  it("exposes two_factor_enabled and refreshAdmin re-hydrates without a reload", async () => {
     render(
       <AuthProvider>
         <Probe />
@@ -286,9 +286,9 @@ describe("AuthProvider", () => {
     );
   });
 
-  // design.md Error Handling: refreshAdmin nunca lança nem desloga; em falha
-  // mantém a identidade anterior.
-  it("refreshAdmin mantém a identidade anterior quando /me falha", async () => {
+  // design.md Error Handling: refreshAdmin never throws nor logs out; on failure
+  // it keeps the previous identity.
+  it("refreshAdmin keeps the previous identity when /me fails", async () => {
     render(
       <AuthProvider>
         <Probe />
@@ -313,9 +313,9 @@ describe("AuthProvider", () => {
     expect(screen.getByTestId("admin").textContent).toBe(before);
   });
 
-  // LOGIN2FA-10: o provider reporta twoFactorRequired e não hidrata admin
-  // quando /api/auth/login responde com challenge_token.
-  it("login com 2FA ativa retorna twoFactorRequired sem autenticar", async () => {
+  // LOGIN2FA-10: the provider reports twoFactorRequired and does not hydrate admin
+  // when /api/auth/login responds with challenge_token.
+  it("login with 2FA active returns twoFactorRequired without authenticating", async () => {
     setTwoFactorEnabled(true);
     render(
       <AuthProvider>
@@ -333,8 +333,8 @@ describe("AuthProvider", () => {
     expect(screen.getByTestId("admin")).toHaveTextContent("null");
   });
 
-  // LOGIN2FA-04: login sem 2FA continua autenticando.
-  it("login sem 2FA retorna authenticated", async () => {
+  // LOGIN2FA-04: login without 2FA still authenticates.
+  it("login without 2FA returns authenticated", async () => {
     render(
       <AuthProvider>
         <Probe />
@@ -350,8 +350,8 @@ describe("AuthProvider", () => {
     expect(screen.getByTestId("status")).toHaveTextContent("authenticated");
   });
 
-  // LOGIN2FA-11: verifyTwoFactor com código válido hidrata o admin via /me.
-  it("verifyTwoFactor com código válido hidrata o admin", async () => {
+  // LOGIN2FA-11: verifyTwoFactor with a valid code hydrates the admin via /me.
+  it("verifyTwoFactor with a valid code hydrates the admin", async () => {
     setTwoFactorEnabled(true);
     render(
       <AuthProvider>
@@ -372,8 +372,8 @@ describe("AuthProvider", () => {
     expect(JSON.parse(screen.getByTestId("admin").textContent ?? "{}").email).toBe("owner@vane.app");
   });
 
-  // LOGIN2FA-11: código inválido rejeita e mantém anonymous (sem sessão).
-  it("verifyTwoFactor com código inválido rejeita e permanece anonymous", async () => {
+  // LOGIN2FA-11: invalid code is rejected and stays anonymous (no session).
+  it("verifyTwoFactor with an invalid code rejects and remains anonymous", async () => {
     setTwoFactorEnabled(true);
     render(
       <AuthProvider>
@@ -395,8 +395,8 @@ describe("AuthProvider", () => {
     expect(screen.getByTestId("admin")).toHaveTextContent("null");
   });
 
-  // LOGIN2FA-10: o fallback por código de recuperação autentica no provider.
-  it("verifyTwoFactor com código de recuperação válido autentica", async () => {
+  // LOGIN2FA-10: the recovery-code fallback authenticates in the provider.
+  it("verifyTwoFactor with a valid recovery code authenticates", async () => {
     seedRecoveryCode("RECOVERY-OK");
     setTwoFactorEnabled(true);
     render(

@@ -12,7 +12,7 @@ async function loginAsOwner() {
 }
 
 describe("admins hooks", () => {
-  it("useAdmins reflete status active|pending do backend mock", async () => {
+  it("useAdmins reflects active|pending status from the mock backend", async () => {
     await loginAsOwner();
     const { result } = renderHook(() => useAdmins(1), { wrapper: TestQueryProvider });
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
@@ -22,7 +22,7 @@ describe("admins hooks", () => {
     expect(statuses).toContain("pending");
   });
 
-  it("erro 409 de useUpdateAdminRole (lockout de último owner) propaga a mensagem sem invalidar a lista", async () => {
+  it("409 error from useUpdateAdminRole (last-owner lockout) propagates the message without invalidating the list", async () => {
     await loginAsOwner();
     const { result } = renderHook(
       () => ({ admins: useAdmins(1), update: useUpdateAdminRole() }),
@@ -38,7 +38,7 @@ describe("admins hooks", () => {
     expect(result.current.admins.data).toBe(before);
   });
 
-  it("erro 409 de useDeleteAdmin (lockout de último owner) propaga a mensagem sem invalidar a lista", async () => {
+  it("409 error from useDeleteAdmin (last-owner lockout) propagates the message without invalidating the list", async () => {
     await loginAsOwner();
     const { result } = renderHook(
       () => ({ admins: useAdmins(1), del: useDeleteAdmin() }),
@@ -52,7 +52,7 @@ describe("admins hooks", () => {
     expect(result.current.admins.data).toBe(before);
   });
 
-  it("useResendInvite retorna status/email_sent e invalida a lista de admins (INVITE-03)", async () => {
+  it("useResendInvite returns status/email_sent and invalidates the admins list (INVITE-03)", async () => {
     await loginAsOwner();
     const { result } = renderHook(
       () => ({ admins: useAdmins(1), resend: useResendInvite() }),
@@ -65,14 +65,14 @@ describe("admins hooks", () => {
     expect(response).toEqual({ status: "resent", email_sent: true });
   });
 
-  it("useResendInvite com id inexistente rejeita com ApiError 404", async () => {
+  it("useResendInvite with a nonexistent id rejects with ApiError 404", async () => {
     await loginAsOwner();
     const { result } = renderHook(() => useResendInvite(), { wrapper: TestQueryProvider });
 
     await expect(result.current.mutateAsync("invite-does-not-exist")).rejects.toBeInstanceOf(ApiError);
   });
 
-  it("useCancelInvite remove o convite da lista de admins (INVITE-05)", async () => {
+  it("useCancelInvite removes the invite from the admins list (INVITE-05)", async () => {
     await loginAsOwner();
     const { result } = renderHook(
       () => ({ admins: useAdmins(1), cancel: useCancelInvite() }),
@@ -88,7 +88,7 @@ describe("admins hooks", () => {
     );
   });
 
-  it("useCancelInvite com id inexistente rejeita com ApiError 404", async () => {
+  it("useCancelInvite with a nonexistent id rejects with ApiError 404", async () => {
     await loginAsOwner();
     const { result } = renderHook(() => useCancelInvite(), { wrapper: TestQueryProvider });
 
