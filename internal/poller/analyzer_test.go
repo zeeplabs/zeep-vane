@@ -165,18 +165,50 @@ type fakeLLMGenerator struct {
 	// instead of returning - used by the timing test to simulate a
 	// provider call that never completes on its own.
 	block bool
+
+	// inputsMu guards lastDegradedInput/lastOutageInput/lastClosingInput,
+	// captured on every call so a test can assert exactly what
+	// llm.AnalysisInput (including CauseType/CauseMessage, T11) each
+	// dispatch goroutine built before calling in.
+	inputsMu                                             sync.Mutex
+	lastDegradedInput, lastOutageInput, lastClosingInput llm.AnalysisInput
 }
 
 func (f *fakeLLMGenerator) GenerateDegradedAnalysis(ctx context.Context, in llm.AnalysisInput) (string, error) {
+	f.inputsMu.Lock()
+	f.lastDegradedInput = in
+	f.inputsMu.Unlock()
 	return f.run(ctx, f.degradedDelay, f.degradedResult, f.degradedErr)
 }
 
 func (f *fakeLLMGenerator) GenerateOutageDescription(ctx context.Context, in llm.AnalysisInput) (string, error) {
+	f.inputsMu.Lock()
+	f.lastOutageInput = in
+	f.inputsMu.Unlock()
 	return f.run(ctx, f.outageDelay, f.outageResult, f.outageErr)
 }
 
 func (f *fakeLLMGenerator) GenerateClosingComment(ctx context.Context, in llm.AnalysisInput) (string, error) {
+	f.inputsMu.Lock()
+	f.lastClosingInput = in
+	f.inputsMu.Unlock()
 	return f.run(ctx, f.closingDelay, f.closingResult, f.closingErr)
+}
+
+// snapshotDegradedInput returns the last llm.AnalysisInput
+// GenerateDegradedAnalysis received.
+func (f *fakeLLMGenerator) snapshotDegradedInput() llm.AnalysisInput {
+	f.inputsMu.Lock()
+	defer f.inputsMu.Unlock()
+	return f.lastDegradedInput
+}
+
+// snapshotOutageInput returns the last llm.AnalysisInput
+// GenerateOutageDescription received.
+func (f *fakeLLMGenerator) snapshotOutageInput() llm.AnalysisInput {
+	f.inputsMu.Lock()
+	defer f.inputsMu.Unlock()
+	return f.lastOutageInput
 }
 
 func (f *fakeLLMGenerator) run(ctx context.Context, delay time.Duration, result string, err error) (string, error) {
@@ -944,5 +976,86 @@ func TestSLOAnalyzer_ResolveCauseHint_Success_ReturnsCauseTypeAndMessage(t *test
 	}
 	if window := provider.lastTo.Sub(provider.lastFrom); window != errorTrackingWindow {
 		t.Errorf("queried window = %v, want %v", window, errorTrackingWindow)
+	}
+}
+
+// TestSLOAnalyzer_DegradedEnrichment_CausePopulated_PassesCauseIntoAnalysisInput
+// covers RCA-01/RCA-05: a degraded transition, with enrichment enabled and
+// a matching Error Tracking issue found, must reach
+// GenerateDegradedAnalysis with CauseType/CauseMessage populated.
+func TestSLOAnalyzer_DegradedEnrichment_CausePopulated_PassesCauseIntoAnalysisInput(t *testing.T) {
+	incidents := &fakeIncidentStore{openIncidents: map[string]string{}}
+	services := &fakeStatusAnalysisWriter{done: make(chan struct{}, 2)}
+	llmSvc := &fakeLLMGenerator{degradedResult: "tooltip text"}
+	a := newTestAnalyzer(incidents, services, llmSvc, time.Second)
+	provider := &fakeErrorCauseProvider{
+		found: true,
+		hint:  datadog.CauseHint{ErrorType: "MongooseError", ErrorMessage: "Operation timed out"},
+	}
+	a.SetErrorCauseEnrichment(&fakeEnrichmentSettingsReader{enabled: true}, provider)
+
+	a.HandleTransition(context.Background(), metricSLOService(), "operational", "degraded", datadog.SLOStatus{}, "test-interval")
+
+	waitOrTimeout(t, services.done) // synchronous clear
+	waitOrTimeout(t, services.done) // async write, after Generate* ran
+
+	in := llmSvc.snapshotDegradedInput()
+	if in.CauseType != "MongooseError" || in.CauseMessage != "Operation timed out" {
+		t.Errorf("GenerateDegradedAnalysis received CauseType=%q CauseMessage=%q, want %q/%q", in.CauseType, in.CauseMessage, "MongooseError", "Operation timed out")
+	}
+}
+
+// TestSLOAnalyzer_OutageEnrichment_CausePopulated_PassesCauseIntoAnalysisInput
+// mirrors the degraded case above for the outage dispatch path.
+func TestSLOAnalyzer_OutageEnrichment_CausePopulated_PassesCauseIntoAnalysisInput(t *testing.T) {
+	incidents := &fakeIncidentStore{openIncidents: map[string]string{}, setDescriptionDone: make(chan struct{}, 1)}
+	services := &fakeStatusAnalysisWriter{}
+	llmSvc := &fakeLLMGenerator{outageResult: "A real outage description."}
+	a := newTestAnalyzer(incidents, services, llmSvc, time.Second)
+	provider := &fakeErrorCauseProvider{
+		found: true,
+		hint:  datadog.CauseHint{ErrorType: "MongooseError", ErrorMessage: "Operation timed out"},
+	}
+	a.SetErrorCauseEnrichment(&fakeEnrichmentSettingsReader{enabled: true}, provider)
+
+	a.HandleTransition(context.Background(), metricSLOService(), "operational", "outage", datadog.SLOStatus{}, "test-interval")
+
+	waitOrTimeout(t, incidents.setDescriptionDone)
+
+	in := llmSvc.snapshotOutageInput()
+	if in.CauseType != "MongooseError" || in.CauseMessage != "Operation timed out" {
+		t.Errorf("GenerateOutageDescription received CauseType=%q CauseMessage=%q, want %q/%q", in.CauseType, in.CauseMessage, "MongooseError", "Operation timed out")
+	}
+}
+
+// TestSLOAnalyzer_DegradedEnrichment_CauseEnrichmentEnabled_StillRespectsCooldownAndConcurrency
+// is the T11 regression check: wiring resolveCauseHint into the dispatch
+// goroutines must not bypass tryAcquire's existing cooldown gate
+// (enrichmentCooldown) - a second dispatch for the same key, immediately
+// following the first, must still be refused.
+func TestSLOAnalyzer_DegradedEnrichment_CauseEnrichmentEnabled_StillRespectsCooldownAndConcurrency(t *testing.T) {
+	incidents := &fakeIncidentStore{openIncidents: map[string]string{}}
+	services := &fakeStatusAnalysisWriter{done: make(chan struct{}, 4)}
+	llmSvc := &fakeLLMGenerator{degradedResult: "tooltip text"}
+	a := newTestAnalyzer(incidents, services, llmSvc, time.Second)
+	provider := &fakeErrorCauseProvider{found: true, hint: datadog.CauseHint{ErrorType: "X", ErrorMessage: "Y"}}
+	a.SetErrorCauseEnrichment(&fakeEnrichmentSettingsReader{enabled: true}, provider)
+
+	svc := metricSLOService()
+	a.HandleTransition(context.Background(), svc, "operational", "degraded", datadog.SLOStatus{}, "interval-A")
+	waitOrTimeout(t, services.done) // synchronous clear
+	waitOrTimeout(t, services.done) // async write
+
+	// Same dedupe key ("degraded:"+svc.ID) dispatched again immediately -
+	// enrichmentCooldown (2 min) must refuse this second one, exactly as it
+	// did before root-cause enrichment existed.
+	a.HandleTransition(context.Background(), svc, "operational", "degraded", datadog.SLOStatus{}, "interval-B")
+
+	calls := services.snapshot()
+	if len(calls) != 3 {
+		t.Errorf("UpdateStatusAnalysis called %d times, want 3 (2 from the first dispatch + 1 sync clear from the second; the second's async write must be refused by cooldown)", len(calls))
+	}
+	if provider.calls != 1 {
+		t.Errorf("errorCauseProvider called %d times, want 1 (cooldown must prevent a second Error Tracking query, same as it prevents a second LLM call)", provider.calls)
 	}
 }

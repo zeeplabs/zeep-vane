@@ -442,14 +442,19 @@ func (a *SLOAnalyzer) dispatchDegradedEnrichment(ctx context.Context, svc db.Ser
 		return
 	}
 
-	in := buildAnalysisInput(svc, sloStatus)
-
 	go func() {
 		defer a.release()
 		defer a.recoverEnrichmentPanic("degraded", svc.ID)
 
 		dctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), a.timeout)
 		defer cancel()
+
+		// resolveCauseHint runs inside this same bounded dctx - no second
+		// timeout context is created for it (slo-root-cause-enrichment
+		// RCA-05); it's a no-op (returns "", "") unless SetErrorCauseEnrichment
+		// was called and the tenant's toggle is on.
+		in := buildAnalysisInput(svc, sloStatus)
+		in.CauseType, in.CauseMessage = a.resolveCauseHint(dctx, svc)
 
 		analysis, err := a.llmSvc.GenerateDegradedAnalysis(dctx, in)
 		if err != nil {
@@ -489,14 +494,17 @@ func (a *SLOAnalyzer) dispatchOutageEnrichment(ctx context.Context, svc db.Servi
 		return
 	}
 
-	in := buildAnalysisInput(svc, sloStatus)
-
 	go func() {
 		defer a.release()
 		defer a.recoverEnrichmentPanic("outage", incidentID)
 
 		dctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), a.timeout)
 		defer cancel()
+
+		// Same reasoning as dispatchDegradedEnrichment: resolveCauseHint
+		// runs inside this dctx, no second timeout context (RCA-05).
+		in := buildAnalysisInput(svc, sloStatus)
+		in.CauseType, in.CauseMessage = a.resolveCauseHint(dctx, svc)
 
 		description, err := a.llmSvc.GenerateOutageDescription(dctx, in)
 		if err != nil {

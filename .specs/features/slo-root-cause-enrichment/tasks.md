@@ -358,11 +358,11 @@ T8 → T14
 - Skill: NONE
 
 **Done when**:
-- [ ] Both dispatch methods call `resolveCauseHint` before building `AnalysisInput`, using the existing `dctx`
-- [ ] No new `context.WithTimeout` call added — same bound governs both the cause lookup and the LLM call
-- [ ] `dispatchClosingCommentEnrichment` has zero changes
-- [ ] Gate check passes: `go test ./internal/poller/...`
-- [ ] Test count: existing count + at least 3 new tests (degraded transition with cause populated, outage transition with cause populated, cooldown/concurrency bounds still apply — regression check against `maxConcurrentEnrichments`/`enrichmentCooldown`)
+- [x] Both dispatch methods call `resolveCauseHint` before building `AnalysisInput`, using the existing `dctx`
+- [x] No new `context.WithTimeout` call added — same bound governs both the cause lookup and the LLM call
+- [x] `dispatchClosingCommentEnrichment` has zero changes
+- [x] Gate check passes: `go test ./internal/poller/...`
+- [x] Test count: existing count + at least 3 new tests (degraded transition with cause populated, outage transition with cause populated, cooldown/concurrency bounds still apply — regression check against `maxConcurrentEnrichments`/`enrichmentCooldown`)
 
 **Tests**: unit
 **Gate**: quick (backend)
