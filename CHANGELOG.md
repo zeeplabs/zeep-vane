@@ -5,15 +5,17 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.2.6] — 2026-09-09
-
+## [Unreleased]
 
 ### Added
 
-- LLM-powered SLO analysis: connect an OpenAI API key from the admin Integrations page (encrypted at rest, model selectable from a fixed allowlist — `gpt-4o-mini`/`gpt-4o`/`gpt-4.1-mini`/`gpt-4.1`) to enable three async enrichments, none of which ever block the poll cycle or a public-page request: a degraded service gets a short LLM-written analysis shown as a tooltip on its public status badge; a service transitioning to `outage` with no already-open incident gets one auto-created with an LLM-written description (falls back to a generic description on any LLM error/timeout); and once an auto-created incident's outage resolves, the LLM drafts a closing comment as a pending proposal an admin must explicitly confirm or discard from the incident detail view — never auto-published.
+- **Full pt-BR/English internationalization** across the admin SPA: a real language selector (Meu Perfil/Settings, persisted per-browser) replaces the previously decorative one, every screen (Billing, Admins, Incidents, Domains & Status Pages, Integrations, Services, Poller, Settings) is routed through `react-i18next`, and the public status page (`/status/:id`) detects the visitor's browser language independently of the logged-in admin's choice. A new `npm run i18n:check` CI gate enforces key parity between `pt-BR.json`/`en.json` going forward.
+- **LLM root-cause enrichment from Datadog Error Tracking**: when a monitored service's linked SLO is `metric`-type with a clean single-service tag, the tenant can opt in (Integrations page toggle, off by default) to have degraded/outage descriptions enriched with the real top error (`error_type`/`error_message`) pulled from Datadog Error Tracking for that service's last 10 minutes — instead of only SLO numbers. Composite (`flow:`-tagged) SLOs and any lookup failure fall back silently to today's behavior; no dispatch is ever blocked by this.
 
+### Fixed
 
-## [Unreleased]
+- Dark/light theme could desynchronize from the toggle after a page reload — the app's own CSP (`default-src 'self'`) silently blocked the inline theme-boot script in production. It now runs as a real imported module.
+- All-Portuguese timestamp formatting throughout the SPA (dates never re-rendered in English even after switching the UI language) — consolidated into one locale-aware `formatDate` helper.
 
 ## [0.5.2] — 2026-09-21
 
@@ -98,6 +100,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A session token carrying an unexpected audience claim is now rejected instead of accepted.
 - The poller now bounds its per-tenant transaction lifetime and excludes the bootstrap placeholder tenant from iteration.
 - Numerous new-layout visual fixes across Incidents/Domains/Status Pages/Integrations/Services to match the handoff mocks exactly (contrast, drawer chrome, badge/severity styling, shadows).
+
+## [0.2.6] — 2026-09-09
+
+### Added
+
+- LLM-powered SLO analysis: connect an OpenAI API key from the admin Integrations page (encrypted at rest, model selectable from a fixed allowlist — `gpt-4o-mini`/`gpt-4o`/`gpt-4.1-mini`/`gpt-4.1`) to enable three async enrichments, none of which ever block the poll cycle or a public-page request: a degraded service gets a short LLM-written analysis shown as a tooltip on its public status badge; a service transitioning to `outage` with no already-open incident gets one auto-created with an LLM-written description (falls back to a generic description on any LLM error/timeout); and once an auto-created incident's outage resolves, the LLM drafts a closing comment as a pending proposal an admin must explicitly confirm or discard from the incident detail view — never auto-published.
 
 ## [0.2.5] — 2026-09-08
 
