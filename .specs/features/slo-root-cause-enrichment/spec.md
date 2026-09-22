@@ -101,7 +101,7 @@ Every ambiguity is resolved or recorded here - nothing is left silently unclear.
 | RCA-06 | P1: Real cause data | Design | Pending |
 | RCA-07 | P2: Admin toggle | Tasks | Implementing |
 | RCA-08 | P2: Admin toggle | Design | Pending |
-| RCA-09 | P2: Admin toggle | Design | Pending |
+| RCA-09 | P2: Admin toggle | Tasks | Implementing |
 | RCA-10 | P2: monitor-type path | Design | Pending |
 | RCA-11 | P2: monitor-type path | Design | Pending |
 

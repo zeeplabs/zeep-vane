@@ -246,6 +246,9 @@ func buildAdminRouter(pool *db.Pool, cfg config.Config, logger *zap.Logger, poll
 		// provider-disconnect PROVDISC-04/05/06: same writeRoles gate as
 		// the email disconnect route above (T6).
 		protected.With(writeRoles).Delete("/api/integrations/llm/{provider}", llmProvidersHandler.Disconnect)
+		// slo-root-cause-enrichment RCA-07/RCA-09: same writeRoles gate as
+		// every other /api/integrations/llm/* write route above.
+		protected.With(writeRoles).Patch("/api/integrations/llm/settings", llmProvidersHandler.UpdateSettings)
 		protected.With(writeRoles).Post("/api/incidents", incidentsHandler.Create)
 		protected.With(writeRoles).Post("/api/incidents/{id}/updates", incidentsHandler.AddUpdate)
 		protected.With(writeRoles).Patch("/api/incidents/{id}", incidentsHandler.Transition)

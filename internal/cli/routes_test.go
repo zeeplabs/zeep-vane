@@ -303,6 +303,15 @@ func writeRouteCases() []routeCase {
 			body:   func() []byte { return nil },
 		},
 		{
+			name:   "PATCH /api/integrations/llm/settings",
+			method: http.MethodPatch,
+			path:   "/api/integrations/llm/settings",
+			body: func() []byte {
+				b, _ := json.Marshal(map[string]bool{"root_cause_enrichment_enabled": true})
+				return b
+			},
+		},
+		{
 			name:   "POST /api/incidents",
 			method: http.MethodPost,
 			path:   "/api/incidents",

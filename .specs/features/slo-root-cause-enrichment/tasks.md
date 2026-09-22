@@ -279,11 +279,11 @@ T8 → T14
 - Skill: NONE
 
 **Done when**:
-- [ ] Handler added, wired at `PATCH /api/integrations/llm/settings` under `writeRoles`
-- [ ] Audit log entry written on successful change
-- [ ] Invalid body / wrong role return the correct error status, matching this handler's existing error-mapping convention
-- [ ] Gate check passes: `go test ./internal/api/...`
-- [ ] Test count: existing count + at least 3 new tests (happy path, invalid body, wrong role)
+- [x] Handler added, wired at `PATCH /api/integrations/llm/settings` under `writeRoles`
+- [x] Audit log entry written on successful change
+- [x] Invalid body / wrong role return the correct error status, matching this handler's existing error-mapping convention
+- [x] Gate check passes: `go test ./internal/api/...`
+- [x] Test count: existing count + at least 3 new tests (happy path, invalid body, wrong role)
 
 **Tests**: unit
 **Gate**: quick (backend)
