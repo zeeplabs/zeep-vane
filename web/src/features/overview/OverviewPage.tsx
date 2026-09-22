@@ -4,6 +4,7 @@ import { Bar, BarChart, ResponsiveContainer } from "recharts";
 import { MdOutlineAdd, MdOutlineWeb, MdOutlineGroupAdd, MdOutlinePublic, MdOutlineBolt } from "react-icons/md";
 import { Card } from "../../components/ui/Card";
 import { Skeleton } from "../../components/ui/Skeleton";
+import { formatDateTimeShort } from "../../lib/formatDate";
 import type { AuditLogEntry, OverviewIncident, OverviewResponse, OverviewUptimeBucket } from "../../types/api";
 import { useOverview, useRecentActivity } from "./hooks";
 import { activityPhraseKey } from "./activityPhrases";
@@ -44,10 +45,6 @@ const incidentDotVar: Record<string, string> = {
   monitoring: "--color-warning",
   resolved: "--color-success",
 };
-
-function formatTimestamp(iso: string, locale: string): string {
-  return new Date(iso).toLocaleString(locale, { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" });
-}
 
 const SHORTCUT_ICONS = {
   addService: MdOutlineAdd,
@@ -200,7 +197,7 @@ function RecentIncidents({ incidents }: { incidents: OverviewIncident[] }) {
               <div className="min-w-0">
                 <div className="truncate text-[12.5px] font-semibold text-text">{incident.title}</div>
                 <div className="text-[11.5px] text-text-muted">
-                  {t(`overview.incidentStatus.${incident.status}`)} · {formatTimestamp(incident.created_at, i18n.language)}
+                  {t(`overview.incidentStatus.${incident.status}`)} · {formatDateTimeShort(incident.created_at, i18n.language)}
                 </div>
               </div>
             </div>
@@ -291,7 +288,9 @@ function ActivityRow({ entry, actorName, t, locale }: {
         <div className="text-[12.5px] text-text">
           <span className="font-bold">{actorName}</span> {t(key, values)}
         </div>
-        <div className="mt-0.5 text-[11.5px] text-text-muted">{formatTimestamp(entry.created_at, locale)}</div>
+        <div data-testid="activity-timestamp" className="mt-0.5 text-[11.5px] text-text-muted">
+          {formatDateTimeShort(entry.created_at, locale)}
+        </div>
       </div>
     </div>
   );

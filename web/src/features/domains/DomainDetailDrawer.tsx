@@ -1,17 +1,15 @@
 import { useEffect, useState } from "react";
 import * as RadixDialog from "@radix-ui/react-dialog";
+import { useTranslation } from "react-i18next";
 import { MdClose } from "react-icons/md";
 import { Button } from "../../components/ui/Button";
 import { ApiError } from "../../lib/apiClient";
+import { formatDateTime } from "../../lib/formatDate";
 import { useDNSTarget } from "../status-pages/hooks";
 import type { Domain } from "../../types/api";
 import { useDeleteDomain, useRecheckDomain } from "./hooks";
 import { attachedPageColumn, domainTypeLabel, sslStatusColor, sslStatusLabel } from "./domainStatusMeta";
 import { DomainStatusTag } from "./DomainStatusTag";
-
-function formatTimestamp(iso: string | null): string {
-  return iso ? new Date(iso).toLocaleString("pt-BR") : "—";
-}
 
 export interface DomainDetailDrawerProps {
   domain: Domain | null;
@@ -28,6 +26,7 @@ export interface DomainDetailDrawerProps {
  * motivo. RadixDialog usado diretamente pra reproduzir isso; `Title` fica
  * sr-only porque o hostname já é o h2 visível. */
 export function DomainDetailDrawer({ domain, onClose }: DomainDetailDrawerProps) {
+  const { i18n } = useTranslation();
   const [current, setCurrent] = useState<Domain | null>(domain);
   const [removeError, setRemoveError] = useState<string | null>(null);
   const { data: dnsTarget } = useDNSTarget();
@@ -106,7 +105,9 @@ export function DomainDetailDrawer({ domain, onClose }: DomainDetailDrawerProps)
                 </div>
                 <div>
                   <div className="mb-1 text-[10.5px] font-bold uppercase tracking-wide text-text-muted">Verificado em</div>
-                  <div className="text-[15px] font-bold text-text">{formatTimestamp(current.verified_at)}</div>
+                  <div className="text-[15px] font-bold text-text">
+                    {current.verified_at ? formatDateTime(current.verified_at, i18n.language) : "—"}
+                  </div>
                 </div>
               </div>
 

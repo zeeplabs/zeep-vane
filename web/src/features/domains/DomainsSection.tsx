@@ -10,12 +10,9 @@ import { Tooltip } from "../../components/ui/Tooltip";
 import { Skeleton } from "../../components/ui/Skeleton";
 import { useAuth } from "../../auth/AuthProvider";
 import { ApiError } from "../../lib/apiClient";
+import { formatDateTime } from "../../lib/formatDate";
 import type { Domain } from "../../types/api";
 import { useCreateDomain, useDeleteDomain, useDomains } from "./hooks";
-
-function formatTimestamp(iso: string): string {
-  return new Date(iso).toLocaleString("pt-BR");
-}
 
 function GlobeIcon() {
   return <MdOutlinePublic size={17} aria-hidden="true" />;
@@ -27,7 +24,7 @@ function TrashIcon() {
 
 /** Tabela + form de domínios. Compartilhada entre `DomainsStatusPagesPage` (handoff mostra as duas seções na mesma tela) e `DomainsPage` (rota própria, mesmo padrão de `ServicesSection`). */
 export function DomainsSection() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const { hasRole } = useAuth();
   const canManage = hasRole(["owner", "operator"]);
   const [page, setPage] = useState(1);
@@ -130,7 +127,7 @@ export function DomainsSection() {
                     <div className="flex-1 text-[15px] font-medium text-text">{d.hostname}</div>
                     <div className="text-right text-xs text-neutral-400">
                       <div>Cadastrado em</div>
-                      <div className="mt-0.5 text-[13px] text-text">{formatTimestamp(d.created_at)}</div>
+                      <div className="mt-0.5 text-[13px] text-text">{formatDateTime(d.created_at, i18n.language)}</div>
                     </div>
                     {canManage ? (
                       <Tooltip label="Excluir">

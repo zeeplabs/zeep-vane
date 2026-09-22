@@ -1,8 +1,9 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, afterEach } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { http, HttpResponse, delay } from "msw";
 import "../../lib/i18n";
+import i18n from "../../lib/i18n";
 import { TestQueryProvider } from "../../test/queryClient";
 import { server } from "../../test/msw/server";
 import { seedAuditLogEntries } from "../../test/msw/handlers";
@@ -45,6 +46,10 @@ function emptyOverview(): OverviewResponse {
     recent_incidents: [],
   };
 }
+
+afterEach(async () => {
+  await i18n.changeLanguage("pt-BR");
+});
 
 describe("OverviewPage", () => {
   // SKEL-04/05: while /api/overview is loading, the page shows skeleton
@@ -220,6 +225,22 @@ describe("OverviewPage", () => {
       renderPage();
 
       expect(await screen.findByText("Usuário removido")).toBeInTheDocument();
+    });
+
+    it("o idioma ativo muda o formato da data, não fica sempre em pt-BR", async () => {
+      seedAuditLogEntries([entry({ created_at: "2026-03-05T14:30:00.000Z" })]);
+      await loginAsOwner();
+      const { unmount } = renderPage();
+      const [ptBRTimestamp] = await screen.findAllByTestId("activity-timestamp");
+      const ptBRText = ptBRTimestamp.textContent ?? "";
+      unmount();
+
+      await i18n.changeLanguage("en");
+      renderPage();
+      const [enTimestamp] = await screen.findAllByTestId("activity-timestamp");
+      const enText = enTimestamp.textContent ?? "";
+
+      expect(enText).not.toBe(ptBRText);
     });
 
     it("mostra skeletons enquanto /api/audit-log carrega", async () => {

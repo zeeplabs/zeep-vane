@@ -7,6 +7,7 @@ import { Button, buttonBaseClasses, buttonVariantClasses } from "../../component
 import { Field } from "../../components/ui/Field";
 import { useAuth } from "../../auth/AuthProvider";
 import { ApiError } from "../../lib/apiClient";
+import { formatDateTime } from "../../lib/formatDate";
 import { useDomains } from "../domains/hooks";
 import { useServices } from "../services/hooks";
 import type { Service, StatusPage, StatusPageState } from "../../types/api";
@@ -282,7 +283,7 @@ interface DomainVerificationPanelProps {
 // Vercel/Render offer for custom domains. Table styling mirrors
 // DomainDetailDrawer's TIPO/VALOR DNS block.
 function DomainVerificationPanel({ statusPageId, fullHostname }: DomainVerificationPanelProps) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const { data: dnsTarget, isLoading: dnsTargetLoading } = useDNSTarget();
   const verifyDomain = useVerifyDomain();
   const result: VerifyDomainResult | undefined = verifyDomain.data;
@@ -373,7 +374,7 @@ function DomainVerificationPanel({ statusPageId, fullHostname }: DomainVerificat
                   : `Conexão HTTPS ainda falha${result.tls_error ? `: ${result.tls_error}` : ""}`
             }
           />
-          <p className="text-text-muted">Última verificação: {new Date(result.checked_at).toLocaleString()}</p>
+          <p className="text-text-muted">Última verificação: {formatDateTime(result.checked_at, i18n.language)}</p>
         </div>
       ) : null}
     </div>

@@ -5,6 +5,7 @@ import { MemoryRouter } from "react-router-dom";
 import { Toaster } from "sonner";
 import { http, HttpResponse, delay } from "msw";
 import "../../lib/i18n";
+import i18n from "../../lib/i18n";
 import { AuthProvider } from "../../auth/AuthProvider";
 import { TestQueryProvider } from "../../test/queryClient";
 import { server } from "../../test/msw/server";
@@ -20,6 +21,7 @@ async function loginAsOwner() {
 
 afterEach(async () => {
   await apiFetch("/api/auth/logout", { method: "POST" });
+  await i18n.changeLanguage("pt-BR");
 });
 
 function renderSection() {
@@ -67,6 +69,21 @@ describe("SessionsSection", () => {
     ) as HTMLButtonElement;
     expect(revokeButton).toBeInTheDocument();
     expect(revokeButton).toHaveTextContent("Encerrar");
+  });
+
+  it("o idioma ativo muda o formato da data da sessão, não fica sempre em pt-BR", async () => {
+    await loginAsOwner();
+    const { unmount } = renderSection();
+    const [ptBRTimestamp] = await screen.findAllByTestId("session-last-seen");
+    const ptBRText = ptBRTimestamp.textContent ?? "";
+    unmount();
+
+    await i18n.changeLanguage("en");
+    renderSection();
+    const [enTimestamp] = await screen.findAllByTestId("session-last-seen");
+    const enText = enTimestamp.textContent ?? "";
+
+    expect(enText).not.toBe(ptBRText);
   });
 
   it("clicar em Encerrar abre o diálogo e confirmar revoga a sessão", async () => {

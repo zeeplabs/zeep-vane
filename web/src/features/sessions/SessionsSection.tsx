@@ -21,12 +21,8 @@ import { Card } from "../../components/ui/Card";
 import { Dialog } from "../../components/ui/Dialog";
 import { Tag } from "../../components/ui/Tag";
 import { Skeleton } from "../../components/ui/Skeleton";
+import { formatDateTime } from "../../lib/formatDate";
 import { useRevokeSession, useSessions } from "./hooks";
-
-function formatTimestamp(iso: string | null, locale: string): string {
-  if (!iso) return "-";
-  return new Date(iso).toLocaleString(locale);
-}
 
 // deviceLabel shortens a User-Agent to a one-word OS/browser label
 // for display. Real UA parsing is out of scope (context.md, "Declined
@@ -129,7 +125,9 @@ export function SessionsSection() {
               </div>
               <div className="text-right text-xs text-neutral-400">
                 <div>{t("sessions.columns.lastSeen")}</div>
-                <div className="mt-0.5 text-[13px] text-text">{formatTimestamp(s.last_seen_at, i18n.language)}</div>
+                <div data-testid="session-last-seen" className="mt-0.5 text-[13px] text-text">
+                  {s.last_seen_at ? formatDateTime(s.last_seen_at, i18n.language) : "-"}
+                </div>
               </div>
               {s.current ? null : (
                 <Button

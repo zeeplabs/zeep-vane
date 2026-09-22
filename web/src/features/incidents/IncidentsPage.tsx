@@ -12,6 +12,7 @@ import { Skeleton } from "../../components/ui/Skeleton";
 import { useAuth } from "../../auth/AuthProvider";
 import { ApiError } from "../../lib/apiClient";
 import type { IncidentSeverity, IncidentStatus } from "../../types/api";
+import { formatDateTimeShort } from "../../lib/formatDate";
 import { useServices } from "../services/hooks";
 import { useCreateIncident, useIncidents } from "./hooks";
 import { IncidentDetailDrawer } from "./IncidentDetailDrawer";
@@ -33,12 +34,8 @@ const severityOptions: { value: IncidentSeverity; label: string }[] = [
 
 const DEFAULT_SEVERITY: IncidentSeverity = "moderate";
 
-function formatOpenedAt(iso: string): string {
-  return new Date(iso).toLocaleString("pt-BR", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" });
-}
-
 export function IncidentsPage() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const { hasRole } = useAuth();
   const canManage = hasRole(["owner", "operator"]);
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
@@ -199,7 +196,7 @@ export function IncidentsPage() {
                 <div className="text-[12.5px] font-bold" style={{ color: severityColor(incident.severity) }}>
                   {severityLabel(incident.severity)}
                 </div>
-                <div className="text-[12.5px] text-neutral-400">{formatOpenedAt(incident.created_at)}</div>
+                <div className="text-[12.5px] text-neutral-400">{formatDateTimeShort(incident.created_at, i18n.language)}</div>
                 <div className="text-[12.5px] font-semibold text-text">
                   {formatDuration(incident.created_at, incident.resolved_at)}
                 </div>

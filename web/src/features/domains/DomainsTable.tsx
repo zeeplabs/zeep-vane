@@ -5,14 +5,11 @@ import { Card } from "../../components/ui/Card";
 import { Pager } from "../../components/ui/Pager";
 import { Skeleton } from "../../components/ui/Skeleton";
 import { EmptyState } from "../../layout/EmptyState";
+import { formatDateTime } from "../../lib/formatDate";
 import type { Domain } from "../../types/api";
 import { useDomains } from "./hooks";
 import { attachedPageColumn, domainTypeLabel, sslStatusColor, sslStatusLabel } from "./domainStatusMeta";
 import { DomainStatusTag } from "./DomainStatusTag";
-
-function formatTimestamp(iso: string | null): string {
-  return iso ? new Date(iso).toLocaleString("pt-BR") : "—";
-}
 
 export interface DomainsTableProps {
   /** Chamado quando uma linha da tabela é selecionada (abre o
@@ -24,7 +21,7 @@ export interface DomainsTableProps {
  * Tipo/Aponta para/SSL/Verificado, mesma estrutura de grid/linha/Pager que
  * ServiceListPage já estabeleceu. */
 export function DomainsTable({ onSelect }: DomainsTableProps) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [page, setPage] = useState(1);
   const { data: domainsPage, isLoading } = useDomains(page);
   const domains = useMemo(() => domainsPage?.items ?? [], [domainsPage]);
@@ -91,7 +88,9 @@ export function DomainsTable({ onSelect }: DomainsTableProps) {
             <div className="text-[13px] font-semibold" style={{ color: sslStatusColor[domain.ssl_status] }}>
               {sslStatusLabel[domain.ssl_status]}
             </div>
-            <div className="text-xs text-text-muted">{formatTimestamp(domain.verified_at)}</div>
+            <div className="text-xs text-text-muted">
+              {domain.verified_at ? formatDateTime(domain.verified_at, i18n.language) : "—"}
+            </div>
             <MdChevronRight size={16} className="text-neutral-500" aria-hidden="true" />
           </div>
         ))}

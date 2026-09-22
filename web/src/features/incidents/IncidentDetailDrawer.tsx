@@ -1,10 +1,12 @@
 import { useState, type FormEvent } from "react";
 import * as RadixDialog from "@radix-ui/react-dialog";
+import { useTranslation } from "react-i18next";
 import { MdClose, MdOutlineAutoAwesome, MdOutlineRefresh } from "react-icons/md";
 import { Button } from "../../components/ui/Button";
 import { Tag } from "../../components/ui/Tag";
 import { Textarea } from "../../components/ui/Textarea";
 import { ApiError } from "../../lib/apiClient";
+import { formatDateTimeShort } from "../../lib/formatDate";
 import type { Incident, IncidentStatus } from "../../types/api";
 import {
   useAddIncidentUpdate,
@@ -23,10 +25,6 @@ const transitionOptions: { value: IncidentStatus; label: string }[] = [
   { value: "monitoring", label: "Monitorando" },
   { value: "resolved", label: "Marcar como resolvido" },
 ];
-
-function formatTimestamp(iso: string): string {
-  return new Date(iso).toLocaleString("pt-BR", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" });
-}
 
 export interface IncidentDetailDrawerProps {
   incident: Incident | null;
@@ -58,6 +56,7 @@ export interface IncidentDetailDrawerProps {
  * mostra - mantidos como ações secundárias, mesmo raciocínio de "Reabrir
  * incidente" abaixo. */
 export function IncidentDetailDrawer({ incident, canManage, serviceName, onClose }: IncidentDetailDrawerProps) {
+  const { i18n } = useTranslation();
   const { data: updatesPage } = useIncidentUpdates(incident?.id ?? "", 1);
   const updates = updatesPage?.items ?? [];
   const timelineUpdates = updates.filter((u) => !u.is_ai_summary);
@@ -134,7 +133,7 @@ export function IncidentDetailDrawer({ incident, canManage, serviceName, onClose
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <div className="mb-1 text-[10.5px] font-bold uppercase tracking-wide text-text-muted">Aberto em</div>
-                  <div className="text-[14.5px] font-bold text-text">{formatTimestamp(incident.created_at)}</div>
+                  <div className="text-[14.5px] font-bold text-text">{formatDateTimeShort(incident.created_at, i18n.language)}</div>
                 </div>
                 <div>
                   <div className="mb-1 text-[10.5px] font-bold uppercase tracking-wide text-text-muted">Duração</div>
@@ -244,7 +243,7 @@ export function IncidentDetailDrawer({ incident, canManage, serviceName, onClose
                       color: "var(--color-success)",
                     }}
                   >
-                    Incidente resolvido em {formatTimestamp(incident.resolved_at ?? incident.created_at)}.
+                    Incidente resolvido em {formatDateTimeShort(incident.resolved_at ?? incident.created_at, i18n.language)}.
                   </div>
                   {canManage ? (
                     <Button variant="ghost" onClick={() => transition.mutate("investigating")} disabled={transition.isPending}>

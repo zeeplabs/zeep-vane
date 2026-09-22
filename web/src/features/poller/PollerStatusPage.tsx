@@ -5,13 +5,9 @@ import { Card } from "../../components/ui/Card";
 import { Pager } from "../../components/ui/Pager";
 import { Tag } from "../../components/ui/Tag";
 import { Skeleton } from "../../components/ui/Skeleton";
+import { formatDateTime } from "../../lib/formatDate";
 import { failureMessage, providerLabel, replicaLabel } from "./format";
 import { usePollerStatus } from "./hooks";
-
-function formatTimestamp(iso: string | null): string {
-  if (!iso) return "-";
-  return new Date(iso).toLocaleString("pt-BR");
-}
 
 function StatCard({ label, value }: { label: string; value: string }) {
   return (
@@ -38,7 +34,7 @@ function AlertBanner({ children }: { children: React.ReactNode }) {
 }
 
 export function PollerStatusPage() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [page, setPage] = useState(1);
   const { data, isLoading, isError } = usePollerStatus(page);
   const totalPages = Math.max(1, Math.ceil((data?.total ?? 0) / (data?.page_size ?? 20)));
@@ -119,7 +115,9 @@ export function PollerStatusPage() {
                   </div>
                   <div className="text-right text-xs text-text-muted">
                     <div>Última execução</div>
-                    <div className="mt-0.5 text-[13px] text-text">{formatTimestamp(e.last_checked_at)}</div>
+                    <div className="mt-0.5 text-[13px] text-text">
+                      {e.last_checked_at ? formatDateTime(e.last_checked_at, i18n.language) : "-"}
+                    </div>
                   </div>
                   {e.status === "active" ? <Tag variant="success">Sucesso</Tag> : <Tag variant="critical">Falha</Tag>}
                 </div>

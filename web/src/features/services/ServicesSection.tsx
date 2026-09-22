@@ -7,14 +7,11 @@ import { Pager } from "../../components/ui/Pager";
 import { Tag } from "../../components/ui/Tag";
 import { Skeleton } from "../../components/ui/Skeleton";
 import { useAuth } from "../../auth/AuthProvider";
+import { formatDateTime } from "../../lib/formatDate";
 import type { Service } from "../../types/api";
 import { useServices } from "./hooks";
 import { statusLabel, statusVariant, statusDotColor } from "./statusMeta";
 import { AddServiceDrawer } from "./AddServiceDrawer";
-
-function formatTimestamp(iso: string): string {
-  return new Date(iso).toLocaleString("pt-BR");
-}
 
 function ClockIcon() {
   return <MdOutlineSchedule size={12} aria-hidden="true" />;
@@ -22,7 +19,7 @@ function ClockIcon() {
 
 /** Tabela + drawer de vínculo de serviço a SLO. Compartilhada entre `IntegrationsPage` (handoff mostra as duas seções na mesma tela) e `ServicesPage` (rota própria, decisão registrada em design.md). */
 export function ServicesSection() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const { hasRole } = useAuth();
   const canManage = hasRole(["owner", "operator"]);
   const [page, setPage] = useState(1);
@@ -33,7 +30,7 @@ export function ServicesSection() {
   const [drawerOpen, setDrawerOpen] = useState(false);
 
   function serviceLastChange(s: Service): string {
-    return s.current_status === "not_configured" ? "—" : formatTimestamp(s.last_status_change_at);
+    return s.current_status === "not_configured" ? "—" : formatDateTime(s.last_status_change_at, i18n.language);
   }
 
   return (

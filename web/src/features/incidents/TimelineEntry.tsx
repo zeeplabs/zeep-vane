@@ -1,3 +1,5 @@
+import { useTranslation } from "react-i18next";
+import { formatDateTime } from "../../lib/formatDate";
 import type { IncidentUpdate } from "../../types/api";
 
 // INCPG-08/09/10/11: AI-generated closing summaries render distinct from
@@ -11,6 +13,7 @@ function authorLabel(update: IncidentUpdate): string {
 }
 
 export function TimelineEntry({ update }: { update: IncidentUpdate }) {
+  const { i18n } = useTranslation();
   if (update.is_ai_summary) {
     return (
       <div
@@ -22,7 +25,7 @@ export function TimelineEntry({ update }: { update: IncidentUpdate }) {
       >
         <p className="text-[11px] font-bold tracking-wide text-accent uppercase">{authorLabel(update)}</p>
         <p className="text-sm text-text">{update.body}</p>
-        <p className="text-xs text-neutral-400">{new Date(update.created_at).toLocaleString("pt-BR")}</p>
+        <p className="text-xs text-neutral-400">{formatDateTime(update.created_at, i18n.language)}</p>
       </div>
     );
   }
@@ -32,7 +35,7 @@ export function TimelineEntry({ update }: { update: IncidentUpdate }) {
       <div className="flex flex-col gap-0.5">
         <p className="text-xs font-semibold text-text-muted">{authorLabel(update)}</p>
         <p className="text-sm text-text">{update.body}</p>
-        <p className="text-xs text-neutral-400">{new Date(update.created_at).toLocaleString("pt-BR")}</p>
+        <p className="text-xs text-neutral-400">{formatDateTime(update.created_at, i18n.language)}</p>
       </div>
     </div>
   );

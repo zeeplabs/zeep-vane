@@ -8,6 +8,7 @@ import { Field } from "../../components/ui/Field";
 import { useAuth } from "../../auth/AuthProvider";
 import type { IncidentStatus } from "../../types/api";
 import { ApiError } from "../../lib/apiClient";
+import { formatDateTime } from "../../lib/formatDate";
 import {
   useAddIncidentUpdate,
   useConfirmCloseIncident,
@@ -25,7 +26,7 @@ const transitionOptions: { value: IncidentStatus; label: string }[] = [
 
 export function IncidentDetail() {
   const { id = "" } = useParams();
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const { hasRole } = useAuth();
   const canManage = hasRole(["owner", "operator"]);
   // SPEC_DEVIATION: design.md/tasks.md didn't account for IncidentDetail.tsx
@@ -168,7 +169,7 @@ export function IncidentDetail() {
             <div className="flex flex-col gap-1">
               <p className="text-sm text-text">{update.body}</p>
               <p className="text-xs text-neutral-400">
-                {new Date(update.created_at).toLocaleString("pt-BR")}
+                {formatDateTime(update.created_at, i18n.language)}
               </p>
             </div>
           </Card>

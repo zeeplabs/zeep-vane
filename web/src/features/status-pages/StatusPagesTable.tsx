@@ -6,13 +6,10 @@ import { Pager } from "../../components/ui/Pager";
 import { Tag } from "../../components/ui/Tag";
 import { Skeleton } from "../../components/ui/Skeleton";
 import { EmptyState } from "../../layout/EmptyState";
+import { formatDateTime } from "../../lib/formatDate";
 import type { StatusPage } from "../../types/api";
 import { useDomains } from "../domains/hooks";
 import { useStatusPages } from "./hooks";
-
-function formatTimestamp(iso: string): string {
-  return new Date(iso).toLocaleString("pt-BR");
-}
 
 // publicUrl composes "URL pública" (spec.md DSP-13/17) from the page's own
 // domain_id/subdomain plus the attached domain's hostname - "—" when no
@@ -33,7 +30,7 @@ export interface StatusPagesTableProps {
  * URL pública/Serviços/Atualizado, mesma estrutura de grid/linha/Pager que
  * DomainsTable (T6) já estabeleceu. */
 export function StatusPagesTable({ onSelect }: StatusPagesTableProps) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [page, setPage] = useState(1);
   const { data: statusPagesPage, isLoading } = useStatusPages(page);
   const pages = useMemo(() => statusPagesPage?.items ?? [], [statusPagesPage]);
@@ -97,7 +94,7 @@ export function StatusPagesTable({ onSelect }: StatusPagesTableProps) {
             <div className="min-w-0 truncate text-[13px] text-text">{p.name}</div>
             <div className="min-w-0 truncate font-mono text-[13px] font-medium text-text-muted">{publicUrl(p, hostnameFor(p))}</div>
             <div className="text-[13px] font-medium text-text-muted">{p.service_ids.length} serviços</div>
-            <div className="text-xs text-text-muted">{formatTimestamp(p.created_at)}</div>
+            <div className="text-xs text-text-muted">{formatDateTime(p.created_at, i18n.language)}</div>
             <MdChevronRight size={16} className="text-neutral-500" aria-hidden="true" />
           </div>
         ))}
