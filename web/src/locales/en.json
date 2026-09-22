@@ -381,11 +381,81 @@
     "loading": "Loading…",
     "disconnectButton": "Disconnect",
     "genericDisconnectError": "Could not disconnect the provider.",
+    "activateButton": "Activate",
+    "genericActivateError": "Could not activate {{provider}}.",
     "disconnectDialog": {
       "title": "Disconnect provider",
       "body": "Are you sure you want to disconnect {{provider}}? The stored API key will be removed and cannot be recovered - you'll need to reconnect to use it again.",
       "confirm": "Disconnect",
       "cancel": "Cancel"
+    }
+  },
+  "integrations": {
+    "title": "Integrations",
+    "subtitle": "Connect Vane to the tools that power monitoring and incident analysis.",
+    "categories": {
+      "apm": "APM & Observability",
+      "ai": "AI",
+      "email": "Email"
+    },
+    "count_one": "{{count}} integration",
+    "count_other": "{{count}} integrations",
+    "statusLabel": {
+      "connected": "Connected",
+      "not_connected": "Not connected",
+      "coming_soon": "Coming soon"
+    },
+    "editConnectionButton": "Edit connection",
+    "connectButton": "Connect",
+    "loading": "Loading…",
+    "loadError": "Could not load",
+    "notConfigured": "Not configured",
+    "syncedNow": "Synced just now",
+    "syncedAgo": "Synced {{count}} min ago",
+    "saveButton": "Save",
+    "datadog": {
+      "title": "Datadog",
+      "description": "Metrics and logs from monitored services, with alerts synced in real time.",
+      "drawerTitle": "Connect Datadog",
+      "drawerDescription": "Keys are validated against Datadog and encrypted at rest. They are not shown again after saving.",
+      "apiKeyLabel": "API key",
+      "apiKeyPlaceholder": "API key",
+      "appKeyLabel": "App key",
+      "appKeyPlaceholder": "Application key",
+      "connectError": "Could not connect to Datadog."
+    },
+    "newRelic": {
+      "title": "New Relic",
+      "description": "Application performance monitoring (APM) and infrastructure."
+    },
+    "llm": {
+      "title": "LLM Provider",
+      "description": "AI-generated incident summaries and assisted resolution.",
+      "activeMeta": "Active · OpenAI · {{model}}",
+      "meta": "OpenAI · {{model}}",
+      "drawerTitle": "Connect LLM Provider",
+      "modelLabel": "Model",
+      "connectError": "Could not connect to the LLM provider."
+    },
+    "email": {
+      "resend": {
+        "title": "Resend",
+        "description": "Sends incident alerts and notifications to the on-call team."
+      },
+      "sendgrid": {
+        "title": "SendGrid",
+        "description": "Sends incident alerts and notifications by email."
+      },
+      "active": "Active",
+      "verified": "Verified",
+      "drawerTitle": "Connect {{provider}}",
+      "apiKeyLabel": "API key",
+      "apiKeyPlaceholder": "API key",
+      "fromEmailLabel": "Sender email",
+      "fromEmailPlaceholder": "sender@domain.com",
+      "fromNameLabel": "Sender name",
+      "fromNamePlaceholder": "Name shown in the email",
+      "connectError": "Could not connect."
     }
   },
   "authLayout": {

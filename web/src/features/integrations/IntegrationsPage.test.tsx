@@ -3,7 +3,7 @@ import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { http, HttpResponse } from "msw";
-import "../../lib/i18n";
+import i18n from "../../lib/i18n";
 import { AuthProvider } from "../../auth/AuthProvider";
 import { TestQueryProvider } from "../../test/queryClient";
 import { server } from "../../test/msw/server";
@@ -48,6 +48,21 @@ describe("IntegrationsPage", () => {
     expect(screen.getByText("IA")).toBeInTheDocument();
     expect(screen.getByText("1 integração")).toBeInTheDocument();
     expect(screen.getByText("E-mail")).toBeInTheDocument();
+  });
+
+  it("renderiza em inglês quando o idioma ativo é en", async () => {
+    await loginAs("owner@vane.app");
+    await i18n.changeLanguage("en");
+
+    try {
+      renderPage();
+
+      expect(await screen.findByText("Integrations")).toBeInTheDocument();
+      expect(screen.getByText("APM & Observability")).toBeInTheDocument();
+      expect(screen.getByText("Email")).toBeInTheDocument();
+    } finally {
+      await i18n.changeLanguage("pt-BR");
+    }
   });
 
   it("mostra Datadog conectado (seed) e New Relic sempre como Em breve", async () => {

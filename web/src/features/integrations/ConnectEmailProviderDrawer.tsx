@@ -1,14 +1,10 @@
 import { useEffect, useState, type FormEvent } from "react";
+import { useTranslation } from "react-i18next";
 import { Drawer, drawerFooterPrimaryStyle, drawerFooterSecondaryStyle } from "../../components/ui/Drawer";
 import { Button } from "../../components/ui/Button";
 import { Field } from "../../components/ui/Field";
 import { ApiError } from "../../lib/apiClient";
 import { useConnectEmailProvider, type EmailProviderName } from "../email-providers/hooks";
-
-const PROVIDER_LABEL: Record<EmailProviderName, string> = {
-  resend: "Resend",
-  sendgrid: "SendGrid",
-};
 
 export interface ConnectEmailProviderDrawerProps {
   provider: EmailProviderName | null;
@@ -19,6 +15,7 @@ export interface ConnectEmailProviderDrawerProps {
  * usado em "Anexar domínio"/"Criar status page" (INTG-10). `provider` nulo
  * fecha o painel, igual ao padrão `pageId`/`EditStatusPageDrawer`. */
 export function ConnectEmailProviderDrawer({ provider, onOpenChange }: ConnectEmailProviderDrawerProps) {
+  const { t } = useTranslation();
   const connectMutation = useConnectEmailProvider(provider ?? "resend");
   const [apiKey, setApiKey] = useState("");
   const [fromEmail, setFromEmail] = useState("");
@@ -42,19 +39,19 @@ export function ConnectEmailProviderDrawer({ provider, onOpenChange }: ConnectEm
       await connectMutation.mutateAsync({ api_key: apiKey, from_email: fromEmail, from_name: fromName });
       onOpenChange(false);
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Não foi possível conectar.");
+      setError(err instanceof ApiError ? err.message : t("integrations.email.connectError"));
     }
   }
 
-  const label = provider ? PROVIDER_LABEL[provider] : "";
+  const label = provider ? t(`integrations.email.${provider}.title`) : "";
 
   return (
     <Drawer
       open={provider !== null}
       onOpenChange={onOpenChange}
-      title={`Conectar ${label}`}
-      description="A chave é validada contra o provedor e criptografada em repouso. Não é reexibida após salvar."
-      closeLabel="Fechar"
+      title={t("integrations.email.drawerTitle", { provider: label })}
+      description={t("aiSettings.keyHint")}
+      closeLabel={t("common.close")}
       footer={
         <>
           <Button
@@ -63,7 +60,7 @@ export function ConnectEmailProviderDrawer({ provider, onOpenChange }: ConnectEm
             style={drawerFooterSecondaryStyle}
             onClick={() => onOpenChange(false)}
           >
-            Cancelar
+            {t("common.cancel")}
           </Button>
           <Button
             type="submit"
@@ -72,7 +69,7 @@ export function ConnectEmailProviderDrawer({ provider, onOpenChange }: ConnectEm
             style={drawerFooterPrimaryStyle}
             disabled={connectMutation.isPending}
           >
-            Salvar
+            {t("integrations.saveButton")}
           </Button>
         </>
       }
@@ -80,26 +77,26 @@ export function ConnectEmailProviderDrawer({ provider, onOpenChange }: ConnectEm
       <form id="connect-email-provider-form" onSubmit={handleSubmit} className="flex flex-col gap-3">
         <Field
           variant="filled"
-          label="API key"
+          label={t("integrations.email.apiKeyLabel")}
           type="password"
-          placeholder="Chave da API"
+          placeholder={t("integrations.email.apiKeyPlaceholder")}
           value={apiKey}
           onChange={(e) => setApiKey(e.target.value)}
           required
         />
         <Field
           variant="filled"
-          label="E-mail do remetente"
+          label={t("integrations.email.fromEmailLabel")}
           type="email"
-          placeholder="remetente@dominio.com"
+          placeholder={t("integrations.email.fromEmailPlaceholder")}
           value={fromEmail}
           onChange={(e) => setFromEmail(e.target.value)}
           required
         />
         <Field
           variant="filled"
-          label="Nome do remetente"
-          placeholder="Nome exibido no e-mail"
+          label={t("integrations.email.fromNameLabel")}
+          placeholder={t("integrations.email.fromNamePlaceholder")}
           value={fromName}
           onChange={(e) => setFromName(e.target.value)}
           required

@@ -1,4 +1,5 @@
 import { useEffect, useState, type FormEvent } from "react";
+import { useTranslation } from "react-i18next";
 import { Drawer, drawerFooterPrimaryStyle, drawerFooterSecondaryStyle } from "../../components/ui/Drawer";
 import { Button } from "../../components/ui/Button";
 import { Field } from "../../components/ui/Field";
@@ -16,6 +17,7 @@ export interface ConnectLLMProviderDrawerProps {
 /** Painel "Conectar LLM Provider" - mesmo chrome padrão de Drawer usado em
  * "Anexar domínio"/"Criar status page" (INTG-09). */
 export function ConnectLLMProviderDrawer({ open, onOpenChange }: ConnectLLMProviderDrawerProps) {
+  const { t } = useTranslation();
   const connectMutation = useConnectLLMProvider(PROVIDER_ID);
   const [apiKey, setApiKey] = useState("");
   const [model, setModel] = useState("");
@@ -36,7 +38,7 @@ export function ConnectLLMProviderDrawer({ open, onOpenChange }: ConnectLLMProvi
       await connectMutation.mutateAsync({ api_key: apiKey, model: model || undefined });
       onOpenChange(false);
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Não foi possível conectar ao LLM Provider.");
+      setError(err instanceof ApiError ? err.message : t("integrations.llm.connectError"));
     }
   }
 
@@ -44,9 +46,9 @@ export function ConnectLLMProviderDrawer({ open, onOpenChange }: ConnectLLMProvi
     <Drawer
       open={open}
       onOpenChange={onOpenChange}
-      title="Conectar LLM Provider"
-      description="A chave é validada contra o provedor e criptografada em repouso. Não é reexibida após salvar."
-      closeLabel="Fechar"
+      title={t("integrations.llm.drawerTitle")}
+      description={t("aiSettings.keyHint")}
+      closeLabel={t("common.close")}
       footer={
         <>
           <Button
@@ -55,7 +57,7 @@ export function ConnectLLMProviderDrawer({ open, onOpenChange }: ConnectLLMProvi
             style={drawerFooterSecondaryStyle}
             onClick={() => onOpenChange(false)}
           >
-            Cancelar
+            {t("common.cancel")}
           </Button>
           <Button
             type="submit"
@@ -64,7 +66,7 @@ export function ConnectLLMProviderDrawer({ open, onOpenChange }: ConnectLLMProvi
             style={drawerFooterPrimaryStyle}
             disabled={connectMutation.isPending}
           >
-            Salvar
+            {t("integrations.saveButton")}
           </Button>
         </>
       }
@@ -72,16 +74,16 @@ export function ConnectLLMProviderDrawer({ open, onOpenChange }: ConnectLLMProvi
       <form id="connect-llm-form" onSubmit={handleSubmit} className="flex flex-col gap-3">
         <Field
           variant="filled"
-          label="API key"
+          label={t("integrations.datadog.apiKeyLabel")}
           type="password"
-          placeholder="Chave da API"
+          placeholder={t("integrations.datadog.apiKeyPlaceholder")}
           value={apiKey}
           onChange={(e) => setApiKey(e.target.value)}
           required
         />
         <div className="flex flex-col gap-1">
           <label htmlFor="connect-llm-model" className="text-sm font-medium text-text">
-            Modelo
+            {t("integrations.llm.modelLabel")}
           </label>
           <select
             id="connect-llm-model"

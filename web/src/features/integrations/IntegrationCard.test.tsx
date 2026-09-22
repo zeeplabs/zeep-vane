@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest";
+import "../../lib/i18n";
 import { render, screen } from "@testing-library/react";
 import { IntegrationCard } from "./IntegrationCard";
 
