@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.0] — 2026-09-22
+
 ### Added
 
 - **Full pt-BR/English internationalization** across the admin SPA: a real language selector (Meu Perfil/Settings, persisted per-browser) replaces the previously decorative one, every screen (Billing, Admins, Incidents, Domains & Status Pages, Integrations, Services, Poller, Settings) is routed through `react-i18next`, and the public status page (`/status/:id`) detects the visitor's browser language independently of the logged-in admin's choice. A new `npm run i18n:check` CI gate enforces key parity between `pt-BR.json`/`en.json` going forward.
