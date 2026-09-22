@@ -384,9 +384,9 @@ T8 → T14
 - Skill: NONE
 
 **Done when**:
-- [ ] `SetErrorCauseEnrichment` called at boot, right alongside the existing `SetNotifier` call
-- [ ] Gate check passes: `go build ./... && go test ./...` (full backend suite, confirms nothing broke at the wiring seam) and `make test-integration`
-- [ ] No new test count requirement (pure wiring — covered by the full backend suite + integration gate, not a new unit test)
+- [x] `SetErrorCauseEnrichment` called at boot, right alongside the existing `SetNotifier` call
+- [x] Gate check passes: `go build ./... && go test ./...` (full backend suite, confirms nothing broke at the wiring seam) and `make test-integration`
+- [x] No new test count requirement (pure wiring — covered by the full backend suite + integration gate, not a new unit test)
 
 **Tests**: none (wiring — covered by the full existing suite + integration gate)
 **Gate**: full
