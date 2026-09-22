@@ -4,6 +4,9 @@ import { BrowserRouter } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import App from "./App";
 import "./styles/tokens.css";
+import { applyBootTheme } from "./styles/themeBoot";
+
+applyBootTheme();
 
 const queryClient = new QueryClient();
 
