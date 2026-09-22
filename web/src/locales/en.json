@@ -4,6 +4,16 @@
     "cancel": "Cancel",
     "status": "Status"
   },
+  "components": {
+    "iconRoleSelector": {
+      "groupLabel": "Select role",
+      "roleLabel": {
+        "owner": "Owner",
+        "operator": "Operator",
+        "viewer": "Viewer"
+      }
+    }
+  },
   "admins": {
     "loading": "Loading…",
     "title": "Users",
@@ -314,7 +324,37 @@
     }
   },
   "poller": {
-    "loading": "Loading…"
+    "loading": "Loading…",
+    "title": "Poller status",
+    "subtitle": "Real state of the active poller and connected integrations.",
+    "loadError": "Couldn't load poller status.",
+    "empty": "No integrations connected.",
+    "lastRun": "Last run",
+    "localReplica": "local replica",
+    "statusLabel": {
+      "unknown": "-",
+      "noLeader": "No leader right now",
+      "active": "Active",
+      "waitingIntegration": "Waiting for integration"
+    },
+    "stat": {
+      "poller": "Poller",
+      "checksPerMinute": "Checks/min",
+      "connectedIntegrations": "Connected integrations"
+    },
+    "leaderNoIntegration": "Leader replica active, but no Datadog integration connected.",
+    "result": {
+      "success": "Success",
+      "failure": "Failure"
+    },
+    "failureMessage": {
+      "single": "Failed to check the {{provider}} integration — the last attempt was unsuccessful.",
+      "multiple": "Failed to check the {{providers}} integrations — the last attempt was unsuccessful."
+    },
+    "providersSeparator": " and ",
+    "banner": {
+      "viewDetails": "View details"
+    }
   },
   "publicStatus": {
     "loading": "Loading…",
@@ -691,7 +731,11 @@
       "name": "Company name",
       "website": "Website",
       "timezone": "Timezone",
-      "language": "Language"
+      "language": "Language",
+      "languageOptions": {
+        "ptBR": "Português (Brasil)",
+        "enUS": "English (US)"
+      }
     },
     "fiscal": {
       "title": "Fiscal information",

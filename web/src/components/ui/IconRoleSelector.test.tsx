@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import i18n from "../../lib/i18n";
 import { IconRoleSelector } from "./IconRoleSelector";
 
 describe("IconRoleSelector", () => {
@@ -34,5 +35,16 @@ describe("IconRoleSelector", () => {
     await userEvent.click(screen.getByRole("button", { name: "Viewer" }));
     expect(onSelect).toHaveBeenCalledTimes(1);
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
+  it("renderiza em inglês quando o idioma ativo é en", async () => {
+    await i18n.changeLanguage("en");
+
+    try {
+      render(<IconRoleSelector role="owner" onSelect={() => {}} />);
+      expect(screen.getByRole("group", { name: "Select role" })).toBeInTheDocument();
+    } finally {
+      await i18n.changeLanguage("pt-BR");
+    }
   });
 });

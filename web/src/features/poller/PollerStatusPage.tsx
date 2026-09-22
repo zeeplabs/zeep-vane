@@ -42,19 +42,20 @@ export function PollerStatusPage() {
   const failing = items.filter((e) => e.status !== "active");
 
   const pollerStatusLabel = !data
-    ? "-"
+    ? t("poller.statusLabel.unknown")
     : !data.leader_elected
-      ? "Sem líder no momento"
+      ? t("poller.statusLabel.noLeader")
       : data.poller_running
-        ? "Ativo"
-        : "Aguardando integração";
-  const replicaName = data?.leader_elected && data.replica ? replicaLabel(data.replica.application_name) : null;
+        ? t("poller.statusLabel.active")
+        : t("poller.statusLabel.waitingIntegration");
+  const replicaName =
+    data?.leader_elected && data.replica ? replicaLabel(t, data.replica.application_name) : null;
 
   return (
     <div className="mx-auto flex w-full max-w-[1280px] flex-col gap-6">
       <div>
-        <h2 className="text-text">Status do poller</h2>
-        <p className="m-0 text-[13.5px] text-text-muted">Estado real do poller ativo e das integrações conectadas.</p>
+        <h2 className="text-text">{t("poller.title")}</h2>
+        <p className="m-0 text-[13.5px] text-text-muted">{t("poller.subtitle")}</p>
       </div>
       {isLoading ? (
         <div aria-busy="true" className="flex flex-col gap-3.5">
@@ -80,25 +81,25 @@ export function PollerStatusPage() {
           </Card>
         </div>
       ) : isError ? (
-        <p className="text-text-muted">Não foi possível carregar o status do poller.</p>
+        <p className="text-text-muted">{t("poller.loadError")}</p>
       ) : (
         <>
           <div className="grid grid-cols-1 gap-3.5 sm:grid-cols-3">
-            <StatCard label="Poller" value={pollerStatusLabel + (replicaName ? ` · ${replicaName}` : "")} />
-            <StatCard label="Verificações/min" value={String(data?.checks_last_minute ?? 0)} />
-            <StatCard label="Integrações conectadas" value={String(data?.total ?? 0)} />
+            <StatCard label={t("poller.stat.poller")} value={pollerStatusLabel + (replicaName ? ` · ${replicaName}` : "")} />
+            <StatCard label={t("poller.stat.checksPerMinute")} value={String(data?.checks_last_minute ?? 0)} />
+            <StatCard label={t("poller.stat.connectedIntegrations")} value={String(data?.total ?? 0)} />
           </div>
 
           {data && data.leader_elected && !data.poller_running ? (
-            <AlertBanner>Réplica líder ativa, mas nenhuma integração Datadog conectada.</AlertBanner>
+            <AlertBanner>{t("poller.leaderNoIntegration")}</AlertBanner>
           ) : null}
           {failing.length > 0 ? (
-            <AlertBanner>{failureMessage(failing.map((e) => e.provider))}</AlertBanner>
+            <AlertBanner>{failureMessage(t, failing.map((e) => e.provider))}</AlertBanner>
           ) : null}
 
           <Card elevation="none" className="divide-y divide-divider overflow-hidden border border-divider">
             {items.length === 0 ? (
-              <p className="px-4 py-6 text-center text-text-muted">Nenhuma integração conectada.</p>
+              <p className="px-4 py-6 text-center text-text-muted">{t("poller.empty")}</p>
             ) : (
               items.map((e) => (
                 <div key={e.provider} data-testid="poller-row" className="flex items-center gap-3 px-4 py-3.5">
@@ -114,12 +115,16 @@ export function PollerStatusPage() {
                     {e.status !== "active" ? <div className="mt-0.5 text-xs text-text-muted">{e.last_error}</div> : null}
                   </div>
                   <div className="text-right text-xs text-text-muted">
-                    <div>Última execução</div>
+                    <div>{t("poller.lastRun")}</div>
                     <div className="mt-0.5 text-[13px] text-text">
                       {e.last_checked_at ? formatDateTime(e.last_checked_at, i18n.language) : "-"}
                     </div>
                   </div>
-                  {e.status === "active" ? <Tag variant="success">Sucesso</Tag> : <Tag variant="critical">Falha</Tag>}
+                  {e.status === "active" ? (
+                    <Tag variant="success">{t("poller.result.success")}</Tag>
+                  ) : (
+                    <Tag variant="critical">{t("poller.result.failure")}</Tag>
+                  )}
                 </div>
               ))
             )}

@@ -1,4 +1,5 @@
 import { useNavigate } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 import { MdOutlineWarningAmber } from "react-icons/md";
 import { Button } from "../../components/ui/Button";
 import { failureMessage } from "./format";
@@ -13,6 +14,7 @@ export function PollerBanner() {
   // needs its own Pager (T18). Page 1 (page_size 20) is enough in practice
   // (AD-002: single-tenant installs have a handful of integrations at
   // most), so this deliberately doesn't scan every page for a failure.
+  const { t } = useTranslation();
   const { data } = usePollerStatus(1);
   const navigate = useNavigate();
   const failing = (data?.items ?? []).filter((entry) => entry.status !== "active");
@@ -27,10 +29,10 @@ export function PollerBanner() {
     >
       <div className="flex items-center gap-2">
         <WarningTriangleIcon />
-        <span className="text-sm">{failureMessage(failing.map((entry) => entry.provider))}</span>
+        <span className="text-sm">{failureMessage(t, failing.map((entry) => entry.provider))}</span>
       </div>
       <Button variant="ghost" onClick={() => navigate("/poller-status")}>
-        Ver detalhes
+        {t("poller.banner.viewDetails")}
       </Button>
     </div>
   );

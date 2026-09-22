@@ -1,10 +1,12 @@
+type Translator = (key: string, options?: Record<string, unknown>) => string;
+
 // replicaLabel maps the backend's replicaApplicationName() fallback
 // (internal/cli/poller_manager.go, when HOSTNAME is unset - local dev,
 // self-hosted without Kubernetes) to a human-readable label. Kubernetes
 // always sets HOSTNAME to the pod name, so "unknown" only ever surfaces
 // outside that environment.
-export function replicaLabel(applicationName: string): string {
-  return applicationName === "unknown" ? "réplica local" : applicationName;
+export function replicaLabel(t: Translator, applicationName: string): string {
+  return applicationName === "unknown" ? t("poller.localReplica") : applicationName;
 }
 
 const PROVIDER_LABELS: Record<string, string> = {
@@ -19,10 +21,10 @@ export function providerLabel(provider: string): string {
 
 // Names the specific integration(s) so an operator doesn't have to open the
 // details page just to know which credential to rotate.
-export function failureMessage(providers: string[]): string {
+export function failureMessage(t: Translator, providers: string[]): string {
   const labels = providers.map(providerLabel);
   if (labels.length === 1) {
-    return `Falha ao verificar a integração ${labels[0]} — última tentativa não teve sucesso.`;
+    return t("poller.failureMessage.single", { provider: labels[0] });
   }
-  return `Falha ao verificar as integrações ${labels.join(" e ")} — última tentativa não teve sucesso.`;
+  return t("poller.failureMessage.multiple", { providers: labels.join(t("poller.providersSeparator")) });
 }

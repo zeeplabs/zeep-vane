@@ -3,7 +3,7 @@ import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { http, HttpResponse, delay } from "msw";
-import "../../lib/i18n";
+import i18n from "../../lib/i18n";
 import { server } from "../../test/msw/server";
 import { resetDeploymentMode, setDeploymentMode } from "../../test/msw/handlers";
 import { TestQueryProvider } from "../../test/queryClient";
@@ -284,5 +284,20 @@ describe("SettingsPage", () => {
 
     expect(screen.queryByRole("button", { name: "Excluir conta" })).not.toBeInTheDocument();
     expect(screen.queryByText(/Remove permanentemente esta conta/)).not.toBeInTheDocument();
+  });
+
+  it("renderiza em inglês quando o idioma ativo é en", async () => {
+    await loginAsOwner();
+    await i18n.changeLanguage("en");
+
+    try {
+      renderPage();
+
+      expect(await screen.findByText("Company profile")).toBeInTheDocument();
+      expect(screen.getByLabelText("Language")).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Save changes" })).toBeInTheDocument();
+    } finally {
+      await i18n.changeLanguage("pt-BR");
+    }
   });
 });

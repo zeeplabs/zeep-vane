@@ -1,7 +1,7 @@
 import { describe, it, expect, afterEach } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
-import "../../lib/i18n";
+import i18n from "../../lib/i18n";
 import { AuthProvider } from "../../auth/AuthProvider";
 import { TestQueryProvider } from "../../test/queryClient";
 import { apiFetch } from "../../lib/apiClient";
@@ -49,5 +49,21 @@ describe("PollerBanner", () => {
 
     expect(await screen.findByTestId("poller-banner")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Ver detalhes" })).toBeInTheDocument();
+  });
+
+  it("renderiza em inglês quando o idioma ativo é en", async () => {
+    pollerStatus[0].status = "invalid";
+    pollerStatus[0].last_error = "Credenciais inválidas";
+    await loginAsOwner();
+    await i18n.changeLanguage("en");
+
+    try {
+      renderBanner();
+
+      expect(await screen.findByTestId("poller-banner")).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "View details" })).toBeInTheDocument();
+    } finally {
+      await i18n.changeLanguage("pt-BR");
+    }
   });
 });

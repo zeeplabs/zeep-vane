@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { MdOutlineShield, MdOutlineBuild, MdOutlineVisibility } from "react-icons/md";
 import { Tooltip } from "./Tooltip";
 
@@ -8,11 +9,7 @@ export interface IconRoleSelectorProps {
   onSelect: (role: AdminRole) => void;
 }
 
-const roles: { value: AdminRole; label: string }[] = [
-  { value: "owner", label: "Owner" },
-  { value: "operator", label: "Operator" },
-  { value: "viewer", label: "Viewer" },
-];
+const roleValues: AdminRole[] = ["owner", "operator", "viewer"];
 
 function ShieldIcon() {
   return <MdOutlineShield size={18} aria-hidden="true" />;
@@ -33,18 +30,20 @@ const icons: Record<AdminRole, () => JSX.Element> = {
 };
 
 export function IconRoleSelector({ role, onSelect }: IconRoleSelectorProps) {
+  const { t } = useTranslation();
   return (
-    <div role="group" aria-label="Selecionar papel" className="inline-flex gap-2">
-      {roles.map((r) => {
-        const Icon = icons[r.value];
-        const active = r.value === role;
+    <div role="group" aria-label={t("components.iconRoleSelector.groupLabel")} className="inline-flex gap-2">
+      {roleValues.map((value) => {
+        const label = t(`components.iconRoleSelector.roleLabel.${value}`);
+        const Icon = icons[value];
+        const active = value === role;
         return (
-          <Tooltip key={r.value} label={r.label}>
+          <Tooltip key={value} label={label}>
             <button
               type="button"
-              aria-label={r.label}
+              aria-label={label}
               aria-pressed={active}
-              onClick={() => onSelect(r.value)}
+              onClick={() => onSelect(value)}
               className={
                 "flex h-9 w-9 cursor-pointer items-center justify-center rounded-md border transition-opacity " +
                 (active ? "border-accent text-accent opacity-100" : "border-divider text-text opacity-40")

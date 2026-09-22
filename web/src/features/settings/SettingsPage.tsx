@@ -253,8 +253,8 @@ export function SettingsPage() {
               onChange={(e) => setLanguage(e.target.value as LanguageOption)}
               className="min-h-9 rounded-md border border-transparent bg-card-header-bg px-3 text-sm text-text outline-none transition-colors focus:border-accent focus:bg-surface"
             >
-              <option value="pt-BR">Português (Brasil)</option>
-              <option value="en-US">English (US)</option>
+              <option value="pt-BR">{t("settingsPage.companyProfile.languageOptions.ptBR")}</option>
+              <option value="en-US">{t("settingsPage.companyProfile.languageOptions.enUS")}</option>
             </select>
           </div>
         </div>
