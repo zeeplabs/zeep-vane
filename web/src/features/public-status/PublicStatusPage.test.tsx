@@ -8,7 +8,22 @@ import "../../lib/i18n";
 import { server } from "../../test/msw/server";
 import { apiFetch } from "../../lib/apiClient";
 import { PublicStatusPage } from "./PublicStatusPage";
+import publicStatusI18n from "./i18n";
 import type { PublicHistoryBucket, PublicHourlyStatus } from "../../lib/publicStatus";
+
+// publicStatusI18n picks its language from navigator.language on init
+// (real visitor detection, see ./i18n.ts) - jsdom's default
+// navigator.language is "en-US", not this app's pt-BR default, so every
+// test here that asserts Portuguese copy needs the instance forced back to
+// pt-BR regardless of what the test environment reports. Mirrors the
+// admin SPA's own i18n test convention (afterEach resets to pt-BR).
+beforeEach(async () => {
+  await publicStatusI18n.changeLanguage("pt-BR");
+});
+
+afterEach(async () => {
+  await publicStatusI18n.changeLanguage("pt-BR");
+});
 
 // The preview endpoint (I12) sits behind requireAuth - unlike the real
 // production public page (served by the Go backend directly via Host
@@ -248,7 +263,12 @@ describe("PublicStatusPage", () => {
     await renderAt("/status/sp-1");
 
     expect(await screen.findByText("Indisponibilidade parcial da API")).toBeInTheDocument();
-    expect(screen.getByText(/Resolvido \d{2} \w{3}, \d{2}:\d{2}/)).toBeInTheDocument();
+    // formatDateTime is now Intl-based (lib/formatDate's formatDateTimeShort,
+    // Phase 1) instead of a hand-rolled month-abbreviation array - pt-BR's
+    // ICU output ("05 de mar., 11:30") doesn't match a fixed \w{3} shape,
+    // so this only pins the parts that must be present regardless of
+    // Intl's exact punctuation/wording for the month.
+    expect(screen.getByText(/Resolvido .+\d{2}:\d{2}/)).toBeInTheDocument();
   });
 
   // AI-09/AI-11/AI-18: inc-1's fixture (mockData.ts) has a description,
@@ -605,5 +625,20 @@ describe("PublicStatusPage", () => {
     const badge = await screen.findByText("Operacional");
     expect(badge).not.toHaveAttribute("title");
     expect(badge).not.toHaveAttribute("tabIndex");
+  });
+});
+
+// SHELL-07-style smoke test (one representative assertion, not a full
+// re-run in a second language): confirms the visitor-language routing
+// through the page's own isolated i18next instance (./i18n.ts) actually
+// renders English copy, not just that the admin SPA's shared instance can.
+describe("PublicStatusPage - idioma do visitante (isolado do vane:language do admin)", () => {
+  it("renderiza em inglês quando o idioma detectado do visitante é inglês", async () => {
+    await publicStatusI18n.changeLanguage("en");
+
+    await renderAt("/status/sp-4");
+
+    expect(await screen.findByText("All systems operational")).toBeInTheDocument();
+    expect(screen.getByText("Services")).toBeInTheDocument();
   });
 });

@@ -26,6 +26,60 @@
     "episodePopover": {
       "heading": "Degradação registrada",
       "noReasonRecorded": "Motivo não disponível para este período."
+    },
+    "overallStatus": {
+      "operational": "Todos os sistemas operacionais",
+      "degraded": "Interrupção parcial em andamento",
+      "outage": "Interrupção em andamento"
+    },
+    "serviceStatus": {
+      "operational": "Operacional",
+      "degraded": "Degradado",
+      "outage": "Interrupção"
+    },
+    "hourlyStatus": {
+      "operational": "Operacional",
+      "degraded": "Degradado",
+      "outage": "Interrupção",
+      "no_data": "Sem dados"
+    },
+    "incidentStatus": {
+      "investigating": "Investigando",
+      "identified": "Identificado",
+      "monitoring": "Monitorando",
+      "resolved": "Resolvido"
+    },
+    "rangeAgo": {
+      "24h": "24h atrás",
+      "7d": "7 dias atrás",
+      "30d": "30 dias atrás",
+      "90d": "90 dias atrás"
+    },
+    "now": "agora",
+    "ongoing": "em andamento",
+    "notFoundTitle": "Página não encontrada.",
+    "notFoundSubtitle": "Verifique o endereço e tente novamente.",
+    "updatedAt": "Atualizado {{time}}",
+    "staleNotice": "Mostrando o último dado disponível — atualização em andamento.",
+    "activeIncidentHeading": "Incidente em andamento",
+    "servicesHeading": "Serviços",
+    "selectRangeLabel": "Selecionar período",
+    "noDataLabel": "(sem dados)",
+    "historyHeading": "Histórico (últimos 90 dias)",
+    "noHistoryIncidents": "Nenhum incidente nos últimos 90 dias.",
+    "loadMore": "Carregar mais",
+    "poweredByPrefix": "Powered by",
+    "autoRefreshNotice": "Atualiza automaticamente a cada 2 minutos.",
+    "hideTimeline": "Ocultar linha do tempo",
+    "showTimeline": "Ver linha do tempo",
+    "resolvedAt": "Resolvido {{time}} · duração {{duration}}",
+    "relativeTime": {
+      "minute_one": "há 1 minuto",
+      "minute_other": "há {{count}} minutos",
+      "hour_one": "há 1 hora",
+      "hour_other": "há {{count}} horas",
+      "day_one": "há 1 dia",
+      "day_other": "há {{count}} dias"
     }
   },
   "emailProviders": {

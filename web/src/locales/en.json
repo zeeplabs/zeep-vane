@@ -26,6 +26,60 @@
     "episodePopover": {
       "heading": "Degradation recorded",
       "noReasonRecorded": "No reason available for this period."
+    },
+    "overallStatus": {
+      "operational": "All systems operational",
+      "degraded": "Partial outage in progress",
+      "outage": "Outage in progress"
+    },
+    "serviceStatus": {
+      "operational": "Operational",
+      "degraded": "Degraded",
+      "outage": "Outage"
+    },
+    "hourlyStatus": {
+      "operational": "Operational",
+      "degraded": "Degraded",
+      "outage": "Outage",
+      "no_data": "No data"
+    },
+    "incidentStatus": {
+      "investigating": "Investigating",
+      "identified": "Identified",
+      "monitoring": "Monitoring",
+      "resolved": "Resolved"
+    },
+    "rangeAgo": {
+      "24h": "24h ago",
+      "7d": "7 days ago",
+      "30d": "30 days ago",
+      "90d": "90 days ago"
+    },
+    "now": "now",
+    "ongoing": "ongoing",
+    "notFoundTitle": "Page not found.",
+    "notFoundSubtitle": "Check the address and try again.",
+    "updatedAt": "Updated {{time}}",
+    "staleNotice": "Showing the last available data — update in progress.",
+    "activeIncidentHeading": "Ongoing incident",
+    "servicesHeading": "Services",
+    "selectRangeLabel": "Select period",
+    "noDataLabel": "(no data)",
+    "historyHeading": "History (last 90 days)",
+    "noHistoryIncidents": "No incidents in the last 90 days.",
+    "loadMore": "Load more",
+    "poweredByPrefix": "Powered by",
+    "autoRefreshNotice": "Refreshes automatically every 2 minutes.",
+    "hideTimeline": "Hide timeline",
+    "showTimeline": "View timeline",
+    "resolvedAt": "Resolved {{time}} · duration {{duration}}",
+    "relativeTime": {
+      "minute_one": "1 minute ago",
+      "minute_other": "{{count}} minutes ago",
+      "hour_one": "1 hour ago",
+      "hour_other": "{{count}} hours ago",
+      "day_one": "1 day ago",
+      "day_other": "{{count}} days ago"
     }
   },
   "emailProviders": {
