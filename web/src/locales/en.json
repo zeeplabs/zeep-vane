@@ -502,7 +502,8 @@
     "eyebrow": "Real-time monitoring",
     "headline": "Total clarity over your infrastructure's health.",
     "statusTitle": "All systems operational",
-    "uptime": "99.98% uptime · last 30 days"
+    "uptime": "99.98% uptime · last 30 days",
+    "companyLogoAlt": "Company logo"
   },
   "auth": {
     "oauth": {
@@ -519,6 +520,8 @@
     "password": "Password",
     "submit": "Sign in",
     "forgotPassword": "Forgot my password",
+    "showPassword": "Show password",
+    "hidePassword": "Hide password",
     "invalidCredentials": "Invalid email or password.",
     "noAccount": "Don't have an account?",
     "createAccount": "Create account",
@@ -728,6 +731,7 @@
       "subtitle": "How the account appears in Vane and on public status pages.",
       "logoHint": "PNG or SVG, transparent background.",
       "uploadLogo": "Upload/change logo",
+      "logoAlt": "Company logo",
       "name": "Company name",
       "website": "Website",
       "timezone": "Timezone",

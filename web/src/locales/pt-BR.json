@@ -502,7 +502,8 @@
     "eyebrow": "Monitoramento em tempo real",
     "headline": "Clareza total sobre a saúde da sua infraestrutura.",
     "statusTitle": "Todos os sistemas operacionais",
-    "uptime": "99.98% uptime · últimos 30 dias"
+    "uptime": "99.98% uptime · últimos 30 dias",
+    "companyLogoAlt": "Company logo"
   },
   "auth": {
     "oauth": {
@@ -519,6 +520,8 @@
     "password": "Senha",
     "submit": "Entrar",
     "forgotPassword": "Esqueci minha senha",
+    "showPassword": "Mostrar senha",
+    "hidePassword": "Ocultar senha",
     "invalidCredentials": "E-mail ou senha inválidos.",
     "noAccount": "Não tem uma conta?",
     "createAccount": "Criar conta",
@@ -728,6 +731,7 @@
       "subtitle": "Como a conta aparece no Vane e nas páginas de status públicas.",
       "logoHint": "PNG ou SVG, fundo transparente.",
       "uploadLogo": "Enviar/alterar logo",
+      "logoAlt": "Logo da empresa",
       "name": "Nome da empresa",
       "website": "Site",
       "timezone": "Fuso horário",

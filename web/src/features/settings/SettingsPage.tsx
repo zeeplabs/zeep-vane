@@ -187,7 +187,11 @@ export function SettingsPage() {
         <div className="mb-5 flex items-center gap-4">
           <div className="flex h-16 w-16 flex-shrink-0 items-center justify-center overflow-hidden rounded-full border border-divider bg-bg text-neutral-500">
             {logoUrl ? (
-              <img src={resolveAssetUrl(logoUrl)!} alt="Logo da empresa" className="h-full w-full object-contain" />
+              <img
+                src={resolveAssetUrl(logoUrl)!}
+                alt={t("settingsPage.companyProfile.logoAlt")}
+                className="h-full w-full object-contain"
+              />
             ) : (
               <ImagePlaceholderIcon />
             )}
