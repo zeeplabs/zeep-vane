@@ -180,10 +180,10 @@ T8 → T14
 - Skill: NONE
 
 **Done when**:
-- [ ] `Service.SLOType`/`DatadogServiceTag` added with a doc comment mirroring `SLOName`'s
-- [ ] Create/Update/Get/List all read and write the two new columns correctly
-- [ ] Gate check passes: `go test ./internal/db/...` (unit) and `make test-integration` (integration)
-- [ ] Test count: existing count + at least 3 new tests (create with both set, update clearing them, read-back roundtrip)
+- [x] `Service.SLOType`/`DatadogServiceTag` added with a doc comment mirroring `SLOName`'s
+- [x] Create/Update/Get/List all read and write the two new columns correctly
+- [x] Gate check passes: `go test ./internal/db/...` (unit) and `make test-integration` (integration)
+- [x] Test count: existing count + at least 3 new tests (create with both set, update clearing them, read-back roundtrip)
 
 **Tests**: unit + integration
 **Gate**: full
