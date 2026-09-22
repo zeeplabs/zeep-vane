@@ -1,9 +1,11 @@
 package datadog
 
 import (
+	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 )
@@ -406,5 +408,185 @@ func TestSearchSLOs_ServerError_ReturnsErrServer(t *testing.T) {
 	_, err := client.SearchSLOs(t.Context(), "checkout")
 	if !errors.Is(err, ErrServer) {
 		t.Errorf("SearchSLOs() error = %v, want ErrServer", err)
+	}
+}
+
+// errorTrackingResponseBody mirrors the verified
+// POST /api/v2/error-tracking/issues/search response shape (design.md's
+// Components section): data[0]'s relationships.issue.data.id looks up the
+// matching included[] entry for error_type/error_message.
+const errorTrackingResponseBody = `{
+  "data": [
+    {
+      "id": "occ-1",
+      "attributes": {"total_count": 82},
+      "relationships": {"issue": {"data": {"id": "issue-1", "type": "issue"}}}
+    }
+  ],
+  "included": [
+    {
+      "id": "issue-1",
+      "type": "issue",
+      "attributes": {
+        "error_type": "MongooseError",
+        "error_message": "Operation psychology_chat_sessions.aggregate() buffering timed out after 10000ms",
+        "service": "psychology-chat-svc"
+      }
+    }
+  ]
+}`
+
+func TestSearchErrorTrackingIssues_ValidResponse_ReturnsTopCauseHint(t *testing.T) {
+	var gotBody map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.Header.Get("DD-API-KEY"); got != "test-api-key" {
+			t.Errorf("DD-API-KEY header = %q, want %q", got, "test-api-key")
+		}
+		if got := r.Header.Get("DD-APPLICATION-KEY"); got != "test-app-key" {
+			t.Errorf("DD-APPLICATION-KEY header = %q, want %q", got, "test-app-key")
+		}
+		if got := r.Method; got != http.MethodPost {
+			t.Errorf("method = %q, want POST", got)
+		}
+		if got := r.URL.Path; got != "/api/v2/error-tracking/issues/search" {
+			t.Errorf("path = %q, want the error tracking search path", got)
+		}
+		if err := json.NewDecoder(r.Body).Decode(&gotBody); err != nil {
+			t.Fatalf("failed to decode request body: %v", err)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(errorTrackingResponseBody))
+	}))
+	defer server.Close()
+
+	client := newTestClient(t, server)
+	from := time.Unix(1000, 0)
+	to := time.Unix(2000, 0)
+	hint, found, err := client.SearchErrorTrackingIssues(t.Context(), "psychology-chat-svc", "production", from, to)
+	if err != nil {
+		t.Fatalf("SearchErrorTrackingIssues() returned unexpected error: %v", err)
+	}
+	if !found {
+		t.Fatalf("found = false, want true")
+	}
+	if hint.ErrorType != "MongooseError" {
+		t.Errorf("ErrorType = %q, want %q", hint.ErrorType, "MongooseError")
+	}
+	wantMessage := "Operation psychology_chat_sessions.aggregate() buffering timed out after 10000ms"
+	if hint.ErrorMessage != wantMessage {
+		t.Errorf("ErrorMessage = %q, want %q", hint.ErrorMessage, wantMessage)
+	}
+
+	data, _ := gotBody["data"].(map[string]any)
+	attrs, _ := data["attributes"].(map[string]any)
+	if got := attrs["query"]; got != "service:psychology-chat-svc AND env:production" {
+		t.Errorf("query = %v, want %q", got, "service:psychology-chat-svc AND env:production")
+	}
+	if got := attrs["track"]; got != "trace" {
+		t.Errorf("track = %v, want %q", got, "trace")
+	}
+	if got := attrs["order_by"]; got != "TOTAL_COUNT" {
+		t.Errorf("order_by = %v, want %q", got, "TOTAL_COUNT")
+	}
+	if got := attrs["from"]; got != float64(from.UnixMilli()) {
+		t.Errorf("from = %v, want %v", got, from.UnixMilli())
+	}
+	if got := attrs["to"]; got != float64(to.UnixMilli()) {
+		t.Errorf("to = %v, want %v", got, to.UnixMilli())
+	}
+}
+
+func TestSearchErrorTrackingIssues_EmptyData_ReturnsNotFoundNotError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"data":[],"included":[]}`))
+	}))
+	defer server.Close()
+
+	client := newTestClient(t, server)
+	hint, found, err := client.SearchErrorTrackingIssues(t.Context(), "svc", "production", time.Unix(0, 0), time.Unix(1, 0))
+	if err != nil {
+		t.Fatalf("SearchErrorTrackingIssues() returned unexpected error: %v", err)
+	}
+	if found {
+		t.Errorf("found = true, want false")
+	}
+	if hint != (CauseHint{}) {
+		t.Errorf("hint = %+v, want zero value", hint)
+	}
+}
+
+func TestSearchErrorTrackingIssues_Unauthorized_ReturnsErrUnauthorized(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+		_, _ = w.Write([]byte(`{"errors":["Unauthorized"]}`))
+	}))
+	defer server.Close()
+
+	client := newTestClient(t, server)
+	_, _, err := client.SearchErrorTrackingIssues(t.Context(), "svc", "production", time.Unix(0, 0), time.Unix(1, 0))
+	if !errors.Is(err, ErrUnauthorized) {
+		t.Errorf("SearchErrorTrackingIssues() error = %v, want ErrUnauthorized", err)
+	}
+}
+
+func TestSearchErrorTrackingIssues_Timeout_ReturnsErrTimeout(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		time.Sleep(100 * time.Millisecond)
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(errorTrackingResponseBody))
+	}))
+	defer server.Close()
+
+	client := &Client{
+		apiKey:     "test-api-key",
+		appKey:     "test-app-key",
+		baseURL:    server.URL,
+		httpClient: &http.Client{Timeout: 10 * time.Millisecond},
+	}
+
+	_, _, err := client.SearchErrorTrackingIssues(t.Context(), "svc", "production", time.Unix(0, 0), time.Unix(1, 0))
+	if !errors.Is(err, ErrTimeout) {
+		t.Errorf("SearchErrorTrackingIssues() error = %v, want ErrTimeout", err)
+	}
+}
+
+func TestSearchErrorTrackingIssues_ServerError_ReturnsErrServer(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte(`{"errors":["Internal Server Error"]}`))
+	}))
+	defer server.Close()
+
+	client := newTestClient(t, server)
+	_, _, err := client.SearchErrorTrackingIssues(t.Context(), "svc", "production", time.Unix(0, 0), time.Unix(1, 0))
+	if !errors.Is(err, ErrServer) {
+		t.Errorf("SearchErrorTrackingIssues() error = %v, want ErrServer", err)
+	}
+}
+
+func TestSearchErrorTrackingIssues_LongErrorMessage_TruncatedTo500Chars(t *testing.T) {
+	longMessage := strings.Repeat("a", 600)
+	body := `{"data":[{"id":"occ-1","attributes":{"total_count":1},"relationships":{"issue":{"data":{"id":"issue-1","type":"issue"}}}}],` +
+		`"included":[{"id":"issue-1","type":"issue","attributes":{"error_type":"E","error_message":"` + longMessage + `"}}]}`
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(body))
+	}))
+	defer server.Close()
+
+	client := newTestClient(t, server)
+	hint, found, err := client.SearchErrorTrackingIssues(t.Context(), "svc", "production", time.Unix(0, 0), time.Unix(1, 0))
+	if err != nil {
+		t.Fatalf("SearchErrorTrackingIssues() returned unexpected error: %v", err)
+	}
+	if !found {
+		t.Fatalf("found = false, want true")
+	}
+	if len(hint.ErrorMessage) != 500 {
+		t.Errorf("len(ErrorMessage) = %d, want 500", len(hint.ErrorMessage))
 	}
 }
