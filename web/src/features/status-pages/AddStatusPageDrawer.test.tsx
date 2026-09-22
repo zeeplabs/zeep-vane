@@ -1,4 +1,5 @@
 import { describe, it, expect, afterEach } from "vitest";
+import "../../lib/i18n";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { TestQueryProvider } from "../../test/queryClient";

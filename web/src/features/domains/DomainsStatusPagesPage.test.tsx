@@ -1,4 +1,5 @@
 import { describe, it, expect, afterEach } from "vitest";
+import i18n from "../../lib/i18n";
 import { render, screen, fireEvent } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
@@ -130,5 +131,22 @@ describe("DomainsStatusPagesPage", () => {
     fireEvent.click(screen.getByText("Domínios"));
     await screen.findByText("click.example.com");
     expect(screen.queryByRole("button", { name: "Verificar novamente" })).not.toBeInTheDocument();
+  });
+
+  it("renderiza em inglês quando o idioma ativo é en", async () => {
+    mockDomainsPage([baseDomain({ id: "dom-1", hostname: "one.example.com" })]);
+    mockStatusPagesPage([]);
+    await loginAsOwner();
+    await i18n.changeLanguage("en");
+
+    try {
+      renderPage();
+
+      expect(await screen.findByText("Domains & Status Pages")).toBeInTheDocument();
+      expect(screen.getByRole("tab", { name: "Domains" })).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: /Add domain/ })).toBeInTheDocument();
+    } finally {
+      await i18n.changeLanguage("pt-BR");
+    }
   });
 });

@@ -81,14 +81,192 @@
       "day_other": "há {{count}} dias"
     }
   },
+  "domainsStatusPages": {
+    "title": "Domínios & Status Pages",
+    "subtitle": "Gerencie os domínios verificados e as páginas públicas de status do Vane.",
+    "tabs": {
+      "domains": "Domínios",
+      "statusPages": "Status Pages"
+    }
+  },
   "domains": {
-    "loading": "Carregando…"
+    "loading": "Carregando…",
+    "table": {
+      "domain": "Domínio",
+      "type": "Tipo",
+      "pointsTo": "Aponta para",
+      "ssl": "SSL",
+      "verified": "Verificado"
+    },
+    "empty": {
+      "title": "Nenhum domínio cadastrado",
+      "description": "Adicione um domínio para começar."
+    },
+    "statusLabel": {
+      "pending": "Pendente",
+      "verified": "Verificado",
+      "error": "Erro"
+    },
+    "sslStatusLabel": {
+      "pending": "Pendente",
+      "active": "Ativo",
+      "error": "Erro"
+    },
+    "typeLabel": {
+      "custom": "Domínio próprio"
+    },
+    "addButton": "Adicionar domínio",
+    "section": {
+      "title": "Domínios cadastrados",
+      "empty": "Nenhum domínio cadastrado.",
+      "createdAtLabel": "Cadastrado em",
+      "deleteTooltip": "Excluir",
+      "deleteError": "Não foi possível excluir o domínio.",
+      "deleteDialog": {
+        "title": "Excluir domínio",
+        "description": "Excluir o domínio {{hostname}}? Esta ação não pode ser desfeita.",
+        "confirmButton": "Excluir"
+      }
+    },
+    "form": {
+      "hostnameLabel": "Hostname",
+      "hostnamePlaceholder": "status.suaempresa.com",
+      "saveButton": "Salvar",
+      "error": "Não foi possível cadastrar o domínio."
+    },
+    "add": {
+      "title": "Adicionar domínio",
+      "description": "Cadastre um domínio raiz para publicar uma status page em um subdomínio dele.",
+      "typeLabel": "Tipo de domínio",
+      "vaneSubdomain": {
+        "title": "Subdomínio Vane",
+        "description": "Em breve: publique sem configurar DNS."
+      },
+      "customDomain": {
+        "title": "Domínio próprio",
+        "description": "Use um domínio que você já possui."
+      }
+    },
+    "detail": {
+      "pointsToConnector": "aponta para",
+      "sslLabel": "SSL/TLS",
+      "verifiedAtLabel": "Verificado em",
+      "dnsConfigLabel": "Configuração DNS",
+      "dnsType": "TIPO",
+      "dnsValue": "VALOR",
+      "notConfigured": "não configurado",
+      "recheckButton": "Verificar novamente",
+      "removeButton": "Remover domínio",
+      "removeError": "Não foi possível remover o domínio."
+    }
   },
   "statusPages": {
     "loading": "Carregando…",
     "dns": {
       "copyCname": "Copiar valor do CNAME",
       "copied": "Valor do CNAME copiado."
+    },
+    "table": {
+      "visibility": "Visib.",
+      "page": "Página",
+      "publicUrl": "URL pública",
+      "services": "Serviços",
+      "updated": "Atualizado"
+    },
+    "empty": {
+      "title": "Nenhuma status page criada",
+      "description": "Crie uma status page para começar."
+    },
+    "publicTag": "Público",
+    "serviceCount_one": "{{count}} serviço",
+    "serviceCount_other": "{{count}} serviços",
+    "createTitle": "Criar status page",
+    "section": {
+      "title": "Status pages",
+      "createButton": "Criar status page",
+      "empty": "Nenhuma status page criada.",
+      "deleteError": "Não foi possível excluir a status page.",
+      "createError": "Não foi possível criar a status page.",
+      "createDescription": "Vincule os serviços que essa status page vai exibir. O domínio é anexado depois, numa tela dedicada.",
+      "nameLabel": "Nome",
+      "servicesLabel": "Serviços",
+      "submitButton": "Criar",
+      "deleteTooltip": "Excluir",
+      "attachDomainLink": "Anexar domínio",
+      "publishedTag": "Publicada",
+      "failedTag": "Falha",
+      "noDomainTag": "Sem domínio configurado",
+      "pendingTag": "Aguardando validação de DNS/certificado",
+      "deleteDialog": {
+        "title": "Excluir status page",
+        "description": "Excluir a status page \"{{name}}\"? Esta ação não pode ser desfeita.",
+        "confirmButton": "Excluir"
+      }
+    },
+    "add": {
+      "description": "Escolha quais serviços aparecem para o público e a visibilidade da página.",
+      "submitButton": "Criar status page",
+      "nameLabel": "Nome da página",
+      "namePlaceholder": "Ex: Status Público",
+      "visibilityLabel": "Visibilidade",
+      "public": {
+        "title": "Público",
+        "description": "Qualquer pessoa com o link pode ver"
+      },
+      "private": {
+        "title": "Privado",
+        "description": "Somente membros do tenant logados"
+      },
+      "servicesLabel": "Serviços exibidos"
+    },
+    "attach": {
+      "title": "Anexar domínio",
+      "description": "Escolha o domínio e o subdomínio que essa status page vai usar. O certificado é emitido automaticamente depois que o DNS propagar.",
+      "submitButton": "Anexar",
+      "domainLabel": "Domínio",
+      "domainPlaceholder": "Selecione um domínio",
+      "subdomainLabel": "Subdomínio",
+      "subdomainPlaceholder": "<subdomínio>",
+      "domainPlaceholderShort": "<domínio>",
+      "dnsRecordLabel": "Registro DNS",
+      "dnsInstruction": "Aponte {{sub}}.{{domain}} (CNAME) para",
+      "dnsNotConfigured": "O operador ainda não configurou o valor de destino do DNS (PUBLIC_DNS_TARGET). Você ainda pode anexar o domínio agora.",
+      "error": "Não foi possível anexar o domínio."
+    },
+    "detail": {
+      "servicesLabel": "Serviços exibidos ({{count}})",
+      "associatedDomainLabel": "Domínio associado",
+      "previewButton": "Pré-visualizar página pública",
+      "viewPublicButton": "Ver página pública",
+      "editButton": "Editar página",
+      "notFound": "Status page não encontrada."
+    },
+    "edit": {
+      "defaultTitle": "Editar status page",
+      "description": "Gerencie domínio, verificação e serviços exibidos nesta página."
+    },
+    "editor": {
+      "noDomainAttached": "Nenhum domínio anexado ainda.",
+      "linkedServicesLabel": "Serviços vinculados ({{selected}}/{{total}})",
+      "noServices": "Nenhum serviço cadastrado.",
+      "linkedGroupLabel": "Vinculados ({{count}})",
+      "availableLabel": "Disponíveis",
+      "searchPlaceholder": "Buscar serviço…",
+      "noServicesFound": "Nenhum serviço encontrado.",
+      "saveServicesButton": "Salvar serviços",
+      "saveServicesError": "Não foi possível salvar os serviços vinculados.",
+      "verifyingButton": "Verificando…",
+      "verifyButton": "Verificar DNS/certificado",
+      "pointHostnameInstruction": "Aponte {{hostname}} para o valor acima. O certificado é emitido automaticamente assim que o DNS propagar e alguém acessar a página (ou ao clicar em \"Verificar\" acima).",
+      "verifyGenericError": "Não foi possível verificar o domínio agora.",
+      "dnsNotResolved": "DNS ainda não resolve para nenhum destino",
+      "dnsMismatch": "DNS resolve para {{ips}}, diferente do destino esperado",
+      "dnsMatch": "DNS resolve corretamente ({{ips}})",
+      "dnsResolves": "DNS resolve ({{ips}})",
+      "tlsValid": "Certificado TLS emitido e válido",
+      "tlsRespondedInvalid": "Conexão HTTPS respondeu, mas o certificado não é válido para {{hostname}}{{errorSuffix}}",
+      "tlsUnreachable": "Conexão HTTPS ainda falha{{errorSuffix}}",
+      "lastCheckedLabel": "Última verificação: {{date}}"
     }
   },
   "incidents": {

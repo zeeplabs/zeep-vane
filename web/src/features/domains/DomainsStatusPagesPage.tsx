@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import { MdOutlineAdd } from "react-icons/md";
 import { useAuth } from "../../auth/AuthProvider";
 import { Button } from "../../components/ui/Button";
@@ -19,6 +20,7 @@ type Tab = "domains" | "status-pages";
  * seguem intocados - continuam em uso por `IntegrationsPage` (design.md's
  * "genuinely different layout" precedent). */
 export function DomainsStatusPagesPage() {
+  const { t } = useTranslation();
   const { hasRole } = useAuth();
   const canManage = hasRole(["owner", "operator"]);
 
@@ -43,15 +45,13 @@ export function DomainsStatusPagesPage() {
     <div className="mx-auto flex w-full max-w-[1280px] flex-col gap-6">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h2 className="text-text">Domínios & Status Pages</h2>
-          <p className="m-0 text-[13.5px] text-neutral-400">
-            Gerencie os domínios verificados e as páginas públicas de status do Vane.
-          </p>
+          <h2 className="text-text">{t("domainsStatusPages.title")}</h2>
+          <p className="m-0 text-[13.5px] text-neutral-400">{t("domainsStatusPages.subtitle")}</p>
         </div>
         {canManage ? (
           <Button variant="solid" onClick={() => setAddOpen(true)}>
             <MdOutlineAdd size={15} aria-hidden="true" />
-            {tab === "domains" ? "Adicionar domínio" : "Criar status page"}
+            {tab === "domains" ? t("domains.addButton") : t("statusPages.section.createButton")}
           </Button>
         ) : null}
       </div>
@@ -67,7 +67,7 @@ export function DomainsStatusPagesPage() {
             (tab === "domains" ? "border-accent font-bold text-text" : "border-transparent font-semibold text-neutral-400")
           }
         >
-          Domínios
+          {t("domainsStatusPages.tabs.domains")}
         </button>
         <button
           type="button"
@@ -81,7 +81,7 @@ export function DomainsStatusPagesPage() {
               : "border-transparent font-semibold text-neutral-400")
           }
         >
-          Status Pages
+          {t("domainsStatusPages.tabs.statusPages")}
         </button>
       </div>
 

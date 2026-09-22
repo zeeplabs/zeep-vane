@@ -1,4 +1,5 @@
 import { describe, it, expect, afterEach } from "vitest";
+import "../../lib/i18n";
 import { render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { http, HttpResponse } from "msw";

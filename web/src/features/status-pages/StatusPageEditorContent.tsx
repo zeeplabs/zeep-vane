@@ -37,11 +37,11 @@ const statePillVariant: Record<StatusPageState, TagVariant> = {
   tls_failed: "critical",
 };
 
-const statePillLabel: Record<StatusPageState, string> = {
-  draft: "Sem domínio configurado",
-  pending_tls: "Aguardando validação de DNS/certificado",
-  published: "Publicada",
-  tls_failed: "Falha",
+const statePillLabelKey: Record<StatusPageState, string> = {
+  draft: "statusPages.section.noDomainTag",
+  pending_tls: "statusPages.section.pendingTag",
+  published: "statusPages.section.publishedTag",
+  tls_failed: "statusPages.section.failedTag",
 };
 
 interface StatusPagePillProps {
@@ -53,6 +53,7 @@ interface StatusPagePillProps {
 // like a different, older component just because it has its own state
 // machine (SPD-12/13).
 function StatusPagePill({ page }: StatusPagePillProps) {
+  const { t } = useTranslation();
   // SPD-12: sem domínio nenhum anexado ainda - distinto de "draft" com
   // domínio (que não deveria mais ocorrer, ver AD-017), mas o texto e a
   // variante servem pros dois. "published"/"tls_failed" sempre vencem,
@@ -65,7 +66,7 @@ function StatusPagePill({ page }: StatusPagePillProps) {
   return (
     <Tag variant={statePillVariant[state]} className="gap-1.5" style={{ borderRadius: "999px" }}>
       {state === "pending_tls" ? <span className="h-1.5 w-1.5 flex-none animate-pulse rounded-full bg-current" aria-hidden="true" /> : null}
-      {statePillLabel[state]}
+      {t(statePillLabelKey[state])}
     </Tag>
   );
 }
@@ -93,6 +94,7 @@ export interface StatusPageEditorContentProps {
  * rótulos em uppercase 10.5px, checklist de serviço com checkbox quadrado
  * em vez do checkbox nativo redondo. */
 export function StatusPageEditorContent({ page, showPreviewLink = true }: StatusPageEditorContentProps) {
+  const { t } = useTranslation();
   // SPEC_DEVIATION: fixed page 1 for now - Pager UI for the domains
   // dropdown is out of scope here (this reads domains only to resolve a
   // hostname/build a select list); T14/T16 (Pager) is a later phase not
@@ -145,7 +147,7 @@ export function StatusPageEditorContent({ page, showPreviewLink = true }: Status
       await setServices.mutateAsync({ id: pageId, service_ids: selectedServiceIds });
     } catch (err) {
       if (err instanceof ApiError) setError(err.message);
-      else setError("Não foi possível salvar os serviços vinculados.");
+      else setError(t("statusPages.editor.saveServicesError"));
     }
   }
 
@@ -157,9 +159,9 @@ export function StatusPageEditorContent({ page, showPreviewLink = true }: Status
 
       {page.domain_id === null ? (
         <div className="flex items-center justify-between gap-3">
-          <p className="text-[13px] text-text-muted">Nenhum domínio anexado ainda.</p>
+          <p className="text-[13px] text-text-muted">{t("statusPages.editor.noDomainAttached")}</p>
           <Button type="button" variant="secondary" className="w-fit" onClick={() => setAttachOpen(true)}>
-            Anexar domínio
+            {t("statusPages.section.attachDomainLink")}
           </Button>
         </div>
       ) : null}
@@ -180,7 +182,7 @@ export function StatusPageEditorContent({ page, showPreviewLink = true }: Status
           className={`${buttonBaseClasses} ${buttonVariantClasses.secondary} w-fit`}
         >
           <MdOutlineOpenInNew size={14} aria-hidden="true" />
-          Pré-visualizar página pública
+          {t("statusPages.detail.previewButton")}
         </a>
       ) : null}
 
@@ -203,17 +205,17 @@ export function StatusPageEditorContent({ page, showPreviewLink = true }: Status
       <div className="flex flex-col gap-3 border-t border-divider pt-4">
         <div className="flex items-center justify-between">
           <span className="text-[10.5px] font-bold uppercase tracking-wide text-text-muted">
-            Serviços vinculados ({selectedServiceIds.length}/{allServices.length})
+            {t("statusPages.editor.linkedServicesLabel", { selected: selectedServiceIds.length, total: allServices.length })}
           </span>
         </div>
 
         {allServices.length === 0 ? (
-          <p className="text-[13px] text-text-muted">Nenhum serviço cadastrado.</p>
+          <p className="text-[13px] text-text-muted">{t("statusPages.editor.noServices")}</p>
         ) : (
           <>
             {linkedServices.length > 0 ? (
               <ServiceGroup
-                label={`Vinculados (${linkedServices.length})`}
+                label={t("statusPages.editor.linkedGroupLabel", { count: linkedServices.length })}
                 services={linkedServices}
                 selectedServiceIds={selectedServiceIds}
                 canManage={canManage}
@@ -225,8 +227,8 @@ export function StatusPageEditorContent({ page, showPreviewLink = true }: Status
               <Field
                 type="text"
                 variant="filled"
-                label="Disponíveis"
-                placeholder="Buscar serviço…"
+                label={t("statusPages.editor.availableLabel")}
+                placeholder={t("statusPages.editor.searchPlaceholder")}
                 value={serviceQuery}
                 onChange={(e) => setServiceQuery(e.target.value)}
               />
@@ -235,7 +237,7 @@ export function StatusPageEditorContent({ page, showPreviewLink = true }: Status
                 selectedServiceIds={selectedServiceIds}
                 canManage={canManage}
                 onToggle={toggleService}
-                emptyLabel="Nenhum serviço encontrado."
+                emptyLabel={t("statusPages.editor.noServicesFound")}
                 scrollable
               />
             </div>
@@ -250,7 +252,7 @@ export function StatusPageEditorContent({ page, showPreviewLink = true }: Status
               disabled={!isDirty || setServices.isPending}
               onClick={handleSaveServices}
             >
-              Salvar serviços
+              {t("statusPages.editor.saveServicesButton")}
             </Button>
             {error ? (
               <p role="alert" className="text-xs text-critical">
@@ -297,29 +299,29 @@ function DomainVerificationPanel({ statusPageId, fullHostname }: DomainVerificat
   return (
     <div className="flex flex-col gap-3">
       <div className="flex items-center justify-between gap-3">
-        <span className="text-[10.5px] font-bold uppercase tracking-wide text-text-muted">Configuração DNS</span>
+        <span className="text-[10.5px] font-bold uppercase tracking-wide text-text-muted">{t("domains.detail.dnsConfigLabel")}</span>
         <Button
           type="button"
           variant="secondary"
           disabled={verifyDomain.isPending}
           onClick={() => verifyDomain.mutate(statusPageId)}
         >
-          {verifyDomain.isPending ? "Verificando…" : "Verificar DNS/certificado"}
+          {verifyDomain.isPending ? t("statusPages.editor.verifyingButton") : t("statusPages.editor.verifyButton")}
         </Button>
       </div>
 
       <div className="overflow-hidden rounded-md border border-divider">
         <div className="grid grid-cols-[70px_1fr] gap-2 border-b border-divider bg-card-header-bg px-3.5 py-2.5">
-          <span className="text-[11px] font-bold text-text-muted">TIPO</span>
-          <span className="text-[11px] font-bold text-text-muted">VALOR</span>
+          <span className="text-[11px] font-bold text-text-muted">{t("domains.detail.dnsType")}</span>
+          <span className="text-[11px] font-bold text-text-muted">{t("domains.detail.dnsValue")}</span>
         </div>
         <div className="grid grid-cols-[70px_1fr_auto] items-center gap-2 px-3.5 py-3">
           <span className="font-mono text-[12.5px] font-bold text-text">CNAME</span>
           {dnsTargetLoading ? (
-            <span className="font-mono text-[12.5px] text-text-muted">Carregando…</span>
+            <span className="font-mono text-[12.5px] text-text-muted">{t("statusPages.loading")}</span>
           ) : (
             <span className="min-w-0 truncate font-mono text-[12.5px] text-text-muted">
-              {dnsTarget ?? "não configurado"}
+              {dnsTarget ?? t("domains.detail.notConfigured")}
             </span>
           )}
           {dnsTarget ? (
@@ -336,15 +338,14 @@ function DomainVerificationPanel({ statusPageId, fullHostname }: DomainVerificat
         </div>
       </div>
       <p className="text-xs text-text-muted">
-        Aponte <strong className="text-text">{fullHostname}</strong> para o valor acima. O certificado é emitido
-        automaticamente assim que o DNS propagar e alguém acessar a página (ou ao clicar em "Verificar" acima).
+        {t("statusPages.editor.pointHostnameInstruction", { hostname: fullHostname })}
       </p>
 
       {verifyDomain.isError ? (
         <p role="alert" className="text-xs text-critical">
           {verifyDomain.error instanceof ApiError
             ? verifyDomain.error.message
-            : "Não foi possível verificar o domínio agora."}
+            : t("statusPages.editor.verifyGenericError")}
         </p>
       ) : null}
 
@@ -354,27 +355,32 @@ function DomainVerificationPanel({ statusPageId, fullHostname }: DomainVerificat
             ok={result.dns_resolved && result.dns_matches_target !== false}
             label={
               !result.dns_resolved
-                ? "DNS ainda não resolve para nenhum destino"
+                ? t("statusPages.editor.dnsNotResolved")
                 : result.dns_matches_target === false
-                  ? `DNS resolve para ${result.resolved_ips.join(", ")}, diferente do destino esperado`
+                  ? t("statusPages.editor.dnsMismatch", { ips: result.resolved_ips.join(", ") })
                   : result.dns_matches_target === true
-                    ? `DNS resolve corretamente (${result.resolved_ips.join(", ")})`
-                    : `DNS resolve (${result.resolved_ips.join(", ")})`
+                    ? t("statusPages.editor.dnsMatch", { ips: result.resolved_ips.join(", ") })
+                    : t("statusPages.editor.dnsResolves", { ips: result.resolved_ips.join(", ") })
             }
           />
           <VerificationRow
             ok={result.tls_cert_valid}
             label={
               result.tls_cert_valid
-                ? "Certificado TLS emitido e válido"
+                ? t("statusPages.editor.tlsValid")
                 : result.tls_reachable
-                  ? `Conexão HTTPS respondeu, mas o certificado não é válido para ${fullHostname}${
-                      result.tls_error ? `: ${result.tls_error}` : ""
-                    }`
-                  : `Conexão HTTPS ainda falha${result.tls_error ? `: ${result.tls_error}` : ""}`
+                  ? t("statusPages.editor.tlsRespondedInvalid", {
+                      hostname: fullHostname,
+                      errorSuffix: result.tls_error ? `: ${result.tls_error}` : "",
+                    })
+                  : t("statusPages.editor.tlsUnreachable", {
+                      errorSuffix: result.tls_error ? `: ${result.tls_error}` : "",
+                    })
             }
           />
-          <p className="text-text-muted">Última verificação: {formatDateTime(result.checked_at, i18n.language)}</p>
+          <p className="text-text-muted">
+            {t("statusPages.editor.lastCheckedLabel", { date: formatDateTime(result.checked_at, i18n.language) })}
+          </p>
         </div>
       ) : null}
     </div>

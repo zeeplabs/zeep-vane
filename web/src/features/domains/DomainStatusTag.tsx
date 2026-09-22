@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { Tag } from "../../components/ui/Tag";
 import type { DomainStatus } from "../../types/api";
 import { domainStatusDotColor, domainStatusLabel, domainStatusVariant } from "./domainStatusMeta";
@@ -11,6 +12,7 @@ export interface DomainStatusTagProps {
  * to match the already-established status badge from the Serviços
  * Monitorados screen exactly, not a plain square Tag. */
 export function DomainStatusTag({ status }: DomainStatusTagProps) {
+  const { t } = useTranslation();
   return (
     <Tag variant={domainStatusVariant[status]} className="gap-1.5" style={{ borderRadius: "999px" }}>
       <span
@@ -18,7 +20,7 @@ export function DomainStatusTag({ status }: DomainStatusTagProps) {
         style={{ backgroundColor: domainStatusDotColor[status] }}
         aria-hidden="true"
       />
-      {domainStatusLabel[status]}
+      {domainStatusLabel(t, status)}
     </Tag>
   );
 }

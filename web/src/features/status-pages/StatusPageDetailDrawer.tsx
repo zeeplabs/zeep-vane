@@ -1,4 +1,5 @@
 import * as RadixDialog from "@radix-ui/react-dialog";
+import { useTranslation } from "react-i18next";
 import { MdClose, MdOutlineOpenInNew } from "react-icons/md";
 import { buttonVariantClasses, buttonBaseClasses } from "../../components/ui/Button";
 import type { StatusPage } from "../../types/api";
@@ -34,6 +35,7 @@ export interface StatusPageDetailDrawerProps {
  * `ServiceDetailDrawer`: o mock não tem título/rodapé com borda, é um
  * painel contínuo com badge de visibilidade+X no topo. */
 export function StatusPageDetailDrawer({ page, onClose, onEdit }: StatusPageDetailDrawerProps) {
+  const { t } = useTranslation();
   // SPEC_DEVIATION: fixed page 1 for now - only used to resolve
   // domain hostname / service names for this drawer, not a picker; Pager UI
   // is out of scope. Mirrors the same deviation in StatusPagesTable.tsx.
@@ -62,10 +64,10 @@ export function StatusPageDetailDrawer({ page, onClose, onEdit }: StatusPageDeta
                   className="inline-flex items-center rounded-full px-2.5 py-1 text-xs font-bold"
                   style={{ backgroundColor: "var(--color-accent-100)", color: "var(--color-accent)" }}
                 >
-                  Público
+                  {t("statusPages.publicTag")}
                 </span>
                 <RadixDialog.Close asChild>
-                  <button type="button" aria-label="Fechar" className="cursor-pointer text-text-muted hover:text-text">
+                  <button type="button" aria-label={t("common.close")} className="cursor-pointer text-text-muted hover:text-text">
                     <MdClose size={18} aria-hidden="true" />
                   </button>
                 </RadixDialog.Close>
@@ -89,7 +91,7 @@ export function StatusPageDetailDrawer({ page, onClose, onEdit }: StatusPageDeta
 
               <div>
                 <div className="mb-2 text-[10.5px] font-bold uppercase tracking-wide text-text-muted">
-                  Serviços exibidos ({serviceNames.length})
+                  {t("statusPages.detail.servicesLabel", { count: serviceNames.length })}
                 </div>
                 {serviceNames.length === 0 ? (
                   <div className="text-sm text-text">—</div>
@@ -114,7 +116,7 @@ export function StatusPageDetailDrawer({ page, onClose, onEdit }: StatusPageDeta
 
               <div>
                 <div className="mb-1 text-[10.5px] font-bold uppercase tracking-wide text-text-muted">
-                  Domínio associado
+                  {t("statusPages.detail.associatedDomainLabel")}
                 </div>
                 <div className="font-mono text-sm font-semibold text-text">{domain?.hostname ?? "—"}</div>
               </div>
@@ -126,7 +128,7 @@ export function StatusPageDetailDrawer({ page, onClose, onEdit }: StatusPageDeta
                 className={`${buttonBaseClasses} ${buttonVariantClasses.secondary} w-fit`}
               >
                 <MdOutlineOpenInNew size={14} aria-hidden="true" />
-                Pré-visualizar página pública
+                {t("statusPages.detail.previewButton")}
               </a>
 
               <div className="flex gap-2.5">
@@ -137,7 +139,7 @@ export function StatusPageDetailDrawer({ page, onClose, onEdit }: StatusPageDeta
                     rel="noreferrer"
                     className={`${buttonBaseClasses} ${buttonVariantClasses.secondary} flex-1`}
                   >
-                    Ver página pública
+                    {t("statusPages.detail.viewPublicButton")}
                   </a>
                 ) : null}
                 <button
@@ -145,7 +147,7 @@ export function StatusPageDetailDrawer({ page, onClose, onEdit }: StatusPageDeta
                   onClick={() => onEdit(page.id)}
                   className={`${buttonBaseClasses} ${buttonVariantClasses.primary} flex-1`}
                 >
-                  Editar página
+                  {t("statusPages.detail.editButton")}
                 </button>
               </div>
             </div>

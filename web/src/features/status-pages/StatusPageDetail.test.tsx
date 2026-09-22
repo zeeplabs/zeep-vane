@@ -3,7 +3,7 @@ import { http, HttpResponse, delay } from "msw";
 import { render, screen, act } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Routes, Route } from "react-router-dom";
-import "../../lib/i18n";
+import i18n from "../../lib/i18n";
 import { AuthProvider } from "../../auth/AuthProvider";
 import { TestQueryProvider } from "../../test/queryClient";
 import { server } from "../../test/msw/server";
@@ -332,5 +332,19 @@ describe("StatusPageDetail", () => {
     expect(await screen.findByText(/^Serviços vinculados/)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "API pública" })).toBeDisabled();
     expect(screen.queryByRole("button", { name: "Salvar serviços" })).not.toBeInTheDocument();
+  });
+
+  it("renderiza em inglês quando o idioma ativo é en", async () => {
+    await loginAsOwner();
+    await i18n.changeLanguage("en");
+
+    try {
+      renderDetail("sp-1");
+
+      expect(await screen.findByText(/^Linked services/)).toBeInTheDocument();
+      expect(screen.getByText("Available")).toBeInTheDocument();
+    } finally {
+      await i18n.changeLanguage("pt-BR");
+    }
   });
 });

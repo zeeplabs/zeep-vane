@@ -1,15 +1,15 @@
 import type { TagVariant } from "../../components/ui/Tag";
 import type { Domain, DomainSSLStatus, DomainStatus } from "../../types/api";
 
+type Translator = (key: string, options?: Record<string, unknown>) => string;
+
 // Shared status badge metadata for every DomainStatus/DomainSSLStatus value
 // (domains-status-pages-page T5), mirroring services/statusMeta.ts's
 // pattern so the redesigned Domínios tab's Status/SSL columns and detail
 // drawer read from a single source of truth.
-export const domainStatusLabel: Record<DomainStatus, string> = {
-  pending: "Pendente",
-  verified: "Verificado",
-  error: "Erro",
-};
+export function domainStatusLabel(t: Translator, status: DomainStatus): string {
+  return t(`domains.statusLabel.${status}`);
+}
 
 export const domainStatusVariant: Record<DomainStatus, TagVariant> = {
   pending: "warning",
@@ -23,11 +23,9 @@ export const domainStatusDotColor: Record<DomainStatus, string> = {
   error: "var(--color-critical)",
 };
 
-export const sslStatusLabel: Record<DomainSSLStatus, string> = {
-  pending: "Pendente",
-  active: "Ativo",
-  error: "Erro",
-};
+export function sslStatusLabel(t: Translator, status: DomainSSLStatus): string {
+  return t(`domains.sslStatusLabel.${status}`);
+}
 
 export const sslStatusColor: Record<DomainSSLStatus, string> = {
   pending: "var(--color-warning)",
@@ -35,9 +33,9 @@ export const sslStatusColor: Record<DomainSSLStatus, string> = {
   error: "var(--color-critical)",
 };
 
-export const domainTypeLabel: Record<Domain["domain_type"], string> = {
-  custom: "Domínio próprio",
-};
+export function domainTypeLabel(t: Translator, type: Domain["domain_type"]): string {
+  return t(`domains.typeLabel.${type}`);
+}
 
 // attachedPageColumn renders spec.md DSP-02/03/04's "Aponta para" value:
 // "—" when nothing is attached, the (single) attached page's name, or that

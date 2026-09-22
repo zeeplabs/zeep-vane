@@ -81,14 +81,192 @@
       "day_other": "{{count}} days ago"
     }
   },
+  "domainsStatusPages": {
+    "title": "Domains & Status Pages",
+    "subtitle": "Manage Vane's verified domains and public status pages.",
+    "tabs": {
+      "domains": "Domains",
+      "statusPages": "Status Pages"
+    }
+  },
   "domains": {
-    "loading": "Loading…"
+    "loading": "Loading…",
+    "table": {
+      "domain": "Domain",
+      "type": "Type",
+      "pointsTo": "Points to",
+      "ssl": "SSL",
+      "verified": "Verified"
+    },
+    "empty": {
+      "title": "No domains registered",
+      "description": "Add a domain to get started."
+    },
+    "statusLabel": {
+      "pending": "Pending",
+      "verified": "Verified",
+      "error": "Error"
+    },
+    "sslStatusLabel": {
+      "pending": "Pending",
+      "active": "Active",
+      "error": "Error"
+    },
+    "typeLabel": {
+      "custom": "Custom domain"
+    },
+    "addButton": "Add domain",
+    "section": {
+      "title": "Registered domains",
+      "empty": "No domains registered.",
+      "createdAtLabel": "Registered on",
+      "deleteTooltip": "Delete",
+      "deleteError": "Couldn't delete the domain.",
+      "deleteDialog": {
+        "title": "Delete domain",
+        "description": "Delete the domain {{hostname}}? This action can't be undone.",
+        "confirmButton": "Delete"
+      }
+    },
+    "form": {
+      "hostnameLabel": "Hostname",
+      "hostnamePlaceholder": "status.yourcompany.com",
+      "saveButton": "Save",
+      "error": "Couldn't register the domain."
+    },
+    "add": {
+      "title": "Add domain",
+      "description": "Register a root domain to publish a status page on a subdomain of it.",
+      "typeLabel": "Domain type",
+      "vaneSubdomain": {
+        "title": "Vane subdomain",
+        "description": "Coming soon: publish without configuring DNS."
+      },
+      "customDomain": {
+        "title": "Custom domain",
+        "description": "Use a domain you already own."
+      }
+    },
+    "detail": {
+      "pointsToConnector": "points to",
+      "sslLabel": "SSL/TLS",
+      "verifiedAtLabel": "Verified on",
+      "dnsConfigLabel": "DNS configuration",
+      "dnsType": "TYPE",
+      "dnsValue": "VALUE",
+      "notConfigured": "not configured",
+      "recheckButton": "Recheck",
+      "removeButton": "Remove domain",
+      "removeError": "Couldn't remove the domain."
+    }
   },
   "statusPages": {
     "loading": "Loading…",
     "dns": {
       "copyCname": "Copy CNAME value",
       "copied": "CNAME value copied."
+    },
+    "table": {
+      "visibility": "Visib.",
+      "page": "Page",
+      "publicUrl": "Public URL",
+      "services": "Services",
+      "updated": "Updated"
+    },
+    "empty": {
+      "title": "No status pages created",
+      "description": "Create a status page to get started."
+    },
+    "publicTag": "Public",
+    "serviceCount_one": "{{count}} service",
+    "serviceCount_other": "{{count}} services",
+    "createTitle": "Create status page",
+    "section": {
+      "title": "Status pages",
+      "createButton": "Create status page",
+      "empty": "No status pages created.",
+      "deleteError": "Couldn't delete the status page.",
+      "createError": "Couldn't create the status page.",
+      "createDescription": "Link the services this status page will show. The domain is attached later, from a dedicated screen.",
+      "nameLabel": "Name",
+      "servicesLabel": "Services",
+      "submitButton": "Create",
+      "deleteTooltip": "Delete",
+      "attachDomainLink": "Attach domain",
+      "publishedTag": "Published",
+      "failedTag": "Failed",
+      "noDomainTag": "No domain configured",
+      "pendingTag": "Awaiting DNS/certificate validation",
+      "deleteDialog": {
+        "title": "Delete status page",
+        "description": "Delete the status page \"{{name}}\"? This action can't be undone.",
+        "confirmButton": "Delete"
+      }
+    },
+    "add": {
+      "description": "Choose which services show to the public and the page's visibility.",
+      "submitButton": "Create status page",
+      "nameLabel": "Page name",
+      "namePlaceholder": "E.g.: Public Status",
+      "visibilityLabel": "Visibility",
+      "public": {
+        "title": "Public",
+        "description": "Anyone with the link can view it"
+      },
+      "private": {
+        "title": "Private",
+        "description": "Signed-in tenant members only"
+      },
+      "servicesLabel": "Services shown"
+    },
+    "attach": {
+      "title": "Attach domain",
+      "description": "Choose the domain and subdomain this status page will use. The certificate is issued automatically once DNS propagates.",
+      "submitButton": "Attach",
+      "domainLabel": "Domain",
+      "domainPlaceholder": "Select a domain",
+      "subdomainLabel": "Subdomain",
+      "subdomainPlaceholder": "<subdomain>",
+      "domainPlaceholderShort": "<domain>",
+      "dnsRecordLabel": "DNS record",
+      "dnsInstruction": "Point {{sub}}.{{domain}} (CNAME) to",
+      "dnsNotConfigured": "The operator hasn't configured the DNS target value yet (PUBLIC_DNS_TARGET). You can still attach the domain now.",
+      "error": "Couldn't attach the domain."
+    },
+    "detail": {
+      "servicesLabel": "Services shown ({{count}})",
+      "associatedDomainLabel": "Associated domain",
+      "previewButton": "Preview public page",
+      "viewPublicButton": "View public page",
+      "editButton": "Edit page",
+      "notFound": "Status page not found."
+    },
+    "edit": {
+      "defaultTitle": "Edit status page",
+      "description": "Manage the domain, verification, and services shown on this page."
+    },
+    "editor": {
+      "noDomainAttached": "No domain attached yet.",
+      "linkedServicesLabel": "Linked services ({{selected}}/{{total}})",
+      "noServices": "No services registered.",
+      "linkedGroupLabel": "Linked ({{count}})",
+      "availableLabel": "Available",
+      "searchPlaceholder": "Search service…",
+      "noServicesFound": "No services found.",
+      "saveServicesButton": "Save services",
+      "saveServicesError": "Couldn't save the linked services.",
+      "verifyingButton": "Verifying…",
+      "verifyButton": "Verify DNS/certificate",
+      "pointHostnameInstruction": "Point {{hostname}} to the value above. The certificate is issued automatically once DNS propagates and someone visits the page (or you click \"Verify\" above).",
+      "verifyGenericError": "Couldn't verify the domain right now.",
+      "dnsNotResolved": "DNS doesn't resolve to any target yet",
+      "dnsMismatch": "DNS resolves to {{ips}}, different from the expected target",
+      "dnsMatch": "DNS resolves correctly ({{ips}})",
+      "dnsResolves": "DNS resolves ({{ips}})",
+      "tlsValid": "TLS certificate issued and valid",
+      "tlsRespondedInvalid": "HTTPS connection responded, but the certificate isn't valid for {{hostname}}{{errorSuffix}}",
+      "tlsUnreachable": "HTTPS connection still fails{{errorSuffix}}",
+      "lastCheckedLabel": "Last checked: {{date}}"
     }
   },
   "incidents": {

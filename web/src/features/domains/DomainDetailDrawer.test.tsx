@@ -1,4 +1,5 @@
 import { useState } from "react";
+import "../../lib/i18n";
 import { describe, it, expect, afterEach } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
