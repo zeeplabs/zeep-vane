@@ -230,10 +230,10 @@ T8 → T14
 - Skill: NONE
 
 **Done when**:
-- [ ] Create/Update accept and persist the two new optional fields
-- [ ] Get/List responses include them
-- [ ] Gate check passes: `go test ./internal/api/...`
-- [ ] Test count: existing count + at least 2 new tests (create with fields set, update clearing them)
+- [x] Create/Update accept and persist the two new optional fields
+- [x] Get/List responses include them
+- [x] Gate check passes: `go test ./internal/api/...`
+- [x] Test count: existing count + at least 2 new tests (create with fields set, update clearing them)
 
 **Tests**: unit
 **Gate**: quick (backend)

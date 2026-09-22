@@ -152,7 +152,8 @@ func (r *ServiceRepository) ListPaginated(ctx context.Context, page, pageSize in
 	offset := (page - 1) * pageSize
 
 	rows, err := r.pool.Query(ctx,
-		`SELECT id, name, COALESCE(slo_id, ''), slo_name, current_status, last_status_change_at, COUNT(*) OVER() AS total
+		`SELECT id, name, COALESCE(slo_id, ''), slo_name, COALESCE(slo_type, ''), COALESCE(datadog_service_tag, ''),
+		        current_status, last_status_change_at, COUNT(*) OVER() AS total
 		 FROM services
 		 WHERE deleted_at IS NULL
 		 ORDER BY name
@@ -168,7 +169,7 @@ func (r *ServiceRepository) ListPaginated(ctx context.Context, page, pageSize in
 	total := 0
 	for rows.Next() {
 		var service Service
-		if err := rows.Scan(&service.ID, &service.Name, &service.SLOID, &service.SLOName, &service.CurrentStatus, &service.LastStatusChangeAt, &total); err != nil {
+		if err := rows.Scan(&service.ID, &service.Name, &service.SLOID, &service.SLOName, &service.SLOType, &service.DatadogServiceTag, &service.CurrentStatus, &service.LastStatusChangeAt, &total); err != nil {
 			return nil, 0, fmt.Errorf("db: failed to scan service: %w", err)
 		}
 		services = append(services, service)

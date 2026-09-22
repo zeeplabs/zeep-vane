@@ -184,6 +184,22 @@ func patchServiceName(t *testing.T, r http.Handler, token, id, name string) *htt
 	return rec
 }
 
+// patchServiceRaw sends an arbitrary raw JSON body to PATCH
+// /api/services/{id}, for tests that need to include/omit slo_type/
+// datadog_service_tag independently of req.Name (updateServiceRequest's
+// *string fields distinguish "absent" from "explicit empty").
+func patchServiceRaw(t *testing.T, r http.Handler, token, id, rawBody string) *httptest.ResponseRecorder {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodPatch, "/api/services/"+id, bytes.NewReader([]byte(rawBody)))
+	req.Header.Set("Content-Type", "application/json")
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+	return rec
+}
+
 // deleteService issues DELETE /api/services/{id} (service-delete
 // SVCDEL-01..05).
 func deleteService(t *testing.T, r http.Handler, token, id string) *httptest.ResponseRecorder {
@@ -262,6 +278,45 @@ func TestCreateService_ValidRequest_201SavesSLOLink(t *testing.T) {
 	}
 	if storedSLOID != "slo-abc-123" {
 		t.Errorf("stored slo_id = %q, want %q", storedSLOID, "slo-abc-123")
+	}
+}
+
+// TestCreateService_WithSLOTypeAndDatadogServiceTag_PersistsAndReturnsThem
+// covers slo-root-cause-enrichment RCA-01: Create accepts slo_type/
+// datadog_service_tag, persists them, and returns them in the response.
+func TestCreateService_WithSLOTypeAndDatadogServiceTag_PersistsAndReturnsThem(t *testing.T) {
+	r, pool, admins := newServicesRouter(t)
+	token := issueTestSessionTokenWithTenant(t, admins, pool)
+	name := uniqueServiceName(t)
+	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), "DELETE FROM services WHERE name = $1", name) })
+
+	rawBody := fmt.Sprintf(`{"name":%q,"slo_id":"slo-rca-create-1","slo_type":"metric","datadog_service_tag":"service:checkout-svc"}`, name)
+	rec := postCreateServiceRaw(t, r, token, rawBody)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusCreated, rec.Body.String())
+	}
+
+	var created serviceResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &created); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+	if created.SLOType != "metric" {
+		t.Errorf("response SLOType = %q, want %q", created.SLOType, "metric")
+	}
+	if created.DatadogServiceTag != "service:checkout-svc" {
+		t.Errorf("response DatadogServiceTag = %q, want %q", created.DatadogServiceTag, "service:checkout-svc")
+	}
+
+	var storedType, storedTag string
+	row := pool.QueryRow(context.Background(), "SELECT slo_type, datadog_service_tag FROM services WHERE name = $1", name)
+	if err := row.Scan(&storedType, &storedTag); err != nil {
+		t.Fatalf("Scan() returned unexpected error: %v", err)
+	}
+	if storedType != "metric" {
+		t.Errorf("stored slo_type = %q, want %q", storedType, "metric")
+	}
+	if storedTag != "service:checkout-svc" {
+		t.Errorf("stored datadog_service_tag = %q, want %q", storedTag, "service:checkout-svc")
 	}
 }
 
@@ -958,6 +1013,100 @@ func TestUpdateService_ValidRequest_200RenamesAndReturnsFullBody(t *testing.T) {
 	}
 	if detail.Name != newName {
 		t.Errorf("GET after update: detail.Name = %q, want %q", detail.Name, newName)
+	}
+}
+
+// TestUpdateService_WithSLOTypeAndTag_SetsThem covers slo-root-cause-
+// enrichment RCA-01: including slo_type/datadog_service_tag in the update
+// body sets them, and the response/read-back reflect the new values.
+func TestUpdateService_WithSLOTypeAndTag_SetsThem(t *testing.T) {
+	r, pool, admins := newServicesRouter(t)
+	token := issueTestSessionTokenWithTenant(t, admins, pool)
+	name := uniqueServiceName(t)
+	created := createServiceForDetail(t, r, pool, token, name, "slo-rca-update-1", "")
+
+	rec := patchServiceRaw(t, r, token, created.ID, fmt.Sprintf(`{"name":%q,"slo_type":"metric","datadog_service_tag":"service:checkout-svc"}`, name))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	var resp serviceResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+	if resp.SLOType != "metric" {
+		t.Errorf("resp.SLOType = %q, want %q", resp.SLOType, "metric")
+	}
+	if resp.DatadogServiceTag != "service:checkout-svc" {
+		t.Errorf("resp.DatadogServiceTag = %q, want %q", resp.DatadogServiceTag, "service:checkout-svc")
+	}
+}
+
+// TestUpdateService_ClearingSLOTypeAndTag_SetsThemEmpty covers RCA-01's
+// "update clearing them" scenario: submitting explicit "" for both fields
+// clears previously-set values back to empty, not left stale.
+func TestUpdateService_ClearingSLOTypeAndTag_SetsThemEmpty(t *testing.T) {
+	r, pool, admins := newServicesRouter(t)
+	token := issueTestSessionTokenWithTenant(t, admins, pool)
+	name := uniqueServiceName(t)
+	created := createServiceForDetail(t, r, pool, token, name, "slo-rca-update-2", "")
+
+	setRec := patchServiceRaw(t, r, token, created.ID, fmt.Sprintf(`{"name":%q,"slo_type":"metric","datadog_service_tag":"service:checkout-svc"}`, name))
+	if setRec.Code != http.StatusOK {
+		t.Fatalf("setup set status = %d, want %d, body = %s", setRec.Code, http.StatusOK, setRec.Body.String())
+	}
+
+	clearRec := patchServiceRaw(t, r, token, created.ID, fmt.Sprintf(`{"name":%q,"slo_type":"","datadog_service_tag":""}`, name))
+	if clearRec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", clearRec.Code, http.StatusOK, clearRec.Body.String())
+	}
+
+	var resp serviceResponse
+	if err := json.Unmarshal(clearRec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+	if resp.SLOType != "" {
+		t.Errorf("resp.SLOType = %q, want empty after clearing", resp.SLOType)
+	}
+	if resp.DatadogServiceTag != "" {
+		t.Errorf("resp.DatadogServiceTag = %q, want empty after clearing", resp.DatadogServiceTag)
+	}
+}
+
+// TestUpdateService_PlainRename_LeavesSLOTypeAndTagUnchanged is a
+// regression guard: a bare {"name":"..."} rename (slo_type/
+// datadog_service_tag both absent, not "") must never clobber previously
+// set values - updateServiceRequest uses *string precisely so "absent"
+// and "explicit empty" are distinguishable.
+func TestUpdateService_PlainRename_LeavesSLOTypeAndTagUnchanged(t *testing.T) {
+	r, pool, admins := newServicesRouter(t)
+	token := issueTestSessionTokenWithTenant(t, admins, pool)
+	name := uniqueServiceName(t)
+	created := createServiceForDetail(t, r, pool, token, name, "slo-rca-update-3", "")
+
+	setRec := patchServiceRaw(t, r, token, created.ID, fmt.Sprintf(`{"name":%q,"slo_type":"metric","datadog_service_tag":"service:checkout-svc"}`, name))
+	if setRec.Code != http.StatusOK {
+		t.Fatalf("setup set status = %d, want %d, body = %s", setRec.Code, http.StatusOK, setRec.Body.String())
+	}
+
+	newName := name + "-renamed"
+	rec := patchServiceName(t, r, token, created.ID, newName)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	var resp serviceResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+	if resp.Name != newName {
+		t.Errorf("resp.Name = %q, want %q", resp.Name, newName)
+	}
+	if resp.SLOType != "metric" {
+		t.Errorf("resp.SLOType = %q, want unchanged %q (plain rename must not clobber it)", resp.SLOType, "metric")
+	}
+	if resp.DatadogServiceTag != "service:checkout-svc" {
+		t.Errorf("resp.DatadogServiceTag = %q, want unchanged %q (plain rename must not clobber it)", resp.DatadogServiceTag, "service:checkout-svc")
 	}
 }
 
