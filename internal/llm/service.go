@@ -103,6 +103,10 @@ type LLMProviderStore interface {
 	// DeleteProvider removes provider's stored row (provider-disconnect
 	// PROVDISC-04/05) - idempotent, no error when zero rows matched.
 	DeleteProvider(ctx context.Context, provider string) error
+	// SetRootCauseEnrichmentEnabled sets the active tenant's
+	// root_cause_enrichment_enabled toggle (slo-root-cause-enrichment
+	// RCA-07/RCA-09).
+	SetRootCauseEnrichmentEnabled(ctx context.Context, enabled bool) error
 }
 
 // ProviderStatus is one connected provider's observable state - never
@@ -241,6 +245,19 @@ func (s *Service) Activate(ctx context.Context, provider string) error {
 func (s *Service) Disconnect(ctx context.Context, provider string) error {
 	if err := s.repo.DeleteProvider(ctx, provider); err != nil {
 		return fmt.Errorf("llm: failed to disconnect provider: %w", err)
+	}
+
+	return nil
+}
+
+// SetRootCauseEnrichmentEnabled sets the active tenant's root-cause
+// enrichment toggle (RCA-07/RCA-09) - a thin wrapper delegating straight to
+// the repository, same shape as Activate/SetModel: no provider-connected
+// check here, since the toggle is meaningful independent of which (if any)
+// provider is currently active.
+func (s *Service) SetRootCauseEnrichmentEnabled(ctx context.Context, enabled bool) error {
+	if err := s.repo.SetRootCauseEnrichmentEnabled(ctx, enabled); err != nil {
+		return fmt.Errorf("llm: failed to set root cause enrichment setting: %w", err)
 	}
 
 	return nil

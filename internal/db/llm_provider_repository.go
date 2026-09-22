@@ -385,3 +385,7 @@ func (a *llmProviderStoreAdapter) MarkTransientFailure(ctx context.Context, prov
 func (a *llmProviderStoreAdapter) DeleteProvider(ctx context.Context, provider string) error {
 	return a.repo.DeleteProvider(ctx, provider)
 }
+
+func (a *llmProviderStoreAdapter) SetRootCauseEnrichmentEnabled(ctx context.Context, enabled bool) error {
+	return a.repo.SetRootCauseEnrichmentEnabled(ctx, enabled)
+}

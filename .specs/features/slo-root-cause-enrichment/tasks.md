@@ -255,9 +255,9 @@ T8 → T14
 - Skill: NONE
 
 **Done when**:
-- [ ] Method added, delegates to repository, wraps errors the same way every other `Service` method does
-- [ ] Gate check passes: `go test ./internal/llm/...`
-- [ ] Test count: existing count + at least 1 new test
+- [x] Method added, delegates to repository, wraps errors the same way every other `Service` method does
+- [x] Gate check passes: `go test ./internal/llm/...`
+- [x] Test count: existing count + at least 1 new test
 
 **Tests**: unit
 **Gate**: quick (backend)
