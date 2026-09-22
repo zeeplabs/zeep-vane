@@ -408,10 +408,10 @@ T8 → T14
 - Skill: NONE
 
 **Done when**:
-- [ ] Selecting an SLO in the drawer captures `slo_type`/`datadog_service_tag` from the search result
-- [ ] Create/Update payload includes both fields
-- [ ] Gate check passes: `cd web && npx tsc -b --noEmit && npm run test`
-- [ ] Test count: existing count + at least 2 new tests (fields present on save, fields absent/empty for a flow-type SLO with no single service tag)
+- [x] Selecting an SLO in the drawer captures `slo_type`/`datadog_service_tag` from the search result
+- [x] Create/Update payload includes both fields
+- [x] Gate check passes: `cd web && npx tsc -b --noEmit && npm run test`
+- [x] Test count: existing count + at least 2 new tests (fields present on save, fields absent/empty for a flow-type SLO with no single service tag)
 
 **Tests**: unit
 **Gate**: quick (frontend)

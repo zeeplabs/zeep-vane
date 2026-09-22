@@ -61,6 +61,12 @@ export interface CreateServiceInput {
   monitor_mode?: MonitorMode;
   slo_id?: string;
   slo_name?: string;
+  // slo_type/datadog_service_tag ride along with slo_id/slo_name, captured
+  // from the same SLO-search result (slo-root-cause-enrichment RCA-01) -
+  // AddServiceDrawer.tsx omits both when the selected SLO has no single
+  // resolved service tag (a flow-type SLO).
+  slo_type?: string;
+  datadog_service_tag?: string;
   poll_type?: PollType;
   poll_target?: string;
   poll_interval_seconds?: 30 | 60 | 300;

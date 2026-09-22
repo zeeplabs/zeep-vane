@@ -7,7 +7,7 @@ import { Field } from "../../components/ui/Field";
 import { ApiError } from "../../lib/apiClient";
 import { useIntegrationStatus, useSLOSearch } from "../integrations/hooks";
 import { useCreateService } from "./hooks";
-import type { MonitorMode, PollType } from "../../types/api";
+import type { MonitorMode, PollType, SLOSummary } from "../../types/api";
 
 export interface AddServiceDrawerProps {
   open: boolean;
@@ -41,7 +41,7 @@ export function AddServiceDrawer({ open, onOpenChange }: AddServiceDrawerProps) 
   const { t } = useTranslation();
   const [name, setName] = useState("");
   const [query, setQuery] = useState("");
-  const [selectedSlo, setSelectedSlo] = useState<{ id: string; name: string } | null>(null);
+  const [selectedSlo, setSelectedSlo] = useState<SLOSummary | null>(null);
   const [monitorMode, setMonitorMode] = useState<MonitorMode>("slo");
   const [pollType, setPollType] = useState<PollType>("http");
   const [pollTarget, setPollTarget] = useState("");
@@ -93,7 +93,13 @@ export function AddServiceDrawer({ open, onOpenChange }: AddServiceDrawerProps) 
         return;
       }
       try {
-        await createService.mutateAsync({ name, slo_id: selectedSlo.id, slo_name: selectedSlo.name });
+        await createService.mutateAsync({
+          name,
+          slo_id: selectedSlo.id,
+          slo_name: selectedSlo.name,
+          slo_type: selectedSlo.slo_type,
+          datadog_service_tag: selectedSlo.datadog_service_tag,
+        });
         resetForm();
         onOpenChange(false);
       } catch (err) {

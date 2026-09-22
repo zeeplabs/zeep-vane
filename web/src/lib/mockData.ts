@@ -102,11 +102,16 @@ export const datadogIntegration: { connected: boolean } & IntegrationStatus = {
   last_error: null,
 };
 
+// slo-4 ("Fila de notificações") has no single resolved service tag - a
+// flow-type SLO (0 or 2+ service_tags entries), per this feature's own
+// decision not to attempt parsing a multi-service SLO's query string
+// (slo-root-cause-enrichment design.md). Exercised by
+// AddServiceDrawer.test.tsx's "no single service tag" case.
 export const sloCatalog: SLOSummary[] = [
-  { id: "slo-1", name: "API disponibilidade 99.9%" },
-  { id: "slo-2", name: "Checkout latência p95" },
-  { id: "slo-3", name: "Autenticação disponibilidade" },
-  { id: "slo-4", name: "Fila de notificações" },
+  { id: "slo-1", name: "API disponibilidade 99.9%", slo_type: "metric", datadog_service_tag: "api-svc" },
+  { id: "slo-2", name: "Checkout latência p95", slo_type: "metric", datadog_service_tag: "checkout-svc" },
+  { id: "slo-3", name: "Autenticação disponibilidade", slo_type: "metric", datadog_service_tag: "auth-svc" },
+  { id: "slo-4", name: "Fila de notificações", slo_type: "metric", datadog_service_tag: "" },
 ];
 
 // -- Services -------------------------------------------------------------------

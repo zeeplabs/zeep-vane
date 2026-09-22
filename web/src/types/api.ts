@@ -46,6 +46,12 @@ export interface IntegrationStatus {
 export interface SLOSummary {
   id: string;
   name: string;
+  // slo_type/datadog_service_tag ride along with every search result
+  // (slo-root-cause-enrichment RCA-01) - "" for datadog_service_tag when
+  // the SLO has 0 or 2+ service_tags entries (a flow-type SLO), same
+  // ""-means-absent convention as the rest of this feature.
+  slo_type: string;
+  datadog_service_tag: string;
 }
 
 export type ServiceStatus = "not_configured" | "operational" | "degraded" | "outage";

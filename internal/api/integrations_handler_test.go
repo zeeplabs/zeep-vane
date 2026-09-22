@@ -371,6 +371,43 @@ func TestSearchDatadogSLOs_Connected_200ReturnsList(t *testing.T) {
 	}
 }
 
+// TestSearchDatadogSLOs_IncludesSLOTypeAndDatadogServiceTag covers
+// slo-root-cause-enrichment RCA-01: the search response must carry
+// slo_type/datadog_service_tag alongside id/name, so AddServiceDrawer can
+// capture them from the same search result without a second round-trip.
+func TestSearchDatadogSLOs_IncludesSLOTypeAndDatadogServiceTag(t *testing.T) {
+	alwaysValid := func(ctx context.Context, apiKey, appKey string) error { return nil }
+	search := func(ctx context.Context, apiKey, appKey, query string) ([]datadog.SLOSummary, error) {
+		return []datadog.SLOSummary{
+			{ID: "slo-1", Name: "Checkout latência p95", SLOType: "metric", ServiceTag: "checkout-svc"},
+			{ID: "slo-2", Name: "Fila de notificações", SLOType: "metric", ServiceTag: ""},
+		}, nil
+	}
+	r, _, admins := newIntegrationsRouterWithSearch(t, alwaysValid, search, zap.NewNop())
+	token := issueTestSessionToken(t, admins)
+	postConnectDatadog(t, r, token, "real-api-key", "real-app-key")
+
+	rec := getDatadogSLOs(t, r, token, "checkout")
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	var resp []sloSummaryResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+	if len(resp) != 2 {
+		t.Fatalf("len(resp) = %d, want 2", len(resp))
+	}
+	if resp[0].SLOType != "metric" || resp[0].DatadogServiceTag != "checkout-svc" {
+		t.Errorf("resp[0] = %+v, want SLOType=%q DatadogServiceTag=%q", resp[0], "metric", "checkout-svc")
+	}
+	if resp[1].SLOType != "metric" || resp[1].DatadogServiceTag != "" {
+		t.Errorf("resp[1] = %+v, want SLOType=%q DatadogServiceTag=%q (flow-type SLO, no single service tag)", resp[1], "metric", "")
+	}
+}
+
 func TestSearchDatadogSLOs_NotConnectedYet_200EmptyList(t *testing.T) {
 	alwaysValid := func(ctx context.Context, apiKey, appKey string) error { return nil }
 	r, _, admins := newIntegrationsRouterWithSearch(t, alwaysValid, alwaysEmptySearch, zap.NewNop())
