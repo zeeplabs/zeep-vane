@@ -11,6 +11,7 @@ import { formatDateTime } from "../../lib/formatDate";
 import type { Service } from "../../types/api";
 import { useServices } from "./hooks";
 import { statusLabel, statusVariant, statusDotColor } from "./statusMeta";
+
 import { AddServiceDrawer } from "./AddServiceDrawer";
 
 function ClockIcon() {
@@ -36,11 +37,11 @@ export function ServicesSection() {
   return (
     <div className="flex flex-col gap-6">
       <div className="flex items-center justify-between">
-        <h2 className="text-text">Serviços monitorados</h2>
+        <h2 className="text-text">{t("services.title")}</h2>
         {canManage ? (
           <Button variant="primary" onClick={() => setDrawerOpen(true)}>
             <MdOutlineAdd size={14} aria-hidden="true" />
-            Vincular serviço
+            {t("services.section.linkButton")}
           </Button>
         ) : null}
       </div>
@@ -65,7 +66,7 @@ export function ServicesSection() {
           <>
             <Card elevation="none" className="border border-divider divide-y divide-divider overflow-hidden">
               {(services ?? []).length === 0 ? (
-                <p className="px-4 py-6 text-center text-neutral-400">Nenhum serviço cadastrado.</p>
+                <p className="px-4 py-6 text-center text-neutral-400">{t("services.section.empty")}</p>
               ) : (
                 (services ?? []).map((s) => (
                   <div key={s.id} data-testid="service-row" className="flex items-center gap-3 px-4 py-3.5">
@@ -82,10 +83,10 @@ export function ServicesSection() {
                       </div>
                     </div>
                     <div className="text-right text-xs text-neutral-400">
-                      <div>Última mudança</div>
+                      <div>{t("services.section.lastChangeLabel")}</div>
                       <div className="mt-0.5 text-[13px] text-text">{serviceLastChange(s)}</div>
                     </div>
-                    <Tag variant={statusVariant[s.current_status]}>{statusLabel[s.current_status]}</Tag>
+                    <Tag variant={statusVariant[s.current_status]}>{statusLabel(t, s.current_status)}</Tag>
                   </div>
                 ))
               )}

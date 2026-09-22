@@ -1032,12 +1032,24 @@
     "loading": "Carregando…",
     "noData": "—",
     "emptyFiltered": "Nenhum serviço encontrado com esses filtros.",
+    "filterAriaLabel": "Filtrar por status",
     "filters": {
       "all": "Todos",
       "operational": "Operacional",
       "degraded": "Degradado",
       "outage": "Inativo",
       "notConfigured": "Não configurado"
+    },
+    "statusLabel": {
+      "operational": "Operacional",
+      "degraded": "Degradado",
+      "outage": "Inativo",
+      "not_configured": "Não configurado"
+    },
+    "section": {
+      "linkButton": "Vincular serviço",
+      "empty": "Nenhum serviço cadastrado.",
+      "lastChangeLabel": "Última mudança"
     },
     "columns": {
       "status": "Status",
@@ -1064,6 +1076,16 @@
       "deleteError": "Não foi possível excluir o serviço."
     },
     "addDrawer": {
+      "drawerTitle": "Adicionar serviço",
+      "drawerDescription": "Configure um novo alvo de monitoramento. O Vane começa a verificar assim que você salvar.",
+      "submitButton": "Adicionar serviço",
+      "nameLabel": "Nome do serviço",
+      "namePlaceholder": "Ex: Payments API",
+      "sloSearchLabel": "Buscar SLO",
+      "sloSearchPlaceholder": "Digite o nome do SLO",
+      "noSloFound": "Nenhum SLO encontrado.",
+      "selectSloError": "Selecione um SLO da lista antes de salvar.",
+      "genericError": "Não foi possível vincular o serviço.",
       "monitorModeLabel": "Como monitorar",
       "monitorModeSlo": "Baseado em SLO",
       "monitorModeSloDescription": "Importa o alvo do serviço de observabilidade conectado",

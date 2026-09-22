@@ -89,7 +89,7 @@ export function AddServiceDrawer({ open, onOpenChange }: AddServiceDrawerProps) 
         // the earlier mock allowed a service with no SLO at all) - validated
         // client-side so the admin gets an immediate, specific message
         // instead of a generic 422 from the API.
-        setError("Selecione um SLO da lista antes de salvar.");
+        setError(t("services.addDrawer.selectSloError"));
         return;
       }
       try {
@@ -98,7 +98,7 @@ export function AddServiceDrawer({ open, onOpenChange }: AddServiceDrawerProps) 
         onOpenChange(false);
       } catch (err) {
         if (err instanceof ApiError) setError(err.message);
-        else setError("Não foi possível vincular o serviço.");
+        else setError(t("services.addDrawer.genericError"));
       }
       return;
     }
@@ -121,7 +121,7 @@ export function AddServiceDrawer({ open, onOpenChange }: AddServiceDrawerProps) 
       onOpenChange(false);
     } catch (err) {
       if (err instanceof ApiError) setError(err.message);
-      else setError("Não foi possível vincular o serviço.");
+      else setError(t("services.addDrawer.genericError"));
     }
   }
 
@@ -138,8 +138,8 @@ export function AddServiceDrawer({ open, onOpenChange }: AddServiceDrawerProps) 
     <Drawer
       open={open}
       onOpenChange={handleOpenChange}
-      title="Adicionar serviço"
-      description="Configure um novo alvo de monitoramento. O Vane começa a verificar assim que você salvar."
+      title={t("services.addDrawer.drawerTitle")}
+      description={t("services.addDrawer.drawerDescription")}
       closeLabel={t("common.close")}
       footer={
         <>
@@ -149,7 +149,7 @@ export function AddServiceDrawer({ open, onOpenChange }: AddServiceDrawerProps) 
             style={drawerFooterSecondaryStyle}
             onClick={() => handleOpenChange(false)}
           >
-            Cancelar
+            {t("common.cancel")}
           </Button>
           <Button
             type="submit"
@@ -158,7 +158,7 @@ export function AddServiceDrawer({ open, onOpenChange }: AddServiceDrawerProps) 
             style={drawerFooterPrimaryStyle}
             disabled={createService.isPending || !canSubmit}
           >
-            Adicionar serviço
+            {t("services.addDrawer.submitButton")}
           </Button>
         </>
       }
@@ -166,10 +166,10 @@ export function AddServiceDrawer({ open, onOpenChange }: AddServiceDrawerProps) 
       <form id="add-service-form" onSubmit={handleSubmit} className="flex flex-col gap-[18px]">
         <Field
           variant="filled"
-          label="Nome do serviço"
+          label={t("services.addDrawer.nameLabel")}
           value={name}
           onChange={(e) => setName(e.target.value)}
-          placeholder="Ex: Payments API"
+          placeholder={t("services.addDrawer.namePlaceholder")}
           required
         />
 
@@ -216,13 +216,13 @@ export function AddServiceDrawer({ open, onOpenChange }: AddServiceDrawerProps) 
             </div>
             <Field
               variant="filled"
-              label="Buscar SLO"
+              label={t("services.addDrawer.sloSearchLabel")}
               value={query}
               onChange={(e) => {
                 setQuery(e.target.value);
                 setSelectedSlo(null);
               }}
-              placeholder="Digite o nome do SLO"
+              placeholder={t("services.addDrawer.sloSearchPlaceholder")}
             />
             <p className="rounded-[9px] border border-accent/20 bg-accent-100 px-3 py-2.5 text-[12px] leading-[1.5] text-neutral-400">
               {t("services.addDrawer.sloHelperNote")}
@@ -230,7 +230,7 @@ export function AddServiceDrawer({ open, onOpenChange }: AddServiceDrawerProps) 
             {query.trim() && sloSearch.data ? (
               <ul className="flex flex-col gap-1 rounded-md border border-divider bg-bg p-1">
                 {sloSearch.data.length === 0 ? (
-                  <li className="px-2 py-1.5 text-xs text-neutral-400">Nenhum SLO encontrado.</li>
+                  <li className="px-2 py-1.5 text-xs text-neutral-400">{t("services.addDrawer.noSloFound")}</li>
                 ) : (
                   sloSearch.data.map((slo) => (
                     <li key={slo.id}>

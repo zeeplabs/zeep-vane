@@ -106,7 +106,7 @@ export function ServiceListPage({
       </div>
 
       <div className="flex flex-wrap items-center justify-between gap-4">
-        <div role="group" aria-label="Filtrar por status" className="flex flex-wrap items-center gap-2">
+        <div role="group" aria-label={t("services.filterAriaLabel")} className="flex flex-wrap items-center gap-2">
           {statusFilters.map((value) => {
             const active = statusFilter === value;
             return (

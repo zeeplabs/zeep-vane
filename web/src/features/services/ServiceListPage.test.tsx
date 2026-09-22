@@ -3,7 +3,7 @@ import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { http, HttpResponse, delay } from "msw";
 import { server } from "../../test/msw/server";
-import "../../lib/i18n";
+import i18n from "../../lib/i18n";
 import { TestQueryProvider } from "../../test/queryClient";
 import { apiFetch } from "../../lib/apiClient";
 import { ServiceListPage } from "./ServiceListPage";
@@ -302,5 +302,21 @@ describe("ServiceListPage", () => {
 
     await userEvent.click(screen.getByRole("button", { name: "Adicionar serviço" }));
     expect(addClicked).toBe(true);
+  });
+
+  it("renderiza em inglês quando o idioma ativo é en", async () => {
+    mockServicesPage(fourStatusFixture);
+    await loginAsOwner();
+    await i18n.changeLanguage("en");
+
+    try {
+      renderPage();
+
+      expect(await screen.findByText("Monitored services")).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Add service" })).toBeInTheDocument();
+      expect(screen.getByRole("group", { name: "Filter by status" })).toBeInTheDocument();
+    } finally {
+      await i18n.changeLanguage("pt-BR");
+    }
   });
 });

@@ -1032,12 +1032,24 @@
     "loading": "Loading…",
     "noData": "—",
     "emptyFiltered": "No service found matching these filters.",
+    "filterAriaLabel": "Filter by status",
     "filters": {
       "all": "All",
       "operational": "Operational",
       "degraded": "Degraded",
       "outage": "Down",
       "notConfigured": "Not configured"
+    },
+    "statusLabel": {
+      "operational": "Operational",
+      "degraded": "Degraded",
+      "outage": "Down",
+      "not_configured": "Not configured"
+    },
+    "section": {
+      "linkButton": "Link service",
+      "empty": "No services registered.",
+      "lastChangeLabel": "Last change"
     },
     "columns": {
       "status": "Status",
@@ -1064,6 +1076,16 @@
       "deleteError": "Could not delete the service."
     },
     "addDrawer": {
+      "drawerTitle": "Add service",
+      "drawerDescription": "Set up a new monitoring target. Vane starts checking as soon as you save.",
+      "submitButton": "Add service",
+      "nameLabel": "Service name",
+      "namePlaceholder": "Ex: Payments API",
+      "sloSearchLabel": "Search SLO",
+      "sloSearchPlaceholder": "Type the SLO name",
+      "noSloFound": "No SLO found.",
+      "selectSloError": "Select an SLO from the list before saving.",
+      "genericError": "Could not link the service.",
       "monitorModeLabel": "How to monitor",
       "monitorModeSlo": "SLO-based",
       "monitorModeSloDescription": "Imports the target from the connected observability provider",
