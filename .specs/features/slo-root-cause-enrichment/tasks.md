@@ -205,10 +205,10 @@ T8 → T14
 - Skill: NONE
 
 **Done when**:
-- [ ] Both methods added, tenant-scoped via the same `app.tenant_id` mechanism every other repository method on this table uses
-- [ ] Default read (no explicit write yet) returns `false`, matching the column's `DEFAULT false`
-- [ ] Gate check passes: `go test ./internal/db/...` (unit) and `make test-integration` (integration)
-- [ ] Test count: existing count + at least 2 new tests (default false, set-then-read roundtrip)
+- [x] Both methods added, tenant-scoped via the same `app.tenant_id` mechanism every other repository method on this table uses
+- [x] Default read (no explicit write yet) returns `false`, matching the column's `DEFAULT false`
+- [x] Gate check passes: `go test ./internal/db/...` (unit) and `make test-integration` (integration)
+- [x] Test count: existing count + at least 2 new tests (default false, set-then-read roundtrip)
 
 **Tests**: unit + integration
 **Gate**: full

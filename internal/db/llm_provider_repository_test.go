@@ -160,6 +160,53 @@ func TestLLMProviderRepository_SetActiveProvider_ThenGetActiveProvider_RoundTrip
 	}
 }
 
+// TestLLMProviderRepository_RootCauseEnrichmentEnabled_EmptySettingsRow_ReturnsFalse
+// covers RCA-07's default: no llm_settings row yet means the toggle is off,
+// matching the column's own DEFAULT false.
+func TestLLMProviderRepository_RootCauseEnrichmentEnabled_EmptySettingsRow_ReturnsFalse(t *testing.T) {
+	repo, _ := newLLMProviderRepoForTest(t)
+	ctx := context.Background()
+
+	enabled, err := repo.RootCauseEnrichmentEnabled(ctx)
+	if err != nil {
+		t.Fatalf("RootCauseEnrichmentEnabled() returned unexpected error: %v", err)
+	}
+	if enabled {
+		t.Errorf("RootCauseEnrichmentEnabled() = true, want false")
+	}
+}
+
+// TestLLMProviderRepository_SetRootCauseEnrichmentEnabled_ThenGet_RoundTrips
+// covers RCA-07/RCA-09: setting the toggle true then reading it back
+// returns true, and setting it back to false clears it again - not a
+// write-once flag.
+func TestLLMProviderRepository_SetRootCauseEnrichmentEnabled_ThenGet_RoundTrips(t *testing.T) {
+	repo, _ := newLLMProviderRepoForTest(t)
+	ctx := context.Background()
+
+	if err := repo.SetRootCauseEnrichmentEnabled(ctx, true); err != nil {
+		t.Fatalf("SetRootCauseEnrichmentEnabled(true) returned unexpected error: %v", err)
+	}
+	enabled, err := repo.RootCauseEnrichmentEnabled(ctx)
+	if err != nil {
+		t.Fatalf("RootCauseEnrichmentEnabled() returned unexpected error: %v", err)
+	}
+	if !enabled {
+		t.Fatalf("RootCauseEnrichmentEnabled() = false, want true after SetRootCauseEnrichmentEnabled(true)")
+	}
+
+	if err := repo.SetRootCauseEnrichmentEnabled(ctx, false); err != nil {
+		t.Fatalf("SetRootCauseEnrichmentEnabled(false) returned unexpected error: %v", err)
+	}
+	enabled, err = repo.RootCauseEnrichmentEnabled(ctx)
+	if err != nil {
+		t.Fatalf("RootCauseEnrichmentEnabled() returned unexpected error: %v", err)
+	}
+	if enabled {
+		t.Fatalf("RootCauseEnrichmentEnabled() = true, want false after SetRootCauseEnrichmentEnabled(false)")
+	}
+}
+
 func TestLLMProviderRepository_UpdateModel_ChangesOnlyModelColumn(t *testing.T) {
 	repo, _ := newLLMProviderRepoForTest(t)
 	ctx := context.Background()

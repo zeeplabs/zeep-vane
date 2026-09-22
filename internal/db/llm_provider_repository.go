@@ -179,6 +179,39 @@ func (r *LLMProviderRepository) SetActiveProvider(ctx context.Context, provider 
 	return nil
 }
 
+// RootCauseEnrichmentEnabled returns the active tenant's
+// root_cause_enrichment_enabled toggle (slo-root-cause-enrichment RCA-07),
+// or false (not an error) when the active tenant has no llm_settings row
+// yet - matching the column's own DEFAULT false (migration 0039), same
+// no-row convention as GetActiveProvider.
+func (r *LLMProviderRepository) RootCauseEnrichmentEnabled(ctx context.Context) (bool, error) {
+	var enabled bool
+	row := r.pool.QueryRow(ctx,
+		"SELECT root_cause_enrichment_enabled FROM llm_settings WHERE tenant_id = NULLIF(current_setting('app.tenant_id', true), '')::uuid")
+	if err := row.Scan(&enabled); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return false, nil
+		}
+		return false, fmt.Errorf("db: failed to get root cause enrichment setting: %w", err)
+	}
+	return enabled, nil
+}
+
+// SetRootCauseEnrichmentEnabled sets the active tenant's llm_settings row's
+// root_cause_enrichment_enabled to enabled (RCA-07/RCA-09), same
+// insert-or-update shape as SetActiveProvider.
+func (r *LLMProviderRepository) SetRootCauseEnrichmentEnabled(ctx context.Context, enabled bool) error {
+	_, err := r.pool.Exec(ctx,
+		`INSERT INTO llm_settings (root_cause_enrichment_enabled) VALUES ($1)
+		 ON CONFLICT (tenant_id) DO UPDATE SET root_cause_enrichment_enabled = EXCLUDED.root_cause_enrichment_enabled`,
+		enabled)
+	if err != nil {
+		return fmt.Errorf("db: failed to set root cause enrichment setting: %w", err)
+	}
+
+	return nil
+}
+
 // DeleteProvider removes provider's row from llm_providers
 // (provider-disconnect PROVDISC-04/05), mirroring
 // EmailProviderRepository.DeleteProvider: idempotent (no error when zero
