@@ -130,11 +130,11 @@ T8 → T14
 - Skill: NONE
 
 **Done when**:
-- [ ] `SLOSummary.SLOType`/`ServiceTag` added
-- [ ] `sloSearchResponse`'s nested struct decodes `slo_type` and `service_tags`
-- [ ] `ServiceTag` is `""` when `service_tags` has 0 or 2+ entries; set only for exactly 1
-- [ ] Gate check passes: `go test ./internal/connectors/datadog/...`
-- [ ] Test count: existing count + at least 3 new tests (single service tag, zero tags, multiple tags)
+- [x] `SLOSummary.SLOType`/`ServiceTag` added
+- [x] `sloSearchResponse`'s nested struct decodes `slo_type` and `service_tags`
+- [x] `ServiceTag` is `""` when `service_tags` has 0 or 2+ entries; set only for exactly 1
+- [x] Gate check passes: `go test ./internal/connectors/datadog/...`
+- [x] Test count: existing count + at least 3 new tests (single service tag, zero tags, multiple tags)
 
 **Tests**: unit
 **Gate**: quick (backend)

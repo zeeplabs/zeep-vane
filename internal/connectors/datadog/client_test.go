@@ -567,6 +567,81 @@ func TestSearchErrorTrackingIssues_ServerError_ReturnsErrServer(t *testing.T) {
 	}
 }
 
+func TestSearchSLOs_SingleServiceTag_PopulatesSLOTypeAndServiceTag(t *testing.T) {
+	body := `{"data":{"attributes":{"slos":[{"data":{"id":"abc","attributes":{
+		"name":"Checkout latência p95","slo_type":"metric","service_tags":["service:checkout-svc"]
+	}}}]}}}`
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(body))
+	}))
+	defer server.Close()
+
+	client := newTestClient(t, server)
+	summaries, err := client.SearchSLOs(t.Context(), "checkout")
+	if err != nil {
+		t.Fatalf("SearchSLOs() returned unexpected error: %v", err)
+	}
+	if len(summaries) != 1 {
+		t.Fatalf("len(summaries) = %d, want 1", len(summaries))
+	}
+	if summaries[0].SLOType != "metric" {
+		t.Errorf("SLOType = %q, want %q", summaries[0].SLOType, "metric")
+	}
+	if summaries[0].ServiceTag != "service:checkout-svc" {
+		t.Errorf("ServiceTag = %q, want %q", summaries[0].ServiceTag, "service:checkout-svc")
+	}
+}
+
+func TestSearchSLOs_ZeroServiceTags_ServiceTagEmpty(t *testing.T) {
+	body := `{"data":{"attributes":{"slos":[{"data":{"id":"abc","attributes":{
+		"name":"Compra de Consulta","slo_type":"metric","service_tags":[]
+	}}}]}}}`
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(body))
+	}))
+	defer server.Close()
+
+	client := newTestClient(t, server)
+	summaries, err := client.SearchSLOs(t.Context(), "compra")
+	if err != nil {
+		t.Fatalf("SearchSLOs() returned unexpected error: %v", err)
+	}
+	if len(summaries) != 1 {
+		t.Fatalf("len(summaries) = %d, want 1", len(summaries))
+	}
+	if summaries[0].ServiceTag != "" {
+		t.Errorf("ServiceTag = %q, want empty (0 service_tags)", summaries[0].ServiceTag)
+	}
+}
+
+func TestSearchSLOs_MultipleServiceTags_ServiceTagEmpty(t *testing.T) {
+	body := `{"data":{"attributes":{"slos":[{"data":{"id":"abc","attributes":{
+		"name":"Compra de Consulta","slo_type":"metric","service_tags":["service:checkout-svc","service:payments-svc"]
+	}}}]}}}`
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(body))
+	}))
+	defer server.Close()
+
+	client := newTestClient(t, server)
+	summaries, err := client.SearchSLOs(t.Context(), "compra")
+	if err != nil {
+		t.Fatalf("SearchSLOs() returned unexpected error: %v", err)
+	}
+	if len(summaries) != 1 {
+		t.Fatalf("len(summaries) = %d, want 1", len(summaries))
+	}
+	if summaries[0].ServiceTag != "" {
+		t.Errorf("ServiceTag = %q, want empty (2 service_tags, ambiguous)", summaries[0].ServiceTag)
+	}
+}
+
 func TestSearchErrorTrackingIssues_LongErrorMessage_TruncatedTo500Chars(t *testing.T) {
 	longMessage := strings.Repeat("a", 600)
 	body := `{"data":[{"id":"occ-1","attributes":{"total_count":1},"relationships":{"issue":{"data":{"id":"issue-1","type":"issue"}}}}],` +

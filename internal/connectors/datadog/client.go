@@ -74,6 +74,14 @@ type SLOProvider interface {
 type SLOSummary struct {
 	ID   string
 	Name string
+	// SLOType is "metric" or "monitor", decoded from the same /slo/search
+	// response already fetched - no new Datadog API call.
+	SLOType string
+	// ServiceTag is the SLO's single service_tags entry, "" when absent or
+	// when service_tags has more than one entry (flow-type/multi-service
+	// SLOs - this session's decision: no attempt to parse the query
+	// string to recover a service list).
+	ServiceTag string
 }
 
 // CauseHint is the narrow root-cause signal SearchErrorTrackingIssues
@@ -138,6 +146,12 @@ type sloSearchResponse struct {
 						// Re-verify against a real account before relying on
 						// this in production.
 						Name string `json:"name"`
+						// SLOType/ServiceTags: fields this response already
+						// carries alongside Name/ID above, per design.md's
+						// root-cause-enrichment feature (RCA-01) - "metric"
+						// or "monitor", and the SLO's service:-scoped tags.
+						SLOType     string   `json:"slo_type"`
+						ServiceTags []string `json:"service_tags"`
 					} `json:"attributes"`
 				} `json:"data"`
 			} `json:"slos"`
@@ -279,7 +293,19 @@ func (c *Client) SearchSLOs(ctx context.Context, query string) ([]SLOSummary, er
 	slos := parsed.Data.Attributes.SLOs
 	summaries := make([]SLOSummary, 0, len(slos))
 	for _, slo := range slos {
-		summaries = append(summaries, SLOSummary{ID: slo.Data.ID, Name: slo.Data.Attributes.Name})
+		summary := SLOSummary{
+			ID:      slo.Data.ID,
+			Name:    slo.Data.Attributes.Name,
+			SLOType: slo.Data.Attributes.SLOType,
+		}
+		// ServiceTag is only set when service_tags has exactly one entry -
+		// flow-type/multi-service SLOs (0 or 2+ tags) get "", per this
+		// session's decision not to attempt parsing the query string to
+		// recover a service list (design.md's Data Models).
+		if len(slo.Data.Attributes.ServiceTags) == 1 {
+			summary.ServiceTag = slo.Data.Attributes.ServiceTags[0]
+		}
+		summaries = append(summaries, summary)
 	}
 
 	return summaries, nil
