@@ -368,7 +368,82 @@
   "billing": {
     "title": "Planos & Faturamento",
     "subtitle": "Escolha o plano ideal para o seu time e gerencie a assinatura da conta.",
-    "comingSoon": "Em breve"
+    "comingSoon": "Em breve",
+    "recommended": "Recomendado",
+    "perMonth": "/mês",
+    "currentPlanButton": "Plano atual",
+    "downgradeButton": "Fazer downgrade",
+    "upgradeButton": "Fazer upgrade",
+    "currentPlan": "Plano atual",
+    "noRecurringCharge": "Sem cobrança recorrente",
+    "monthlyBilling": "Cobrança mensal",
+    "paymentMethod": {
+      "title": "Forma de pagamento",
+      "empty": "Nenhum cartão cadastrado. Um cartão é adicionado ao fazer upgrade para um plano pago."
+    },
+    "invoices": {
+      "title": "Faturas",
+      "empty": "Suas faturas aparecerão aqui após a primeira cobrança da assinatura."
+    },
+    "plans": {
+      "free": {
+        "name": "Free",
+        "tagline": "Para começar a monitorar o essencial.",
+        "features": [
+          "Até 3 usuários",
+          "1 status page pública",
+          "Histórico de 7 dias",
+          "Polling manual ilimitado",
+          "Suporte via comunidade"
+        ]
+      },
+      "starter": {
+        "name": "Starter",
+        "tagline": "Para times que já dependem do Vane no dia a dia.",
+        "features": [
+          "Até 10 usuários",
+          "Até 3 status pages",
+          "1 domínio próprio",
+          "Fechamento de incidentes com IA",
+          "Histórico de 30 dias",
+          "Suporte por email"
+        ]
+      },
+      "scale": {
+        "name": "Scale",
+        "tagline": "Para operações críticas em múltiplos times.",
+        "features": [
+          "Usuários ilimitados",
+          "Status pages ilimitadas",
+          "Domínios próprios ilimitados",
+          "Fechamento de incidentes com IA",
+          "Histórico de 90 dias",
+          "SSO e suporte prioritário"
+        ]
+      }
+    },
+    "selfHosted": {
+      "title": "Licença self-hosted",
+      "noActiveLicense": "Nenhuma licença ativa",
+      "defaultFeaturesLocked": "Recursos padrão bloqueados",
+      "perYear": "/ano",
+      "licenseDescription": "Compra única, licença válida por 12 meses no seu ambiente self-hosted.",
+      "buyLicenseButton": "Comprar licença",
+      "activateTitle": "Ativar licença",
+      "activateDescription": "Após a compra, enviamos um código de licença por email. Cole o código abaixo para desbloquear os recursos padrão nesta instância.",
+      "licenseKeyLabel": "Código de licença",
+      "activateButton": "Ativar licença"
+    },
+    "license": {
+      "name": "Licença Anual",
+      "features": [
+        "Usuários ilimitados",
+        "Domínios próprios e status pages ilimitados",
+        "Fechamento de incidentes com IA",
+        "SSO e suporte prioritário",
+        "Atualizações durante a vigência da licença"
+      ]
+    }
   },
   "profile": {
     "title": "Meu Perfil",

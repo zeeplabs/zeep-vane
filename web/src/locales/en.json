@@ -368,7 +368,82 @@
   "billing": {
     "title": "Plans & Billing",
     "subtitle": "Choose the right plan for your team and manage the account subscription.",
-    "comingSoon": "Coming soon"
+    "comingSoon": "Coming soon",
+    "recommended": "Recommended",
+    "perMonth": "/mo",
+    "currentPlanButton": "Current plan",
+    "downgradeButton": "Downgrade",
+    "upgradeButton": "Upgrade",
+    "currentPlan": "Current plan",
+    "noRecurringCharge": "No recurring charge",
+    "monthlyBilling": "Monthly billing",
+    "paymentMethod": {
+      "title": "Payment method",
+      "empty": "No card on file. A card is added when you upgrade to a paid plan."
+    },
+    "invoices": {
+      "title": "Invoices",
+      "empty": "Your invoices will appear here after the subscription's first charge."
+    },
+    "plans": {
+      "free": {
+        "name": "Free",
+        "tagline": "To get started monitoring the essentials.",
+        "features": [
+          "Up to 3 users",
+          "1 public status page",
+          "7-day history",
+          "Unlimited manual polling",
+          "Community support"
+        ]
+      },
+      "starter": {
+        "name": "Starter",
+        "tagline": "For teams that already rely on Vane day to day.",
+        "features": [
+          "Up to 10 users",
+          "Up to 3 status pages",
+          "1 custom domain",
+          "AI-assisted incident closing",
+          "30-day history",
+          "Email support"
+        ]
+      },
+      "scale": {
+        "name": "Scale",
+        "tagline": "For critical operations across multiple teams.",
+        "features": [
+          "Unlimited users",
+          "Unlimited status pages",
+          "Unlimited custom domains",
+          "AI-assisted incident closing",
+          "90-day history",
+          "SSO and priority support"
+        ]
+      }
+    },
+    "selfHosted": {
+      "title": "Self-hosted license",
+      "noActiveLicense": "No active license",
+      "defaultFeaturesLocked": "Default features locked",
+      "perYear": "/yr",
+      "licenseDescription": "One-time purchase, license valid for 12 months on your self-hosted environment.",
+      "buyLicenseButton": "Buy license",
+      "activateTitle": "Activate license",
+      "activateDescription": "After purchase, we send a license code by email. Paste the code below to unlock the default features on this instance.",
+      "licenseKeyLabel": "License code",
+      "activateButton": "Activate license"
+    },
+    "license": {
+      "name": "Annual License",
+      "features": [
+        "Unlimited users",
+        "Unlimited custom domains and status pages",
+        "AI-assisted incident closing",
+        "SSO and priority support",
+        "Updates during the license term"
+      ]
+    }
   },
   "profile": {
     "title": "My Profile",

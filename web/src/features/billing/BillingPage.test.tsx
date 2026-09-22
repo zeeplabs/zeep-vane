@@ -4,7 +4,7 @@ import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { Toaster } from "sonner";
 import { http, HttpResponse } from "msw";
-import "../../lib/i18n";
+import i18n from "../../lib/i18n";
 import { AuthProvider } from "../../auth/AuthProvider";
 import { TestQueryProvider } from "../../test/queryClient";
 import { server } from "../../test/msw/server";
@@ -141,5 +141,21 @@ describe("BillingPage - BILLPG-01..06", () => {
     // (TenantSwitcher) plan badge is separately covered by
     // TenantSwitcher.test.tsx, not by this test.
     expect(await screen.findByText("Scale")).toBeInTheDocument();
+  });
+
+  it("renderiza em inglês quando o idioma ativo é en", async () => {
+    setDeploymentMode("saas");
+    mockMembershipPlan("starter");
+    await loginAsOwner();
+    await i18n.changeLanguage("en");
+
+    try {
+      renderPage();
+
+      expect(await screen.findByText("Plans & Billing")).toBeInTheDocument();
+      expect(screen.getByText("Upgrade")).toBeInTheDocument();
+    } finally {
+      await i18n.changeLanguage("pt-BR");
+    }
   });
 });
