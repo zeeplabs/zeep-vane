@@ -4,7 +4,7 @@ import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { Toaster } from "sonner";
 import { http, HttpResponse, delay } from "msw";
-import "../../lib/i18n";
+import i18n from "../../lib/i18n";
 import { AuthProvider } from "../../auth/AuthProvider";
 import { TestQueryProvider } from "../../test/queryClient";
 import { server } from "../../test/msw/server";
@@ -276,5 +276,19 @@ describe("AdminsPage", () => {
 
     const freshRow = rowFor("novo-operador@vane.app");
     expect(within(freshRow).queryByText("Expirado")).not.toBeInTheDocument();
+  });
+
+  it("renderiza em inglês quando o idioma ativo é en", async () => {
+    await loginAsOwner();
+    await i18n.changeLanguage("en");
+
+    try {
+      renderPage();
+
+      expect(await screen.findByText("Users")).toBeInTheDocument();
+      expect(screen.getByText("Invite user")).toBeInTheDocument();
+    } finally {
+      await i18n.changeLanguage("pt-BR");
+    }
   });
 });

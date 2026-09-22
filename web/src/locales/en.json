@@ -1,9 +1,85 @@
 {
   "common": {
-    "close": "Close"
+    "close": "Close",
+    "cancel": "Cancel",
+    "status": "Status"
   },
   "admins": {
-    "loading": "Loading…"
+    "loading": "Loading…",
+    "title": "Users",
+    "subtitle": "Manage who has access to the tenant and each person's role.",
+    "inviteButton": "Invite user",
+    "filters": {
+      "all": "All",
+      "ariaLabel": "Filter by role"
+    },
+    "roleLabel": {
+      "owner": "Admin",
+      "operator": "Member",
+      "viewer": "Read-only"
+    },
+    "statusLabel": {
+      "active": "Active",
+      "pending": "Pending"
+    },
+    "roleOptions": {
+      "owner": {
+        "label": "Admin",
+        "description": "Full access, including billing and integrations"
+      },
+      "operator": {
+        "label": "Member",
+        "description": "Manages services and incidents, no access to billing"
+      },
+      "viewer": {
+        "label": "Read-only",
+        "description": "Views dashboards and incidents, can't edit anything"
+      }
+    },
+    "roleFieldLabel": "Role",
+    "searchPlaceholder": "Search by name or email",
+    "table": {
+      "user": "User",
+      "role": "Role",
+      "lastAccess": "Last access"
+    },
+    "empty": "No users found with these filters.",
+    "expiredTag": "Expired",
+    "resendInviteButton": "Resend invite",
+    "removeUserButton": "Remove user",
+    "roleChangeError": "Couldn't change the role.",
+    "invite": {
+      "title": "Invite user",
+      "description": "We'll send an invite by email with an access link to this tenant.",
+      "submitButton": "Send invite",
+      "nameLabel": "Name",
+      "emailLabel": "Email",
+      "emailPlaceholder": "name@company.com",
+      "phoneLabel": "Mobile (optional)",
+      "error": "Couldn't send the invite."
+    },
+    "remove": {
+      "title": "Remove user",
+      "description": "Remove access for {{email}}? This action can't be undone.",
+      "confirmButton": "Remove",
+      "error": "Couldn't remove the user.",
+      "inviteCancelledToast": "Invite for {{email}} canceled.",
+      "accessRemovedToast": "Access for {{email}} removed."
+    },
+    "resend": {
+      "successToast": "Invite resent to {{email}}.",
+      "failedDeliveryToast": "Invite resent to {{email}}, but the email couldn't be delivered.",
+      "error": "Couldn't resend the invite."
+    },
+    "relativeTime": {
+      "now": "now",
+      "minute_one": "{{count}} min ago",
+      "minute_other": "{{count}} min ago",
+      "hour_one": "{{count}} hour ago",
+      "hour_other": "{{count}} hours ago",
+      "day_one": "{{count}} day ago",
+      "day_other": "{{count}} days ago"
+    }
   },
   "domains": {
     "loading": "Loading…"

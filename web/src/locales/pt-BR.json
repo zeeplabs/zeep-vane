@@ -1,9 +1,85 @@
 {
   "common": {
-    "close": "Fechar"
+    "close": "Fechar",
+    "cancel": "Cancelar",
+    "status": "Status"
   },
   "admins": {
-    "loading": "Carregando…"
+    "loading": "Carregando…",
+    "title": "Usuários",
+    "subtitle": "Gerencie quem tem acesso ao tenant e o papel de cada pessoa.",
+    "inviteButton": "Convidar usuário",
+    "filters": {
+      "all": "Todos",
+      "ariaLabel": "Filtrar por papel"
+    },
+    "roleLabel": {
+      "owner": "Admin",
+      "operator": "Membro",
+      "viewer": "Leitura"
+    },
+    "statusLabel": {
+      "active": "Ativo",
+      "pending": "Pendente"
+    },
+    "roleOptions": {
+      "owner": {
+        "label": "Admin",
+        "description": "Acesso total, inclusive faturamento e integrações"
+      },
+      "operator": {
+        "label": "Membro",
+        "description": "Gerencia serviços e incidentes, sem acesso à cobrança"
+      },
+      "viewer": {
+        "label": "Somente leitura",
+        "description": "Visualiza painéis e incidentes, sem editar nada"
+      }
+    },
+    "roleFieldLabel": "Papel",
+    "searchPlaceholder": "Buscar por nome ou email",
+    "table": {
+      "user": "Usuário",
+      "role": "Papel",
+      "lastAccess": "Último acesso"
+    },
+    "empty": "Nenhum usuário encontrado com esses filtros.",
+    "expiredTag": "Expirado",
+    "resendInviteButton": "Reenviar convite",
+    "removeUserButton": "Remover usuário",
+    "roleChangeError": "Não foi possível alterar o papel.",
+    "invite": {
+      "title": "Convidar usuário",
+      "description": "Enviaremos um convite por email com um link de acesso a este tenant.",
+      "submitButton": "Enviar convite",
+      "nameLabel": "Nome",
+      "emailLabel": "Email",
+      "emailPlaceholder": "nome@empresa.com",
+      "phoneLabel": "Celular (opcional)",
+      "error": "Não foi possível enviar o convite."
+    },
+    "remove": {
+      "title": "Remover usuário",
+      "description": "Remover o acesso de {{email}}? Esta ação não pode ser desfeita.",
+      "confirmButton": "Remover",
+      "error": "Não foi possível remover o usuário.",
+      "inviteCancelledToast": "Convite de {{email}} cancelado.",
+      "accessRemovedToast": "Acesso de {{email}} removido."
+    },
+    "resend": {
+      "successToast": "Convite reenviado para {{email}}.",
+      "failedDeliveryToast": "Convite reenviado para {{email}}, mas o e-mail não pôde ser entregue.",
+      "error": "Não foi possível reenviar o convite."
+    },
+    "relativeTime": {
+      "now": "agora",
+      "minute_one": "há {{count}} min",
+      "minute_other": "há {{count}} min",
+      "hour_one": "há {{count}} hora",
+      "hour_other": "há {{count}} horas",
+      "day_one": "há {{count}} dia",
+      "day_other": "há {{count}} dias"
+    }
   },
   "domains": {
     "loading": "Carregando…"

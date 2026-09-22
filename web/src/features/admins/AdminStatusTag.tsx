@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { Tag } from "../../components/ui/Tag";
 import { adminStatusDotColor, adminStatusLabel, adminStatusVariant, type AdminStatus } from "./adminMeta";
 
@@ -8,6 +9,7 @@ export interface AdminStatusTagProps {
 // Dot+pill status badge - same pattern as IncidentStatusTag/StatusTag/
 // DomainStatusTag elsewhere in new-layout-migration.
 export function AdminStatusTag({ status }: AdminStatusTagProps) {
+  const { t } = useTranslation();
   return (
     <Tag variant={adminStatusVariant[status]} className="gap-1.5 rounded-full">
       <span
@@ -15,7 +17,7 @@ export function AdminStatusTag({ status }: AdminStatusTagProps) {
         style={{ backgroundColor: adminStatusDotColor[status] }}
         aria-hidden="true"
       />
-      {adminStatusLabel[status]}
+      {adminStatusLabel(t, status)}
     </Tag>
   );
 }
