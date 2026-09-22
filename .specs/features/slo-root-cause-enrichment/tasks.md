@@ -156,9 +156,9 @@ T8 → T14
 - Skill: NONE
 
 **Done when**:
-- [ ] `up.sql` adds all three columns exactly as specified in design.md
-- [ ] `down.sql` drops them cleanly (reverse order)
-- [ ] Gate check passes: `make test-integration` (proves the migration applies from zero against a disposable Postgres)
+- [x] `up.sql` adds all three columns exactly as specified in design.md
+- [x] `down.sql` drops them cleanly (reverse order)
+- [x] Gate check passes: `make test-integration` (proves the migration applies from zero against a disposable Postgres)
 
 **Tests**: none (migration — integration gate only, per Test Coverage Matrix)
 **Gate**: full
