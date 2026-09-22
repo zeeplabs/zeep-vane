@@ -17,7 +17,7 @@ async function loginAsOwner() {
 
 afterEach(async () => {
   await act(async () => {
-    await i18n.changeLanguage("pt");
+    await i18n.changeLanguage("pt-BR");
   });
   await apiFetch("/api/auth/logout", { method: "POST" });
 });

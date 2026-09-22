@@ -11,7 +11,7 @@ beforeEach(() => {
 
 afterEach(async () => {
   window.localStorage.clear();
-  await i18n.changeLanguage("pt");
+  await i18n.changeLanguage("pt-BR");
   vi.restoreAllMocks();
 });
 
@@ -43,7 +43,7 @@ describe("useLanguage", () => {
     });
 
     expect(result.current.language).toBe("pt-BR");
-    expect(i18n.language).toBe("pt");
+    expect(i18n.language).toBe("pt-BR");
     expect(window.localStorage.getItem(LANGUAGE_KEY)).toBe("pt-BR");
   });
 

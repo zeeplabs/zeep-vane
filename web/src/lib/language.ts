@@ -12,8 +12,13 @@ export const LANGUAGE_STORAGE_KEY = "vane:language";
 
 export type LanguageOption = "pt-BR" | "en-US";
 
+// LanguageOption (what the SettingsPage selector offers) is intentionally
+// a separate type from the i18next lng key (what locales/*.json is keyed
+// by) - "pt-BR" happens to map to itself today, but a future "pt-PT"
+// option would still need its own entry here without touching either
+// existing locale file.
 const LNG_BY_OPTION: Record<LanguageOption, string> = {
-  "pt-BR": "pt",
+  "pt-BR": "pt-BR",
   "en-US": "en",
 };
 

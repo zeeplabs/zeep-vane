@@ -17,7 +17,7 @@ import {
 
 afterEach(async () => {
   await act(async () => {
-    await i18n.changeLanguage("pt");
+    await i18n.changeLanguage("pt-BR");
   });
   try {
     await apiFetch("/api/auth/logout", { method: "POST" });
