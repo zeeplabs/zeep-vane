@@ -1,5 +1,6 @@
 import i18n from "i18next";
 import { initReactI18next } from "react-i18next";
+import { readStoredLanguage, toI18nLng } from "./language";
 
 const resources = {
   pt: {
@@ -1204,7 +1205,7 @@ const resources = {
 if (!i18n.isInitialized) {
   i18n.use(initReactI18next).init({
     resources,
-    lng: "pt",
+    lng: toI18nLng(readStoredLanguage()),
     fallbackLng: "pt",
     interpolation: { escapeValue: false },
   });

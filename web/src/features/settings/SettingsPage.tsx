@@ -9,6 +9,8 @@ import { Skeleton } from "../../components/ui/Skeleton";
 import { ApiError, resolveAssetUrl } from "../../lib/apiClient";
 import { useAuth } from "../../auth/AuthProvider";
 import { useCompanySettings, useDeleteTenant, useUpdateCompanySettings, useUploadCompanyLogo } from "./hooks";
+import { useLanguage } from "../../lib/useLanguage";
+import type { LanguageOption } from "../../lib/language";
 import type { TaxIDType, TenantBillingAddress } from "../../types/api";
 
 type PersonType = "pj" | "pf";
@@ -45,7 +47,7 @@ export function SettingsPage() {
   const [name, setName] = useState("");
   const [website, setWebsite] = useState("");
   const [timezone, setTimezone] = useState(timezoneOptions[0]);
-  const [language, setLanguage] = useState("pt-BR");
+  const { language, setLanguage } = useLanguage();
   const [logoUrl, setLogoUrl] = useState<string | null>(null);
 
   const [personType, setPersonType] = useState<PersonType>("pj");
@@ -64,7 +66,6 @@ export function SettingsPage() {
     setName(data.name);
     setWebsite(data.website ?? "");
     setTimezone(data.timezone ?? timezoneOptions[0]);
-    setLanguage(data.locale);
     setLogoUrl(data.logo_url);
     setLegalName(data.legal_name ?? "");
     setTaxId(data.tax_id ?? "");
@@ -249,7 +250,7 @@ export function SettingsPage() {
             <select
               id="settings-language"
               value={language}
-              onChange={(e) => setLanguage(e.target.value)}
+              onChange={(e) => setLanguage(e.target.value as LanguageOption)}
               className="min-h-9 rounded-md border border-transparent bg-card-header-bg px-3 text-sm text-text outline-none transition-colors focus:border-accent focus:bg-surface"
             >
               <option value="pt-BR">Português (Brasil)</option>
