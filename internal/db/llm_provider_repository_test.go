@@ -308,6 +308,37 @@ func TestLLMProviderStore_ConnectThenList_RoundTripsThroughRealRepository(t *tes
 	}
 }
 
+// TestLLMProviderStore_SetRootCauseEnrichmentEnabled_ThenGet_RoundTrips is
+// the adapter boundary test for RootCauseEnrichmentEnabled/
+// SetRootCauseEnrichmentEnabled (RCA-07/RCA-08), mirroring
+// TestLLMProviderStore_ConnectThenList_RoundTripsThroughRealRepository's
+// reasoning - llmProviderStoreAdapter's delegation is exercised end-to-end
+// through the real repository, not just via hand-written fakes.
+func TestLLMProviderStore_SetRootCauseEnrichmentEnabled_ThenGet_RoundTrips(t *testing.T) {
+	repo, _ := newLLMProviderRepoForTest(t)
+	ctx := context.Background()
+	store := NewLLMProviderStore(repo)
+
+	enabled, err := store.RootCauseEnrichmentEnabled(ctx)
+	if err != nil {
+		t.Fatalf("RootCauseEnrichmentEnabled() returned unexpected error: %v", err)
+	}
+	if enabled {
+		t.Errorf("RootCauseEnrichmentEnabled() = true, want false before any write")
+	}
+
+	if err := store.SetRootCauseEnrichmentEnabled(ctx, true); err != nil {
+		t.Fatalf("SetRootCauseEnrichmentEnabled(true) returned unexpected error: %v", err)
+	}
+	enabled, err = store.RootCauseEnrichmentEnabled(ctx)
+	if err != nil {
+		t.Fatalf("RootCauseEnrichmentEnabled() returned unexpected error: %v", err)
+	}
+	if !enabled {
+		t.Errorf("RootCauseEnrichmentEnabled() = false, want true after SetRootCauseEnrichmentEnabled(true)")
+	}
+}
+
 // TestLLMProviderStore_Get_NotFound_SurfacesLLMSentinel confirms the
 // adapter translates db.ErrNotFound to llm.ErrProviderRecordNotFound
 // rather than leaking the internal/db sentinel through the

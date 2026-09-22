@@ -35,6 +35,10 @@ export interface LLMProvidersResponse {
   total: number;
   page: number;
   page_size: number;
+  // root_cause_enrichment_enabled rides along with the provider list
+  // (slo-root-cause-enrichment RCA-08) - both live on the same
+  // tenant-scoped llm_settings row.
+  root_cause_enrichment_enabled: boolean;
 }
 
 export interface ConnectLLMProviderInput {

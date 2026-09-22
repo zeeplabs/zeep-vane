@@ -30,6 +30,10 @@ type llmProviderService interface {
 	// SetRootCauseEnrichmentEnabled backs UpdateSettings
 	// (slo-root-cause-enrichment RCA-07/RCA-09).
 	SetRootCauseEnrichmentEnabled(ctx context.Context, enabled bool) error
+	// RootCauseEnrichmentEnabled backs List's root_cause_enrichment_enabled
+	// field (RCA-08) - the settings UI needs the current value to render
+	// the toggle, not just a way to write it.
+	RootCauseEnrichmentEnabled(ctx context.Context) (bool, error)
 }
 
 // llmProviderRowGetter is the subset of *db.LLMProviderRepository
@@ -297,6 +301,11 @@ type listLLMProvidersResponse struct {
 	Total          int                   `json:"total"`
 	Page           int                   `json:"page"`
 	PageSize       int                   `json:"page_size"`
+	// RootCauseEnrichmentEnabled rides along with the provider list
+	// (slo-root-cause-enrichment RCA-08) so the settings UI can render the
+	// toggle's current state without a second endpoint - both live on the
+	// same tenant-scoped llm_settings row.
+	RootCauseEnrichmentEnabled bool `json:"root_cause_enrichment_enabled"`
 }
 
 // List handles GET /api/integrations/llm. It returns one page of connected
@@ -312,11 +321,19 @@ func (h *LLMProvidersHandler) List(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	rootCauseEnabled, err := h.svc.RootCauseEnrichmentEnabled(r.Context())
+	if err != nil {
+		h.logger.Error("llm providers: failed to read root cause enrichment setting", zap.Error(err))
+		writeInternalError(w)
+		return
+	}
+
 	resp := listLLMProvidersResponse{
-		Providers: make([]llmProviderResponse, 0, len(result.Providers)),
-		Total:     result.Total,
-		Page:      result.Page,
-		PageSize:  result.PageSize,
+		Providers:                  make([]llmProviderResponse, 0, len(result.Providers)),
+		Total:                      result.Total,
+		Page:                       result.Page,
+		PageSize:                   result.PageSize,
+		RootCauseEnrichmentEnabled: rootCauseEnabled,
 	}
 	if result.ActiveProvider != "" {
 		active := result.ActiveProvider

@@ -475,7 +475,12 @@
       "meta": "OpenAI · {{model}}",
       "drawerTitle": "Conectar LLM Provider",
       "modelLabel": "Modelo",
-      "connectError": "Não foi possível conectar ao LLM Provider."
+      "connectError": "Não foi possível conectar ao LLM Provider.",
+      "rootCauseEnrichment": {
+        "label": "Enriquecimento com causa raiz",
+        "description": "Usa o Datadog Error Tracking para descrever a causa real de uma degradação ou indisponibilidade.",
+        "genericError": "Não foi possível atualizar essa configuração."
+      }
     },
     "email": {
       "resend": {

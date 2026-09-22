@@ -27,6 +27,7 @@ type fakeStore struct {
 	markTransientFailureErr error
 	deleteErr               error
 	setRootCauseErr         error
+	getRootCauseErr         error
 
 	markInvalidCalls          []string // provider
 	markCheckedCalls          []string // provider
@@ -171,6 +172,15 @@ func (f *fakeStore) SetRootCauseEnrichmentEnabled(_ context.Context, enabled boo
 	}
 	f.rootCauseEnrichmentEnabled = enabled
 	return nil
+}
+
+// RootCauseEnrichmentEnabled returns the last value SetRootCauseEnrichmentEnabled
+// recorded (RCA-08), or getRootCauseErr when set.
+func (f *fakeStore) RootCauseEnrichmentEnabled(_ context.Context) (bool, error) {
+	if f.getRootCauseErr != nil {
+		return false, f.getRootCauseErr
+	}
+	return f.rootCauseEnrichmentEnabled, nil
 }
 
 // fakeProvider is a Provider double recording whether it was asked to
@@ -491,5 +501,40 @@ func TestSetRootCauseEnrichmentEnabled_RepositoryError_Wrapped(t *testing.T) {
 	}
 	if !errors.Is(err, store.setRootCauseErr) {
 		t.Errorf("SetRootCauseEnrichmentEnabled() error = %v, want it to wrap %v", err, store.setRootCauseErr)
+	}
+}
+
+// TestRootCauseEnrichmentEnabled_DelegatesToRepository covers RCA-08: the
+// settings UI needs to read the toggle's current state, not just write it.
+func TestRootCauseEnrichmentEnabled_DelegatesToRepository(t *testing.T) {
+	store := newFakeStore()
+	store.rootCauseEnrichmentEnabled = true
+	factory := func(provider, apiKey, model string) (Provider, error) { return &fakeProvider{}, nil }
+	svc := newTestService(store, factory)
+
+	enabled, err := svc.RootCauseEnrichmentEnabled(t.Context())
+	if err != nil {
+		t.Fatalf("RootCauseEnrichmentEnabled() returned unexpected error: %v", err)
+	}
+	if !enabled {
+		t.Errorf("RootCauseEnrichmentEnabled() = false, want true")
+	}
+}
+
+// TestRootCauseEnrichmentEnabled_RepositoryError_Wrapped mirrors
+// TestSetRootCauseEnrichmentEnabled_RepositoryError_Wrapped for the read
+// path.
+func TestRootCauseEnrichmentEnabled_RepositoryError_Wrapped(t *testing.T) {
+	store := newFakeStore()
+	store.getRootCauseErr = errors.New("db unavailable")
+	factory := func(provider, apiKey, model string) (Provider, error) { return &fakeProvider{}, nil }
+	svc := newTestService(store, factory)
+
+	_, err := svc.RootCauseEnrichmentEnabled(t.Context())
+	if err == nil {
+		t.Fatal("RootCauseEnrichmentEnabled() returned nil error, want a wrapped error")
+	}
+	if !errors.Is(err, store.getRootCauseErr) {
+		t.Errorf("RootCauseEnrichmentEnabled() error = %v, want it to wrap %v", err, store.getRootCauseErr)
 	}
 }

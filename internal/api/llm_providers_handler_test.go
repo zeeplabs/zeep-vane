@@ -29,6 +29,7 @@ type fakeLLMProviderService struct {
 	disconnectErr error
 
 	setRootCauseErr error
+	getRootCauseErr error
 
 	connectCalls               []connectLLMCall
 	setModelCalls              []setModelCall
@@ -77,6 +78,13 @@ func (f *fakeLLMProviderService) SetRootCauseEnrichmentEnabled(ctx context.Conte
 	}
 	f.rootCauseEnrichmentEnabled = enabled
 	return nil
+}
+
+func (f *fakeLLMProviderService) RootCauseEnrichmentEnabled(ctx context.Context) (bool, error) {
+	if f.getRootCauseErr != nil {
+		return false, f.getRootCauseErr
+	}
+	return f.rootCauseEnrichmentEnabled, nil
 }
 
 // fakeLLMProviderRowGetter is a no-DB double for llmProviderRowGetter,
@@ -519,6 +527,45 @@ func TestLLMDisconnect_ServiceError_500(t *testing.T) {
 // 200/422, mirroring every other handler's writeInternalError fallback.
 func TestLLMList_ServiceError_500(t *testing.T) {
 	fake := &fakeLLMProviderService{listErr: context.DeadlineExceeded}
+	r := newLLMProvidersRouter(fake)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/integrations/llm", nil)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusInternalServerError {
+		t.Errorf("status = %d, want %d, body = %s", rec.Code, http.StatusInternalServerError, rec.Body.String())
+	}
+}
+
+// TestLLMList_IncludesRootCauseEnrichmentEnabled covers RCA-08: List's
+// response must reflect the current toggle value, not just its list
+// endpoint's original fields.
+func TestLLMList_IncludesRootCauseEnrichmentEnabled(t *testing.T) {
+	fake := &fakeLLMProviderService{rootCauseEnrichmentEnabled: true}
+	r := newLLMProvidersRouter(fake)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/integrations/llm", nil)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	var resp listLLMProvidersResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("response is not valid JSON: %v", err)
+	}
+	if !resp.RootCauseEnrichmentEnabled {
+		t.Errorf("root_cause_enrichment_enabled = false, want true")
+	}
+}
+
+// TestLLMList_RootCauseEnrichmentEnabledError_500 mirrors
+// TestLLMList_ServiceError_500 for the settings-read failure path.
+func TestLLMList_RootCauseEnrichmentEnabledError_500(t *testing.T) {
+	fake := &fakeLLMProviderService{getRootCauseErr: context.DeadlineExceeded}
 	r := newLLMProvidersRouter(fake)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/integrations/llm", nil)

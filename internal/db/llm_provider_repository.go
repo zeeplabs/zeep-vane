@@ -389,3 +389,7 @@ func (a *llmProviderStoreAdapter) DeleteProvider(ctx context.Context, provider s
 func (a *llmProviderStoreAdapter) SetRootCauseEnrichmentEnabled(ctx context.Context, enabled bool) error {
 	return a.repo.SetRootCauseEnrichmentEnabled(ctx, enabled)
 }
+
+func (a *llmProviderStoreAdapter) RootCauseEnrichmentEnabled(ctx context.Context) (bool, error) {
+	return a.repo.RootCauseEnrichmentEnabled(ctx)
+}

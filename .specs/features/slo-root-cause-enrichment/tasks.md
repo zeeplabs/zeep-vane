@@ -433,11 +433,11 @@ T8 → T14
 - Skill: NONE
 
 **Done when**:
-- [ ] Toggle renders reflecting current setting, hidden when no active LLM provider
-- [ ] Switching it calls the `PATCH` endpoint and reflects the new state
-- [ ] `pt-BR.json`/`en.json` parity maintained (`npm run i18n:check` clean)
-- [ ] Gate check passes: `cd web && npx tsc -b --noEmit && npm run test && npm run i18n:check`
-- [ ] Test count: existing count + at least 3 new tests (renders when provider active, hidden when no provider, toggle-then-persist + one "renders in English" smoke test per this repo's convention)
+- [x] Toggle renders reflecting current setting, hidden when no active LLM provider
+- [x] Switching it calls the `PATCH` endpoint and reflects the new state
+- [x] `pt-BR.json`/`en.json` parity maintained (`npm run i18n:check` clean)
+- [x] Gate check passes: `cd web && npx tsc -b --noEmit && npm run test && npm run i18n:check`
+- [x] Test count: existing count + at least 3 new tests (renders when provider active, hidden when no provider, toggle-then-persist + one "renders in English" smoke test per this repo's convention)
 
 **Tests**: unit
 **Gate**: quick (frontend)

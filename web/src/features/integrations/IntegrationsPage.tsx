@@ -9,6 +9,7 @@ import {
 } from "react-icons/md";
 import { Button } from "../../components/ui/Button";
 import { Dialog } from "../../components/ui/Dialog";
+import { Switch } from "../../components/ui/Switch";
 import { useAuth } from "../../auth/AuthProvider";
 import { ApiError } from "../../lib/apiClient";
 import { IntegrationCard, type IntegrationStatusKind } from "./IntegrationCard";
@@ -23,7 +24,12 @@ import {
   type EmailProviderName,
   type EmailProviderStatus,
 } from "../email-providers/hooks";
-import { useActivateLLMProvider, useDisconnectLLMProvider, useLLMProviders } from "../settings/hooks";
+import {
+  useActivateLLMProvider,
+  useDisconnectLLMProvider,
+  useLLMProviders,
+  useUpdateRootCauseEnrichment,
+} from "../settings/hooks";
 
 const cardHeaderBg = "var(--color-card-header-bg)";
 const textMuted = "var(--color-text-muted)";
@@ -104,6 +110,46 @@ function NewRelicCard() {
       title={t("integrations.newRelic.title")}
       description={t("integrations.newRelic.description")}
     />
+  );
+}
+
+// RootCauseEnrichmentToggle (slo-root-cause-enrichment RCA-07/RCA-08/
+// RCA-09) is rendered only while an LLM provider is active - design.md's
+// resolved Risk: enrichment is meaningless without an LLM to consume it,
+// so the control is hidden entirely rather than shown disabled with no
+// precedent in this codebase for that pattern.
+function RootCauseEnrichmentToggle({ canManage, enabled }: { canManage: boolean; enabled: boolean }) {
+  const { t } = useTranslation();
+  const mutation = useUpdateRootCauseEnrichment();
+  const [error, setError] = useState<string | null>(null);
+
+  async function handleChange(next: boolean) {
+    setError(null);
+    try {
+      await mutation.mutateAsync(next);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : t("integrations.llm.rootCauseEnrichment.genericError"));
+    }
+  }
+
+  return (
+    <div className="flex flex-col gap-1 border-t border-divider pt-2">
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-xs font-medium text-text">{t("integrations.llm.rootCauseEnrichment.label")}</span>
+        <Switch
+          checked={enabled}
+          onChange={handleChange}
+          disabled={!canManage || mutation.isPending}
+          aria-label={t("integrations.llm.rootCauseEnrichment.label")}
+        />
+      </div>
+      <span className="text-[11px] text-neutral-400">{t("integrations.llm.rootCauseEnrichment.description")}</span>
+      {error ? (
+        <p role="alert" className="m-0 text-xs text-critical">
+          {error}
+        </p>
+      ) : null}
+    </div>
   );
 }
 
@@ -188,6 +234,9 @@ function LLMProviderCard({ canManage, onConnect }: { canManage: boolean; onConne
                 </div>
               ) : null}
               {actionButton(canManage, connected, onConnect, t)}
+              {isActive ? (
+                <RootCauseEnrichmentToggle canManage={canManage} enabled={data?.root_cause_enrichment_enabled ?? false} />
+              ) : null}
             </div>
           )
         }

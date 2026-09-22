@@ -65,6 +65,25 @@ describe("IntegrationsPage", () => {
     }
   });
 
+  it("renders the root-cause enrichment toggle label in English when the active language is en", async () => {
+    await loginAs("owner@vane.app");
+    await apiFetch("/api/integrations/llm/openai", {
+      method: "POST",
+      body: JSON.stringify({ api_key: "sk-real-key", model: "gpt-4o" }),
+    });
+    await apiFetch("/api/integrations/llm/openai/activate", { method: "POST" });
+    await i18n.changeLanguage("en");
+
+    try {
+      renderPage();
+
+      const llmCard = await cardOf("LLM Provider");
+      expect(await within(llmCard).findByText("Root-cause enrichment")).toBeInTheDocument();
+    } finally {
+      await i18n.changeLanguage("pt-BR");
+    }
+  });
+
   it("shows Datadog connected (seed) and New Relic always as Coming soon", async () => {
     await loginAs("owner@vane.app");
     renderPage();
@@ -172,6 +191,63 @@ describe("IntegrationsPage", () => {
 
     const llmCard = await cardOf("LLM Provider");
     expect(await within(llmCard).findByText("Ativo · OpenAI · gpt-4o")).toBeInTheDocument();
+  });
+
+  // TestIntegrationsPage covers slo-root-cause-enrichment RCA-07/RCA-08:
+  // the toggle is hidden entirely - not shown, not greyed - unless an LLM
+  // provider is currently active (design.md's resolved Risk).
+  it("root-cause enrichment toggle is hidden when no LLM provider is connected", async () => {
+    await loginAs("owner@vane.app");
+    renderPage();
+
+    const llmCard = await cardOf("LLM Provider");
+    await within(llmCard).findByText("Não conectado");
+    expect(within(llmCard).queryByRole("switch")).not.toBeInTheDocument();
+  });
+
+  it("root-cause enrichment toggle is hidden when the LLM provider is connected but not active", async () => {
+    await loginAs("owner@vane.app");
+    await apiFetch("/api/integrations/llm/openai", {
+      method: "POST",
+      body: JSON.stringify({ api_key: "sk-real-key", model: "gpt-4o" }),
+    });
+    renderPage();
+
+    const llmCard = await cardOf("LLM Provider");
+    await within(llmCard).findByText("OpenAI · gpt-4o");
+    expect(within(llmCard).queryByRole("switch")).not.toBeInTheDocument();
+  });
+
+  it("root-cause enrichment toggle renders reflecting the current setting when the LLM provider is active", async () => {
+    await loginAs("owner@vane.app");
+    await apiFetch("/api/integrations/llm/openai", {
+      method: "POST",
+      body: JSON.stringify({ api_key: "sk-real-key", model: "gpt-4o" }),
+    });
+    await apiFetch("/api/integrations/llm/openai/activate", { method: "POST" });
+    renderPage();
+
+    const llmCard = await cardOf("LLM Provider");
+    await within(llmCard).findByText("Ativo · OpenAI · gpt-4o");
+    const toggle = within(llmCard).getByRole("switch");
+    expect(toggle).toHaveAttribute("aria-checked", "false");
+  });
+
+  it("switching the root-cause enrichment toggle calls the PATCH endpoint and reflects the new state", async () => {
+    await loginAs("owner@vane.app");
+    await apiFetch("/api/integrations/llm/openai", {
+      method: "POST",
+      body: JSON.stringify({ api_key: "sk-real-key", model: "gpt-4o" }),
+    });
+    await apiFetch("/api/integrations/llm/openai/activate", { method: "POST" });
+    renderPage();
+
+    const llmCard = await cardOf("LLM Provider");
+    await within(llmCard).findByText("Ativo · OpenAI · gpt-4o");
+    const toggle = within(llmCard).getByRole("switch");
+    await userEvent.click(toggle);
+
+    await waitFor(() => expect(within(llmCard).getByRole("switch")).toHaveAttribute("aria-checked", "true"));
   });
 
   it("owner activates a connected-but-inactive LLM Provider by clicking Ativar (INTGCARD-01)", async () => {

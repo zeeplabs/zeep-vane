@@ -107,6 +107,10 @@ type LLMProviderStore interface {
 	// root_cause_enrichment_enabled toggle (slo-root-cause-enrichment
 	// RCA-07/RCA-09).
 	SetRootCauseEnrichmentEnabled(ctx context.Context, enabled bool) error
+	// RootCauseEnrichmentEnabled reads the active tenant's current
+	// root_cause_enrichment_enabled toggle (RCA-08: the settings UI needs
+	// this to render the toggle's current state, not just write it).
+	RootCauseEnrichmentEnabled(ctx context.Context) (bool, error)
 }
 
 // ProviderStatus is one connected provider's observable state - never
@@ -261,6 +265,18 @@ func (s *Service) SetRootCauseEnrichmentEnabled(ctx context.Context, enabled boo
 	}
 
 	return nil
+}
+
+// RootCauseEnrichmentEnabled reads the active tenant's current root-cause
+// enrichment toggle (RCA-08) - a thin wrapper delegating straight to the
+// repository, same shape as SetRootCauseEnrichmentEnabled.
+func (s *Service) RootCauseEnrichmentEnabled(ctx context.Context) (bool, error) {
+	enabled, err := s.repo.RootCauseEnrichmentEnabled(ctx)
+	if err != nil {
+		return false, fmt.Errorf("llm: failed to read root cause enrichment setting: %w", err)
+	}
+
+	return enabled, nil
 }
 
 // List returns one page of connected providers plus the current active

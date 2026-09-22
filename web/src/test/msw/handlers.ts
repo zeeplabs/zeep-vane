@@ -212,10 +212,15 @@ interface LLMProviderRecord {
 
 let llmProvidersState: LLMProviderRecord[] = [];
 let llmActiveProvider: LLMProviderName | null = null;
+// llmRootCauseEnrichmentEnabled mirrors llm_settings.root_cause_enrichment_enabled
+// (slo-root-cause-enrichment RCA-07/RCA-08/RCA-09) - defaults to false
+// (opt-in only), same as the real column's DEFAULT.
+let llmRootCauseEnrichmentEnabled = false;
 
 export function resetLLMProviders(): void {
   llmProvidersState = [];
   llmActiveProvider = null;
+  llmRootCauseEnrichmentEnabled = false;
 }
 resetLLMProviders();
 
@@ -1407,7 +1412,18 @@ export const handlers = [
       total: paged.total,
       page: paged.page,
       page_size: paged.page_size,
+      root_cause_enrichment_enabled: llmRootCauseEnrichmentEnabled,
     });
+  }),
+
+  // PATCH /api/integrations/llm/settings (slo-root-cause-enrichment
+  // RCA-07/RCA-09) - mirrors LLMProvidersHandler.UpdateSettings: toggles
+  // root_cause_enrichment_enabled, echoes the new value back.
+  http.patch("/api/integrations/llm/settings", async ({ request }) => {
+    if (!sessionAdminId) return HttpResponse.json({ error: "unauthorized" }, { status: 401 });
+    const body = (await request.json()) as { root_cause_enrichment_enabled?: boolean };
+    llmRootCauseEnrichmentEnabled = body.root_cause_enrichment_enabled ?? false;
+    return HttpResponse.json({ root_cause_enrichment_enabled: llmRootCauseEnrichmentEnabled });
   }),
 
   // POST /api/integrations/llm/:provider (AI-01/AI-02/AI-03) - mirrors
