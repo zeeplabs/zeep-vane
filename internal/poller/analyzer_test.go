@@ -780,3 +780,169 @@ func TestSLOAnalyzer_AutoCreatedOutage_NotifierError_StillCreatesIncident(t *tes
 		t.Errorf("Create called %d times, want 1 despite the notification error", createCalls)
 	}
 }
+
+// fakeEnrichmentSettingsReader is a no-DB fake of enrichmentSettingsReader.
+type fakeEnrichmentSettingsReader struct {
+	enabled bool
+	err     error
+}
+
+func (f *fakeEnrichmentSettingsReader) RootCauseEnrichmentEnabled(ctx context.Context) (bool, error) {
+	return f.enabled, f.err
+}
+
+// fakeErrorCauseProvider is a no-network fake of errorCauseProvider,
+// recording every call's arguments so a test can assert exactly what
+// service/env/window resolveCauseHint queried with.
+type fakeErrorCauseProvider struct {
+	hint  datadog.CauseHint
+	found bool
+	err   error
+
+	calls                int
+	lastService, lastEnv string
+	lastFrom, lastTo     time.Time
+}
+
+func (f *fakeErrorCauseProvider) SearchErrorTrackingIssues(ctx context.Context, service, env string, from, to time.Time) (datadog.CauseHint, bool, error) {
+	f.calls++
+	f.lastService, f.lastEnv, f.lastFrom, f.lastTo = service, env, from, to
+	return f.hint, f.found, f.err
+}
+
+// metricSLOService is a db.Service shaped like a linked metric-type SLO
+// with a single resolved service tag - the only shape resolveCauseHint
+// ever queries Error Tracking for (RCA-01).
+func metricSLOService() db.Service {
+	return db.Service{ID: "svc-1", Name: "API", SLOType: "metric", DatadogServiceTag: "checkout-api"}
+}
+
+// TestSLOAnalyzer_ResolveCauseHint_Unset_ReturnsEmpty covers RCA-04: an
+// analyzer that never called SetErrorCauseEnrichment (every pre-feature
+// caller/test) must behave exactly as before - resolveCauseHint short-
+// circuits to empty without touching either dependency.
+func TestSLOAnalyzer_ResolveCauseHint_Unset_ReturnsEmpty(t *testing.T) {
+	a := newTestAnalyzer(&fakeIncidentStore{}, &fakeStatusAnalysisWriter{}, &fakeLLMGenerator{}, time.Second)
+
+	causeType, causeMessage := a.resolveCauseHint(context.Background(), metricSLOService())
+
+	if causeType != "" || causeMessage != "" {
+		t.Errorf("resolveCauseHint = (%q, %q), want (\"\", \"\") when SetErrorCauseEnrichment was never called", causeType, causeMessage)
+	}
+}
+
+// TestSLOAnalyzer_ResolveCauseHint_ToggleOff_ReturnsEmptyAndSkipsProvider
+// covers RCA-04's "zero extra Datadog API calls when disabled" guarantee.
+func TestSLOAnalyzer_ResolveCauseHint_ToggleOff_ReturnsEmptyAndSkipsProvider(t *testing.T) {
+	a := newTestAnalyzer(&fakeIncidentStore{}, &fakeStatusAnalysisWriter{}, &fakeLLMGenerator{}, time.Second)
+	provider := &fakeErrorCauseProvider{found: true, hint: datadog.CauseHint{ErrorType: "X", ErrorMessage: "Y"}}
+	a.SetErrorCauseEnrichment(&fakeEnrichmentSettingsReader{enabled: false}, provider)
+
+	causeType, causeMessage := a.resolveCauseHint(context.Background(), metricSLOService())
+
+	if causeType != "" || causeMessage != "" {
+		t.Errorf("resolveCauseHint = (%q, %q), want (\"\", \"\") when the toggle is off", causeType, causeMessage)
+	}
+	if provider.calls != 0 {
+		t.Errorf("errorCauseProvider called %d times, want 0 when the toggle is off", provider.calls)
+	}
+}
+
+// TestSLOAnalyzer_ResolveCauseHint_WrongSLOType_ReturnsEmptyAndSkipsProvider
+// covers RCA-01's scoping to metric-type SLOs only.
+func TestSLOAnalyzer_ResolveCauseHint_WrongSLOType_ReturnsEmptyAndSkipsProvider(t *testing.T) {
+	a := newTestAnalyzer(&fakeIncidentStore{}, &fakeStatusAnalysisWriter{}, &fakeLLMGenerator{}, time.Second)
+	provider := &fakeErrorCauseProvider{found: true, hint: datadog.CauseHint{ErrorType: "X", ErrorMessage: "Y"}}
+	a.SetErrorCauseEnrichment(&fakeEnrichmentSettingsReader{enabled: true}, provider)
+
+	svc := metricSLOService()
+	svc.SLOType = "monitor"
+	causeType, causeMessage := a.resolveCauseHint(context.Background(), svc)
+
+	if causeType != "" || causeMessage != "" {
+		t.Errorf("resolveCauseHint = (%q, %q), want (\"\", \"\") for a monitor-type SLO", causeType, causeMessage)
+	}
+	if provider.calls != 0 {
+		t.Errorf("errorCauseProvider called %d times, want 0 for a monitor-type SLO", provider.calls)
+	}
+}
+
+// TestSLOAnalyzer_ResolveCauseHint_NoServiceTag_ReturnsEmptyAndSkipsProvider
+// covers RCA-01's scoping to a single resolved service tag - a flow-type
+// SLO (0 or 2+ service_tags) has DatadogServiceTag == "".
+func TestSLOAnalyzer_ResolveCauseHint_NoServiceTag_ReturnsEmptyAndSkipsProvider(t *testing.T) {
+	a := newTestAnalyzer(&fakeIncidentStore{}, &fakeStatusAnalysisWriter{}, &fakeLLMGenerator{}, time.Second)
+	provider := &fakeErrorCauseProvider{found: true, hint: datadog.CauseHint{ErrorType: "X", ErrorMessage: "Y"}}
+	a.SetErrorCauseEnrichment(&fakeEnrichmentSettingsReader{enabled: true}, provider)
+
+	svc := metricSLOService()
+	svc.DatadogServiceTag = ""
+	causeType, causeMessage := a.resolveCauseHint(context.Background(), svc)
+
+	if causeType != "" || causeMessage != "" {
+		t.Errorf("resolveCauseHint = (%q, %q), want (\"\", \"\") when DatadogServiceTag is empty", causeType, causeMessage)
+	}
+	if provider.calls != 0 {
+		t.Errorf("errorCauseProvider called %d times, want 0 when DatadogServiceTag is empty", provider.calls)
+	}
+}
+
+// TestSLOAnalyzer_ResolveCauseHint_ProviderError_ReturnsEmpty covers
+// RCA-03: a failing Error Tracking query must never surface as an error to
+// the caller - just an empty cause, same as any other fallback.
+func TestSLOAnalyzer_ResolveCauseHint_ProviderError_ReturnsEmpty(t *testing.T) {
+	a := newTestAnalyzer(&fakeIncidentStore{}, &fakeStatusAnalysisWriter{}, &fakeLLMGenerator{}, time.Second)
+	provider := &fakeErrorCauseProvider{err: datadog.ErrUnauthorized}
+	a.SetErrorCauseEnrichment(&fakeEnrichmentSettingsReader{enabled: true}, provider)
+
+	causeType, causeMessage := a.resolveCauseHint(context.Background(), metricSLOService())
+
+	if causeType != "" || causeMessage != "" {
+		t.Errorf("resolveCauseHint = (%q, %q), want (\"\", \"\") when the provider errors", causeType, causeMessage)
+	}
+}
+
+// TestSLOAnalyzer_ResolveCauseHint_NotFound_ReturnsEmpty covers RCA-03's
+// "zero issues in the window is not an error" case.
+func TestSLOAnalyzer_ResolveCauseHint_NotFound_ReturnsEmpty(t *testing.T) {
+	a := newTestAnalyzer(&fakeIncidentStore{}, &fakeStatusAnalysisWriter{}, &fakeLLMGenerator{}, time.Second)
+	provider := &fakeErrorCauseProvider{found: false}
+	a.SetErrorCauseEnrichment(&fakeEnrichmentSettingsReader{enabled: true}, provider)
+
+	causeType, causeMessage := a.resolveCauseHint(context.Background(), metricSLOService())
+
+	if causeType != "" || causeMessage != "" {
+		t.Errorf("resolveCauseHint = (%q, %q), want (\"\", \"\") when the query finds nothing", causeType, causeMessage)
+	}
+}
+
+// TestSLOAnalyzer_ResolveCauseHint_Success_ReturnsCauseTypeAndMessage
+// covers RCA-01/RCA-02: a found issue's ErrorType/ErrorMessage must pass
+// through unchanged, and the query must use svc's DatadogServiceTag and the
+// fixed "production" env.
+func TestSLOAnalyzer_ResolveCauseHint_Success_ReturnsCauseTypeAndMessage(t *testing.T) {
+	a := newTestAnalyzer(&fakeIncidentStore{}, &fakeStatusAnalysisWriter{}, &fakeLLMGenerator{}, time.Second)
+	provider := &fakeErrorCauseProvider{
+		found: true,
+		hint:  datadog.CauseHint{ErrorType: "MongooseError", ErrorMessage: "Operation timed out"},
+	}
+	a.SetErrorCauseEnrichment(&fakeEnrichmentSettingsReader{enabled: true}, provider)
+
+	causeType, causeMessage := a.resolveCauseHint(context.Background(), metricSLOService())
+
+	if causeType != "MongooseError" || causeMessage != "Operation timed out" {
+		t.Errorf("resolveCauseHint = (%q, %q), want (%q, %q)", causeType, causeMessage, "MongooseError", "Operation timed out")
+	}
+	if provider.calls != 1 {
+		t.Fatalf("errorCauseProvider called %d times, want 1", provider.calls)
+	}
+	if provider.lastService != "checkout-api" {
+		t.Errorf("queried service = %q, want %q", provider.lastService, "checkout-api")
+	}
+	if provider.lastEnv != "production" {
+		t.Errorf("queried env = %q, want %q", provider.lastEnv, "production")
+	}
+	if window := provider.lastTo.Sub(provider.lastFrom); window != errorTrackingWindow {
+		t.Errorf("queried window = %v, want %v", window, errorTrackingWindow)
+	}
+}

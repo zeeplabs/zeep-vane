@@ -332,11 +332,11 @@ T8 → T14
 - Skill: NONE
 
 **Done when**:
-- [ ] Both interfaces added, matching T1/T2's real method signatures exactly (no adapter needed — `*datadog.Client` satisfies `errorCauseProvider` directly)
-- [ ] `SetErrorCauseEnrichment` added, nil by default (unset = feature fully off, zero behavior change for any caller/test that doesn't call it)
-- [ ] `resolveCauseHint` implements every early-out from RCA-01..04, unit-testable in isolation
-- [ ] Gate check passes: `go test ./internal/poller/...`
-- [ ] Test count: existing count + at least 6 new tests (1:1 to RCA-01 through RCA-04's branches: unset, toggle off, wrong slo_type, no service tag, provider error, success)
+- [x] Both interfaces added, matching T1/T2's real method signatures exactly (no adapter needed — `*datadog.Client` satisfies `errorCauseProvider` directly)
+- [x] `SetErrorCauseEnrichment` added, nil by default (unset = feature fully off, zero behavior change for any caller/test that doesn't call it)
+- [x] `resolveCauseHint` implements every early-out from RCA-01..04, unit-testable in isolation
+- [x] Gate check passes: `go test ./internal/poller/...`
+- [x] Test count: existing count + at least 6 new tests (1:1 to RCA-01 through RCA-04's branches: unset, toggle off, wrong slo_type, no service tag, provider error, success)
 
 **Tests**: unit
 **Gate**: quick (backend)

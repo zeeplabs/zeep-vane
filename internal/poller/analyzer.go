@@ -53,6 +53,42 @@ type llmGenerator interface {
 	GenerateClosingComment(ctx context.Context, in llm.AnalysisInput) (string, error)
 }
 
+// errorCauseProvider is the subset of *datadog.Client SLOAnalyzer depends
+// on to look up a root-cause hint for a degraded/outage transition
+// (slo-root-cause-enrichment RCA-01/02/03).
+//
+// SPEC_DEVIATION: design.md names this method FindTopErrorCause. It is
+// named SearchErrorTrackingIssues here instead, matching T1's actual
+// *datadog.Client method exactly - design.md's own Dependencies note ("no
+// adapter needed") only holds if the method names match; renaming the
+// already-shipped Client method to satisfy design.md's prose would be the
+// wrong side of that trade.
+type errorCauseProvider interface {
+	SearchErrorTrackingIssues(ctx context.Context, service, env string, from, to time.Time) (datadog.CauseHint, bool, error)
+}
+
+// enrichmentSettingsReader is SLOAnalyzer's read-only view onto the
+// tenant's root-cause-enrichment toggle (RCA-04), checked once per dispatch
+// before deciding whether to call errorCauseProvider at all. Satisfied by
+// *db.LLMProviderRepository's RootCauseEnrichmentEnabled method (T5) - a
+// narrow read-only addition, not a new repository.
+type enrichmentSettingsReader interface {
+	RootCauseEnrichmentEnabled(ctx context.Context) (bool, error)
+}
+
+// errorTrackingWindow is how far back resolveCauseHint looks when it
+// queries Error Tracking Issues: the 10 minutes ending at dispatch time.
+// Not user-confirmed (spec.md's Assumptions) - chosen because the
+// transition just happened, so there is no meaningful "interval so far" to
+// look back on yet, and 10 minutes is long enough to catch the error burst
+// that caused the breach without pulling in stale, unrelated issues.
+const errorTrackingWindow = 10 * time.Minute
+
+// errorTrackingEnv is the fixed env: tag every Error Tracking query scopes
+// to (spec.md AC1) - every real service in the reference org this session
+// verified against is tagged env:production; not tenant-configurable.
+const errorTrackingEnv = "production"
+
 // AnalysisTimeout is the recommended bound for every async LLM enrichment
 // call HandleTransition dispatches - the value callers wiring SLOAnalyzer
 // into production (via NewSLOAnalyzer's timeout parameter) should pass.
@@ -129,6 +165,14 @@ type SLOAnalyzer struct {
 	// those emails. Set via SetNotifier from boot wiring.
 	notifier incidentNotifier
 
+	// enrichmentSettings/causeProvider back root-cause enrichment
+	// (slo-root-cause-enrichment RCA-01..04). Optional, same nil-means-off
+	// convention as notifier: unset (the default, and every existing test)
+	// means resolveCauseHint always returns ("", ""), zero behavior change.
+	// Set together via SetErrorCauseEnrichment from boot wiring.
+	enrichmentSettings enrichmentSettingsReader
+	causeProvider      errorCauseProvider
+
 	sem chan struct{} // bounds concurrent enrichment goroutines (maxConcurrentEnrichments)
 
 	mu           sync.Mutex
@@ -144,6 +188,64 @@ type incidentNotifier interface {
 // emails. Optional - a nil notifier (the default) disables those emails.
 func (a *SLOAnalyzer) SetNotifier(n incidentNotifier) {
 	a.notifier = n
+}
+
+// SetErrorCauseEnrichment installs settings and provider for root-cause
+// enrichment (slo-root-cause-enrichment RCA-01..04). Optional, same shape
+// as SetNotifier: unset (the default, and every existing test) means the
+// feature is fully off - resolveCauseHint returns ("", "") immediately,
+// zero behavior change for any caller that doesn't opt in at boot wiring.
+func (a *SLOAnalyzer) SetErrorCauseEnrichment(settings enrichmentSettingsReader, provider errorCauseProvider) {
+	a.enrichmentSettings = settings
+	a.causeProvider = provider
+}
+
+// resolveCauseHint resolves a root-cause hint for svc's degraded/outage
+// transition, or ("", "") on every early-out: enrichment unset (RCA-04),
+// the tenant's toggle off (RCA-04), svc's linked SLO isn't metric-type or
+// has no single service tag (RCA-01), the Error Tracking query errors, or
+// it finds nothing (RCA-03) - the single funnel point implementing every
+// fallback rule from RCA-01..04.
+func (a *SLOAnalyzer) resolveCauseHint(ctx context.Context, svc db.Service) (causeType, causeMessage string) {
+	if a.enrichmentSettings == nil || a.causeProvider == nil {
+		return "", ""
+	}
+
+	enabled, err := a.enrichmentSettings.RootCauseEnrichmentEnabled(ctx)
+	if err != nil {
+		a.logger.Error("slo-analyzer: failed to read root cause enrichment setting",
+			zap.String("service_id", svc.ID), zap.Error(err))
+		return "", ""
+	}
+	if !enabled {
+		return "", ""
+	}
+
+	if svc.SLOType != "metric" || svc.DatadogServiceTag == "" {
+		return "", ""
+	}
+
+	to := time.Now()
+	from := to.Add(-errorTrackingWindow)
+	hint, found, err := a.causeProvider.SearchErrorTrackingIssues(ctx, svc.DatadogServiceTag, errorTrackingEnv, from, to)
+	if err != nil {
+		if errors.Is(err, datadog.ErrUnauthorized) {
+			// Logged distinctly from a timeout/server error (spec.md's edge
+			// case) so an operator can tell "wrong App Key scope" apart
+			// from "Datadog was slow" without reading the error string.
+			a.logger.Error("slo-analyzer: error tracking query unauthorized",
+				zap.String("service_id", svc.ID), zap.String("reason", "unauthorized"), zap.Error(err))
+		} else {
+			a.logger.Error("slo-analyzer: error tracking query failed",
+				zap.String("service_id", svc.ID), zap.Error(err))
+		}
+		return "", ""
+	}
+	if !found {
+		return "", ""
+	}
+
+	return hint.ErrorType, hint.ErrorMessage
 }
 
 // NewSLOAnalyzer builds an SLOAnalyzer. timeout bounds every async LLM
