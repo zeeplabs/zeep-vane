@@ -305,12 +305,12 @@ T8 → T14
 - Skill: NONE
 
 **Done when**:
-- [ ] `AnalysisInput.CauseType`/`CauseMessage` added
-- [ ] `buildDegradedTooltipPrompt`/`buildOutageDescriptionPrompt` append the cause sentence only when both fields are non-empty; identical output to today when empty
-- [ ] `buildClosingCommentPrompt` unchanged
-- [ ] Doc comment at `internal/llm/prompts.go:5-7` corrected per design.md's Risks & Concerns row
-- [ ] Gate check passes: `go test ./internal/llm/...`
-- [ ] Test count: existing count + at least 4 new tests (degraded/outage with cause, degraded/outage without cause — 1:1 to RCA-06)
+- [x] `AnalysisInput.CauseType`/`CauseMessage` added
+- [x] `buildDegradedTooltipPrompt`/`buildOutageDescriptionPrompt` append the cause sentence only when both fields are non-empty; identical output to today when empty
+- [x] `buildClosingCommentPrompt` unchanged
+- [x] Doc comment at `internal/llm/prompts.go:5-7` corrected per design.md's Risks & Concerns row
+- [x] Gate check passes: `go test ./internal/llm/...`
+- [x] Test count: existing count + at least 4 new tests (degraded/outage with cause, degraded/outage without cause — 1:1 to RCA-06)
 
 **Tests**: unit
 **Gate**: quick (backend)

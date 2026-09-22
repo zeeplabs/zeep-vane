@@ -3,8 +3,13 @@ package llm
 import "fmt"
 
 // AnalysisInput is the SLO/incident context handed to each prompt builder,
-// built directly from db.Service + datadog.SLOStatus by the caller
-// (SLOAnalyzer) - no new external call is made to gather it.
+// built by the caller (SLOAnalyzer) from db.Service + datadog.SLOStatus.
+// internal/llm itself still makes no external call to gather any of this -
+// but for a degraded/outage transition with root-cause enrichment enabled,
+// SLOAnalyzer may populate CauseType/CauseMessage from a Datadog Error
+// Tracking lookup it makes itself before calling in (slo-root-cause-
+// enrichment RCA-06), which this package's own Generate* methods never
+// trigger.
 type AnalysisInput struct {
 	ServiceName          string
 	SLOState             string
@@ -12,6 +17,27 @@ type AnalysisInput struct {
 	Target               float64
 	Timeframe            string
 	ErrorBudgetRemaining float64
+	// CauseType/CauseMessage carry a Datadog Error Tracking issue's
+	// error_type/error_message (datadog.CauseHint). Both "" (the default,
+	// and every existing caller/test) unless the caller opted into and
+	// found root-cause enrichment data for a degraded/outage transition
+	// (RCA-01..04); buildClosingCommentPrompt ignores both fields.
+	CauseType    string
+	CauseMessage string
+}
+
+// causeSentence returns the extra user-prompt sentence surfacing in's cause
+// data, or "" when either field is empty. This is RCA-06's "extend the user
+// prompt" reading of "allow the model to reflect the practical impact of
+// the cause" (design.md's Integration Points, T9's Reuses note): the system
+// prompt already forbids speculating beyond the data provided, so folding
+// the cause into the user prompt is what lets the model use it, without
+// needing to reword analysisSystemPrompt's jargon/tone constraints.
+func causeSentence(in AnalysisInput) string {
+	if in.CauseType == "" || in.CauseMessage == "" {
+		return ""
+	}
+	return fmt.Sprintf(" Causa técnica identificada: %s - %s.", in.CauseType, in.CauseMessage)
 }
 
 // analysisSystemPrompt is shared by all three builders: it instructs a
@@ -33,9 +59,9 @@ const analysisSystemPrompt = "Você está escrevendo uma atualização curta e f
 func buildDegradedTooltipPrompt(in AnalysisInput) (systemPrompt, userPrompt string) {
 	userPrompt = fmt.Sprintf(
 		"O serviço %q está atualmente em estado degradado. Estado do SLO: %s. "+
-			"SLI atual: %.4f. Meta: %.4f. Período: %s. Error budget restante: %.2f%%. "+
+			"SLI atual: %.4f. Meta: %.4f. Período: %s. Error budget restante: %.2f%%.%s "+
 			"Escreva um tooltip curto explicando o estado degradado para quem visita a página de status.",
-		in.ServiceName, in.SLOState, in.SLI, in.Target, in.Timeframe, in.ErrorBudgetRemaining,
+		in.ServiceName, in.SLOState, in.SLI, in.Target, in.Timeframe, in.ErrorBudgetRemaining, causeSentence(in),
 	)
 	return analysisSystemPrompt, userPrompt
 }
@@ -45,9 +71,9 @@ func buildDegradedTooltipPrompt(in AnalysisInput) (systemPrompt, userPrompt stri
 func buildOutageDescriptionPrompt(in AnalysisInput) (systemPrompt, userPrompt string) {
 	userPrompt = fmt.Sprintf(
 		"O serviço %q acabou de entrar em indisponibilidade. Estado do SLO: %s. "+
-			"SLI atual: %.4f. Meta: %.4f. Período: %s. Error budget restante: %.2f%%. "+
+			"SLI atual: %.4f. Meta: %.4f. Período: %s. Error budget restante: %.2f%%.%s "+
 			"Escreva uma descrição curta do incidente explicando o que está acontecendo para quem visita a página de status.",
-		in.ServiceName, in.SLOState, in.SLI, in.Target, in.Timeframe, in.ErrorBudgetRemaining,
+		in.ServiceName, in.SLOState, in.SLI, in.Target, in.Timeframe, in.ErrorBudgetRemaining, causeSentence(in),
 	)
 	return analysisSystemPrompt, userPrompt
 }
