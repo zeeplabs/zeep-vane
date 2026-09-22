@@ -18,11 +18,11 @@ import {
   useTransitionIncident,
 } from "./hooks";
 
-const transitionOptions: { value: IncidentStatus; label: string }[] = [
-  { value: "identified", label: "Identificado" },
-  { value: "monitoring", label: "Monitorando" },
-  { value: "resolved", label: "Marcar como resolvido" },
-];
+const transitionValues: IncidentStatus[] = ["identified", "monitoring", "resolved"];
+
+function transitionLabel(t: (key: string) => string, value: IncidentStatus): string {
+  return value === "resolved" ? t("incidents.transition.resolved") : t(`incidents.statusLabel.${value}`);
+}
 
 export function IncidentDetail() {
   const { id = "" } = useParams();
@@ -81,15 +81,15 @@ export function IncidentDetail() {
     }
   }
 
-  if (!incident) return <p className="text-neutral-400">Incidente não encontrado.</p>;
+  if (!incident) return <p className="text-neutral-400">{t("incidentDetail.notFound")}</p>;
 
   return (
     <div className="mx-auto flex w-full max-w-[1280px] flex-col gap-6">
       <div className="flex items-center gap-2">
         <Tag variant={incident.status === "resolved" ? "neutral" : "accent"}>
-          {incident.status === "resolved" ? "Resolvido" : incident.status}
+          {incident.status === "resolved" ? t("incidents.statusLabel.resolved") : incident.status}
         </Tag>
-        {incident.auto_created ? <Tag variant="neutral-outline">Automático</Tag> : null}
+        {incident.auto_created ? <Tag variant="neutral-outline">{t("incidents.autoCreatedTag")}</Tag> : null}
         <h3 className="text-text">{incident.title}</h3>
       </div>
 
@@ -135,14 +135,14 @@ export function IncidentDetail() {
 
       {canManage ? (
         <div className="flex flex-wrap gap-2">
-          {transitionOptions.map((opt) => (
+          {transitionValues.map((value) => (
             <Button
-              key={opt.value}
+              key={value}
               variant="secondary"
-              disabled={transition.isPending || incident.status === opt.value}
-              onClick={() => transition.mutate(opt.value)}
+              disabled={transition.isPending || incident.status === value}
+              onClick={() => transition.mutate(value)}
             >
-              {opt.label}
+              {transitionLabel(t, value)}
             </Button>
           ))}
         </div>
@@ -151,13 +151,13 @@ export function IncidentDetail() {
       {canManage ? (
         <form onSubmit={handlePublish} className="flex flex-col gap-2">
           <Field
-            label="Novo update"
+            label={t("incidentDetail.newUpdateLabel")}
             value={body}
             onChange={(e) => setBody(e.target.value)}
-            placeholder="Descreva o progresso da investigação"
+            placeholder={t("incidentDetail.newUpdatePlaceholder")}
           />
           <Button type="submit" variant="primary" className="w-fit" disabled={addUpdate.isPending}>
-            Publicar
+            {t("incidentDetail.publishButton")}
           </Button>
         </form>
       ) : null}

@@ -92,7 +92,48 @@
     }
   },
   "incidents": {
-    "loading": "Carregando…"
+    "loading": "Carregando…",
+    "title": "Incidentes",
+    "subtitle": "Acompanhe, atualize e encerre incidentes dos serviços monitorados.",
+    "newButton": "Novo incidente",
+    "filters": {
+      "all": "Todos",
+      "ariaLabel": "Filtrar por status"
+    },
+    "autoCreatedTag": "Automático",
+    "table": {
+      "incident": "Incidente",
+      "service": "Serviço",
+      "severity": "Severidade",
+      "openedAt": "Aberto em",
+      "duration": "Duração"
+    },
+    "empty": "Nenhum incidente encontrado com esse filtro.",
+    "statusLabel": {
+      "investigating": "Investigando",
+      "identified": "Identificado",
+      "monitoring": "Monitorando",
+      "resolved": "Resolvido"
+    },
+    "severityLabel": {
+      "minor": "Menor",
+      "moderate": "Moderado",
+      "critical": "Crítico"
+    },
+    "transition": {
+      "resolved": "Marcar como resolvido"
+    },
+    "create": {
+      "title": "Criar incidente",
+      "description": "Descreva o incidente e vincule os serviços afetados.",
+      "submitButton": "Criar",
+      "titleLabel": "Título",
+      "affectedServicesLabel": "Serviços afetados",
+      "severityLabel": "Severidade",
+      "descriptionLabel": "Descrição inicial",
+      "descriptionPlaceholder": "O que está acontecendo?",
+      "error": "Não foi possível criar o incidente."
+    }
   },
   "poller": {
     "loading": "Carregando…"
@@ -330,7 +371,26 @@
     "confirmCloseButton": "Confirmar encerramento",
     "discardProposalButton": "Descartar",
     "genericConfirmCloseError": "Não foi possível confirmar o encerramento.",
-    "genericDiscardProposalError": "Não foi possível descartar a proposta."
+    "genericDiscardProposalError": "Não foi possível descartar a proposta.",
+    "notFound": "Incidente não encontrado.",
+    "newUpdateLabel": "Novo update",
+    "newUpdatePlaceholder": "Descreva o progresso da investigação",
+    "publishButton": "Publicar",
+    "aiSummaryLabel": "Resumo gerado por IA",
+    "discardProposalLink": "Descartar proposta",
+    "timelineLabel": "Linha do tempo",
+    "timelineEmpty": "Nenhuma atualização ainda.",
+    "addUpdateLabel": "Adicionar atualização",
+    "updatePlaceholder": "Descreva o progresso da investigação...",
+    "publishUpdateButton": "Publicar atualização",
+    "resolveWithAiButton": "Resolver com resumo de IA",
+    "resolvedAt": "Incidente resolvido em {{date}}.",
+    "reopenButton": "Reabrir incidente",
+    "author": {
+      "aiSummary": "Resumo gerado por IA",
+      "team": "Equipe",
+      "system": "Sistema"
+    }
   },
   "tenantSelector": {
     "title": "Selecione uma organização",

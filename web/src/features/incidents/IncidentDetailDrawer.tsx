@@ -20,11 +20,11 @@ import { formatDuration, severityColor, severityLabel } from "./incidentStatusMe
 import { IncidentStatusTag } from "./IncidentStatusTag";
 import { TimelineEntry } from "./TimelineEntry";
 
-const transitionOptions: { value: IncidentStatus; label: string }[] = [
-  { value: "identified", label: "Identificado" },
-  { value: "monitoring", label: "Monitorando" },
-  { value: "resolved", label: "Marcar como resolvido" },
-];
+const transitionValues: IncidentStatus[] = ["identified", "monitoring", "resolved"];
+
+function transitionLabel(t: (key: string) => string, value: IncidentStatus): string {
+  return value === "resolved" ? t("incidents.transition.resolved") : t(`incidents.statusLabel.${value}`);
+}
 
 export interface IncidentDetailDrawerProps {
   incident: Incident | null;
@@ -56,7 +56,7 @@ export interface IncidentDetailDrawerProps {
  * mostra - mantidos como ações secundárias, mesmo raciocínio de "Reabrir
  * incidente" abaixo. */
 export function IncidentDetailDrawer({ incident, canManage, serviceName, onClose }: IncidentDetailDrawerProps) {
-  const { i18n } = useTranslation();
+  const { t, i18n } = useTranslation();
   const { data: updatesPage } = useIncidentUpdates(incident?.id ?? "", 1);
   const updates = updatesPage?.items ?? [];
   const timelineUpdates = updates.filter((u) => !u.is_ai_summary);
@@ -81,7 +81,7 @@ export function IncidentDetailDrawer({ incident, canManage, serviceName, onClose
     try {
       await confirmClose.mutateAsync(incident.pending_close_comment);
     } catch (err) {
-      setProposalError(err instanceof ApiError ? err.message : "Não foi possível confirmar o encerramento.");
+      setProposalError(err instanceof ApiError ? err.message : t("incidentDetail.genericConfirmCloseError"));
     }
   }
 
@@ -90,7 +90,7 @@ export function IncidentDetailDrawer({ incident, canManage, serviceName, onClose
     try {
       await discardCloseProposal.mutateAsync();
     } catch (err) {
-      setProposalError(err instanceof ApiError ? err.message : "Não foi possível descartar a proposta.");
+      setProposalError(err instanceof ApiError ? err.message : t("incidentDetail.genericDiscardProposalError"));
     }
   }
 
@@ -109,10 +109,10 @@ export function IncidentDetailDrawer({ incident, canManage, serviceName, onClose
               <div className="flex items-start justify-between">
                 <div className="flex items-center gap-2">
                   <IncidentStatusTag status={incident.status} />
-                  {incident.auto_created ? <Tag variant="neutral-outline">Automático</Tag> : null}
+                  {incident.auto_created ? <Tag variant="neutral-outline">{t("incidents.autoCreatedTag")}</Tag> : null}
                 </div>
                 <RadixDialog.Close asChild>
-                  <button type="button" aria-label="Fechar" className="cursor-pointer text-text-muted hover:text-text">
+                  <button type="button" aria-label={t("common.close")} className="cursor-pointer text-text-muted hover:text-text">
                     <MdClose size={18} aria-hidden="true" />
                   </button>
                 </RadixDialog.Close>
@@ -125,18 +125,18 @@ export function IncidentDetailDrawer({ incident, canManage, serviceName, onClose
                 <p data-testid="incident-detail-subtitle" className="mt-1 text-[13px] text-text-muted">
                   {incident.service_ids.length > 0 ? incident.service_ids.map(serviceName).join(", ") : "—"} ·{" "}
                   <span className="font-bold" style={{ color: severityColor(incident.severity) }}>
-                    {severityLabel(incident.severity)}
+                    {severityLabel(t, incident.severity)}
                   </span>
                 </p>
               </div>
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <div className="mb-1 text-[10.5px] font-bold uppercase tracking-wide text-text-muted">Aberto em</div>
+                  <div className="mb-1 text-[10.5px] font-bold uppercase tracking-wide text-text-muted">{t("incidents.table.openedAt")}</div>
                   <div className="text-[14.5px] font-bold text-text">{formatDateTimeShort(incident.created_at, i18n.language)}</div>
                 </div>
                 <div>
-                  <div className="mb-1 text-[10.5px] font-bold uppercase tracking-wide text-text-muted">Duração</div>
+                  <div className="mb-1 text-[10.5px] font-bold uppercase tracking-wide text-text-muted">{t("incidents.table.duration")}</div>
                   <div className="text-[14.5px] font-bold text-text">
                     {formatDuration(incident.created_at, incident.resolved_at)}
                   </div>
@@ -154,7 +154,7 @@ export function IncidentDetailDrawer({ incident, canManage, serviceName, onClose
                 >
                   <div className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wide text-accent">
                     <MdOutlineAutoAwesome size={14} aria-hidden="true" />
-                    Resumo gerado por IA
+                    {t("incidentDetail.aiSummaryLabel")}
                   </div>
                   <p className="text-[13px] leading-relaxed text-text-muted">{aiSummaryText}</p>
                   {proposalError ? (
@@ -169,17 +169,17 @@ export function IncidentDetailDrawer({ incident, canManage, serviceName, onClose
                       disabled={confirmClose.isPending || discardCloseProposal.isPending}
                       className="w-fit cursor-pointer text-xs text-accent hover:underline disabled:cursor-not-allowed disabled:opacity-50"
                     >
-                      Descartar proposta
+                      {t("incidentDetail.discardProposalLink")}
                     </button>
                   ) : null}
                 </div>
               ) : null}
 
               <div>
-                <div className="mb-2 text-[10.5px] font-bold uppercase tracking-wide text-text-muted">Linha do tempo</div>
+                <div className="mb-2 text-[10.5px] font-bold uppercase tracking-wide text-text-muted">{t("incidentDetail.timelineLabel")}</div>
                 <div className="ml-1 flex flex-col gap-3 border-l-2 border-divider pl-4">
                   {timelineUpdates.length === 0 ? (
-                    <p className="text-xs text-text-muted">Nenhuma atualização ainda.</p>
+                    <p className="text-xs text-text-muted">{t("incidentDetail.timelineEmpty")}</p>
                   ) : (
                     timelineUpdates.map((update) => <TimelineEntry key={update.id} update={update} />)
                   )}
@@ -191,18 +191,18 @@ export function IncidentDetailDrawer({ incident, canManage, serviceName, onClose
                   {canManage ? (
                     <form onSubmit={handlePublish} className="flex flex-col gap-2">
                       <label htmlFor="incident-update-body" className="text-[12.5px] font-semibold text-text-muted">
-                        Adicionar atualização
+                        {t("incidentDetail.addUpdateLabel")}
                       </label>
                       <Textarea
                         id="incident-update-body"
                         variant="filled"
                         value={body}
                         onChange={(e) => setBody(e.target.value)}
-                        placeholder="Descreva o progresso da investigação..."
+                        placeholder={t("incidentDetail.updatePlaceholder")}
                         rows={3}
                       />
                       <Button type="submit" variant="secondary" className="w-full" disabled={addUpdate.isPending}>
-                        Publicar atualização
+                        {t("incidentDetail.publishUpdateButton")}
                       </Button>
                     </form>
                   ) : null}
@@ -214,20 +214,20 @@ export function IncidentDetailDrawer({ incident, canManage, serviceName, onClose
                       onClick={handleConfirmClose}
                       disabled={!incident.pending_close_comment || confirmClose.isPending || discardCloseProposal.isPending}
                     >
-                      Resolver com resumo de IA
+                      {t("incidentDetail.resolveWithAiButton")}
                     </Button>
                   ) : null}
 
                   {canManage ? (
                     <div className="flex flex-wrap gap-2">
-                      {transitionOptions.map((opt) => (
+                      {transitionValues.map((value) => (
                         <Button
-                          key={opt.value}
+                          key={value}
                           variant="secondary"
-                          disabled={transition.isPending || incident.status === opt.value}
-                          onClick={() => transition.mutate(opt.value)}
+                          disabled={transition.isPending || incident.status === value}
+                          onClick={() => transition.mutate(value)}
                         >
-                          {opt.label}
+                          {transitionLabel(t, value)}
                         </Button>
                       ))}
                     </div>
@@ -243,12 +243,14 @@ export function IncidentDetailDrawer({ incident, canManage, serviceName, onClose
                       color: "var(--color-success)",
                     }}
                   >
-                    Incidente resolvido em {formatDateTimeShort(incident.resolved_at ?? incident.created_at, i18n.language)}.
+                    {t("incidentDetail.resolvedAt", {
+                      date: formatDateTimeShort(incident.resolved_at ?? incident.created_at, i18n.language),
+                    })}
                   </div>
                   {canManage ? (
                     <Button variant="ghost" onClick={() => transition.mutate("investigating")} disabled={transition.isPending}>
                       <MdOutlineRefresh size={14} aria-hidden="true" />
-                      Reabrir incidente
+                      {t("incidentDetail.reopenButton")}
                     </Button>
                   ) : null}
                 </>

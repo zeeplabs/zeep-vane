@@ -92,7 +92,48 @@
     }
   },
   "incidents": {
-    "loading": "Loading…"
+    "loading": "Loading…",
+    "title": "Incidents",
+    "subtitle": "Track, update, and close incidents for monitored services.",
+    "newButton": "New incident",
+    "filters": {
+      "all": "All",
+      "ariaLabel": "Filter by status"
+    },
+    "autoCreatedTag": "Automatic",
+    "table": {
+      "incident": "Incident",
+      "service": "Service",
+      "severity": "Severity",
+      "openedAt": "Opened at",
+      "duration": "Duration"
+    },
+    "empty": "No incidents found with this filter.",
+    "statusLabel": {
+      "investigating": "Investigating",
+      "identified": "Identified",
+      "monitoring": "Monitoring",
+      "resolved": "Resolved"
+    },
+    "severityLabel": {
+      "minor": "Minor",
+      "moderate": "Moderate",
+      "critical": "Critical"
+    },
+    "transition": {
+      "resolved": "Mark as resolved"
+    },
+    "create": {
+      "title": "Create incident",
+      "description": "Describe the incident and link the affected services.",
+      "submitButton": "Create",
+      "titleLabel": "Title",
+      "affectedServicesLabel": "Affected services",
+      "severityLabel": "Severity",
+      "descriptionLabel": "Initial description",
+      "descriptionPlaceholder": "What's happening?",
+      "error": "Couldn't create the incident."
+    }
   },
   "poller": {
     "loading": "Loading…"
@@ -330,7 +371,26 @@
     "confirmCloseButton": "Confirm closure",
     "discardProposalButton": "Discard",
     "genericConfirmCloseError": "Could not confirm the closure.",
-    "genericDiscardProposalError": "Could not discard the proposal."
+    "genericDiscardProposalError": "Could not discard the proposal.",
+    "notFound": "Incident not found.",
+    "newUpdateLabel": "New update",
+    "newUpdatePlaceholder": "Describe the investigation progress",
+    "publishButton": "Publish",
+    "aiSummaryLabel": "AI-generated summary",
+    "discardProposalLink": "Discard proposal",
+    "timelineLabel": "Timeline",
+    "timelineEmpty": "No updates yet.",
+    "addUpdateLabel": "Add update",
+    "updatePlaceholder": "Describe the investigation progress...",
+    "publishUpdateButton": "Publish update",
+    "resolveWithAiButton": "Resolve with AI summary",
+    "resolvedAt": "Incident resolved at {{date}}.",
+    "reopenButton": "Reopen incident",
+    "author": {
+      "aiSummary": "AI-generated summary",
+      "team": "Team",
+      "system": "System"
+    }
   },
   "tenantSelector": {
     "title": "Select an organization",

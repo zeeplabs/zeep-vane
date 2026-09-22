@@ -3,7 +3,7 @@ import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { http, HttpResponse, delay } from "msw";
 import { MemoryRouter } from "react-router-dom";
-import "../../lib/i18n";
+import i18n from "../../lib/i18n";
 import { AuthProvider } from "../../auth/AuthProvider";
 import { TestQueryProvider } from "../../test/queryClient";
 import { server } from "../../test/msw/server";
@@ -508,5 +508,19 @@ describe("IncidentsPage", () => {
     const dialog = await screen.findByRole("dialog");
     const summaryText = "Incidente resolvido após rollback do deploy problemático.";
     expect(within(dialog).getAllByText(summaryText)).toHaveLength(1);
+  });
+
+  it("renderiza em inglês quando o idioma ativo é en", async () => {
+    await loginAs("owner@vane.app");
+    await i18n.changeLanguage("en");
+
+    try {
+      renderPage();
+
+      expect(await screen.findByText("Incidents")).toBeInTheDocument();
+      expect(screen.getByText("New incident")).toBeInTheDocument();
+    } finally {
+      await i18n.changeLanguage("pt-BR");
+    }
   });
 });

@@ -1,17 +1,16 @@
 import type { IncidentSeverity, IncidentStatus } from "../../types/api";
 import type { TagVariant } from "../../components/ui/Tag";
 
+type Translator = (key: string, options?: Record<string, unknown>) => string;
+
 // Mirrors the mock's STATUS_META (handoff-new-layout/Incidentes.dc.html):
 // investigating=critical(red), monitoring=warning(amber), resolved=success
 // (green). "identified" has no mock equivalent (its seed data never uses
 // that status) - mapped to accent (purple) to stay visually distinct
 // without inventing a color the design system doesn't already have.
-export const incidentStatusLabel: Record<IncidentStatus, string> = {
-  investigating: "Investigando",
-  identified: "Identificado",
-  monitoring: "Monitorando",
-  resolved: "Resolvido",
-};
+export function incidentStatusLabel(t: Translator, status: IncidentStatus): string {
+  return t(`incidents.statusLabel.${status}`);
+}
 
 export const incidentStatusVariant: Record<IncidentStatus, TagVariant> = {
   investigating: "critical",
@@ -30,12 +29,6 @@ export const incidentStatusDotColor: Record<IncidentStatus, string> = {
 // Mirrors the mock's SEVERITY_META - severity renders as bold colored text
 // (not a Tag/pill), same composition as the mock's `inc.severityColor`/
 // `selected.severityColor`.
-export const incidentSeverityLabel: Record<IncidentSeverity, string> = {
-  minor: "Menor",
-  moderate: "Moderado",
-  critical: "Crítico",
-};
-
 export const incidentSeverityColor: Record<IncidentSeverity, string> = {
   minor: "var(--color-text-muted)",
   moderate: "var(--color-warning)",
@@ -44,8 +37,12 @@ export const incidentSeverityColor: Record<IncidentSeverity, string> = {
 
 // Edge case (spec.md): an unrecognized severity value renders its raw
 // string in a neutral color instead of crashing/rendering blank.
-export function severityLabel(severity: string): string {
-  return incidentSeverityLabel[severity as IncidentSeverity] ?? severity;
+const knownSeverities: IncidentSeverity[] = ["minor", "moderate", "critical"];
+
+export function severityLabel(t: Translator, severity: string): string {
+  return knownSeverities.includes(severity as IncidentSeverity)
+    ? t(`incidents.severityLabel.${severity}`)
+    : severity;
 }
 
 export function severityColor(severity: string): string {
