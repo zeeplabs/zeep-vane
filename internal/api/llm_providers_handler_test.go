@@ -28,10 +28,15 @@ type fakeLLMProviderService struct {
 	listErr       error
 	disconnectErr error
 
-	connectCalls    []connectLLMCall
-	setModelCalls   []setModelCall
-	activateCalls   []string
-	disconnectCalls []string
+	setRootCauseErr error
+	getRootCauseErr error
+
+	connectCalls               []connectLLMCall
+	setModelCalls              []setModelCall
+	activateCalls              []string
+	disconnectCalls            []string
+	setRootCauseCalls          []bool
+	rootCauseEnrichmentEnabled bool
 }
 
 type connectLLMCall struct {
@@ -66,6 +71,22 @@ func (f *fakeLLMProviderService) Disconnect(ctx context.Context, provider string
 	return f.disconnectErr
 }
 
+func (f *fakeLLMProviderService) SetRootCauseEnrichmentEnabled(ctx context.Context, enabled bool) error {
+	f.setRootCauseCalls = append(f.setRootCauseCalls, enabled)
+	if f.setRootCauseErr != nil {
+		return f.setRootCauseErr
+	}
+	f.rootCauseEnrichmentEnabled = enabled
+	return nil
+}
+
+func (f *fakeLLMProviderService) RootCauseEnrichmentEnabled(ctx context.Context) (bool, error) {
+	if f.getRootCauseErr != nil {
+		return false, f.getRootCauseErr
+	}
+	return f.rootCauseEnrichmentEnabled, nil
+}
+
 // fakeLLMProviderRowGetter is a no-DB double for llmProviderRowGetter,
 // letting the Disconnect handler's "fetch the row before deleting it"
 // precondition be observed without a real database - mirrors
@@ -91,7 +112,19 @@ func newLLMProvidersRouter(svc llmProviderService) http.Handler {
 	r.Post("/api/integrations/llm/{provider}/model", h.SetModel)
 	r.Post("/api/integrations/llm/{provider}/activate", h.Activate)
 	r.Get("/api/integrations/llm", h.List)
+	r.Patch("/api/integrations/llm/settings", h.UpdateSettings)
 	return r
+}
+
+// doLLMUpdateSettingsRequest posts an arbitrary raw JSON body to PATCH
+// /api/integrations/llm/settings.
+func doLLMUpdateSettingsRequest(t *testing.T, r http.Handler, rawBody string) *httptest.ResponseRecorder {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodPatch, "/api/integrations/llm/settings", strings.NewReader(rawBody))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+	return rec
 }
 
 // newLLMProvidersRouterWithRows extends newLLMProvidersRouter with a wired
@@ -500,6 +533,99 @@ func TestLLMList_ServiceError_500(t *testing.T) {
 	rec := httptest.NewRecorder()
 	r.ServeHTTP(rec, req)
 
+	if rec.Code != http.StatusInternalServerError {
+		t.Errorf("status = %d, want %d, body = %s", rec.Code, http.StatusInternalServerError, rec.Body.String())
+	}
+}
+
+// TestLLMList_IncludesRootCauseEnrichmentEnabled covers RCA-08: List's
+// response must reflect the current toggle value, not just its list
+// endpoint's original fields.
+func TestLLMList_IncludesRootCauseEnrichmentEnabled(t *testing.T) {
+	fake := &fakeLLMProviderService{rootCauseEnrichmentEnabled: true}
+	r := newLLMProvidersRouter(fake)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/integrations/llm", nil)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	var resp listLLMProvidersResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("response is not valid JSON: %v", err)
+	}
+	if !resp.RootCauseEnrichmentEnabled {
+		t.Errorf("root_cause_enrichment_enabled = false, want true")
+	}
+}
+
+// TestLLMList_RootCauseEnrichmentEnabledError_500 mirrors
+// TestLLMList_ServiceError_500 for the settings-read failure path.
+func TestLLMList_RootCauseEnrichmentEnabledError_500(t *testing.T) {
+	fake := &fakeLLMProviderService{getRootCauseErr: context.DeadlineExceeded}
+	r := newLLMProvidersRouter(fake)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/integrations/llm", nil)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusInternalServerError {
+		t.Errorf("status = %d, want %d, body = %s", rec.Code, http.StatusInternalServerError, rec.Body.String())
+	}
+}
+
+// TestLLMUpdateSettings_ValidRequest_200Toggles covers RCA-07/RCA-09's
+// happy path: a well-formed body calls through to
+// SetRootCauseEnrichmentEnabled with the submitted value and echoes it
+// back at 200.
+func TestLLMUpdateSettings_ValidRequest_200Toggles(t *testing.T) {
+	fake := &fakeLLMProviderService{}
+	r := newLLMProvidersRouter(fake)
+
+	rec := doLLMUpdateSettingsRequest(t, r, `{"root_cause_enrichment_enabled":true}`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	if len(fake.setRootCauseCalls) != 1 || !fake.setRootCauseCalls[0] {
+		t.Fatalf("setRootCauseCalls = %v, want [true]", fake.setRootCauseCalls)
+	}
+
+	var resp updateLLMSettingsRequest
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+	if !resp.RootCauseEnrichmentEnabled {
+		t.Errorf("response root_cause_enrichment_enabled = false, want true")
+	}
+}
+
+// TestLLMUpdateSettings_MalformedBody_422 covers RCA-09: an invalid JSON
+// body is rejected before the service is ever called.
+func TestLLMUpdateSettings_MalformedBody_422(t *testing.T) {
+	fake := &fakeLLMProviderService{}
+	r := newLLMProvidersRouter(fake)
+
+	rec := doLLMUpdateSettingsRequest(t, r, `{"root_cause_enrichment_enabled":`)
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Errorf("status = %d, want %d, body = %s", rec.Code, http.StatusUnprocessableEntity, rec.Body.String())
+	}
+	if len(fake.setRootCauseCalls) != 0 {
+		t.Errorf("setRootCauseCalls = %v, want none (malformed body must never reach the service)", fake.setRootCauseCalls)
+	}
+}
+
+// TestLLMUpdateSettings_ServiceError_500 mirrors every other handler's
+// writeInternalError fallback: an unexpected repository failure must not
+// leak as a 200/422.
+func TestLLMUpdateSettings_ServiceError_500(t *testing.T) {
+	fake := &fakeLLMProviderService{setRootCauseErr: context.DeadlineExceeded}
+	r := newLLMProvidersRouter(fake)
+
+	rec := doLLMUpdateSettingsRequest(t, r, `{"root_cause_enrichment_enabled":true}`)
 	if rec.Code != http.StatusInternalServerError {
 		t.Errorf("status = %d, want %d, body = %s", rec.Code, http.StatusInternalServerError, rec.Body.String())
 	}

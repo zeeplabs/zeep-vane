@@ -32,34 +32,34 @@ function renderPage() {
 }
 
 describe("DomainsPage", () => {
-  it("lista domínios com hostname e data de cadastro", async () => {
+  it("lists domains with hostname and registration date", async () => {
     await loginAs("owner@vane.app");
     renderPage();
     expect(await screen.findByText("status.acme.com")).toBeInTheDocument();
     expect(screen.getAllByText("Cadastrado em").length).toBeGreaterThan(0);
   });
 
-  it("viewer não vê o formulário de cadastro", async () => {
+  it("viewer does not see the registration form", async () => {
     await loginAs("viewer@vane.app");
     renderPage();
     await screen.findByText("status.acme.com");
     expect(screen.queryByRole("button", { name: "Adicionar domínio" })).not.toBeInTheDocument();
   });
 
-  it("cadastro duplicado exibe erro exato sem criar linha nova", async () => {
+  it("duplicate registration shows the exact error without creating a new row", async () => {
     await loginAs("owner@vane.app");
     renderPage();
     await userEvent.click(await screen.findByRole("button", { name: "Adicionar domínio" }));
     await userEvent.type(screen.getByLabelText("Hostname"), "status.acme.com");
     await userEvent.click(screen.getByRole("button", { name: "Salvar" }));
 
-    // Texto do backend real (I13) - inglês, gap de i18n já identificado em
-    // LoginPage.test.tsx (I7), não corrigido aqui (fora de escopo).
+    // Real backend text (I13) - English, i18n gap already identified in
+    // LoginPage.test.tsx (I7), not fixed here (out of scope).
     expect(await screen.findByText("hostname already registered")).toBeInTheDocument();
-    expect(screen.getAllByText("status.acme.com")).toHaveLength(1); // continua só a linha original, não duplicou
+    expect(screen.getAllByText("status.acme.com")).toHaveLength(1); // still just the original row, did not duplicate
   });
 
-  it("cadastro novo aparece na tabela", async () => {
+  it("new registration appears in the table", async () => {
     await loginAs("owner@vane.app");
     renderPage();
     await userEvent.click(await screen.findByRole("button", { name: "Adicionar domínio" }));

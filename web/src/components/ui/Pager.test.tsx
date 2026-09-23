@@ -4,24 +4,24 @@ import userEvent from "@testing-library/user-event";
 import { Pager } from "./Pager";
 
 describe("Pager", () => {
-  it("renderiza 'Página X de Y'", () => {
+  it("renders 'Página X de Y'", () => {
     render(<Pager page={2} totalPages={5} onChange={vi.fn()} />);
     expect(screen.getByText("Página 2 de 5")).toBeInTheDocument();
   });
 
-  it("desabilita Anterior na página 1", () => {
+  it("disables Anterior on page 1", () => {
     render(<Pager page={1} totalPages={5} onChange={vi.fn()} />);
     expect(screen.getByRole("button", { name: "Anterior" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "Próximo" })).not.toBeDisabled();
   });
 
-  it("desabilita Próximo na última página", () => {
+  it("disables Próximo on the last page", () => {
     render(<Pager page={5} totalPages={5} onChange={vi.fn()} />);
     expect(screen.getByRole("button", { name: "Próximo" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "Anterior" })).not.toBeDisabled();
   });
 
-  it("chama onChange com page-1/page+1 ao clicar", async () => {
+  it("calls onChange with page-1/page+1 on click", async () => {
     const onChange = vi.fn();
     render(<Pager page={2} totalPages={5} onChange={onChange} />);
 
@@ -32,7 +32,7 @@ describe("Pager", () => {
     expect(onChange).toHaveBeenCalledWith(3);
   });
 
-  it("com totalPages=1 (total=0, per caller's max(1,...)) desabilita os dois botões", () => {
+  it("with totalPages=1 (total=0, per caller's max(1,...)) disables both buttons", () => {
     render(<Pager page={1} totalPages={1} onChange={vi.fn()} />);
     expect(screen.getByRole("button", { name: "Anterior" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "Próximo" })).toBeDisabled();

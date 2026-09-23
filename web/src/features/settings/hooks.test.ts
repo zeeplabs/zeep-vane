@@ -79,13 +79,13 @@ describe("company settings hooks", () => {
   });
 
   it("useUploadCompanyLogo monta o FormData com a chave 'logo' esperada pelo backend", async () => {
-    // O contrato entre camadas (nome do campo multipart) é um literal
-    // independente em cada lado: hooks.ts hardcoda "logo" no FormData, o Go
-    // hardcoda logoFormFieldName = "logo". O MSW não consegue ler o corpo
-    // multipart sob jsdom (request.formData()/request.text() travam - ver
-    // validation.md, Non-Shallow Litmus), então este teste inspeciona o
-    // FormData que o hook monta diretamente, via um spy em fetch, sem
-    // depender do MSW ler o corpo.
+    // The contract between layers (the multipart field name) is an independent
+    // literal on each side: hooks.ts hardcodes "logo" in the FormData, Go
+    // hardcodes logoFormFieldName = "logo". MSW can't read the multipart
+    // body under jsdom (request.formData()/request.text() hang - see
+    // validation.md, Non-Shallow Litmus), so this test inspects the
+    // FormData the hook builds directly, via a spy on fetch, without
+    // relying on MSW reading the body.
     const fetchSpy = vi.spyOn(globalThis, "fetch");
     await loginAsOwner();
     const { result } = renderHook(() => useUploadCompanyLogo(), { wrapper: TestQueryProvider });

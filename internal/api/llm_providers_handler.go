@@ -27,6 +27,13 @@ type llmProviderService interface {
 	Activate(ctx context.Context, provider string) error
 	List(ctx context.Context, page, pageSize int) (llm.ListResult, error)
 	Disconnect(ctx context.Context, provider string) error
+	// SetRootCauseEnrichmentEnabled backs UpdateSettings
+	// (slo-root-cause-enrichment RCA-07/RCA-09).
+	SetRootCauseEnrichmentEnabled(ctx context.Context, enabled bool) error
+	// RootCauseEnrichmentEnabled backs List's root_cause_enrichment_enabled
+	// field (RCA-08) - the settings UI needs the current value to render
+	// the toggle, not just a way to write it.
+	RootCauseEnrichmentEnabled(ctx context.Context) (bool, error)
 }
 
 // llmProviderRowGetter is the subset of *db.LLMProviderRepository
@@ -233,6 +240,53 @@ func (h *LLMProvidersHandler) Disconnect(w http.ResponseWriter, r *http.Request)
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// llmSettingsAuditTargetLabel is the fixed target_label for the
+// root_cause_enrichment_enabled toggle's audit entry (RCA-09) - same
+// tenant-wide-setting precedent as companySettingsAuditTargetLabel, since
+// this toggle has no per-row identity of its own (it lives on the
+// singleton llm_settings row, not a llm_providers row).
+const llmSettingsAuditTargetLabel = "Configurações de IA"
+
+type updateLLMSettingsRequest struct {
+	RootCauseEnrichmentEnabled bool `json:"root_cause_enrichment_enabled"`
+}
+
+const invalidLLMSettingsBody = `{"error":"invalid request body"}`
+
+// UpdateSettings handles PATCH /api/integrations/llm/settings
+// (slo-root-cause-enrichment RCA-07/RCA-09): toggles
+// root_cause_enrichment_enabled for the active tenant. writeRoles-gated
+// (routes.go), same tier as every other /api/integrations/llm/* write
+// route. A malformed body responds 422; any other failure responds 500 via
+// writeInternalError (AGENTS.md §4 - never leak the raw error).
+func (h *LLMProvidersHandler) UpdateSettings(w http.ResponseWriter, r *http.Request) {
+	var req updateLLMSettingsRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusUnprocessableEntity)
+		_, _ = w.Write([]byte(invalidLLMSettingsBody))
+		return
+	}
+
+	if err := h.svc.SetRootCauseEnrichmentEnabled(r.Context(), req.RootCauseEnrichmentEnabled); err != nil {
+		h.logger.Error("llm providers: failed to update settings", zap.Error(err))
+		writeInternalError(w)
+		return
+	}
+
+	if actor, ok := UserFromContext(r.Context()); ok {
+		if tenantID, ok := ActiveTenantIDFromContext(r.Context()); ok {
+			if err := h.audit.Record(r.Context(), actor.ID, tenantID, llmSettingsAuditTargetLabel, "llm_settings_updated"); err != nil {
+				h.logger.Error("llm providers: failed to record audit entry", zap.Error(err))
+			}
+		}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(req)
+}
+
 type llmProviderResponse struct {
 	Provider      string  `json:"provider"`
 	Model         string  `json:"model"`
@@ -247,6 +301,11 @@ type listLLMProvidersResponse struct {
 	Total          int                   `json:"total"`
 	Page           int                   `json:"page"`
 	PageSize       int                   `json:"page_size"`
+	// RootCauseEnrichmentEnabled rides along with the provider list
+	// (slo-root-cause-enrichment RCA-08) so the settings UI can render the
+	// toggle's current state without a second endpoint - both live on the
+	// same tenant-scoped llm_settings row.
+	RootCauseEnrichmentEnabled bool `json:"root_cause_enrichment_enabled"`
 }
 
 // List handles GET /api/integrations/llm. It returns one page of connected
@@ -262,11 +321,19 @@ func (h *LLMProvidersHandler) List(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	rootCauseEnabled, err := h.svc.RootCauseEnrichmentEnabled(r.Context())
+	if err != nil {
+		h.logger.Error("llm providers: failed to read root cause enrichment setting", zap.Error(err))
+		writeInternalError(w)
+		return
+	}
+
 	resp := listLLMProvidersResponse{
-		Providers: make([]llmProviderResponse, 0, len(result.Providers)),
-		Total:     result.Total,
-		Page:      result.Page,
-		PageSize:  result.PageSize,
+		Providers:                  make([]llmProviderResponse, 0, len(result.Providers)),
+		Total:                      result.Total,
+		Page:                       result.Page,
+		PageSize:                   result.PageSize,
+		RootCauseEnrichmentEnabled: rootCauseEnabled,
 	}
 	if result.ActiveProvider != "" {
 		active := result.ActiveProvider

@@ -1,4 +1,5 @@
 import { useEffect, useState, type FormEvent } from "react";
+import { useTranslation } from "react-i18next";
 import { Drawer, drawerFooterPrimaryStyle, drawerFooterSecondaryStyle } from "../../components/ui/Drawer";
 import { Button } from "../../components/ui/Button";
 import { Field } from "../../components/ui/Field";
@@ -13,6 +14,7 @@ export interface ConnectDatadogDrawerProps {
 /** Painel "Conectar Datadog" - mesmo chrome padrão de Drawer usado em
  * "Anexar domínio"/"Criar status page" (INTG-08). */
 export function ConnectDatadogDrawer({ open, onOpenChange }: ConnectDatadogDrawerProps) {
+  const { t } = useTranslation();
   const connectMutation = useConnectDatadog();
   const [apiKey, setApiKey] = useState("");
   const [appKey, setAppKey] = useState("");
@@ -33,7 +35,7 @@ export function ConnectDatadogDrawer({ open, onOpenChange }: ConnectDatadogDrawe
       await connectMutation.mutateAsync({ api_key: apiKey, app_key: appKey });
       onOpenChange(false);
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Não foi possível conectar ao Datadog.");
+      setError(err instanceof ApiError ? err.message : t("integrations.datadog.connectError"));
     }
   }
 
@@ -41,9 +43,9 @@ export function ConnectDatadogDrawer({ open, onOpenChange }: ConnectDatadogDrawe
     <Drawer
       open={open}
       onOpenChange={onOpenChange}
-      title="Conectar Datadog"
-      description="As chaves são validadas contra o Datadog e criptografadas em repouso. Não são reexibidas após salvar."
-      closeLabel="Fechar"
+      title={t("integrations.datadog.drawerTitle")}
+      description={t("integrations.datadog.drawerDescription")}
+      closeLabel={t("common.close")}
       footer={
         <>
           <Button
@@ -52,7 +54,7 @@ export function ConnectDatadogDrawer({ open, onOpenChange }: ConnectDatadogDrawe
             style={drawerFooterSecondaryStyle}
             onClick={() => onOpenChange(false)}
           >
-            Cancelar
+            {t("common.cancel")}
           </Button>
           <Button
             type="submit"
@@ -61,7 +63,7 @@ export function ConnectDatadogDrawer({ open, onOpenChange }: ConnectDatadogDrawe
             style={drawerFooterPrimaryStyle}
             disabled={connectMutation.isPending}
           >
-            Salvar
+            {t("integrations.saveButton")}
           </Button>
         </>
       }
@@ -69,18 +71,18 @@ export function ConnectDatadogDrawer({ open, onOpenChange }: ConnectDatadogDrawe
       <form id="connect-datadog-form" onSubmit={handleSubmit} className="flex flex-col gap-3">
         <Field
           variant="filled"
-          label="API key"
+          label={t("integrations.datadog.apiKeyLabel")}
           type="password"
-          placeholder="Chave da API"
+          placeholder={t("integrations.datadog.apiKeyPlaceholder")}
           value={apiKey}
           onChange={(e) => setApiKey(e.target.value)}
           required
         />
         <Field
           variant="filled"
-          label="App key"
+          label={t("integrations.datadog.appKeyLabel")}
           type="password"
-          placeholder="Chave da aplicação"
+          placeholder={t("integrations.datadog.appKeyPlaceholder")}
           value={appKey}
           onChange={(e) => setAppKey(e.target.value)}
           required

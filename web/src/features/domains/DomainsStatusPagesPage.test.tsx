@@ -1,4 +1,5 @@
 import { describe, it, expect, afterEach } from "vitest";
+import i18n from "../../lib/i18n";
 import { render, screen, fireEvent } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
@@ -80,7 +81,7 @@ function renderPage() {
 }
 
 describe("DomainsStatusPagesPage", () => {
-  it("renderiza sem crashar, com a aba Domínios ativa por padrão e o botão 'Adicionar domínio'", async () => {
+  it("renders without crashing, with the Domínios tab active by default and the 'Adicionar domínio' button", async () => {
     mockDomainsPage([baseDomain({ id: "dom-1", hostname: "one.example.com" })]);
     mockStatusPagesPage([]);
     await loginAsOwner();
@@ -91,7 +92,7 @@ describe("DomainsStatusPagesPage", () => {
     expect(screen.getByRole("button", { name: /Adicionar domínio/ })).toBeInTheDocument();
   });
 
-  it("trocar para a aba Status Pages troca a tabela e o rótulo do botão para 'Criar status page' (DSP-18)", async () => {
+  it("switching to the Status Pages tab swaps the table and the button label to 'Criar status page' (DSP-18)", async () => {
     mockDomainsPage([]);
     mockStatusPagesPage([basePage({ id: "sp-1", name: "Página Um" })]);
     await loginAsOwner();
@@ -104,7 +105,7 @@ describe("DomainsStatusPagesPage", () => {
     expect(screen.getByRole("button", { name: /Criar status page/ })).toBeInTheDocument();
   });
 
-  it("trocar de aba fecha o drawer de detalhe aberto na aba anterior (DSP-19)", async () => {
+  it("switching tabs closes the detail drawer left open on the previous tab (DSP-19)", async () => {
     mockDomainsPage([baseDomain({ id: "dom-1", hostname: "click.example.com" })]);
     mockStatusPagesPage([]);
     await loginAsOwner();
@@ -130,5 +131,22 @@ describe("DomainsStatusPagesPage", () => {
     fireEvent.click(screen.getByText("Domínios"));
     await screen.findByText("click.example.com");
     expect(screen.queryByRole("button", { name: "Verificar novamente" })).not.toBeInTheDocument();
+  });
+
+  it("renders in English when the active language is en", async () => {
+    mockDomainsPage([baseDomain({ id: "dom-1", hostname: "one.example.com" })]);
+    mockStatusPagesPage([]);
+    await loginAsOwner();
+    await i18n.changeLanguage("en");
+
+    try {
+      renderPage();
+
+      expect(await screen.findByText("Domains & Status Pages")).toBeInTheDocument();
+      expect(screen.getByRole("tab", { name: "Domains" })).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: /Add domain/ })).toBeInTheDocument();
+    } finally {
+      await i18n.changeLanguage("pt-BR");
+    }
   });
 });

@@ -19,7 +19,7 @@ async function loginAsOwner() {
 }
 
 describe("LLM provider hooks", () => {
-  it("useLLMProviders retorna lista vazia e active_provider nulo quando nada foi conectado", async () => {
+  it("useLLMProviders returns an empty list and a null active_provider when nothing was connected", async () => {
     await loginAsOwner();
     const { result } = renderHook(() => useLLMProviders(1), { wrapper: TestQueryProvider });
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
@@ -27,7 +27,7 @@ describe("LLM provider hooks", () => {
     expect(result.current.data?.providers).toEqual([]);
   });
 
-  it("useConnectLLMProvider conecta e invalida useLLMProviders em sucesso", async () => {
+  it("useConnectLLMProvider connects and invalidates useLLMProviders on success", async () => {
     await loginAsOwner();
     const { result } = renderHook(
       () => ({ list: useLLMProviders(1), connect: useConnectLLMProvider("openai") }),
@@ -48,14 +48,14 @@ describe("LLM provider hooks", () => {
     );
   });
 
-  it("useConnectLLMProvider propaga ApiError 422 numa chave inválida", async () => {
+  it("useConnectLLMProvider propagates a 422 ApiError on an invalid key", async () => {
     await loginAsOwner();
     const { result } = renderHook(() => useConnectLLMProvider("openai"), { wrapper: TestQueryProvider });
 
     await expect(result.current.mutateAsync({ api_key: "invalid-key" })).rejects.toBeInstanceOf(ApiError);
   });
 
-  it("useSetLLMProviderModel troca o modelo de um provider conectado sem reenviar a chave", async () => {
+  it("useSetLLMProviderModel switches the model of a connected provider without resending the key", async () => {
     await loginAsOwner();
     const { result } = renderHook(
       () => ({
@@ -75,7 +75,7 @@ describe("LLM provider hooks", () => {
     );
   });
 
-  it("useSetLLMProviderModel propaga ApiError 422 para um modelo fora do allowlist", async () => {
+  it("useSetLLMProviderModel propagates a 422 ApiError for a model outside the allowlist", async () => {
     await loginAsOwner();
     const { result } = renderHook(
       () => ({ connect: useConnectLLMProvider("openai"), setModel: useSetLLMProviderModel("openai") }),
@@ -91,7 +91,7 @@ describe("LLM provider hooks", () => {
   // status before ever looking at the model allowlist (internal/llm/
   // service.go), so a disconnected provider must 422 as "not connected",
   // never "unknown model", even with a bogus model.
-  it("useSetLLMProviderModel propaga o erro de 'não conectado', não 'modelo desconhecido', quando o provider nunca foi conectado", async () => {
+  it("useSetLLMProviderModel propagates the 'not connected' error, not 'unknown model', when the provider was never connected", async () => {
     await loginAsOwner();
     const { result } = renderHook(() => useSetLLMProviderModel("openai"), { wrapper: TestQueryProvider });
 
@@ -100,7 +100,7 @@ describe("LLM provider hooks", () => {
     });
   });
 
-  it("useActivateLLMProvider ativa um provider conectado e invalida a lista", async () => {
+  it("useActivateLLMProvider activates a connected provider and invalidates the list", async () => {
     await loginAsOwner();
     const { result } = renderHook(
       () => ({
@@ -118,7 +118,7 @@ describe("LLM provider hooks", () => {
     await waitFor(() => expect(result.current.list.data?.active_provider).toBe("openai"));
   });
 
-  it("useActivateLLMProvider propaga ApiError 422 para um provider não conectado", async () => {
+  it("useActivateLLMProvider propagates a 422 ApiError for an unconnected provider", async () => {
     await loginAsOwner();
     const { result } = renderHook(() => useActivateLLMProvider(), { wrapper: TestQueryProvider });
 
@@ -128,7 +128,7 @@ describe("LLM provider hooks", () => {
   // PROVDISC-07/08: mirrors useDisconnectEmailProvider's own coverage - a
   // DELETE with no body, invalidating the same ["integrations", "llm"]
   // query key on success so the disconnected row disappears from the list.
-  it("useDisconnectLLMProvider desconecta um provider conectado e invalida a lista", async () => {
+  it("useDisconnectLLMProvider disconnects a connected provider and invalidates the list", async () => {
     await loginAsOwner();
     const { result } = renderHook(
       () => ({
@@ -151,14 +151,14 @@ describe("LLM provider hooks", () => {
     );
   });
 
-  it("useDisconnectLLMProvider é idempotente - desconectar um provider nunca conectado ainda resolve com sucesso", async () => {
+  it("useDisconnectLLMProvider is idempotent - disconnecting a never-connected provider still resolves successfully", async () => {
     await loginAsOwner();
     const { result } = renderHook(() => useDisconnectLLMProvider(), { wrapper: TestQueryProvider });
 
     await expect(result.current.mutateAsync("openai")).resolves.toBeUndefined();
   });
 
-  it("useDisconnectLLMProvider propaga ApiError 404 para um nome de provider desconhecido", async () => {
+  it("useDisconnectLLMProvider propagates a 404 ApiError for an unknown provider name", async () => {
     await loginAsOwner();
     const { result } = renderHook(() => useDisconnectLLMProvider(), { wrapper: TestQueryProvider });
 

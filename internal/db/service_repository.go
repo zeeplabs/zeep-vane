@@ -37,6 +37,14 @@ type Service struct {
 	// Datadog call to display it. '' for a row created before this field
 	// existed and never re-saved, or for a polling-mode service (no SLO).
 	SLOName string
+	// SLOType is the linked SLO's type ("metric" or "monitor"), and
+	// DatadogServiceTag is its single service:-scoped tag - both resolved
+	// once at SLO-link time (slo-root-cause-enrichment RCA-01), same
+	// ""-means-absent convention as SLOName above. DatadogServiceTag is ""
+	// when the SLO has 0 or 2+ service_tags entries (flow-type SLO) or for
+	// a row saved before this feature existed.
+	SLOType           string
+	DatadogServiceTag string
 	// MonitorMode is "slo" (default, unchanged existing behavior) or
 	// "polling" (manual-polling-monitoring MP-01/MP-02).
 	MonitorMode string
@@ -81,8 +89,10 @@ func NewServiceRepository(pool *Pool) *ServiceRepository {
 // service.MonitorMode (manual-polling-monitoring MP-01/MP-02): "polling"
 // persists PollType/PollTarget/PollIntervalSeconds and leaves slo_id/
 // slo_name NULL/empty; anything else (including "", every existing caller's
-// zero value) persists slo_id/slo_name unchanged from today and normalizes
-// service.MonitorMode to "slo" on success.
+// zero value) persists slo_id/slo_name/slo_type/datadog_service_tag
+// unchanged from today and normalizes service.MonitorMode to "slo" on
+// success. SLOType/DatadogServiceTag are stored NULL (via NULLIF) when "",
+// matching the nullable-column shape design.md defines for them.
 func (r *ServiceRepository) Create(ctx context.Context, service *Service) error {
 	var row pgx.Row
 	if service.MonitorMode == "polling" {
@@ -93,8 +103,10 @@ func (r *ServiceRepository) Create(ctx context.Context, service *Service) error 
 		)
 	} else {
 		row = r.pool.QueryRow(ctx,
-			"INSERT INTO services (name, slo_id, slo_name) VALUES ($1, $2, $3) RETURNING id, current_status, last_status_change_at",
-			service.Name, service.SLOID, service.SLOName,
+			`INSERT INTO services (name, slo_id, slo_name, slo_type, datadog_service_tag)
+			 VALUES ($1, $2, $3, NULLIF($4, ''), NULLIF($5, ''))
+			 RETURNING id, current_status, last_status_change_at`,
+			service.Name, service.SLOID, service.SLOName, service.SLOType, service.DatadogServiceTag,
 		)
 	}
 
@@ -117,10 +129,12 @@ func (r *ServiceRepository) Create(ctx context.Context, service *Service) error 
 func (r *ServiceRepository) Get(ctx context.Context, id string) (*Service, bool, error) {
 	var service Service
 	row := r.pool.QueryRow(ctx,
-		"SELECT id, name, COALESCE(slo_id, ''), slo_name, current_status, last_status_change_at, status_analysis FROM services WHERE id = $1 AND deleted_at IS NULL",
+		`SELECT id, name, COALESCE(slo_id, ''), slo_name, COALESCE(slo_type, ''), COALESCE(datadog_service_tag, ''),
+		        current_status, last_status_change_at, status_analysis
+		 FROM services WHERE id = $1 AND deleted_at IS NULL`,
 		id,
 	)
-	if err := row.Scan(&service.ID, &service.Name, &service.SLOID, &service.SLOName, &service.CurrentStatus, &service.LastStatusChangeAt, &service.StatusAnalysis); err != nil {
+	if err := row.Scan(&service.ID, &service.Name, &service.SLOID, &service.SLOName, &service.SLOType, &service.DatadogServiceTag, &service.CurrentStatus, &service.LastStatusChangeAt, &service.StatusAnalysis); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, false, nil
 		}
@@ -138,7 +152,8 @@ func (r *ServiceRepository) ListPaginated(ctx context.Context, page, pageSize in
 	offset := (page - 1) * pageSize
 
 	rows, err := r.pool.Query(ctx,
-		`SELECT id, name, COALESCE(slo_id, ''), slo_name, current_status, last_status_change_at, COUNT(*) OVER() AS total
+		`SELECT id, name, COALESCE(slo_id, ''), slo_name, COALESCE(slo_type, ''), COALESCE(datadog_service_tag, ''),
+		        current_status, last_status_change_at, COUNT(*) OVER() AS total
 		 FROM services
 		 WHERE deleted_at IS NULL
 		 ORDER BY name
@@ -154,7 +169,7 @@ func (r *ServiceRepository) ListPaginated(ctx context.Context, page, pageSize in
 	total := 0
 	for rows.Next() {
 		var service Service
-		if err := rows.Scan(&service.ID, &service.Name, &service.SLOID, &service.SLOName, &service.CurrentStatus, &service.LastStatusChangeAt, &total); err != nil {
+		if err := rows.Scan(&service.ID, &service.Name, &service.SLOID, &service.SLOName, &service.SLOType, &service.DatadogServiceTag, &service.CurrentStatus, &service.LastStatusChangeAt, &total); err != nil {
 			return nil, 0, fmt.Errorf("db: failed to scan service: %w", err)
 		}
 		services = append(services, service)
@@ -190,7 +205,9 @@ func (r *ServiceRepository) countServices(ctx context.Context) (int, error) {
 // this is the ServiceRepository/poller.go precedent, not a new deviation).
 func (r *ServiceRepository) List(ctx context.Context) ([]Service, error) {
 	rows, err := r.pool.Query(ctx,
-		"SELECT id, name, COALESCE(slo_id, ''), monitor_mode, current_status, last_status_change_at FROM services WHERE deleted_at IS NULL ORDER BY name")
+		`SELECT id, name, COALESCE(slo_id, ''), monitor_mode, COALESCE(slo_type, ''), COALESCE(datadog_service_tag, ''),
+		        current_status, last_status_change_at
+		 FROM services WHERE deleted_at IS NULL ORDER BY name`)
 	if err != nil {
 		return nil, fmt.Errorf("db: failed to list services: %w", err)
 	}
@@ -199,7 +216,7 @@ func (r *ServiceRepository) List(ctx context.Context) ([]Service, error) {
 	var services []Service
 	for rows.Next() {
 		var service Service
-		if err := rows.Scan(&service.ID, &service.Name, &service.SLOID, &service.MonitorMode, &service.CurrentStatus, &service.LastStatusChangeAt); err != nil {
+		if err := rows.Scan(&service.ID, &service.Name, &service.SLOID, &service.MonitorMode, &service.SLOType, &service.DatadogServiceTag, &service.CurrentStatus, &service.LastStatusChangeAt); err != nil {
 			return nil, fmt.Errorf("db: failed to scan service: %w", err)
 		}
 		services = append(services, service)
@@ -288,6 +305,27 @@ func (r *ServiceRepository) Update(ctx context.Context, id, name string) error {
 	tag, err := r.pool.Exec(ctx, "UPDATE services SET name = $2 WHERE id = $1 AND deleted_at IS NULL", id, name)
 	if err != nil {
 		return fmt.Errorf("db: failed to update service: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+// UpdateSLOMetadata sets serviceID's slo_type/datadog_service_tag columns -
+// metadata about an already-linked SLO (design.md's Data Models: no CHECK
+// constraint tying these to monitor_mode, unlike slo_id/monitor_mode/poll_*
+// which Update deliberately leaves out of scope). Passing "" for either
+// clears it to NULL, mirroring SLOName's ""-means-absent convention.
+// Returns ErrNotFound if no service matches serviceID, the same convention
+// Update uses.
+func (r *ServiceRepository) UpdateSLOMetadata(ctx context.Context, serviceID, sloType, datadogServiceTag string) error {
+	tag, err := r.pool.Exec(ctx,
+		"UPDATE services SET slo_type = NULLIF($2, ''), datadog_service_tag = NULLIF($3, '') WHERE id = $1 AND deleted_at IS NULL",
+		serviceID, sloType, datadogServiceTag,
+	)
+	if err != nil {
+		return fmt.Errorf("db: failed to update service SLO metadata: %w", err)
 	}
 	if tag.RowsAffected() == 0 {
 		return ErrNotFound

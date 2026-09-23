@@ -44,18 +44,18 @@ function App({ initialEntry = "/protected" }: { initialEntry?: string }) {
 }
 
 describe("RequireAuth / RequireRole", () => {
-  it("não autenticado é redirecionado para /login", async () => {
+  it("unauthenticated is redirected to /login", async () => {
     render(<App />);
     expect(await screen.findByText("login page")).toBeInTheDocument();
   });
 
-  it("papel errado é redirecionado para / (acesso direto por URL)", async () => {
+  it("wrong role is redirected to / (direct URL access)", async () => {
     await loginAs("viewer@vane.app");
     render(<App />);
     expect(await screen.findByText("home page")).toBeInTheDocument();
   });
 
-  it("papel certo renderiza o conteúdo protegido", async () => {
+  it("correct role renders the protected content", async () => {
     await loginAs("owner@vane.app");
     render(<App />);
     expect(await screen.findByText("owner only content")).toBeInTheDocument();

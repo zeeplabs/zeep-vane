@@ -1,4 +1,5 @@
 import { describe, it, expect, afterEach, vi } from "vitest";
+import "../../lib/i18n";
 import { http, HttpResponse } from "msw";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -35,7 +36,7 @@ function renderDrawer(statusPageId: string, onOpenChange: (open: boolean) => voi
 }
 
 describe("AttachDomainDrawer", () => {
-  it("renderiza o seletor de domínio, o campo de subdomínio e o valor do DNS target configurado", async () => {
+  it("renders the domain selector, the subdomain field and the configured DNS target value", async () => {
     await loginAsOwner();
     const page = await createDomainlessPage("Drawer Render Test");
     renderDrawer(page.id, vi.fn());
@@ -45,7 +46,7 @@ describe("AttachDomainDrawer", () => {
     expect(await screen.findByText(/203\.0\.113\.10/)).toBeInTheDocument();
   });
 
-  it("mostra aviso quando o operador não configurou PUBLIC_DNS_TARGET, sem bloquear o formulário", async () => {
+  it("shows a warning when the operator hasn't configured PUBLIC_DNS_TARGET, without blocking the form", async () => {
     server.use(http.get("/api/instance/dns-target", () => HttpResponse.json({ target: null })));
     await loginAsOwner();
     const page = await createDomainlessPage("Drawer No DNS Target Test");
@@ -57,7 +58,7 @@ describe("AttachDomainDrawer", () => {
     expect(screen.getByRole("button", { name: "Anexar" })).toBeEnabled();
   });
 
-  it("submit com sucesso fecha o painel e a página passa a refletir o domínio anexado", async () => {
+  it("a successful submit closes the panel and the page reflects the attached domain", async () => {
     await loginAsOwner();
     const page = await createDomainlessPage("Drawer Success Test");
     const onOpenChange = vi.fn();
@@ -76,7 +77,7 @@ describe("AttachDomainDrawer", () => {
     expect(attached?.subdomain).toBe("novo-anexado");
   });
 
-  it("404 (página não encontrada) mostra erro inline e mantém o painel aberto", async () => {
+  it("404 (page not found) shows an inline error and keeps the panel open", async () => {
     await loginAsOwner();
     const onOpenChange = vi.fn();
     renderDrawer("sp-nao-existe", onOpenChange);
@@ -90,11 +91,11 @@ describe("AttachDomainDrawer", () => {
     expect(onOpenChange).not.toHaveBeenCalled();
   });
 
-  it("409 (página já com domínio) mostra erro inline e mantém o painel aberto", async () => {
+  it("409 (page already has a domain) shows an inline error and keeps the panel open", async () => {
     await loginAsOwner();
     const onOpenChange = vi.fn();
-    // sp-1 já tem domain_id (fixture) - simula o admin reabrindo a tela
-    // pra uma página que outra requisição concorrente já anexou.
+    // sp-1 already has a domain_id (fixture) - simulates the admin reopening the
+    // screen for a page that another concurrent request already attached.
     renderDrawer("sp-1", onOpenChange);
 
     await screen.findByRole("option", { name: "status.acme.com" });
@@ -108,7 +109,7 @@ describe("AttachDomainDrawer", () => {
     expect(onOpenChange).not.toHaveBeenCalled();
   });
 
-  it("422 (domain_id inválido) mostra erro inline e mantém o painel aberto", async () => {
+  it("422 (invalid domain_id) shows an inline error and keeps the panel open", async () => {
     server.use(
       http.get("/api/domains", () =>
         HttpResponse.json({

@@ -4,7 +4,7 @@ import userEvent from "@testing-library/user-event";
 import { Drawer } from "./Drawer";
 
 describe("Drawer", () => {
-  it("renderiza título, descrição, conteúdo e footer quando aberto", () => {
+  it("renders title, description, content and footer when open", () => {
     render(
       <Drawer
         open
@@ -23,7 +23,7 @@ describe("Drawer", () => {
     expect(screen.getByRole("button", { name: "Criar" })).toBeInTheDocument();
   });
 
-  it("Escape chama onOpenChange(false)", async () => {
+  it("Escape calls onOpenChange(false)", async () => {
     const onOpenChange = vi.fn();
     render(
       <Drawer open onOpenChange={onOpenChange} title="Criar incidente" closeLabel="Fechar">
@@ -34,7 +34,7 @@ describe("Drawer", () => {
     expect(onOpenChange).toHaveBeenCalledWith(false);
   });
 
-  it("fechado não renderiza conteúdo", () => {
+  it("closed does not render content", () => {
     render(
       <Drawer open={false} onOpenChange={() => {}} title="Criar status page" closeLabel="Fechar">
         <p>corpo</p>
@@ -43,7 +43,7 @@ describe("Drawer", () => {
     expect(screen.queryByText("corpo")).not.toBeInTheDocument();
   });
 
-  it("sempre renderiza o X de fechar (mesmo modelo de chrome em todos os drawers)", async () => {
+  it("always renders the close X (same chrome model across all drawers)", async () => {
     const onOpenChange = vi.fn();
     render(
       <Drawer open onOpenChange={onOpenChange} title="Criar status page" closeLabel="Fechar">

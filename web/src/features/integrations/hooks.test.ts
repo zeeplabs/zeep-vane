@@ -12,21 +12,21 @@ async function loginAsOwner() {
 }
 
 describe("integrations hooks", () => {
-  it("useIntegrationStatus retorna o status conectado da fixture", async () => {
+  it("useIntegrationStatus returns the connected status from the fixture", async () => {
     await loginAsOwner();
     const { result } = renderHook(() => useIntegrationStatus(), { wrapper: TestQueryProvider });
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(result.current.data?.connected).toBe(true);
   });
 
-  it("useSLOSearch não dispara com query vazia", async () => {
+  it("useSLOSearch doesn't fire with an empty query", async () => {
     await loginAsOwner();
     const { result } = renderHook(() => useSLOSearch(""), { wrapper: TestQueryProvider });
     expect(result.current.fetchStatus).toBe("idle");
     expect(result.current.data).toBeUndefined();
   });
 
-  it("useSLOSearch retorna resultados filtrados por nome", async () => {
+  it("useSLOSearch returns results filtered by name", async () => {
     await loginAsOwner();
     const { result } = renderHook(() => useSLOSearch("checkout"), { wrapper: TestQueryProvider });
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
@@ -34,7 +34,7 @@ describe("integrations hooks", () => {
     expect(result.current.data?.[0].name.toLowerCase()).toContain("checkout");
   });
 
-  it("useConnectDatadog invalida useIntegrationStatus em sucesso", async () => {
+  it("useConnectDatadog invalidates useIntegrationStatus on success", async () => {
     await loginAsOwner();
     const { result } = renderHook(
       () => ({ status: useIntegrationStatus(), connect: useConnectDatadog() }),

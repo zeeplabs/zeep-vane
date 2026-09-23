@@ -4,7 +4,7 @@ import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { Toaster } from "sonner";
 import { http, HttpResponse } from "msw";
-import "../../lib/i18n";
+import i18n from "../../lib/i18n";
 import { AuthProvider } from "../../auth/AuthProvider";
 import { TestQueryProvider } from "../../test/queryClient";
 import { server } from "../../test/msw/server";
@@ -58,7 +58,7 @@ function mockMembershipPlan(planTier: string) {
 }
 
 describe("BillingPage - BILLPG-01..06", () => {
-  it("modo saas: mostra o plano atual e os 3 cards de plano", async () => {
+  it("saas mode: shows the current plan and the 3 plan cards", async () => {
     setDeploymentMode("saas");
     mockMembershipPlan("starter");
     await loginAsOwner();
@@ -73,7 +73,7 @@ describe("BillingPage - BILLPG-01..06", () => {
     expect(screen.getByTestId("plan-card-scale-button")).not.toBeDisabled();
   });
 
-  it("modo saas: forma de pagamento e faturas sempre mostram o estado vazio", async () => {
+  it("saas mode: payment method and invoices always show the empty state", async () => {
     setDeploymentMode("saas");
     mockMembershipPlan("free");
     await loginAsOwner();
@@ -84,7 +84,7 @@ describe("BillingPage - BILLPG-01..06", () => {
     expect(screen.getByText(/Suas faturas aparecerão aqui/)).toBeInTheDocument();
   });
 
-  it("modo saas: clicar em Fazer upgrade mostra toast decorativo, sem UI de checkout nem campo de cartão", async () => {
+  it("saas mode: clicking Upgrade shows a decorative toast, with no checkout UI or card field", async () => {
     setDeploymentMode("saas");
     mockMembershipPlan("free");
     await loginAsOwner();
@@ -97,7 +97,7 @@ describe("BillingPage - BILLPG-01..06", () => {
     expect(screen.queryByText("Informações de pagamento")).not.toBeInTheDocument();
   });
 
-  it("modo self_hosted: mostra banner de licença inativa e os 2 cards de licença", async () => {
+  it("self_hosted mode: shows the inactive-license banner and the 2 license cards", async () => {
     setDeploymentMode("self_hosted");
     await loginAsOwner();
     renderPage();
@@ -108,7 +108,7 @@ describe("BillingPage - BILLPG-01..06", () => {
     expect(screen.getByTestId("license-activate-button")).toBeInTheDocument();
   });
 
-  it("modo self_hosted: comprar/ativar licença mostram toast decorativo, sem ativar nada de verdade", async () => {
+  it("self_hosted mode: buy/activate license show a decorative toast, without actually activating anything", async () => {
     setDeploymentMode("self_hosted");
     await loginAsOwner();
     renderPage();
@@ -123,7 +123,7 @@ describe("BillingPage - BILLPG-01..06", () => {
   // BILLPG-04's own non-negotiable: the license-key field is decorative
   // only, never a real activation input - disabled proves it can't even be
   // typed into, not just that its button is a no-op.
-  it("modo self_hosted: campo de código de licença é somente decorativo (disabled)", async () => {
+  it("self_hosted mode: license key field is purely decorative (disabled)", async () => {
     setDeploymentMode("self_hosted");
     await loginAsOwner();
     renderPage();
@@ -131,7 +131,7 @@ describe("BillingPage - BILLPG-01..06", () => {
     expect(await screen.findByLabelText("Código de licença")).toBeDisabled();
   });
 
-  it("banner de plano atual (BillingPage) reflete o plan_tier real, não um valor fixo", async () => {
+  it("current-plan banner (BillingPage) reflects the real plan_tier, not a fixed value", async () => {
     setDeploymentMode("saas");
     mockMembershipPlan("scale");
     await loginAsOwner();
@@ -141,5 +141,21 @@ describe("BillingPage - BILLPG-01..06", () => {
     // (TenantSwitcher) plan badge is separately covered by
     // TenantSwitcher.test.tsx, not by this test.
     expect(await screen.findByText("Scale")).toBeInTheDocument();
+  });
+
+  it("renders in English when the active language is en", async () => {
+    setDeploymentMode("saas");
+    mockMembershipPlan("starter");
+    await loginAsOwner();
+    await i18n.changeLanguage("en");
+
+    try {
+      renderPage();
+
+      expect(await screen.findByText("Plans & Billing")).toBeInTheDocument();
+      expect(screen.getByText("Upgrade")).toBeInTheDocument();
+    } finally {
+      await i18n.changeLanguage("pt-BR");
+    }
   });
 });

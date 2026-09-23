@@ -288,7 +288,8 @@ func newPollerFromStoredIntegration(ctx context.Context, pool *db.Pool, cfg conf
 	interval := time.Duration(cfg.PollIntervalSeconds) * time.Second
 
 	incidents := db.NewIncidentRepository(pool)
-	llmSvc := llm.NewService(db.NewLLMProviderStore(db.NewLLMProviderRepository(pool)), llmProviderFactory, cfg.MasterKey, logger)
+	llmProviderRepo := db.NewLLMProviderRepository(pool)
+	llmSvc := llm.NewService(db.NewLLMProviderStore(llmProviderRepo), llmProviderFactory, cfg.MasterKey, logger)
 	analyzer := poller.NewSLOAnalyzer(incidents, services, intervals, llmSvc, poller.AnalysisTimeout, logger)
 
 	// Auto-created outage incidents bypass the HTTP handler, so the analyzer
@@ -299,6 +300,16 @@ func newPollerFromStoredIntegration(ctx context.Context, pool *db.Pool, cfg conf
 		return nil, false, err
 	}
 	analyzer.SetNotifier(notifier)
+
+	// slo-root-cause-enrichment RCA-01/RCA-07: wired unconditionally at
+	// boot, same reasoning as SetNotifier above - the runtime toggle
+	// (llm_settings.root_cause_enrichment_enabled, read via
+	// llmProviderRepo.RootCauseEnrichmentEnabled), not this wiring, gates
+	// whether resolveCauseHint ever calls out to Datadog. client already
+	// satisfies errorCauseProvider (SearchErrorTrackingIssues) and
+	// llmProviderRepo already satisfies enrichmentSettingsReader
+	// (RootCauseEnrichmentEnabled) - no adapters needed.
+	analyzer.SetErrorCauseEnrichment(llmProviderRepo, client)
 
 	p = poller.NewPoller(services, services, intervals, integrations, client, interval, analyzer, logger)
 

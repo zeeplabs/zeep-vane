@@ -13,8 +13,8 @@ export interface TableProps<T> {
   emptyMessage?: string;
 }
 
-// Assinatura visual do Nocturne: hairline entre linhas que se desvanece nos
-// 48px finais de cada borda (nunca uma borda sólida full-width).
+// Nocturne's visual signature: a hairline between rows that fades out in the
+// final 48px of each edge (never a solid full-width border).
 const fadingHairline: React.CSSProperties = {
   backgroundImage:
     "linear-gradient(to right, transparent 0, var(--color-divider) 48px, var(--color-divider) calc(100% - 48px), transparent 100%)",

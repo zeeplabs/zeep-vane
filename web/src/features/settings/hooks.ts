@@ -141,6 +141,28 @@ export function useActivateLLMProvider() {
   });
 }
 
+// useUpdateRootCauseEnrichment toggles root_cause_enrichment_enabled via
+// PATCH /api/integrations/llm/settings (slo-root-cause-enrichment RCA-07/
+// RCA-09) - invalidates the same ["integrations", "llm"] list query the
+// toggle itself reads from, so the new value is reflected immediately.
+interface UpdateRootCauseEnrichmentResponse {
+  root_cause_enrichment_enabled: boolean;
+}
+
+export function useUpdateRootCauseEnrichment() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (enabled: boolean) =>
+      apiFetch<UpdateRootCauseEnrichmentResponse>("/api/integrations/llm/settings", {
+        method: "PATCH",
+        body: JSON.stringify({ root_cause_enrichment_enabled: enabled }),
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["integrations", "llm"] });
+    },
+  });
+}
+
 // The real backend's DELETE /api/integrations/llm/{provider} responds 204
 // No Content with no body, whether or not a row existed (idempotent
 // delete, PROVDISC-04/05) - mirrors useDisconnectEmailProvider.

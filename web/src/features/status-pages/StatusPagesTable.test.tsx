@@ -79,7 +79,7 @@ describe("StatusPagesTable", () => {
   // the real grid template render (not the old "Carregando…" paragraph as
   // visible content) inside an aria-busy container that still carries the
   // sr-only loading string.
-  it("mostra skeletons (não o texto) enquanto /api/status-pages carrega", async () => {
+  it("shows skeletons (not the text) while /api/status-pages is loading", async () => {
     mockDomainsPage([]);
     server.use(
       http.get("/api/status-pages", async () => {
@@ -98,7 +98,7 @@ describe("StatusPagesTable", () => {
 
   // SKEL-06: once the fetch resolves, skeletons are gone and the real
   // table (or its EmptyState) takes over.
-  it("remove os skeletons assim que /api/status-pages termina de carregar", async () => {
+  it("removes the skeletons as soon as /api/status-pages finishes loading", async () => {
     mockDomainsPage([]);
     mockStatusPagesPage([basePage({ id: "sp-loaded", name: "Página Carregada" })]);
     await loginAsOwner();
@@ -108,7 +108,7 @@ describe("StatusPagesTable", () => {
     expect(screen.queryAllByTestId("skeleton")).toHaveLength(0);
   });
 
-  it("renderiza a URL pública quando a página tem domínio anexado (DSP-13)", async () => {
+  it("renders the public URL when the page has an attached domain (DSP-13)", async () => {
     mockDomainsPage([baseDomain({ id: "dom-1", hostname: "acme.health" })]);
     mockStatusPagesPage([
       basePage({
@@ -128,7 +128,7 @@ describe("StatusPagesTable", () => {
     expect(screen.getByText("Público")).toBeInTheDocument();
   });
 
-  it("renderiza '—' na coluna URL pública quando a página não tem domínio (DSP-17)", async () => {
+  it("renders '—' in the public URL column when the page has no domain (DSP-17)", async () => {
     mockDomainsPage([]);
     mockStatusPagesPage([basePage({ id: "sp-no-domain", name: "Sem domínio", domain_id: null, subdomain: null })]);
     await loginAsOwner();
@@ -139,7 +139,7 @@ describe("StatusPagesTable", () => {
     expect(within(row).getByText("—")).toBeInTheDocument();
   });
 
-  it("mostra o EmptyState em vez de uma tabela vazia quando não há status pages", async () => {
+  it("shows the EmptyState instead of an empty table when there are no status pages", async () => {
     mockDomainsPage([]);
     mockStatusPagesPage([]);
     await loginAsOwner();
@@ -149,7 +149,7 @@ describe("StatusPagesTable", () => {
     expect(screen.queryAllByTestId("status-page-row")).toHaveLength(0);
   });
 
-  it("clicar em uma linha chama onSelect com a página correspondente", async () => {
+  it("clicking a row calls onSelect with the corresponding page", async () => {
     mockDomainsPage([]);
     const page = basePage({ id: "sp-click", name: "Clicável" });
     mockStatusPagesPage([page]);

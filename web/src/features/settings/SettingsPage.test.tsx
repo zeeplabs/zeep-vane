@@ -3,7 +3,7 @@ import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { http, HttpResponse, delay } from "msw";
-import "../../lib/i18n";
+import i18n from "../../lib/i18n";
 import { server } from "../../test/msw/server";
 import { resetDeploymentMode, setDeploymentMode } from "../../test/msw/handlers";
 import { TestQueryProvider } from "../../test/queryClient";
@@ -40,7 +40,7 @@ describe("SettingsPage", () => {
   // SKEL-04/05: while /api/company-settings is loading, skeleton blocks
   // render (not the old "Carregando…" paragraph as visible content)
   // inside an aria-busy container that still carries the sr-only string.
-  it("mostra skeletons (não o texto) enquanto /api/company-settings carrega", async () => {
+  it("shows skeletons (not the text) while /api/company-settings is loading", async () => {
     server.use(
       http.get("/api/company-settings", async () => {
         await delay("infinite");
@@ -58,7 +58,7 @@ describe("SettingsPage", () => {
 
   // SKEL-06: once the fetch resolves, skeletons are gone and the real form
   // takes over.
-  it("remove os skeletons assim que /api/company-settings termina de carregar", async () => {
+  it("removes the skeletons as soon as /api/company-settings finishes loading", async () => {
     await loginAsOwner();
     renderPage();
 
@@ -66,7 +66,7 @@ describe("SettingsPage", () => {
     expect(screen.queryAllByTestId("skeleton")).toHaveLength(0);
   });
 
-  it("carrega e exibe o perfil da empresa persistido (nome/site/fuso/idioma)", async () => {
+  it("loads and displays the persisted company profile (name/website/timezone/language)", async () => {
     await loginAsOwner();
     renderPage();
 
@@ -76,7 +76,7 @@ describe("SettingsPage", () => {
     expect(screen.getByLabelText("Idioma")).toHaveValue("pt-BR");
   });
 
-  it("editar nome/site/fuso e salvar persiste os 3 campos (CFGPG-01/02)", async () => {
+  it("editing name/website/timezone and saving persists all 3 fields (CFGPG-01/02)", async () => {
     await loginAsOwner();
     renderPage();
     await screen.findByDisplayValue("Sua Empresa Ltda.");
@@ -97,7 +97,7 @@ describe("SettingsPage", () => {
     expect(persisted.timezone).toBe("UTC (GMT+0)");
   });
 
-  it("fuso horário inválido do backend mostra o erro inline (CFGPG-04)", async () => {
+  it("an invalid timezone from the backend shows the inline error (CFGPG-04)", async () => {
     server.use(
       http.patch("/api/company-settings", () =>
         HttpResponse.json({ error: "timezone must be one of the supported values" }, { status: 422 }),
@@ -112,7 +112,7 @@ describe("SettingsPage", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent("timezone must be one of the supported values");
   });
 
-  it("selecionar um arquivo de logo dispara o upload imediatamente", async () => {
+  it("selecting a logo file triggers the upload immediately", async () => {
     await loginAsOwner();
     renderPage();
     await screen.findByDisplayValue("Sua Empresa Ltda.");
@@ -127,7 +127,7 @@ describe("SettingsPage", () => {
     });
   });
 
-  it("falha de upload (422) exibe o erro inline", async () => {
+  it("an upload failure (422) shows the inline error", async () => {
     server.use(
       http.post("/api/company-settings/logo", () =>
         HttpResponse.json({ error: "logo must be a PNG or SVG image no larger than 10 MB" }, { status: 422 }),
@@ -146,7 +146,7 @@ describe("SettingsPage", () => {
     );
   });
 
-  it("tipo de pessoa Pessoa Jurídica mostra Razão social/CNPJ e inscrição estadual (CFGPG-06)", async () => {
+  it("person type Pessoa Jurídica shows Razão social/CNPJ and inscrição estadual (CFGPG-06)", async () => {
     await loginAsOwner();
     renderPage();
     await screen.findByDisplayValue("Sua Empresa Ltda.");
@@ -157,7 +157,7 @@ describe("SettingsPage", () => {
     expect(screen.getByLabelText("Inscrição estadual")).toBeInTheDocument();
   });
 
-  it("alternar para Pessoa Física troca os rótulos e esconde inscrição estadual (CFGPG-06)", async () => {
+  it("switching to Pessoa Física swaps the labels and hides inscrição estadual (CFGPG-06)", async () => {
     await loginAsOwner();
     renderPage();
     await screen.findByDisplayValue("Sua Empresa Ltda.");
@@ -169,7 +169,7 @@ describe("SettingsPage", () => {
     expect(screen.queryByLabelText("Inscrição estadual")).not.toBeInTheDocument();
   });
 
-  it("preencher razão social, CNPJ e endereço fiscal completo persiste tudo (CFGPG-06/07)", async () => {
+  it("filling in razão social, CNPJ and a complete billing address persists everything (CFGPG-06/07)", async () => {
     await loginAsOwner();
     renderPage();
     await screen.findByDisplayValue("Sua Empresa Ltda.");
@@ -200,7 +200,7 @@ describe("SettingsPage", () => {
     });
   });
 
-  it("CPF com menos de 11 dígitos mostra o erro de validação do backend, sem persistir (TENANT-23)", async () => {
+  it("a CPF with fewer than 11 digits shows the backend's validation error, without persisting (TENANT-23)", async () => {
     await loginAsOwner();
     renderPage();
     await screen.findByDisplayValue("Sua Empresa Ltda.");
@@ -217,7 +217,7 @@ describe("SettingsPage", () => {
     expect(persisted.tax_id ?? "").not.toBe("1234");
   });
 
-  it("descartar reverte os campos ao último valor persistido, sem chamar a API", async () => {
+  it("discarding reverts the fields to the last persisted value, without calling the API", async () => {
     await loginAsOwner();
     renderPage();
     await screen.findByDisplayValue("Sua Empresa Ltda.");
@@ -233,7 +233,7 @@ describe("SettingsPage", () => {
     expect(persisted.name).toBe("Sua Empresa Ltda.");
   });
 
-  it("botão Excluir conta abre modal de confirmação antes de qualquer chamada de API (CFGPG-09)", async () => {
+  it("the Excluir conta button opens a confirmation modal before any API call (CFGPG-09)", async () => {
     await loginAsOwner();
     renderPage();
     await screen.findByDisplayValue("Sua Empresa Ltda.");
@@ -244,7 +244,7 @@ describe("SettingsPage", () => {
     expect(within(dialog).getByText("Excluir conta?")).toBeInTheDocument();
   });
 
-  it("confirmar exclusão chama DELETE /api/tenants/current e fecha o modal (CFGPG-09)", async () => {
+  it("confirming deletion calls DELETE /api/tenants/current and closes the modal (CFGPG-09)", async () => {
     await loginAsOwner();
     renderPage();
     await screen.findByDisplayValue("Sua Empresa Ltda.");
@@ -256,7 +256,7 @@ describe("SettingsPage", () => {
     await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
   });
 
-  it("exclusão bloqueada (409, único tenant ativo) mostra o erro dentro do modal, que permanece aberto (CFGPG-11)", async () => {
+  it("a blocked deletion (409, only active tenant) shows the error inside the modal, which stays open (CFGPG-11)", async () => {
     server.use(
       http.delete("/api/tenants/current", () =>
         HttpResponse.json({ error: "this is your only active account - it cannot be deleted" }, { status: 409 }),
@@ -276,7 +276,7 @@ describe("SettingsPage", () => {
     expect(screen.getByRole("dialog")).toBeInTheDocument();
   });
 
-  it("self_hosted: zona de perigo (Excluir conta) não é renderizada - AD-002, single-tenant por instalação", async () => {
+  it("self_hosted: the danger zone (Excluir conta) is not rendered - AD-002, single-tenant per installation", async () => {
     setDeploymentMode("self_hosted");
     await loginAsOwner();
     renderPage();
@@ -284,5 +284,20 @@ describe("SettingsPage", () => {
 
     expect(screen.queryByRole("button", { name: "Excluir conta" })).not.toBeInTheDocument();
     expect(screen.queryByText(/Remove permanentemente esta conta/)).not.toBeInTheDocument();
+  });
+
+  it("renders in English when the active language is en", async () => {
+    await loginAsOwner();
+    await i18n.changeLanguage("en");
+
+    try {
+      renderPage();
+
+      expect(await screen.findByText("Company profile")).toBeInTheDocument();
+      expect(screen.getByLabelText("Language")).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Save changes" })).toBeInTheDocument();
+    } finally {
+      await i18n.changeLanguage("pt-BR");
+    }
   });
 });

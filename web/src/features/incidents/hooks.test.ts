@@ -17,7 +17,7 @@ async function loginAsOwner() {
 }
 
 describe("incidents hooks", () => {
-  it("useAddIncidentUpdate invalida a timeline do incidente em sucesso (resposta é a lista completa)", async () => {
+  it("useAddIncidentUpdate invalidates the incident timeline on success (response is the full list)", async () => {
     await loginAsOwner();
     const { result } = renderHook(
       () => ({ updates: useIncidentUpdates("inc-1", 1), add: useAddIncidentUpdate("inc-1") }),
@@ -32,7 +32,7 @@ describe("incidents hooks", () => {
     await waitFor(() => expect(result.current.updates.data!.items.length).toBe(before + 1));
   });
 
-  it("useTransitionIncident aceita reabertura (resolved -> estado anterior)", async () => {
+  it("useTransitionIncident accepts reopening (resolved -> previous state)", async () => {
     await loginAsOwner();
     const { result } = renderHook(() => useTransitionIncident("inc-2"), {
       wrapper: TestQueryProvider,
@@ -43,7 +43,7 @@ describe("incidents hooks", () => {
     expect(reopened.resolved_at).toBeNull();
   });
 
-  it("useIncidents(1) usa queryKey com a página e busca /api/incidents?page=1, retornando o envelope Page completo", async () => {
+  it("useIncidents(1) uses a queryKey with the page and fetches /api/incidents?page=1, returning the full Page envelope", async () => {
     const fetchSpy = vi.spyOn(globalThis, "fetch");
     await loginAsOwner();
     const { result } = renderHook(() => useIncidents(1), { wrapper: TestQueryProvider });
@@ -61,7 +61,7 @@ describe("incidents hooks", () => {
     fetchSpy.mockRestore();
   });
 
-  it("useIncidentUpdates(id, 1) busca /api/incidents/:id/updates?page=1, retornando o envelope Page completo", async () => {
+  it("useIncidentUpdates(id, 1) fetches /api/incidents/:id/updates?page=1, returning the full Page envelope", async () => {
     const fetchSpy = vi.spyOn(globalThis, "fetch");
     await loginAsOwner();
     const { result } = renderHook(() => useIncidentUpdates("inc-1", 1), { wrapper: TestQueryProvider });

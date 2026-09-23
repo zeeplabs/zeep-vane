@@ -36,7 +36,7 @@ function renderCard() {
 }
 
 describe("PersonalInfoCard", () => {
-  it("exibe nome, email somente leitura e iniciais", async () => {
+  it("displays name, read-only email, and initials", async () => {
     await loginAsOwner();
     renderCard();
 
@@ -49,7 +49,7 @@ describe("PersonalInfoCard", () => {
 
   // PROFRD-03: Nome/Email render side by side in a 2-column grid, matching
   // the mock's layout - not stacked in a single column.
-  it("Nome e Email renderizam em grid de 2 colunas (PROFRD-03)", async () => {
+  it("Nome and Email render in a 2-column grid (PROFRD-03)", async () => {
     await loginAsOwner();
     renderCard();
 
@@ -60,10 +60,10 @@ describe("PersonalInfoCard", () => {
     expect(grid).toContainElement(screen.getByLabelText("Email"));
   });
 
-  // PROFPAGE-04/05: salvar um nome válido envia o PATCH e mostra o toast; o
-  // campo re-sincroniza com o valor re-hidratado de /me (o trim prova que o
-  // estado veio do servidor, não do que foi digitado).
-  it("salvar nome válido envia o PATCH e reflete o nome re-hidratado", async () => {
+  // PROFPAGE-04/05: saving a valid name sends the PATCH and shows the toast; the
+  // field re-syncs with the re-hydrated value from /me (the trim proves the
+  // state came from the server, not from what was typed).
+  it("saving a valid name sends the PATCH and reflects the re-hydrated name", async () => {
     const user = userEvent.setup();
     await loginAsOwner();
     renderCard();
@@ -77,9 +77,9 @@ describe("PersonalInfoCard", () => {
     await waitFor(() => expect(nameInput.value).toBe("Ana Silva"));
   });
 
-  // PROFPAGE-06: nome vazio/whitespace bloqueia o submit, mostra erro inline
-  // e não envia nenhuma requisição.
-  it("nome vazio bloqueia o submit e não envia PATCH", async () => {
+  // PROFPAGE-06: an empty/whitespace name blocks the submit, shows an inline
+  // error, and sends no request.
+  it("empty name blocks the submit and sends no PATCH", async () => {
     const user = userEvent.setup();
     await loginAsOwner();
     const patchSpy = vi.fn();
@@ -100,9 +100,9 @@ describe("PersonalInfoCard", () => {
     expect(patchSpy).not.toHaveBeenCalled();
   });
 
-  // spec.md edge case: 422 do servidor mostra o mesmo erro inline do caso
-  // vazio.
-  it("422 do servidor mostra o erro inline de nome", async () => {
+  // spec.md edge case: a 422 from the server shows the same inline error as
+  // the empty case.
+  it("422 from the server shows the inline name error", async () => {
     const user = userEvent.setup();
     await loginAsOwner();
     server.use(

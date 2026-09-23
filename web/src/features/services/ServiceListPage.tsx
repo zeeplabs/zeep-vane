@@ -6,6 +6,7 @@ import { Button } from "../../components/ui/Button";
 import { Input } from "../../components/ui/Input";
 import { Pager } from "../../components/ui/Pager";
 import { Skeleton } from "../../components/ui/Skeleton";
+import { formatDateTime } from "../../lib/formatDate";
 import type { ServiceStatus } from "../../types/api";
 import { useServices } from "./hooks";
 import { StatusTag } from "./StatusTag";
@@ -22,10 +23,6 @@ const filterI18nKey: Record<StatusFilter, string> = {
   outage: "services.filters.outage",
   not_configured: "services.filters.notConfigured",
 };
-
-function formatTimestamp(iso: string): string {
-  return new Date(iso).toLocaleString("pt-BR");
-}
 
 function formatUptime(uptime: number | null): string {
   return uptime === null ? "—" : `${uptime.toFixed(2)}%`;
@@ -55,7 +52,7 @@ export function ServiceListPage({
   canManage = true,
   selectedServiceId = null,
 }: ServiceListPageProps) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [page, setPage] = useState(1);
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [searchQuery, setSearchQuery] = useState("");
@@ -109,7 +106,7 @@ export function ServiceListPage({
       </div>
 
       <div className="flex flex-wrap items-center justify-between gap-4">
-        <div role="group" aria-label="Filtrar por status" className="flex flex-wrap items-center gap-2">
+        <div role="group" aria-label={t("services.filterAriaLabel")} className="flex flex-wrap items-center gap-2">
           {statusFilters.map((value) => {
             const active = statusFilter === value;
             return (
@@ -205,7 +202,7 @@ export function ServiceListPage({
                   </div>
                   <div className="text-[13px] font-semibold text-text">{formatUptime(service.uptime_30d)}</div>
                   <div className="text-xs text-neutral-400">
-                    {service.last_seen_at ? formatTimestamp(service.last_seen_at) : "—"}
+                    {service.last_seen_at ? formatDateTime(service.last_seen_at, i18n.language) : "—"}
                   </div>
                   <MdChevronRight size={16} className="text-neutral-500" aria-hidden="true" />
                 </div>

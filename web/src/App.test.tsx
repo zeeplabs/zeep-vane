@@ -18,11 +18,11 @@ function renderAppAt(path: string) {
   );
 }
 
-// Todos os cenários abaixo são de visitante anônimo (nenhuma sessão) - o
-// guard de bootstrap (SHD-19, SHD-21) só decide entre /bootstrap e /login,
-// nunca interage com RequireAuth/RequireRole.
+// All scenarios below are anonymous visitor (no session) - the
+// bootstrap guard (SHD-19, SHD-21) only decides between /bootstrap and /login,
+// never interacts with RequireAuth/RequireRole.
 describe("App - bootstrap redirect guard", () => {
-  it("carregar /login com needsBootstrap=true redireciona para /bootstrap (SHD-19)", async () => {
+  it("loading /login with needsBootstrap=true redirects to /bootstrap (SHD-19)", async () => {
     setBootstrapped(false);
     renderAppAt("/login");
 
@@ -31,7 +31,7 @@ describe("App - bootstrap redirect guard", () => {
     );
   });
 
-  it("carregar / com needsBootstrap=true redireciona para /bootstrap (SHD-19)", async () => {
+  it("loading / with needsBootstrap=true redirects to /bootstrap (SHD-19)", async () => {
     setBootstrapped(false);
     renderAppAt("/");
 
@@ -40,7 +40,7 @@ describe("App - bootstrap redirect guard", () => {
     );
   });
 
-  it("carregar /bootstrap com needsBootstrap=false redireciona para /login (SHD-21)", async () => {
+  it("loading /bootstrap with needsBootstrap=false redirects to /login (SHD-21)", async () => {
     setBootstrapped(true);
     renderAppAt("/bootstrap");
 
@@ -48,15 +48,15 @@ describe("App - bootstrap redirect guard", () => {
     expect(screen.queryByText("Crie a conta do primeiro administrador")).not.toBeInTheDocument();
   });
 
-  it("carregar /bootstrap com needsBootstrap=true renderiza BootstrapPage sem loop de redirecionamento (SHD-21)", async () => {
+  it("loading /bootstrap with needsBootstrap=true renders BootstrapPage without a redirect loop (SHD-21)", async () => {
     setBootstrapped(false);
     renderAppAt("/bootstrap");
 
     await waitFor(() =>
       expect(screen.getByText("Crie a conta do primeiro administrador")).toBeInTheDocument()
     );
-    // Dá tempo para qualquer possível segunda rodada de efeitos e confirma
-    // que a tela não volta a pular para /login - provaria um loop.
+    // Gives time for any possible second round of effects and confirms
+    // that the screen doesn't jump back to /login - that would prove a loop.
     await act(async () => {
       await new Promise((resolve) => setTimeout(resolve, 50));
     });
@@ -71,7 +71,7 @@ describe("App - bootstrap redirect guard", () => {
 // bundle). RootRoute tells them apart by probing GET /api/public-status,
 // which only the public HTTPS listener ever wires up in production.
 describe("App - RootRoute (AD-018 status-page-domain vs admin-domain)", () => {
-  it("/api/public-status 200 renderiza a status page pública, sem exigir sessão nem redirecionar para /login", async () => {
+  it("/api/public-status 200 renders the public status page, without requiring a session or redirecting to /login", async () => {
     server.use(
       http.get("/api/public-status", () => {
         return HttpResponse.json({
@@ -87,7 +87,7 @@ describe("App - RootRoute (AD-018 status-page-domain vs admin-domain)", () => {
     expect(screen.queryByRole("heading", { name: "Entrar" })).not.toBeInTheDocument();
   });
 
-  it("/api/public-status 404 (domínio admin) segue o fluxo normal de bootstrap/login", async () => {
+  it("/api/public-status 404 (admin domain) follows the normal bootstrap/login flow", async () => {
     setBootstrapped(true);
     renderAppAt("/");
 
@@ -95,10 +95,10 @@ describe("App - RootRoute (AD-018 status-page-domain vs admin-domain)", () => {
   });
 });
 
-// PROFPAGE-01/03: /profile vive dentro do grupo autenticado (sem RequireRole)
-// e é acessível a qualquer papel; sem sessão, RequireAuth redireciona.
-describe("App - rota /profile", () => {
-  it("autenticado renderiza a ProfilePage", async () => {
+// PROFPAGE-01/03: /profile lives inside the authenticated group (no RequireRole)
+// and is accessible to any role; without a session, RequireAuth redirects.
+describe("App - /profile route", () => {
+  it("authenticated renders the ProfilePage", async () => {
     setBootstrapped(true);
     await apiFetch("/api/auth/login", {
       method: "POST",
@@ -112,7 +112,7 @@ describe("App - rota /profile", () => {
     expect(screen.getByText("Sessões ativas")).toBeInTheDocument();
   });
 
-  it("sem sessão redireciona para /login", async () => {
+  it("without a session redirects to /login", async () => {
     setBootstrapped(true);
     renderAppAt("/profile");
 
@@ -123,8 +123,8 @@ describe("App - rota /profile", () => {
 
 // OVW-01: "/" lands on the Overview page (not /domains) for an authenticated
 // user with a resolved tenant; /overview is also directly addressable.
-describe("App - rota Overview", () => {
-  it("autenticado carregando / renderiza a OverviewPage (OVW-01)", async () => {
+describe("App - Overview route", () => {
+  it("authenticated loading / renders the OverviewPage (OVW-01)", async () => {
     setBootstrapped(true);
     await apiFetch("/api/auth/login", {
       method: "POST",
@@ -137,7 +137,7 @@ describe("App - rota Overview", () => {
     );
   });
 
-  it("visita direta a /overview renderiza a OverviewPage", async () => {
+  it("direct visit to /overview renders the OverviewPage", async () => {
     setBootstrapped(true);
     await apiFetch("/api/auth/login", {
       method: "POST",

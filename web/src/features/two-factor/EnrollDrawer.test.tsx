@@ -34,8 +34,8 @@ function renderDrawer(onEnabled: () => void = () => {}) {
 }
 
 describe("EnrollDrawer", () => {
-  // PROFPAGE-13: o passo scan renderiza o QR do otpauth_uri e o secret cru.
-  it("passo scan mostra o QR e o secret para entrada manual", async () => {
+  // PROFPAGE-13: the scan step renders the otpauth_uri QR and the raw secret.
+  it("scan step shows the QR and the secret for manual entry", async () => {
     await loginAsOwner();
     renderDrawer();
 
@@ -44,8 +44,8 @@ describe("EnrollDrawer", () => {
     expect(screen.getByTestId("enroll-secret").textContent).toBeTruthy();
   });
 
-  // PROFPAGE-15: código inválido mostra erro inline e mantém o passo verify.
-  it("código inválido mostra erro inline e permanece em verify", async () => {
+  // PROFPAGE-15: invalid code shows an inline error and stays on the verify step.
+  it("invalid code shows an inline error and stays on verify", async () => {
     const user = userEvent.setup();
     await loginAsOwner();
     renderDrawer();
@@ -61,8 +61,8 @@ describe("EnrollDrawer", () => {
     expect(screen.getByLabelText("Código de verificação")).toBeInTheDocument();
   });
 
-  // PROFPAGE-14: código válido avança para o passo codes com os 10 códigos.
-  it("código válido mostra os 10 códigos de recuperação uma vez", async () => {
+  // PROFPAGE-14: valid code advances to the codes step with the 10 codes.
+  it("valid code shows the 10 recovery codes once", async () => {
     const user = userEvent.setup();
     await loginAsOwner();
     renderDrawer();
@@ -77,8 +77,8 @@ describe("EnrollDrawer", () => {
     expect(screen.getByText("Estes códigos não serão exibidos novamente.")).toBeInTheDocument();
   });
 
-  // PROFPAGE-16: concluir o passo codes chama onEnabled (refresh) e fecha.
-  it("concluir chama onEnabled e fecha o drawer", async () => {
+  // PROFPAGE-16: finishing the codes step calls onEnabled (refresh) and closes.
+  it("finishing calls onEnabled and closes the drawer", async () => {
     const user = userEvent.setup();
     const onEnabled = vi.fn();
     await loginAsOwner();
@@ -96,9 +96,9 @@ describe("EnrollDrawer", () => {
     await waitFor(() => expect(screen.queryByTestId("recovery-codes")).toBeNull());
   });
 
-  // spec.md edge case: enroll 409 (já ativado) fecha o drawer, avisa e chama
-  // onEnabled em vez de mostrar erro.
-  it("enroll 409 fecha o drawer, avisa e chama onEnabled", async () => {
+  // spec.md edge case: enroll 409 (already enabled) closes the drawer,
+  // warns, and calls onEnabled instead of showing an error.
+  it("enroll 409 closes the drawer, warns, and calls onEnabled", async () => {
     const onEnabled = vi.fn();
     await loginAsOwner();
     setTwoFactorEnabled(true);

@@ -176,6 +176,15 @@ func (h *IntegrationsHandler) Status(w http.ResponseWriter, r *http.Request) {
 type sloSummaryResponse struct {
 	ID   string `json:"id"`
 	Name string `json:"name"`
+	// SLOType/DatadogServiceTag ride along with every search result so the
+	// frontend's AddServiceDrawer can capture and send them on Create/
+	// Update without a second round-trip (slo-root-cause-enrichment
+	// RCA-01) - same field names the services request/response contract
+	// already uses (internal/api/services_handler.go), so no renaming is
+	// needed at the call site that copies a selected result into that
+	// payload.
+	SLOType           string `json:"slo_type"`
+	DatadogServiceTag string `json:"datadog_service_tag"`
 }
 
 // SearchSLOs handles GET /api/integrations/datadog/slos?query=, letting an
@@ -220,7 +229,7 @@ func (h *IntegrationsHandler) SearchSLOs(w http.ResponseWriter, r *http.Request)
 
 	resp := make([]sloSummaryResponse, len(slos))
 	for i, slo := range slos {
-		resp[i] = sloSummaryResponse{ID: slo.ID, Name: slo.Name}
+		resp[i] = sloSummaryResponse{ID: slo.ID, Name: slo.Name, SLOType: slo.SLOType, DatadogServiceTag: slo.ServiceTag}
 	}
 	writeSLOSummaries(w, resp)
 }

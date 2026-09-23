@@ -5,10 +5,6 @@
 // buy/activate a license) shows a "coming soon" toast and never sends a
 // request or renders a card-number input, matching the same decorative
 // pattern already used for OAuthButtons and the New Relic integration card.
-// Plan/license copy (name/tagline/price/features) is ported verbatim from
-// the mock's own PLAN_DEFS/LICENSE_DEF as static PT-BR content, not routed
-// through i18n - it's real marketing copy the mock itself never localizes,
-// same precedent as PublicStatusPage's rangeAgoLabel/hourlyLabel maps.
 
 import { toast } from "sonner";
 import { useTranslation } from "react-i18next";
@@ -16,83 +12,37 @@ import { useAuth } from "../../auth/AuthProvider";
 import { Card } from "../../components/ui/Card";
 import { Button } from "../../components/ui/Button";
 
+type Translator = (key: string, options?: Record<string, unknown>) => string;
+
 interface PlanDef {
   key: "free" | "starter" | "scale";
-  name: string;
-  tagline: string;
   price: string;
   recommended?: boolean;
-  features: string[];
 }
 
 const PLAN_DEFS: PlanDef[] = [
-  {
-    key: "free",
-    name: "Free",
-    tagline: "Para começar a monitorar o essencial.",
-    price: "R$ 0",
-    features: [
-      "Até 3 usuários",
-      "1 status page pública",
-      "Histórico de 7 dias",
-      "Polling manual ilimitado",
-      "Suporte via comunidade",
-    ],
-  },
-  {
-    key: "starter",
-    name: "Starter",
-    tagline: "Para times que já dependem do Vane no dia a dia.",
-    price: "R$ 49",
-    recommended: true,
-    features: [
-      "Até 10 usuários",
-      "Até 3 status pages",
-      "1 domínio próprio",
-      "Fechamento de incidentes com IA",
-      "Histórico de 30 dias",
-      "Suporte por email",
-    ],
-  },
-  {
-    key: "scale",
-    name: "Scale",
-    tagline: "Para operações críticas em múltiplos times.",
-    price: "R$ 149",
-    features: [
-      "Usuários ilimitados",
-      "Status pages ilimitadas",
-      "Domínios próprios ilimitados",
-      "Fechamento de incidentes com IA",
-      "Histórico de 90 dias",
-      "SSO e suporte prioritário",
-    ],
-  },
+  { key: "free", price: "R$ 0" },
+  { key: "starter", price: "R$ 49", recommended: true },
+  { key: "scale", price: "R$ 149" },
 ];
 
-const LICENSE_DEF = {
-  name: "Licença Anual",
-  price: "R$ 1.490",
-  features: [
-    "Usuários ilimitados",
-    "Domínios próprios e status pages ilimitados",
-    "Fechamento de incidentes com IA",
-    "SSO e suporte prioritário",
-    "Atualizações durante a vigência da licença",
-  ],
-};
+const LICENSE_PRICE = "R$ 1.490";
 
-function planNameFor(planTier: string): string {
-  if (!planTier) return "Free";
+function planNameFor(planTier: string, t: Translator): string {
+  if (!planTier) return t("billing.plans.free.name");
   const known = PLAN_DEFS.find((p) => p.key === planTier);
-  return known ? known.name : planTier;
+  return known ? t(`billing.plans.${known.key}.name`) : planTier;
 }
 
-function showComingSoon(t: (key: string) => string) {
+function showComingSoon(t: Translator) {
   toast.info(t("billing.comingSoon"));
 }
 
-function PlanCard({ plan, isCurrent, t }: { plan: PlanDef; isCurrent: boolean; t: (key: string) => string }) {
+function PlanCard({ plan, isCurrent, t }: { plan: PlanDef; isCurrent: boolean; t: Translator }) {
+  const name = t(`billing.plans.${plan.key}.name`);
+  const tagline = t(`billing.plans.${plan.key}.tagline`);
+  const features = t(`billing.plans.${plan.key}.features`, { returnObjects: true }) as unknown as string[];
+
   return (
     <Card
       elevation="none"
@@ -104,20 +54,20 @@ function PlanCard({ plan, isCurrent, t }: { plan: PlanDef; isCurrent: boolean; t
     >
       {plan.recommended && !isCurrent ? (
         <span className="absolute -top-2.5 left-5 rounded-full bg-accent px-2.5 py-0.5 text-[10.5px] font-bold text-white">
-          Recomendado
+          {t("billing.recommended")}
         </span>
       ) : null}
       <div>
-        <p className="m-0 text-[15px] font-bold text-text">{plan.name}</p>
-        <p className="m-0 mt-1 min-h-8 text-[12.5px] leading-relaxed text-neutral-400">{plan.tagline}</p>
+        <p className="m-0 text-[15px] font-bold text-text">{name}</p>
+        <p className="m-0 mt-1 min-h-8 text-[12.5px] leading-relaxed text-neutral-400">{tagline}</p>
       </div>
       <div className="flex items-baseline gap-1">
         <span className="text-[22px] font-bold text-text">{plan.price}</span>
-        {plan.key !== "free" ? <span className="text-[13px] text-neutral-400">/mês</span> : null}
+        {plan.key !== "free" ? <span className="text-[13px] text-neutral-400">{t("billing.perMonth")}</span> : null}
       </div>
       <div className="h-px bg-divider" />
       <ul className="flex flex-1 flex-col gap-2.5">
-        {plan.features.map((feat) => (
+        {features.map((feat) => (
           <li key={feat} className="flex items-start gap-2 text-[12.5px] leading-relaxed text-neutral-400">
             <span aria-hidden="true" className="mt-0.5 text-success">
               ✓
@@ -132,78 +82,88 @@ function PlanCard({ plan, isCurrent, t }: { plan: PlanDef; isCurrent: boolean; t
         onClick={() => showComingSoon(t)}
         data-testid={`plan-card-${plan.key}-button`}
       >
-        {isCurrent ? "Plano atual" : plan.key === "free" ? "Fazer downgrade" : "Fazer upgrade"}
+        {isCurrent
+          ? t("billing.currentPlanButton")
+          : plan.key === "free"
+            ? t("billing.downgradeButton")
+            : t("billing.upgradeButton")}
       </Button>
     </Card>
   );
 }
 
-function SaasBilling({ planTier, t }: { planTier: string; t: (key: string) => string }) {
+function SaasBilling({ planTier, t }: { planTier: string; t: Translator }) {
   const isFree = !planTier || planTier === "free";
-  const currentPlanName = planNameFor(planTier);
+  const currentPlanName = planNameFor(planTier, t);
 
   return (
     <>
       <div className="mb-7 flex items-center justify-between gap-4 rounded-md border border-divider bg-card-header-bg p-[18px_20px]">
         <div>
-          <p className="m-0 text-[13px] text-neutral-400">Plano atual</p>
+          <p className="m-0 text-[13px] text-neutral-400">{t("billing.currentPlan")}</p>
           <p className="m-0 text-base font-bold text-text">{currentPlanName}</p>
         </div>
         <p className="m-0 text-[12.5px] text-neutral-400">
-          {isFree ? "Sem cobrança recorrente" : "Cobrança mensal"}
+          {isFree ? t("billing.noRecurringCharge") : t("billing.monthlyBilling")}
         </p>
       </div>
 
       <div className="mb-8 grid grid-cols-3 gap-[18px]">
         {PLAN_DEFS.map((plan) => (
-          <PlanCard key={plan.key} plan={plan} isCurrent={planNameFor(planTier) === plan.name} t={t} />
+          <PlanCard
+            key={plan.key}
+            plan={plan}
+            isCurrent={planNameFor(planTier, t) === t(`billing.plans.${plan.key}.name`)}
+            t={t}
+          />
         ))}
       </div>
 
       <div className="grid grid-cols-2 gap-[18px]">
         <Card elevation="none" className="border border-divider p-5">
-          <p className="m-0 text-[13.5px] font-bold text-text">Forma de pagamento</p>
+          <p className="m-0 text-[13.5px] font-bold text-text">{t("billing.paymentMethod.title")}</p>
           <p className="m-0 mt-3.5 text-[12.5px] leading-relaxed text-neutral-400">
-            Nenhum cartão cadastrado. Um cartão é adicionado ao fazer upgrade para um plano pago.
+            {t("billing.paymentMethod.empty")}
           </p>
         </Card>
         <Card elevation="none" className="border border-divider p-5">
-          <p className="m-0 text-[13.5px] font-bold text-text">Faturas</p>
-          <p className="m-0 mt-3.5 text-[12.5px] leading-relaxed text-neutral-400">
-            Suas faturas aparecerão aqui após a primeira cobrança da assinatura.
-          </p>
+          <p className="m-0 text-[13.5px] font-bold text-text">{t("billing.invoices.title")}</p>
+          <p className="m-0 mt-3.5 text-[12.5px] leading-relaxed text-neutral-400">{t("billing.invoices.empty")}</p>
         </Card>
       </div>
     </>
   );
 }
 
-function SelfHostedBilling({ t }: { t: (key: string) => string }) {
+function SelfHostedBilling({ t }: { t: Translator }) {
+  const licenseName = t("billing.license.name");
+  const licenseFeatures = t("billing.license.features", { returnObjects: true }) as unknown as string[];
+
   return (
     <>
       <div className="mb-7 flex items-center justify-between gap-4 rounded-md border border-warning/30 bg-warning/10 p-[18px_20px]">
         <div>
-          <p className="m-0 text-[13px] text-neutral-400">Licença self-hosted</p>
-          <p className="m-0 text-base font-bold text-text">Nenhuma licença ativa</p>
+          <p className="m-0 text-[13px] text-neutral-400">{t("billing.selfHosted.title")}</p>
+          <p className="m-0 text-base font-bold text-text">{t("billing.selfHosted.noActiveLicense")}</p>
         </div>
-        <p className="m-0 text-[12.5px] text-neutral-400">Recursos padrão bloqueados</p>
+        <p className="m-0 text-[12.5px] text-neutral-400">{t("billing.selfHosted.defaultFeaturesLocked")}</p>
       </div>
 
       <div className="grid grid-cols-2 gap-[18px]">
         <Card elevation="none" className="flex flex-col gap-4 border border-divider p-[24px]">
           <div>
-            <p className="m-0 text-[15px] font-bold text-text">{LICENSE_DEF.name}</p>
+            <p className="m-0 text-[15px] font-bold text-text">{licenseName}</p>
             <p className="m-0 mt-1 text-[12.5px] leading-relaxed text-neutral-400">
-              Compra única, licença válida por 12 meses no seu ambiente self-hosted.
+              {t("billing.selfHosted.licenseDescription")}
             </p>
           </div>
           <div className="flex items-baseline gap-1">
-            <span className="text-[22px] font-bold text-text">{LICENSE_DEF.price}</span>
-            <span className="text-[13px] text-neutral-400">/ano</span>
+            <span className="text-[22px] font-bold text-text">{LICENSE_PRICE}</span>
+            <span className="text-[13px] text-neutral-400">{t("billing.selfHosted.perYear")}</span>
           </div>
           <div className="h-px bg-divider" />
           <ul className="flex flex-1 flex-col gap-2.5">
-            {LICENSE_DEF.features.map((feat) => (
+            {licenseFeatures.map((feat) => (
               <li key={feat} className="flex items-start gap-2 text-[12.5px] leading-relaxed text-neutral-400">
                 <span aria-hidden="true" className="mt-0.5 text-success">
                   ✓
@@ -213,18 +173,17 @@ function SelfHostedBilling({ t }: { t: (key: string) => string }) {
             ))}
           </ul>
           <Button variant="solid" onClick={() => showComingSoon(t)} data-testid="license-buy-button">
-            Comprar licença
+            {t("billing.selfHosted.buyLicenseButton")}
           </Button>
         </Card>
 
         <Card elevation="none" className="flex flex-col gap-3 border border-divider p-[24px]">
-          <p className="m-0 text-[15px] font-bold text-text">Ativar licença</p>
+          <p className="m-0 text-[15px] font-bold text-text">{t("billing.selfHosted.activateTitle")}</p>
           <p className="m-0 text-[12.5px] leading-relaxed text-neutral-400">
-            Após a compra, enviamos um código de licença por email. Cole o código abaixo para desbloquear os recursos
-            padrão nesta instância.
+            {t("billing.selfHosted.activateDescription")}
           </p>
           <label className="text-[12.5px] font-semibold text-neutral-400" htmlFor="license-key-input">
-            Código de licença
+            {t("billing.selfHosted.licenseKeyLabel")}
           </label>
           <input
             id="license-key-input"
@@ -235,7 +194,7 @@ function SelfHostedBilling({ t }: { t: (key: string) => string }) {
           />
           <div className="flex-1" />
           <Button variant="secondary" onClick={() => showComingSoon(t)} data-testid="license-activate-button">
-            Ativar licença
+            {t("billing.selfHosted.activateButton")}
           </Button>
         </Card>
       </div>

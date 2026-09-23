@@ -3,6 +3,7 @@
 package datadog
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -17,10 +18,18 @@ import (
 )
 
 const (
-	defaultBaseURL = "https://api.datadoghq.com"
-	sloSearchPath  = "/api/v1/slo/search"
-	sloHistoryPath = "/api/v1/slo/%s/history"
-	defaultTimeout = 10 * time.Second
+	defaultBaseURL          = "https://api.datadoghq.com"
+	sloSearchPath           = "/api/v1/slo/search"
+	sloHistoryPath          = "/api/v1/slo/%s/history"
+	errorTrackingSearchPath = "/api/v2/error-tracking/issues/search"
+	defaultTimeout          = 10 * time.Second
+	// maxCauseMessageLength bounds CauseHint.ErrorMessage before it ever
+	// leaves this package - long enough for the real validation-error
+	// example seen live this session (~350 chars) without truncating it,
+	// short enough to bound the LLM prompt's token cost predictably
+	// regardless of what a future error message looks like (design.md's
+	// Tech Decisions).
+	maxCauseMessageLength = 500
 )
 
 // SLOStatus is vane's normalized view of a Datadog SLO's status over the
@@ -65,6 +74,24 @@ type SLOProvider interface {
 type SLOSummary struct {
 	ID   string
 	Name string
+	// SLOType is "metric" or "monitor", decoded from the same /slo/search
+	// response already fetched - no new Datadog API call.
+	SLOType string
+	// ServiceTag is the SLO's single service_tags entry, "" when absent or
+	// when service_tags has more than one entry (flow-type/multi-service
+	// SLOs - this session's decision: no attempt to parse the query
+	// string to recover a service list).
+	ServiceTag string
+}
+
+// CauseHint is the narrow root-cause signal SearchErrorTrackingIssues
+// returns - deliberately not the full Datadog issue (no stack trace, no
+// file_path), per the root-cause-enrichment spec's data-minimization
+// decision. ErrorMessage is truncated to maxCauseMessageLength before it
+// ever leaves this package.
+type CauseHint struct {
+	ErrorType    string
+	ErrorMessage string
 }
 
 // Typed errors so callers (the poller's retry logic, Phase 4) can tell an
@@ -111,7 +138,7 @@ type sloSearchResponse struct {
 				Data struct {
 					ID         string `json:"id"`
 					Attributes struct {
-						// Name: [Provável], not live-verified like ID above
+						// Name: [Likely], not live-verified like ID above
 						// (see SLOStatus doc) - inferred from the official
 						// client's SLOResponseData shape
 						// (github.com/DataDog/datadog-api-client-go,
@@ -119,6 +146,12 @@ type sloSearchResponse struct {
 						// Re-verify against a real account before relying on
 						// this in production.
 						Name string `json:"name"`
+						// SLOType/ServiceTags: fields this response already
+						// carries alongside Name/ID above, per design.md's
+						// root-cause-enrichment feature (RCA-01) - "metric"
+						// or "monitor", and the SLO's service:-scoped tags.
+						SLOType     string   `json:"slo_type"`
+						ServiceTags []string `json:"service_tags"`
 					} `json:"attributes"`
 				} `json:"data"`
 			} `json:"slos"`
@@ -260,10 +293,125 @@ func (c *Client) SearchSLOs(ctx context.Context, query string) ([]SLOSummary, er
 	slos := parsed.Data.Attributes.SLOs
 	summaries := make([]SLOSummary, 0, len(slos))
 	for _, slo := range slos {
-		summaries = append(summaries, SLOSummary{ID: slo.Data.ID, Name: slo.Data.Attributes.Name})
+		summary := SLOSummary{
+			ID:      slo.Data.ID,
+			Name:    slo.Data.Attributes.Name,
+			SLOType: slo.Data.Attributes.SLOType,
+		}
+		// ServiceTag is only set when service_tags has exactly one entry -
+		// flow-type/multi-service SLOs (0 or 2+ tags) get "", per this
+		// session's decision not to attempt parsing the query string to
+		// recover a service list (design.md's Data Models).
+		if len(slo.Data.Attributes.ServiceTags) == 1 {
+			summary.ServiceTag = slo.Data.Attributes.ServiceTags[0]
+		}
+		summaries = append(summaries, summary)
 	}
 
 	return summaries, nil
+}
+
+// errorTrackingSearchRequest mirrors the verified
+// POST /api/v2/error-tracking/issues/search request body (design.md's
+// Components section, confirmed live against Datadog's public docs).
+type errorTrackingSearchRequest struct {
+	Data errorTrackingSearchRequestData `json:"data"`
+}
+
+type errorTrackingSearchRequestData struct {
+	Type       string                               `json:"type"`
+	Attributes errorTrackingSearchRequestAttributes `json:"attributes"`
+}
+
+type errorTrackingSearchRequestAttributes struct {
+	Query   string `json:"query"`
+	From    int64  `json:"from"`
+	To      int64  `json:"to"`
+	Track   string `json:"track"`
+	OrderBy string `json:"order_by"`
+}
+
+// errorTrackingSearchResponse mirrors the verified response shape: data[]
+// is ordered by the requested order_by (TOTAL_COUNT descending here);
+// data[0]'s relationships.issue.data.id looks up the matching entry in
+// included[] for the actual error_type/error_message.
+type errorTrackingSearchResponse struct {
+	Data []struct {
+		Relationships struct {
+			Issue struct {
+				Data struct {
+					ID string `json:"id"`
+				} `json:"data"`
+			} `json:"issue"`
+		} `json:"relationships"`
+	} `json:"data"`
+	Included []struct {
+		ID         string `json:"id"`
+		Attributes struct {
+			ErrorType    string `json:"error_type"`
+			ErrorMessage string `json:"error_message"`
+		} `json:"attributes"`
+	} `json:"included"`
+}
+
+// SearchErrorTrackingIssues returns the highest-total_count Error Tracking
+// issue's type + message for service/env within [from, to), or
+// (CauseHint{}, false, nil) when nothing matches - mirroring SearchSLOs'
+// "empty result is normal, not a failure" convention. Only "trace" track
+// issues are queried (every real service in the reference org is a backend
+// microservice - design.md's Tech Decisions).
+func (c *Client) SearchErrorTrackingIssues(ctx context.Context, service, env string, from, to time.Time) (CauseHint, bool, error) {
+	endpoint := fmt.Sprintf("%s%s", c.baseURL, errorTrackingSearchPath)
+	reqBody := errorTrackingSearchRequest{
+		Data: errorTrackingSearchRequestData{
+			Type: "search_request",
+			Attributes: errorTrackingSearchRequestAttributes{
+				Query:   fmt.Sprintf("service:%s AND env:%s", service, env),
+				From:    from.UnixMilli(),
+				To:      to.UnixMilli(),
+				Track:   "trace",
+				OrderBy: "TOTAL_COUNT",
+			},
+		},
+	}
+	body, err := json.Marshal(reqBody)
+	if err != nil {
+		return CauseHint{}, false, fmt.Errorf("datadog: failed to encode request: %w", err)
+	}
+
+	resp, err := c.post(ctx, endpoint, body)
+	if err != nil {
+		return CauseHint{}, false, err
+	}
+	defer resp.Body.Close()
+
+	var parsed errorTrackingSearchResponse
+	if err := json.NewDecoder(resp.Body).Decode(&parsed); err != nil {
+		return CauseHint{}, false, fmt.Errorf("datadog: failed to decode response: %w", err)
+	}
+
+	if len(parsed.Data) == 0 {
+		return CauseHint{}, false, nil
+	}
+
+	topIssueID := parsed.Data[0].Relationships.Issue.Data.ID
+	for _, included := range parsed.Included {
+		if included.ID != topIssueID {
+			continue
+		}
+		hint := CauseHint{
+			ErrorType:    included.Attributes.ErrorType,
+			ErrorMessage: included.Attributes.ErrorMessage,
+		}
+		if len(hint.ErrorMessage) > maxCauseMessageLength {
+			hint.ErrorMessage = hint.ErrorMessage[:maxCauseMessageLength]
+		}
+		return hint, true, nil
+	}
+
+	// top issue's id has no matching included[] entry - treat as "not
+	// found" rather than erroring, since the query itself succeeded.
+	return CauseHint{}, false, nil
 }
 
 // ValidateCredentials checks that the client's API/App key pair is valid
@@ -293,6 +441,45 @@ func (c *Client) get(ctx context.Context, endpoint string) (*http.Response, erro
 	}
 	req.Header.Set("DD-API-KEY", c.apiKey)
 	req.Header.Set("DD-APPLICATION-KEY", c.appKey)
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		if isTimeout(err) {
+			return nil, ErrTimeout
+		}
+		return nil, fmt.Errorf("datadog: request failed: %w", err)
+	}
+
+	switch {
+	case resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden:
+		resp.Body.Close()
+		return nil, ErrUnauthorized
+	case resp.StatusCode == http.StatusNotFound:
+		resp.Body.Close()
+		return nil, ErrNotFound
+	case resp.StatusCode >= http.StatusInternalServerError:
+		resp.Body.Close()
+		return nil, ErrServer
+	case resp.StatusCode != http.StatusOK:
+		resp.Body.Close()
+		return nil, fmt.Errorf("datadog: unexpected status %d", resp.StatusCode)
+	}
+
+	return resp, nil
+}
+
+// post issues an authenticated POST with a JSON body against endpoint and
+// classifies the outcome into vane's typed connector errors, mirroring
+// get's header/timeout/error-classification behavior. On success (200) it
+// returns the response with its body still open for the caller to decode.
+func (c *Client) post(ctx context.Context, endpoint string, body []byte) (*http.Response, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
+	if err != nil {
+		return nil, fmt.Errorf("datadog: failed to build request: %w", err)
+	}
+	req.Header.Set("DD-API-KEY", c.apiKey)
+	req.Header.Set("DD-APPLICATION-KEY", c.appKey)
+	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {

@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { Drawer } from "../../components/ui/Drawer";
 import { useStatusPage } from "./hooks";
 import { StatusPageEditorContent } from "./StatusPageEditorContent";
@@ -22,6 +23,7 @@ export interface EditStatusPageDrawerProps {
  * tela legada `/status-pages/{id}` continua mostrando (default `true`),
  * já que ela não tem um drawer de detalhe separado. */
 export function EditStatusPageDrawer({ pageId, onClose }: EditStatusPageDrawerProps) {
+  const { t } = useTranslation();
   const { data: page } = useStatusPage(pageId ?? "");
 
   return (
@@ -30,9 +32,9 @@ export function EditStatusPageDrawer({ pageId, onClose }: EditStatusPageDrawerPr
       onOpenChange={(open) => {
         if (!open) onClose();
       }}
-      title={page?.name ?? "Editar status page"}
-      description="Gerencie domínio, verificação e serviços exibidos nesta página."
-      closeLabel="Fechar"
+      title={page?.name ?? t("statusPages.edit.defaultTitle")}
+      description={t("statusPages.edit.description")}
+      closeLabel={t("common.close")}
     >
       {page ? <StatusPageEditorContent page={page} showPreviewLink={false} /> : null}
     </Drawer>

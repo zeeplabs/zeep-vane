@@ -113,9 +113,9 @@ export interface AuthContextValue {
   hasRole: (roles: Role[]) => boolean;
   sessionExpired: boolean;
   dismissSessionExpired: () => void;
-  /** Dev-only: troca o papel visualizado sem novo login. Usado pelo seletor "Visualizando como" da sidebar. */
+  /** Dev-only: switches the viewed role without a new login. Used by the sidebar's "Viewing as" selector. */
   setDevRole: (role: Role) => void;
-  /** Dev-only: dispara o modal de sessão expirada manualmente, sem esperar um 401 real. */
+  /** Dev-only: triggers the session-expired modal manually, without waiting for a real 401. */
   simulateSessionExpired: () => void;
 }
 
@@ -186,10 +186,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const login = useCallback(async (email: string, password: string): Promise<LoginOutcome> => {
-    // O corpo de /api/auth/login traz só {token} - descartado
-    // deliberadamente, nunca guardado em estado. A sessão real vem do
-    // cookie httpOnly que o login também seta (AD-004); a identidade é
-    // hidratada por /api/auth/me logo em seguida, mesmo caminho do boot.
+    // /api/auth/login's body only carries {token} - discarded
+    // deliberately, never stored in state. The real session comes from
+    // the httpOnly cookie that login also sets (AD-004); identity is
+    // hydrated via /api/auth/me right after, same path as boot.
     // skipUnauthorizedHandler: a wrong-credentials 401 here is a normal
     // login failure (LoginPage shows its own inline error), never a
     // session that expired.

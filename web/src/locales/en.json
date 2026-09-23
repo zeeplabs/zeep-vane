@@ -1,0 +1,1178 @@
+{
+  "common": {
+    "close": "Close",
+    "cancel": "Cancel",
+    "status": "Status"
+  },
+  "components": {
+    "iconRoleSelector": {
+      "groupLabel": "Select role",
+      "roleLabel": {
+        "owner": "Owner",
+        "operator": "Operator",
+        "viewer": "Viewer"
+      }
+    }
+  },
+  "admins": {
+    "loading": "Loading…",
+    "title": "Users",
+    "subtitle": "Manage who has access to the tenant and each person's role.",
+    "inviteButton": "Invite user",
+    "filters": {
+      "all": "All",
+      "ariaLabel": "Filter by role"
+    },
+    "roleLabel": {
+      "owner": "Admin",
+      "operator": "Member",
+      "viewer": "Read-only"
+    },
+    "statusLabel": {
+      "active": "Active",
+      "pending": "Pending"
+    },
+    "roleOptions": {
+      "owner": {
+        "label": "Admin",
+        "description": "Full access, including billing and integrations"
+      },
+      "operator": {
+        "label": "Member",
+        "description": "Manages services and incidents, no access to billing"
+      },
+      "viewer": {
+        "label": "Read-only",
+        "description": "Views dashboards and incidents, can't edit anything"
+      }
+    },
+    "roleFieldLabel": "Role",
+    "searchPlaceholder": "Search by name or email",
+    "table": {
+      "user": "User",
+      "role": "Role",
+      "lastAccess": "Last access"
+    },
+    "empty": "No users found with these filters.",
+    "expiredTag": "Expired",
+    "resendInviteButton": "Resend invite",
+    "removeUserButton": "Remove user",
+    "roleChangeError": "Couldn't change the role.",
+    "invite": {
+      "title": "Invite user",
+      "description": "We'll send an invite by email with an access link to this tenant.",
+      "submitButton": "Send invite",
+      "nameLabel": "Name",
+      "emailLabel": "Email",
+      "emailPlaceholder": "name@company.com",
+      "phoneLabel": "Mobile (optional)",
+      "error": "Couldn't send the invite."
+    },
+    "remove": {
+      "title": "Remove user",
+      "description": "Remove access for {{email}}? This action can't be undone.",
+      "confirmButton": "Remove",
+      "error": "Couldn't remove the user.",
+      "inviteCancelledToast": "Invite for {{email}} canceled.",
+      "accessRemovedToast": "Access for {{email}} removed."
+    },
+    "resend": {
+      "successToast": "Invite resent to {{email}}.",
+      "failedDeliveryToast": "Invite resent to {{email}}, but the email couldn't be delivered.",
+      "error": "Couldn't resend the invite."
+    },
+    "relativeTime": {
+      "now": "now",
+      "minute_one": "{{count}} min ago",
+      "minute_other": "{{count}} min ago",
+      "hour_one": "{{count}} hour ago",
+      "hour_other": "{{count}} hours ago",
+      "day_one": "{{count}} day ago",
+      "day_other": "{{count}} days ago"
+    }
+  },
+  "domainsStatusPages": {
+    "title": "Domains & Status Pages",
+    "subtitle": "Manage Vane's verified domains and public status pages.",
+    "tabs": {
+      "domains": "Domains",
+      "statusPages": "Status Pages"
+    }
+  },
+  "domains": {
+    "loading": "Loading…",
+    "table": {
+      "domain": "Domain",
+      "type": "Type",
+      "pointsTo": "Points to",
+      "ssl": "SSL",
+      "verified": "Verified"
+    },
+    "empty": {
+      "title": "No domains registered",
+      "description": "Add a domain to get started."
+    },
+    "statusLabel": {
+      "pending": "Pending",
+      "verified": "Verified",
+      "error": "Error"
+    },
+    "sslStatusLabel": {
+      "pending": "Pending",
+      "active": "Active",
+      "error": "Error"
+    },
+    "typeLabel": {
+      "custom": "Custom domain"
+    },
+    "addButton": "Add domain",
+    "section": {
+      "title": "Registered domains",
+      "empty": "No domains registered.",
+      "createdAtLabel": "Registered on",
+      "deleteTooltip": "Delete",
+      "deleteError": "Couldn't delete the domain.",
+      "deleteDialog": {
+        "title": "Delete domain",
+        "description": "Delete the domain {{hostname}}? This action can't be undone.",
+        "confirmButton": "Delete"
+      }
+    },
+    "form": {
+      "hostnameLabel": "Hostname",
+      "hostnamePlaceholder": "status.yourcompany.com",
+      "saveButton": "Save",
+      "error": "Couldn't register the domain."
+    },
+    "add": {
+      "title": "Add domain",
+      "description": "Register a root domain to publish a status page on a subdomain of it.",
+      "typeLabel": "Domain type",
+      "vaneSubdomain": {
+        "title": "Vane subdomain",
+        "description": "Coming soon: publish without configuring DNS."
+      },
+      "customDomain": {
+        "title": "Custom domain",
+        "description": "Use a domain you already own."
+      }
+    },
+    "detail": {
+      "pointsToConnector": "points to",
+      "sslLabel": "SSL/TLS",
+      "verifiedAtLabel": "Verified on",
+      "dnsConfigLabel": "DNS configuration",
+      "dnsType": "TYPE",
+      "dnsValue": "VALUE",
+      "notConfigured": "not configured",
+      "recheckButton": "Recheck",
+      "removeButton": "Remove domain",
+      "removeError": "Couldn't remove the domain."
+    }
+  },
+  "statusPages": {
+    "loading": "Loading…",
+    "dns": {
+      "copyCname": "Copy CNAME value",
+      "copied": "CNAME value copied."
+    },
+    "table": {
+      "visibility": "Visib.",
+      "page": "Page",
+      "publicUrl": "Public URL",
+      "services": "Services",
+      "updated": "Updated"
+    },
+    "empty": {
+      "title": "No status pages created",
+      "description": "Create a status page to get started."
+    },
+    "publicTag": "Public",
+    "serviceCount_one": "{{count}} service",
+    "serviceCount_other": "{{count}} services",
+    "createTitle": "Create status page",
+    "section": {
+      "title": "Status pages",
+      "createButton": "Create status page",
+      "empty": "No status pages created.",
+      "deleteError": "Couldn't delete the status page.",
+      "createError": "Couldn't create the status page.",
+      "createDescription": "Link the services this status page will show. The domain is attached later, from a dedicated screen.",
+      "nameLabel": "Name",
+      "servicesLabel": "Services",
+      "submitButton": "Create",
+      "deleteTooltip": "Delete",
+      "attachDomainLink": "Attach domain",
+      "publishedTag": "Published",
+      "failedTag": "Failed",
+      "noDomainTag": "No domain configured",
+      "pendingTag": "Awaiting DNS/certificate validation",
+      "deleteDialog": {
+        "title": "Delete status page",
+        "description": "Delete the status page \"{{name}}\"? This action can't be undone.",
+        "confirmButton": "Delete"
+      }
+    },
+    "add": {
+      "description": "Choose which services show to the public and the page's visibility.",
+      "submitButton": "Create status page",
+      "nameLabel": "Page name",
+      "namePlaceholder": "E.g.: Public Status",
+      "visibilityLabel": "Visibility",
+      "public": {
+        "title": "Public",
+        "description": "Anyone with the link can view it"
+      },
+      "private": {
+        "title": "Private",
+        "description": "Signed-in tenant members only"
+      },
+      "servicesLabel": "Services shown"
+    },
+    "attach": {
+      "title": "Attach domain",
+      "description": "Choose the domain and subdomain this status page will use. The certificate is issued automatically once DNS propagates.",
+      "submitButton": "Attach",
+      "domainLabel": "Domain",
+      "domainPlaceholder": "Select a domain",
+      "subdomainLabel": "Subdomain",
+      "subdomainPlaceholder": "<subdomain>",
+      "domainPlaceholderShort": "<domain>",
+      "dnsRecordLabel": "DNS record",
+      "dnsInstruction": "Point {{sub}}.{{domain}} (CNAME) to",
+      "dnsNotConfigured": "The operator hasn't configured the DNS target value yet (PUBLIC_DNS_TARGET). You can still attach the domain now.",
+      "error": "Couldn't attach the domain."
+    },
+    "detail": {
+      "servicesLabel": "Services shown ({{count}})",
+      "associatedDomainLabel": "Associated domain",
+      "previewButton": "Preview public page",
+      "viewPublicButton": "View public page",
+      "editButton": "Edit page",
+      "notFound": "Status page not found."
+    },
+    "edit": {
+      "defaultTitle": "Edit status page",
+      "description": "Manage the domain, verification, and services shown on this page."
+    },
+    "editor": {
+      "noDomainAttached": "No domain attached yet.",
+      "linkedServicesLabel": "Linked services ({{selected}}/{{total}})",
+      "noServices": "No services registered.",
+      "linkedGroupLabel": "Linked ({{count}})",
+      "availableLabel": "Available",
+      "searchPlaceholder": "Search service…",
+      "noServicesFound": "No services found.",
+      "saveServicesButton": "Save services",
+      "saveServicesError": "Couldn't save the linked services.",
+      "verifyingButton": "Verifying…",
+      "verifyButton": "Verify DNS/certificate",
+      "pointHostnameInstruction": "Point {{hostname}} to the value above. The certificate is issued automatically once DNS propagates and someone visits the page (or you click \"Verify\" above).",
+      "verifyGenericError": "Couldn't verify the domain right now.",
+      "dnsNotResolved": "DNS doesn't resolve to any target yet",
+      "dnsMismatch": "DNS resolves to {{ips}}, different from the expected target",
+      "dnsMatch": "DNS resolves correctly ({{ips}})",
+      "dnsResolves": "DNS resolves ({{ips}})",
+      "tlsValid": "TLS certificate issued and valid",
+      "tlsRespondedInvalid": "HTTPS connection responded, but the certificate isn't valid for {{hostname}}{{errorSuffix}}",
+      "tlsUnreachable": "HTTPS connection still fails{{errorSuffix}}",
+      "lastCheckedLabel": "Last checked: {{date}}"
+    }
+  },
+  "incidents": {
+    "loading": "Loading…",
+    "title": "Incidents",
+    "subtitle": "Track, update, and close incidents for monitored services.",
+    "newButton": "New incident",
+    "filters": {
+      "all": "All",
+      "ariaLabel": "Filter by status"
+    },
+    "autoCreatedTag": "Automatic",
+    "table": {
+      "incident": "Incident",
+      "service": "Service",
+      "severity": "Severity",
+      "openedAt": "Opened at",
+      "duration": "Duration"
+    },
+    "empty": "No incidents found with this filter.",
+    "statusLabel": {
+      "investigating": "Investigating",
+      "identified": "Identified",
+      "monitoring": "Monitoring",
+      "resolved": "Resolved"
+    },
+    "severityLabel": {
+      "minor": "Minor",
+      "moderate": "Moderate",
+      "critical": "Critical"
+    },
+    "transition": {
+      "resolved": "Mark as resolved"
+    },
+    "create": {
+      "title": "Create incident",
+      "description": "Describe the incident and link the affected services.",
+      "submitButton": "Create",
+      "titleLabel": "Title",
+      "affectedServicesLabel": "Affected services",
+      "severityLabel": "Severity",
+      "descriptionLabel": "Initial description",
+      "descriptionPlaceholder": "What's happening?",
+      "error": "Couldn't create the incident."
+    }
+  },
+  "poller": {
+    "loading": "Loading…",
+    "title": "Poller status",
+    "subtitle": "Real state of the active poller and connected integrations.",
+    "loadError": "Couldn't load poller status.",
+    "empty": "No integrations connected.",
+    "lastRun": "Last run",
+    "localReplica": "local replica",
+    "statusLabel": {
+      "unknown": "-",
+      "noLeader": "No leader right now",
+      "active": "Active",
+      "waitingIntegration": "Waiting for integration"
+    },
+    "stat": {
+      "poller": "Poller",
+      "checksPerMinute": "Checks/min",
+      "connectedIntegrations": "Connected integrations"
+    },
+    "leaderNoIntegration": "Leader replica active, but no Datadog integration connected.",
+    "result": {
+      "success": "Success",
+      "failure": "Failure"
+    },
+    "failureMessage": {
+      "single": "Failed to check the {{provider}} integration — the last attempt was unsuccessful.",
+      "multiple": "Failed to check the {{providers}} integrations — the last attempt was unsuccessful."
+    },
+    "providersSeparator": " and ",
+    "banner": {
+      "viewDetails": "View details"
+    }
+  },
+  "publicStatus": {
+    "loading": "Loading…",
+    "episodePopover": {
+      "heading": "Degradation recorded",
+      "noReasonRecorded": "No reason available for this period."
+    },
+    "overallStatus": {
+      "operational": "All systems operational",
+      "degraded": "Partial outage in progress",
+      "outage": "Outage in progress"
+    },
+    "serviceStatus": {
+      "operational": "Operational",
+      "degraded": "Degraded",
+      "outage": "Outage"
+    },
+    "hourlyStatus": {
+      "operational": "Operational",
+      "degraded": "Degraded",
+      "outage": "Outage",
+      "no_data": "No data"
+    },
+    "incidentStatus": {
+      "investigating": "Investigating",
+      "identified": "Identified",
+      "monitoring": "Monitoring",
+      "resolved": "Resolved"
+    },
+    "rangeAgo": {
+      "24h": "24h ago",
+      "7d": "7 days ago",
+      "30d": "30 days ago",
+      "90d": "90 days ago"
+    },
+    "now": "now",
+    "ongoing": "ongoing",
+    "notFoundTitle": "Page not found.",
+    "notFoundSubtitle": "Check the address and try again.",
+    "updatedAt": "Updated {{time}}",
+    "staleNotice": "Showing the last available data — update in progress.",
+    "activeIncidentHeading": "Ongoing incident",
+    "servicesHeading": "Services",
+    "selectRangeLabel": "Select period",
+    "noDataLabel": "(no data)",
+    "historyHeading": "History (last 90 days)",
+    "noHistoryIncidents": "No incidents in the last 90 days.",
+    "loadMore": "Load more",
+    "poweredByPrefix": "Powered by",
+    "autoRefreshNotice": "Refreshes automatically every 2 minutes.",
+    "hideTimeline": "Hide timeline",
+    "showTimeline": "View timeline",
+    "resolvedAt": "Resolved {{time}} · duration {{duration}}",
+    "relativeTime": {
+      "minute_one": "1 minute ago",
+      "minute_other": "{{count}} minutes ago",
+      "hour_one": "1 hour ago",
+      "hour_other": "{{count}} hours ago",
+      "day_one": "1 day ago",
+      "day_other": "{{count}} days ago"
+    }
+  },
+  "emailProviders": {
+    "loading": "Loading…",
+    "disconnectButton": "Disconnect",
+    "genericDisconnectError": "Could not disconnect the provider.",
+    "activateButton": "Activate",
+    "genericActivateError": "Could not activate {{provider}}.",
+    "disconnectDialog": {
+      "title": "Disconnect provider",
+      "body": "Are you sure you want to disconnect {{provider}}? The stored API key will be removed and cannot be recovered - you'll need to reconnect to use it again.",
+      "confirm": "Disconnect",
+      "cancel": "Cancel"
+    }
+  },
+  "integrations": {
+    "title": "Integrations",
+    "subtitle": "Connect Vane to the tools that power monitoring and incident analysis.",
+    "categories": {
+      "apm": "APM & Observability",
+      "ai": "AI",
+      "email": "Email"
+    },
+    "count_one": "{{count}} integration",
+    "count_other": "{{count}} integrations",
+    "statusLabel": {
+      "connected": "Connected",
+      "not_connected": "Not connected",
+      "coming_soon": "Coming soon"
+    },
+    "editConnectionButton": "Edit connection",
+    "connectButton": "Connect",
+    "loading": "Loading…",
+    "loadError": "Could not load",
+    "notConfigured": "Not configured",
+    "syncedNow": "Synced just now",
+    "syncedAgo": "Synced {{count}} min ago",
+    "saveButton": "Save",
+    "datadog": {
+      "title": "Datadog",
+      "description": "Metrics and logs from monitored services, with alerts synced in real time.",
+      "drawerTitle": "Connect Datadog",
+      "drawerDescription": "Keys are validated against Datadog and encrypted at rest. They are not shown again after saving.",
+      "apiKeyLabel": "API key",
+      "apiKeyPlaceholder": "API key",
+      "appKeyLabel": "App key",
+      "appKeyPlaceholder": "Application key",
+      "connectError": "Could not connect to Datadog."
+    },
+    "newRelic": {
+      "title": "New Relic",
+      "description": "Application performance monitoring (APM) and infrastructure."
+    },
+    "llm": {
+      "title": "LLM Provider",
+      "description": "AI-generated incident summaries and assisted resolution.",
+      "activeMeta": "Active · OpenAI · {{model}}",
+      "meta": "OpenAI · {{model}}",
+      "drawerTitle": "Connect LLM Provider",
+      "modelLabel": "Model",
+      "connectError": "Could not connect to the LLM provider.",
+      "rootCauseEnrichment": {
+        "label": "Root-cause enrichment",
+        "description": "Uses Datadog Error Tracking to describe the real cause of a degradation or outage.",
+        "genericError": "Could not update this setting."
+      }
+    },
+    "email": {
+      "resend": {
+        "title": "Resend",
+        "description": "Sends incident alerts and notifications to the on-call team."
+      },
+      "sendgrid": {
+        "title": "SendGrid",
+        "description": "Sends incident alerts and notifications by email."
+      },
+      "active": "Active",
+      "verified": "Verified",
+      "drawerTitle": "Connect {{provider}}",
+      "apiKeyLabel": "API key",
+      "apiKeyPlaceholder": "API key",
+      "fromEmailLabel": "Sender email",
+      "fromEmailPlaceholder": "sender@domain.com",
+      "fromNameLabel": "Sender name",
+      "fromNamePlaceholder": "Name shown in the email",
+      "connectError": "Could not connect."
+    }
+  },
+  "authLayout": {
+    "eyebrow": "Real-time monitoring",
+    "headline": "Total clarity over your infrastructure's health.",
+    "statusTitle": "All systems operational",
+    "uptime": "99.98% uptime · last 30 days",
+    "companyLogoAlt": "Company logo"
+  },
+  "auth": {
+    "oauth": {
+      "google": "Google",
+      "microsoft": "Microsoft",
+      "comingSoon": "Social login coming soon.",
+      "divider": "or continue with email"
+    }
+  },
+  "login": {
+    "title": "Sign in",
+    "subtitle": "Access your organization's monitoring dashboard.",
+    "email": "Email",
+    "password": "Password",
+    "submit": "Sign in",
+    "forgotPassword": "Forgot my password",
+    "showPassword": "Show password",
+    "hidePassword": "Hide password",
+    "invalidCredentials": "Invalid email or password.",
+    "noAccount": "Don't have an account?",
+    "createAccount": "Create account",
+    "twoFactor": {
+      "title": "Two-factor verification",
+      "subtitle": "Enter the 6-digit code from your authenticator app.",
+      "codeLabel": "Verification code",
+      "submit": "Verify",
+      "back": "Back",
+      "useRecovery": "Use a recovery code",
+      "useCode": "Use the app code",
+      "recoveryLabel": "Recovery code",
+      "recoveryHint": "Enter one of the recovery codes generated when you enabled two-factor authentication.",
+      "invalid": "Invalid or expired code. Try again.",
+      "generic": "Could not complete verification. Try again."
+    }
+  },
+  "sidebar": {
+    "brand": "Vane",
+    "groupMonitoring": "Monitoring",
+    "groupPlatform": "Platform",
+    "groupOrganization": "Organization",
+    "overview": "Overview",
+    "domainsStatusPages": "Domains & Status",
+    "incidents": "Incidents",
+    "integrations": "Integrations",
+    "services": "Monitored services",
+    "admins": "Users",
+    "billing": "Plans & Billing",
+    "pollerStatus": "Poller Status",
+    "settings": "Settings",
+    "pinMenu": "Pin menu",
+    "viewingAs": "Viewing as",
+    "logout": "Sign out"
+  },
+  "logoutDialog": {
+    "title": "Sign out",
+    "body": "Are you sure you want to end your session?",
+    "cancel": "Cancel",
+    "confirm": "Sign out"
+  },
+  "tenantSwitcher": {
+    "label": "Switch organization",
+    "freePlan": "Free"
+  },
+  "avatarMenu": {
+    "trigger": "User menu"
+  },
+  "topbar": {
+    "toggleTheme": "Toggle theme"
+  },
+  "sessionExpired": {
+    "title": "Session expired",
+    "body": "Your session has expired. Please sign in again to continue.",
+    "cta": "Go to login"
+  },
+  "bootstrap": {
+    "eyebrow": "Initial setup",
+    "title": "Create the first administrator account",
+    "subtitle": "This instance has no administrator yet. Create the owner account to get started.",
+    "name": "Name",
+    "email": "Email",
+    "phone": "Phone (optional)",
+    "password": "Password",
+    "confirmPassword": "Confirm password",
+    "submit": "Create administrator",
+    "passwordMismatch": "Passwords do not match.",
+    "weakPassword": "Password must be between 8 and 72 characters.",
+    "alreadyBootstrapped": "This instance already has an administrator.",
+    "goToLogin": "Go to login",
+    "genericError": "Could not create the administrator. Please try again."
+  },
+  "acceptInvite": {
+    "title": "Set your password",
+    "subtitle": "You've been invited to the admin dashboard. Set a password to activate your account.",
+    "password": "Password",
+    "confirmPassword": "Confirm password",
+    "submit": "Activate account",
+    "passwordMismatch": "Passwords do not match.",
+    "weakPassword": "Password must be between 8 and 72 characters.",
+    "invalidOrExpired": "This invite link is invalid or has expired. Ask your admin to send a new one.",
+    "genericError": "Could not activate the account. Please try again."
+  },
+  "passwordReset": {
+    "title": "Reset password",
+    "subtitle": "Enter your email and we'll send you instructions to reset your password.",
+    "email": "Email",
+    "submit": "Send instructions",
+    "confirmationMessage": "If this email is registered, you'll receive password reset instructions shortly.",
+    "genericError": "Could not send the email. Please try again.",
+    "backToLogin": "Back to login"
+  },
+  "passwordResetConfirm": {
+    "title": "Set your new password",
+    "subtitle": "Choose a new password to access your account.",
+    "password": "New password",
+    "confirmPassword": "Confirm new password",
+    "submit": "Reset password",
+    "passwordMismatch": "Passwords do not match.",
+    "weakPassword": "Password must be between 8 and 72 characters.",
+    "invalidOrExpired": "This reset link is invalid or has expired. Request a new one.",
+    "genericError": "Could not reset the password. Please try again.",
+    "successMessage": "Password reset successfully.",
+    "goToLogin": "Go to login"
+  },
+  "aiSettings": {
+    "title": "AI analysis",
+    "subtitle": "Connect an AI provider to generate automatic degradation and incident analyses.",
+    "providerLabel": "OpenAI",
+    "loading": "Loading…",
+    "notConnected": "No integration connected",
+    "connected": "Connected",
+    "active": "Active",
+    "invalid": "Invalid",
+    "connectButton": "Connect",
+    "reconnectButton": "Reconnect",
+    "activateButton": "Activate",
+    "cancelButton": "Cancel",
+    "saveButton": "Save",
+    "apiKeyLabel": "OpenAI API key",
+    "modelLabel": "Model",
+    "keyHint": "The key is validated against the provider and encrypted at rest. It is never shown again after saving.",
+    "lastChecked": "Last checked",
+    "genericConnectError": "Could not connect to the provider.",
+    "genericActivateError": "Could not activate the provider.",
+    "genericModelError": "Could not update the model.",
+    "disconnectButton": "Disconnect",
+    "genericDisconnectError": "Could not disconnect the provider.",
+    "disconnectDialog": {
+      "title": "Disconnect provider",
+      "body": "Are you sure you want to disconnect {{provider}}? The stored API key will be removed and cannot be recovered - you'll need to reconnect to use it again.",
+      "confirm": "Disconnect",
+      "cancel": "Cancel"
+    }
+  },
+  "incidentDetail": {
+    "pendingCloseBannerLabel": "AI-suggested closing comment",
+    "confirmCloseButton": "Confirm closure",
+    "discardProposalButton": "Discard",
+    "genericConfirmCloseError": "Could not confirm the closure.",
+    "genericDiscardProposalError": "Could not discard the proposal.",
+    "notFound": "Incident not found.",
+    "newUpdateLabel": "New update",
+    "newUpdatePlaceholder": "Describe the investigation progress",
+    "publishButton": "Publish",
+    "aiSummaryLabel": "AI-generated summary",
+    "discardProposalLink": "Discard proposal",
+    "timelineLabel": "Timeline",
+    "timelineEmpty": "No updates yet.",
+    "addUpdateLabel": "Add update",
+    "updatePlaceholder": "Describe the investigation progress...",
+    "publishUpdateButton": "Publish update",
+    "resolveWithAiButton": "Resolve with AI summary",
+    "resolvedAt": "Incident resolved at {{date}}.",
+    "reopenButton": "Reopen incident",
+    "author": {
+      "aiSummary": "AI-generated summary",
+      "team": "Team",
+      "system": "System"
+    }
+  },
+  "tenantSelector": {
+    "title": "Select an organization",
+    "subtitle": "Your account has access to more than one organization. Choose one to continue.",
+    "roleOwner": "Owner",
+    "roleOperator": "Operator",
+    "roleViewer": "Viewer",
+    "genericError": "Could not switch organization. Please try again."
+  },
+  "signup": {
+    "title": "Create your account",
+    "subtitle": "Create your organization and start monitoring your services.",
+    "tenantName": "Organization name",
+    "email": "Email",
+    "password": "Password",
+    "submit": "Create account",
+    "backToLogin": "Already have an account? Sign in",
+    "weakPassword": "Password must be between 8 and 72 characters.",
+    "alreadyPending": "A signup for this email is already pending verification. Check your inbox.",
+    "genericError": "Could not create the account. Please try again.",
+    "pendingTitle": "Check your email",
+    "pendingSubtitle": "We sent a verification link to {{email}}. Click it to activate your account.",
+    "resendButton": "Resend verification email",
+    "resendConfirmation": "Verification email resent.",
+    "resendError": "Could not resend the email. Please try again.",
+    "terms": "By continuing, you agree to the Terms of Service and Privacy Policy.",
+    "restrictedTitle": "Signup unavailable",
+    "restrictedSubtitle": "This installation is self-hosted and does not accept new signups. Contact this instance's administrator for access."
+  },
+  "verifyEmail": {
+    "loading": "Verifying your email...",
+    "successTitle": "Email verified",
+    "successSubtitle": "Your account is now active. You can sign in.",
+    "invalidTitle": "Invalid or expired link",
+    "invalidSubtitle": "This verification link is invalid or has expired. Request a new one.",
+    "goToLogin": "Go to login"
+  },
+  "settingsPage": {
+    "title": "Settings",
+    "subtitle": "Company profile and fiscal data used on the account's invoices.",
+    "loading": "Loading…",
+    "saved": "Changes saved",
+    "discard": "Discard",
+    "save": "Save changes",
+    "companyProfile": {
+      "title": "Company profile",
+      "subtitle": "How the account appears in Vane and on public status pages.",
+      "logoHint": "PNG or SVG, transparent background.",
+      "uploadLogo": "Upload/change logo",
+      "logoAlt": "Company logo",
+      "name": "Company name",
+      "website": "Website",
+      "timezone": "Timezone",
+      "language": "Language",
+      "languageOptions": {
+        "ptBR": "Português (Brasil)",
+        "enUS": "English (US)"
+      }
+    },
+    "fiscal": {
+      "title": "Fiscal information",
+      "subtitle": "Used for invoicing and billing.",
+      "personType": "Type",
+      "personTypePJ": "Company",
+      "personTypePF": "Individual",
+      "legalNamePJ": "Legal name",
+      "legalNamePF": "Full name",
+      "taxIdPJ": "CNPJ",
+      "taxIdPF": "CPF",
+      "stateRegistration": "State registration",
+      "stateRegistrationPlaceholder": "Exempt, if none",
+      "zip": "ZIP code",
+      "street": "Street",
+      "number": "Number",
+      "complement": "Complement",
+      "complementPlaceholder": "Optional",
+      "state": "State",
+      "city": "City",
+      "country": "Country"
+    },
+    "dangerZone": {
+      "title": "Delete account",
+      "description": "Permanently removes this account, including monitored services, incidents, and status pages. This action cannot be undone.",
+      "button": "Delete account"
+    },
+    "deleteDialog": {
+      "title": "Delete account?",
+      "body": "This action is permanent and removes all monitored services, incidents, and status pages. It cannot be undone.",
+      "cancel": "Cancel",
+      "confirm": "Delete account"
+    },
+    "errors": {
+      "lastTenant": "This is your only active account - it cannot be deleted.",
+      "save": "Could not save the changes.",
+      "delete": "Could not delete the account."
+    }
+  },
+  "sessions": {
+    "title": "Active sessions",
+    "subtitle": "These are the devices currently signed in to your account. End any you don't recognize.",
+    "empty": "No active sessions.",
+    "currentBadge": "This session",
+    "unknownDevice": "Unknown device",
+    "unknownIp": "Unknown IP",
+    "revokeButton": "End session",
+    "revokeSuccess": "Session ended.",
+    "revokeCurrentError": "You can't end the session you're currently using.",
+    "genericError": "Could not end the session. Please try again.",
+    "loadError": "Could not load sessions. Please try again.",
+    "loading": "Loading sessions...",
+    "columns": {
+      "ip": "IP",
+      "lastSeen": "Last seen"
+    }
+  },
+  "billing": {
+    "title": "Plans & Billing",
+    "subtitle": "Choose the right plan for your team and manage the account subscription.",
+    "comingSoon": "Coming soon",
+    "recommended": "Recommended",
+    "perMonth": "/mo",
+    "currentPlanButton": "Current plan",
+    "downgradeButton": "Downgrade",
+    "upgradeButton": "Upgrade",
+    "currentPlan": "Current plan",
+    "noRecurringCharge": "No recurring charge",
+    "monthlyBilling": "Monthly billing",
+    "paymentMethod": {
+      "title": "Payment method",
+      "empty": "No card on file. A card is added when you upgrade to a paid plan."
+    },
+    "invoices": {
+      "title": "Invoices",
+      "empty": "Your invoices will appear here after the subscription's first charge."
+    },
+    "plans": {
+      "free": {
+        "name": "Free",
+        "tagline": "To get started monitoring the essentials.",
+        "features": [
+          "Up to 3 users",
+          "1 public status page",
+          "7-day history",
+          "Unlimited manual polling",
+          "Community support"
+        ]
+      },
+      "starter": {
+        "name": "Starter",
+        "tagline": "For teams that already rely on Vane day to day.",
+        "features": [
+          "Up to 10 users",
+          "Up to 3 status pages",
+          "1 custom domain",
+          "AI-assisted incident closing",
+          "30-day history",
+          "Email support"
+        ]
+      },
+      "scale": {
+        "name": "Scale",
+        "tagline": "For critical operations across multiple teams.",
+        "features": [
+          "Unlimited users",
+          "Unlimited status pages",
+          "Unlimited custom domains",
+          "AI-assisted incident closing",
+          "90-day history",
+          "SSO and priority support"
+        ]
+      }
+    },
+    "selfHosted": {
+      "title": "Self-hosted license",
+      "noActiveLicense": "No active license",
+      "defaultFeaturesLocked": "Default features locked",
+      "perYear": "/yr",
+      "licenseDescription": "One-time purchase, license valid for 12 months on your self-hosted environment.",
+      "buyLicenseButton": "Buy license",
+      "activateTitle": "Activate license",
+      "activateDescription": "After purchase, we send a license code by email. Paste the code below to unlock the default features on this instance.",
+      "licenseKeyLabel": "License code",
+      "activateButton": "Activate license"
+    },
+    "license": {
+      "name": "Annual License",
+      "features": [
+        "Unlimited users",
+        "Unlimited custom domains and status pages",
+        "AI-assisted incident closing",
+        "SSO and priority support",
+        "Updates during the license term"
+      ]
+    }
+  },
+  "profile": {
+    "title": "My Profile",
+    "menuItem": "My Profile",
+    "personalInfo": {
+      "title": "Personal information",
+      "subtitle": "How you appear to other team members.",
+      "nameLabel": "Name",
+      "emailLabel": "Email",
+      "saveButton": "Save changes",
+      "nameRequired": "Enter your name.",
+      "updateSuccess": "Name updated.",
+      "updateError": "Could not update your name. Please try again."
+    },
+    "security": {
+      "title": "Security",
+      "subtitle": "Password and two-factor authentication.",
+      "currentPassword": "Current password",
+      "newPassword": "New password",
+      "confirmPassword": "Confirm new password",
+      "updatePassword": "Update password",
+      "required": "Fill in all fields.",
+      "mismatch": "Passwords don't match.",
+      "wrongCurrent": "Current password is incorrect.",
+      "policyError": "Password must be between 8 and 72 characters.",
+      "updateSuccess": "Password updated.",
+      "updateError": "Could not update your password. Please try again."
+    },
+    "sessionsRevoke": {
+      "title": "End session?",
+      "body": "The device will be signed out of your account.",
+      "cancel": "Cancel",
+      "confirm": "End session"
+    },
+    "notifications": {
+      "title": "Notifications",
+      "subtitle": "Choose which events you want to be emailed about.",
+      "loading": "Loading notifications...",
+      "loadError": "Could not load your preferences. Please try again.",
+      "updateError": "Could not save the preference. Please try again.",
+      "incidentOpened": "New incident",
+      "incidentOpenedHint": "When an incident is opened on any service.",
+      "incidentResolved": "Incident resolved",
+      "incidentResolvedHint": "When an incident you follow is resolved.",
+      "weeklyDigest": "Weekly digest",
+      "weeklyDigestHint": "Uptime and the week's main events, every Monday."
+    }
+  },
+  "twoFactor": {
+    "title": "Two-factor authentication",
+    "subtitle": "Requires a code from your authenticator app when signing in.",
+    "enabledBadge": "Enabled",
+    "disabledBadge": "Disabled",
+    "enableButton": "Enable",
+    "disableButton": "Disable",
+    "scan": {
+      "instructions": "Scan the QR code with your authenticator app (Google Authenticator, Authy, 1Password...).",
+      "manualHint": "Or enter the code manually",
+      "continueButton": "Continue",
+      "loadError": "Could not start enrollment. Please try again.",
+      "alreadyEnabled": "Two-factor authentication is already enabled."
+    },
+    "verify": {
+      "title": "Verification code",
+      "instructions": "Enter the 6-digit code from your authenticator app.",
+      "label": "Verification code",
+      "placeholder": "Enter the 6-digit code.",
+      "submit": "Enable",
+      "back": "Back",
+      "invalid": "Invalid code. Please try again."
+    },
+    "codes": {
+      "title": "Two-factor authentication enabled",
+      "instructions": "Save these recovery codes. Each can be used only once.",
+      "warning": "These codes will not be shown again.",
+      "copy": "Copy codes",
+      "copied": "Codes copied.",
+      "download": "Download codes",
+      "finish": "Done"
+    },
+    "disable": {
+      "title": "Disable two-factor authentication",
+      "body": "Confirm your current password to disable two-factor authentication.",
+      "passwordLabel": "Current password",
+      "confirm": "Disable",
+      "cancel": "Cancel",
+      "wrongPassword": "Incorrect password.",
+      "success": "Two-factor authentication disabled.",
+      "error": "Could not disable two-factor authentication. Please try again."
+    }
+  },
+  "overview": {
+    "title": "Overview",
+    "subtitle": "A summary of your organization's monitoring.",
+    "loading": "Loading…",
+    "loadError": "Could not load the summary. Please try again.",
+    "noData": "—",
+    "cards": {
+      "uptime": "Average uptime (30d)",
+      "uptimeTrendUp": "+{{value}} vs last month",
+      "uptimeTrendDown": "{{value}} vs last month",
+      "openIncidents": "Open incidents",
+      "openIncidentsBreakdown": "{{critical}} critical, {{monitoring}} monitoring",
+      "unhealthyServices": "Services with problems",
+      "unhealthyServicesTotal": "of {{total}} monitored services",
+      "verifiedDomains": "Verified domains",
+      "verifiedDomainsPending": "{{pending}} pending verification"
+    },
+    "chart": {
+      "title": "Aggregate uptime — last 14 days",
+      "average": "Average {{value}}",
+      "barLabel": "{{date}} · {{value}}",
+      "daysAgo": "14 days ago",
+      "today": "today"
+    },
+    "incidents": {
+      "title": "Recent incidents",
+      "viewAll": "View all",
+      "empty": "No recent incidents."
+    },
+    "shortcuts": {
+      "title": "Quick shortcuts",
+      "addService": "Add service",
+      "createStatusPage": "Create status page",
+      "inviteUser": "Invite user",
+      "viewDomains": "View domains"
+    },
+    "incidentStatus": {
+      "investigating": "Investigating",
+      "identified": "Identified",
+      "monitoring": "Monitoring",
+      "resolved": "Resolved"
+    },
+    "upsell": {
+      "message": "You're on the Free plan — 2/3 users, no AI incident resolution, and no custom domains. Upgrade to unlock more features.",
+      "cta": "Upgrade"
+    },
+    "activity": {
+      "title": "Recent team activity",
+      "removedUser": "Removed user",
+      "empty": "No recent activity.",
+      "loadError": "Could not load recent activity. Please try again.",
+      "actions": {
+        "invited": "invited {{target}}",
+        "invitedWithoutTarget": "invited a new member",
+        "resent": "resent the invite to {{target}}",
+        "resentWithoutTarget": "resent an invite",
+        "canceled": "canceled the invite for {{target}}",
+        "canceledWithoutTarget": "canceled an invite",
+        "role_changed": "changed {{target}}'s role",
+        "role_changedWithoutTarget": "changed a role",
+        "removed": "removed {{target}}",
+        "removedWithoutTarget": "removed a member",
+        "domain_verified": "verified the domain {{target}}",
+        "domain_verifiedWithoutTarget": "verified a domain",
+        "domain_deleted": "deleted the domain {{target}}",
+        "domain_deletedWithoutTarget": "deleted a domain",
+        "status_page_deleted": "deleted the page {{target}}",
+        "status_page_deletedWithoutTarget": "deleted a page",
+        "status_page_domain_verified": "verified the domain for page {{target}}",
+        "status_page_domain_verifiedWithoutTarget": "verified the domain for a page",
+        "service_created": "created the service {{target}}",
+        "service_createdWithoutTarget": "created a service",
+        "service_updated": "edited the service {{target}}",
+        "service_updatedWithoutTarget": "edited a service",
+        "service_deleted": "removed the service {{target}}",
+        "service_deletedWithoutTarget": "removed a service",
+        "status_page_created": "created the page {{target}}",
+        "status_page_createdWithoutTarget": "created a status page",
+        "status_page_domain_attached": "attached a domain to the page {{target}}",
+        "status_page_domain_attachedWithoutTarget": "attached a domain to a page",
+        "status_page_services_updated": "updated the services on page {{target}}",
+        "status_page_services_updatedWithoutTarget": "updated the services on a page",
+        "domain_created": "registered the domain {{target}}",
+        "domain_createdWithoutTarget": "registered a domain",
+        "datadog_connected": "connected the Datadog integration",
+        "datadog_connectedWithoutTarget": "connected the Datadog integration",
+        "email_provider_connected": "connected the email provider {{target}}",
+        "email_provider_connectedWithoutTarget": "connected an email provider",
+        "email_provider_activated": "activated the email provider {{target}}",
+        "email_provider_activatedWithoutTarget": "activated an email provider",
+        "llm_provider_connected": "connected the AI provider {{target}}",
+        "llm_provider_connectedWithoutTarget": "connected an AI provider",
+        "llm_provider_activated": "activated the AI provider {{target}}",
+        "llm_provider_activatedWithoutTarget": "activated an AI provider",
+        "company_settings_updated": "updated the company settings",
+        "company_settings_updatedWithoutTarget": "updated the company settings",
+        "company_logo_updated": "updated the company logo",
+        "company_logo_updatedWithoutTarget": "updated the company logo",
+        "tenant_deleted": "deleted the account {{target}}",
+        "tenant_deletedWithoutTarget": "deleted the account",
+        "unknown": "performed {{action}} on {{target}}",
+        "unknownWithoutTarget": "performed {{action}}"
+      }
+    }
+  },
+  "services": {
+    "title": "Monitored services",
+    "subtitle": "Track the health of services Vane monitors in real time.",
+    "addButton": "Add service",
+    "searchPlaceholder": "Search service",
+    "loading": "Loading…",
+    "noData": "—",
+    "emptyFiltered": "No service found matching these filters.",
+    "filterAriaLabel": "Filter by status",
+    "filters": {
+      "all": "All",
+      "operational": "Operational",
+      "degraded": "Degraded",
+      "outage": "Down",
+      "notConfigured": "Not configured"
+    },
+    "statusLabel": {
+      "operational": "Operational",
+      "degraded": "Degraded",
+      "outage": "Down",
+      "not_configured": "Not configured"
+    },
+    "section": {
+      "linkButton": "Link service",
+      "empty": "No services registered.",
+      "lastChangeLabel": "Last change"
+    },
+    "columns": {
+      "status": "Status",
+      "service": "Service",
+      "uptime": "Uptime 30d",
+      "lastCheck": "Last check"
+    },
+    "detail": {
+      "uptime": "Uptime 30d",
+      "lastCheck": "Last check",
+      "incidents": "Incidents (30d)",
+      "history": "Last 24 checks",
+      "close": "Close",
+      "detailTitle": "Service detail",
+      "editName": "Rename service",
+      "namePlaceholder": "Service name",
+      "save": "Save",
+      "cancel": "Cancel",
+      "nameRequired": "Name cannot be empty.",
+      "renameError": "Could not rename the service.",
+      "deleteAction": "Delete service",
+      "deleteConfirmTitle": "Delete service",
+      "deleteConfirmDescription": "Delete the service \"{{name}}\"? Its check history and incidents are kept, but it stops being monitored. This action cannot be undone.",
+      "deleteError": "Could not delete the service."
+    },
+    "addDrawer": {
+      "drawerTitle": "Add service",
+      "drawerDescription": "Set up a new monitoring target. Vane starts checking as soon as you save.",
+      "submitButton": "Add service",
+      "nameLabel": "Service name",
+      "namePlaceholder": "Ex: Payments API",
+      "sloSearchLabel": "Search SLO",
+      "sloSearchPlaceholder": "Type the SLO name",
+      "noSloFound": "No SLO found.",
+      "selectSloError": "Select an SLO from the list before saving.",
+      "genericError": "Could not link the service.",
+      "monitorModeLabel": "How to monitor",
+      "monitorModeSlo": "SLO-based",
+      "monitorModeSloDescription": "Imports the target from the connected observability provider",
+      "monitorModeSloDisabledHint": "Connect Datadog under Integrations to use this mode",
+      "monitorModePolling": "Manual polling",
+      "monitorModePollingDescription": "Vane checks via HTTP, TCP or ping",
+      "sourceLabel": "Source",
+      "sourceDatadog": "Datadog",
+      "sourceNewRelic": "New Relic",
+      "sourceNewRelicBadge": "Coming soon",
+      "sloHelperNote": "Alert thresholds are inherited from the SLO configured in the provider.",
+      "checkTypeLabel": "Check type",
+      "checkType": {
+        "http": "HTTP(S)",
+        "tcp": "TCP",
+        "ping": "Ping"
+      },
+      "targetLabel": {
+        "http": "URL to check",
+        "tcp": "Host:port",
+        "ping": "Host"
+      },
+      "targetPlaceholder": {
+        "http": "https://api.acme.health/health",
+        "tcp": "db.acme.health:5432",
+        "ping": "cache.acme.health"
+      },
+      "intervalLabel": "Check interval",
+      "interval": {
+        "30": "30s",
+        "60": "1 min",
+        "300": "5 min"
+      },
+      "pollingValidationError": "Fill in the target and check interval before saving."
+    }
+  }
+}

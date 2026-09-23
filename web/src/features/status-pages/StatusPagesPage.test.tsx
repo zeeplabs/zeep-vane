@@ -32,26 +32,26 @@ function renderPage() {
 }
 
 describe("StatusPagesPage", () => {
-  it("lista status pages com tags de estado mapeadas", async () => {
+  it("lists status pages with mapped state tags", async () => {
     await loginAs("owner@vane.app");
     renderPage();
     expect((await screen.findAllByText("Publicada")).length).toBeGreaterThan(0);
-    // sp-2 tem domain_id preenchido e state "draft" (SPD-13): label de
-    // DNS/certificado pendente, não mais o antigo "Emitindo certificado"
-    // ambíguo (removido pela correção do Gap 1 do Verifier).
+    // sp-2 has domain_id set and state "draft" (SPD-13): pending
+    // DNS/certificate label, no longer the old ambiguous "Emitindo
+    // certificado" (removed by the Verifier's Gap 1 fix).
     expect(screen.getByText("Aguardando validação de DNS/certificado")).toBeInTheDocument();
     expect(screen.queryByText("Emitindo certificado")).not.toBeInTheDocument();
     expect(screen.getByText("Falha")).toBeInTheDocument();
   });
 
-  it("viewer não vê o formulário de criação", async () => {
+  it("viewer does not see the creation form", async () => {
     await loginAs("viewer@vane.app");
     renderPage();
     await screen.findAllByText("Publicada");
     expect(screen.queryByRole("button", { name: "Criar status page" })).not.toBeInTheDocument();
   });
 
-  it("criação não tem campos de domínio e a página nova nasce sem domínio, com label distinto de 'sem domínio configurado' (SPD-01/SPD-12)", async () => {
+  it("creation has no domain fields and the new page starts with no domain, with a label distinct from 'sem domínio configurado' (SPD-01/SPD-12)", async () => {
     await loginAs("owner@vane.app");
     renderPage();
     await userEvent.click(await screen.findByRole("button", { name: "Criar status page" }));
@@ -62,9 +62,9 @@ describe("StatusPagesPage", () => {
 
     await waitFor(() => expect(screen.queryByLabelText("Nome")).not.toBeInTheDocument());
     expect(await screen.findByText("Status Nova Empresa")).toBeInTheDocument();
-    // Página recém-criada não tem domínio (domain_id: null): a lista deve
-    // mostrar o label distinto exigido pela spec (SPD-12), nunca o antigo
-    // "Emitindo certificado" ambíguo que a spec proíbe para esse caso.
+    // Newly created page has no domain (domain_id: null): the list must show
+    // the distinct label required by the spec (SPD-12), never the old
+    // ambiguous "Emitindo certificado" the spec forbids for this case.
     const labels = screen.getAllByText("Sem domínio configurado");
     expect(labels.length).toBeGreaterThan(0);
     expect(screen.queryByText("Emitindo certificado")).not.toBeInTheDocument();

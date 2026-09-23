@@ -56,7 +56,7 @@ describe("DomainsTable", () => {
   // SKEL-04/05: while /api/domains is loading, skeleton rows render (not
   // the old "Carregando…" paragraph as visible content) inside an
   // aria-busy container that still carries the sr-only loading string.
-  it("mostra skeletons (não o texto) enquanto /api/domains carrega", async () => {
+  it("shows skeletons (not the text) while /api/domains loads", async () => {
     server.use(
       http.get("/api/domains", async () => {
         await delay("infinite");
@@ -74,7 +74,7 @@ describe("DomainsTable", () => {
 
   // SKEL-06: once the fetch resolves, skeletons are gone and the real
   // table (or its empty state) takes over.
-  it("remove os skeletons assim que /api/domains termina de carregar", async () => {
+  it("removes the skeletons as soon as /api/domains finishes loading", async () => {
     mockDomainsPage([baseDomain({ id: "dom-loaded", hostname: "loaded.example.com" })]);
     await loginAsOwner();
     renderTable();
@@ -83,7 +83,7 @@ describe("DomainsTable", () => {
     expect(screen.queryAllByTestId("skeleton")).toHaveLength(0);
   });
 
-  it("renderiza Status/Tipo/SSL da linha (DSP-01)", async () => {
+  it("renders the row's Status/Tipo/SSL (DSP-01)", async () => {
     mockDomainsPage([
       baseDomain({
         id: "dom-full",
@@ -103,7 +103,7 @@ describe("DomainsTable", () => {
     expect(within(row).getByText("Ativo")).toBeInTheDocument();
   });
 
-  it("renderiza '—' na coluna Aponta para quando o domínio não tem status page anexada (DSP-02)", async () => {
+  it("renders '—' in the Aponta para column when the domain has no attached status page (DSP-02)", async () => {
     mockDomainsPage([baseDomain({ id: "dom-0", hostname: "zero.example.com", attached_page_name: null, attached_page_count: 0 })]);
     await loginAsOwner();
     renderTable();
@@ -113,7 +113,7 @@ describe("DomainsTable", () => {
     expect(within(row).getByText("—")).toBeInTheDocument();
   });
 
-  it("renderiza o nome da página anexada quando há exatamente uma (DSP-03)", async () => {
+  it("renders the attached page's name when there is exactly one (DSP-03)", async () => {
     mockDomainsPage([
       baseDomain({ id: "dom-1", hostname: "one.example.com", attached_page_name: "Status Principal", attached_page_count: 1 }),
     ]);
@@ -124,7 +124,7 @@ describe("DomainsTable", () => {
     expect(screen.getByText("Status Principal")).toBeInTheDocument();
   });
 
-  it("renderiza o nome da primeira página + '+N' quando há mais de uma anexada (DSP-04)", async () => {
+  it("renders the first page's name + '+N' when more than one is attached (DSP-04)", async () => {
     mockDomainsPage([
       baseDomain({ id: "dom-2", hostname: "two.example.com", attached_page_name: "Status Público", attached_page_count: 2 }),
     ]);
@@ -135,7 +135,7 @@ describe("DomainsTable", () => {
     expect(screen.getByText("Status Público +1")).toBeInTheDocument();
   });
 
-  it("renderiza '—' na coluna Verificado quando verified_at é null (DSP-16)", async () => {
+  it("renders '—' in the Verificado column when verified_at is null (DSP-16)", async () => {
     mockDomainsPage([
       baseDomain({
         id: "dom-null",
@@ -157,7 +157,7 @@ describe("DomainsTable", () => {
     expect(within(row).getAllByText("—")).toHaveLength(2);
   });
 
-  it("mostra o EmptyState em vez de uma tabela vazia quando não há domínios", async () => {
+  it("shows the EmptyState instead of an empty table when there are no domains", async () => {
     mockDomainsPage([]);
     await loginAsOwner();
     renderTable();
@@ -166,7 +166,7 @@ describe("DomainsTable", () => {
     expect(screen.queryAllByTestId("domain-row")).toHaveLength(0);
   });
 
-  it("clicar em uma linha chama onSelect com o domínio correspondente", async () => {
+  it("clicking a row calls onSelect with the corresponding domain", async () => {
     const domain = baseDomain({ id: "dom-click", hostname: "click.example.com" });
     mockDomainsPage([domain]);
     await loginAsOwner();

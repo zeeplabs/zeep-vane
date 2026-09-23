@@ -1,17 +1,15 @@
 import { useEffect, useState } from "react";
 import * as RadixDialog from "@radix-ui/react-dialog";
+import { useTranslation } from "react-i18next";
 import { MdClose } from "react-icons/md";
 import { Button } from "../../components/ui/Button";
 import { ApiError } from "../../lib/apiClient";
+import { formatDateTime } from "../../lib/formatDate";
 import { useDNSTarget } from "../status-pages/hooks";
 import type { Domain } from "../../types/api";
 import { useDeleteDomain, useRecheckDomain } from "./hooks";
 import { attachedPageColumn, domainTypeLabel, sslStatusColor, sslStatusLabel } from "./domainStatusMeta";
 import { DomainStatusTag } from "./DomainStatusTag";
-
-function formatTimestamp(iso: string | null): string {
-  return iso ? new Date(iso).toLocaleString("pt-BR") : "—";
-}
 
 export interface DomainDetailDrawerProps {
   domain: Domain | null;
@@ -28,6 +26,7 @@ export interface DomainDetailDrawerProps {
  * motivo. RadixDialog usado diretamente pra reproduzir isso; `Title` fica
  * sr-only porque o hostname já é o h2 visível. */
 export function DomainDetailDrawer({ domain, onClose }: DomainDetailDrawerProps) {
+  const { t, i18n } = useTranslation();
   const [current, setCurrent] = useState<Domain | null>(domain);
   const [removeError, setRemoveError] = useState<string | null>(null);
   const { data: dnsTarget } = useDNSTarget();
@@ -53,7 +52,7 @@ export function DomainDetailDrawer({ domain, onClose }: DomainDetailDrawerProps)
       onClose();
     } catch (err) {
       if (err instanceof ApiError) setRemoveError(err.message);
-      else setRemoveError("Não foi possível remover o domínio.");
+      else setRemoveError(t("domains.detail.removeError"));
     }
   }
 
@@ -74,7 +73,7 @@ export function DomainDetailDrawer({ domain, onClose }: DomainDetailDrawerProps)
                 <RadixDialog.Close asChild>
                   <button
                     type="button"
-                    aria-label="Fechar"
+                    aria-label={t("common.close")}
                     className="cursor-pointer text-text-muted hover:text-text"
                   >
                     <MdClose size={18} aria-hidden="true" />
@@ -87,7 +86,8 @@ export function DomainDetailDrawer({ domain, onClose }: DomainDetailDrawerProps)
                   <h2 className="font-mono text-[19px] font-bold text-text">{current.hostname}</h2>
                 </RadixDialog.Title>
                 <p className="mt-0.5 text-[13px] text-text-muted">
-                  {domainTypeLabel[current.domain_type]} · aponta para {attachedPageColumn(current)}
+                  {domainTypeLabel(t, current.domain_type)} · {t("domains.detail.pointsToConnector")}{" "}
+                  {attachedPageColumn(current)}
                 </p>
               </div>
 
@@ -99,31 +99,33 @@ export function DomainDetailDrawer({ domain, onClose }: DomainDetailDrawerProps)
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <div className="mb-1 text-[10.5px] font-bold uppercase tracking-wide text-text-muted">SSL/TLS</div>
+                  <div className="mb-1 text-[10.5px] font-bold uppercase tracking-wide text-text-muted">{t("domains.detail.sslLabel")}</div>
                   <div className="text-[15px] font-bold" style={{ color: sslStatusColor[current.ssl_status] }}>
-                    {sslStatusLabel[current.ssl_status]}
+                    {sslStatusLabel(t, current.ssl_status)}
                   </div>
                 </div>
                 <div>
-                  <div className="mb-1 text-[10.5px] font-bold uppercase tracking-wide text-text-muted">Verificado em</div>
-                  <div className="text-[15px] font-bold text-text">{formatTimestamp(current.verified_at)}</div>
+                  <div className="mb-1 text-[10.5px] font-bold uppercase tracking-wide text-text-muted">{t("domains.detail.verifiedAtLabel")}</div>
+                  <div className="text-[15px] font-bold text-text">
+                    {current.verified_at ? formatDateTime(current.verified_at, i18n.language) : "—"}
+                  </div>
                 </div>
               </div>
 
               {current.domain_type === "custom" ? (
                 <div>
                   <div className="mb-1 text-[10.5px] font-bold uppercase tracking-wide text-text-muted">
-                    Configuração DNS
+                    {t("domains.detail.dnsConfigLabel")}
                   </div>
                   <div className="overflow-hidden rounded-md border border-divider">
                     <div className="grid grid-cols-[70px_1fr] gap-2 border-b border-divider bg-card-header-bg px-3.5 py-2.5">
-                      <span className="text-[11px] font-bold text-text-muted">TIPO</span>
-                      <span className="text-[11px] font-bold text-text-muted">VALOR</span>
+                      <span className="text-[11px] font-bold text-text-muted">{t("domains.detail.dnsType")}</span>
+                      <span className="text-[11px] font-bold text-text-muted">{t("domains.detail.dnsValue")}</span>
                     </div>
                     <div className="grid grid-cols-[70px_1fr] items-center gap-2 px-3.5 py-3">
                       <span className="font-mono text-[12.5px] font-bold text-text">CNAME</span>
                       <span className="min-w-0 truncate font-mono text-[12.5px] text-text-muted">
-                        {dnsTarget ?? "não configurado"}
+                        {dnsTarget ?? t("domains.detail.notConfigured")}
                       </span>
                     </div>
                   </div>
@@ -144,7 +146,7 @@ export function DomainDetailDrawer({ domain, onClose }: DomainDetailDrawerProps)
                   onClick={handleRecheck}
                   disabled={recheckDomain.isPending}
                 >
-                  Verificar novamente
+                  {t("domains.detail.recheckButton")}
                 </Button>
                 <Button
                   type="button"
@@ -154,7 +156,7 @@ export function DomainDetailDrawer({ domain, onClose }: DomainDetailDrawerProps)
                   onClick={handleRemove}
                   disabled={deleteDomain.isPending}
                 >
-                  Remover domínio
+                  {t("domains.detail.removeButton")}
                 </Button>
               </div>
             </div>

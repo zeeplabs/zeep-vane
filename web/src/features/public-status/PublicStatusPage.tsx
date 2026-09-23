@@ -21,12 +21,15 @@ import type {
 import { resolveAssetUrl } from "../../lib/apiClient";
 import { usePublicStatusPage } from "./hooks";
 import { usePublicStatusTheme } from "./usePublicStatusTheme";
+import publicStatusI18n from "./i18n";
 import { formatRelativeTime, formatDateTime, formatDuration } from "./format";
 
-const overallCopy: Record<PublicServiceStatus, { label: string; colorVar: string }> = {
-  operational: { label: "Todos os sistemas operacionais", colorVar: "--color-success" },
-  degraded: { label: "Interrupção parcial em andamento", colorVar: "--color-warning" },
-  outage: { label: "Interrupção em andamento", colorVar: "--color-critical" },
+type Translator = (key: string, opts?: Record<string, unknown>) => string;
+
+const overallColorVar: Record<PublicServiceStatus, string> = {
+  operational: "--color-success",
+  degraded: "--color-warning",
+  outage: "--color-critical",
 };
 
 const serviceTagVariant: Record<PublicServiceStatus, TagVariant> = {
@@ -35,15 +38,9 @@ const serviceTagVariant: Record<PublicServiceStatus, TagVariant> = {
   outage: "critical",
 };
 
-const serviceLabel: Record<PublicServiceStatus, string> = {
-  operational: "Operacional",
-  degraded: "Degradado",
-  outage: "Interrupção",
-};
-
 // hourlyColorVar covers every PublicHourlyStatus, including "no_data"
-// (light gray, UPT-02) - overallCopy/serviceTagVariant above only cover
-// PublicServiceStatus, which has no no_data case.
+// (light gray, UPT-02) - overallColorVar/serviceTagVariant above only
+// cover PublicServiceStatus, which has no no_data case.
 const hourlyColorVar: Record<PublicHourlyStatus, string> = {
   operational: "--color-success",
   degraded: "--color-warning",
@@ -51,60 +48,58 @@ const hourlyColorVar: Record<PublicHourlyStatus, string> = {
   no_data: "--color-neutral-600",
 };
 
-const hourlyLabel: Record<PublicHourlyStatus, string> = {
-  operational: "Operacional",
-  degraded: "Degradado",
-  outage: "Interrupção",
-  no_data: "Sem dados",
-};
+function hourlyTooltipFormatter(locale: string): Intl.DateTimeFormat {
+  return new Intl.DateTimeFormat(locale, {
+    day: "2-digit",
+    month: "2-digit",
+    hour: "2-digit",
+    hour12: false,
+    // Always America/Sao_Paulo regardless of the visitor's own browser/OS
+    // timezone - the offset is computed client-side, but the timezone
+    // itself is fixed, not detected (unlike `locale`, which now is).
+    timeZone: "America/Sao_Paulo",
+  });
+}
 
-const HOURLY_TOOLTIP_FORMATTER = new Intl.DateTimeFormat("pt-BR", {
-  day: "2-digit",
-  month: "2-digit",
-  hour: "2-digit",
-  hour12: false,
-  timeZone: "America/Sao_Paulo",
-});
-
-// hourlyTooltip formats a bar's local date, hour range, and PT-BR status
-// label (UPT-05), always in America/Sao_Paulo regardless of the visitor's
-// own browser/OS timezone - the offset is computed client-side, but the
-// timezone itself is fixed, not detected.
-function hourlyTooltip(bucket: PublicHistoryBucket): string {
+// hourlyTooltip formats a bar's local date, hour range, and status label
+// (UPT-05), always in America/Sao_Paulo (see hourlyTooltipFormatter).
+function hourlyTooltip(bucket: PublicHistoryBucket, t: Translator, locale: string): string {
   const start = new Date(bucket.start);
-  const parts = HOURLY_TOOLTIP_FORMATTER.formatToParts(start);
+  const parts = hourlyTooltipFormatter(locale).formatToParts(start);
   const get = (type: string) => parts.find((p) => p.type === type)?.value ?? "";
   const day = get("day");
   const month = get("month");
   const startHour = Number(get("hour")) % 24;
   const endHour = (startHour + 1) % 24;
-  return `${day}/${month}, ${startHour}h–${endHour}h · ${hourlyLabel[bucket.status]}`;
+  return `${day}/${month}, ${startHour}h–${endHour}h · ${t(`publicStatus.hourlyStatus.${bucket.status}`)}`;
 }
 
-// EPISODE_TIME_FORMATTER formats a degraded episode's start/end with
-// minute precision (unlike HOURLY_TOOLTIP_FORMATTER above, which only
-// needs hour precision for a whole bucket) - degraded-interval-analysis
-// episodes can start/end at any minute within a bucket.
-const EPISODE_TIME_FORMATTER = new Intl.DateTimeFormat("pt-BR", {
-  day: "2-digit",
-  month: "2-digit",
-  hour: "2-digit",
-  minute: "2-digit",
-  hour12: false,
-  timeZone: "America/Sao_Paulo",
-});
+// episodeTimeFormatter formats a degraded episode's start/end with minute
+// precision (unlike hourlyTooltipFormatter above, which only needs hour
+// precision for a whole bucket) - degraded-interval-analysis episodes can
+// start/end at any minute within a bucket. Same fixed-timezone convention.
+function episodeTimeFormatter(locale: string): Intl.DateTimeFormat {
+  return new Intl.DateTimeFormat(locale, {
+    day: "2-digit",
+    month: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+    timeZone: "America/Sao_Paulo",
+  });
+}
 
 // episodeTimeRange formats one degraded episode's start-end range
-// (degraded-interval-analysis DEGINT-13), always in America/Sao_Paulo -
-// same fixed-timezone convention as hourlyTooltip above. A null ends_at
-// (still open as of the response) renders as "em andamento" instead of a
+// (degraded-interval-analysis DEGINT-13). A null ends_at (still open as of
+// the response) renders as "ongoing"/"em andamento" instead of a
 // fabricated end time.
-function episodeTimeRange(episode: PublicDegradedEpisode): string {
-  const starts = EPISODE_TIME_FORMATTER.format(new Date(episode.starts_at));
+function episodeTimeRange(episode: PublicDegradedEpisode, t: Translator, locale: string): string {
+  const formatter = episodeTimeFormatter(locale);
+  const starts = formatter.format(new Date(episode.starts_at));
   if (!episode.ends_at) {
-    return `${starts} – em andamento`;
+    return `${starts} – ${t("publicStatus.ongoing")}`;
   }
-  const ends = EPISODE_TIME_FORMATTER.format(new Date(episode.ends_at));
+  const ends = formatter.format(new Date(episode.ends_at));
   return `${starts} – ${ends}`;
 }
 
@@ -117,30 +112,11 @@ const RANGE_OPTIONS: SegOption[] = [
   { value: "90d", label: "90d" },
 ];
 
-// rangeAgoLabel is the leftmost label under each service's history chart,
-// keyed by the selected range - follows this file's existing hardcoded
-// PT-BR Record<K,string> pattern (see hourlyLabel/incidentLabel above; this
-// feature doesn't route strings through react-i18next anywhere else in
-// this file, so a new i18n key here would be an inconsistent one-off).
-const rangeAgoLabel: Record<RangeKey, string> = {
-  "24h": "24h atrás",
-  "7d": "7 dias atrás",
-  "30d": "30 dias atrás",
-  "90d": "90 dias atrás",
-};
-
 const incidentTagVariant: Record<PublicIncidentEntry["status"], TagVariant> = {
   investigating: "critical",
   identified: "warning",
   monitoring: "warning",
   resolved: "neutral",
-};
-
-const incidentLabel: Record<PublicIncidentEntry["status"], string> = {
-  investigating: "Investigando",
-  identified: "Identificado",
-  monitoring: "Monitorando",
-  resolved: "Resolvido",
 };
 
 // formatUptimePercent renders the backend's nullable uptime_percent
@@ -171,7 +147,17 @@ function MoonIcon() {
   return <MdOutlineNightlight size={16} aria-hidden="true" data-testid="theme-icon-moon" />;
 }
 
-function IncidentCard({ incident, tone }: { incident: PublicIncidentEntry; tone: "active" | "resolved" }) {
+function IncidentCard({
+  incident,
+  tone,
+  t,
+  locale,
+}: {
+  incident: PublicIncidentEntry;
+  tone: "active" | "resolved";
+  t: Translator;
+  locale: string;
+}) {
   const [expanded, setExpanded] = useState(false);
 
   return (
@@ -205,7 +191,10 @@ function IncidentCard({ incident, tone }: { incident: PublicIncidentEntry; tone:
             </div>
           ) : (
             <p className="text-xs text-neutral-400">
-              Resolvido {formatDateTime(incident.resolved_at!)} · {formatDuration(incident.created_at, incident.resolved_at!)}
+              {t("publicStatus.resolvedAt", {
+                time: formatDateTime(incident.resolved_at!, locale),
+                duration: formatDuration(incident.created_at, incident.resolved_at!),
+              })}
             </p>
           )}
         </div>
@@ -213,7 +202,7 @@ function IncidentCard({ incident, tone }: { incident: PublicIncidentEntry; tone:
           variant={tone === "active" ? incidentTagVariant[incident.status] : "neutral"}
           style={{ fontSize: "11.5px", fontWeight: 700, padding: "4px 10px" }}
         >
-          {tone === "active" ? incidentLabel[incident.status] : "Resolvido"}
+          {t(`publicStatus.incidentStatus.${tone === "active" ? incident.status : "resolved"}`)}
         </Tag>
       </div>
 
@@ -222,7 +211,7 @@ function IncidentCard({ incident, tone }: { incident: PublicIncidentEntry; tone:
           {incident.updates.map((u, i) => (
             <div key={i} className="flex flex-col gap-0.5">
               <span className="text-[11px] font-semibold text-neutral-400">
-                {formatDateTime(u.created_at)}
+                {formatDateTime(u.created_at, locale)}
               </span>
               <p className="text-[12.5px] leading-relaxed text-neutral-200">{u.body}</p>
             </div>
@@ -235,7 +224,7 @@ function IncidentCard({ incident, tone }: { incident: PublicIncidentEntry; tone:
         className="cursor-pointer self-start text-[12.5px] font-semibold text-accent"
         onClick={() => setExpanded((v) => !v)}
       >
-        {expanded ? "Ocultar linha do tempo" : "Ver linha do tempo"}
+        {expanded ? t("publicStatus.hideTimeline") : t("publicStatus.showTimeline")}
       </button>
     </Card>
   );
@@ -259,7 +248,8 @@ function LoadingSkeleton({ loadingLabel }: { loadingLabel: string }) {
 // the request's own hostname on the Go side). useParams() naturally
 // returns undefined for :id when this is mounted outside that route.
 export function PublicStatusPage() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation("translation", { i18n: publicStatusI18n });
+  const locale = i18n.language;
   const { id } = useParams();
   const [range, setRange] = useState<RangeKey>("24h");
   const { data, isLoading, isError, hasMoreResolved, loadMoreResolvedIncidents } = usePublicStatusPage(id, range);
@@ -290,7 +280,7 @@ export function PublicStatusPage() {
     const descriptionTag = document.querySelector('meta[name="description"]');
     descriptionTag?.setAttribute(
       "content",
-      `${data.company_name} — ${overallCopy[worstServiceStatus(data.services.map((s) => s.status))].label}.`,
+      `${data.company_name} — ${t(`publicStatus.overallStatus.${worstServiceStatus(data.services.map((s) => s.status))}`)}.`,
     );
 
     return () => {
@@ -327,15 +317,15 @@ export function PublicStatusPage() {
     return (
       <div data-theme={themeAttr} data-testid="public-status-theme-root" className="min-h-screen bg-bg">
         <div className="mx-auto flex w-full max-w-[720px] flex-col items-center gap-2 px-4 py-24 text-center">
-          <p className="text-text">Página não encontrada.</p>
-          <p className="text-sm text-neutral-400">Verifique o endereço e tente novamente.</p>
+          <p className="text-text">{t("publicStatus.notFoundTitle")}</p>
+          <p className="text-sm text-neutral-400">{t("publicStatus.notFoundSubtitle")}</p>
         </div>
       </div>
     );
   }
 
   const overall = worstServiceStatus(data.services.map((s) => s.status));
-  const overallInfo = overallCopy[overall];
+  const overallColor = overallColorVar[overall];
 
   return (
     <div data-theme={themeAttr} data-testid="public-status-theme-root" className="min-h-screen bg-bg">
@@ -357,7 +347,7 @@ export function PublicStatusPage() {
           </button>
           <div className="flex items-center gap-1.5 text-xs text-neutral-400">
             {data.stale ? <ClockIcon /> : null}
-            <span>Atualizado {formatRelativeTime(data.updated_at)}</span>
+            <span>{t("publicStatus.updatedAt", { time: formatRelativeTime(data.updated_at, t) })}</span>
           </div>
         </div>
       </header>
@@ -365,40 +355,38 @@ export function PublicStatusPage() {
       <div
         className="flex items-center gap-3 rounded-md p-[18px_22px]"
         style={{
-          background: `color-mix(in oklch, var(${overallInfo.colorVar}) 14%, var(--color-surface))`,
+          background: `color-mix(in oklch, var(${overallColor}) 14%, var(--color-surface))`,
         }}
       >
         <div
           className="h-[10px] w-[10px] flex-none rounded-full"
-          style={{ background: `var(${overallInfo.colorVar})` }}
+          style={{ background: `var(${overallColor})` }}
         />
         <div className="flex flex-col gap-0.5">
-          <p className="text-base font-bold text-text">{overallInfo.label}</p>
+          <p className="text-base font-bold text-text">{t(`publicStatus.overallStatus.${overall}`)}</p>
           {data.stale ? (
-            <p className="text-xs text-neutral-400">
-              Mostrando o último dado disponível — atualização em andamento.
-            </p>
+            <p className="text-xs text-neutral-400">{t("publicStatus.staleNotice")}</p>
           ) : null}
         </div>
       </div>
 
       {data.incidents.active.length > 0 ? (
         <section className="flex flex-col gap-3">
-          <h2 className="text-xs uppercase tracking-wide text-neutral-400">Incidente em andamento</h2>
+          <h2 className="text-xs uppercase tracking-wide text-neutral-400">{t("publicStatus.activeIncidentHeading")}</h2>
           {data.incidents.active.map((incident) => (
-            <IncidentCard key={incident.id} incident={incident} tone="active" />
+            <IncidentCard key={incident.id} incident={incident} tone="active" t={t} locale={locale} />
           ))}
         </section>
       ) : null}
 
       <section className="flex flex-col gap-3">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <h2 className="text-xs uppercase tracking-wide text-neutral-400">Serviços</h2>
+          <h2 className="text-xs uppercase tracking-wide text-neutral-400">{t("publicStatus.servicesHeading")}</h2>
           <Seg
             options={RANGE_OPTIONS}
             value={range}
             onChange={(value) => setRange(value as RangeKey)}
-            aria-label="Selecionar período"
+            aria-label={t("publicStatus.selectRangeLabel")}
           />
         </div>
         <div className="flex flex-col gap-2.5">
@@ -411,11 +399,11 @@ export function PublicStatusPage() {
                 <div className="flex min-w-0 items-center gap-2.5">
                   <span
                     className="h-[7px] w-[7px] flex-none rounded-full"
-                    style={{ background: `var(${overallCopy[service.status].colorVar})` }}
+                    style={{ background: `var(${overallColorVar[service.status]})` }}
                   />
                   <span className="truncate text-sm font-bold text-text">{service.name}</span>
                   {!service.last_updated_at ? (
-                    <span className="text-xs text-neutral-500">(sem dados)</span>
+                    <span className="text-xs text-neutral-500">{t("publicStatus.noDataLabel")}</span>
                   ) : null}
                 </div>
                 <div className="flex flex-shrink-0 items-center gap-2.5">
@@ -435,7 +423,7 @@ export function PublicStatusPage() {
                       ? { title: service.status_analysis, tabIndex: 0 }
                       : {})}
                   >
-                    {serviceLabel[service.status]}
+                    {t(`publicStatus.serviceStatus.${service.status}`)}
                   </Tag>
                 </div>
               </div>
@@ -460,7 +448,7 @@ export function PublicStatusPage() {
                           trigger={
                             <button
                               type="button"
-                              title={hourlyTooltip(bucket)}
+                              title={hourlyTooltip(bucket, t, locale)}
                               className="h-[24px] flex-1 rounded-[2px] cursor-pointer border-0 p-0"
                               style={barStyle}
                               data-testid={`hourly-bar-${service.name}-${i}`}
@@ -473,7 +461,9 @@ export function PublicStatusPage() {
                           <div className="flex flex-col gap-2">
                             {episodes.map((episode, j) => (
                               <div key={j}>
-                                <p className="m-0 text-[11px] text-neutral-400">{episodeTimeRange(episode)}</p>
+                                <p className="m-0 text-[11px] text-neutral-400">
+                                  {episodeTimeRange(episode, t, locale)}
+                                </p>
                                 <p className="m-0 text-xs text-text">
                                   {episode.analysis ?? t("publicStatus.episodePopover.noReasonRecorded")}
                                 </p>
@@ -486,7 +476,7 @@ export function PublicStatusPage() {
                     return (
                       <div
                         key={i}
-                        title={hourlyTooltip(bucket)}
+                        title={hourlyTooltip(bucket, t, locale)}
                         tabIndex={0}
                         className="h-[24px] flex-1 rounded-[2px]"
                         style={barStyle}
@@ -496,8 +486,8 @@ export function PublicStatusPage() {
                   })}
                 </div>
                 <div className="flex justify-between text-[10.5px] text-neutral-500">
-                  <span>{rangeAgoLabel[range]}</span>
-                  <span>agora</span>
+                  <span>{t(`publicStatus.rangeAgo.${range}`)}</span>
+                  <span>{t("publicStatus.now")}</span>
                 </div>
               </div>
             </Card>
@@ -506,11 +496,11 @@ export function PublicStatusPage() {
       </section>
 
       <section className="flex flex-col gap-3">
-        <h2 className="text-xs uppercase tracking-wide text-neutral-400">Histórico (últimos 90 dias)</h2>
+        <h2 className="text-xs uppercase tracking-wide text-neutral-400">{t("publicStatus.historyHeading")}</h2>
         {data.incidents.resolved.length > 0 ? (
           <div className="flex flex-col gap-2">
             {data.incidents.resolved.map((incident) => (
-              <IncidentCard key={incident.id} incident={incident} tone="resolved" />
+              <IncidentCard key={incident.id} incident={incident} tone="resolved" t={t} locale={locale} />
             ))}
             {hasMoreResolved ? (
               <Button
@@ -519,19 +509,19 @@ export function PublicStatusPage() {
                 onClick={handleLoadMore}
                 disabled={loadingMore}
               >
-                Carregar mais
+                {t("publicStatus.loadMore")}
               </Button>
             ) : null}
           </div>
         ) : (
-          <p className="text-sm text-neutral-500">Nenhum incidente nos últimos 90 dias.</p>
+          <p className="text-sm text-neutral-500">{t("publicStatus.noHistoryIncidents")}</p>
         )}
       </section>
 
       <footer className="mt-[48px] text-center text-xs text-neutral-500">
-        Powered by <span className="font-semibold text-accent">Vane</span>
+        {t("publicStatus.poweredByPrefix")} <span className="font-semibold text-accent">Vane</span>
         <span className="mx-1.5">·</span>
-        Atualiza automaticamente a cada 2 minutos.
+        {t("publicStatus.autoRefreshNotice")}
       </footer>
     </div>
     </div>

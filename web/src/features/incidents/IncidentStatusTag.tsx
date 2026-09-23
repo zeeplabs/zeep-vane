@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { Tag } from "../../components/ui/Tag";
 import type { IncidentStatus } from "../../types/api";
 import { incidentStatusDotColor, incidentStatusLabel, incidentStatusVariant } from "./incidentStatusMeta";
@@ -10,6 +11,7 @@ export interface IncidentStatusTagProps {
  * domains/DomainStatusTag.tsx - every status badge in the app follows this
  * one shape, not a plain square Tag. */
 export function IncidentStatusTag({ status }: IncidentStatusTagProps) {
+  const { t } = useTranslation();
   return (
     <Tag variant={incidentStatusVariant[status]} className="gap-1.5" style={{ borderRadius: "999px" }}>
       <span
@@ -17,7 +19,7 @@ export function IncidentStatusTag({ status }: IncidentStatusTagProps) {
         style={{ backgroundColor: incidentStatusDotColor[status] }}
         aria-hidden="true"
       />
-      {incidentStatusLabel[status]}
+      {incidentStatusLabel(t, status)}
     </Tag>
   );
 }

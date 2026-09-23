@@ -1,4 +1,5 @@
 import { useState } from "react";
+import "../../lib/i18n";
 import { describe, it, expect, afterEach } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -45,9 +46,9 @@ function baseDomain(overrides: Partial<Domain>): Domain {
   };
 }
 
-/** Harness combinando DomainsTable + DomainDetailDrawer sob o mesmo
- * QueryClient - necessário para exercitar DSP-07 de ponta a ponta (a
- * invalidação de cache do delete removendo a linha da tabela). */
+/** Harness combining DomainsTable + DomainDetailDrawer under the same
+ * QueryClient - needed to exercise DSP-07 end to end (the delete's
+ * cache invalidation removing the row from the table). */
 function TableAndDrawer() {
   const [selected, setSelected] = useState<Domain | null>(null);
   return (
@@ -67,7 +68,7 @@ function renderHarness() {
 }
 
 describe("DomainDetailDrawer", () => {
-  it("renderiza status, banner de erro (last_error), SSL/Verificado e bloco de DNS para domínio custom (DSP-05)", async () => {
+  it("renders status, error banner (last_error), SSL/Verified and the DNS block for a custom domain (DSP-05)", async () => {
     mockDomainsPage([
       baseDomain({
         id: "dom-error",
@@ -87,7 +88,7 @@ describe("DomainDetailDrawer", () => {
     expect(screen.getAllByText("Erro").length).toBeGreaterThan(0);
   });
 
-  it("'Verificar novamente' chama useRecheckDomain e o drawer reflete o novo estado retornado (DSP-06)", async () => {
+  it("'Verificar novamente' calls useRecheckDomain and the drawer reflects the returned new state (DSP-06)", async () => {
     const domain = baseDomain({
       id: "dom-recheck",
       hostname: "recheck.example.com",
@@ -110,7 +111,7 @@ describe("DomainDetailDrawer", () => {
     await waitFor(() => expect(screen.getByText("Ativo")).toBeInTheDocument());
   });
 
-  it("'Remover domínio' bem-sucedido fecha o drawer e remove a linha da tabela (DSP-07)", async () => {
+  it("successful 'Remover domínio' closes the drawer and removes the row from the table (DSP-07)", async () => {
     // Uses the real (unmocked) MSW domainsState-backed handlers rather than
     // a static server.use() override for GET /api/domains - the row's
     // disappearance depends on the DELETE handler's mutation of
@@ -130,7 +131,7 @@ describe("DomainDetailDrawer", () => {
     expect(screen.queryByRole("button", { name: "Remover domínio" })).not.toBeInTheDocument();
   });
 
-  it("'Remover domínio' com 409 mostra erro inline e mantém o drawer aberto (DSP-08)", async () => {
+  it("'Remover domínio' with 409 shows an inline error and keeps the drawer open (DSP-08)", async () => {
     mockDomainsPage([baseDomain({ id: "dom-inuse", hostname: "inuse.example.com" })]);
     server.use(
       http.delete("/api/domains/:id", () =>

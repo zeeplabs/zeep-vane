@@ -5,14 +5,11 @@ import { Card } from "../../components/ui/Card";
 import { Pager } from "../../components/ui/Pager";
 import { Skeleton } from "../../components/ui/Skeleton";
 import { EmptyState } from "../../layout/EmptyState";
+import { formatDateTime } from "../../lib/formatDate";
 import type { Domain } from "../../types/api";
 import { useDomains } from "./hooks";
 import { attachedPageColumn, domainTypeLabel, sslStatusColor, sslStatusLabel } from "./domainStatusMeta";
 import { DomainStatusTag } from "./DomainStatusTag";
-
-function formatTimestamp(iso: string | null): string {
-  return iso ? new Date(iso).toLocaleString("pt-BR") : "—";
-}
 
 export interface DomainsTableProps {
   /** Chamado quando uma linha da tabela é selecionada (abre o
@@ -24,7 +21,7 @@ export interface DomainsTableProps {
  * Tipo/Aponta para/SSL/Verificado, mesma estrutura de grid/linha/Pager que
  * ServiceListPage já estabeleceu. */
 export function DomainsTable({ onSelect }: DomainsTableProps) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [page, setPage] = useState(1);
   const { data: domainsPage, isLoading } = useDomains(page);
   const domains = useMemo(() => domainsPage?.items ?? [], [domainsPage]);
@@ -35,12 +32,12 @@ export function DomainsTable({ onSelect }: DomainsTableProps) {
       <Card elevation="none" aria-busy="true" className="overflow-hidden border border-divider">
         <span className="sr-only">{t("domains.loading")}</span>
         <div className="grid grid-cols-[110px_1fr_140px_1fr_90px_140px_20px] items-center gap-3 border-b border-divider bg-card-header-bg px-5 py-2.5">
-          <span className="text-[11px] font-bold uppercase tracking-wide text-neutral-400">Status</span>
-          <span className="text-[11px] font-bold uppercase tracking-wide text-neutral-400">Domínio</span>
-          <span className="text-[11px] font-bold uppercase tracking-wide text-neutral-400">Tipo</span>
-          <span className="text-[11px] font-bold uppercase tracking-wide text-neutral-400">Aponta para</span>
-          <span className="text-[11px] font-bold uppercase tracking-wide text-neutral-400">SSL</span>
-          <span className="text-[11px] font-bold uppercase tracking-wide text-neutral-400">Verificado</span>
+          <span className="text-[11px] font-bold uppercase tracking-wide text-neutral-400">{t("common.status")}</span>
+          <span className="text-[11px] font-bold uppercase tracking-wide text-neutral-400">{t("domains.table.domain")}</span>
+          <span className="text-[11px] font-bold uppercase tracking-wide text-neutral-400">{t("domains.table.type")}</span>
+          <span className="text-[11px] font-bold uppercase tracking-wide text-neutral-400">{t("domains.table.pointsTo")}</span>
+          <span className="text-[11px] font-bold uppercase tracking-wide text-neutral-400">{t("domains.table.ssl")}</span>
+          <span className="text-[11px] font-bold uppercase tracking-wide text-neutral-400">{t("domains.table.verified")}</span>
           <span />
         </div>
         {Array.from({ length: 5 }).map((_, i) => (
@@ -62,19 +59,19 @@ export function DomainsTable({ onSelect }: DomainsTableProps) {
   }
 
   if (domains.length === 0) {
-    return <EmptyState title="Nenhum domínio cadastrado" description="Adicione um domínio para começar." />;
+    return <EmptyState title={t("domains.empty.title")} description={t("domains.empty.description")} />;
   }
 
   return (
     <div className="flex flex-col gap-3">
       <Card elevation="none" className="overflow-hidden border border-divider">
         <div className="grid grid-cols-[110px_1fr_140px_1fr_90px_140px_20px] items-center gap-3 border-b border-divider bg-card-header-bg px-5 py-2.5">
-          <span className="text-[11px] font-bold uppercase tracking-wide text-neutral-400">Status</span>
-          <span className="text-[11px] font-bold uppercase tracking-wide text-neutral-400">Domínio</span>
-          <span className="text-[11px] font-bold uppercase tracking-wide text-neutral-400">Tipo</span>
-          <span className="text-[11px] font-bold uppercase tracking-wide text-neutral-400">Aponta para</span>
-          <span className="text-[11px] font-bold uppercase tracking-wide text-neutral-400">SSL</span>
-          <span className="text-[11px] font-bold uppercase tracking-wide text-neutral-400">Verificado</span>
+          <span className="text-[11px] font-bold uppercase tracking-wide text-neutral-400">{t("common.status")}</span>
+          <span className="text-[11px] font-bold uppercase tracking-wide text-neutral-400">{t("domains.table.domain")}</span>
+          <span className="text-[11px] font-bold uppercase tracking-wide text-neutral-400">{t("domains.table.type")}</span>
+          <span className="text-[11px] font-bold uppercase tracking-wide text-neutral-400">{t("domains.table.pointsTo")}</span>
+          <span className="text-[11px] font-bold uppercase tracking-wide text-neutral-400">{t("domains.table.ssl")}</span>
+          <span className="text-[11px] font-bold uppercase tracking-wide text-neutral-400">{t("domains.table.verified")}</span>
           <span />
         </div>
         {domains.map((domain) => (
@@ -86,12 +83,14 @@ export function DomainsTable({ onSelect }: DomainsTableProps) {
           >
             <DomainStatusTag status={domain.status} />
             <div className="min-w-0 truncate font-mono text-[13px] text-text">{domain.hostname}</div>
-            <div className="text-[13px] font-medium text-text-muted">{domainTypeLabel[domain.domain_type]}</div>
+            <div className="text-[13px] font-medium text-text-muted">{domainTypeLabel(t, domain.domain_type)}</div>
             <div className="min-w-0 truncate text-[13px] font-medium text-text-muted">{attachedPageColumn(domain)}</div>
             <div className="text-[13px] font-semibold" style={{ color: sslStatusColor[domain.ssl_status] }}>
-              {sslStatusLabel[domain.ssl_status]}
+              {sslStatusLabel(t, domain.ssl_status)}
             </div>
-            <div className="text-xs text-text-muted">{formatTimestamp(domain.verified_at)}</div>
+            <div className="text-xs text-text-muted">
+              {domain.verified_at ? formatDateTime(domain.verified_at, i18n.language) : "—"}
+            </div>
             <MdChevronRight size={16} className="text-neutral-500" aria-hidden="true" />
           </div>
         ))}

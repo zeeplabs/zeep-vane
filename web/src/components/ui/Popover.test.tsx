@@ -4,7 +4,7 @@ import userEvent from "@testing-library/user-event";
 import { Popover } from "./Popover";
 
 describe("Popover", () => {
-  it("fica fechado até o trigger ser clicado", () => {
+  it("stays closed until the trigger is clicked", () => {
     render(
       <Popover trigger={<button type="button">abrir</button>}>
         <p>conteúdo do popover</p>
@@ -13,7 +13,7 @@ describe("Popover", () => {
     expect(screen.queryByText("conteúdo do popover")).not.toBeInTheDocument();
   });
 
-  it("abre ao clicar no trigger", async () => {
+  it("opens on trigger click", async () => {
     render(
       <Popover trigger={<button type="button">abrir</button>}>
         <p>conteúdo do popover</p>
@@ -23,7 +23,7 @@ describe("Popover", () => {
     expect(screen.getByText("conteúdo do popover")).toBeInTheDocument();
   });
 
-  it("fecha ao clicar no trigger de novo", async () => {
+  it("closes on clicking the trigger again", async () => {
     render(
       <Popover trigger={<button type="button">abrir</button>}>
         <p>conteúdo do popover</p>
@@ -36,7 +36,7 @@ describe("Popover", () => {
     expect(screen.queryByText("conteúdo do popover")).not.toBeInTheDocument();
   });
 
-  it("fecha ao pressionar Escape", async () => {
+  it("closes on pressing Escape", async () => {
     render(
       <Popover trigger={<button type="button">abrir</button>}>
         <p>conteúdo do popover</p>
@@ -48,7 +48,7 @@ describe("Popover", () => {
     expect(screen.queryByText("conteúdo do popover")).not.toBeInTheDocument();
   });
 
-  it("fecha ao clicar fora", async () => {
+  it("closes on clicking outside", async () => {
     render(
       <div>
         <Popover trigger={<button type="button">abrir</button>}>
@@ -63,7 +63,7 @@ describe("Popover", () => {
     expect(screen.queryByText("conteúdo do popover")).not.toBeInTheDocument();
   });
 
-  it("abre e fecha via teclado (Enter no trigger focado, Escape fecha)", async () => {
+  it("opens and closes via keyboard (Enter on focused trigger, Escape closes)", async () => {
     render(
       <Popover trigger={<button type="button">abrir</button>}>
         <p>conteúdo do popover</p>

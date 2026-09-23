@@ -1,0 +1,1178 @@
+{
+  "common": {
+    "close": "Fechar",
+    "cancel": "Cancelar",
+    "status": "Status"
+  },
+  "components": {
+    "iconRoleSelector": {
+      "groupLabel": "Selecionar papel",
+      "roleLabel": {
+        "owner": "Owner",
+        "operator": "Operator",
+        "viewer": "Viewer"
+      }
+    }
+  },
+  "admins": {
+    "loading": "Carregando…",
+    "title": "Usuários",
+    "subtitle": "Gerencie quem tem acesso ao tenant e o papel de cada pessoa.",
+    "inviteButton": "Convidar usuário",
+    "filters": {
+      "all": "Todos",
+      "ariaLabel": "Filtrar por papel"
+    },
+    "roleLabel": {
+      "owner": "Admin",
+      "operator": "Membro",
+      "viewer": "Leitura"
+    },
+    "statusLabel": {
+      "active": "Ativo",
+      "pending": "Pendente"
+    },
+    "roleOptions": {
+      "owner": {
+        "label": "Admin",
+        "description": "Acesso total, inclusive faturamento e integrações"
+      },
+      "operator": {
+        "label": "Membro",
+        "description": "Gerencia serviços e incidentes, sem acesso à cobrança"
+      },
+      "viewer": {
+        "label": "Somente leitura",
+        "description": "Visualiza painéis e incidentes, sem editar nada"
+      }
+    },
+    "roleFieldLabel": "Papel",
+    "searchPlaceholder": "Buscar por nome ou email",
+    "table": {
+      "user": "Usuário",
+      "role": "Papel",
+      "lastAccess": "Último acesso"
+    },
+    "empty": "Nenhum usuário encontrado com esses filtros.",
+    "expiredTag": "Expirado",
+    "resendInviteButton": "Reenviar convite",
+    "removeUserButton": "Remover usuário",
+    "roleChangeError": "Não foi possível alterar o papel.",
+    "invite": {
+      "title": "Convidar usuário",
+      "description": "Enviaremos um convite por email com um link de acesso a este tenant.",
+      "submitButton": "Enviar convite",
+      "nameLabel": "Nome",
+      "emailLabel": "Email",
+      "emailPlaceholder": "nome@empresa.com",
+      "phoneLabel": "Celular (opcional)",
+      "error": "Não foi possível enviar o convite."
+    },
+    "remove": {
+      "title": "Remover usuário",
+      "description": "Remover o acesso de {{email}}? Esta ação não pode ser desfeita.",
+      "confirmButton": "Remover",
+      "error": "Não foi possível remover o usuário.",
+      "inviteCancelledToast": "Convite de {{email}} cancelado.",
+      "accessRemovedToast": "Acesso de {{email}} removido."
+    },
+    "resend": {
+      "successToast": "Convite reenviado para {{email}}.",
+      "failedDeliveryToast": "Convite reenviado para {{email}}, mas o e-mail não pôde ser entregue.",
+      "error": "Não foi possível reenviar o convite."
+    },
+    "relativeTime": {
+      "now": "agora",
+      "minute_one": "há {{count}} min",
+      "minute_other": "há {{count}} min",
+      "hour_one": "há {{count}} hora",
+      "hour_other": "há {{count}} horas",
+      "day_one": "há {{count}} dia",
+      "day_other": "há {{count}} dias"
+    }
+  },
+  "domainsStatusPages": {
+    "title": "Domínios & Status Pages",
+    "subtitle": "Gerencie os domínios verificados e as páginas públicas de status do Vane.",
+    "tabs": {
+      "domains": "Domínios",
+      "statusPages": "Status Pages"
+    }
+  },
+  "domains": {
+    "loading": "Carregando…",
+    "table": {
+      "domain": "Domínio",
+      "type": "Tipo",
+      "pointsTo": "Aponta para",
+      "ssl": "SSL",
+      "verified": "Verificado"
+    },
+    "empty": {
+      "title": "Nenhum domínio cadastrado",
+      "description": "Adicione um domínio para começar."
+    },
+    "statusLabel": {
+      "pending": "Pendente",
+      "verified": "Verificado",
+      "error": "Erro"
+    },
+    "sslStatusLabel": {
+      "pending": "Pendente",
+      "active": "Ativo",
+      "error": "Erro"
+    },
+    "typeLabel": {
+      "custom": "Domínio próprio"
+    },
+    "addButton": "Adicionar domínio",
+    "section": {
+      "title": "Domínios cadastrados",
+      "empty": "Nenhum domínio cadastrado.",
+      "createdAtLabel": "Cadastrado em",
+      "deleteTooltip": "Excluir",
+      "deleteError": "Não foi possível excluir o domínio.",
+      "deleteDialog": {
+        "title": "Excluir domínio",
+        "description": "Excluir o domínio {{hostname}}? Esta ação não pode ser desfeita.",
+        "confirmButton": "Excluir"
+      }
+    },
+    "form": {
+      "hostnameLabel": "Hostname",
+      "hostnamePlaceholder": "status.suaempresa.com",
+      "saveButton": "Salvar",
+      "error": "Não foi possível cadastrar o domínio."
+    },
+    "add": {
+      "title": "Adicionar domínio",
+      "description": "Cadastre um domínio raiz para publicar uma status page em um subdomínio dele.",
+      "typeLabel": "Tipo de domínio",
+      "vaneSubdomain": {
+        "title": "Subdomínio Vane",
+        "description": "Em breve: publique sem configurar DNS."
+      },
+      "customDomain": {
+        "title": "Domínio próprio",
+        "description": "Use um domínio que você já possui."
+      }
+    },
+    "detail": {
+      "pointsToConnector": "aponta para",
+      "sslLabel": "SSL/TLS",
+      "verifiedAtLabel": "Verificado em",
+      "dnsConfigLabel": "Configuração DNS",
+      "dnsType": "TIPO",
+      "dnsValue": "VALOR",
+      "notConfigured": "não configurado",
+      "recheckButton": "Verificar novamente",
+      "removeButton": "Remover domínio",
+      "removeError": "Não foi possível remover o domínio."
+    }
+  },
+  "statusPages": {
+    "loading": "Carregando…",
+    "dns": {
+      "copyCname": "Copiar valor do CNAME",
+      "copied": "Valor do CNAME copiado."
+    },
+    "table": {
+      "visibility": "Visib.",
+      "page": "Página",
+      "publicUrl": "URL pública",
+      "services": "Serviços",
+      "updated": "Atualizado"
+    },
+    "empty": {
+      "title": "Nenhuma status page criada",
+      "description": "Crie uma status page para começar."
+    },
+    "publicTag": "Público",
+    "serviceCount_one": "{{count}} serviço",
+    "serviceCount_other": "{{count}} serviços",
+    "createTitle": "Criar status page",
+    "section": {
+      "title": "Status pages",
+      "createButton": "Criar status page",
+      "empty": "Nenhuma status page criada.",
+      "deleteError": "Não foi possível excluir a status page.",
+      "createError": "Não foi possível criar a status page.",
+      "createDescription": "Vincule os serviços que essa status page vai exibir. O domínio é anexado depois, numa tela dedicada.",
+      "nameLabel": "Nome",
+      "servicesLabel": "Serviços",
+      "submitButton": "Criar",
+      "deleteTooltip": "Excluir",
+      "attachDomainLink": "Anexar domínio",
+      "publishedTag": "Publicada",
+      "failedTag": "Falha",
+      "noDomainTag": "Sem domínio configurado",
+      "pendingTag": "Aguardando validação de DNS/certificado",
+      "deleteDialog": {
+        "title": "Excluir status page",
+        "description": "Excluir a status page \"{{name}}\"? Esta ação não pode ser desfeita.",
+        "confirmButton": "Excluir"
+      }
+    },
+    "add": {
+      "description": "Escolha quais serviços aparecem para o público e a visibilidade da página.",
+      "submitButton": "Criar status page",
+      "nameLabel": "Nome da página",
+      "namePlaceholder": "Ex: Status Público",
+      "visibilityLabel": "Visibilidade",
+      "public": {
+        "title": "Público",
+        "description": "Qualquer pessoa com o link pode ver"
+      },
+      "private": {
+        "title": "Privado",
+        "description": "Somente membros do tenant logados"
+      },
+      "servicesLabel": "Serviços exibidos"
+    },
+    "attach": {
+      "title": "Anexar domínio",
+      "description": "Escolha o domínio e o subdomínio que essa status page vai usar. O certificado é emitido automaticamente depois que o DNS propagar.",
+      "submitButton": "Anexar",
+      "domainLabel": "Domínio",
+      "domainPlaceholder": "Selecione um domínio",
+      "subdomainLabel": "Subdomínio",
+      "subdomainPlaceholder": "<subdomínio>",
+      "domainPlaceholderShort": "<domínio>",
+      "dnsRecordLabel": "Registro DNS",
+      "dnsInstruction": "Aponte {{sub}}.{{domain}} (CNAME) para",
+      "dnsNotConfigured": "O operador ainda não configurou o valor de destino do DNS (PUBLIC_DNS_TARGET). Você ainda pode anexar o domínio agora.",
+      "error": "Não foi possível anexar o domínio."
+    },
+    "detail": {
+      "servicesLabel": "Serviços exibidos ({{count}})",
+      "associatedDomainLabel": "Domínio associado",
+      "previewButton": "Pré-visualizar página pública",
+      "viewPublicButton": "Ver página pública",
+      "editButton": "Editar página",
+      "notFound": "Status page não encontrada."
+    },
+    "edit": {
+      "defaultTitle": "Editar status page",
+      "description": "Gerencie domínio, verificação e serviços exibidos nesta página."
+    },
+    "editor": {
+      "noDomainAttached": "Nenhum domínio anexado ainda.",
+      "linkedServicesLabel": "Serviços vinculados ({{selected}}/{{total}})",
+      "noServices": "Nenhum serviço cadastrado.",
+      "linkedGroupLabel": "Vinculados ({{count}})",
+      "availableLabel": "Disponíveis",
+      "searchPlaceholder": "Buscar serviço…",
+      "noServicesFound": "Nenhum serviço encontrado.",
+      "saveServicesButton": "Salvar serviços",
+      "saveServicesError": "Não foi possível salvar os serviços vinculados.",
+      "verifyingButton": "Verificando…",
+      "verifyButton": "Verificar DNS/certificado",
+      "pointHostnameInstruction": "Aponte {{hostname}} para o valor acima. O certificado é emitido automaticamente assim que o DNS propagar e alguém acessar a página (ou ao clicar em \"Verificar\" acima).",
+      "verifyGenericError": "Não foi possível verificar o domínio agora.",
+      "dnsNotResolved": "DNS ainda não resolve para nenhum destino",
+      "dnsMismatch": "DNS resolve para {{ips}}, diferente do destino esperado",
+      "dnsMatch": "DNS resolve corretamente ({{ips}})",
+      "dnsResolves": "DNS resolve ({{ips}})",
+      "tlsValid": "Certificado TLS emitido e válido",
+      "tlsRespondedInvalid": "Conexão HTTPS respondeu, mas o certificado não é válido para {{hostname}}{{errorSuffix}}",
+      "tlsUnreachable": "Conexão HTTPS ainda falha{{errorSuffix}}",
+      "lastCheckedLabel": "Última verificação: {{date}}"
+    }
+  },
+  "incidents": {
+    "loading": "Carregando…",
+    "title": "Incidentes",
+    "subtitle": "Acompanhe, atualize e encerre incidentes dos serviços monitorados.",
+    "newButton": "Novo incidente",
+    "filters": {
+      "all": "Todos",
+      "ariaLabel": "Filtrar por status"
+    },
+    "autoCreatedTag": "Automático",
+    "table": {
+      "incident": "Incidente",
+      "service": "Serviço",
+      "severity": "Severidade",
+      "openedAt": "Aberto em",
+      "duration": "Duração"
+    },
+    "empty": "Nenhum incidente encontrado com esse filtro.",
+    "statusLabel": {
+      "investigating": "Investigando",
+      "identified": "Identificado",
+      "monitoring": "Monitorando",
+      "resolved": "Resolvido"
+    },
+    "severityLabel": {
+      "minor": "Menor",
+      "moderate": "Moderado",
+      "critical": "Crítico"
+    },
+    "transition": {
+      "resolved": "Marcar como resolvido"
+    },
+    "create": {
+      "title": "Criar incidente",
+      "description": "Descreva o incidente e vincule os serviços afetados.",
+      "submitButton": "Criar",
+      "titleLabel": "Título",
+      "affectedServicesLabel": "Serviços afetados",
+      "severityLabel": "Severidade",
+      "descriptionLabel": "Descrição inicial",
+      "descriptionPlaceholder": "O que está acontecendo?",
+      "error": "Não foi possível criar o incidente."
+    }
+  },
+  "poller": {
+    "loading": "Carregando…",
+    "title": "Status do poller",
+    "subtitle": "Estado real do poller ativo e das integrações conectadas.",
+    "loadError": "Não foi possível carregar o status do poller.",
+    "empty": "Nenhuma integração conectada.",
+    "lastRun": "Última execução",
+    "localReplica": "réplica local",
+    "statusLabel": {
+      "unknown": "-",
+      "noLeader": "Sem líder no momento",
+      "active": "Ativo",
+      "waitingIntegration": "Aguardando integração"
+    },
+    "stat": {
+      "poller": "Poller",
+      "checksPerMinute": "Verificações/min",
+      "connectedIntegrations": "Integrações conectadas"
+    },
+    "leaderNoIntegration": "Réplica líder ativa, mas nenhuma integração Datadog conectada.",
+    "result": {
+      "success": "Sucesso",
+      "failure": "Falha"
+    },
+    "failureMessage": {
+      "single": "Falha ao verificar a integração {{provider}} — última tentativa não teve sucesso.",
+      "multiple": "Falha ao verificar as integrações {{providers}} — última tentativa não teve sucesso."
+    },
+    "providersSeparator": " e ",
+    "banner": {
+      "viewDetails": "Ver detalhes"
+    }
+  },
+  "publicStatus": {
+    "loading": "Carregando…",
+    "episodePopover": {
+      "heading": "Degradação registrada",
+      "noReasonRecorded": "Motivo não disponível para este período."
+    },
+    "overallStatus": {
+      "operational": "Todos os sistemas operacionais",
+      "degraded": "Interrupção parcial em andamento",
+      "outage": "Interrupção em andamento"
+    },
+    "serviceStatus": {
+      "operational": "Operacional",
+      "degraded": "Degradado",
+      "outage": "Interrupção"
+    },
+    "hourlyStatus": {
+      "operational": "Operacional",
+      "degraded": "Degradado",
+      "outage": "Interrupção",
+      "no_data": "Sem dados"
+    },
+    "incidentStatus": {
+      "investigating": "Investigando",
+      "identified": "Identificado",
+      "monitoring": "Monitorando",
+      "resolved": "Resolvido"
+    },
+    "rangeAgo": {
+      "24h": "24h atrás",
+      "7d": "7 dias atrás",
+      "30d": "30 dias atrás",
+      "90d": "90 dias atrás"
+    },
+    "now": "agora",
+    "ongoing": "em andamento",
+    "notFoundTitle": "Página não encontrada.",
+    "notFoundSubtitle": "Verifique o endereço e tente novamente.",
+    "updatedAt": "Atualizado {{time}}",
+    "staleNotice": "Mostrando o último dado disponível — atualização em andamento.",
+    "activeIncidentHeading": "Incidente em andamento",
+    "servicesHeading": "Serviços",
+    "selectRangeLabel": "Selecionar período",
+    "noDataLabel": "(sem dados)",
+    "historyHeading": "Histórico (últimos 90 dias)",
+    "noHistoryIncidents": "Nenhum incidente nos últimos 90 dias.",
+    "loadMore": "Carregar mais",
+    "poweredByPrefix": "Powered by",
+    "autoRefreshNotice": "Atualiza automaticamente a cada 2 minutos.",
+    "hideTimeline": "Ocultar linha do tempo",
+    "showTimeline": "Ver linha do tempo",
+    "resolvedAt": "Resolvido {{time}} · duração {{duration}}",
+    "relativeTime": {
+      "minute_one": "há 1 minuto",
+      "minute_other": "há {{count}} minutos",
+      "hour_one": "há 1 hora",
+      "hour_other": "há {{count}} horas",
+      "day_one": "há 1 dia",
+      "day_other": "há {{count}} dias"
+    }
+  },
+  "emailProviders": {
+    "loading": "Carregando…",
+    "disconnectButton": "Desconectar",
+    "genericDisconnectError": "Não foi possível desconectar o provedor.",
+    "activateButton": "Ativar",
+    "genericActivateError": "Não foi possível ativar o {{provider}}.",
+    "disconnectDialog": {
+      "title": "Desconectar provedor",
+      "body": "Tem certeza que deseja desconectar o {{provider}}? A chave de API armazenada será removida e não poderá ser recuperada - será necessário reconectar para usá-lo novamente.",
+      "confirm": "Desconectar",
+      "cancel": "Cancelar"
+    }
+  },
+  "integrations": {
+    "title": "Integrações",
+    "subtitle": "Conecte o Vane às ferramentas que alimentam o monitoramento e a análise de incidentes.",
+    "categories": {
+      "apm": "APM & Observabilidade",
+      "ai": "IA",
+      "email": "E-mail"
+    },
+    "count_one": "{{count}} integração",
+    "count_other": "{{count}} integrações",
+    "statusLabel": {
+      "connected": "Conectado",
+      "not_connected": "Não conectado",
+      "coming_soon": "Em breve"
+    },
+    "editConnectionButton": "Editar conexão",
+    "connectButton": "Conectar",
+    "loading": "Carregando…",
+    "loadError": "Não foi possível carregar",
+    "notConfigured": "Não configurado",
+    "syncedNow": "Sincronizado agora mesmo",
+    "syncedAgo": "Sincronizado há {{count}} min",
+    "saveButton": "Salvar",
+    "datadog": {
+      "title": "Datadog",
+      "description": "Métricas e logs dos serviços monitorados, com alertas sincronizados em tempo real.",
+      "drawerTitle": "Conectar Datadog",
+      "drawerDescription": "As chaves são validadas contra o Datadog e criptografadas em repouso. Não são reexibidas após salvar.",
+      "apiKeyLabel": "API key",
+      "apiKeyPlaceholder": "Chave da API",
+      "appKeyLabel": "App key",
+      "appKeyPlaceholder": "Chave da aplicação",
+      "connectError": "Não foi possível conectar ao Datadog."
+    },
+    "newRelic": {
+      "title": "New Relic",
+      "description": "Monitoramento de performance de aplicações (APM) e infraestrutura."
+    },
+    "llm": {
+      "title": "LLM Provider",
+      "description": "Geração de resumos e fechamento assistido de incidentes com IA.",
+      "activeMeta": "Ativo · OpenAI · {{model}}",
+      "meta": "OpenAI · {{model}}",
+      "drawerTitle": "Conectar LLM Provider",
+      "modelLabel": "Modelo",
+      "connectError": "Não foi possível conectar ao LLM Provider.",
+      "rootCauseEnrichment": {
+        "label": "Enriquecimento com causa raiz",
+        "description": "Usa o Datadog Error Tracking para descrever a causa real de uma degradação ou indisponibilidade.",
+        "genericError": "Não foi possível atualizar essa configuração."
+      }
+    },
+    "email": {
+      "resend": {
+        "title": "Resend",
+        "description": "Envio de alertas e notificações de incidentes para o time de plantão."
+      },
+      "sendgrid": {
+        "title": "SendGrid",
+        "description": "Envio de alertas e notificações de incidentes por email."
+      },
+      "active": "Ativo",
+      "verified": "Verificado",
+      "drawerTitle": "Conectar {{provider}}",
+      "apiKeyLabel": "API key",
+      "apiKeyPlaceholder": "Chave da API",
+      "fromEmailLabel": "E-mail do remetente",
+      "fromEmailPlaceholder": "remetente@dominio.com",
+      "fromNameLabel": "Nome do remetente",
+      "fromNamePlaceholder": "Nome exibido no e-mail",
+      "connectError": "Não foi possível conectar."
+    }
+  },
+  "authLayout": {
+    "eyebrow": "Monitoramento em tempo real",
+    "headline": "Clareza total sobre a saúde da sua infraestrutura.",
+    "statusTitle": "Todos os sistemas operacionais",
+    "uptime": "99.98% uptime · últimos 30 dias",
+    "companyLogoAlt": "Company logo"
+  },
+  "auth": {
+    "oauth": {
+      "google": "Google",
+      "microsoft": "Microsoft",
+      "comingSoon": "Login social em breve.",
+      "divider": "ou continue com email"
+    }
+  },
+  "login": {
+    "title": "Entrar",
+    "subtitle": "Acesse o painel de monitoramento da sua organização.",
+    "email": "E-mail",
+    "password": "Senha",
+    "submit": "Entrar",
+    "forgotPassword": "Esqueci minha senha",
+    "showPassword": "Mostrar senha",
+    "hidePassword": "Ocultar senha",
+    "invalidCredentials": "E-mail ou senha inválidos.",
+    "noAccount": "Não tem uma conta?",
+    "createAccount": "Criar conta",
+    "twoFactor": {
+      "title": "Verificação em duas etapas",
+      "subtitle": "Digite o código de 6 dígitos do seu aplicativo autenticador.",
+      "codeLabel": "Código de verificação",
+      "submit": "Verificar",
+      "back": "Voltar",
+      "useRecovery": "Usar um código de recuperação",
+      "useCode": "Usar o código do aplicativo",
+      "recoveryLabel": "Código de recuperação",
+      "recoveryHint": "Digite um dos códigos de recuperação gerados ao ativar a autenticação em duas etapas.",
+      "invalid": "Código inválido ou expirado. Tente novamente.",
+      "generic": "Não foi possível concluir a verificação. Tente novamente."
+    }
+  },
+  "sidebar": {
+    "brand": "Vane",
+    "overview": "Visão geral",
+    "groupMonitoring": "Monitoramento",
+    "groupPlatform": "Plataforma",
+    "groupOrganization": "Organização",
+    "domainsStatusPages": "Domínios & Status",
+    "incidents": "Incidentes",
+    "integrations": "Integrações",
+    "services": "Serviços monitorados",
+    "admins": "Usuários",
+    "billing": "Planos & Faturamento",
+    "pollerStatus": "Poller Status",
+    "settings": "Configurações",
+    "pinMenu": "Fixar menu",
+    "viewingAs": "Visualizando como",
+    "logout": "Sair"
+  },
+  "logoutDialog": {
+    "title": "Sair do painel",
+    "body": "Tem certeza que deseja encerrar sua sessão?",
+    "cancel": "Cancelar",
+    "confirm": "Sair"
+  },
+  "tenantSwitcher": {
+    "label": "Trocar de organização",
+    "freePlan": "Free"
+  },
+  "avatarMenu": {
+    "trigger": "Menu do usuário"
+  },
+  "topbar": {
+    "toggleTheme": "Alternar tema"
+  },
+  "sessionExpired": {
+    "title": "Sessão expirada",
+    "body": "Sua sessão expirou. Faça login novamente para continuar.",
+    "cta": "Ir para o login"
+  },
+  "bootstrap": {
+    "eyebrow": "Configuração inicial",
+    "title": "Crie a conta do primeiro administrador",
+    "subtitle": "Esta instância ainda não tem nenhum administrador. Crie a conta owner para começar.",
+    "name": "Nome",
+    "email": "E-mail",
+    "phone": "Celular (opcional)",
+    "password": "Senha",
+    "confirmPassword": "Confirmar senha",
+    "submit": "Criar administrador",
+    "passwordMismatch": "As senhas não coincidem.",
+    "weakPassword": "A senha deve ter entre 8 e 72 caracteres.",
+    "alreadyBootstrapped": "Esta instância já tem um administrador.",
+    "goToLogin": "Ir para o login",
+    "genericError": "Não foi possível criar o administrador. Tente novamente."
+  },
+  "acceptInvite": {
+    "title": "Defina sua senha",
+    "subtitle": "Você foi convidado para o painel administrativo. Defina uma senha para ativar sua conta.",
+    "password": "Senha",
+    "confirmPassword": "Confirmar senha",
+    "submit": "Ativar conta",
+    "passwordMismatch": "As senhas não coincidem.",
+    "weakPassword": "A senha deve ter entre 8 e 72 caracteres.",
+    "invalidOrExpired": "Este link de convite é inválido ou expirou. Peça ao seu administrador para enviar um novo.",
+    "genericError": "Não foi possível ativar a conta. Tente novamente."
+  },
+  "passwordReset": {
+    "title": "Recuperar senha",
+    "subtitle": "Informe seu e-mail e enviaremos instruções para redefinir sua senha.",
+    "email": "E-mail",
+    "submit": "Enviar instruções",
+    "confirmationMessage": "Se este e-mail estiver cadastrado, você receberá instruções para redefinir sua senha em instantes.",
+    "genericError": "Não foi possível enviar o e-mail. Tente novamente.",
+    "backToLogin": "Voltar para o login"
+  },
+  "passwordResetConfirm": {
+    "title": "Defina sua nova senha",
+    "subtitle": "Escolha uma nova senha para acessar sua conta.",
+    "password": "Nova senha",
+    "confirmPassword": "Confirmar nova senha",
+    "submit": "Redefinir senha",
+    "passwordMismatch": "As senhas não coincidem.",
+    "weakPassword": "A senha deve ter entre 8 e 72 caracteres.",
+    "invalidOrExpired": "Este link de recuperação é inválido ou expirou. Solicite um novo.",
+    "genericError": "Não foi possível redefinir a senha. Tente novamente.",
+    "successMessage": "Senha redefinida com sucesso.",
+    "goToLogin": "Ir para o login"
+  },
+  "aiSettings": {
+    "title": "Análise por IA",
+    "subtitle": "Conecte um provedor de IA para gerar análises automáticas de degradação e incidentes.",
+    "providerLabel": "OpenAI",
+    "loading": "Carregando…",
+    "notConnected": "Nenhuma integração conectada",
+    "connected": "Conectado",
+    "active": "Ativo",
+    "invalid": "Inválido",
+    "connectButton": "Conectar",
+    "reconnectButton": "Reconectar",
+    "activateButton": "Ativar",
+    "cancelButton": "Cancelar",
+    "saveButton": "Salvar",
+    "apiKeyLabel": "OpenAI API key",
+    "modelLabel": "Modelo",
+    "keyHint": "A chave é validada contra o provedor e criptografada em repouso. Não é reexibida após salvar.",
+    "lastChecked": "Última verificação",
+    "genericConnectError": "Não foi possível conectar ao provedor.",
+    "genericActivateError": "Não foi possível ativar o provedor.",
+    "genericModelError": "Não foi possível atualizar o modelo.",
+    "disconnectButton": "Desconectar",
+    "genericDisconnectError": "Não foi possível desconectar o provedor.",
+    "disconnectDialog": {
+      "title": "Desconectar provedor",
+      "body": "Tem certeza que deseja desconectar o {{provider}}? A chave de API armazenada será removida e não poderá ser recuperada - será necessário reconectar para usá-lo novamente.",
+      "confirm": "Desconectar",
+      "cancel": "Cancelar"
+    }
+  },
+  "incidentDetail": {
+    "pendingCloseBannerLabel": "Comentário de encerramento sugerido pela IA",
+    "confirmCloseButton": "Confirmar encerramento",
+    "discardProposalButton": "Descartar",
+    "genericConfirmCloseError": "Não foi possível confirmar o encerramento.",
+    "genericDiscardProposalError": "Não foi possível descartar a proposta.",
+    "notFound": "Incidente não encontrado.",
+    "newUpdateLabel": "Novo update",
+    "newUpdatePlaceholder": "Descreva o progresso da investigação",
+    "publishButton": "Publicar",
+    "aiSummaryLabel": "Resumo gerado por IA",
+    "discardProposalLink": "Descartar proposta",
+    "timelineLabel": "Linha do tempo",
+    "timelineEmpty": "Nenhuma atualização ainda.",
+    "addUpdateLabel": "Adicionar atualização",
+    "updatePlaceholder": "Descreva o progresso da investigação...",
+    "publishUpdateButton": "Publicar atualização",
+    "resolveWithAiButton": "Resolver com resumo de IA",
+    "resolvedAt": "Incidente resolvido em {{date}}.",
+    "reopenButton": "Reabrir incidente",
+    "author": {
+      "aiSummary": "Resumo gerado por IA",
+      "team": "Equipe",
+      "system": "Sistema"
+    }
+  },
+  "tenantSelector": {
+    "title": "Selecione uma organização",
+    "subtitle": "Sua conta tem acesso a mais de uma organização. Escolha uma para continuar.",
+    "roleOwner": "Owner",
+    "roleOperator": "Operator",
+    "roleViewer": "Viewer",
+    "genericError": "Não foi possível trocar de organização. Tente novamente."
+  },
+  "signup": {
+    "title": "Crie sua conta",
+    "subtitle": "Crie sua organização e comece a monitorar seus serviços.",
+    "tenantName": "Nome da organização",
+    "email": "E-mail",
+    "password": "Senha",
+    "submit": "Criar conta",
+    "backToLogin": "Já tem conta? Entrar",
+    "weakPassword": "A senha deve ter entre 8 e 72 caracteres.",
+    "alreadyPending": "Já existe um cadastro pendente de verificação para este e-mail. Verifique sua caixa de entrada.",
+    "genericError": "Não foi possível criar a conta. Tente novamente.",
+    "pendingTitle": "Verifique seu e-mail",
+    "pendingSubtitle": "Enviamos um link de verificação para {{email}}. Clique nele para ativar sua conta.",
+    "resendButton": "Reenviar e-mail de verificação",
+    "resendConfirmation": "E-mail de verificação reenviado.",
+    "resendError": "Não foi possível reenviar o e-mail. Tente novamente.",
+    "terms": "Ao continuar, você concorda com os Termos de Uso e a Política de Privacidade.",
+    "restrictedTitle": "Cadastro indisponível",
+    "restrictedSubtitle": "Esta instalação é self-hosted e não aceita novos cadastros. Fale com o administrador desta instância para obter acesso."
+  },
+  "verifyEmail": {
+    "loading": "Verificando seu e-mail...",
+    "successTitle": "E-mail verificado",
+    "successSubtitle": "Sua conta foi ativada. Você já pode entrar.",
+    "invalidTitle": "Link inválido ou expirado",
+    "invalidSubtitle": "Este link de verificação é inválido ou expirou. Solicite um novo reenvio.",
+    "goToLogin": "Ir para o login"
+  },
+  "settingsPage": {
+    "title": "Configurações",
+    "subtitle": "Perfil da empresa e dados fiscais usados nas faturas da conta.",
+    "loading": "Carregando…",
+    "saved": "Alterações salvas",
+    "discard": "Descartar",
+    "save": "Salvar alterações",
+    "companyProfile": {
+      "title": "Perfil da empresa",
+      "subtitle": "Como a conta aparece no Vane e nas páginas de status públicas.",
+      "logoHint": "PNG ou SVG, fundo transparente.",
+      "uploadLogo": "Enviar/alterar logo",
+      "logoAlt": "Logo da empresa",
+      "name": "Nome da empresa",
+      "website": "Site",
+      "timezone": "Fuso horário",
+      "language": "Idioma",
+      "languageOptions": {
+        "ptBR": "Português (Brasil)",
+        "enUS": "English (US)"
+      }
+    },
+    "fiscal": {
+      "title": "Dados fiscais",
+      "subtitle": "Usados para emissão de notas fiscais e faturas.",
+      "personType": "Tipo",
+      "personTypePJ": "Pessoa Jurídica",
+      "personTypePF": "Pessoa Física",
+      "legalNamePJ": "Razão social",
+      "legalNamePF": "Nome completo",
+      "taxIdPJ": "CNPJ",
+      "taxIdPF": "CPF",
+      "stateRegistration": "Inscrição estadual",
+      "stateRegistrationPlaceholder": "Isento, se não houver",
+      "zip": "CEP",
+      "street": "Endereço",
+      "number": "Número",
+      "complement": "Complemento",
+      "complementPlaceholder": "Opcional",
+      "state": "Estado",
+      "city": "Cidade",
+      "country": "País"
+    },
+    "dangerZone": {
+      "title": "Excluir conta",
+      "description": "Remove permanentemente esta conta, incluindo serviços monitorados, incidentes e status pages. Essa ação não pode ser desfeita.",
+      "button": "Excluir conta"
+    },
+    "deleteDialog": {
+      "title": "Excluir conta?",
+      "body": "Essa ação é permanente e remove todos os serviços monitorados, incidentes e status pages. Não pode ser desfeita.",
+      "cancel": "Cancelar",
+      "confirm": "Excluir conta"
+    },
+    "errors": {
+      "lastTenant": "Esta é sua única conta ativa - não é possível excluí-la.",
+      "save": "Não foi possível salvar as alterações.",
+      "delete": "Não foi possível excluir a conta."
+    }
+  },
+  "sessions": {
+    "title": "Sessões ativas",
+    "subtitle": "Estes são os dispositivos conectados à sua conta. Encerre sessões que você não reconhece.",
+    "empty": "Nenhuma sessão ativa.",
+    "currentBadge": "Esta sessão",
+    "unknownDevice": "Dispositivo desconhecido",
+    "unknownIp": "IP desconhecido",
+    "revokeButton": "Encerrar",
+    "revokeSuccess": "Sessão encerrada.",
+    "revokeCurrentError": "Você não pode encerrar a sessão que está usando.",
+    "genericError": "Não foi possível encerrar a sessão. Tente novamente.",
+    "loadError": "Não foi possível carregar as sessões. Tente novamente.",
+    "loading": "Carregando sessões...",
+    "columns": {
+      "ip": "IP",
+      "lastSeen": "Última atividade"
+    }
+  },
+  "billing": {
+    "title": "Planos & Faturamento",
+    "subtitle": "Escolha o plano ideal para o seu time e gerencie a assinatura da conta.",
+    "comingSoon": "Em breve",
+    "recommended": "Recomendado",
+    "perMonth": "/mês",
+    "currentPlanButton": "Plano atual",
+    "downgradeButton": "Fazer downgrade",
+    "upgradeButton": "Fazer upgrade",
+    "currentPlan": "Plano atual",
+    "noRecurringCharge": "Sem cobrança recorrente",
+    "monthlyBilling": "Cobrança mensal",
+    "paymentMethod": {
+      "title": "Forma de pagamento",
+      "empty": "Nenhum cartão cadastrado. Um cartão é adicionado ao fazer upgrade para um plano pago."
+    },
+    "invoices": {
+      "title": "Faturas",
+      "empty": "Suas faturas aparecerão aqui após a primeira cobrança da assinatura."
+    },
+    "plans": {
+      "free": {
+        "name": "Free",
+        "tagline": "Para começar a monitorar o essencial.",
+        "features": [
+          "Até 3 usuários",
+          "1 status page pública",
+          "Histórico de 7 dias",
+          "Polling manual ilimitado",
+          "Suporte via comunidade"
+        ]
+      },
+      "starter": {
+        "name": "Starter",
+        "tagline": "Para times que já dependem do Vane no dia a dia.",
+        "features": [
+          "Até 10 usuários",
+          "Até 3 status pages",
+          "1 domínio próprio",
+          "Fechamento de incidentes com IA",
+          "Histórico de 30 dias",
+          "Suporte por email"
+        ]
+      },
+      "scale": {
+        "name": "Scale",
+        "tagline": "Para operações críticas em múltiplos times.",
+        "features": [
+          "Usuários ilimitados",
+          "Status pages ilimitadas",
+          "Domínios próprios ilimitados",
+          "Fechamento de incidentes com IA",
+          "Histórico de 90 dias",
+          "SSO e suporte prioritário"
+        ]
+      }
+    },
+    "selfHosted": {
+      "title": "Licença self-hosted",
+      "noActiveLicense": "Nenhuma licença ativa",
+      "defaultFeaturesLocked": "Recursos padrão bloqueados",
+      "perYear": "/ano",
+      "licenseDescription": "Compra única, licença válida por 12 meses no seu ambiente self-hosted.",
+      "buyLicenseButton": "Comprar licença",
+      "activateTitle": "Ativar licença",
+      "activateDescription": "Após a compra, enviamos um código de licença por email. Cole o código abaixo para desbloquear os recursos padrão nesta instância.",
+      "licenseKeyLabel": "Código de licença",
+      "activateButton": "Ativar licença"
+    },
+    "license": {
+      "name": "Licença Anual",
+      "features": [
+        "Usuários ilimitados",
+        "Domínios próprios e status pages ilimitados",
+        "Fechamento de incidentes com IA",
+        "SSO e suporte prioritário",
+        "Atualizações durante a vigência da licença"
+      ]
+    }
+  },
+  "profile": {
+    "title": "Meu Perfil",
+    "menuItem": "Meu Perfil",
+    "personalInfo": {
+      "title": "Informações pessoais",
+      "subtitle": "Como você aparece para outros membros do time.",
+      "nameLabel": "Nome",
+      "emailLabel": "Email",
+      "saveButton": "Salvar alterações",
+      "nameRequired": "Informe seu nome.",
+      "updateSuccess": "Nome atualizado.",
+      "updateError": "Não foi possível atualizar o nome. Tente novamente."
+    },
+    "security": {
+      "title": "Segurança",
+      "subtitle": "Senha de acesso e autenticação em duas etapas.",
+      "currentPassword": "Senha atual",
+      "newPassword": "Nova senha",
+      "confirmPassword": "Confirmar nova senha",
+      "updatePassword": "Atualizar senha",
+      "required": "Preencha todos os campos.",
+      "mismatch": "As senhas não coincidem.",
+      "wrongCurrent": "Senha atual incorreta.",
+      "policyError": "A senha deve ter entre 8 e 72 caracteres.",
+      "updateSuccess": "Senha atualizada.",
+      "updateError": "Não foi possível atualizar a senha. Tente novamente."
+    },
+    "sessionsRevoke": {
+      "title": "Encerrar sessão?",
+      "body": "O dispositivo será desconectado da sua conta.",
+      "cancel": "Cancelar",
+      "confirm": "Encerrar"
+    },
+    "notifications": {
+      "title": "Notificações",
+      "subtitle": "Escolha de quais eventos você quer receber email.",
+      "loading": "Carregando notificações...",
+      "loadError": "Não foi possível carregar as preferências. Tente novamente.",
+      "updateError": "Não foi possível salvar a preferência. Tente novamente.",
+      "incidentOpened": "Novo incidente",
+      "incidentOpenedHint": "Quando um incidente é aberto em qualquer serviço.",
+      "incidentResolved": "Incidente resolvido",
+      "incidentResolvedHint": "Quando um incidente que você acompanha é encerrado.",
+      "weeklyDigest": "Resumo semanal",
+      "weeklyDigestHint": "Uptime e principais eventos da semana, toda segunda."
+    }
+  },
+  "twoFactor": {
+    "title": "Autenticação em duas etapas",
+    "subtitle": "Exige um código do seu app autenticador ao entrar.",
+    "enabledBadge": "Ativada",
+    "disabledBadge": "Desativada",
+    "enableButton": "Ativar",
+    "disableButton": "Desativar",
+    "scan": {
+      "instructions": "Escaneie o QR code com seu app autenticador (Google Authenticator, Authy, 1Password...).",
+      "manualHint": "Ou insira o código manualmente",
+      "continueButton": "Continuar",
+      "loadError": "Não foi possível iniciar a ativação. Tente novamente.",
+      "alreadyEnabled": "A autenticação em duas etapas já está ativada."
+    },
+    "verify": {
+      "title": "Código de verificação",
+      "instructions": "Digite o código de 6 dígitos gerado pelo seu app autenticador.",
+      "label": "Código de verificação",
+      "placeholder": "Digite os 6 dígitos do código.",
+      "submit": "Ativar",
+      "back": "Voltar",
+      "invalid": "Código inválido. Tente novamente."
+    },
+    "codes": {
+      "title": "Autenticação em duas etapas ativada",
+      "instructions": "Guarde estes códigos de recuperação. Cada um só pode ser usado uma vez.",
+      "warning": "Estes códigos não serão exibidos novamente.",
+      "copy": "Copiar códigos",
+      "copied": "Códigos copiados.",
+      "download": "Baixar códigos",
+      "finish": "Concluir"
+    },
+    "disable": {
+      "title": "Desativar autenticação em duas etapas",
+      "body": "Confirme sua senha atual para desativar a autenticação em duas etapas.",
+      "passwordLabel": "Senha atual",
+      "confirm": "Desativar",
+      "cancel": "Cancelar",
+      "wrongPassword": "Senha incorreta.",
+      "success": "Autenticação em duas etapas desativada.",
+      "error": "Não foi possível desativar a autenticação em duas etapas. Tente novamente."
+    }
+  },
+  "overview": {
+    "title": "Visão geral",
+    "subtitle": "Resumo do monitoramento da sua organização.",
+    "loading": "Carregando…",
+    "loadError": "Não foi possível carregar o resumo. Tente novamente.",
+    "noData": "—",
+    "cards": {
+      "uptime": "Uptime médio (30d)",
+      "uptimeTrendUp": "+{{value}} vs mês anterior",
+      "uptimeTrendDown": "{{value}} vs mês anterior",
+      "openIncidents": "Incidentes abertos",
+      "openIncidentsBreakdown": "{{critical}} crítico, {{monitoring}} monitorando",
+      "unhealthyServices": "Serviços com problema",
+      "unhealthyServicesTotal": "de {{total}} serviços monitorados",
+      "verifiedDomains": "Domínios verificados",
+      "verifiedDomainsPending": "{{pending}} pendente de verificação"
+    },
+    "chart": {
+      "title": "Uptime agregado — últimos 14 dias",
+      "average": "Média {{value}}",
+      "barLabel": "{{date}} · {{value}}",
+      "daysAgo": "14 dias atrás",
+      "today": "hoje"
+    },
+    "incidents": {
+      "title": "Incidentes recentes",
+      "viewAll": "Ver todos",
+      "empty": "Nenhum incidente recente."
+    },
+    "shortcuts": {
+      "title": "Atalhos rápidos",
+      "addService": "Adicionar serviço",
+      "createStatusPage": "Criar status page",
+      "inviteUser": "Convidar usuário",
+      "viewDomains": "Ver domínios"
+    },
+    "incidentStatus": {
+      "investigating": "Investigando",
+      "identified": "Identificado",
+      "monitoring": "Monitorando",
+      "resolved": "Resolvido"
+    },
+    "upsell": {
+      "message": "Você está no plano Free — 2/3 usuários, sem fechamento de incidentes por IA e sem domínios próprios. Faça upgrade para desbloquear mais recursos.",
+      "cta": "Fazer upgrade"
+    },
+    "activity": {
+      "title": "Atividade recente do time",
+      "removedUser": "Usuário removido",
+      "empty": "Nenhuma atividade recente.",
+      "loadError": "Não foi possível carregar a atividade recente. Tente novamente.",
+      "actions": {
+        "invited": "convidou {{target}}",
+        "invitedWithoutTarget": "convidou um novo membro",
+        "resent": "reenviou convite para {{target}}",
+        "resentWithoutTarget": "reenviou um convite",
+        "canceled": "cancelou convite de {{target}}",
+        "canceledWithoutTarget": "cancelou um convite",
+        "role_changed": "alterou o papel de {{target}}",
+        "role_changedWithoutTarget": "alterou um papel",
+        "removed": "removeu {{target}}",
+        "removedWithoutTarget": "removeu um membro",
+        "domain_verified": "verificou o domínio {{target}}",
+        "domain_verifiedWithoutTarget": "verificou um domínio",
+        "domain_deleted": "excluiu o domínio {{target}}",
+        "domain_deletedWithoutTarget": "excluiu um domínio",
+        "status_page_deleted": "excluiu a página {{target}}",
+        "status_page_deletedWithoutTarget": "excluiu uma página",
+        "status_page_domain_verified": "verificou o domínio da página {{target}}",
+        "status_page_domain_verifiedWithoutTarget": "verificou o domínio de uma página",
+        "service_created": "criou o serviço {{target}}",
+        "service_createdWithoutTarget": "criou um serviço",
+        "service_updated": "editou o serviço {{target}}",
+        "service_updatedWithoutTarget": "editou um serviço",
+        "service_deleted": "removeu o serviço {{target}}",
+        "service_deletedWithoutTarget": "removeu um serviço",
+        "status_page_created": "criou a página {{target}}",
+        "status_page_createdWithoutTarget": "criou uma página de status",
+        "status_page_domain_attached": "anexou um domínio à página {{target}}",
+        "status_page_domain_attachedWithoutTarget": "anexou um domínio a uma página",
+        "status_page_services_updated": "atualizou os serviços da página {{target}}",
+        "status_page_services_updatedWithoutTarget": "atualizou os serviços de uma página",
+        "domain_created": "cadastrou o domínio {{target}}",
+        "domain_createdWithoutTarget": "cadastrou um domínio",
+        "datadog_connected": "conectou a integração com o Datadog",
+        "datadog_connectedWithoutTarget": "conectou a integração com o Datadog",
+        "email_provider_connected": "conectou o provedor de e-mail {{target}}",
+        "email_provider_connectedWithoutTarget": "conectou um provedor de e-mail",
+        "email_provider_activated": "ativou o provedor de e-mail {{target}}",
+        "email_provider_activatedWithoutTarget": "ativou um provedor de e-mail",
+        "llm_provider_connected": "conectou o provedor de IA {{target}}",
+        "llm_provider_connectedWithoutTarget": "conectou um provedor de IA",
+        "llm_provider_activated": "ativou o provedor de IA {{target}}",
+        "llm_provider_activatedWithoutTarget": "ativou um provedor de IA",
+        "company_settings_updated": "atualizou as configurações da empresa",
+        "company_settings_updatedWithoutTarget": "atualizou as configurações da empresa",
+        "company_logo_updated": "atualizou o logo da empresa",
+        "company_logo_updatedWithoutTarget": "atualizou o logo da empresa",
+        "tenant_deleted": "excluiu a conta {{target}}",
+        "tenant_deletedWithoutTarget": "excluiu a conta",
+        "unknown": "realizou {{action}} em {{target}}",
+        "unknownWithoutTarget": "realizou {{action}}"
+      }
+    }
+  },
+  "services": {
+    "title": "Serviços monitorados",
+    "subtitle": "Acompanhe a saúde dos serviços monitorados pelo Vane em tempo real.",
+    "addButton": "Adicionar serviço",
+    "searchPlaceholder": "Buscar serviço",
+    "loading": "Carregando…",
+    "noData": "—",
+    "emptyFiltered": "Nenhum serviço encontrado com esses filtros.",
+    "filterAriaLabel": "Filtrar por status",
+    "filters": {
+      "all": "Todos",
+      "operational": "Operacional",
+      "degraded": "Degradado",
+      "outage": "Inativo",
+      "notConfigured": "Não configurado"
+    },
+    "statusLabel": {
+      "operational": "Operacional",
+      "degraded": "Degradado",
+      "outage": "Inativo",
+      "not_configured": "Não configurado"
+    },
+    "section": {
+      "linkButton": "Vincular serviço",
+      "empty": "Nenhum serviço cadastrado.",
+      "lastChangeLabel": "Última mudança"
+    },
+    "columns": {
+      "status": "Status",
+      "service": "Serviço",
+      "uptime": "Uptime 30d",
+      "lastCheck": "Última verificação"
+    },
+    "detail": {
+      "uptime": "Uptime 30d",
+      "lastCheck": "Última verificação",
+      "incidents": "Incidentes (30d)",
+      "history": "Últimas 24 verificações",
+      "close": "Fechar",
+      "detailTitle": "Detalhe do serviço",
+      "editName": "Renomear serviço",
+      "namePlaceholder": "Nome do serviço",
+      "save": "Salvar",
+      "cancel": "Cancelar",
+      "nameRequired": "O nome não pode ficar vazio.",
+      "renameError": "Não foi possível renomear o serviço.",
+      "deleteAction": "Excluir serviço",
+      "deleteConfirmTitle": "Excluir serviço",
+      "deleteConfirmDescription": "Excluir o serviço \"{{name}}\"? O histórico de verificações e incidentes é mantido, mas ele para de ser monitorado. Esta ação não pode ser desfeita.",
+      "deleteError": "Não foi possível excluir o serviço."
+    },
+    "addDrawer": {
+      "drawerTitle": "Adicionar serviço",
+      "drawerDescription": "Configure um novo alvo de monitoramento. O Vane começa a verificar assim que você salvar.",
+      "submitButton": "Adicionar serviço",
+      "nameLabel": "Nome do serviço",
+      "namePlaceholder": "Ex: Payments API",
+      "sloSearchLabel": "Buscar SLO",
+      "sloSearchPlaceholder": "Digite o nome do SLO",
+      "noSloFound": "Nenhum SLO encontrado.",
+      "selectSloError": "Selecione um SLO da lista antes de salvar.",
+      "genericError": "Não foi possível vincular o serviço.",
+      "monitorModeLabel": "Como monitorar",
+      "monitorModeSlo": "Baseado em SLO",
+      "monitorModeSloDescription": "Importa o alvo do serviço de observabilidade conectado",
+      "monitorModeSloDisabledHint": "Conecte o Datadog em Integrações para usar este modo",
+      "monitorModePolling": "Polling manual",
+      "monitorModePollingDescription": "Vane verifica por HTTP, TCP ou ping",
+      "sourceLabel": "Fonte",
+      "sourceDatadog": "Datadog",
+      "sourceNewRelic": "New Relic",
+      "sourceNewRelicBadge": "Em breve",
+      "sloHelperNote": "Os limites de alerta são herdados do SLO configurado no provedor.",
+      "checkTypeLabel": "Tipo de verificação",
+      "checkType": {
+        "http": "HTTP(S)",
+        "tcp": "TCP",
+        "ping": "Ping"
+      },
+      "targetLabel": {
+        "http": "URL a verificar",
+        "tcp": "Host:porta",
+        "ping": "Host"
+      },
+      "targetPlaceholder": {
+        "http": "https://api.acme.health/health",
+        "tcp": "db.acme.health:5432",
+        "ping": "cache.acme.health"
+      },
+      "intervalLabel": "Intervalo de verificação",
+      "interval": {
+        "30": "30s",
+        "60": "1 min",
+        "300": "5 min"
+      },
+      "pollingValidationError": "Preencha o alvo e o intervalo de verificação antes de salvar."
+    }
+  }
+}

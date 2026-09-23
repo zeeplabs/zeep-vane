@@ -37,13 +37,13 @@ function renderTopbar(title: string) {
 }
 
 describe("Topbar", () => {
-  it("renderiza o título recebido via prop", async () => {
+  it("renders the title received via prop", async () => {
     await loginAs("owner@vane.app");
     renderTopbar("Domínios & Status Pages");
     expect(await screen.findByText("Domínios & Status Pages")).toBeInTheDocument();
   });
 
-  it("botão de tema chama toggleTheme e alterna o atributo data-theme", async () => {
+  it("theme button calls toggleTheme and toggles the data-theme attribute", async () => {
     await loginAs("owner@vane.app");
     renderTopbar("Incidentes");
     const toggle = screen.getByRole("button", { name: "Alternar tema" });
@@ -53,15 +53,15 @@ describe("Topbar", () => {
     expect(document.documentElement.dataset.theme).toBe("dark");
   });
 
-  it("o sino é estático - sem href e sem onClick", async () => {
+  it("the bell is static - no href and no onClick", async () => {
     await loginAs("owner@vane.app");
     renderTopbar("Serviços");
-    // aria-hidden - não é um elemento interativo, então não tem role de link/botão.
+    // aria-hidden - not an interactive element, so it has no link/button role.
     expect(screen.queryByRole("link", { name: /notifica/i })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /notifica/i })).not.toBeInTheDocument();
   });
 
-  it("renderiza o AvatarMenu (trigger do menu do usuário)", async () => {
+  it("renders the AvatarMenu (user menu trigger)", async () => {
     await loginAs("owner@vane.app");
     renderTopbar("Serviços");
     expect(await screen.findByRole("button", { name: "Menu do usuário" })).toBeInTheDocument();

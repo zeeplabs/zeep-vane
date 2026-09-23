@@ -27,14 +27,13 @@ import {
 } from "./hooks";
 
 type RoleFilter = "all" | Role;
+type Translator = (key: string, options?: Record<string, unknown>) => string;
 const roleFilters: RoleFilter[] = ["all", "owner", "operator", "viewer"];
-const filterLabel: Record<RoleFilter, string> = { all: "Todos", ...adminRoleLabel };
+const roles: Role[] = ["owner", "operator", "viewer"];
 
-const roleOptions: { value: Role; label: string; description: string }[] = [
-  { value: "owner", label: "Admin", description: "Acesso total, inclusive faturamento e integrações" },
-  { value: "operator", label: "Membro", description: "Gerencia serviços e incidentes, sem acesso à cobrança" },
-  { value: "viewer", label: "Somente leitura", description: "Visualiza painéis e incidentes, sem editar nada" },
-];
+function filterLabelFor(t: Translator, value: RoleFilter): string {
+  return value === "all" ? t("admins.filters.all") : adminRoleLabel(t, value);
+}
 
 function PlusIcon() {
   return <MdOutlineAdd size={14} aria-hidden="true" />;
@@ -50,18 +49,18 @@ function initials(a: AdminRow): string {
     .join("");
 }
 
-function RoleBoxes({ value, onChange }: { value: Role; onChange: (r: Role) => void }) {
+function RoleBoxes({ value, onChange, t }: { value: Role; onChange: (r: Role) => void; t: Translator }) {
   return (
-    <div role="radiogroup" aria-label="Papel" className="flex flex-col gap-2">
-      {roleOptions.map((opt) => {
-        const active = value === opt.value;
+    <div role="radiogroup" aria-label={t("admins.roleFieldLabel")} className="flex flex-col gap-2">
+      {roles.map((role) => {
+        const active = value === role;
         return (
           <button
-            key={opt.value}
+            key={role}
             type="button"
             role="radio"
             aria-checked={active}
-            onClick={() => onChange(opt.value)}
+            onClick={() => onChange(role)}
             className="cursor-pointer rounded-md border-[1.5px] px-3.5 py-3 text-left transition-colors"
             style={
               active
@@ -77,8 +76,8 @@ function RoleBoxes({ value, onChange }: { value: Role; onChange: (r: Role) => vo
                   }
             }
           >
-            <div className="mb-0.5 text-[13px] font-bold">{opt.label}</div>
-            <div className="text-[11.5px] leading-snug opacity-80">{opt.description}</div>
+            <div className="mb-0.5 text-[13px] font-bold">{t(`admins.roleOptions.${role}.label`)}</div>
+            <div className="text-[11.5px] leading-snug opacity-80">{t(`admins.roleOptions.${role}.description`)}</div>
           </button>
         );
       })}
@@ -142,7 +141,7 @@ export function AdminsPage() {
       setNewRole("viewer");
       setInviteOpen(false);
     } catch (err) {
-      setInviteError(err instanceof ApiError ? err.message : "Não foi possível enviar o convite.");
+      setInviteError(err instanceof ApiError ? err.message : t("admins.invite.error"));
     }
   }
 
@@ -152,7 +151,7 @@ export function AdminsPage() {
     try {
       await updateRole.mutateAsync({ id: a.id, role });
     } catch (err) {
-      setRoleError(err instanceof ApiError ? err.message : "Não foi possível alterar o papel.");
+      setRoleError(err instanceof ApiError ? err.message : t("admins.roleChangeError"));
     }
   }
 
@@ -162,15 +161,15 @@ export function AdminsPage() {
     try {
       if (removeTarget.status === "pending") {
         await cancelInvite.mutateAsync(removeTarget.id);
-        toast.success(`Convite de ${removeTarget.email} cancelado.`);
+        toast.success(t("admins.remove.inviteCancelledToast", { email: removeTarget.email }));
       } else {
         await deleteAdmin.mutateAsync(removeTarget.id);
-        toast.success(`Acesso de ${removeTarget.email} removido.`);
+        toast.success(t("admins.remove.accessRemovedToast", { email: removeTarget.email }));
       }
       setRemoveTarget(null);
       setSelectedId(null);
     } catch (err) {
-      setRemoveError(err instanceof ApiError ? err.message : "Não foi possível remover o usuário.");
+      setRemoveError(err instanceof ApiError ? err.message : t("admins.remove.error"));
     }
   }
 
@@ -179,11 +178,11 @@ export function AdminsPage() {
       const result = await resendInvite.mutateAsync(a.id);
       toast.success(
         result.email_sent
-          ? `Convite reenviado para ${a.email}.`
-          : `Convite reenviado para ${a.email}, mas o e-mail não pôde ser entregue.`
+          ? t("admins.resend.successToast", { email: a.email })
+          : t("admins.resend.failedDeliveryToast", { email: a.email })
       );
     } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : "Não foi possível reenviar o convite.");
+      toast.error(err instanceof ApiError ? err.message : t("admins.resend.error"));
     }
   }
 
@@ -191,17 +190,17 @@ export function AdminsPage() {
     <div className="mx-auto flex w-full max-w-[1280px] flex-col gap-5">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h2 className="text-text">Usuários</h2>
-          <p className="m-0 text-[13.5px] text-neutral-400">Gerencie quem tem acesso ao tenant e o papel de cada pessoa.</p>
+          <h2 className="text-text">{t("admins.title")}</h2>
+          <p className="m-0 text-[13.5px] text-neutral-400">{t("admins.subtitle")}</p>
         </div>
         <Button variant="solid" onClick={() => setInviteOpen(true)}>
           <PlusIcon />
-          Convidar usuário
+          {t("admins.inviteButton")}
         </Button>
       </div>
 
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div role="group" aria-label="Filtrar por papel" className="flex flex-wrap items-center gap-2">
+        <div role="group" aria-label={t("admins.filters.ariaLabel")} className="flex flex-wrap items-center gap-2">
           {roleFilters.map((value) => {
             const active = roleFilter === value;
             return (
@@ -217,7 +216,7 @@ export function AdminsPage() {
                     : "border-divider bg-surface text-neutral-400 hover:text-text")
                 }
               >
-                {filterLabel[value]}
+                {filterLabelFor(t, value)}
                 <span className="opacity-70">{counts[value]}</span>
               </button>
             );
@@ -227,8 +226,8 @@ export function AdminsPage() {
           type="text"
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
-          placeholder="Buscar por nome ou email"
-          aria-label="Buscar por nome ou email"
+          placeholder={t("admins.searchPlaceholder")}
+          aria-label={t("admins.searchPlaceholder")}
           className="w-60 rounded-md border border-transparent bg-card-header-bg px-3 py-2 text-[13px] text-text outline-none transition-colors focus:border-accent focus:bg-surface"
         />
       </div>
@@ -255,16 +254,14 @@ export function AdminsPage() {
       ) : (
         <Card elevation="none" className="overflow-hidden border border-divider">
           <div className="grid grid-cols-[minmax(220px,1fr)_110px_130px_130px_20px] items-center gap-3 border-b border-divider bg-card-header-bg px-5 py-2.5">
-            <span className="text-[11px] font-bold uppercase tracking-wide text-neutral-400">Usuário</span>
-            <span className="text-[11px] font-bold uppercase tracking-wide text-neutral-400">Papel</span>
-            <span className="text-[11px] font-bold uppercase tracking-wide text-neutral-400">Status</span>
-            <span className="text-[11px] font-bold uppercase tracking-wide text-neutral-400">Último acesso</span>
+            <span className="text-[11px] font-bold uppercase tracking-wide text-neutral-400">{t("admins.table.user")}</span>
+            <span className="text-[11px] font-bold uppercase tracking-wide text-neutral-400">{t("admins.table.role")}</span>
+            <span className="text-[11px] font-bold uppercase tracking-wide text-neutral-400">{t("common.status")}</span>
+            <span className="text-[11px] font-bold uppercase tracking-wide text-neutral-400">{t("admins.table.lastAccess")}</span>
             <span />
           </div>
           {filtered.length === 0 ? (
-            <p className="px-5 py-12 text-center text-[13.5px] text-neutral-400">
-              Nenhum usuário encontrado com esses filtros.
-            </p>
+            <p className="px-5 py-12 text-center text-[13.5px] text-neutral-400">{t("admins.empty")}</p>
           ) : (
             filtered.map((a) => (
               <div
@@ -283,13 +280,13 @@ export function AdminsPage() {
                   </div>
                 </div>
                 <Tag variant={a.role === "owner" ? "accent" : "neutral"} className="w-fit rounded-full">
-                  {adminRoleLabel[a.role]}
+                  {adminRoleLabel(t, a.role)}
                 </Tag>
                 <div className="flex flex-wrap items-center gap-1.5">
                   <AdminStatusTag status={a.status} />
-                  {a.expired ? <Tag variant="critical">Expirado</Tag> : null}
+                  {a.expired ? <Tag variant="critical">{t("admins.expiredTag")}</Tag> : null}
                 </div>
-                <div className="text-[12.5px] text-neutral-400">{formatLastAccess(a.last_access)}</div>
+                <div className="text-[12.5px] text-neutral-400">{formatLastAccess(a.last_access, t)}</div>
                 <MdChevronRight size={16} className="text-neutral-500" aria-hidden="true" />
               </div>
             ))
@@ -313,10 +310,10 @@ export function AdminsPage() {
                 <div className="flex items-start justify-between">
                   <div className="flex flex-wrap items-center gap-1.5">
                     <AdminStatusTag status={selected.status} />
-                    {selected.expired ? <Tag variant="critical">Expirado</Tag> : null}
+                    {selected.expired ? <Tag variant="critical">{t("admins.expiredTag")}</Tag> : null}
                   </div>
                   <RadixDialog.Close asChild>
-                    <button type="button" aria-label="Fechar" className="cursor-pointer text-neutral-400 hover:text-text">
+                    <button type="button" aria-label={t("common.close")} className="cursor-pointer text-neutral-400 hover:text-text">
                       <MdClose size={18} aria-hidden="true" />
                     </button>
                   </RadixDialog.Close>
@@ -337,8 +334,8 @@ export function AdminsPage() {
                 </div>
 
                 <div className="flex flex-col gap-1.5">
-                  <span className="text-[12.5px] font-semibold text-neutral-400">Papel</span>
-                  <RoleBoxes value={selected.role} onChange={(role) => handleRoleChange(selected, role)} />
+                  <span className="text-[12.5px] font-semibold text-neutral-400">{t("admins.roleFieldLabel")}</span>
+                  <RoleBoxes value={selected.role} onChange={(role) => handleRoleChange(selected, role)} t={t} />
                   {roleError ? (
                     <p role="alert" className="text-xs text-critical">
                       {roleError}
@@ -348,9 +345,9 @@ export function AdminsPage() {
 
                 <div>
                   <div className="mb-1 text-[10.5px] font-bold uppercase tracking-wide text-neutral-400">
-                    Último acesso
+                    {t("admins.table.lastAccess")}
                   </div>
-                  <div className="text-sm font-semibold text-text">{formatLastAccess(selected.last_access)}</div>
+                  <div className="text-sm font-semibold text-text">{formatLastAccess(selected.last_access, t)}</div>
                 </div>
 
                 <div className="flex-1" />
@@ -364,7 +361,7 @@ export function AdminsPage() {
                       onClick={() => handleResend(selected)}
                       disabled={resendInvite.isPending}
                     >
-                      Reenviar convite
+                      {t("admins.resendInviteButton")}
                     </Button>
                   ) : null}
                   <Button
@@ -373,7 +370,7 @@ export function AdminsPage() {
                     className="!flex-1 !border-critical !text-critical hover:!bg-critical/10"
                     onClick={() => setRemoveTarget(selected)}
                   >
-                    Remover usuário
+                    {t("admins.removeUserButton")}
                   </Button>
                 </div>
               </div>
@@ -385,9 +382,9 @@ export function AdminsPage() {
       <Drawer
         open={inviteOpen}
         onOpenChange={setInviteOpen}
-        title="Convidar usuário"
-        description="Enviaremos um convite por email com um link de acesso a este tenant."
-        closeLabel="Fechar"
+        title={t("admins.invite.title")}
+        description={t("admins.invite.description")}
+        closeLabel={t("common.close")}
         footer={
           <>
             <Button
@@ -396,7 +393,7 @@ export function AdminsPage() {
               style={drawerFooterSecondaryStyle}
               onClick={() => setInviteOpen(false)}
             >
-              Cancelar
+              {t("common.cancel")}
             </Button>
             <Button
               type="submit"
@@ -405,26 +402,32 @@ export function AdminsPage() {
               style={drawerFooterPrimaryStyle}
               disabled={inviteAdmin.isPending}
             >
-              Enviar convite
+              {t("admins.invite.submitButton")}
             </Button>
           </>
         }
       >
         <form id="invite-user-form" onSubmit={handleInvite} className="flex flex-col gap-3">
-          <Field variant="filled" label="Nome" value={name} onChange={(e) => setName(e.target.value)} required />
           <Field
             variant="filled"
-            label="Email"
+            label={t("admins.invite.nameLabel")}
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            required
+          />
+          <Field
+            variant="filled"
+            label={t("admins.invite.emailLabel")}
             type="email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-            placeholder="nome@empresa.com"
+            placeholder={t("admins.invite.emailPlaceholder")}
             required
           />
-          <PhoneField label="Celular (opcional)" variant="filled" onChange={setPhone} />
+          <PhoneField label={t("admins.invite.phoneLabel")} variant="filled" onChange={setPhone} />
           <div className="flex flex-col gap-1.5">
-            <span className="text-sm font-medium text-text">Papel</span>
-            <RoleBoxes value={newRole} onChange={setNewRole} />
+            <span className="text-sm font-medium text-text">{t("admins.roleFieldLabel")}</span>
+            <RoleBoxes value={newRole} onChange={setNewRole} t={t} />
           </div>
           {inviteError ? (
             <p role="alert" className="text-xs text-critical">
@@ -439,16 +442,14 @@ export function AdminsPage() {
         onOpenChange={(open) => {
           if (!open) setRemoveTarget(null);
         }}
-        title="Remover usuário"
+        title={t("admins.remove.title")}
         description={
-          removeTarget
-            ? `Remover o acesso de ${removeTarget.email}? Esta ação não pode ser desfeita.`
-            : undefined
+          removeTarget ? t("admins.remove.description", { email: removeTarget.email }) : undefined
         }
         footer={
           <>
             <Button variant="secondary" onClick={() => setRemoveTarget(null)}>
-              Cancelar
+              {t("common.cancel")}
             </Button>
             <Button
               variant="solid"
@@ -456,7 +457,7 @@ export function AdminsPage() {
               onClick={confirmRemove}
               disabled={deleteAdmin.isPending || cancelInvite.isPending}
             >
-              Remover
+              {t("admins.remove.confirmButton")}
             </Button>
           </>
         }

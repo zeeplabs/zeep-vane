@@ -11,25 +11,25 @@ import { Input, inputVariantClasses, type InputVariant } from "./Input";
 
 export interface PhoneFieldProps {
   label: string;
-  /** Recebe o telefone completo já formatado com DDI (ex.: "+55 (11) 98765-4321"), ou "" se o campo estiver vazio. */
+  /** Receives the full phone number already formatted with the dial code (e.g.: "+55 (11) 98765-4321"), or "" if the field is empty. */
   onChange: (value: string) => void;
   required?: boolean;
-  /** Mesma semântica de Input/Field - "filled" nos drawers já migrados
-   * (new-layout-migration), "default" (bordered) nas telas ainda não
-   * migradas (ex. BootstrapPage). Sem isso o DDI/telefone destoava
-   * visualmente do resto do formulário mesmo quando o form ao redor já
-   * usava filled. */
+  /** Same semantics as Input/Field - "filled" in drawers already migrated
+   * (new-layout-migration), "default" (bordered) in screens not yet
+   * migrated (e.g. BootstrapPage). Without this, the dial code/phone
+   * fields would visually clash with the rest of the form even when the
+   * surrounding form already used filled. */
   variant?: InputVariant;
 }
 
 const DEFAULT_COUNTRY_CODE = "BR";
 
-// PhoneField: seletor de país (DDI) + input com máscara local, já que o
-// Vane é usado por empresas fora do Brasil (AD-002 é sobre tenancy, não
-// sobre geografia) - um celular só com DDD brasileiro fixo excluiria
-// qualquer instalação internacional. globalCellphoneMask/countries vêm do
-// @zeeptech/toolkit (AD-016) em vez de reimplementar 200 máscaras nacionais
-// aqui.
+// PhoneField: country (dial code) selector + input with local masking, since
+// Vane is used by companies outside Brazil (AD-002 is about tenancy, not
+// geography) - a phone field hardcoded to a Brazilian area code would
+// exclude any international installation. globalCellphoneMask/countries
+// come from @zeeptech/toolkit (AD-016) instead of reimplementing 200
+// national masks here.
 export function PhoneField({ label, onChange, required, variant = "default" }: PhoneFieldProps) {
   const inputId = useId();
   const [countryCode, setCountryCode] = useState(DEFAULT_COUNTRY_CODE);

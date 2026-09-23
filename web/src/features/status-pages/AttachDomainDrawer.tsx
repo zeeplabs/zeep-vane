@@ -1,4 +1,5 @@
 import { useEffect, useState, type FormEvent } from "react";
+import { useTranslation } from "react-i18next";
 import { Drawer, drawerFooterPrimaryStyle, drawerFooterSecondaryStyle } from "../../components/ui/Drawer";
 import { Button } from "../../components/ui/Button";
 import { Field } from "../../components/ui/Field";
@@ -12,12 +13,13 @@ export interface AttachDomainDrawerProps {
   onOpenChange: (open: boolean) => void;
 }
 
-/** Painel "Anexar domínio" (SPD-06 through SPD-10) - abre a partir de
- * `StatusPageDetail` para uma status page sem domínio, escolhe um
- * `Domain` existente + subdomínio e mostra o registro DNS que o
- * operador precisa configurar. Mesmo padrão de `Drawer` já usado em
- * "Criar status page"/"Criar incidente". */
+/** "Attach domain" panel (SPD-06 through SPD-10) - opened from
+ * `StatusPageDetail` for a status page with no domain attached, picks an
+ * existing `Domain` + subdomain and shows the DNS record the operator
+ * needs to configure. Same `Drawer` pattern already used by
+ * "Create status page"/"Create incident". */
 export function AttachDomainDrawer({ statusPageId, open, onOpenChange }: AttachDomainDrawerProps) {
+  const { t } = useTranslation();
   // SPEC_DEVIATION: fixed page 1 for now - Pager UI for the domains
   // dropdown is out of scope here (this reads domains only to resolve a
   // hostname/build a select list); T14/T16 (Pager) is a later phase not
@@ -31,8 +33,8 @@ export function AttachDomainDrawer({ statusPageId, open, onOpenChange }: AttachD
   const [subdomain, setSubdomain] = useState("");
   const [error, setError] = useState<string | null>(null);
 
-  // Reseta o formulário toda vez que o painel abre - evita reaproveitar
-  // estado (domínio/subdomínio/erro) de uma abertura anterior.
+  // Resets the form every time the panel opens - avoids reusing
+  // state (domain/subdomain/error) from a previous opening.
   useEffect(() => {
     if (open) {
       setDomainId(domains?.[0]?.id ?? "");
@@ -52,7 +54,7 @@ export function AttachDomainDrawer({ statusPageId, open, onOpenChange }: AttachD
       // inline; o painel permanece aberto pro admin corrigir e tentar
       // de novo, em vez de fechar e perder o que foi digitado.
       if (err instanceof ApiError) setError(err.message);
-      else setError("Não foi possível anexar o domínio.");
+      else setError(t("statusPages.attach.error"));
     }
   }
 
@@ -62,9 +64,9 @@ export function AttachDomainDrawer({ statusPageId, open, onOpenChange }: AttachD
     <Drawer
       open={open}
       onOpenChange={onOpenChange}
-      title="Anexar domínio"
-      description="Escolha o domínio e o subdomínio que essa status page vai usar. O certificado é emitido automaticamente depois que o DNS propagar."
-      closeLabel="Fechar"
+      title={t("statusPages.attach.title")}
+      description={t("statusPages.attach.description")}
+      closeLabel={t("common.close")}
       footer={
         <>
           <Button
@@ -73,7 +75,7 @@ export function AttachDomainDrawer({ statusPageId, open, onOpenChange }: AttachD
             style={drawerFooterSecondaryStyle}
             onClick={() => onOpenChange(false)}
           >
-            Cancelar
+            {t("common.cancel")}
           </Button>
           <Button
             type="submit"
@@ -82,7 +84,7 @@ export function AttachDomainDrawer({ statusPageId, open, onOpenChange }: AttachD
             style={drawerFooterPrimaryStyle}
             disabled={attachDomain.isPending}
           >
-            Anexar
+            {t("statusPages.attach.submitButton")}
           </Button>
         </>
       }
@@ -90,7 +92,7 @@ export function AttachDomainDrawer({ statusPageId, open, onOpenChange }: AttachD
       <form id="attach-domain-form" onSubmit={handleSubmit} className="flex flex-col gap-3">
         <div className="flex flex-col gap-1">
           <label htmlFor="attach-domain-picker" className="text-sm font-medium text-text">
-            Domínio
+            {t("statusPages.attach.domainLabel")}
           </label>
           <select
             id="attach-domain-picker"
@@ -100,7 +102,7 @@ export function AttachDomainDrawer({ statusPageId, open, onOpenChange }: AttachD
             required
           >
             <option value="" disabled>
-              Selecione um domínio
+              {t("statusPages.attach.domainPlaceholder")}
             </option>
             {(domains ?? []).map((d) => (
               <option key={d.id} value={d.id}>
@@ -111,26 +113,26 @@ export function AttachDomainDrawer({ statusPageId, open, onOpenChange }: AttachD
         </div>
 
         <Field
-          label="Subdomínio"
+          label={t("statusPages.attach.subdomainLabel")}
           value={subdomain}
           onChange={(e) => setSubdomain(e.target.value)}
           required
         />
 
         <div className="flex flex-col gap-1 rounded-md border border-divider p-3">
-          <span className="text-sm font-medium text-text">Registro DNS</span>
+          <span className="text-sm font-medium text-text">{t("statusPages.attach.dnsRecordLabel")}</span>
           {dnsTargetLoading ? (
-            <p className="text-xs text-neutral-400">Carregando…</p>
+            <p className="text-xs text-neutral-400">{t("statusPages.loading")}</p>
           ) : dnsTarget ? (
             <p className="text-xs text-neutral-400">
-              Aponte {subdomain || "<subdomínio>"}.{selectedDomain?.hostname ?? "<domínio>"} (CNAME) para{" "}
+              {t("statusPages.attach.dnsInstruction", {
+                sub: subdomain || t("statusPages.attach.subdomainPlaceholder"),
+                domain: selectedDomain?.hostname ?? t("statusPages.attach.domainPlaceholderShort"),
+              })}{" "}
               <strong>{dnsTarget}</strong>.
             </p>
           ) : (
-            <p className="text-xs text-neutral-400">
-              O operador ainda não configurou o valor de destino do DNS (PUBLIC_DNS_TARGET). Você ainda pode
-              anexar o domínio agora.
-            </p>
+            <p className="text-xs text-neutral-400">{t("statusPages.attach.dnsNotConfigured")}</p>
           )}
         </div>
 

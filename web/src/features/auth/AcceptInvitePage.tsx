@@ -80,7 +80,7 @@ export function AcceptInvitePage() {
         />
 
         <div className="relative flex items-center gap-2">
-          <img src={logoUrl ?? vaneLogo} alt="Company logo" className="w-[180px] object-contain" />
+          <img src={logoUrl ?? vaneLogo} alt={t("authLayout.companyLogoAlt")} className="w-[180px] object-contain" />
         </div>
 
         <div className="relative flex flex-col gap-4">

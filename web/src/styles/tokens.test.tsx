@@ -1,22 +1,22 @@
 import { describe, it, expect } from "vitest";
 import { render } from "@testing-library/react";
 import "./tokens.css";
-// Fonte crua de tokens.css (sem tree-shaking do Tailwind), usada só para
-// checar a ramp completa — o compilado só mantém os passos de fato usados
-// no projeto.
+// Raw source of tokens.css (without Tailwind's tree-shaking), used only to
+// check the full ramp — the compiled output only keeps the steps actually
+// used in the project.
 import tokensSource from "./tokens.css?raw";
 
-// Smoke test: renderiza um elemento por token de cor e confirma que o CSS
-// compilado (gerado a partir de tokens.css via Tailwind @theme) define a
-// variável correspondente com um valor concreto — não vazio, não hardcoded
-// fora de tokens.css.
+// Smoke test: renders one element per color token and confirms the compiled
+// CSS (generated from tokens.css via Tailwind @theme) defines the
+// corresponding variable with a concrete value — not empty, not hardcoded
+// outside tokens.css.
 //
-// Nota: jsdom não processa @layer (usado pelo Tailwind v4 para @theme), então
-// getComputedStyle(documentElement) não resolve essas custom properties em
-// ambiente de teste — isso é uma limitação conhecida do jsdom, não um bug do
-// design system. Por isso o smoke test inspeciona o CSS compilado injetado em
-// <head>, que é onde as regras realmente vivem (e que o navegador real
-// resolve normalmente).
+// Note: jsdom does not process @layer (used by Tailwind v4 for @theme), so
+// getComputedStyle(documentElement) does not resolve these custom properties
+// in the test environment — this is a known jsdom limitation, not a design
+// system bug. That's why the smoke test inspects the compiled CSS injected
+// into <head>, which is where the rules actually live (and which the real
+// browser resolves normally).
 function compiledCss(): string {
   return document.head.innerHTML;
 }
@@ -31,16 +31,16 @@ const colorTokenProbes: { token: string; className: string; property: "backgroun
 
 describe("tokens.css", () => {
   it.each(colorTokenProbes)(
-    "token $token: elemento com classe .$className resolve para uma regra CSS concreta",
+    "token $token: element with class .$className resolves to a concrete CSS rule",
     ({ token, className, property }) => {
       const { container } = render(<div data-testid="probe" className={className} />);
       const el = container.querySelector('[data-testid="probe"]') as HTMLElement;
       expect(el.className).toContain(className);
 
       const css = compiledCss();
-      // A classe deve existir como regra compilada...
+      // The class must exist as a compiled rule...
       expect(css).toContain(`.${className.replace("/", "\\/")}`);
-      // ...usando a variável do token (não um valor hardcoded solto).
+      // ...using the token variable (not a loose hardcoded value).
       const rulePattern = new RegExp(
         `\\.${className.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace("\\/", "\\/")}[\\s\\S]{0,80}${property}:\\s*var\\(${token}\\)`
       );
@@ -62,14 +62,14 @@ describe("tokens.css", () => {
   // deploy). Shifted to #a16207 (~35° hue, same ballpark luminance so text
   // contrast on both light and dark surfaces is unaffected), a clearer
   // yellow/gold distinct from red without touching success/critical.
-  it("define os 3 tokens semânticos com os valores hex esperados, idênticos nos dois temas", () => {
+  it("defines the 3 semantic tokens with the expected hex values, identical in both themes", () => {
     const css = compiledCss();
     expect(css).toMatch(/--color-success:\s*#1a9e6b/i);
     expect(css).toMatch(/--color-warning:\s*#a16207/i);
     expect(css).toMatch(/--color-critical:\s*#d6395b/i);
   });
 
-  it("define a ramp neutral e accent (100–900) na fonte de tokens.css", () => {
+  it("defines the neutral and accent ramp (100-900) in tokens.css's source", () => {
     for (const step of [100, 200, 300, 400, 500, 600, 700, 800, 900]) {
       expect(tokensSource).toContain(`--color-neutral-${step}:`);
       expect(tokensSource).toContain(`--color-accent-${step}:`);
@@ -91,7 +91,7 @@ describe("tokens.css", () => {
     return tokensSource.slice(open + 1, close);
   }
 
-  it("SHELL-01: tokens do shell com os hex exatos do handoff, claros e escuros", () => {
+  it("SHELL-01: shell tokens with the handoff's exact hex values, light and dark", () => {
     const light = cssBlock("@theme");
     const dark = cssBlock('[data-theme="dark"]');
     const shellTokens: { token: string; light: RegExp; dark: RegExp }[] = [
@@ -113,13 +113,13 @@ describe("tokens.css", () => {
     }
   });
 
-  it("SHELL-02: carrega Manrope 400/500/600/700 e a usa em heading/body", () => {
+  it("SHELL-02: loads Manrope 400/500/600/700 and uses it for heading/body", () => {
     expect(tokensSource).toMatch(/Manrope:wght@400;500;600;700/);
     expect(tokensSource).toMatch(/--font-heading:\s*"Manrope"/);
     expect(tokensSource).toMatch(/--font-body:\s*"Manrope"/);
   });
 
-  it("SHELL-03: accent #5a46c7 / hover #4c3aae, sem override no tema escuro", () => {
+  it("SHELL-03: accent #5a46c7 / hover #4c3aae, no override in dark theme", () => {
     const light = cssBlock("@theme");
     const dark = cssBlock('[data-theme="dark"]');
     expect(light).toMatch(/--color-accent:\s*#5a46c7/i);

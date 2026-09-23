@@ -3,7 +3,7 @@ import { render, screen } from "@testing-library/react";
 import { Card } from "./Card";
 
 describe("Card", () => {
-  it("usa fundo surface e radius md por padrão", () => {
+  it("uses the surface background and md radius by default", () => {
     render(<Card data-testid="card">conteúdo</Card>);
     const card = screen.getByTestId("card");
     expect(card.className).toContain("bg-surface");
@@ -11,7 +11,7 @@ describe("Card", () => {
   });
 
   it.each(["elev-sm", "elev-md", "elev-lg"] as const)(
-    "aplica variante de elevação %s",
+    "applies the elevation variant %s",
     (elevation) => {
       render(
         <Card elevation={elevation} data-testid="card">

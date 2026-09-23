@@ -28,7 +28,7 @@ function TestApp() {
 }
 
 describe("SessionExpiredModal", () => {
-  it("disparar 401 simulado abre o modal", async () => {
+  it("triggering a simulated 401 opens the modal", async () => {
     render(<TestApp />);
     await act(async () => {
       triggerUnauthorized();
@@ -36,7 +36,7 @@ describe("SessionExpiredModal", () => {
     expect(await screen.findByText("Sessão expirada")).toBeInTheDocument();
   });
 
-  it("clique no backdrop não fecha o modal", async () => {
+  it("clicking the backdrop does not close the modal", async () => {
     render(<TestApp />);
     await act(async () => {
       triggerUnauthorized();
@@ -50,7 +50,7 @@ describe("SessionExpiredModal", () => {
     expect(screen.getByText("Sessão expirada")).toBeInTheDocument();
   });
 
-  it("clique no CTA navega para /login", async () => {
+  it("clicking the CTA navigates to /login", async () => {
     render(<TestApp />);
     await act(async () => {
       triggerUnauthorized();
@@ -61,11 +61,11 @@ describe("SessionExpiredModal", () => {
     expect(await screen.findByText("login page")).toBeInTheDocument();
   });
 
-  // Regressão: o probe de boot em GET /api/auth/me sempre 401 pra um
-  // visitante anônimo (inclusive na própria /login) - isso NUNCA é uma
-  // sessão que expirou, é a ausência de sessão alguma. AuthProvider passa
-  // skipUnauthorizedHandler nesse fetch especificamente por isto.
-  it("boot anônimo (401 esperado em /api/auth/me) não abre o modal de sessão expirada", async () => {
+  // Regression: the boot probe on GET /api/auth/me always 401s for an
+  // anonymous visitor (including on /login itself) - this is NEVER a
+  // session that expired, it's the absence of any session at all. AuthProvider
+  // passes skipUnauthorizedHandler on that specific fetch for this reason.
+  it("anonymous boot (401 expected on /api/auth/me) does not open the session-expired modal", async () => {
     render(<TestApp />);
     await waitFor(() => expect(screen.getByTestId("auth-status")).toHaveTextContent("anonymous"));
     expect(screen.queryByText("Sessão expirada")).not.toBeInTheDocument();

@@ -12,18 +12,19 @@ async function loginAsOwner() {
 }
 
 describe("services hooks", () => {
-  it("useServices retorna a lista de serviços da fixture", async () => {
+  it("useServices returns the list of services from the fixture", async () => {
     await loginAsOwner();
     const { result } = renderHook(() => useServices(1), { wrapper: TestQueryProvider });
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(result.current.data!.items.length).toBeGreaterThan(0);
   });
 
-  // O backend real exige slo_id na criação (services.slo_id NOT NULL,
-  // 0004_services.up.sql) - diferente do mock antigo, que permitia criar
-  // um serviço sem SLO nenhum. Todo serviço criado nasce "not_configured"
-  // até o poller buscar o status pela primeira vez (SPEC_DEVIATION, I15).
-  it("serviço criado com slo_id nasce not_configured e resolve slo_name via busca por id", async () => {
+  // The real backend requires slo_id on creation (services.slo_id NOT NULL,
+  // 0004_services.up.sql) - unlike the old mock, which allowed creating a
+  // service with no SLO at all. Every created service starts out
+  // "not_configured" until the poller fetches its status for the first
+  // time (SPEC_DEVIATION, I15).
+  it("a service created with slo_id starts as not_configured and resolves slo_name by id lookup", async () => {
     await loginAsOwner();
     const { result } = renderHook(
       () => ({ services: useServices(1), create: useCreateService() }),
@@ -44,7 +45,7 @@ describe("services hooks", () => {
     expect(names).toContain("Serviço com SLO");
   });
 
-  it("POST /api/services sem slo_id retorna 422 (mesma regra do backend real)", async () => {
+  it("POST /api/services without slo_id returns 422 (same rule as the real backend)", async () => {
     await loginAsOwner();
     await expect(
       apiFetch("/api/services", {
@@ -54,7 +55,7 @@ describe("services hooks", () => {
     ).rejects.toThrow(ApiError);
   });
 
-  it("useServices(1) usa queryKey com a página e busca /api/services?page=1, retornando o envelope Page completo", async () => {
+  it("useServices(1) uses a queryKey with the page and fetches /api/services?page=1, returning the full Page envelope", async () => {
     const fetchSpy = vi.spyOn(globalThis, "fetch");
     await loginAsOwner();
     const { result } = renderHook(() => useServices(1), { wrapper: TestQueryProvider });
@@ -76,7 +77,7 @@ describe("services hooks", () => {
   // straight from the single list response, with no per-row live call
   // (the old fetchSLOName call this hook used to make, I15's
   // SPEC_DEVIATION, is gone).
-  it("useServices retorna slo_name/uptime_30d/last_seen_at por item com uma única chamada de rede", async () => {
+  it("useServices returns slo_name/uptime_30d/last_seen_at per item with a single network call", async () => {
     const fetchSpy = vi.spyOn(globalThis, "fetch");
     await loginAsOwner();
     const { result } = renderHook(() => useServices(1), { wrapper: TestQueryProvider });
@@ -99,7 +100,7 @@ describe("services hooks", () => {
 
   // SVC-14..17: useServiceDetail fetches GET /api/services/{id} and returns
   // the flat detail DTO, including all 24 hourly_buckets.
-  it("useServiceDetail retorna uptime/incidentes/status_analysis e 24 hourly_buckets", async () => {
+  it("useServiceDetail returns uptime/incidents/status_analysis and 24 hourly_buckets", async () => {
     await loginAsOwner();
     const { result: list } = renderHook(() => useServices(1), { wrapper: TestQueryProvider });
     await waitFor(() => expect(list.current.isSuccess).toBe(true));
@@ -116,7 +117,7 @@ describe("services hooks", () => {
 
   // SVC-20..25: useCreateService sends slo_name in the POST body (the
   // frontend already has it from the selected SLOSummary).
-  it("useCreateService envia slo_name no corpo da requisição", async () => {
+  it("useCreateService sends slo_name in the request body", async () => {
     await loginAsOwner();
     const fetchSpy = vi.spyOn(globalThis, "fetch");
     const { result } = renderHook(() => useCreateService(), { wrapper: TestQueryProvider });
@@ -133,7 +134,7 @@ describe("services hooks", () => {
 
   // service-edit SVCEDIT-01/02/06: useUpdateService PATCHes the name and
   // both the list and detail caches reflect it afterward.
-  it("useUpdateService renomeia e invalida a lista e o detalhe", async () => {
+  it("useUpdateService renames and invalidates the list and the detail", async () => {
     await loginAsOwner();
     const { result } = renderHook(() => ({ services: useServices(1), update: useUpdateService() }), {
       wrapper: TestQueryProvider,
@@ -150,7 +151,7 @@ describe("services hooks", () => {
   });
 
   // service-edit SVCEDIT-03: an empty name rejects with 422, same as Create.
-  it("useUpdateService com nome vazio rejeita com 422", async () => {
+  it("useUpdateService with an empty name rejects with 422", async () => {
     await loginAsOwner();
     const { result } = renderHook(() => ({ services: useServices(1), update: useUpdateService() }), {
       wrapper: TestQueryProvider,
@@ -163,7 +164,7 @@ describe("services hooks", () => {
 
   // service-delete SVCDEL-01/02/09: useDeleteService removes an unattached
   // service and invalidates the list.
-  it("useDeleteService remove um serviço não vinculado e invalida a lista", async () => {
+  it("useDeleteService removes an unattached service and invalidates the list", async () => {
     await loginAsOwner();
     const { result } = renderHook(
       () => ({ services: useServices(1), create: useCreateService(), del: useDeleteService() }),
@@ -185,7 +186,7 @@ describe("services hooks", () => {
 
   // service-delete SVCDEL-03: deleting a service still attached to a
   // status page (fixture svc-1) rejects with ApiError (409).
-  it("useDeleteService em serviço vinculado a status page rejeita", async () => {
+  it("useDeleteService on a service attached to a status page rejects", async () => {
     await loginAsOwner();
     const { result } = renderHook(() => useDeleteService(), { wrapper: TestQueryProvider });
 

@@ -74,7 +74,7 @@ function renderDrawer(onClose: () => void = () => {}) {
 }
 
 describe("ServiceDetailDrawer", () => {
-  it("mostra Uptime 30d, Última verificação e Incidentes (30d) (SVC-14)", async () => {
+  it("shows Uptime 30d, Last checked and Incidents (30d) (SVC-14)", async () => {
     const lastSeen = new Date("2026-01-05T10:00:00Z").toISOString();
     mockDetail({ uptime_30d: 99.87, last_seen_at: lastSeen, incidents_30d: 3 });
     await loginAsOwner();
@@ -85,7 +85,7 @@ describe("ServiceDetailDrawer", () => {
     expect(screen.getByText("3")).toBeInTheDocument();
   });
 
-  it("renderiza a nota quando degraded e status_analysis não vazio (SVC-15)", async () => {
+  it("renders the note when degraded and status_analysis is non-empty (SVC-15)", async () => {
     mockDetail({ current_status: "degraded", status_analysis: "Latência acima do normal." });
     await loginAsOwner();
     renderDrawer();
@@ -93,7 +93,7 @@ describe("ServiceDetailDrawer", () => {
     expect(await screen.findByText("Latência acima do normal.")).toBeInTheDocument();
   });
 
-  it("não renderiza a nota quando degraded mas status_analysis é vazio (SVC-16)", async () => {
+  it("does not render the note when degraded but status_analysis is empty (SVC-16)", async () => {
     mockDetail({ current_status: "degraded", status_analysis: null });
     await loginAsOwner();
     renderDrawer();
@@ -102,7 +102,7 @@ describe("ServiceDetailDrawer", () => {
     expect(screen.queryByText("Latência acima do normal.")).not.toBeInTheDocument();
   });
 
-  it("não renderiza a nota quando status_analysis existe mas o status não é degraded (SVC-16)", async () => {
+  it("does not render the note when status_analysis exists but the status is not degraded (SVC-16)", async () => {
     mockDetail({ current_status: "operational", status_analysis: "Texto que não deveria aparecer." });
     await loginAsOwner();
     renderDrawer();
@@ -111,7 +111,7 @@ describe("ServiceDetailDrawer", () => {
     expect(screen.queryByText("Texto que não deveria aparecer.")).not.toBeInTheDocument();
   });
 
-  it("renderiza exatamente 24 barras de histórico, mesmo com um fixture de tamanho diferente (SVC-17)", async () => {
+  it("renders exactly 24 history bars, even with a differently-sized fixture (SVC-17)", async () => {
     mockDetail({ hourly_buckets: buildBuckets(24) });
     await loginAsOwner();
     renderDrawer();
@@ -120,7 +120,7 @@ describe("ServiceDetailDrawer", () => {
     expect(screen.getAllByTestId("history-bar")).toHaveLength(24);
   });
 
-  it("fecha ao clicar no controle de fechar (SVC-18)", async () => {
+  it("closes when clicking the close control (SVC-18)", async () => {
     mockDetail();
     await loginAsOwner();
     let closeCalls = 0;
@@ -132,7 +132,7 @@ describe("ServiceDetailDrawer", () => {
     expect(closeCalls).toBe(1);
   });
 
-  it("fecha ao clicar no backdrop (SVC-18)", async () => {
+  it("closes when clicking the backdrop (SVC-18)", async () => {
     mockDetail();
     await loginAsOwner();
     let closeCalls = 0;
@@ -150,7 +150,7 @@ describe("ServiceDetailDrawer", () => {
   // manual-polling-monitoring T9: a polling-manual service has no
   // slo_name/slo_id at all - the subtitle must show poll_target, not
   // blank/undefined.
-  it("mostra poll_target como subtítulo para um serviço monitor_mode=polling (T9)", async () => {
+  it("shows poll_target as the subtitle for a monitor_mode=polling service (T9)", async () => {
     mockDetail({
       slo_id: null,
       slo_name: null,
@@ -165,7 +165,7 @@ describe("ServiceDetailDrawer", () => {
   });
 
   // Regression: an slo-mode service's subtitle is unchanged.
-  it("mantém slo_name como subtítulo para um serviço monitor_mode=slo (T9 regressão)", async () => {
+  it("keeps slo_name as the subtitle for a monitor_mode=slo service (T9 regression)", async () => {
     mockDetail({ monitor_mode: "slo" });
     await loginAsOwner();
     renderDrawer();
@@ -174,7 +174,7 @@ describe("ServiceDetailDrawer", () => {
     expect(screen.getByText("Checkout latência p95")).toBeInTheDocument();
   });
 
-  it("não renderiza 'Pausar monitoramento' nem 'Editar configuração' (SVC-19)", async () => {
+  it("does not render 'Pausar monitoramento' or 'Editar configuração' (SVC-19)", async () => {
     mockDetail();
     await loginAsOwner();
     renderDrawer();
@@ -186,7 +186,7 @@ describe("ServiceDetailDrawer", () => {
 
   // service-edit SVCEDIT-06: owner sees the rename control and can rename
   // the service, which reflects in the drawer without a full page reload.
-  it("owner consegue renomear o serviço pelo drawer (SVCEDIT-06)", async () => {
+  it("owner can rename the service from the drawer (SVCEDIT-06)", async () => {
     mockDetail();
     await loginAsOwner();
     server.use(
@@ -208,7 +208,7 @@ describe("ServiceDetailDrawer", () => {
     expect(await screen.findByText("Checkout renomeado")).toBeInTheDocument();
   });
 
-  it("nome vazio mostra erro e não salva (SVCEDIT-03)", async () => {
+  it("an empty name shows an error and does not save (SVCEDIT-03)", async () => {
     mockDetail();
     await loginAsOwner();
     renderDrawer();
@@ -226,7 +226,7 @@ describe("ServiceDetailDrawer", () => {
     expect(screen.getByPlaceholderText("Nome do serviço")).toBeInTheDocument();
   });
 
-  it("cancelar edição descarta o rascunho e mantém o nome original", async () => {
+  it("canceling the edit discards the draft and keeps the original name", async () => {
     mockDetail();
     await loginAsOwner();
     renderDrawer();
@@ -241,7 +241,7 @@ describe("ServiceDetailDrawer", () => {
     expect(screen.queryByPlaceholderText("Nome do serviço")).not.toBeInTheDocument();
   });
 
-  it("viewer não vê o botão de renomear", async () => {
+  it("viewer does not see the rename button", async () => {
     mockDetail();
     await apiFetch("/api/auth/login", {
       method: "POST",
@@ -255,7 +255,7 @@ describe("ServiceDetailDrawer", () => {
 
   // service-delete SVCDEL-09: owner sees the delete action, confirms, and
   // the drawer closes on success.
-  it("owner consegue excluir o serviço após confirmar (SVCDEL-09)", async () => {
+  it("owner can delete the service after confirming (SVCDEL-09)", async () => {
     mockDetail();
     await loginAsOwner();
     server.use(http.delete("/api/services/:id", () => new HttpResponse(null, { status: 204 })));
@@ -274,7 +274,7 @@ describe("ServiceDetailDrawer", () => {
     await waitFor(() => expect(closeCalls).toBe(1));
   });
 
-  it("delete bloqueado (409) mostra erro e não fecha o drawer", async () => {
+  it("blocked delete (409) shows an error and does not close the drawer", async () => {
     mockDetail();
     await loginAsOwner();
     server.use(
@@ -296,7 +296,7 @@ describe("ServiceDetailDrawer", () => {
     expect(closeCalls).toBe(0);
   });
 
-  it("viewer não vê o botão de excluir", async () => {
+  it("viewer does not see the delete button", async () => {
     mockDetail();
     await apiFetch("/api/auth/login", {
       method: "POST",

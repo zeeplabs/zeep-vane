@@ -7,6 +7,7 @@ import { Button, buttonBaseClasses, buttonVariantClasses } from "../../component
 import { Field } from "../../components/ui/Field";
 import { useAuth } from "../../auth/AuthProvider";
 import { ApiError } from "../../lib/apiClient";
+import { formatDateTime } from "../../lib/formatDate";
 import { useDomains } from "../domains/hooks";
 import { useServices } from "../services/hooks";
 import type { Service, StatusPage, StatusPageState } from "../../types/api";
@@ -36,11 +37,11 @@ const statePillVariant: Record<StatusPageState, TagVariant> = {
   tls_failed: "critical",
 };
 
-const statePillLabel: Record<StatusPageState, string> = {
-  draft: "Sem domínio configurado",
-  pending_tls: "Aguardando validação de DNS/certificado",
-  published: "Publicada",
-  tls_failed: "Falha",
+const statePillLabelKey: Record<StatusPageState, string> = {
+  draft: "statusPages.section.noDomainTag",
+  pending_tls: "statusPages.section.pendingTag",
+  published: "statusPages.section.publishedTag",
+  tls_failed: "statusPages.section.failedTag",
 };
 
 interface StatusPagePillProps {
@@ -52,46 +53,49 @@ interface StatusPagePillProps {
 // like a different, older component just because it has its own state
 // machine (SPD-12/13).
 function StatusPagePill({ page }: StatusPagePillProps) {
-  // SPD-12: sem domínio nenhum anexado ainda - distinto de "draft" com
-  // domínio (que não deveria mais ocorrer, ver AD-017), mas o texto e a
-  // variante servem pros dois. "published"/"tls_failed" sempre vencem,
-  // mesmo no formato defendido/impossível de published sem domain_id
-  // (nunca produzido pelo fluxo real - MarkPublished exige domain_id via
-  // JOIN por hostname - mas publicUrl() e este pill continuam defendendo
-  // contra ele, mesmo raciocínio de StatusPagesSection.test.tsx).
+  const { t } = useTranslation();
+  // SPD-12: no domain attached yet - distinct from "draft" with a
+  // domain (which shouldn't happen anymore, see AD-017), but the text and
+  // variant serve both cases. "published"/"tls_failed" always win, even
+  // in the defensive/impossible shape of "published" with no domain_id
+  // (never produced by the real flow - MarkPublished requires domain_id
+  // via a hostname JOIN - but publicUrl() and this pill still guard
+  // against it, same reasoning as StatusPagesSection.test.tsx).
   const state: StatusPageState =
     page.domain_id === null && page.state !== "published" && page.state !== "tls_failed" ? "draft" : page.state;
   return (
     <Tag variant={statePillVariant[state]} className="gap-1.5" style={{ borderRadius: "999px" }}>
       {state === "pending_tls" ? <span className="h-1.5 w-1.5 flex-none animate-pulse rounded-full bg-current" aria-hidden="true" /> : null}
-      {statePillLabel[state]}
+      {t(statePillLabelKey[state])}
     </Tag>
   );
 }
 
 export interface StatusPageEditorContentProps {
   page: StatusPage;
-  /** Controla o link "Pré-visualizar página pública". Default `true` -
-   * necessário pra tela legada `/status-pages/{id}` (`StatusPageDetail.tsx`,
-   * sem drawer de detalhe separado, esse é seu único jeito de pré-visualizar).
-   * `EditStatusPageDrawer` do novo layout passa `false`: o link mudou para o
-   * `StatusPageDetailDrawer` ("visualizar detalhes"), a pedido do Julio -
-   * antes só existia no drawer de edição, o que era o lugar errado. */
+  /** Controls the "Preview public page" link. Defaults to `true` -
+   * needed by the legacy `/status-pages/{id}` screen (`StatusPageDetail.tsx`,
+   * with no separate detail drawer, this is its only way to preview).
+   * The new layout's `EditStatusPageDrawer` passes `false`: the link moved
+   * to `StatusPageDetailDrawer` ("view details"), at Julio's request -
+   * it previously only existed in the edit drawer, which was the wrong
+   * place for it. */
   showPreviewLink?: boolean;
 }
 
-/** Corpo real de edição de uma status page (status, anexar domínio,
- * verificação de DNS/certificado, serviços vinculados) - extraído de
- * `StatusPageDetail.tsx` pra ser reusado tanto pela tela legada
- * `/status-pages/{id}` (ainda usada pelo fluxo pré-redesign) quanto pelo
- * `EditStatusPageDrawer` do novo layout, que substitui a navegação pra
- * tela separada por um drawer (mesmo modelo do de criação), por pedido
- * explícito do Julio: "em tela separada nao ficou legal". Layout alinhado
- * com os componentes já migrados (`DomainDetailDrawer`,
- * `AddStatusPageDrawer`): sem `Card`, seções separadas por `border-t`,
- * rótulos em uppercase 10.5px, checklist de serviço com checkbox quadrado
- * em vez do checkbox nativo redondo. */
+/** Actual editing body for a status page (status, attach domain,
+ * DNS/certificate verification, linked services) - extracted from
+ * `StatusPageDetail.tsx` to be reused both by the legacy
+ * `/status-pages/{id}` screen (still used by the pre-redesign flow) and by
+ * the new layout's `EditStatusPageDrawer`, which replaces navigation to a
+ * separate screen with a drawer (same pattern as creation), at Julio's
+ * explicit request: "didn't look good in a separate screen". Layout
+ * aligned with already-migrated components (`DomainDetailDrawer`,
+ * `AddStatusPageDrawer`): no `Card`, sections separated by `border-t`,
+ * 10.5px uppercase labels, service checklist with a square checkbox
+ * instead of the native round one. */
 export function StatusPageEditorContent({ page, showPreviewLink = true }: StatusPageEditorContentProps) {
+  const { t } = useTranslation();
   // SPEC_DEVIATION: fixed page 1 for now - Pager UI for the domains
   // dropdown is out of scope here (this reads domains only to resolve a
   // hostname/build a select list); T14/T16 (Pager) is a later phase not
@@ -144,7 +148,7 @@ export function StatusPageEditorContent({ page, showPreviewLink = true }: Status
       await setServices.mutateAsync({ id: pageId, service_ids: selectedServiceIds });
     } catch (err) {
       if (err instanceof ApiError) setError(err.message);
-      else setError("Não foi possível salvar os serviços vinculados.");
+      else setError(t("statusPages.editor.saveServicesError"));
     }
   }
 
@@ -156,9 +160,9 @@ export function StatusPageEditorContent({ page, showPreviewLink = true }: Status
 
       {page.domain_id === null ? (
         <div className="flex items-center justify-between gap-3">
-          <p className="text-[13px] text-text-muted">Nenhum domínio anexado ainda.</p>
+          <p className="text-[13px] text-text-muted">{t("statusPages.editor.noDomainAttached")}</p>
           <Button type="button" variant="secondary" className="w-fit" onClick={() => setAttachOpen(true)}>
-            Anexar domínio
+            {t("statusPages.section.attachDomainLink")}
           </Button>
         </div>
       ) : null}
@@ -179,20 +183,21 @@ export function StatusPageEditorContent({ page, showPreviewLink = true }: Status
           className={`${buttonBaseClasses} ${buttonVariantClasses.secondary} w-fit`}
         >
           <MdOutlineOpenInNew size={14} aria-hidden="true" />
-          Pré-visualizar página pública
+          {t("statusPages.detail.previewButton")}
         </a>
       ) : null}
 
-      {/* Painel fixo de configuração de DNS/certificado (mirrors o fluxo de
-          domínio customizado de plataformas como Vercel/Render) - permanece
-          visível enquanto a página tem domínio anexado e ainda não está
-          publicada, mesmo que o polling automático (useStatusPage) já
-          esteja tentando detectar a transição sozinho a cada 10s. Restrito
-          a canManage: o endpoint que ele lê (GET /api/instance/dns-target)
-          e o que ele aciona (POST .../verify-domain) são ambos
-          write-role-gated no backend - um viewer só veria um 403
-          confuso/enganoso ("DNS não configurado" quando na verdade só não
-          teve permissão de ler) em vez de nada. */}
+      {/* Fixed DNS/certificate configuration panel (mirrors the custom
+          domain flow of platforms like Vercel/Render) - stays visible
+          while the page has a domain attached and isn't published yet,
+          even though the automatic polling (useStatusPage) is already
+          trying to detect the transition on its own every 10s. Restricted
+          to canManage: both the endpoint it reads (GET
+          /api/instance/dns-target) and the one it triggers (POST
+          .../verify-domain) are write-role-gated on the backend - a
+          viewer would just see a confusing/misleading 403 ("DNS not
+          configured" when really they just lacked read permission)
+          instead of nothing. */}
       {page.domain_id !== null && page.subdomain !== null && page.state !== "published" && canManage ? (
         <div className="flex flex-col gap-3 border-t border-divider pt-4">
           <DomainVerificationPanel statusPageId={page.id} fullHostname={`${page.subdomain}.${hostname ?? "?"}`} />
@@ -202,17 +207,17 @@ export function StatusPageEditorContent({ page, showPreviewLink = true }: Status
       <div className="flex flex-col gap-3 border-t border-divider pt-4">
         <div className="flex items-center justify-between">
           <span className="text-[10.5px] font-bold uppercase tracking-wide text-text-muted">
-            Serviços vinculados ({selectedServiceIds.length}/{allServices.length})
+            {t("statusPages.editor.linkedServicesLabel", { selected: selectedServiceIds.length, total: allServices.length })}
           </span>
         </div>
 
         {allServices.length === 0 ? (
-          <p className="text-[13px] text-text-muted">Nenhum serviço cadastrado.</p>
+          <p className="text-[13px] text-text-muted">{t("statusPages.editor.noServices")}</p>
         ) : (
           <>
             {linkedServices.length > 0 ? (
               <ServiceGroup
-                label={`Vinculados (${linkedServices.length})`}
+                label={t("statusPages.editor.linkedGroupLabel", { count: linkedServices.length })}
                 services={linkedServices}
                 selectedServiceIds={selectedServiceIds}
                 canManage={canManage}
@@ -224,8 +229,8 @@ export function StatusPageEditorContent({ page, showPreviewLink = true }: Status
               <Field
                 type="text"
                 variant="filled"
-                label="Disponíveis"
-                placeholder="Buscar serviço…"
+                label={t("statusPages.editor.availableLabel")}
+                placeholder={t("statusPages.editor.searchPlaceholder")}
                 value={serviceQuery}
                 onChange={(e) => setServiceQuery(e.target.value)}
               />
@@ -234,7 +239,7 @@ export function StatusPageEditorContent({ page, showPreviewLink = true }: Status
                 selectedServiceIds={selectedServiceIds}
                 canManage={canManage}
                 onToggle={toggleService}
-                emptyLabel="Nenhum serviço encontrado."
+                emptyLabel={t("statusPages.editor.noServicesFound")}
                 scrollable
               />
             </div>
@@ -249,7 +254,7 @@ export function StatusPageEditorContent({ page, showPreviewLink = true }: Status
               disabled={!isDirty || setServices.isPending}
               onClick={handleSaveServices}
             >
-              Salvar serviços
+              {t("statusPages.editor.saveServicesButton")}
             </Button>
             {error ? (
               <p role="alert" className="text-xs text-critical">
@@ -282,7 +287,7 @@ interface DomainVerificationPanelProps {
 // Vercel/Render offer for custom domains. Table styling mirrors
 // DomainDetailDrawer's TIPO/VALOR DNS block.
 function DomainVerificationPanel({ statusPageId, fullHostname }: DomainVerificationPanelProps) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const { data: dnsTarget, isLoading: dnsTargetLoading } = useDNSTarget();
   const verifyDomain = useVerifyDomain();
   const result: VerifyDomainResult | undefined = verifyDomain.data;
@@ -296,29 +301,29 @@ function DomainVerificationPanel({ statusPageId, fullHostname }: DomainVerificat
   return (
     <div className="flex flex-col gap-3">
       <div className="flex items-center justify-between gap-3">
-        <span className="text-[10.5px] font-bold uppercase tracking-wide text-text-muted">Configuração DNS</span>
+        <span className="text-[10.5px] font-bold uppercase tracking-wide text-text-muted">{t("domains.detail.dnsConfigLabel")}</span>
         <Button
           type="button"
           variant="secondary"
           disabled={verifyDomain.isPending}
           onClick={() => verifyDomain.mutate(statusPageId)}
         >
-          {verifyDomain.isPending ? "Verificando…" : "Verificar DNS/certificado"}
+          {verifyDomain.isPending ? t("statusPages.editor.verifyingButton") : t("statusPages.editor.verifyButton")}
         </Button>
       </div>
 
       <div className="overflow-hidden rounded-md border border-divider">
         <div className="grid grid-cols-[70px_1fr] gap-2 border-b border-divider bg-card-header-bg px-3.5 py-2.5">
-          <span className="text-[11px] font-bold text-text-muted">TIPO</span>
-          <span className="text-[11px] font-bold text-text-muted">VALOR</span>
+          <span className="text-[11px] font-bold text-text-muted">{t("domains.detail.dnsType")}</span>
+          <span className="text-[11px] font-bold text-text-muted">{t("domains.detail.dnsValue")}</span>
         </div>
         <div className="grid grid-cols-[70px_1fr_auto] items-center gap-2 px-3.5 py-3">
           <span className="font-mono text-[12.5px] font-bold text-text">CNAME</span>
           {dnsTargetLoading ? (
-            <span className="font-mono text-[12.5px] text-text-muted">Carregando…</span>
+            <span className="font-mono text-[12.5px] text-text-muted">{t("statusPages.loading")}</span>
           ) : (
             <span className="min-w-0 truncate font-mono text-[12.5px] text-text-muted">
-              {dnsTarget ?? "não configurado"}
+              {dnsTarget ?? t("domains.detail.notConfigured")}
             </span>
           )}
           {dnsTarget ? (
@@ -335,15 +340,14 @@ function DomainVerificationPanel({ statusPageId, fullHostname }: DomainVerificat
         </div>
       </div>
       <p className="text-xs text-text-muted">
-        Aponte <strong className="text-text">{fullHostname}</strong> para o valor acima. O certificado é emitido
-        automaticamente assim que o DNS propagar e alguém acessar a página (ou ao clicar em "Verificar" acima).
+        {t("statusPages.editor.pointHostnameInstruction", { hostname: fullHostname })}
       </p>
 
       {verifyDomain.isError ? (
         <p role="alert" className="text-xs text-critical">
           {verifyDomain.error instanceof ApiError
             ? verifyDomain.error.message
-            : "Não foi possível verificar o domínio agora."}
+            : t("statusPages.editor.verifyGenericError")}
         </p>
       ) : null}
 
@@ -353,27 +357,32 @@ function DomainVerificationPanel({ statusPageId, fullHostname }: DomainVerificat
             ok={result.dns_resolved && result.dns_matches_target !== false}
             label={
               !result.dns_resolved
-                ? "DNS ainda não resolve para nenhum destino"
+                ? t("statusPages.editor.dnsNotResolved")
                 : result.dns_matches_target === false
-                  ? `DNS resolve para ${result.resolved_ips.join(", ")}, diferente do destino esperado`
+                  ? t("statusPages.editor.dnsMismatch", { ips: result.resolved_ips.join(", ") })
                   : result.dns_matches_target === true
-                    ? `DNS resolve corretamente (${result.resolved_ips.join(", ")})`
-                    : `DNS resolve (${result.resolved_ips.join(", ")})`
+                    ? t("statusPages.editor.dnsMatch", { ips: result.resolved_ips.join(", ") })
+                    : t("statusPages.editor.dnsResolves", { ips: result.resolved_ips.join(", ") })
             }
           />
           <VerificationRow
             ok={result.tls_cert_valid}
             label={
               result.tls_cert_valid
-                ? "Certificado TLS emitido e válido"
+                ? t("statusPages.editor.tlsValid")
                 : result.tls_reachable
-                  ? `Conexão HTTPS respondeu, mas o certificado não é válido para ${fullHostname}${
-                      result.tls_error ? `: ${result.tls_error}` : ""
-                    }`
-                  : `Conexão HTTPS ainda falha${result.tls_error ? `: ${result.tls_error}` : ""}`
+                  ? t("statusPages.editor.tlsRespondedInvalid", {
+                      hostname: fullHostname,
+                      errorSuffix: result.tls_error ? `: ${result.tls_error}` : "",
+                    })
+                  : t("statusPages.editor.tlsUnreachable", {
+                      errorSuffix: result.tls_error ? `: ${result.tls_error}` : "",
+                    })
             }
           />
-          <p className="text-text-muted">Última verificação: {new Date(result.checked_at).toLocaleString()}</p>
+          <p className="text-text-muted">
+            {t("statusPages.editor.lastCheckedLabel", { date: formatDateTime(result.checked_at, i18n.language) })}
+          </p>
         </div>
       ) : null}
     </div>
@@ -407,7 +416,7 @@ interface ServiceGroupProps {
 }
 
 // ServiceGroup renders one labeled block of service checklist rows
-// ("Vinculados" / "Disponíveis") - same checkbox-row composition
+// ("Linked" / "Available") - same checkbox-row composition
 // AddStatusPageDrawer's service checklist already established (16px
 // rounded-square checkbox + MdCheck), not the old native round
 // <input type="checkbox">.

@@ -31,7 +31,7 @@ async function fillAndSubmit(tenantName: string, email: string, password: string
 }
 
 describe("SignupPage", () => {
-  it("signup válido mostra a tela de verificação pendente (T18, TENANT-08)", async () => {
+  it("a valid signup shows the pending-verification screen (T18, TENANT-08)", async () => {
     render(<App />);
 
     await fillAndSubmit("Acme Inc.", "founder@acme.example.com", "demo1234");
@@ -40,11 +40,11 @@ describe("SignupPage", () => {
     expect(
       screen.getByText((_, node) => node?.textContent === "Enviamos um link de verificação para founder@acme.example.com. Clique nele para ativar sua conta.")
     ).toBeInTheDocument();
-    // O formulário de signup não deve mais estar visível.
+    // The signup form should no longer be visible.
     expect(screen.queryByLabelText("E-mail")).not.toBeInTheDocument();
   });
 
-  it("clicar em reenviar chama o endpoint de reenvio e mostra confirmação (T18, TENANT-11)", async () => {
+  it("clicking resend calls the resend endpoint and shows confirmation (T18, TENANT-11)", async () => {
     render(<App />);
     await fillAndSubmit("Acme Inc.", "founder@acme.example.com", "demo1234");
 
@@ -54,14 +54,14 @@ describe("SignupPage", () => {
     expect(await screen.findByText("E-mail de verificação reenviado.")).toBeInTheDocument();
   });
 
-  it("segunda tentativa de signup com o mesmo e-mail ainda não verificado mostra erro 409 (spec.md edge case)", async () => {
+  it("a second signup attempt with the same still-unverified email shows a 409 error (spec.md edge case)", async () => {
     const first = render(<App />);
     await fillAndSubmit("Acme Inc.", "founder@acme.example.com", "demo1234");
     await screen.findByText("Verifique seu e-mail");
     first.unmount();
 
-    // Segunda tentativa - simula outra aba/reload preenchendo o formulário
-    // de novo para o mesmo e-mail antes de verificar o primeiro.
+    // Second attempt - simulates another tab/reload filling the form
+    // again for the same email before verifying the first one.
     render(<App />);
     await fillAndSubmit("Acme Inc.", "founder@acme.example.com", "demo1234");
 
@@ -70,7 +70,7 @@ describe("SignupPage", () => {
     );
   });
 
-  it("senha fora do intervalo de 8-72 caracteres mostra erro de validação (T9's weak-password gate)", async () => {
+  it("a password outside the 8-72 character range shows a validation error (T9's weak-password gate)", async () => {
     render(<App />);
     await fillAndSubmit("Acme Inc.", "founder2@acme.example.com", "short");
 
@@ -78,15 +78,15 @@ describe("SignupPage", () => {
     expect(screen.queryByText("Verifique seu e-mail")).not.toBeInTheDocument();
   });
 
-  it("link 'já tem conta' leva de volta ao login", async () => {
+  it("the 'já tem conta' link leads back to login", async () => {
     render(<App />);
     await userEvent.click(screen.getByText("Já tem conta? Entrar"));
     expect(await screen.findByText("login page")).toBeInTheDocument();
   });
 
-  // DEPMODE-07: em modo self-hosted, mostra mensagem de acesso restrito em
-  // vez do formulário - reflete o 404 real do backend nessas rotas.
-  it("mostra mensagem de acesso restrito em modo self_hosted, sem exibir o formulário (AD-033)", async () => {
+  // DEPMODE-07: in self-hosted mode, shows a restricted-access message instead
+  // of the form - reflects the backend's real 404 on these routes.
+  it("shows a restricted-access message in self_hosted mode, without displaying the form (AD-033)", async () => {
     setDeploymentMode("self_hosted");
     render(<App />);
 

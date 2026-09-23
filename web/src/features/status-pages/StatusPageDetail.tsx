@@ -29,7 +29,7 @@ export function StatusPageDetail() {
       </div>
     );
   }
-  if (!page) return <p className="text-neutral-400">Status page não encontrada.</p>;
+  if (!page) return <p className="text-neutral-400">{t("statusPages.detail.notFound")}</p>;
 
   return (
     <div className="mx-auto flex w-full max-w-[1280px] flex-col gap-4">

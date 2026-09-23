@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { useTranslation } from "react-i18next";
 import { Tag, type TagVariant } from "../../components/ui/Tag";
 
 export type IntegrationStatusKind = "connected" | "not_connected" | "coming_soon";
@@ -13,12 +14,6 @@ const statusDotColor: Record<IntegrationStatusKind, string> = {
   connected: "var(--color-success)",
   not_connected: "var(--color-text-muted)",
   coming_soon: "var(--color-text-muted)",
-};
-
-const statusLabel: Record<IntegrationStatusKind, string> = {
-  connected: "Conectado",
-  not_connected: "Não conectado",
-  coming_soon: "Em breve",
 };
 
 export interface IntegrationCardProps {
@@ -38,6 +33,7 @@ export interface IntegrationCardProps {
  * elevation - the card is bordered, not shadowed (post shadow-removal
  * convention). */
 export function IntegrationCard({ icon, bannerBg, status, title, description, meta, action }: IntegrationCardProps) {
+  const { t } = useTranslation();
   return (
     <div className="flex flex-col overflow-hidden rounded-2xl border border-divider bg-surface">
       <div className="relative flex h-[112px] flex-none items-center justify-center" style={{ background: bannerBg }}>
@@ -52,7 +48,7 @@ export function IntegrationCard({ icon, bannerBg, status, title, description, me
             style={{ backgroundColor: statusDotColor[status] }}
             aria-hidden="true"
           />
-          {statusLabel[status]}
+          {t(`integrations.statusLabel.${status}`)}
         </Tag>
       </div>
       <div className="flex flex-1 flex-col p-5">

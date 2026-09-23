@@ -4,6 +4,7 @@ import * as RadixDialog from "@radix-ui/react-dialog";
 import { MdOutlineWarningAmber, MdClose, MdOutlineEdit, MdCheck, MdOutlineDeleteOutline } from "react-icons/md";
 import { useAuth } from "../../auth/AuthProvider";
 import { ApiError } from "../../lib/apiClient";
+import { formatDateTime } from "../../lib/formatDate";
 import { Input } from "../../components/ui/Input";
 import { Button } from "../../components/ui/Button";
 import { Dialog } from "../../components/ui/Dialog";
@@ -23,10 +24,6 @@ const bucketColor: Record<HourlyBucket["status"], string> = {
   outage: "var(--color-critical)",
   no_data: "var(--color-neutral-600)",
 };
-
-function formatTimestamp(iso: string): string {
-  return new Date(iso).toLocaleString("pt-BR");
-}
 
 function formatUptime(uptime: number | null): string {
   return uptime === null ? "—" : `${uptime.toFixed(2)}%`;
@@ -61,7 +58,7 @@ function Stat({ label, value }: StatProps) {
  * (o nome do serviço é renderizado visualmente como h2 ou como o input de
  * edição, nunca os dois ao mesmo tempo). */
 export function ServiceDetailDrawer({ serviceId, onClose }: ServiceDetailDrawerProps) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const { hasRole } = useAuth();
   const isOwner = hasRole(["owner"]);
   const { data: detail, isLoading } = useServiceDetail(serviceId);
@@ -206,7 +203,7 @@ export function ServiceDetailDrawer({ serviceId, onClose }: ServiceDetailDrawerP
                 <Stat label={t("services.detail.uptime")} value={formatUptime(detail.uptime_30d)} />
                 <Stat
                   label={t("services.detail.lastCheck")}
-                  value={detail.last_seen_at ? formatTimestamp(detail.last_seen_at) : "—"}
+                  value={detail.last_seen_at ? formatDateTime(detail.last_seen_at, i18n.language) : "—"}
                 />
                 <Stat label={t("services.detail.incidents")} value={String(detail.incidents_30d)} />
               </div>

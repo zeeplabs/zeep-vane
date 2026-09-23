@@ -103,6 +103,14 @@ type LLMProviderStore interface {
 	// DeleteProvider removes provider's stored row (provider-disconnect
 	// PROVDISC-04/05) - idempotent, no error when zero rows matched.
 	DeleteProvider(ctx context.Context, provider string) error
+	// SetRootCauseEnrichmentEnabled sets the active tenant's
+	// root_cause_enrichment_enabled toggle (slo-root-cause-enrichment
+	// RCA-07/RCA-09).
+	SetRootCauseEnrichmentEnabled(ctx context.Context, enabled bool) error
+	// RootCauseEnrichmentEnabled reads the active tenant's current
+	// root_cause_enrichment_enabled toggle (RCA-08: the settings UI needs
+	// this to render the toggle's current state, not just write it).
+	RootCauseEnrichmentEnabled(ctx context.Context) (bool, error)
 }
 
 // ProviderStatus is one connected provider's observable state - never
@@ -244,6 +252,31 @@ func (s *Service) Disconnect(ctx context.Context, provider string) error {
 	}
 
 	return nil
+}
+
+// SetRootCauseEnrichmentEnabled sets the active tenant's root-cause
+// enrichment toggle (RCA-07/RCA-09) - a thin wrapper delegating straight to
+// the repository, same shape as Activate/SetModel: no provider-connected
+// check here, since the toggle is meaningful independent of which (if any)
+// provider is currently active.
+func (s *Service) SetRootCauseEnrichmentEnabled(ctx context.Context, enabled bool) error {
+	if err := s.repo.SetRootCauseEnrichmentEnabled(ctx, enabled); err != nil {
+		return fmt.Errorf("llm: failed to set root cause enrichment setting: %w", err)
+	}
+
+	return nil
+}
+
+// RootCauseEnrichmentEnabled reads the active tenant's current root-cause
+// enrichment toggle (RCA-08) - a thin wrapper delegating straight to the
+// repository, same shape as SetRootCauseEnrichmentEnabled.
+func (s *Service) RootCauseEnrichmentEnabled(ctx context.Context) (bool, error) {
+	enabled, err := s.repo.RootCauseEnrichmentEnabled(ctx)
+	if err != nil {
+		return false, fmt.Errorf("llm: failed to read root cause enrichment setting: %w", err)
+	}
+
+	return enabled, nil
 }
 
 // List returns one page of connected providers plus the current active

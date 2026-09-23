@@ -15,7 +15,7 @@ async function loginAsOwner() {
 }
 
 describe("overview hooks", () => {
-  it("useOverview expõe o OverviewResponse com os 6 campos", async () => {
+  it("useOverview exposes the OverviewResponse with its 6 fields", async () => {
     await loginAsOwner();
     const { result } = renderHook(() => useOverview(), { wrapper: TestQueryProvider });
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
@@ -30,7 +30,7 @@ describe("overview hooks", () => {
     expect(data.uptime_series).toHaveLength(14);
   });
 
-  it("useOverview surfaceia isError quando o endpoint responde 500", async () => {
+  it("useOverview surfaces isError when the endpoint responds with 500", async () => {
     await loginAsOwner();
     server.use(
       http.get("/api/overview", () =>
@@ -44,7 +44,7 @@ describe("overview hooks", () => {
 
   // recent-team-activity T15/ACTIVITY-09: useRecentActivity fetches
   // GET /api/audit-log?limit=5 as its own query, independent of useOverview.
-  it("useRecentActivity retorna as entradas de audit-log da fixture", async () => {
+  it("useRecentActivity returns the audit-log entries from the fixture", async () => {
     await loginAsOwner();
     seedAuditLogEntries([
       {
@@ -70,7 +70,7 @@ describe("overview hooks", () => {
     ]);
   });
 
-  it("useRecentActivity surfaceia isError quando o endpoint responde 500", async () => {
+  it("useRecentActivity surfaces isError when the endpoint responds with 500", async () => {
     await loginAsOwner();
     server.use(
       http.get("/api/audit-log", () =>

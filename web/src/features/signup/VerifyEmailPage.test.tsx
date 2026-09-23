@@ -27,9 +27,9 @@ function App(initialPath: string) {
 }
 
 describe("VerifyEmailPage", () => {
-  it("token válido de um signup pendente marca o e-mail como verificado (T18, TENANT-09/10)", async () => {
-    // Cria o signup pendente primeiro, para que o token determinístico do
-    // fixture msw (signupVerifyToken) exista de fato.
+  it("a valid token for a pending signup marks the email as verified (T18, TENANT-09/10)", async () => {
+    // Create the pending signup first, so the MSW fixture's deterministic
+    // token (signupVerifyToken) actually exists.
     render(App("/signup"));
     await userEvent.type(screen.getByLabelText("Nome da organização"), "Acme Inc.");
     await userEvent.type(screen.getByLabelText("E-mail"), "verify-me@acme.example.com");
@@ -43,7 +43,7 @@ describe("VerifyEmailPage", () => {
     expect(screen.getByText("Sua conta foi ativada. Você já pode entrar.")).toBeInTheDocument();
   });
 
-  it("token inválido/expirado mostra erro claro, sem verificar nada (T10)", async () => {
+  it("an invalid/expired token shows a clear error, without verifying anything (T10)", async () => {
     render(App("/verify-email/no-such-token"));
 
     expect(await screen.findByRole("alert")).toHaveTextContent(
@@ -51,7 +51,7 @@ describe("VerifyEmailPage", () => {
     );
   });
 
-  it("mostra o estado de carregamento antes da resposta do backend", async () => {
+  it("shows the loading state before the backend responds", async () => {
     server.use(
       http.get("/api/signup/verify/:token", async () => {
         await new Promise((resolve) => setTimeout(resolve, 20));
@@ -64,7 +64,7 @@ describe("VerifyEmailPage", () => {
     expect(await screen.findByText("E-mail verificado")).toBeInTheDocument();
   });
 
-  it("link 'ir para o login' leva para /login após a verificação", async () => {
+  it("the 'ir para o login' link leads to /login after verification", async () => {
     render(App("/signup"));
     await userEvent.type(screen.getByLabelText("Nome da organização"), "Acme Inc.");
     await userEvent.type(screen.getByLabelText("E-mail"), "verify-nav@acme.example.com");

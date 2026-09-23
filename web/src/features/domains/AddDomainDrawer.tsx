@@ -1,4 +1,5 @@
 import { useState, type FormEvent, type ReactNode } from "react";
+import { useTranslation } from "react-i18next";
 import { MdOutlinePublic, MdOutlineLink } from "react-icons/md";
 import { Drawer, drawerFooterPrimaryStyle, drawerFooterSecondaryStyle } from "../../components/ui/Drawer";
 import { Button } from "../../components/ui/Button";
@@ -13,12 +14,13 @@ export interface AddDomainDrawerProps {
 
 type DomainTypeChoice = "vane-subdomain" | "custom";
 
-/** Drawer de cadastro de domínio da aba Domínios (spec.md DSP-09..12):
- * escolha de tipo ("Subdomínio Vane" desabilitado/decorativo, "Domínio
- * próprio" selecionado por padrão e o único funcional) + hostname, enviado
- * via `useCreateDomain`. Segue o mesmo padrão de tile desabilitado do
- * `ModeCard` local de `AddServiceDrawer.tsx` (T8's Reuses). */
+/** Domain registration drawer for the Domínios tab (spec.md DSP-09..12):
+ * type choice ("Subdomínio Vane" disabled/decorative, "Domínio
+ * próprio" selected by default and the only functional one) + hostname, sent
+ * via `useCreateDomain`. Follows the same disabled-tile pattern as
+ * `AddServiceDrawer.tsx`'s local `ModeCard` (T8's Reuses). */
 export function AddDomainDrawer({ open, onOpenChange }: AddDomainDrawerProps) {
+  const { t } = useTranslation();
   const [domainType, setDomainType] = useState<DomainTypeChoice>("custom");
   const [hostname, setHostname] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -45,7 +47,7 @@ export function AddDomainDrawer({ open, onOpenChange }: AddDomainDrawerProps) {
       onOpenChange(false);
     } catch (err) {
       if (err instanceof ApiError) setError(err.message);
-      else setError("Não foi possível cadastrar o domínio.");
+      else setError(t("domains.form.error"));
     }
   }
 
@@ -53,9 +55,9 @@ export function AddDomainDrawer({ open, onOpenChange }: AddDomainDrawerProps) {
     <Drawer
       open={open}
       onOpenChange={handleOpenChange}
-      title="Adicionar domínio"
-      description="Cadastre um domínio raiz para publicar uma status page em um subdomínio dele."
-      closeLabel="Fechar"
+      title={t("domains.add.title")}
+      description={t("domains.add.description")}
+      closeLabel={t("common.close")}
       footer={
         <>
           <Button
@@ -64,7 +66,7 @@ export function AddDomainDrawer({ open, onOpenChange }: AddDomainDrawerProps) {
             style={drawerFooterSecondaryStyle}
             onClick={() => handleOpenChange(false)}
           >
-            Cancelar
+            {t("common.cancel")}
           </Button>
           <Button
             type="submit"
@@ -73,26 +75,26 @@ export function AddDomainDrawer({ open, onOpenChange }: AddDomainDrawerProps) {
             style={drawerFooterPrimaryStyle}
             disabled={createDomain.isPending || hostname.trim().length === 0}
           >
-            Adicionar domínio
+            {t("domains.addButton")}
           </Button>
         </>
       }
     >
       <form id="add-domain-form" onSubmit={handleSubmit} className="flex flex-col gap-[18px]">
         <div className="flex flex-col gap-[6px]">
-          <span className="text-sm font-medium text-text">Tipo de domínio</span>
-          <div role="group" aria-label="Tipo de domínio" className="grid grid-cols-2 gap-[10px]">
+          <span className="text-sm font-medium text-text">{t("domains.add.typeLabel")}</span>
+          <div role="group" aria-label={t("domains.add.typeLabel")} className="grid grid-cols-2 gap-[10px]">
             <ModeCard
               active={false}
               disabled
-              title="Subdomínio Vane"
-              description="Em breve: publique sem configurar DNS."
+              title={t("domains.add.vaneSubdomain.title")}
+              description={t("domains.add.vaneSubdomain.description")}
               icon={<MdOutlinePublic size={18} />}
             />
             <ModeCard
               active={domainType === "custom"}
-              title="Domínio próprio"
-              description="Use um domínio que você já possui."
+              title={t("domains.add.customDomain.title")}
+              description={t("domains.add.customDomain.description")}
               icon={<MdOutlineLink size={18} />}
               onClick={() => setDomainType("custom")}
             />
@@ -102,10 +104,10 @@ export function AddDomainDrawer({ open, onOpenChange }: AddDomainDrawerProps) {
         {domainType === "custom" ? (
           <Field
             variant="filled"
-            label="Hostname"
+            label={t("domains.form.hostnameLabel")}
             value={hostname}
             onChange={(e) => setHostname(e.target.value)}
-            placeholder="status.suaempresa.com"
+            placeholder={t("domains.form.hostnamePlaceholder")}
             required
           />
         ) : null}

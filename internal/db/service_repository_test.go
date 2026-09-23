@@ -629,6 +629,158 @@ func TestServiceRepository_Update_SameName_IsIdempotentNoError(t *testing.T) {
 	}
 }
 
+// TestServiceRepository_Create_PersistsSLOTypeAndDatadogServiceTag covers
+// slo-root-cause-enrichment RCA-01: Create persists both new columns and
+// Get reads them back unchanged.
+func TestServiceRepository_Create_PersistsSLOTypeAndDatadogServiceTag(t *testing.T) {
+	repo, pool := newServiceRepoTestPool(t)
+	tenantID := seedPlainTenant(t, pool)
+	name := fmt.Sprintf("create-rca-%d", time.Now().UnixNano())
+	service := &Service{Name: name, SLOID: "slo-rca-1", SLOType: "metric", DatadogServiceTag: "service:checkout-svc"}
+	withTenantTx(t, pool, tenantID, func(ctx context.Context) {
+		if err := repo.Create(ctx, service); err != nil {
+			t.Fatalf("Create() returned unexpected error: %v", err)
+		}
+	})
+	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), "DELETE FROM services WHERE id = $1", service.ID) })
+
+	got, found, err := repo.Get(context.Background(), service.ID)
+	if err != nil {
+		t.Fatalf("Get() returned unexpected error: %v", err)
+	}
+	if !found {
+		t.Fatalf("found = false, want true")
+	}
+	if got.SLOType != "metric" {
+		t.Errorf("got.SLOType = %q, want %q", got.SLOType, "metric")
+	}
+	if got.DatadogServiceTag != "service:checkout-svc" {
+		t.Errorf("got.DatadogServiceTag = %q, want %q", got.DatadogServiceTag, "service:checkout-svc")
+	}
+}
+
+// TestServiceRepository_Create_EmptySLOTypeAndTag_StoredAsNullReadAsEmpty
+// covers a pre-feature-shaped row (flow-type SLO, or a row saved before
+// SearchSLOs decoded these fields): "" in, "" out, never a scan error from
+// a NULL column.
+func TestServiceRepository_Create_EmptySLOTypeAndTag_StoredAsNullReadAsEmpty(t *testing.T) {
+	repo, pool := newServiceRepoTestPool(t)
+	tenantID := seedPlainTenant(t, pool)
+	name := fmt.Sprintf("create-rca-empty-%d", time.Now().UnixNano())
+	service := &Service{Name: name, SLOID: "slo-rca-2"}
+	withTenantTx(t, pool, tenantID, func(ctx context.Context) {
+		if err := repo.Create(ctx, service); err != nil {
+			t.Fatalf("Create() returned unexpected error: %v", err)
+		}
+	})
+	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), "DELETE FROM services WHERE id = $1", service.ID) })
+
+	got, found, err := repo.Get(context.Background(), service.ID)
+	if err != nil {
+		t.Fatalf("Get() returned unexpected error: %v", err)
+	}
+	if !found {
+		t.Fatalf("found = false, want true")
+	}
+	if got.SLOType != "" {
+		t.Errorf("got.SLOType = %q, want empty", got.SLOType)
+	}
+	if got.DatadogServiceTag != "" {
+		t.Errorf("got.DatadogServiceTag = %q, want empty", got.DatadogServiceTag)
+	}
+}
+
+// TestServiceRepository_UpdateSLOMetadata_SetsThenClears_RoundTrips covers
+// RCA-01's admin-facing round trip: set both fields, read them back, then
+// clear both via "" and confirm they read back empty again (not left
+// stale).
+func TestServiceRepository_UpdateSLOMetadata_SetsThenClears_RoundTrips(t *testing.T) {
+	repo, pool := newServiceRepoTestPool(t)
+	tenantID := seedPlainTenant(t, pool)
+	name := fmt.Sprintf("update-rca-%d", time.Now().UnixNano())
+	service := &Service{Name: name, SLOID: "slo-rca-3"}
+	withTenantTx(t, pool, tenantID, func(ctx context.Context) {
+		if err := repo.Create(ctx, service); err != nil {
+			t.Fatalf("setup Create() returned unexpected error: %v", err)
+		}
+	})
+	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), "DELETE FROM services WHERE id = $1", service.ID) })
+
+	if err := repo.UpdateSLOMetadata(context.Background(), service.ID, "metric", "service:checkout-svc"); err != nil {
+		t.Fatalf("UpdateSLOMetadata() set returned unexpected error: %v", err)
+	}
+	got, _, err := repo.Get(context.Background(), service.ID)
+	if err != nil {
+		t.Fatalf("Get() after set returned unexpected error: %v", err)
+	}
+	if got.SLOType != "metric" || got.DatadogServiceTag != "service:checkout-svc" {
+		t.Fatalf("after set: got = {SLOType:%q DatadogServiceTag:%q}, want {metric service:checkout-svc}", got.SLOType, got.DatadogServiceTag)
+	}
+
+	if err := repo.UpdateSLOMetadata(context.Background(), service.ID, "", ""); err != nil {
+		t.Fatalf("UpdateSLOMetadata() clear returned unexpected error: %v", err)
+	}
+	got, _, err = repo.Get(context.Background(), service.ID)
+	if err != nil {
+		t.Fatalf("Get() after clear returned unexpected error: %v", err)
+	}
+	if got.SLOType != "" {
+		t.Errorf("after clear: got.SLOType = %q, want empty", got.SLOType)
+	}
+	if got.DatadogServiceTag != "" {
+		t.Errorf("after clear: got.DatadogServiceTag = %q, want empty", got.DatadogServiceTag)
+	}
+}
+
+// TestServiceRepository_UpdateSLOMetadata_UnknownID_ReturnsErrNotFound
+// mirrors Update's not-found convention.
+func TestServiceRepository_UpdateSLOMetadata_UnknownID_ReturnsErrNotFound(t *testing.T) {
+	repo, _ := newServiceRepoTestPool(t)
+
+	err := repo.UpdateSLOMetadata(context.Background(), "00000000-0000-0000-0000-000000000000", "metric", "service:x")
+	if !errors.Is(err, ErrNotFound) {
+		t.Errorf("UpdateSLOMetadata() error = %v, want ErrNotFound", err)
+	}
+}
+
+// TestServiceRepository_List_IncludesSLOTypeAndDatadogServiceTag covers the
+// poller's read path (internal/poller/poller.go calls List every cycle and
+// feeds each db.Service into SLOAnalyzer.HandleTransition) - RCA-01's
+// resolveCauseHint reads svc.SLOType/svc.DatadogServiceTag from exactly
+// this call.
+func TestServiceRepository_List_IncludesSLOTypeAndDatadogServiceTag(t *testing.T) {
+	repo, pool := newServiceRepoTestPool(t)
+	tenantID := seedPlainTenant(t, pool)
+	name := fmt.Sprintf("list-rca-%d", time.Now().UnixNano())
+	service := &Service{Name: name, SLOID: "slo-rca-4", SLOType: "metric", DatadogServiceTag: "service:checkout-svc"}
+	withTenantTx(t, pool, tenantID, func(ctx context.Context) {
+		if err := repo.Create(ctx, service); err != nil {
+			t.Fatalf("setup Create() returned unexpected error: %v", err)
+		}
+	})
+	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), "DELETE FROM services WHERE id = $1", service.ID) })
+
+	all, err := repo.List(context.Background())
+	if err != nil {
+		t.Fatalf("List() returned unexpected error: %v", err)
+	}
+	var found *Service
+	for i := range all {
+		if all[i].ID == service.ID {
+			found = &all[i]
+		}
+	}
+	if found == nil {
+		t.Fatalf("List() did not return the seeded service")
+	}
+	if found.SLOType != "metric" {
+		t.Errorf("found.SLOType = %q, want %q", found.SLOType, "metric")
+	}
+	if found.DatadogServiceTag != "service:checkout-svc" {
+		t.Errorf("found.DatadogServiceTag = %q, want %q", found.DatadogServiceTag, "service:checkout-svc")
+	}
+}
+
 // TestServiceRepository_SoftDelete_SetsDeletedAtAndHidesFromReads covers
 // service-delete SVCDEL-01/02: deleted_at is set, and the service
 // disappears from Get/List/ListPaginated/ListPollingManual afterward.

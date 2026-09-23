@@ -65,7 +65,59 @@ describe("AddServiceDrawer", () => {
     const call = fetchSpy.mock.calls.find(([url]) => String(url).endsWith("/api/services"));
     expect(call).toBeDefined();
     const body = JSON.parse((call![1] as RequestInit).body as string);
-    expect(body).toEqual({ name: "Fila de pagamentos", slo_id: "slo-2", slo_name: "Checkout latência p95" });
+    expect(body).toEqual({
+      name: "Fila de pagamentos",
+      slo_id: "slo-2",
+      slo_name: "Checkout latência p95",
+      slo_type: "metric",
+      datadog_service_tag: "checkout-svc",
+    });
+
+    fetchSpy.mockRestore();
+  });
+
+  // TestAddServiceDrawer covers slo-root-cause-enrichment RCA-01: selecting
+  // an SLO captures slo_type/datadog_service_tag from the same search
+  // result and includes them in the create payload.
+  it("selecting an SLO with a single service tag sends slo_type/datadog_service_tag on save", async () => {
+    await loginAsOwner();
+    const fetchSpy = vi.spyOn(globalThis, "fetch");
+    renderDrawer();
+
+    await userEvent.type(screen.getByLabelText("Nome do serviço"), "API principal");
+    await userEvent.type(screen.getByLabelText("Buscar SLO"), "API disponibilidade");
+    const option = await screen.findByRole("button", { name: /API disponibilidade/i });
+    await userEvent.click(option);
+    await userEvent.click(screen.getByRole("button", { name: "Adicionar serviço" }));
+
+    const call = fetchSpy.mock.calls.find(([url]) => String(url).endsWith("/api/services"));
+    expect(call).toBeDefined();
+    const body = JSON.parse((call![1] as RequestInit).body as string);
+    expect(body.slo_type).toBe("metric");
+    expect(body.datadog_service_tag).toBe("api-svc");
+
+    fetchSpy.mockRestore();
+  });
+
+  // Flow-type SLO (0 or 2+ service_tags entries) has no single resolved
+  // service tag - datadog_service_tag must be sent empty, not omitted or
+  // invented, same ""-means-absent convention as the rest of this feature.
+  it("selecting a flow-type SLO with no single service tag sends an empty datadog_service_tag", async () => {
+    await loginAsOwner();
+    const fetchSpy = vi.spyOn(globalThis, "fetch");
+    renderDrawer();
+
+    await userEvent.type(screen.getByLabelText("Nome do serviço"), "Fila de notificações");
+    await userEvent.type(screen.getByLabelText("Buscar SLO"), "Fila de notificações");
+    const option = await screen.findByRole("button", { name: /Fila de notificações/i });
+    await userEvent.click(option);
+    await userEvent.click(screen.getByRole("button", { name: "Adicionar serviço" }));
+
+    const call = fetchSpy.mock.calls.find(([url]) => String(url).endsWith("/api/services"));
+    expect(call).toBeDefined();
+    const body = JSON.parse((call![1] as RequestInit).body as string);
+    expect(body.slo_type).toBe("metric");
+    expect(body.datadog_service_tag).toBe("");
 
     fetchSpy.mockRestore();
   });
@@ -221,7 +273,7 @@ describe("AddServiceDrawer", () => {
 
   // T8 "Done when": toggling back to SLO mode keeps the slo-mode submission
   // exactly as before - no poll_* fields leak in.
-  it("toggling from polling back to SLO mode still submits only {name, slo_id, slo_name}", async () => {
+  it("toggling from polling back to SLO mode still submits only the slo-mode fields (no poll_* leaking in)", async () => {
     await loginAsOwner();
     const fetchSpy = vi.spyOn(globalThis, "fetch");
     renderDrawer();
@@ -240,7 +292,13 @@ describe("AddServiceDrawer", () => {
     const call = fetchSpy.mock.calls.find(([url]) => String(url).endsWith("/api/services"));
     expect(call).toBeDefined();
     const body = JSON.parse((call![1] as RequestInit).body as string);
-    expect(body).toEqual({ name: "Fila de pagamentos", slo_id: "slo-2", slo_name: "Checkout latência p95" });
+    expect(body).toEqual({
+      name: "Fila de pagamentos",
+      slo_id: "slo-2",
+      slo_name: "Checkout latência p95",
+      slo_type: "metric",
+      datadog_service_tag: "checkout-svc",
+    });
 
     fetchSpy.mockRestore();
   });

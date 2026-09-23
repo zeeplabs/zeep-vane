@@ -1,6 +1,8 @@
 import type { TagVariant } from "../../components/ui/Tag";
 import type { Service, ServiceStatus } from "../../types/api";
 
+type Translator = (key: string, options?: Record<string, unknown>) => string;
+
 // Shared status badge metadata for every ServiceStatus value, used by both
 // ServicesSection (compact embed, IntegrationsPage) and ServiceListPage/
 // ServiceDetailDrawer (monitored-services-page redesign) so the 4-state
@@ -11,12 +13,9 @@ import type { Service, ServiceStatus } from "../../types/api";
 // (handoff-new-layout/Servicos Monitorados.dc.html) both require "Inativo".
 // Hoisting picks the spec-correct value rather than preserving the stale
 // one, since no existing test asserts on the old "Inoperante" string.
-export const statusLabel: Record<ServiceStatus, string> = {
-  operational: "Operacional",
-  degraded: "Degradado",
-  outage: "Inativo",
-  not_configured: "Não configurado",
-};
+export function statusLabel(t: Translator, status: ServiceStatus): string {
+  return t(`services.statusLabel.${status}`);
+}
 
 export const statusVariant: Record<ServiceStatus, TagVariant> = {
   operational: "success",

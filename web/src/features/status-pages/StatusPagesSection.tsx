@@ -35,7 +35,7 @@ function publicUrl(page: StatusPage, hostname: string | undefined): string | nul
   return `https://${page.subdomain}.${hostname ?? "?"}`;
 }
 
-/** Tabela + dialog de status pages. Compartilhada entre `DomainsStatusPagesPage` (handoff mostra as duas seções na mesma tela) e `StatusPagesPage` (rota própria, mesmo padrão de `ServicesSection`). */
+/** Status pages table + dialog. Shared between `DomainsStatusPagesPage` (handoff shows both sections on the same screen) and `StatusPagesPage` (its own route, same pattern as `ServicesSection`). */
 export function StatusPagesSection() {
   const { t } = useTranslation();
   const { hasRole } = useAuth();
@@ -74,7 +74,7 @@ export function StatusPagesSection() {
       setRemoveTarget(null);
     } catch (err) {
       if (err instanceof ApiError) setRemoveError(err.message);
-      else setRemoveError("Não foi possível excluir a status page.");
+      else setRemoveError(t("statusPages.section.deleteError"));
     }
   }
 
@@ -99,7 +99,7 @@ export function StatusPagesSection() {
       setDialogOpen(false);
     } catch (err) {
       if (err instanceof ApiError) setError(err.message);
-      else setError("Não foi possível criar a status page.");
+      else setError(t("statusPages.section.createError"));
     }
   }
 
@@ -122,39 +122,39 @@ export function StatusPagesSection() {
               {url}
             </a>
           ) : null}
-          <Tag variant="success">Publicada</Tag>
+          <Tag variant="success">{t("statusPages.section.publishedTag")}</Tag>
         </div>
       );
     }
     if (p.state === "tls_failed") {
       return (
         <div className="flex flex-col items-end gap-0.5">
-          <Tag variant="critical">Falha</Tag>
+          <Tag variant="critical">{t("statusPages.section.failedTag")}</Tag>
           <span className="text-xs text-neutral-400">{p.tls_last_error}</span>
         </div>
       );
     }
-    // SPD-12: sem domínio nenhum anexado ainda - distinto do "aguardando
-    // DNS/certificado" abaixo, com uma ação pra sair desse estado. Mesma
-    // lógica de StatusPageDetail.tsx, aplicada na lista.
+    // SPD-12: no domain attached yet - distinct from the "waiting for
+    // DNS/certificate" state below, with an action to leave this state.
+    // Same logic as StatusPageDetail.tsx, applied to the list.
     if (p.domain_id === null) {
       return (
         <div className="flex flex-col items-end gap-1">
           <Tag variant="accent-outline" className="w-fit">
-            Sem domínio configurado
+            {t("statusPages.section.noDomainTag")}
           </Tag>
           <Link to={`/status-pages/${p.id}`} className="text-xs text-accent hover:underline">
-            Anexar domínio
+            {t("statusPages.section.attachDomainLink")}
           </Link>
         </div>
       );
     }
-    // SPD-13: domínio anexado, mas o certificado ainda não foi emitido -
-    // substitui o antigo texto ambíguo "Emitindo certificado", que não
-    // distinguia esse caso do de "sem domínio" acima.
+    // SPD-13: domain attached, but the certificate hasn't been issued
+    // yet - replaces the old ambiguous "Issuing certificate" text, which
+    // didn't distinguish this case from "no domain" above.
     return (
       <Tag variant="accent" data-testid="pulsing-tag" className="animate-pulse">
-        Aguardando validação de DNS/certificado
+        {t("statusPages.section.pendingTag")}
       </Tag>
     );
   }
@@ -162,7 +162,7 @@ export function StatusPagesSection() {
   return (
     <div className="flex flex-col gap-3">
       <div className="flex items-center justify-between">
-        <h4 className="text-text">Status pages</h4>
+        <h4 className="text-text">{t("statusPages.section.title")}</h4>
         {canManage ? (
           <Button
             variant="primary"
@@ -172,7 +172,7 @@ export function StatusPagesSection() {
             }}
           >
             <MdOutlineAdd size={14} aria-hidden="true" />
-            Criar status page
+            {t("statusPages.section.createButton")}
           </Button>
         ) : null}
       </div>
@@ -196,7 +196,7 @@ export function StatusPagesSection() {
           <>
             <Card elevation="none" className="border border-divider divide-y divide-divider overflow-hidden">
               {(pages ?? []).length === 0 ? (
-                <p className="px-4 py-6 text-center text-neutral-400">Nenhuma status page criada.</p>
+                <p className="px-4 py-6 text-center text-neutral-400">{t("statusPages.section.empty")}</p>
               ) : (
                 (pages ?? []).map((p) => (
                   <div key={p.id} data-testid="status-page-row" className="flex items-center gap-3 px-4 py-3.5">
@@ -211,10 +211,10 @@ export function StatusPagesSection() {
                     </div>
                     {stateBlock(p)}
                     {canManage ? (
-                      <Tooltip label="Excluir">
+                      <Tooltip label={t("statusPages.section.deleteTooltip")}>
                         <Button
                           variant="ghost"
-                          aria-label="Excluir"
+                          aria-label={t("statusPages.section.deleteTooltip")}
                           className="text-neutral-400 hover:text-critical"
                           onClick={() => {
                             setRemoveError(null);
@@ -239,17 +239,19 @@ export function StatusPagesSection() {
         onOpenChange={(open) => {
           if (!open) setRemoveTarget(null);
         }}
-        title="Excluir status page"
+        title={t("statusPages.section.deleteDialog.title")}
         description={
-          removeTarget ? `Excluir a status page "${removeTarget.name}"? Esta ação não pode ser desfeita.` : undefined
+          removeTarget
+            ? t("statusPages.section.deleteDialog.description", { name: removeTarget.name })
+            : undefined
         }
         footer={
           <>
             <Button variant="secondary" onClick={() => setRemoveTarget(null)}>
-              Cancelar
+              {t("common.cancel")}
             </Button>
             <Button variant="primary" onClick={confirmRemove} disabled={deleteStatusPage.isPending}>
-              Excluir
+              {t("statusPages.section.deleteDialog.confirmButton")}
             </Button>
           </>
         }
@@ -264,9 +266,9 @@ export function StatusPagesSection() {
       <Drawer
         open={dialogOpen}
         onOpenChange={setDialogOpen}
-        title="Criar status page"
-        description="Vincule os serviços que essa status page vai exibir. O domínio é anexado depois, numa tela dedicada."
-        closeLabel="Fechar"
+        title={t("statusPages.createTitle")}
+        description={t("statusPages.section.createDescription")}
+        closeLabel={t("common.close")}
         footer={
           <>
             <Button
@@ -275,7 +277,7 @@ export function StatusPagesSection() {
               style={drawerFooterSecondaryStyle}
               onClick={() => setDialogOpen(false)}
             >
-              Cancelar
+              {t("common.cancel")}
             </Button>
             <Button
               type="submit"
@@ -284,15 +286,15 @@ export function StatusPagesSection() {
               style={drawerFooterPrimaryStyle}
               disabled={createStatusPage.isPending}
             >
-              Criar
+              {t("statusPages.section.submitButton")}
             </Button>
           </>
         }
       >
         <form id="create-status-page-form" onSubmit={handleSubmit} className="flex flex-col gap-3">
-          <Field label="Nome" value={name} onChange={(e) => setName(e.target.value)} required />
+          <Field label={t("statusPages.section.nameLabel")} value={name} onChange={(e) => setName(e.target.value)} required />
           <div className="flex flex-col gap-1">
-            <span className="text-sm font-medium text-text">Serviços</span>
+            <span className="text-sm font-medium text-text">{t("statusPages.section.servicesLabel")}</span>
             <div className="flex flex-wrap gap-2">
               {(services ?? []).map((s) => {
                 const active = serviceIds.includes(s.id);

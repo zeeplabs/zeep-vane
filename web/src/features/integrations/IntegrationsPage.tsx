@@ -9,6 +9,7 @@ import {
 } from "react-icons/md";
 import { Button } from "../../components/ui/Button";
 import { Dialog } from "../../components/ui/Dialog";
+import { Switch } from "../../components/ui/Switch";
 import { useAuth } from "../../auth/AuthProvider";
 import { ApiError } from "../../lib/apiClient";
 import { IntegrationCard, type IntegrationStatusKind } from "./IntegrationCard";
@@ -23,16 +24,24 @@ import {
   type EmailProviderName,
   type EmailProviderStatus,
 } from "../email-providers/hooks";
-import { useActivateLLMProvider, useDisconnectLLMProvider, useLLMProviders } from "../settings/hooks";
+import {
+  useActivateLLMProvider,
+  useDisconnectLLMProvider,
+  useLLMProviders,
+  useUpdateRootCauseEnrichment,
+} from "../settings/hooks";
 
 const cardHeaderBg = "var(--color-card-header-bg)";
 const textMuted = "var(--color-text-muted)";
 
-function formatSyncedAgo(iso: string | null | undefined): string {
-  if (!iso) return "Não configurado";
-  const minutes = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 60000));
-  if (minutes < 1) return "Sincronizado agora mesmo";
-  return `Sincronizado há ${minutes} min`;
+function useFormatSyncedAgo() {
+  const { t } = useTranslation();
+  return (iso: string | null | undefined): string => {
+    if (!iso) return t("integrations.notConfigured");
+    const minutes = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 60000));
+    if (minutes < 1) return t("integrations.syncedNow");
+    return t("integrations.syncedAgo", { count: minutes });
+  };
 }
 
 interface CategorySectionProps {
@@ -42,58 +51,105 @@ interface CategorySectionProps {
 }
 
 function CategorySection({ title, count, children }: CategorySectionProps) {
+  const { t } = useTranslation();
   return (
     <div className="mb-8">
       <div className="mb-3.5 flex items-baseline gap-2">
         <span className="text-[13px] font-bold text-text">{title}</span>
-        <span className="text-xs text-text-muted">
-          {count} {count === 1 ? "integração" : "integrações"}
-        </span>
+        <span className="text-xs text-text-muted">{t("integrations.count", { count })}</span>
       </div>
       <div className="grid grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-3">{children}</div>
     </div>
   );
 }
 
-function actionButton(canManage: boolean, connected: boolean, onClick: () => void): ReactNode {
+function actionButton(
+  canManage: boolean,
+  connected: boolean,
+  onClick: () => void,
+  t: (key: string) => string
+): ReactNode {
   if (!canManage) return null;
   return (
     <Button type="button" variant={connected ? "secondary" : "primary"} className="w-full" onClick={onClick}>
-      {connected ? "Editar conexão" : "Conectar"}
+      {connected ? t("integrations.editConnectionButton") : t("integrations.connectButton")}
     </Button>
   );
 }
 
 function DatadogCard({ canManage, onConnect }: { canManage: boolean; onConnect: () => void }) {
+  const { t } = useTranslation();
+  const formatSyncedAgo = useFormatSyncedAgo();
   const { data, isLoading, isError } = useIntegrationStatus();
   const connected = data?.connected ?? false;
   const status: IntegrationStatusKind = connected ? "connected" : "not_connected";
 
-  let meta = isLoading ? "Carregando…" : formatSyncedAgo(connected ? data?.last_checked_at : null);
-  if (isError) meta = "Não foi possível carregar";
+  let meta = isLoading ? t("integrations.loading") : formatSyncedAgo(connected ? data?.last_checked_at : null);
+  if (isError) meta = t("integrations.loadError");
 
   return (
     <IntegrationCard
       icon={<MdOutlineShowChart size={24} color="var(--color-accent)" aria-hidden="true" />}
       bannerBg="#F3F1FB"
       status={status}
-      title="Datadog"
-      description="Métricas e logs dos serviços monitorados, com alertas sincronizados em tempo real."
+      title={t("integrations.datadog.title")}
+      description={t("integrations.datadog.description")}
       meta={meta}
-      action={isLoading || isError ? null : actionButton(canManage, connected, onConnect)}
+      action={isLoading || isError ? null : actionButton(canManage, connected, onConnect, t)}
     />
   );
 }
 
 function NewRelicCard() {
+  const { t } = useTranslation();
   return (
     <IntegrationCard
       icon={<MdOutlineBarChart size={24} color={textMuted} aria-hidden="true" />}
       bannerBg={cardHeaderBg}
       status="coming_soon"
-      title="New Relic"
-      description="Monitoramento de performance de aplicações (APM) e infraestrutura."
+      title={t("integrations.newRelic.title")}
+      description={t("integrations.newRelic.description")}
     />
+  );
+}
+
+// RootCauseEnrichmentToggle (slo-root-cause-enrichment RCA-07/RCA-08/
+// RCA-09) is rendered only while an LLM provider is active - design.md's
+// resolved Risk: enrichment is meaningless without an LLM to consume it,
+// so the control is hidden entirely rather than shown disabled with no
+// precedent in this codebase for that pattern.
+function RootCauseEnrichmentToggle({ canManage, enabled }: { canManage: boolean; enabled: boolean }) {
+  const { t } = useTranslation();
+  const mutation = useUpdateRootCauseEnrichment();
+  const [error, setError] = useState<string | null>(null);
+
+  async function handleChange(next: boolean) {
+    setError(null);
+    try {
+      await mutation.mutateAsync(next);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : t("integrations.llm.rootCauseEnrichment.genericError"));
+    }
+  }
+
+  return (
+    <div className="flex flex-col gap-1 border-t border-divider pt-2">
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-xs font-medium text-text">{t("integrations.llm.rootCauseEnrichment.label")}</span>
+        <Switch
+          checked={enabled}
+          onChange={handleChange}
+          disabled={!canManage || mutation.isPending}
+          aria-label={t("integrations.llm.rootCauseEnrichment.label")}
+        />
+      </div>
+      <span className="text-[11px] text-neutral-400">{t("integrations.llm.rootCauseEnrichment.description")}</span>
+      {error ? (
+        <p role="alert" className="m-0 text-xs text-critical">
+          {error}
+        </p>
+      ) : null}
+    </div>
   );
 }
 
@@ -110,13 +166,13 @@ function LLMProviderCard({ canManage, onConnect }: { canManage: boolean; onConne
   const [disconnectDialogOpen, setDisconnectDialogOpen] = useState(false);
 
   let meta = isLoading
-    ? "Carregando…"
+    ? t("integrations.loading")
     : connected
       ? isActive
-        ? `Ativo · OpenAI · ${status?.model}`
-        : `OpenAI · ${status?.model}`
-      : "Não configurado";
-  if (isError) meta = "Não foi possível carregar";
+        ? t("integrations.llm.activeMeta", { model: status?.model })
+        : t("integrations.llm.meta", { model: status?.model })
+      : t("integrations.notConfigured");
+  if (isError) meta = t("integrations.loadError");
 
   async function handleActivate() {
     setError(null);
@@ -144,8 +200,8 @@ function LLMProviderCard({ canManage, onConnect }: { canManage: boolean; onConne
         icon={<MdOutlineSmartToy size={24} color="#B45309" aria-hidden="true" />}
         bannerBg="#FBF4E9"
         status={kind}
-        title="LLM Provider"
-        description="Geração de resumos e fechamento assistido de incidentes com IA."
+        title={t("integrations.llm.title")}
+        description={t("integrations.llm.description")}
         meta={meta}
         action={
           isLoading || isError ? null : (
@@ -177,7 +233,10 @@ function LLMProviderCard({ canManage, onConnect }: { canManage: boolean; onConne
                   </Button>
                 </div>
               ) : null}
-              {actionButton(canManage, connected, onConnect)}
+              {actionButton(canManage, connected, onConnect, t)}
+              {isActive ? (
+                <RootCauseEnrichmentToggle canManage={canManage} enabled={data?.root_cause_enrichment_enabled ?? false} />
+              ) : null}
             </div>
           )
         }
@@ -196,19 +255,12 @@ function LLMProviderCard({ canManage, onConnect }: { canManage: boolean; onConne
   );
 }
 
-const EMAIL_PROVIDER_META: Record<
-  EmailProviderName,
-  { title: string; description: string; icon: ReactNode; bannerBg: string }
-> = {
+const EMAIL_PROVIDER_ICON: Record<EmailProviderName, { icon: ReactNode; bannerBg: string }> = {
   resend: {
-    title: "Resend",
-    description: "Envio de alertas e notificações de incidentes para o time de plantão.",
     icon: <MdOutlineMailOutline size={24} color="#1A9E6B" aria-hidden="true" />,
     bannerBg: "#EEF6F1",
   },
   sendgrid: {
-    title: "SendGrid",
-    description: "Envio de alertas e notificações de incidentes por email.",
     icon: <MdOutlineSend size={24} color={textMuted} aria-hidden="true" />,
     bannerBg: cardHeaderBg,
   },
@@ -230,7 +282,9 @@ function EmailProviderCard({
   onConnect: () => void;
 }) {
   const { t } = useTranslation();
-  const providerMeta = EMAIL_PROVIDER_META[id];
+  const providerIcon = EMAIL_PROVIDER_ICON[id];
+  const providerTitle = t(`integrations.email.${id}.title`);
+  const providerDescription = t(`integrations.email.${id}.description`);
   const connected = status?.status === "connected";
   const kind: IntegrationStatusKind = connected ? "connected" : "not_connected";
   const activateMutation = useActivateEmailProvider();
@@ -243,7 +297,9 @@ function EmailProviderCard({
     try {
       await activateMutation.mutateAsync(id);
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : `Não foi possível ativar o ${providerMeta.title}.`);
+      setError(
+        err instanceof ApiError ? err.message : t("emailProviders.genericActivateError", { provider: providerTitle })
+      );
     }
   }
 
@@ -261,12 +317,20 @@ function EmailProviderCard({
   return (
     <>
       <IntegrationCard
-        icon={providerMeta.icon}
-        bannerBg={providerMeta.bannerBg}
+        icon={providerIcon.icon}
+        bannerBg={providerIcon.bannerBg}
         status={kind}
-        title={providerMeta.title}
-        description={providerMeta.description}
-        meta={isError ? "Não foi possível carregar" : connected ? (isActive ? "Ativo" : "Verificado") : "Não configurado"}
+        title={providerTitle}
+        description={providerDescription}
+        meta={
+          isError
+            ? t("integrations.loadError")
+            : connected
+              ? isActive
+                ? t("integrations.email.active")
+                : t("integrations.email.verified")
+              : t("integrations.notConfigured")
+        }
         action={
           isError ? null : (
             <div className="flex flex-col gap-2">
@@ -284,7 +348,7 @@ function EmailProviderCard({
                       onClick={handleActivate}
                       disabled={activateMutation.isPending}
                     >
-                      Ativar
+                      {t("emailProviders.activateButton")}
                     </Button>
                   ) : null}
                   <Button
@@ -297,7 +361,7 @@ function EmailProviderCard({
                   </Button>
                 </div>
               ) : null}
-              {actionButton(canManage, connected, onConnect)}
+              {actionButton(canManage, connected, onConnect, t)}
             </div>
           )
         }
@@ -308,7 +372,7 @@ function EmailProviderCard({
         onConfirm={handleConfirmDisconnect}
         pending={disconnectMutation.isPending}
         title={t("emailProviders.disconnectDialog.title")}
-        description={t("emailProviders.disconnectDialog.body", { provider: providerMeta.title })}
+        description={t("emailProviders.disconnectDialog.body", { provider: providerTitle })}
         cancelLabel={t("emailProviders.disconnectDialog.cancel")}
         confirmLabel={t("emailProviders.disconnectDialog.confirm")}
       />
@@ -362,6 +426,7 @@ function DisconnectConfirmDialog({
 }
 
 export function IntegrationsPage() {
+  const { t } = useTranslation();
   const { hasRole } = useAuth();
   const canManage = hasRole(["owner", "operator"]);
   const { data: emailData, isError: emailIsError } = useEmailProviders(1);
@@ -374,22 +439,20 @@ export function IntegrationsPage() {
   return (
     <div className="mx-auto flex w-full max-w-[1280px] flex-col">
       <div className="mb-7">
-        <h2 className="text-text">Integrações</h2>
-        <p className="m-0 text-[13.5px] text-text-muted">
-          Conecte o Vane às ferramentas que alimentam o monitoramento e a análise de incidentes.
-        </p>
+        <h2 className="text-text">{t("integrations.title")}</h2>
+        <p className="m-0 text-[13.5px] text-text-muted">{t("integrations.subtitle")}</p>
       </div>
 
-      <CategorySection title="APM & Observabilidade" count={2}>
+      <CategorySection title={t("integrations.categories.apm")} count={2}>
         <DatadogCard canManage={canManage} onConnect={() => setDatadogDrawerOpen(true)} />
         <NewRelicCard />
       </CategorySection>
 
-      <CategorySection title="IA" count={1}>
+      <CategorySection title={t("integrations.categories.ai")} count={1}>
         <LLMProviderCard canManage={canManage} onConnect={() => setLlmDrawerOpen(true)} />
       </CategorySection>
 
-      <CategorySection title="E-mail" count={2}>
+      <CategorySection title={t("integrations.categories.email")} count={2}>
         <EmailProviderCard
           id="resend"
           status={byProvider.get("resend")}

@@ -7,7 +7,7 @@ Rules for any AI agent (Claude Code, Codex, Cursor, etc.) working in this reposi
 ## 1. Project shape
 
 - Go backend (`cmd/vane`, `internal/*`) + React/Vite/TS admin SPA (`web/`), embedded into the Go binary at build time via `go:embed` (`web/embed.go`, AD-009/AD-001).
-- **Single-tenant by design** (AD-002): one Vane installation serves exactly one company. There is no `company_id`/tenant column anywhere in the schema, and there never should be — if a change looks like it needs one, the actual answer is "run another installation," not "add a tenant column."
+- **Two distribution models on one codebase** (AD-002, reverted by AD-022): self-hosted (`VANE_DEPLOYMENT_MODE=self_hosted`, the default) auto-provisions exactly 1 tenant at `/bootstrap`, no billing, annual license via the Zeep license server; SaaS (`saas`, Zeep's own deployment only) is real multi-tenant, public signup, free + paid plans, LLM gated by plan. Every domain table carries `tenant_id` with Postgres RLS as the enforcement boundary (fail-closed, not just a code-level filter) — a query missing a `WHERE tenant_id = ?` fails closed instead of leaking cross-tenant. Don't assume single-tenant when reading older code/comments; check `.specs/STATE.md`'s AD-022 (and the `deployment-mode`/`multi-tenancy-core` features under `.specs/features/`) before touching tenancy boundaries.
 - Three fixed admin roles (`owner`/`operator`/`viewer`, AD-003) — no configurable permission matrix. Don't add a granular-permissions system without an explicit decision recorded in `.specs/STATE.md`.
 - Larger features are spec'd under `.specs/features/<name>/` (`spec.md`, `design.md`, `tasks.md`) before implementation, and every non-trivial architectural choice gets an `AD-NNN` entry in `.specs/STATE.md`. Read `.specs/STATE.md` before touching auth, the domain model, public routing, or pagination — it's the running log of *why* things are the way they are, and contradicting a recorded decision without addressing it there is a bug in the change, not just in the docs.
 - Small fixes/UI tweaks don't need a spec.
@@ -60,6 +60,7 @@ docker stop vane-test-pg
 - React Query `queryKey` for paginated data must include the page number (`["resource", page]`) so each page gets its own cache entry — omitting it causes stale/cross-page data bugs.
 - User-facing strings go through `react-i18next` — this app ships pt-BR and English. No hardcoded strings in components.
 - MSW (`web/src/test/msw/handlers.ts`) mocks must mirror the real backend response shape exactly, including the `Page<T>` envelope for paginated endpoints — a mock returning a bare array while the backend returns `{items,...}` will pass TypeScript (the frontend defines its own types) but crash at runtime. Use the existing `paginatedPage()` helper for new paginated mock endpoints instead of hand-rolling pagination logic.
+- All code-facing text is English, always — test `describe`/`it`/`test` names, code comments, commit messages, variable/function names, error messages logged server-side, everything that isn't a `t()`-routed user-facing string. `react-i18next` locale JSON files (`web/src/locales/*.json`) are the one exception, since pt-BR content there is the actual product. This applies to both `web/` (TS/TSX) and the Go backend.
 
 ## 6. Documentation that must stay in sync
 

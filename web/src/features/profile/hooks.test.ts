@@ -23,9 +23,9 @@ afterEach(async () => {
 });
 
 describe("profile hooks", () => {
-  // PROFPAGE-04/05: o hook envia {name} e o refreshAdmin() re-hidrata a
-  // identidade - o admin do contexto passa a mostrar o novo nome.
-  it("useUpdateProfileName envia {name} e re-hidrata a identidade", async () => {
+  // PROFPAGE-04/05: the hook sends {name} and refreshAdmin() re-hydrates the
+  // identity - the context's admin then shows the new name.
+  it("useUpdateProfileName sends {name} and re-hydrates the identity", async () => {
     await loginAsOwner();
     const { result } = renderHook(
       () => {
@@ -45,8 +45,8 @@ describe("profile hooks", () => {
     await waitFor(() => expect(result.current.auth.admin?.name).toBe("Ana Silva"));
   });
 
-  // PROFPAGE-07: corpo exato {current_password,new_password} e sucesso 200.
-  it("useChangePassword envia o corpo exato e resolve com status ok", async () => {
+  // PROFPAGE-07: exact body {current_password,new_password} and a 200 success.
+  it("useChangePassword sends the exact body and resolves with status ok", async () => {
     await loginAsOwner();
     const { result } = renderHook(() => useChangePassword(), { wrapper: TestQueryProvider });
 
@@ -58,8 +58,8 @@ describe("profile hooks", () => {
     expect(response).toEqual({ status: "ok" });
   });
 
-  // PROFPAGE-09: 401 da senha atual errada chega como ApiError(status 401).
-  it("useChangePassword propaga 401 como ApiError", async () => {
+  // PROFPAGE-09: a 401 from a wrong current password arrives as ApiError(status 401).
+  it("useChangePassword propagates 401 as ApiError", async () => {
     await loginAsOwner();
     const { result } = renderHook(() => useChangePassword(), { wrapper: TestQueryProvider });
 
@@ -68,8 +68,8 @@ describe("profile hooks", () => {
     ).rejects.toMatchObject({ status: 401 });
   });
 
-  // PROFPAGE-10: 422 da política de senha chega como ApiError(status 422).
-  it("useChangePassword propaga 422 (política) como ApiError", async () => {
+  // PROFPAGE-10: a 422 from the password policy arrives as ApiError(status 422).
+  it("useChangePassword propagates 422 (policy) as ApiError", async () => {
     await loginAsOwner();
     const { result } = renderHook(() => useChangePassword(), { wrapper: TestQueryProvider });
 

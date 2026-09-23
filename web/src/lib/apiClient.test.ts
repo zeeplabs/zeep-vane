@@ -4,7 +4,7 @@ import { server } from "../test/msw/server";
 import { apiFetch, ApiError, setUnauthorizedHandler, triggerUnauthorized } from "./apiClient";
 
 describe("apiClient (real fetch via MSW)", () => {
-  it("login com credenciais válidas retorna token", async () => {
+  it("login with valid credentials returns a token", async () => {
     const res = await apiFetch<{ token: string }>("/api/auth/login", {
       method: "POST",
       body: JSON.stringify({ email: "owner@vane.app", password: "demo1234" }),
@@ -12,7 +12,7 @@ describe("apiClient (real fetch via MSW)", () => {
     expect(res.token).toBeDefined();
   });
 
-  it("login com credenciais inválidas rejeita com ApiError 401", async () => {
+  it("login with invalid credentials rejects with ApiError 401", async () => {
     await expect(
       apiFetch("/api/auth/login", {
         method: "POST",
@@ -21,11 +21,11 @@ describe("apiClient (real fetch via MSW)", () => {
     ).rejects.toMatchObject({ status: 401, message: "invalid email or password" });
   });
 
-  it("GET /api/auth/me falha (401) quando não há sessão", async () => {
+  it("GET /api/auth/me fails (401) when there is no session", async () => {
     await expect(apiFetch("/api/auth/me")).rejects.toBeInstanceOf(ApiError);
   });
 
-  it("GET /api/auth/me retorna a sessão após login; logout limpa a sessão", async () => {
+  it("GET /api/auth/me returns the session after login; logout clears the session", async () => {
     await apiFetch("/api/auth/login", {
       method: "POST",
       body: JSON.stringify({ email: "owner@vane.app", password: "demo1234" }),
@@ -37,7 +37,7 @@ describe("apiClient (real fetch via MSW)", () => {
     await expect(apiFetch("/api/auth/me")).rejects.toBeInstanceOf(ApiError);
   });
 
-  it("triggerUnauthorized dispara o handler registrado manualmente", () => {
+  it("triggerUnauthorized fires the manually registered handler", () => {
     const handler = vi.fn();
     setUnauthorizedHandler(handler);
     triggerUnauthorized();
@@ -45,7 +45,7 @@ describe("apiClient (real fetch via MSW)", () => {
     setUnauthorizedHandler(null);
   });
 
-  it("dispara o handler automaticamente em qualquer 401 real (AF-03)", async () => {
+  it("fires the handler automatically on any real 401 (AF-03)", async () => {
     const handler = vi.fn();
     setUnauthorizedHandler(handler);
     await expect(apiFetch("/api/auth/me")).rejects.toBeInstanceOf(ApiError);
@@ -53,7 +53,7 @@ describe("apiClient (real fetch via MSW)", () => {
     setUnauthorizedHandler(null);
   });
 
-  it("não dispara o handler em erros não-401 (422)", async () => {
+  it("does not fire the handler on non-401 errors (422)", async () => {
     server.use(
       http.post("/api/domains", () => HttpResponse.json({ error: "Hostname é obrigatório." }, { status: 422 }))
     );

@@ -1,16 +1,19 @@
+import { useTranslation } from "react-i18next";
+import { formatDateTime } from "../../lib/formatDate";
 import type { IncidentUpdate } from "../../types/api";
 
 // INCPG-08/09/10/11: AI-generated closing summaries render distinct from
 // human/system updates; human updates get a generic "Equipe" label since no
 // admin-name-by-ID lookup is wired into this endpoint (spec.md Assumptions,
 // confirmed via AskUserQuestion).
-function authorLabel(update: IncidentUpdate): string {
-  if (update.is_ai_summary) return "Resumo gerado por IA";
-  if (update.author_id) return "Equipe";
-  return "Sistema";
+function authorLabel(t: (key: string) => string, update: IncidentUpdate): string {
+  if (update.is_ai_summary) return t("incidentDetail.author.aiSummary");
+  if (update.author_id) return t("incidentDetail.author.team");
+  return t("incidentDetail.author.system");
 }
 
 export function TimelineEntry({ update }: { update: IncidentUpdate }) {
+  const { t, i18n } = useTranslation();
   if (update.is_ai_summary) {
     return (
       <div
@@ -20,9 +23,9 @@ export function TimelineEntry({ update }: { update: IncidentUpdate }) {
           borderColor: "color-mix(in oklch, var(--color-accent) 40%, transparent)",
         }}
       >
-        <p className="text-[11px] font-bold tracking-wide text-accent uppercase">{authorLabel(update)}</p>
+        <p className="text-[11px] font-bold tracking-wide text-accent uppercase">{authorLabel(t, update)}</p>
         <p className="text-sm text-text">{update.body}</p>
-        <p className="text-xs text-neutral-400">{new Date(update.created_at).toLocaleString("pt-BR")}</p>
+        <p className="text-xs text-neutral-400">{formatDateTime(update.created_at, i18n.language)}</p>
       </div>
     );
   }
@@ -30,9 +33,9 @@ export function TimelineEntry({ update }: { update: IncidentUpdate }) {
     <div className="flex gap-3">
       <div className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-accent" />
       <div className="flex flex-col gap-0.5">
-        <p className="text-xs font-semibold text-text-muted">{authorLabel(update)}</p>
+        <p className="text-xs font-semibold text-text-muted">{authorLabel(t, update)}</p>
         <p className="text-sm text-text">{update.body}</p>
-        <p className="text-xs text-neutral-400">{new Date(update.created_at).toLocaleString("pt-BR")}</p>
+        <p className="text-xs text-neutral-400">{formatDateTime(update.created_at, i18n.language)}</p>
       </div>
     </div>
   );

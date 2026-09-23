@@ -331,7 +331,7 @@ func TestOverviewHandler_Get_ServiceWithoutIntervals_UptimeIsDash(t *testing.T) 
 }
 
 // TestOverviewHandler_Get_UptimePrior_AveragesSixtyToThirtyDaysAgo covers
-// OVW-17 (the uptime card's "vs mês anterior" trend subtext): the prior
+// OVW-17 (the uptime card's "vs previous month" trend subtext): the prior
 // figure must average the 60d-30d-ago window, not the current 30d window,
 // and the two must be independently computable (a service can look
 // different in the two windows).

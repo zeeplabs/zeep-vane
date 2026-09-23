@@ -1,4 +1,5 @@
 import { describe, it, expect, afterEach } from "vitest";
+import "../../lib/i18n";
 import { render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { http, HttpResponse } from "msw";
@@ -68,7 +69,7 @@ function renderDrawer(page: StatusPage | null, onClose: () => void = () => {}, o
 }
 
 describe("StatusPageDetailDrawer", () => {
-  it("com domínio anexado: mostra o domínio e um link 'Ver página pública' com o href correto (DSP-14)", async () => {
+  it("with an attached domain: shows the domain and a 'Ver página pública' link with the correct href (DSP-14)", async () => {
     mockDomainsPage([baseDomain({ id: "dom-1", hostname: "acme.health" })]);
     await loginAsOwner();
     const page = basePage({ id: "sp-1", name: "Com domínio", domain_id: "dom-1", subdomain: "status" });
@@ -81,7 +82,7 @@ describe("StatusPageDetailDrawer", () => {
     expect(screen.getByRole("button", { name: "Editar página" })).toBeInTheDocument();
   });
 
-  it("'Editar página' aciona onEdit com o id da página, sem navegar para uma tela separada", async () => {
+  it("'Editar página' triggers onEdit with the page id, without navigating to a separate screen", async () => {
     mockDomainsPage([]);
     await loginAsOwner();
     const page = basePage({ id: "sp-1", name: "Com domínio" });
@@ -95,7 +96,7 @@ describe("StatusPageDetailDrawer", () => {
     expect(editedId).toBe("sp-1");
   });
 
-  it("sem domínio: não mostra o link 'Ver página pública' e exibe '—' para o domínio (DSP-17)", async () => {
+  it("with no domain: does not show the 'Ver página pública' link and shows '—' for the domain (DSP-17)", async () => {
     mockDomainsPage([]);
     await loginAsOwner();
     const page = basePage({ id: "sp-2", name: "Sem domínio", domain_id: null, subdomain: null });
@@ -110,7 +111,7 @@ describe("StatusPageDetailDrawer", () => {
     expect(screen.getAllByText("—")).toHaveLength(2);
   });
 
-  it("com serviços anexados: lista o nome de cada serviço resolvido por id (DSP-14)", async () => {
+  it("with attached services: lists the name of each service resolved by id (DSP-14)", async () => {
     mockDomainsPage([]);
     await loginAsOwner();
     const page = basePage({ id: "sp-3", name: "Com serviços", domain_id: null, service_ids: ["svc-1"] });
@@ -123,7 +124,7 @@ describe("StatusPageDetailDrawer", () => {
     expect(await screen.findByText("API pública")).toBeInTheDocument();
   });
 
-  it("mostra 'Pré-visualizar página pública' apontando pro endpoint de preview interno, mesmo sem domínio anexado", async () => {
+  it("shows 'Pré-visualizar página pública' pointing to the internal preview endpoint, even with no domain attached", async () => {
     mockDomainsPage([]);
     await loginAsOwner();
     const page = basePage({ id: "sp-preview", name: "Sem domínio ainda", domain_id: null, subdomain: null });

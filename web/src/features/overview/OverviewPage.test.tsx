@@ -1,8 +1,9 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, afterEach } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { http, HttpResponse, delay } from "msw";
 import "../../lib/i18n";
+import i18n from "../../lib/i18n";
 import { TestQueryProvider } from "../../test/queryClient";
 import { server } from "../../test/msw/server";
 import { seedAuditLogEntries } from "../../test/msw/handlers";
@@ -46,11 +47,15 @@ function emptyOverview(): OverviewResponse {
   };
 }
 
+afterEach(async () => {
+  await i18n.changeLanguage("pt-BR");
+});
+
 describe("OverviewPage", () => {
   // SKEL-04/05: while /api/overview is loading, the page shows skeleton
   // cards (not the old "Carregando…" paragraph as visible content) inside
   // an aria-busy container that still carries the sr-only loading string.
-  it("mostra skeletons (não o texto) enquanto /api/overview carrega", async () => {
+  it("shows skeletons (not the text) while /api/overview is loading", async () => {
     server.use(
       http.get("/api/overview", async () => {
         await delay("infinite");
@@ -71,7 +76,7 @@ describe("OverviewPage", () => {
   // "Atividade recente do time" (recent-team-activity) runs its own
   // independent useRecentActivity query, so this also waits for its
   // empty-state text before asserting zero skeletons page-wide.
-  it("remove os skeletons assim que /api/overview termina de carregar", async () => {
+  it("removes the skeletons as soon as /api/overview finishes loading", async () => {
     await loginAsOwner();
     renderPage();
 
@@ -80,7 +85,7 @@ describe("OverviewPage", () => {
     expect(screen.queryAllByTestId("skeleton")).toHaveLength(0);
   });
 
-  it("renderiza os 4 cards com os valores reais do endpoint", async () => {
+  it("renders the 4 cards with the endpoint's real values", async () => {
     await loginAsOwner();
     renderPage();
 
@@ -103,7 +108,7 @@ describe("OverviewPage", () => {
     expect(screen.queryByText(/plano Free/i)).not.toBeInTheDocument();
   });
 
-  it("tenant vazio mostra '—' no uptime, 0 nos counts e o estado vazio de incidentes", async () => {
+  it("empty tenant shows '—' for uptime, 0 for counts and the empty incidents state", async () => {
     server.use(http.get("/api/overview", () => HttpResponse.json(emptyOverview())));
     await loginAsOwner();
     renderPage();
@@ -123,7 +128,7 @@ describe("OverviewPage", () => {
     expect(screen.queryByText(/pendente de verificação/i)).not.toBeInTheDocument();
   });
 
-  it("renderiza exatamente 14 barras com tooltip acessível (null vira '—')", async () => {
+  it("renders exactly 14 bars with an accessible tooltip (null becomes '—')", async () => {
     await loginAsOwner();
     renderPage();
 
@@ -134,7 +139,7 @@ describe("OverviewPage", () => {
     expect(bars[13]).toHaveAttribute("aria-label", expect.stringContaining("99.9%"));
   });
 
-  it("lista incidentes recentes e o link 'Ver todos' aponta para /incidents", async () => {
+  it("lists recent incidents and the 'Ver todos' link points to /incidents", async () => {
     await loginAsOwner();
     renderPage();
 
@@ -143,7 +148,7 @@ describe("OverviewPage", () => {
     expect(screen.getByRole("link", { name: "Ver todos" })).toHaveAttribute("href", "/incidents");
   });
 
-  it("mostra estado vazio quando não há incidentes recentes", async () => {
+  it("shows an empty state when there are no recent incidents", async () => {
     server.use(
       http.get("/api/overview", () =>
         HttpResponse.json({ ...emptyOverview(), uptime_avg_30d: 100 }),
@@ -155,7 +160,7 @@ describe("OverviewPage", () => {
     await waitFor(() => expect(screen.getByText("Nenhum incidente recente.")).toBeInTheDocument());
   });
 
-  it("os 4 atalhos rápidos apontam para as rotas corretas", async () => {
+  it("the 4 quick shortcuts point to the correct routes", async () => {
     await loginAsOwner();
     renderPage();
 
@@ -166,7 +171,7 @@ describe("OverviewPage", () => {
     expect(screen.getByRole("link", { name: "Ver domínios" })).toHaveAttribute("href", "/domains");
   });
 
-  it("mostra o estado de erro quando o endpoint falha", async () => {
+  it("shows the error state when the endpoint fails", async () => {
     server.use(
       http.get("/api/overview", () =>
         HttpResponse.json({ error: "internal server error" }, { status: 500 }),
@@ -182,10 +187,10 @@ describe("OverviewPage", () => {
     );
   });
 
-  // recent-team-activity T17: "Atividade recente do time" is wired to
+  // recent-team-activity T17: "Recent team activity" is wired to
   // GET /api/audit-log (ACTIVITY-09) instead of the deleted ACTIVITY_FEED
   // mock array.
-  describe("Atividade recente do time (audit-log)", () => {
+  describe("Recent team activity (audit-log)", () => {
     function entry(overrides: Partial<AuditLogEntry>): AuditLogEntry {
       return {
         action: "invited",
@@ -197,7 +202,7 @@ describe("OverviewPage", () => {
       };
     }
 
-    it("renderiza entradas reais com a frase correta, incluindo uma entrada com target_label nulo", async () => {
+    it("renders real entries with the correct phrasing, including one entry with a null target_label", async () => {
       seedAuditLogEntries([
         entry({ action: "invited", target_label: "novo@acme.health", actor_name: "Ana Silva" }),
         entry({ action: "role_changed", target_label: null, actor_name: "Rafael Nunes" }),
@@ -214,7 +219,7 @@ describe("OverviewPage", () => {
       expect(screen.queryByText(/undefined/)).not.toBeInTheDocument();
     });
 
-    it("mostra o placeholder de usuário removido quando actor_deleted é true", async () => {
+    it("shows the removed-user placeholder when actor_deleted is true", async () => {
       seedAuditLogEntries([entry({ actor_deleted: true, actor_name: "" })]);
       await loginAsOwner();
       renderPage();
@@ -222,7 +227,23 @@ describe("OverviewPage", () => {
       expect(await screen.findByText("Usuário removido")).toBeInTheDocument();
     });
 
-    it("mostra skeletons enquanto /api/audit-log carrega", async () => {
+    it("the active language changes the date format, it doesn't stay always in pt-BR", async () => {
+      seedAuditLogEntries([entry({ created_at: "2026-03-05T14:30:00.000Z" })]);
+      await loginAsOwner();
+      const { unmount } = renderPage();
+      const [ptBRTimestamp] = await screen.findAllByTestId("activity-timestamp");
+      const ptBRText = ptBRTimestamp.textContent ?? "";
+      unmount();
+
+      await i18n.changeLanguage("en");
+      renderPage();
+      const [enTimestamp] = await screen.findAllByTestId("activity-timestamp");
+      const enText = enTimestamp.textContent ?? "";
+
+      expect(enText).not.toBe(ptBRText);
+    });
+
+    it("shows skeletons while /api/audit-log is loading", async () => {
       server.use(
         http.get("/api/audit-log", async () => {
           await delay("infinite");
@@ -236,7 +257,7 @@ describe("OverviewPage", () => {
       expect(screen.getAllByTestId("skeleton").length).toBeGreaterThan(0);
     });
 
-    it("mostra a linha de erro quando /api/audit-log falha", async () => {
+    it("shows the error row when /api/audit-log fails", async () => {
       server.use(
         http.get("/api/audit-log", () =>
           HttpResponse.json({ error: "internal server error" }, { status: 500 }),
@@ -252,7 +273,7 @@ describe("OverviewPage", () => {
       );
     });
 
-    it("mostra o estado vazio quando o tenant não tem nenhuma atividade", async () => {
+    it("shows the empty state when the tenant has no activity at all", async () => {
       await loginAsOwner();
       renderPage();
 

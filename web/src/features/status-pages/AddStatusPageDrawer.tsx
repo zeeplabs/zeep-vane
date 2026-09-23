@@ -1,4 +1,5 @@
 import { useState, type FormEvent, type ReactNode } from "react";
+import { useTranslation } from "react-i18next";
 import { MdOutlinePublic, MdOutlineLock, MdCheck } from "react-icons/md";
 import { Drawer, drawerFooterPrimaryStyle, drawerFooterSecondaryStyle } from "../../components/ui/Drawer";
 import { Button } from "../../components/ui/Button";
@@ -21,6 +22,7 @@ type VisibilityChoice = "public" | "private";
  * direto do mock (`handoff-new-layout/Dominios e Status Pages.dc.html`'s
  * add-page drawer) - checklist é linha com checkbox quadrado, não chip. */
 export function AddStatusPageDrawer({ open, onOpenChange }: AddStatusPageDrawerProps) {
+  const { t } = useTranslation();
   const [visibility, setVisibility] = useState<VisibilityChoice>("public");
   const [name, setName] = useState("");
   const [serviceIds, setServiceIds] = useState<string[]>([]);
@@ -57,7 +59,7 @@ export function AddStatusPageDrawer({ open, onOpenChange }: AddStatusPageDrawerP
       onOpenChange(false);
     } catch (err) {
       if (err instanceof ApiError) setError(err.message);
-      else setError("Não foi possível criar a status page.");
+      else setError(t("statusPages.section.createError"));
     }
   }
 
@@ -65,9 +67,9 @@ export function AddStatusPageDrawer({ open, onOpenChange }: AddStatusPageDrawerP
     <Drawer
       open={open}
       onOpenChange={handleOpenChange}
-      title="Criar status page"
-      description="Escolha quais serviços aparecem para o público e a visibilidade da página."
-      closeLabel="Fechar"
+      title={t("statusPages.createTitle")}
+      description={t("statusPages.add.description")}
+      closeLabel={t("common.close")}
       footer={
         <>
           <Button
@@ -76,7 +78,7 @@ export function AddStatusPageDrawer({ open, onOpenChange }: AddStatusPageDrawerP
             style={drawerFooterSecondaryStyle}
             onClick={() => handleOpenChange(false)}
           >
-            Cancelar
+            {t("common.cancel")}
           </Button>
           <Button
             type="submit"
@@ -85,7 +87,7 @@ export function AddStatusPageDrawer({ open, onOpenChange }: AddStatusPageDrawerP
             style={drawerFooterPrimaryStyle}
             disabled={createStatusPage.isPending || name.trim().length === 0}
           >
-            Criar status page
+            {t("statusPages.add.submitButton")}
           </Button>
         </>
       }
@@ -93,35 +95,35 @@ export function AddStatusPageDrawer({ open, onOpenChange }: AddStatusPageDrawerP
       <form id="add-status-page-form" onSubmit={handleSubmit} className="flex flex-col gap-[18px]">
         <Field
           variant="filled"
-          label="Nome da página"
-          placeholder="Ex: Status Público"
+          label={t("statusPages.add.nameLabel")}
+          placeholder={t("statusPages.add.namePlaceholder")}
           value={name}
           onChange={(e) => setName(e.target.value)}
           required
         />
 
         <div className="flex flex-col gap-[6px]">
-          <span className="text-sm font-medium text-text">Visibilidade</span>
-          <div role="group" aria-label="Visibilidade" className="grid grid-cols-2 gap-[10px]">
+          <span className="text-sm font-medium text-text">{t("statusPages.add.visibilityLabel")}</span>
+          <div role="group" aria-label={t("statusPages.add.visibilityLabel")} className="grid grid-cols-2 gap-[10px]">
             <ModeCard
               active={visibility === "public"}
-              title="Público"
-              description="Qualquer pessoa com o link pode ver"
+              title={t("statusPages.add.public.title")}
+              description={t("statusPages.add.public.description")}
               icon={<MdOutlinePublic size={18} />}
               onClick={() => setVisibility("public")}
             />
             <ModeCard
               active={false}
               disabled
-              title="Privado"
-              description="Somente membros do tenant logados"
+              title={t("statusPages.add.private.title")}
+              description={t("statusPages.add.private.description")}
               icon={<MdOutlineLock size={18} />}
             />
           </div>
         </div>
 
         <div className="flex flex-col gap-1">
-          <span className="text-sm font-medium text-text">Serviços exibidos</span>
+          <span className="text-sm font-medium text-text">{t("statusPages.add.servicesLabel")}</span>
           <div className="flex flex-col gap-1">
             {(services ?? []).map((s) => {
               const checked = serviceIds.includes(s.id);

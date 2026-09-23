@@ -1767,7 +1767,7 @@ func TestLogin_PersistsSessionRow_UserAgentIPAndSID(t *testing.T) {
 // TestSwitchTenant_PreservesSessionRowAndSID proves the user-sessions
 // SESS-02 contract: switching tenants reuses the same sessions-table row -
 // the session row count for the user is unchanged and the new token's `sid`
-// claim equals the pre-switch token's, so the "Sessões ativas" list shows
+// claim equals the pre-switch token's, so the "Active sessions" list shows
 // this device once, not once per tenant switch.
 func TestSwitchTenant_PreservesSessionRowAndSID(t *testing.T) {
 	r, repo, pool := newMeRouter(t)

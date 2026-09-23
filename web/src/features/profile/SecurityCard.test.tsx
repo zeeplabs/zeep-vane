@@ -40,9 +40,9 @@ async function fill(user: ReturnType<typeof userEvent.setup>, current: string, n
 }
 
 describe("SecurityCard", () => {
-  // PROFRD-03: "Senha atual" full-width acima, "Nova senha"/"Confirmar nova
-  // senha" lado a lado em grid de 2 colunas - matching the mock's layout.
-  it("Nova senha e Confirmar nova senha renderizam em grid de 2 colunas (PROFRD-03)", async () => {
+  // PROFRD-03: "Senha atual" full-width above, "Nova senha"/"Confirmar nova
+  // senha" side by side in a 2-column grid - matching the mock's layout.
+  it("Nova senha and Confirmar nova senha render in a 2-column grid (PROFRD-03)", async () => {
     await loginAsOwner();
     renderCard();
 
@@ -54,8 +54,8 @@ describe("SecurityCard", () => {
     expect(grid).not.toContainElement(screen.getByLabelText("Senha atual"));
   });
 
-  // PROFPAGE-08: confirmação diferente bloqueia o submit e não envia request.
-  it("confirmação diferente bloqueia o submit sem enviar request", async () => {
+  // PROFPAGE-08: a different confirmation blocks the submit and sends no request.
+  it("different confirmation blocks the submit without sending a request", async () => {
     const user = userEvent.setup();
     await loginAsOwner();
     const spy = vi.fn();
@@ -73,8 +73,8 @@ describe("SecurityCard", () => {
     expect(spy).not.toHaveBeenCalled();
   });
 
-  // PROFPAGE-09: 401 mostra o erro de senha atual.
-  it("401 mostra o erro de senha atual", async () => {
+  // PROFPAGE-09: 401 shows the current-password error.
+  it("401 shows the current-password error", async () => {
     const user = userEvent.setup();
     await loginAsOwner();
     renderCard();
@@ -84,8 +84,8 @@ describe("SecurityCard", () => {
     expect(await screen.findByText("Senha atual incorreta.")).toBeInTheDocument();
   });
 
-  // PROFPAGE-10: 422 mostra o erro de política de senha.
-  it("422 mostra o erro de política de senha", async () => {
+  // PROFPAGE-10: 422 shows the password policy error.
+  it("422 shows the password policy error", async () => {
     const user = userEvent.setup();
     await loginAsOwner();
     renderCard();
@@ -95,8 +95,8 @@ describe("SecurityCard", () => {
     expect(await screen.findByText("A senha deve ter entre 8 e 72 caracteres.")).toBeInTheDocument();
   });
 
-  // PROFPAGE-07: sucesso limpa o form e mostra o toast.
-  it("sucesso limpa o form e mostra o toast", async () => {
+  // PROFPAGE-07: success clears the form and shows the toast.
+  it("success clears the form and shows the toast", async () => {
     const user = userEvent.setup();
     await loginAsOwner();
     renderCard();
@@ -107,7 +107,7 @@ describe("SecurityCard", () => {
     expect((screen.getByLabelText("Senha atual") as HTMLInputElement).value).toBe("");
     expect((screen.getByLabelText("Nova senha") as HTMLInputElement).value).toBe("");
     expect((screen.getByLabelText("Confirmar nova senha") as HTMLInputElement).value).toBe("");
-    // PROFPAGE-11: a sessão atual continua autenticada após a troca.
+    // PROFPAGE-11: the current session remains authenticated after the change.
     await expect(apiFetch<{ email: string }>("/api/auth/me")).resolves.toMatchObject({
       email: "owner@vane.app",
     });

@@ -10,12 +10,9 @@ import { Tooltip } from "../../components/ui/Tooltip";
 import { Skeleton } from "../../components/ui/Skeleton";
 import { useAuth } from "../../auth/AuthProvider";
 import { ApiError } from "../../lib/apiClient";
+import { formatDateTime } from "../../lib/formatDate";
 import type { Domain } from "../../types/api";
 import { useCreateDomain, useDeleteDomain, useDomains } from "./hooks";
-
-function formatTimestamp(iso: string): string {
-  return new Date(iso).toLocaleString("pt-BR");
-}
 
 function GlobeIcon() {
   return <MdOutlinePublic size={17} aria-hidden="true" />;
@@ -27,7 +24,7 @@ function TrashIcon() {
 
 /** Tabela + form de domínios. Compartilhada entre `DomainsStatusPagesPage` (handoff mostra as duas seções na mesma tela) e `DomainsPage` (rota própria, mesmo padrão de `ServicesSection`). */
 export function DomainsSection() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const { hasRole } = useAuth();
   const canManage = hasRole(["owner", "operator"]);
   const [page, setPage] = useState(1);
@@ -53,7 +50,7 @@ export function DomainsSection() {
       setFormOpen(false);
     } catch (err) {
       if (err instanceof ApiError) setError(err.message);
-      else setError("Não foi possível cadastrar o domínio.");
+      else setError(t("domains.form.error"));
     }
   }
 
@@ -65,18 +62,18 @@ export function DomainsSection() {
       setRemoveTarget(null);
     } catch (err) {
       if (err instanceof ApiError) setRemoveError(err.message);
-      else setRemoveError("Não foi possível excluir o domínio.");
+      else setRemoveError(t("domains.section.deleteError"));
     }
   }
 
   return (
     <div className="flex flex-col gap-3">
       <div className="flex items-center justify-between">
-        <h4 className="text-text">Domínios cadastrados</h4>
+        <h4 className="text-text">{t("domains.section.title")}</h4>
         {canManage ? (
           <Button variant="primary" onClick={() => setFormOpen((v) => !v)}>
             <MdOutlineAdd size={14} aria-hidden="true" />
-            Adicionar domínio
+            {t("domains.addButton")}
           </Button>
         ) : null}
       </div>
@@ -85,19 +82,19 @@ export function DomainsSection() {
         <Card elevation="none" className="border border-divider max-w-md p-5">
           <form onSubmit={handleSubmit} className="flex flex-col gap-3">
             <Field
-              label="Hostname"
+              label={t("domains.form.hostnameLabel")}
               value={hostname}
               onChange={(e) => setHostname(e.target.value)}
-              placeholder="status.suaempresa.com"
+              placeholder={t("domains.form.hostnamePlaceholder")}
               error={error ?? undefined}
               required
             />
             <div className="flex gap-2">
               <Button type="submit" variant="primary" disabled={createDomain.isPending}>
-                Salvar
+                {t("domains.form.saveButton")}
               </Button>
               <Button type="button" variant="secondary" onClick={() => setFormOpen(false)}>
-                Cancelar
+                {t("common.cancel")}
               </Button>
             </div>
           </form>
@@ -120,7 +117,7 @@ export function DomainsSection() {
           <>
             <Card elevation="none" className="border border-divider divide-y divide-divider overflow-hidden">
               {(domains ?? []).length === 0 ? (
-                <p className="px-4 py-6 text-center text-neutral-400">Nenhum domínio cadastrado.</p>
+                <p className="px-4 py-6 text-center text-neutral-400">{t("domains.section.empty")}</p>
               ) : (
                 (domains ?? []).map((d) => (
                   <div key={d.id} data-testid="domain-row" className="flex items-center gap-3 px-4 py-3.5">
@@ -129,14 +126,14 @@ export function DomainsSection() {
                     </div>
                     <div className="flex-1 text-[15px] font-medium text-text">{d.hostname}</div>
                     <div className="text-right text-xs text-neutral-400">
-                      <div>Cadastrado em</div>
-                      <div className="mt-0.5 text-[13px] text-text">{formatTimestamp(d.created_at)}</div>
+                      <div>{t("domains.section.createdAtLabel")}</div>
+                      <div className="mt-0.5 text-[13px] text-text">{formatDateTime(d.created_at, i18n.language)}</div>
                     </div>
                     {canManage ? (
-                      <Tooltip label="Excluir">
+                      <Tooltip label={t("domains.section.deleteTooltip")}>
                         <Button
                           variant="ghost"
-                          aria-label="Excluir"
+                          aria-label={t("domains.section.deleteTooltip")}
                           className="text-neutral-400 hover:text-critical"
                           onClick={() => {
                             setRemoveError(null);
@@ -161,19 +158,19 @@ export function DomainsSection() {
         onOpenChange={(open) => {
           if (!open) setRemoveTarget(null);
         }}
-        title="Excluir domínio"
+        title={t("domains.section.deleteDialog.title")}
         description={
           removeTarget
-            ? `Excluir o domínio ${removeTarget.hostname}? Esta ação não pode ser desfeita.`
+            ? t("domains.section.deleteDialog.description", { hostname: removeTarget.hostname })
             : undefined
         }
         footer={
           <>
             <Button variant="secondary" onClick={() => setRemoveTarget(null)}>
-              Cancelar
+              {t("common.cancel")}
             </Button>
             <Button variant="primary" onClick={confirmRemove} disabled={deleteDomain.isPending}>
-              Excluir
+              {t("domains.section.deleteDialog.confirmButton")}
             </Button>
           </>
         }

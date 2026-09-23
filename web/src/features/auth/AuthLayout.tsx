@@ -116,7 +116,7 @@ export function AuthLayout({ children }: AuthLayoutProps) {
         </div>
 
         <div className="absolute bottom-9 left-11 z-10 pointer-events-none">
-          <img src={logoUrl ?? vaneLogo} alt="Company logo" className="h-9 w-auto object-contain" />
+          <img src={logoUrl ?? vaneLogo} alt={t("authLayout.companyLogoAlt")} className="h-9 w-auto object-contain" />
         </div>
       </div>
 

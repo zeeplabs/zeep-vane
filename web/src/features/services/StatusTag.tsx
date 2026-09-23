@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { Tag } from "../../components/ui/Tag";
 import type { ServiceStatus } from "../../types/api";
 import { statusDotColor, statusLabel, statusVariant } from "./statusMeta";
@@ -11,6 +12,7 @@ export interface StatusTagProps {
  * `svc.statusDot` span) - shared by ServiceListPage's table rows and
  * ServiceDetailDrawer's header so both match the mock identically. */
 export function StatusTag({ status }: StatusTagProps) {
+  const { t } = useTranslation();
   return (
     // Tag's base class is rounded-sm (this app's custom 8px scale,
     // tokens.css) - the mock's status pill is fully rounded (999px).
@@ -22,7 +24,7 @@ export function StatusTag({ status }: StatusTagProps) {
         style={{ backgroundColor: statusDotColor[status] }}
         aria-hidden="true"
       />
-      {statusLabel[status]}
+      {statusLabel(t, status)}
     </Tag>
   );
 }

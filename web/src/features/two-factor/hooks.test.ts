@@ -24,9 +24,9 @@ afterEach(async () => {
 });
 
 describe("two-factor hooks", () => {
-  // PROFPAGE-13: sucesso devolve o secret e a URI otpauth:// que o drawer
-  // renderiza como QR.
-  it("useEnroll2FA devolve secret e otpauth_uri", async () => {
+  // PROFPAGE-13: success returns the secret and the otpauth:// URI that the
+  // drawer renders as a QR code.
+  it("useEnroll2FA returns secret and otpauth_uri", async () => {
     await loginAsOwner();
     const { result } = renderHook(() => useEnroll2FA(), { wrapper: TestQueryProvider });
 
@@ -36,8 +36,8 @@ describe("two-factor hooks", () => {
     expect(response.otpauth_uri.startsWith("otpauth://")).toBe(true);
   });
 
-  // PROFPAGE-13 edge case: 409 quando já existe enrollment confirmado.
-  it("useEnroll2FA propaga 409 quando já está ativado", async () => {
+  // PROFPAGE-13 edge case: 409 when a confirmed enrollment already exists.
+  it("useEnroll2FA propagates 409 when already enabled", async () => {
     await loginAsOwner();
     setTwoFactorEnabled(true);
     const { result } = renderHook(() => useEnroll2FA(), { wrapper: TestQueryProvider });
@@ -45,8 +45,8 @@ describe("two-factor hooks", () => {
     await expect(result.current.mutateAsync()).rejects.toMatchObject({ status: 409 });
   });
 
-  // PROFPAGE-14: confirm devolve exatamente 10 códigos de recuperação.
-  it("useConfirm2FA devolve 10 códigos de recuperação", async () => {
+  // PROFPAGE-14: confirm returns exactly 10 recovery codes.
+  it("useConfirm2FA returns 10 recovery codes", async () => {
     await loginAsOwner();
     const { result } = renderHook(() => useConfirm2FA(), { wrapper: TestQueryProvider });
 
@@ -58,17 +58,17 @@ describe("two-factor hooks", () => {
     }
   });
 
-  // PROFPAGE-15: código inválido chega como ApiError(status 422).
-  it("useConfirm2FA propaga 422 em código inválido", async () => {
+  // PROFPAGE-15: invalid code arrives as ApiError(status 422).
+  it("useConfirm2FA propagates 422 on invalid code", async () => {
     await loginAsOwner();
     const { result } = renderHook(() => useConfirm2FA(), { wrapper: TestQueryProvider });
 
     await expect(result.current.mutateAsync("000000")).rejects.toMatchObject({ status: 422 });
   });
 
-  // PROFPAGE-17: desativar com a senha correta devolve ok e o refreshAdmin
-  // re-hidrata a identidade com two_factor_enabled=false.
-  it("useDisable2FA desativa e re-hidrata a identidade", async () => {
+  // PROFPAGE-17: disabling with the correct password returns ok and
+  // refreshAdmin re-hydrates the identity with two_factor_enabled=false.
+  it("useDisable2FA disables and re-hydrates the identity", async () => {
     await loginAsOwner();
     setTwoFactorEnabled(true);
     const { result } = renderHook(
@@ -90,9 +90,9 @@ describe("two-factor hooks", () => {
     await waitFor(() => expect(result.current.auth.admin?.two_factor_enabled).toBe(false));
   });
 
-  // PROFPAGE-18: senha errada chega como ApiError(status 401) e o 2FA
-  // permanece ativado.
-  it("useDisable2FA propaga 401 em senha errada", async () => {
+  // PROFPAGE-18: wrong password arrives as ApiError(status 401) and 2FA
+  // stays enabled.
+  it("useDisable2FA propagates 401 on wrong password", async () => {
     await loginAsOwner();
     setTwoFactorEnabled(true);
     const { result } = renderHook(

@@ -3,7 +3,7 @@ import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { http, HttpResponse, delay } from "msw";
 import { MemoryRouter } from "react-router-dom";
-import "../../lib/i18n";
+import i18n from "../../lib/i18n";
 import { AuthProvider } from "../../auth/AuthProvider";
 import { TestQueryProvider } from "../../test/queryClient";
 import { server } from "../../test/msw/server";
@@ -42,7 +42,7 @@ describe("IncidentsPage", () => {
   // the real grid template render (not the old "Carregando…" paragraph as
   // visible content) inside an aria-busy container that still carries the
   // sr-only loading string.
-  it("mostra skeletons (não o texto) enquanto /api/incidents carrega", async () => {
+  it("shows skeletons (not the text) while /api/incidents is loading", async () => {
     server.use(
       http.get("/api/incidents", async () => {
         await delay("infinite");
@@ -60,7 +60,7 @@ describe("IncidentsPage", () => {
 
   // SKEL-06: once the fetch resolves, skeletons are gone and the real
   // table takes over - loading and loaded are mutually exclusive.
-  it("remove os skeletons assim que /api/incidents termina de carregar", async () => {
+  it("removes the skeletons as soon as /api/incidents finishes loading", async () => {
     await loginAs("owner@vane.app");
     renderPage();
 
@@ -68,14 +68,14 @@ describe("IncidentsPage", () => {
     expect(screen.queryAllByTestId("skeleton")).toHaveLength(0);
   });
 
-  it("tabela lista incidentes ativos e resolvidos juntos por padrão", async () => {
+  it("table lists active and resolved incidents together by default", async () => {
     await loginAs("owner@vane.app");
     renderPage();
     expect(await screen.findByText("Latência elevada no Checkout")).toBeInTheDocument();
     expect(await screen.findByText("Indisponibilidade parcial da API")).toBeInTheDocument();
   });
 
-  it("chip de status filtra a tabela (Resolvido esconde os ativos)", async () => {
+  it("status chip filters the table (Resolvido hides active ones)", async () => {
     await loginAs("owner@vane.app");
     renderPage();
     await screen.findByText("Latência elevada no Checkout");
@@ -86,7 +86,7 @@ describe("IncidentsPage", () => {
     expect(screen.queryByText("Latência elevada no Checkout")).not.toBeInTheDocument();
   });
 
-  it("clicar numa linha abre o drawer de detalhe com título, serviço e severidade", async () => {
+  it("clicking a row opens the detail drawer with title, service, and severity", async () => {
     await loginAs("owner@vane.app");
     renderPage();
     await openIncidentRow("Latência elevada no Checkout");
@@ -97,7 +97,7 @@ describe("IncidentsPage", () => {
     expect(within(dialog).getByTestId("incident-detail-subtitle")).toHaveTextContent("Crítico");
   });
 
-  it("drawer de incidente resolvido mostra banner e botão Reabrir para quem gerencia", async () => {
+  it("resolved incident drawer shows banner and Reabrir button for managers", async () => {
     await loginAs("owner@vane.app");
     renderPage();
     await openIncidentRow("Indisponibilidade parcial da API");
@@ -106,7 +106,7 @@ describe("IncidentsPage", () => {
     expect(await screen.findByRole("button", { name: /Reabrir incidente/ })).toBeInTheDocument();
   });
 
-  it("viewer não vê 'Novo incidente' nem controles de gestão no drawer", async () => {
+  it("viewer doesn't see 'Novo incidente' or management controls in the drawer", async () => {
     await loginAs("viewer@vane.app");
     renderPage();
     await screen.findByText("Latência elevada no Checkout");
@@ -117,7 +117,7 @@ describe("IncidentsPage", () => {
     expect(screen.queryByRole("button", { name: /Reabrir incidente/ })).not.toBeInTheDocument();
   });
 
-  it("criar incidente com serviços selecionados aparece na tabela", async () => {
+  it("creating an incident with selected services appears in the table", async () => {
     await loginAs("owner@vane.app");
     renderPage();
     await userEvent.click(await screen.findByRole("button", { name: "Novo incidente" }));
@@ -132,7 +132,7 @@ describe("IncidentsPage", () => {
   // AI-12: inc-1's fixture (mockData.ts) is auto_created:true, inc-2 isn't -
   // exercises both the badge-present and badge-absent cases, in the table
   // row and in the drawer header.
-  it("incidente auto-criado mostra badge Automático na linha e no drawer, manual não mostra", async () => {
+  it("auto-created incident shows the Automático badge in the row and drawer, manual doesn't", async () => {
     await loginAs("owner@vane.app");
     renderPage();
 
@@ -185,7 +185,7 @@ describe("IncidentsPage", () => {
     created_at: new Date(Date.now() - i * 60_000).toISOString(),
   }));
 
-  it("renderiza o Pager e navega para a página seguinte (PAG-07)", async () => {
+  it("renders the Pager and navigates to the next page (PAG-07)", async () => {
     server.use(paginatedIncidents(manyIncidents));
     await loginAs("owner@vane.app");
     renderPage();
@@ -200,7 +200,7 @@ describe("IncidentsPage", () => {
     expect(screen.queryByText("Incidente paginado 1")).not.toBeInTheDocument();
   });
 
-  it("criar incidente na página 2 e voltar à página 1 mostra o novo incidente (PAG-11)", async () => {
+  it("creating an incident on page 2 and returning to page 1 shows the new incident (PAG-11)", async () => {
     const items = [...manyIncidents];
     server.use(
       paginatedIncidents(items),
@@ -249,7 +249,7 @@ describe("IncidentsPage", () => {
   // INCPG-01: inc-1 (mockData.ts) is severity "critical", inc-2 is
   // "moderate" - exercises the label+color mapping in the table, binding
   // each label to its own row so a label/severity mismatch would fail.
-  it("mostra severidade colorida por linha na tabela (INCPG-01)", async () => {
+  it("shows colored severity per row in the table (INCPG-01)", async () => {
     await loginAs("owner@vane.app");
     renderPage();
 
@@ -266,7 +266,7 @@ describe("IncidentsPage", () => {
     expect(moderateCell).toHaveStyle({ color: "var(--color-warning)" });
   });
 
-  it("severidade desconhecida mostra o valor bruto em vez de quebrar (edge case)", async () => {
+  it("unknown severity shows the raw value instead of breaking (edge case)", async () => {
     server.use(
       http.get("/api/incidents", () =>
         HttpResponse.json({
@@ -299,7 +299,7 @@ describe("IncidentsPage", () => {
   // INCPG-03/04/05/06/07: create drawer defaults severity to Moderado,
   // sends the selected severity + typed description, and resets both after
   // a successful submit.
-  it("criar incidente envia severidade selecionada e descrição, reseta o form (INCPG-03..07)", async () => {
+  it("creating an incident sends the selected severity and description, resets the form (INCPG-03..07)", async () => {
     let capturedBody: { severity?: string; description?: string } | null = null;
     server.use(
       http.post("/api/incidents", async ({ request }) => {
@@ -347,7 +347,7 @@ describe("IncidentsPage", () => {
   // the incident is created (real MSW create handler, INCSEV-03's
   // NULL-on-empty convention) with the default severity, and no crash
   // occurs rendering it back in the table/drawer.
-  it("criar incidente sem descrição envia o form normalmente (INCPG-06)", async () => {
+  it("creating an incident with no description submits the form normally (INCPG-06)", async () => {
     await loginAs("owner@vane.app");
     renderPage();
 
@@ -365,7 +365,7 @@ describe("IncidentsPage", () => {
   // INCPG-08/09/10/11: timeline entries distinguish AI-generated summaries
   // ("Resumo gerado por IA"), human updates ("Equipe"), and system updates
   // with no author ("Sistema"), inside the detail drawer.
-  it("timeline no drawer distingue resumo de IA, atualização humana e do sistema (INCPG-09..11)", async () => {
+  it("drawer timeline distinguishes AI summary, human update, and system update (INCPG-09..11)", async () => {
     server.use(
       http.get("/api/incidents/:id/updates", ({ params }) => {
         const incidentId = params.id as string;
@@ -409,12 +409,23 @@ describe("IncidentsPage", () => {
     expect(await screen.findByText("Resumo gerado por IA")).toBeInTheDocument();
     expect(screen.getAllByText("Equipe").length).toBeGreaterThan(0);
     expect(screen.getByText("Sistema")).toBeInTheDocument();
+
+    // INCPG-09: accent-tinted container proves "visually distinct", not
+    // just the label text - box lives above the timeline (drawer pulls the
+    // is_ai_summary entry out of the regular list into its own AI box, see
+    // IncidentDetailDrawer's `aiSummaryText`), so TimelineEntry's own
+    // is_ai_summary branch is unreachable in production and not asserted here.
+    const aiBox = screen.getByTestId("ai-summary-box");
+    expect(aiBox).toHaveStyle({
+      borderColor: "color-mix(in oklch, var(--color-accent) 40%, transparent)",
+      backgroundColor: "color-mix(in oklch, var(--color-accent) 10%, transparent)",
+    });
   });
 
   // Decision confirmed via AskUserQuestion: "Resolver com resumo de IA"
   // keeps the mock's label/visual but stays disabled until a real pending
   // proposal exists - no synchronous generate-on-click endpoint exists.
-  it("incidente ativo sem proposta pendente mostra botão desabilitado, sem caixa de IA", async () => {
+  it("active incident with no pending proposal shows disabled button, no AI box", async () => {
     server.use(
       http.get("/api/incidents/:id/updates", () =>
         HttpResponse.json({ items: [], total: 0, page: 1, page_size: 25 })
@@ -449,7 +460,7 @@ describe("IncidentsPage", () => {
     expect(screen.getByRole("button", { name: "Resolver com resumo de IA" })).toBeDisabled();
   });
 
-  it("incidente ativo com proposta pendente mostra caixa de IA e confirma o fechamento ao clicar", async () => {
+  it("active incident with a pending proposal shows the AI box and confirms closure on click", async () => {
     const incident = {
       id: "inc-with-proposal",
       title: "Incidente com proposta de IA",
@@ -489,7 +500,7 @@ describe("IncidentsPage", () => {
     expect(await screen.findByText(/Incidente resolvido em/)).toBeInTheDocument();
   });
 
-  it("incidente resolvido mostra resumo de IA vindo da timeline, sem duplicar na Linha do tempo", async () => {
+  it("resolved incident shows the AI summary coming from the timeline, without duplicating in the Linha do tempo", async () => {
     await loginAs("owner@vane.app");
     renderPage();
     await openIncidentRow("Indisponibilidade parcial da API");
@@ -497,5 +508,19 @@ describe("IncidentsPage", () => {
     const dialog = await screen.findByRole("dialog");
     const summaryText = "Incidente resolvido após rollback do deploy problemático.";
     expect(within(dialog).getAllByText(summaryText)).toHaveLength(1);
+  });
+
+  it("renders in English when the active language is en", async () => {
+    await loginAs("owner@vane.app");
+    await i18n.changeLanguage("en");
+
+    try {
+      renderPage();
+
+      expect(await screen.findByText("Incidents")).toBeInTheDocument();
+      expect(screen.getByText("New incident")).toBeInTheDocument();
+    } finally {
+      await i18n.changeLanguage("pt-BR");
+    }
   });
 });

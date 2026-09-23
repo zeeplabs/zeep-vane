@@ -12,6 +12,7 @@ import { Skeleton } from "../../components/ui/Skeleton";
 import { useAuth } from "../../auth/AuthProvider";
 import { ApiError } from "../../lib/apiClient";
 import type { IncidentSeverity, IncidentStatus } from "../../types/api";
+import { formatDateTimeShort } from "../../lib/formatDate";
 import { useServices } from "../services/hooks";
 import { useCreateIncident, useIncidents } from "./hooks";
 import { IncidentDetailDrawer } from "./IncidentDetailDrawer";
@@ -22,23 +23,18 @@ import { incidentStatusLabel, formatDuration, severityColor, severityLabel } fro
 // row (handoff-new-layout/Incidentes.dc.html), plus "identified" - a real
 // status the mock's seed data never exercises but the backend supports.
 type StatusFilter = "all" | IncidentStatus;
+type Translator = (key: string, options?: Record<string, unknown>) => string;
 const statusFilters: StatusFilter[] = ["all", "investigating", "identified", "monitoring", "resolved"];
-const filterLabel: Record<StatusFilter, string> = { all: "Todos", ...incidentStatusLabel };
+const severities: IncidentSeverity[] = ["minor", "moderate", "critical"];
 
-const severityOptions: { value: IncidentSeverity; label: string }[] = [
-  { value: "minor", label: "Menor" },
-  { value: "moderate", label: "Moderado" },
-  { value: "critical", label: "Crítico" },
-];
+function filterLabelFor(t: Translator, value: StatusFilter): string {
+  return value === "all" ? t("incidents.filters.all") : incidentStatusLabel(t, value);
+}
 
 const DEFAULT_SEVERITY: IncidentSeverity = "moderate";
 
-function formatOpenedAt(iso: string): string {
-  return new Date(iso).toLocaleString("pt-BR", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" });
-}
-
 export function IncidentsPage() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const { hasRole } = useAuth();
   const canManage = hasRole(["owner", "operator"]);
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
@@ -86,7 +82,7 @@ export function IncidentsPage() {
       setDialogOpen(false);
     } catch (err) {
       if (err instanceof ApiError) setError(err.message);
-      else setError("Não foi possível criar o incidente.");
+      else setError(t("incidents.create.error"));
     }
   }
 
@@ -111,20 +107,18 @@ export function IncidentsPage() {
     <div className="mx-auto flex w-full max-w-[1280px] flex-col gap-6">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-text">Incidentes</h2>
-          <p className="m-0 text-[13.5px] text-neutral-400">
-            Acompanhe, atualize e encerre incidentes dos serviços monitorados.
-          </p>
+          <h2 className="text-text">{t("incidents.title")}</h2>
+          <p className="m-0 text-[13.5px] text-neutral-400">{t("incidents.subtitle")}</p>
         </div>
         {canManage ? (
           <Button variant="solid" onClick={() => setDialogOpen(true)}>
             <MdOutlineAdd size={14} aria-hidden="true" />
-            Novo incidente
+            {t("incidents.newButton")}
           </Button>
         ) : null}
       </div>
 
-      <div role="group" aria-label="Filtrar por status" className="flex flex-wrap items-center gap-2">
+      <div role="group" aria-label={t("incidents.filters.ariaLabel")} className="flex flex-wrap items-center gap-2">
         {statusFilters.map((value) => {
           const active = statusFilter === value;
           return (
@@ -140,7 +134,7 @@ export function IncidentsPage() {
                   : "border-divider bg-surface text-neutral-400 hover:text-text")
               }
             >
-              {filterLabel[value]}
+              {filterLabelFor(t, value)}
               <span className="opacity-70">{counts[value]}</span>
             </button>
           );
@@ -168,18 +162,16 @@ export function IncidentsPage() {
       ) : (
         <Card elevation="none" className="overflow-hidden border border-divider">
           <div className="grid grid-cols-[130px_1fr_140px_100px_130px_90px_20px] items-center gap-3 border-b border-divider bg-card-header-bg px-5 py-2.5">
-            <span className="text-[11px] font-bold uppercase tracking-wide text-neutral-400">Status</span>
-            <span className="text-[11px] font-bold uppercase tracking-wide text-neutral-400">Incidente</span>
-            <span className="text-[11px] font-bold uppercase tracking-wide text-neutral-400">Serviço</span>
-            <span className="text-[11px] font-bold uppercase tracking-wide text-neutral-400">Severidade</span>
-            <span className="text-[11px] font-bold uppercase tracking-wide text-neutral-400">Aberto em</span>
-            <span className="text-[11px] font-bold uppercase tracking-wide text-neutral-400">Duração</span>
+            <span className="text-[11px] font-bold uppercase tracking-wide text-neutral-400">{t("common.status")}</span>
+            <span className="text-[11px] font-bold uppercase tracking-wide text-neutral-400">{t("incidents.table.incident")}</span>
+            <span className="text-[11px] font-bold uppercase tracking-wide text-neutral-400">{t("incidents.table.service")}</span>
+            <span className="text-[11px] font-bold uppercase tracking-wide text-neutral-400">{t("incidents.table.severity")}</span>
+            <span className="text-[11px] font-bold uppercase tracking-wide text-neutral-400">{t("incidents.table.openedAt")}</span>
+            <span className="text-[11px] font-bold uppercase tracking-wide text-neutral-400">{t("incidents.table.duration")}</span>
             <span />
           </div>
           {filtered.length === 0 ? (
-            <p className="px-5 py-12 text-center text-[13.5px] text-neutral-400">
-              Nenhum incidente encontrado com esse filtro.
-            </p>
+            <p className="px-5 py-12 text-center text-[13.5px] text-neutral-400">{t("incidents.empty")}</p>
           ) : (
             filtered.map((incident) => (
               <div
@@ -191,15 +183,15 @@ export function IncidentsPage() {
                 <IncidentStatusTag status={incident.status} />
                 <div className="flex min-w-0 items-center gap-2">
                   <span className="min-w-0 truncate text-[13.5px] font-bold text-text">{incident.title}</span>
-                  {incident.auto_created ? <Tag variant="neutral-outline">Automático</Tag> : null}
+                  {incident.auto_created ? <Tag variant="neutral-outline">{t("incidents.autoCreatedTag")}</Tag> : null}
                 </div>
                 <div className="min-w-0 truncate text-[12.5px] text-neutral-400">
                   {incident.service_ids.length > 0 ? incident.service_ids.map(serviceName).join(", ") : "—"}
                 </div>
                 <div className="text-[12.5px] font-bold" style={{ color: severityColor(incident.severity) }}>
-                  {severityLabel(incident.severity)}
+                  {severityLabel(t, incident.severity)}
                 </div>
-                <div className="text-[12.5px] text-neutral-400">{formatOpenedAt(incident.created_at)}</div>
+                <div className="text-[12.5px] text-neutral-400">{formatDateTimeShort(incident.created_at, i18n.language)}</div>
                 <div className="text-[12.5px] font-semibold text-text">
                   {formatDuration(incident.created_at, incident.resolved_at)}
                 </div>
@@ -222,9 +214,9 @@ export function IncidentsPage() {
       <Drawer
         open={dialogOpen}
         onOpenChange={setDialogOpen}
-        title="Criar incidente"
-        description="Descreva o incidente e vincule os serviços afetados."
-        closeLabel="Fechar"
+        title={t("incidents.create.title")}
+        description={t("incidents.create.description")}
+        closeLabel={t("common.close")}
         footer={
           <>
             <Button
@@ -233,7 +225,7 @@ export function IncidentsPage() {
               style={drawerFooterSecondaryStyle}
               onClick={() => setDialogOpen(false)}
             >
-              Cancelar
+              {t("common.cancel")}
             </Button>
             <Button
               type="submit"
@@ -242,15 +234,21 @@ export function IncidentsPage() {
               style={drawerFooterPrimaryStyle}
               disabled={createIncident.isPending}
             >
-              Criar
+              {t("incidents.create.submitButton")}
             </Button>
           </>
         }
       >
         <form id="create-incident-form" onSubmit={handleSubmit} className="flex flex-col gap-3">
-          <Field variant="filled" label="Título" value={title} onChange={(e) => setTitle(e.target.value)} required />
+          <Field
+            variant="filled"
+            label={t("incidents.create.titleLabel")}
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            required
+          />
           <div className="flex flex-col gap-1">
-            <span className="text-sm font-medium text-text">Serviços afetados</span>
+            <span className="text-sm font-medium text-text">{t("incidents.create.affectedServicesLabel")}</span>
             <div className="flex flex-col gap-1">
               {(services ?? []).map((s) => {
                 const checked = serviceIds.includes(s.id);
@@ -277,18 +275,18 @@ export function IncidentsPage() {
             </div>
           </div>
           <div className="flex flex-col gap-1">
-            <span className="text-sm font-medium text-text">Severidade</span>
-            <div role="radiogroup" aria-label="Severidade" className="grid grid-cols-3 gap-2">
-              {severityOptions.map((opt) => {
-                const active = severity === opt.value;
-                const color = severityColor(opt.value);
+            <span className="text-sm font-medium text-text">{t("incidents.create.severityLabel")}</span>
+            <div role="radiogroup" aria-label={t("incidents.create.severityLabel")} className="grid grid-cols-3 gap-2">
+              {severities.map((value) => {
+                const active = severity === value;
+                const color = severityColor(value);
                 return (
                   <button
-                    key={opt.value}
+                    key={value}
                     type="button"
                     role="radio"
                     aria-checked={active}
-                    onClick={() => setSeverity(opt.value)}
+                    onClick={() => setSeverity(value)}
                     className="cursor-pointer rounded-md border-[1.5px] px-3 py-2.5 text-center text-[12.5px] font-bold transition-colors"
                     style={
                       active
@@ -296,7 +294,7 @@ export function IncidentsPage() {
                         : { borderColor: "var(--color-divider)", backgroundColor: "var(--color-surface)", color: "var(--color-text-muted)" }
                     }
                   >
-                    {opt.label}
+                    {severityLabel(t, value)}
                   </button>
                 );
               })}
@@ -304,14 +302,14 @@ export function IncidentsPage() {
           </div>
           <div className="flex flex-col gap-1">
             <label htmlFor="incident-description" className="text-sm font-medium text-text">
-              Descrição inicial
+              {t("incidents.create.descriptionLabel")}
             </label>
             <Textarea
               id="incident-description"
               variant="filled"
               value={description}
               onChange={(e) => setDescription(e.target.value)}
-              placeholder="O que está acontecendo?"
+              placeholder={t("incidents.create.descriptionPlaceholder")}
               rows={4}
             />
           </div>

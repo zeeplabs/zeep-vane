@@ -9,9 +9,9 @@ function initialsFor(label: string): string {
 }
 
 // AvatarMenu is the topbar's user popover (new-layout-migration, SHELL-08/
-// SHELL-09): identity, "Meu Perfil" (any authenticated role, profile-page
-// PROFPAGE-02), "Configurações" (same owner-only gate the sidebar nav item
-// already applies), and "Sair" (reuses LogoutConfirmDialog, T8 - no second
+// SHELL-09): identity, "My Profile" (any authenticated role, profile-page
+// PROFPAGE-02), "Settings" (same owner-only gate the sidebar nav item
+// already applies), and "Log out" (reuses LogoutConfirmDialog, T8 - no second
 // copy of the confirm modal).
 export function AvatarMenu() {
   const { t } = useTranslation();

@@ -398,6 +398,24 @@ Seen once or not yet corroborated. Tracked, not trusted.
 - evidence: spec.md P1 Activate story AC4 / IntegrationsPage.test.tsx (no failure-path test) (frontend)
 - last seen: 2026-09-17T20:57:40Z
 
+### L-065 - When a spec AC says a fixed/shared instruction string (a system prompt or similar constant) 'SHALL be extended' with per-call data, prefer extending the per-call payload (user prompt) instead and record the reinterpretation explicitly in design.md - literal AC wording can conflict with an established shared-constant-vs-per-call-payload pattern.
+- signal: `spec_precision_gap` · recurrence: 1 feature(s) · scope: `internal/llm` · harmful: 0
+- features: slo-root-cause-enrichment
+- evidence: spec.md RCA-06 vs internal/llm/prompts.go:29-35 (internal/llm)
+- last seen: 2026-09-22T17:29:16Z
+
+### L-066 - When a frontend task's 'capture X from the search/list result' AC depends on a backend response DTO, verify during Design that the DTO already exposes every field the connector/decoder layer decodes - a decoded-but-not-serialized field makes the frontend task's Done-when criterion unimplementable without an undocumented backend change.
+- signal: `spec_deviation` · recurrence: 1 feature(s) · scope: `internal/api` · harmful: 0
+- features: slo-root-cause-enrichment
+- evidence: commit b50acad (T13) (internal/api)
+- last seen: 2026-09-22T17:29:16Z
+
+### L-067 - When a task adds a settings toggle in Design/Tasks, plan both the write path and the read path together - a setter-only repository/service method makes any 'toggle reflects the current value' AC unimplementable until a symmetric getter is added.
+- signal: `spec_deviation` · recurrence: 1 feature(s) · scope: `internal/llm` · harmful: 0
+- features: slo-root-cause-enrichment
+- evidence: commit dad22ea (T14) (internal/llm)
+- last seen: 2026-09-22T17:29:16Z
+
 ## Quarantined (failed when applied - ignore)
 
 A confirmed lesson that recurred alongside failure. Kept for the maintainer to review.

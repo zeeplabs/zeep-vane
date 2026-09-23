@@ -42,6 +42,11 @@ type serviceCreatorLister interface {
 	ListPaginated(ctx context.Context, page, pageSize int) ([]db.Service, int, error)
 	Get(ctx context.Context, id string) (*db.Service, bool, error)
 	Update(ctx context.Context, id, name string) error
+	// UpdateSLOMetadata sets a service's slo_type/datadog_service_tag
+	// (slo-root-cause-enrichment RCA-01) - called only when the request
+	// explicitly includes both fields, so a plain rename never clobbers
+	// them (see Update handler).
+	UpdateSLOMetadata(ctx context.Context, id, sloType, datadogServiceTag string) error
 	SoftDelete(ctx context.Context, id string) error
 }
 
@@ -78,6 +83,12 @@ type createServiceRequest struct {
 	Name    string `json:"name"`
 	SLOID   string `json:"slo_id"`
 	SLOName string `json:"slo_name"`
+	// SLOType/DatadogServiceTag are optional (slo-root-cause-enrichment
+	// RCA-01) - "" (the zero value, same as every existing caller that
+	// predates this feature) means no cause-enrichment metadata for this
+	// SLO (e.g. a flow-type SLO with 0 or 2+ service_tags entries).
+	SLOType           string `json:"slo_type"`
+	DatadogServiceTag string `json:"datadog_service_tag"`
 	// MonitorMode is "slo" (default when omitted, unchanged existing
 	// behavior) or "polling" (manual-polling-monitoring MP-01/MP-02).
 	MonitorMode string `json:"monitor_mode"`
@@ -104,6 +115,10 @@ type serviceResponse struct {
 	Name    string `json:"name"`
 	SLOID   string `json:"slo_id"`
 	SLOName string `json:"slo_name"`
+	// SLOType/DatadogServiceTag mirror SLOName's round-trip (slo-root-
+	// cause-enrichment RCA-01) - "" when absent, same convention.
+	SLOType           string `json:"slo_type"`
+	DatadogServiceTag string `json:"datadog_service_tag"`
 	// MonitorMode/PollType/PollTarget/PollIntervalSeconds mirror the same
 	// fields on db.Service (manual-polling-monitoring T2) so the frontend's
 	// list/detail read paths (T9) can tell a polling-manual service apart
@@ -169,7 +184,14 @@ func (h *ServicesHandler) Create(w http.ResponseWriter, r *http.Request) {
 			writeAdminError(w, http.StatusUnprocessableEntity, invalidServiceRequestBody)
 			return
 		}
-		service = &db.Service{Name: req.Name, SLOID: req.SLOID, SLOName: req.SLOName, MonitorMode: "slo"}
+		service = &db.Service{
+			Name:              req.Name,
+			SLOID:             req.SLOID,
+			SLOName:           req.SLOName,
+			SLOType:           req.SLOType,
+			DatadogServiceTag: req.DatadogServiceTag,
+			MonitorMode:       "slo",
+		}
 
 	case "polling":
 		if req.SLOID != "" || req.SLOName != "" {
@@ -291,6 +313,8 @@ func toServiceResponse(service *db.Service, uptime30d *float64, lastSeenAt *time
 		Name:                service.Name,
 		SLOID:               service.SLOID,
 		SLOName:             service.SLOName,
+		SLOType:             service.SLOType,
+		DatadogServiceTag:   service.DatadogServiceTag,
 		MonitorMode:         service.MonitorMode,
 		PollType:            service.PollType,
 		PollTarget:          service.PollTarget,
@@ -388,6 +412,15 @@ func (h *ServicesHandler) Get(w http.ResponseWriter, r *http.Request) {
 
 type updateServiceRequest struct {
 	Name string `json:"name"`
+	// SLOType/DatadogServiceTag are optional pointers (slo-root-cause-
+	// enrichment RCA-01): nil (the field absent from the request body,
+	// every caller that predates this feature) means "leave unchanged" -
+	// a plain rename must never clobber a service's linked-SLO metadata.
+	// Only updated when BOTH are present, since they always describe the
+	// same linked SLO and travel together (mirroring how slo_id/slo_name
+	// are always set together at Create time).
+	SLOType           *string `json:"slo_type"`
+	DatadogServiceTag *string `json:"datadog_service_tag"`
 }
 
 // Update handles PATCH /api/services/{id} (service-edit SVCEDIT-01..05):
@@ -397,6 +430,10 @@ type updateServiceRequest struct {
 // success (SVCEDIT-02), a fixed generic 422 for an empty name (SVCEDIT-03),
 // and a fixed generic 404 for an unknown id (SVCEDIT-04) - never leaking
 // whether the id is malformed vs. absent, same convention as Get.
+//
+// SLOType/DatadogServiceTag (slo-root-cause-enrichment RCA-01) are updated
+// only when the request explicitly includes both - a bare {"name":"..."}
+// rename request never touches them.
 func (h *ServicesHandler) Update(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 
@@ -414,6 +451,18 @@ func (h *ServicesHandler) Update(w http.ResponseWriter, r *http.Request) {
 		h.logger.Error("services: failed to update service", zap.Error(err))
 		writeInternalError(w)
 		return
+	}
+
+	if req.SLOType != nil && req.DatadogServiceTag != nil {
+		if err := h.services.UpdateSLOMetadata(r.Context(), id, *req.SLOType, *req.DatadogServiceTag); err != nil {
+			if errors.Is(err, db.ErrNotFound) {
+				writeAdminError(w, http.StatusNotFound, serviceNotFoundBody)
+				return
+			}
+			h.logger.Error("services: failed to update service SLO metadata", zap.Error(err))
+			writeInternalError(w)
+			return
+		}
 	}
 
 	ctx := r.Context()
