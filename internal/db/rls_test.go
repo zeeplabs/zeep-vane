@@ -47,7 +47,7 @@ func newRLSTestPool(t *testing.T) *Pool {
 		t.Fatalf("creating %s role returned unexpected error: %v", rlsTestRole, err)
 	}
 	if _, err := pool.Exec(ctx,
-		"GRANT SELECT, INSERT, UPDATE, DELETE ON tenants, tenant_memberships, tenant_invites, services TO "+rlsTestRole,
+		"GRANT SELECT, INSERT, UPDATE, DELETE ON tenants, tenant_memberships, tenant_invites, services, integrations TO "+rlsTestRole,
 	); err != nil {
 		t.Fatalf("granting DML to %s returned unexpected error: %v", rlsTestRole, err)
 	}
@@ -131,6 +131,104 @@ func seedTenantWithService(t *testing.T, pool *Pool, namePrefix string) (tenantI
 	})
 
 	return tenantID
+}
+
+// seedTenantWithIntegration creates and commits one tenant plus one
+// connected Datadog integration row owned by it (integrations-tenant-scope,
+// TENANT-05) - same shape/reasoning as seedTenantWithService, integrations
+// is FORCE ROW LEVEL SECURITY since migration 0040 so its insert's WITH
+// CHECK requires app.tenant_id to already match. Returns the committed
+// tenant id.
+func seedTenantWithIntegration(t *testing.T, pool *Pool, namePrefix string) (tenantID string) {
+	t.Helper()
+	ctx := context.Background()
+
+	if err := pool.QueryRow(ctx, "SELECT gen_random_uuid()").Scan(&tenantID); err != nil {
+		t.Fatalf("generating tenant id returned unexpected error: %v", err)
+	}
+
+	tx, txCtx := beginRLSTx(t, pool, "", tenantID)
+
+	if _, err := pool.Exec(txCtx,
+		"INSERT INTO tenants (id, name) VALUES ($1, $2)", tenantID, namePrefix+"-tenant",
+	); err != nil {
+		_ = tx.Rollback(ctx)
+		t.Fatalf("seed tenant insert returned unexpected error: %v", err)
+	}
+
+	if _, err := pool.Exec(txCtx,
+		`INSERT INTO integrations (provider, encrypted_api_key, encrypted_app_key)
+		 VALUES ('datadog', $1, $2)`,
+		[]byte(namePrefix+"-api-key"), []byte(namePrefix+"-app-key"),
+	); err != nil {
+		_ = tx.Rollback(ctx)
+		t.Fatalf("seed integration insert returned unexpected error: %v", err)
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		t.Fatalf("commit returned unexpected error: %v", err)
+	}
+
+	t.Cleanup(func() {
+		cleanupTx, cleanupCtx := beginRLSTx(t, pool, "", tenantID)
+		_, _ = pool.Exec(cleanupCtx, "DELETE FROM integrations WHERE tenant_id = $1", tenantID)
+		_, _ = pool.Exec(cleanupCtx, "DELETE FROM tenants WHERE id = $1", tenantID)
+		_ = cleanupTx.Commit(context.Background())
+	})
+
+	return tenantID
+}
+
+// TestRLS_Integrations_TenantA_NeverSeesTenantB_EvenWithUnfilteredQuery
+// proves the same TENANT-01/02 guarantee for `integrations`
+// (integrations-tenant-scope, TENANT-05) that
+// TestRLS_TenantA_NeverSeesTenantB_EvenWithUnfilteredQuery already proves
+// for services: two tenants each with their own connected Datadog
+// integration, queried from tenant A's session with a raw
+// "SELECT encrypted_api_key FROM integrations" that omits
+// "WHERE tenant_id = ?" - RLS must still only return A's own credentials,
+// never B's. This is the exact query shape newPollerFromStoredIntegration's
+// pre-fix GetDatadog(ctx) ran (integrations had no tenant_id/RLS at all
+// before migration 0040) - one installation-wide client answering every
+// tenant's poll cycle.
+func TestRLS_Integrations_TenantA_NeverSeesTenantB_EvenWithUnfilteredQuery(t *testing.T) {
+	pool := newRLSTestPool(t)
+	prefixA := fmt.Sprintf("rls-integ-a-%d", tUniqueSuffix())
+	prefixB := fmt.Sprintf("rls-integ-b-%d", tUniqueSuffix())
+	tenantA := seedTenantWithIntegration(t, pool, prefixA)
+	_ = seedTenantWithIntegration(t, pool, prefixB)
+
+	tx, ctx := beginRLSTx(t, pool, "", tenantA)
+	defer func() { _ = tx.Rollback(context.Background()) }()
+
+	rows, err := pool.Query(ctx, "SELECT encrypted_api_key FROM integrations")
+	if err != nil {
+		t.Fatalf("Query() returned unexpected error: %v", err)
+	}
+	defer rows.Close()
+
+	var apiKeys [][]byte
+	for rows.Next() {
+		var key []byte
+		if err := rows.Scan(&key); err != nil {
+			t.Fatalf("Scan() returned unexpected error: %v", err)
+		}
+		apiKeys = append(apiKeys, key)
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatalf("rows.Err() returned unexpected error: %v", err)
+	}
+
+	wantKey := prefixA + "-api-key"
+	if len(apiKeys) != 1 || string(apiKeys[0]) != wantKey {
+		t.Fatalf("integrations visible from tenant A's session = %v, want exactly [%q]", apiKeys, wantKey)
+	}
+	leakedKey := prefixB + "-api-key"
+	for _, key := range apiKeys {
+		if string(key) == leakedKey {
+			t.Fatalf("tenant A's session saw tenant B's datadog credentials %q - cross-tenant leak", key)
+		}
+	}
 }
 
 // TestRLS_NoTenantContext_ReturnsZeroRows proves TENANT-03: a query that

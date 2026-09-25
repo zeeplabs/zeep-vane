@@ -111,17 +111,17 @@ Decisão de negócio (Julio, nesta sessão): em modo SaaS, tenants contratantes 
 
 | Requirement ID | Story | Phase | Status |
 | --- | --- | --- | --- |
-| SAASMAIL-01 | P1: Signup SaaS deixa de travar | Design | Pending |
-| SAASMAIL-02 | P1: Signup SaaS deixa de travar | Design | Pending |
-| SAASMAIL-03 | P1: Signup SaaS deixa de travar | Design | Pending |
-| SAASMAIL-04 | P1: Signup SaaS deixa de travar | Design | Pending |
-| SAASMAIL-05 | P1: As outras 5 categorias | Design | Pending |
-| SAASMAIL-06 | P1: As outras 5 categorias | Design | Pending |
-| SAASMAIL-07 | P1: As outras 5 categorias | Design | Pending |
-| SAASMAIL-08 | P1: As outras 5 categorias | Design | Pending |
-| SAASMAIL-09 | P1: Tenant SaaS nunca conecta provider próprio | Design | Pending |
-| SAASMAIL-10 | P1: Tenant SaaS nunca conecta provider próprio | Design | Pending |
-| SAASMAIL-11 | P1: Tenant SaaS nunca conecta provider próprio | Design | Pending |
+| SAASMAIL-01 | P1: Signup SaaS deixa de travar | Execute (T1+T6+T7) | Verified |
+| SAASMAIL-02 | P1: Signup SaaS deixa de travar | Execute (T6+T7) | Verified |
+| SAASMAIL-03 | P1: Signup SaaS deixa de travar | Execute (T6: wiring) | Verified |
+| SAASMAIL-04 | P1: Signup SaaS deixa de travar | Execute (T6: wiring) | Verified |
+| SAASMAIL-05 | P1: As outras 5 categorias | Execute (T4+T6: NotificationServiceSender + wiring) | Verified |
+| SAASMAIL-06 | P1: As outras 5 categorias | Execute (T4+T6: NotificationServiceSender + wiring) | Verified |
+| SAASMAIL-07 | P1: As outras 5 categorias | Execute (T4+T6: NotificationServiceSender + wiring) | Verified |
+| SAASMAIL-08 | P1: As outras 5 categorias | Execute (T3+T6: client HTTP + wiring) | Verified |
+| SAASMAIL-09 | P1: Tenant SaaS nunca conecta provider próprio | Execute (T5: requireSelfHostedMode) | Verified |
+| SAASMAIL-10 | P1: Tenant SaaS nunca conecta provider próprio | Execute (T5: requireSelfHostedMode) | Verified |
+| SAASMAIL-11 | P1: Tenant SaaS nunca conecta provider próprio | Execute (T5: backend 404 + T9: frontend hide) | Verified |
 
 **ID format:** `SAASMAIL-NN`
 

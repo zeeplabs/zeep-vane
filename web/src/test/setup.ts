@@ -1,5 +1,15 @@
 import "@testing-library/jest-dom/vitest";
+import { configure } from "@testing-library/react";
 import { beforeAll, afterEach, afterAll } from "vitest";
+
+// testing-library's default asyncUtilTimeout (waitFor/findBy*) is 1000ms -
+// fine on local hardware, too tight on CircleCI's shared containers where
+// a single async tick (React Query settling, MSW round-trip) can take
+// longer under load. A tight default made CI flaky (a different random
+// subset of tests timing out each run) even after the resource class and
+// vitest thread pool were both tuned - this is the actual bottleneck,
+// not CPU/thread provisioning.
+configure({ asyncUtilTimeout: 5000 });
 import { server } from "./msw/server";
 import {
   resetAuthSession,

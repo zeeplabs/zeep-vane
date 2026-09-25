@@ -89,12 +89,12 @@ T1 → T8
 - Skill: NONE
 
 **Done when**:
-- [ ] `Config` ganha os 2 campos novos
-- [ ] `saas` + ambas setadas → boot ok, campos populados
-- [ ] `saas` + qualquer uma ausente → `Load()` retorna erro claro
-- [ ] `self_hosted` + ambas ausentes → boot ok (comportamento inalterado)
-- [ ] Gate check passes: `go build ./... && go test ./internal/config/... && go vet ./internal/config/... && gofmt -l internal/config/config.go`
-- [ ] Traceability de SAASMAIL-01 (edge case) atualizada em `spec.md`
+- [x] `Config` ganha os 2 campos novos
+- [x] `saas` + ambas setadas → boot ok, campos populados
+- [x] `saas` + qualquer uma ausente → `Load()` retorna erro claro
+- [x] `self_hosted` + ambas ausentes → boot ok (comportamento inalterado)
+- [x] Gate check passes: `go build ./... && go test ./internal/config/... && go vet ./internal/config/... && gofmt -l internal/config/config.go`
+- [x] Traceability de SAASMAIL-01 (edge case) atualizada em `spec.md`
 
 **Tests**: unit
 **Gate**: quick
@@ -115,9 +115,9 @@ T1 → T8
 - Skill: NONE
 
 **Done when**:
-- [ ] Tipos definidos e exportados, compilam sem erro
-- [ ] Comentário no arquivo aponta que a implementação concreta vive em `internal/connectors/notificationservice` (T3), nunca o inverso
-- [ ] Gate check passes: `go build ./... && go vet ./internal/email/... && gofmt -l internal/email/notification_service.go`
+- [x] Tipos definidos e exportados, compilam sem erro
+- [x] Comentário no arquivo aponta que a implementação concreta vive em `internal/connectors/notificationservice` (T3), nunca o inverso
+- [x] Gate check passes: `go build ./... && go vet ./internal/email/... && gofmt -l internal/email/notification_service.go`
 
 **Tests**: none (camada de tipo puro, sem lógica - mesmo tratamento de config/entity da matriz)
 **Gate**: quick
@@ -139,12 +139,12 @@ T1 → T8
 - Skill: NONE
 
 **Done when**:
-- [ ] `NewClient(baseURL, apiKey string) *Client` construído
-- [ ] `Send` monta o payload de conteúdo inline corretamente (nunca `template.key`)
-- [ ] Testes cobrindo: envio válido (payload/headers corretos, incluindo `Idempotency-Key`), 401/403, timeout, 5xx, 400/409/413/422 (`httptest.Server` fake, mesmo padrão de `resend/client_test.go`)
-- [ ] Chave de API nunca aparece em nenhum log/erro retornado
-- [ ] Gate check passes: `go build ./... && go test ./internal/connectors/notificationservice/... && go vet ./internal/connectors/notificationservice/... && gofmt -l internal/connectors/notificationservice/client.go internal/connectors/notificationservice/client_test.go`
-- [ ] Test count: >= 6 testes passam (mínimo, um por cenário de classificação)
+- [x] `NewClient(baseURL, apiKey string) *Client` construído
+- [x] `Send` monta o payload de conteúdo inline corretamente (nunca `template.key`)
+- [x] Testes cobrindo: envio válido (payload/headers corretos, incluindo `Idempotency-Key`), 401/403, timeout, 5xx, 400/409/413/422 (`httptest.Server` fake, mesmo padrão de `resend/client_test.go`)
+- [x] Chave de API nunca aparece em nenhum log/erro retornado
+- [x] Gate check passes: `go build ./... && go test ./internal/connectors/notificationservice/... && go vet ./internal/connectors/notificationservice/... && gofmt -l internal/connectors/notificationservice/client.go internal/connectors/notificationservice/client_test.go`
+- [x] Test count: >= 6 testes passam (mínimo, um por cenário de classificação) — 7 passam
 
 **Tests**: unit
 **Gate**: quick
@@ -166,14 +166,14 @@ T1 → T8
 - Skill: NONE
 
 **Done when**:
-- [ ] `NewNotificationServiceSender(client, tenantKey, logger) (*NotificationServiceSender, error)` construído, erro só se `parseTemplates()` falhar
-- [ ] As 6 categorias mapeiam `category`/`priority`/`type` exatamente conforme a tabela do design (1 teste por categoria)
-- [ ] Idempotency-key: mesmo `to`+`subject`+`html` → mesma chave; conteúdo diferente → chave diferente (2 testes mínimo)
-- [ ] Falha do client (fake retornando erro) é propagada ao chamador sem wrapping que esconda o erro original de classificação (`errors.Is` continua funcionando)
-- [ ] `NotificationServiceSender` satisfaz `email.Sender` em tempo de compilação (`var _ email.Sender = (*NotificationServiceSender)(nil)`)
-- [ ] Gate check passes: `go build ./... && go test ./internal/email/... && go vet ./internal/email/... && gofmt -l internal/email/notification_service_sender.go internal/email/notification_service_sender_test.go`
-- [ ] Test count: >= 10 testes passam (6 categorias + 2 idempotência + falha propagada + assertion de compilação)
-- [ ] Traceability de SAASMAIL-05/06/07 atualizada em `spec.md`
+- [x] `NewNotificationServiceSender(client, tenantKey, logger) (*NotificationServiceSender, error)` construído, erro só se `parseTemplates()` falhar
+- [x] As 6 categorias mapeiam `category`/`priority`/`type` exatamente conforme a tabela do design (1 teste por categoria)
+- [x] Idempotency-key: mesmo `to`+`subject`+`html` → mesma chave; conteúdo diferente → chave diferente (2 testes mínimo)
+- [x] Falha do client (fake retornando erro) é propagada ao chamador sem wrapping que esconda o erro original de classificação (`errors.Is` continua funcionando)
+- [x] `NotificationServiceSender` satisfaz `email.Sender` em tempo de compilação (`var _ email.Sender = (*NotificationServiceSender)(nil)`)
+- [x] Gate check passes: `go build ./... && go test ./internal/email/... && go vet ./internal/email/... && gofmt -l internal/email/notification_service_sender.go internal/email/notification_service_sender_test.go`
+- [x] Test count: >= 10 testes passam (6 categorias + 2 idempotência + falha propagada + assertion de compilação) — 11 passam
+- [x] Traceability de SAASMAIL-05/06/07 atualizada em `spec.md`
 
 **Tests**: unit
 **Gate**: quick
@@ -195,12 +195,12 @@ T1 → T8
 - Skill: NONE
 
 **Done when**:
-- [ ] `requireSelfHostedMode(deploymentMode string) func(http.Handler) http.Handler` criado e aplicado às 4 rotas
-- [ ] `TestAdminRouter_Viewer_EmailProvidersList_200` corrigido pra construir roteador `self_hosted` dedicado (continua verde)
-- [ ] Novo teste `TestAdminRouter_EmailProvidersRoutes_SaaSMode_404` prova as 4 rotas retornando 404 em `saas`
-- [ ] Comportamento em `self_hosted` continua idêntico ao de hoje pras 4 rotas (asserção explícita)
-- [ ] Gate check passes: `go build ./... && go test ./... && go vet ./... && gofmt -l internal/cli/routes.go internal/cli/routes_test.go && make test-integration`
-- [ ] Traceability de SAASMAIL-09/10/11 atualizada em `spec.md`
+- [x] `requireSelfHostedMode(deploymentMode string) func(http.Handler) http.Handler` criado e aplicado às 4 rotas
+- [x] `TestAdminRouter_Viewer_EmailProvidersList_200` corrigido pra construir roteador `self_hosted` dedicado (continua verde)
+- [x] Novo teste `TestAdminRouter_EmailProvidersRoutes_SaaSMode_404` prova as 4 rotas retornando 404 em `saas`
+- [x] Comportamento em `self_hosted` continua idêntico ao de hoje pras 4 rotas (asserção explícita)
+- [x] Gate check passes: `go build ./... && go test ./... && go vet ./... && gofmt -l internal/cli/routes.go internal/cli/routes_test.go && make test-integration`
+- [x] Traceability de SAASMAIL-09/10/11 atualizada em `spec.md`
 
 **Tests**: integration
 **Gate**: full
@@ -222,12 +222,12 @@ T1 → T8
 - Skill: NONE
 
 **Done when**:
-- [ ] `newEmailSender` construído e usado nos 2 pontos de wiring, eliminando a duplicação de `email.NewService(...)`
-- [ ] `AdminsHandler`/`SignupHandler` compilam contra `email.Sender`, zero mudança de comportamento em `self_hosted` (suíte de testes existente de `internal/api` continua 100% verde sem nenhuma edição de asserção)
-- [ ] `saas`: `buildAdminRouter`/`newNotifyService` recebem um `*NotificationServiceSender` de fato quando `VANE_NOTIFICATION_SERVICE_BASE_URL`/`_API_KEY` estão setadas
-- [ ] `EmailProvidersHandler` inalterado (continua só com o `*email.Service` self-hosted)
-- [ ] Gate check passes: `go build ./... && go test ./... && go vet ./... && gofmt -l internal/cli/routes.go internal/cli/serve.go internal/api/admins.go internal/api/signup_handler.go && make test-integration`
-- [ ] Test count: suíte completa de `internal/api`/`internal/cli` sem nenhum teste removido, todos verdes
+- [x] `newEmailSender` construído e usado nos 2 pontos de wiring, eliminando a duplicação de `email.NewService(...)`
+- [x] `AdminsHandler`/`SignupHandler` compilam contra `email.Sender`, zero mudança de comportamento em `self_hosted` (suíte de testes existente de `internal/api` continua 100% verde sem nenhuma edição de asserção)
+- [x] `saas`: `buildAdminRouter`/`newNotifyService` recebem um `*NotificationServiceSender` de fato quando `VANE_NOTIFICATION_SERVICE_BASE_URL`/`_API_KEY` estão setadas
+- [x] `EmailProvidersHandler` inalterado (continua só com o `*email.Service` self-hosted)
+- [x] Gate check passes: `go build ./... && go test ./... && go vet ./... && gofmt -l internal/cli/routes.go internal/cli/serve.go internal/api/admins.go internal/api/signup_handler.go && make test-integration`
+- [x] Test count: suíte completa de `internal/api`/`internal/cli` sem nenhum teste removido, todos verdes (flake pré-existente e não relacionado — `TestPublicStatusGet_HourlyHistory_KnownHourStatusAppearsAsSingleBucket`, teste dependente de wall-clock cruzando fronteira de hora — confirmado 3x verde isolado e verde na re-corrida completa)
 
 **Tests**: integration
 **Gate**: full
@@ -249,10 +249,10 @@ T1 → T8
 - Skill: NONE
 
 **Done when**:
-- [ ] Novo teste prova envio + verificação + login liberado, com um `email.Sender` fake que nunca consulta `email_providers`
-- [ ] Teste falharia se o bug original (dependência de `GetActiveProvider`) fosse reintroduzido
-- [ ] Gate check passes: `go build ./... && go test ./internal/api/... && go vet ./internal/api/... && gofmt -l internal/api/signup_handler_test.go`
-- [ ] Traceability de SAASMAIL-01/02 marcada "Verified" em `spec.md`
+- [x] Novo teste prova envio + verificação + login liberado, com um `email.Sender` fake que nunca consulta `email_providers`
+- [x] Teste falharia se o bug original (dependência de `GetActiveProvider`) fosse reintroduzido
+- [x] Gate check passes: `go build ./... && go test ./internal/api/... && go vet ./internal/api/... && gofmt -l internal/api/signup_handler_test.go`
+- [x] Traceability de SAASMAIL-01/02 marcada "Verified" em `spec.md`
 
 **Tests**: unit
 **Gate**: quick
@@ -274,13 +274,35 @@ T1 → T8
 - Skill: NONE
 
 **Done when**:
-- [ ] Tabela atualizada com as 2 env vars novas, obrigatoriedade condicional documentada
-- [ ] Nenhuma outra seção do README fica desatualizada por esta mudança
+- [x] Tabela atualizada com as 2 env vars novas, obrigatoriedade condicional documentada
+- [x] Nenhuma outra seção do README fica desatualizada por esta mudança
 
 **Tests**: none
 **Gate**: docs (leitura manual, sem comando)
 
 **Commit**: `docs(readme): document notification-service platform env vars`
+
+---
+
+### T9 (fix task, gap found by Verifier): frontend hides email-provider category in saas mode
+
+**What**: Verifier caught SAASMAIL-11 AC3 unimplemented (`.specs/features/saas-transactional-email/validation.md`): the spec explicitly requires `EmailProvidersPage`/its integration-page equivalent to stop being shown in `saas` mode, not just be 404'd on the backend (T5 only closed the backend half). `IntegrationsPage`'s email-provider `CategorySection` (+ its `ConnectEmailProviderDrawer`) now renders only when `useAuth().deploymentMode === "self_hosted"` - same signal (`deployment_mode` from `GET /api/bootstrap/status`) already used by `LoginPage`'s "Criar conta" link (AD-033). `useEmailProviders` gained an `enabled` parameter so the query itself doesn't fire in `saas` mode either (the routes 404 there per T5, so fetching would only ever produce a spurious error state for a card that isn't rendered).
+**Where**: `web/src/features/integrations/IntegrationsPage.tsx`, `web/src/features/email-providers/hooks.ts`, `web/src/features/integrations/IntegrationsPage.test.tsx`
+**Depends on**: T5 (backend gate), T6 (wiring) - purely additive frontend gap-fix, no backend change
+**Requirement**: SAASMAIL-11 AC3
+
+**Done when**:
+- [x] Email-provider `CategorySection` + `ConnectEmailProviderDrawer` render only in `self_hosted` mode
+- [x] `useEmailProviders` doesn't fetch in `saas` mode
+- [x] Existing email-provider tests in `IntegrationsPage.test.tsx` set `self_hosted` explicitly (they were implicitly relying on the MSW mock's `saas`-by-default state, per `handlers.ts`'s own documented convention) - all 31 pre-existing tests still pass, no assertion weakened
+- [x] New test: in `saas` mode, email category/cards/drawer never render
+- [x] Gate check passes: `npx tsc -b --noEmit && npm run test && npm run i18n:check && npm run build` (707/707 tests, 854 keys parity)
+- [x] Traceability of SAASMAIL-11 updated to `Verified` in `spec.md`
+
+**Tests**: unit (vitest, MSW)
+**Gate**: quick (frontend)
+
+**Commit**: `fix(web): hide email-provider integrations in saas mode`
 
 ---
 

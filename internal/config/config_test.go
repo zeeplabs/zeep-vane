@@ -369,6 +369,8 @@ func TestLoad_DeploymentModeUnset_DefaultsToSelfHosted(t *testing.T) {
 func TestLoad_DeploymentModeSaaS_UsesGivenValue(t *testing.T) {
 	setAllRequiredEnv(t)
 	t.Setenv("VANE_DEPLOYMENT_MODE", "saas")
+	t.Setenv("VANE_NOTIFICATION_SERVICE_BASE_URL", "https://notifications.zeeptecnologia.com.br")
+	t.Setenv("VANE_NOTIFICATION_SERVICE_API_KEY", "zns_live_test-key")
 
 	cfg, err := Load()
 	if err != nil {
@@ -376,6 +378,46 @@ func TestLoad_DeploymentModeSaaS_UsesGivenValue(t *testing.T) {
 	}
 	if cfg.DeploymentMode != DeploymentModeSaaS {
 		t.Errorf("DeploymentMode = %q, want %q", cfg.DeploymentMode, DeploymentModeSaaS)
+	}
+}
+
+// TestLoad_SaaSMode_NotificationServiceVarsRequired asserts SAASMAIL-01's
+// edge case: a saas boot with either notification-service env var missing
+// fails clearly instead of silently starting unable to send any email.
+func TestLoad_SaaSMode_NotificationServiceBaseURLMissing_Error(t *testing.T) {
+	setAllRequiredEnv(t)
+	t.Setenv("VANE_DEPLOYMENT_MODE", "saas")
+	t.Setenv("VANE_NOTIFICATION_SERVICE_API_KEY", "zns_live_test-key")
+
+	_, err := Load()
+	if err == nil {
+		t.Fatal("Load() in saas mode with VANE_NOTIFICATION_SERVICE_BASE_URL unset returned nil error, want error")
+	}
+}
+
+func TestLoad_SaaSMode_NotificationServiceAPIKeyMissing_Error(t *testing.T) {
+	setAllRequiredEnv(t)
+	t.Setenv("VANE_DEPLOYMENT_MODE", "saas")
+	t.Setenv("VANE_NOTIFICATION_SERVICE_BASE_URL", "https://notifications.zeeptecnologia.com.br")
+
+	_, err := Load()
+	if err == nil {
+		t.Fatal("Load() in saas mode with VANE_NOTIFICATION_SERVICE_API_KEY unset returned nil error, want error")
+	}
+}
+
+// TestLoad_SelfHostedMode_NotificationServiceVarsOptional asserts a
+// self-hosted boot never requires the platform notification-service
+// credential - it isn't used in that mode.
+func TestLoad_SelfHostedMode_NotificationServiceVarsOptional(t *testing.T) {
+	setAllRequiredEnv(t)
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() in self-hosted mode with notification-service vars unset returned unexpected error: %v", err)
+	}
+	if cfg.NotificationServiceBaseURL != "" || cfg.NotificationServiceAPIKey != "" {
+		t.Errorf("NotificationServiceBaseURL/APIKey = %q/%q, want both empty in self-hosted mode", cfg.NotificationServiceBaseURL, cfg.NotificationServiceAPIKey)
 	}
 }
 

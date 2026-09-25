@@ -27,6 +27,9 @@ type Config struct {
 	HTTPSEnabled        bool
 	SecureCookies       bool
 	DeploymentMode      string
+
+	NotificationServiceBaseURL string
+	NotificationServiceAPIKey  string
 }
 
 // DeploymentModeSelfHosted is the default distribution model: one
@@ -177,6 +180,23 @@ func Load() (Config, error) {
 		return Config{}, fmt.Errorf("config: environment variable VANE_DEPLOYMENT_MODE must be %q or %q, got %q", DeploymentModeSelfHosted, DeploymentModeSaaS, deploymentMode)
 	}
 
+	// notificationServiceBaseURL/APIKey authenticate every call to
+	// zeep-notification-service, the single platform-wide channel SaaS
+	// transactional email goes through (AD-034) - never a per-tenant
+	// credential like email_providers. Required only in saas mode: a
+	// self-hosted install never talks to this service, so leaving both
+	// unset there is the unchanged, expected default.
+	notificationServiceBaseURL := os.Getenv("VANE_NOTIFICATION_SERVICE_BASE_URL")
+	notificationServiceAPIKey := os.Getenv("VANE_NOTIFICATION_SERVICE_API_KEY")
+	if deploymentMode == DeploymentModeSaaS {
+		if notificationServiceBaseURL == "" {
+			return Config{}, fmt.Errorf("config: environment variable VANE_NOTIFICATION_SERVICE_BASE_URL is required when VANE_DEPLOYMENT_MODE=%s", DeploymentModeSaaS)
+		}
+		if notificationServiceAPIKey == "" {
+			return Config{}, fmt.Errorf("config: environment variable VANE_NOTIFICATION_SERVICE_API_KEY is required when VANE_DEPLOYMENT_MODE=%s", DeploymentModeSaaS)
+		}
+	}
+
 	return Config{
 		DatabaseURL:         databaseURL,
 		MasterKey:           masterKey,
@@ -191,6 +211,9 @@ func Load() (Config, error) {
 		HTTPSEnabled:        httpsEnabled,
 		SecureCookies:       secureCookies,
 		DeploymentMode:      deploymentMode,
+
+		NotificationServiceBaseURL: notificationServiceBaseURL,
+		NotificationServiceAPIKey:  notificationServiceAPIKey,
 	}, nil
 }
 

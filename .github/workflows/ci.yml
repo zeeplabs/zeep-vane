@@ -1,10 +1,12 @@
 name: CI
 
+# Auto-trigger disabled: CI moved to CircleCI (.circleci/config.yml, workflow
+# "ci" - jobs go-gate/web-gate/go-integration/full-build). Kept in the repo,
+# workflow_dispatch-only (workflow_call kept too, since docker-publish.yml
+# still references it), to run by hand if it's ever needed to compare
+# against a CircleCI result.
 on:
-  push:
-    branches: [main, develop]
-  pull_request:
-    branches: [main, develop]
+  workflow_dispatch: {}
   workflow_call:
 
 env:

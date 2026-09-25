@@ -206,8 +206,20 @@ func (a *SLOAnalyzer) SetErrorCauseEnrichment(settings enrichmentSettingsReader,
 // has no single service tag (RCA-01), the Error Tracking query errors, or
 // it finds nothing (RCA-03) - the single funnel point implementing every
 // fallback rule from RCA-01..04.
-func (a *SLOAnalyzer) resolveCauseHint(ctx context.Context, svc db.Service) (causeType, causeMessage string) {
-	if a.enrichmentSettings == nil || a.causeProvider == nil {
+//
+// provider is the caller's per-dispatch override (integrations-tenant-scope,
+// TENANT-05: the current tenant's own Datadog client, captured by the
+// enrichment goroutine's closure at dispatch time in
+// dispatchDegradedEnrichment/dispatchOutageEnrichment) - it takes
+// precedence over a.causeProvider, the static default installed by
+// SetErrorCauseEnrichment, which only still matters for a caller (existing
+// tests) that invokes HandleTransition directly without a per-call
+// provider.
+func (a *SLOAnalyzer) resolveCauseHint(ctx context.Context, svc db.Service, provider errorCauseProvider) (causeType, causeMessage string) {
+	if provider == nil {
+		provider = a.causeProvider
+	}
+	if a.enrichmentSettings == nil || provider == nil {
 		return "", ""
 	}
 
@@ -227,7 +239,7 @@ func (a *SLOAnalyzer) resolveCauseHint(ctx context.Context, svc db.Service) (cau
 
 	to := time.Now()
 	from := to.Add(-errorTrackingWindow)
-	hint, found, err := a.causeProvider.SearchErrorTrackingIssues(ctx, svc.DatadogServiceTag, errorTrackingEnv, from, to)
+	hint, found, err := provider.SearchErrorTrackingIssues(ctx, svc.DatadogServiceTag, errorTrackingEnv, from, to)
 	if err != nil {
 		if errors.Is(err, datadog.ErrUnauthorized) {
 			// Logged distinctly from a timeout/server error (spec.md's edge
@@ -306,7 +318,13 @@ func (a *SLOAnalyzer) release() {
 // context.WithTimeout(context.WithoutCancel(ctx), a.timeout) - the same
 // shape AD-014 established for the password-reset email send - so this
 // method always returns well before the goroutine's result is known.
-func (a *SLOAnalyzer) HandleTransition(ctx context.Context, svc db.Service, previousStatus, newStatus string, sloStatus datadog.SLOStatus, intervalID string) {
+// causeProvider is the current tenant's own Datadog client
+// (integrations-tenant-scope, TENANT-05), resolved fresh by the caller
+// (Poller.pollService) for whichever tenant this transition belongs to -
+// nil disables root-cause enrichment for this call only (resolveCauseHint
+// falls back to the static default installed by SetErrorCauseEnrichment,
+// which production leaves nil; see newPollerFromStoredIntegration).
+func (a *SLOAnalyzer) HandleTransition(ctx context.Context, svc db.Service, previousStatus, newStatus string, sloStatus datadog.SLOStatus, intervalID string, causeProvider errorCauseProvider) {
 	if previousStatus == newStatus {
 		return
 	}
@@ -326,11 +344,11 @@ func (a *SLOAnalyzer) HandleTransition(ctx context.Context, svc db.Service, prev
 		}
 	}
 	if enteringDegraded {
-		a.dispatchDegradedEnrichment(ctx, svc, sloStatus, intervalID)
+		a.dispatchDegradedEnrichment(ctx, svc, sloStatus, intervalID, causeProvider)
 	}
 
 	if newStatus == "outage" {
-		a.handleOutageTransition(ctx, svc, sloStatus)
+		a.handleOutageTransition(ctx, svc, sloStatus, causeProvider)
 	}
 
 	if newStatus == "operational" {
@@ -343,7 +361,7 @@ func (a *SLOAnalyzer) HandleTransition(ctx context.Context, svc db.Service, prev
 // this service - a single outage must not spawn a duplicate incident every
 // cycle it stays breached. On successful creation it dispatches the async
 // GenerateOutageDescription enrichment to refine that description.
-func (a *SLOAnalyzer) handleOutageTransition(ctx context.Context, svc db.Service, sloStatus datadog.SLOStatus) {
+func (a *SLOAnalyzer) handleOutageTransition(ctx context.Context, svc db.Service, sloStatus datadog.SLOStatus, causeProvider errorCauseProvider) {
 	_, found, err := a.incidents.HasOpenIncidentForService(ctx, svc.ID)
 	if err != nil {
 		a.logger.Error("slo-analyzer: failed to check open incident for outage service",
@@ -383,7 +401,7 @@ func (a *SLOAnalyzer) handleOutageTransition(ctx context.Context, svc db.Service
 		}
 	}
 
-	a.dispatchOutageEnrichment(ctx, svc, sloStatus, incident.ID)
+	a.dispatchOutageEnrichment(ctx, svc, sloStatus, incident.ID, causeProvider)
 }
 
 // handleRecoveryTransition dispatches a closing-comment proposal for svc's
@@ -434,7 +452,7 @@ func (a *SLOAnalyzer) handleRecoveryTransition(ctx context.Context, svc db.Servi
 // error string. Gated by tryAcquire (maxConcurrentEnrichments/
 // enrichmentCooldown) - a refused dispatch simply leaves both NULL
 // fallbacks in place.
-func (a *SLOAnalyzer) dispatchDegradedEnrichment(ctx context.Context, svc db.Service, sloStatus datadog.SLOStatus, intervalID string) {
+func (a *SLOAnalyzer) dispatchDegradedEnrichment(ctx context.Context, svc db.Service, sloStatus datadog.SLOStatus, intervalID string, causeProvider errorCauseProvider) {
 	key := "degraded:" + svc.ID
 	if !a.tryAcquire(key) {
 		a.logger.Warn("slo-analyzer: skipping degraded enrichment (cooldown or concurrency limit)",
@@ -452,9 +470,13 @@ func (a *SLOAnalyzer) dispatchDegradedEnrichment(ctx context.Context, svc db.Ser
 		// resolveCauseHint runs inside this same bounded dctx - no second
 		// timeout context is created for it (slo-root-cause-enrichment
 		// RCA-05); it's a no-op (returns "", "") unless SetErrorCauseEnrichment
-		// was called and the tenant's toggle is on.
+		// was called and the tenant's toggle is on. causeProvider was
+		// captured by this closure above, at dispatch time, on the caller's
+		// goroutine - never read lazily from a shared field here, which
+		// would race against pollCycle moving on to the next tenant
+		// (integrations-tenant-scope, TENANT-05).
 		in := buildAnalysisInput(svc, sloStatus)
-		in.CauseType, in.CauseMessage = a.resolveCauseHint(dctx, svc)
+		in.CauseType, in.CauseMessage = a.resolveCauseHint(dctx, svc, causeProvider)
 
 		analysis, err := a.llmSvc.GenerateDegradedAnalysis(dctx, in)
 		if err != nil {
@@ -486,7 +508,7 @@ func (a *SLOAnalyzer) dispatchDegradedEnrichment(ctx context.Context, svc db.Ser
 // or timeout it logs and leaves the generic description in place - it is
 // never overwritten with an error string (AI-13 fallback behavior). Gated
 // by tryAcquire, same as dispatchDegradedEnrichment.
-func (a *SLOAnalyzer) dispatchOutageEnrichment(ctx context.Context, svc db.Service, sloStatus datadog.SLOStatus, incidentID string) {
+func (a *SLOAnalyzer) dispatchOutageEnrichment(ctx context.Context, svc db.Service, sloStatus datadog.SLOStatus, incidentID string, causeProvider errorCauseProvider) {
 	key := "outage:" + incidentID
 	if !a.tryAcquire(key) {
 		a.logger.Warn("slo-analyzer: skipping outage description enrichment (cooldown or concurrency limit)",
@@ -502,9 +524,11 @@ func (a *SLOAnalyzer) dispatchOutageEnrichment(ctx context.Context, svc db.Servi
 		defer cancel()
 
 		// Same reasoning as dispatchDegradedEnrichment: resolveCauseHint
-		// runs inside this dctx, no second timeout context (RCA-05).
+		// runs inside this dctx, no second timeout context (RCA-05), and
+		// causeProvider was captured by this closure at dispatch time, not
+		// read lazily from a shared field (integrations-tenant-scope).
 		in := buildAnalysisInput(svc, sloStatus)
-		in.CauseType, in.CauseMessage = a.resolveCauseHint(dctx, svc)
+		in.CauseType, in.CauseMessage = a.resolveCauseHint(dctx, svc, causeProvider)
 
 		description, err := a.llmSvc.GenerateOutageDescription(dctx, in)
 		if err != nil {

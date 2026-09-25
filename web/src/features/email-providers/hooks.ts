@@ -27,10 +27,14 @@ export interface EmailProvidersResponse {
   page_size: number;
 }
 
-export function useEmailProviders(page: number) {
+// enabled defaults to true; pass false in saas mode, where these 4 routes
+// 404 (requireSelfHostedMode, AD-034) - fetching would only produce a
+// spurious error state for a card that isn't rendered anyway.
+export function useEmailProviders(page: number, enabled = true) {
   return useQuery({
     queryKey: ["integrations", "email", page],
     queryFn: () => apiFetch<EmailProvidersResponse>(`/api/integrations/email?page=${page}`),
+    enabled,
   });
 }
 

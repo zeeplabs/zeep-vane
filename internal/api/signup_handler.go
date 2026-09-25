@@ -59,7 +59,7 @@ type SignupHandler struct {
 	tenants         signupTenantCreator
 	memberships     signupMembershipCreator
 	verifications   signupVerificationStore
-	emailSvc        *email.Service
+	emailSvc        email.Sender
 	logger          *zap.Logger
 	devTokenLogging bool
 	adminBaseURL    string
@@ -71,7 +71,7 @@ type SignupHandler struct {
 // verification token is only logged when explicitly enabled, and the
 // verification link is built from cfg.AdminBaseURL, never the incoming
 // request's Host header.
-func NewSignupHandler(pool *db.Pool, users signupUserStore, tenants signupTenantCreator, memberships signupMembershipCreator, verifications signupVerificationStore, emailSvc *email.Service, logger *zap.Logger, devTokenLogging bool, adminBaseURL string) *SignupHandler {
+func NewSignupHandler(pool *db.Pool, users signupUserStore, tenants signupTenantCreator, memberships signupMembershipCreator, verifications signupVerificationStore, emailSvc email.Sender, logger *zap.Logger, devTokenLogging bool, adminBaseURL string) *SignupHandler {
 	return &SignupHandler{
 		pool: pool, users: users, tenants: tenants, memberships: memberships,
 		verifications: verifications, emailSvc: emailSvc, logger: logger,

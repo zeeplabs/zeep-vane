@@ -18,7 +18,6 @@ import (
 	"github.com/zeeplabs/zeep-vane/internal/connectors/datadog"
 	"github.com/zeeplabs/zeep-vane/internal/crypto"
 	"github.com/zeeplabs/zeep-vane/internal/db"
-	"github.com/zeeplabs/zeep-vane/internal/email"
 	"github.com/zeeplabs/zeep-vane/internal/llm"
 	"github.com/zeeplabs/zeep-vane/internal/logging"
 	"github.com/zeeplabs/zeep-vane/internal/notify"
@@ -257,32 +256,19 @@ func newHTTPSServer(pool *db.Pool, dsn, masterKey string, logger *zap.Logger) *h
 	}
 }
 
-// newPollerFromStoredIntegration builds a Poller from whatever Datadog
-// integration is currently connected. started is false (with a nil error)
-// if no integration has been connected yet - the poller then simply isn't
-// started; PollerManager.Restart is what lets an admin connecting Datadog
-// after boot start it without a process restart (PLD-01).
+// newPollerFromStoredIntegration builds the shared Poller. started is
+// always true now (integrations-tenant-scope, TENANT-05): `integrations` is
+// per-tenant since migration 0040, so "is Datadog connected" is no longer a
+// single installation-wide boolean the way it was pre-multi-tenancy - a
+// SaaS install always has some tenants connected and others not, and even a
+// self-hosted install's one tenant can connect after boot. The poller
+// always runs; EnableTenantDatadogClients's resolver below is what makes a
+// tenant with nothing connected yet a no-op each cycle (db.ErrNotFound),
+// not a reason to not start at all. PollerManager.Restart still exists to
+// pick up a rotated/newly-connected key sooner than the next natural tick
+// (PLD-01/PLD-05), it just no longer gates whether a poller runs at all.
 func newPollerFromStoredIntegration(ctx context.Context, pool *db.Pool, cfg config.Config, logger *zap.Logger) (p *poller.Poller, started bool, err error) {
 	integrations := db.NewIntegrationRepository(pool)
-
-	integration, err := integrations.GetDatadog(ctx)
-	if errors.Is(err, db.ErrNotFound) {
-		return nil, false, nil
-	}
-	if err != nil {
-		return nil, false, err
-	}
-
-	apiKey, err := crypto.Decrypt(cfg.MasterKey, integration.EncryptedAPIKey)
-	if err != nil {
-		return nil, false, fmt.Errorf("serve: failed to decrypt datadog api key: %w", err)
-	}
-	appKey, err := crypto.Decrypt(cfg.MasterKey, integration.EncryptedAppKey)
-	if err != nil {
-		return nil, false, fmt.Errorf("serve: failed to decrypt datadog app key: %w", err)
-	}
-
-	client := datadog.NewClient(string(apiKey), string(appKey))
 	services := db.NewServiceRepository(pool)
 	intervals := db.NewStatusIntervalRepository(pool)
 	interval := time.Duration(cfg.PollIntervalSeconds) * time.Second
@@ -301,17 +287,23 @@ func newPollerFromStoredIntegration(ctx context.Context, pool *db.Pool, cfg conf
 	}
 	analyzer.SetNotifier(notifier)
 
-	// slo-root-cause-enrichment RCA-01/RCA-07: wired unconditionally at
-	// boot, same reasoning as SetNotifier above - the runtime toggle
-	// (llm_settings.root_cause_enrichment_enabled, read via
-	// llmProviderRepo.RootCauseEnrichmentEnabled), not this wiring, gates
-	// whether resolveCauseHint ever calls out to Datadog. client already
-	// satisfies errorCauseProvider (SearchErrorTrackingIssues) and
-	// llmProviderRepo already satisfies enrichmentSettingsReader
-	// (RootCauseEnrichmentEnabled) - no adapters needed.
-	analyzer.SetErrorCauseEnrichment(llmProviderRepo, client)
+	// slo-root-cause-enrichment RCA-01/RCA-07: only the settings reader is
+	// wired statically here - llm_providers/llm_settings are already
+	// tenant-scoped via RLS on ctx (AD-024), so a single shared
+	// llmProviderRepo reference is safe. The Datadog client used for the
+	// error-tracking lookup itself is NOT wired here (nil): it is resolved
+	// fresh per tenant per cycle by EnableTenantDatadogClients below and
+	// threaded explicitly through Poller.pollService ->
+	// SLOAnalyzer.HandleTransition's causeProvider parameter, captured by
+	// each enrichment goroutine's closure at dispatch time - never a field
+	// read lazily inside the goroutine, which would race against pollCycle
+	// swapping tenants (integrations-tenant-scope). A single
+	// installation-wide client fixed here was the pre-fix bug: every
+	// tenant's poll cycle and root-cause lookup answered by whichever
+	// tenant connected Datadog first.
+	analyzer.SetErrorCauseEnrichment(llmProviderRepo, nil)
 
-	p = poller.NewPoller(services, services, intervals, integrations, client, interval, analyzer, logger)
+	p = poller.NewPoller(services, services, intervals, integrations, nil, interval, analyzer, logger)
 
 	// TENANT-04: every production poll cycle iterates tenants explicitly,
 	// one app.tenant_id-scoped transaction at a time, instead of the old
@@ -320,6 +312,32 @@ func newPollerFromStoredIntegration(ctx context.Context, pool *db.Pool, cfg conf
 	// from db.SystemTenantLister, the only caller allowed to read tenants
 	// without a tenant of its own (AD-024) - never a BYPASSRLS role.
 	p.EnableTenantIteration(db.NewSystemTenantLister(pool), poolTenantTx(pool))
+
+	// integrations-tenant-scope TENANT-05: resolves and decrypts the active
+	// tenant's own Datadog credentials fresh every cycle, inside that
+	// tenant's own app.tenant_id-scoped transaction (ctx, from
+	// EnableTenantIteration above) - GetDatadog is RLS-scoped exactly like
+	// every other tenant-scoped repository call, so this can never return
+	// another tenant's row. db.ErrNotFound (never connected yet) bubbles up
+	// unwrapped so pollCycle can tell "nothing to do this tenant this
+	// cycle" apart from a real failure.
+	p.EnableTenantDatadogClients(func(ctx context.Context) (poller.DatadogClient, error) {
+		integration, err := integrations.GetDatadog(ctx)
+		if err != nil {
+			return nil, err
+		}
+
+		apiKey, err := crypto.Decrypt(cfg.MasterKey, integration.EncryptedAPIKey)
+		if err != nil {
+			return nil, fmt.Errorf("serve: failed to decrypt datadog api key: %w", err)
+		}
+		appKey, err := crypto.Decrypt(cfg.MasterKey, integration.EncryptedAppKey)
+		if err != nil {
+			return nil, fmt.Errorf("serve: failed to decrypt datadog app key: %w", err)
+		}
+
+		return datadog.NewClient(string(apiKey), string(appKey)), nil
+	})
 
 	return p, true, nil
 }
@@ -362,11 +380,11 @@ func poolTenantTx(pool *db.Pool) poller.TenantTxFunc {
 // lifecycle (HTTP handler and poller's auto-created incidents) and the weekly
 // digest scheduler.
 func newNotifyService(pool *db.Pool, cfg config.Config, logger *zap.Logger) (*notify.Service, error) {
-	emailService, err := email.NewService(db.NewEmailProviderRepository(pool), emailProviderFactory, cfg.MasterKey, logger)
+	emailSender, err := newEmailSender(cfg, pool, logger)
 	if err != nil {
-		return nil, fmt.Errorf("serve: failed to build email service for notifications: %w", err)
+		return nil, fmt.Errorf("serve: failed to build email sender for notifications: %w", err)
 	}
-	return notify.NewService(db.NewTenantMembershipRepository(pool), db.NewNotificationPreferenceRepository(pool), emailService, cfg.AdminBaseURL, logger), nil
+	return notify.NewService(db.NewTenantMembershipRepository(pool), db.NewNotificationPreferenceRepository(pool), emailSender, cfg.AdminBaseURL, logger), nil
 }
 
 // newDigestScheduler builds the weekly digest scheduler with its production

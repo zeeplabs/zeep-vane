@@ -427,9 +427,13 @@ function DisconnectConfirmDialog({
 
 export function IntegrationsPage() {
   const { t } = useTranslation();
-  const { hasRole } = useAuth();
+  const { hasRole, deploymentMode } = useAuth();
   const canManage = hasRole(["owner", "operator"]);
-  const { data: emailData, isError: emailIsError } = useEmailProviders(1);
+  // AD-034, SAASMAIL-11 AC3: a saas tenant never connects its own email
+  // provider - the card/category simply doesn't exist in that mode, same
+  // treatment LoginPage/SignupPage already give the signup link (AD-033).
+  const showEmailProviders = deploymentMode === "self_hosted";
+  const { data: emailData, isError: emailIsError } = useEmailProviders(1, showEmailProviders);
   const byProvider = new Map(emailData?.providers.map((p) => [p.provider, p]));
 
   const [datadogDrawerOpen, setDatadogDrawerOpen] = useState(false);
@@ -452,33 +456,37 @@ export function IntegrationsPage() {
         <LLMProviderCard canManage={canManage} onConnect={() => setLlmDrawerOpen(true)} />
       </CategorySection>
 
-      <CategorySection title={t("integrations.categories.email")} count={2}>
-        <EmailProviderCard
-          id="resend"
-          status={byProvider.get("resend")}
-          isActive={emailData?.active_provider === "resend"}
-          canManage={canManage}
-          isError={emailIsError}
-          onConnect={() => setEmailDrawerProvider("resend")}
-        />
-        <EmailProviderCard
-          id="sendgrid"
-          status={byProvider.get("sendgrid")}
-          isActive={emailData?.active_provider === "sendgrid"}
-          canManage={canManage}
-          isError={emailIsError}
-          onConnect={() => setEmailDrawerProvider("sendgrid")}
-        />
-      </CategorySection>
+      {showEmailProviders && (
+        <CategorySection title={t("integrations.categories.email")} count={2}>
+          <EmailProviderCard
+            id="resend"
+            status={byProvider.get("resend")}
+            isActive={emailData?.active_provider === "resend"}
+            canManage={canManage}
+            isError={emailIsError}
+            onConnect={() => setEmailDrawerProvider("resend")}
+          />
+          <EmailProviderCard
+            id="sendgrid"
+            status={byProvider.get("sendgrid")}
+            isActive={emailData?.active_provider === "sendgrid"}
+            canManage={canManage}
+            isError={emailIsError}
+            onConnect={() => setEmailDrawerProvider("sendgrid")}
+          />
+        </CategorySection>
+      )}
 
       <ConnectDatadogDrawer open={datadogDrawerOpen} onOpenChange={setDatadogDrawerOpen} />
       <ConnectLLMProviderDrawer open={llmDrawerOpen} onOpenChange={setLlmDrawerOpen} />
-      <ConnectEmailProviderDrawer
-        provider={emailDrawerProvider}
-        onOpenChange={(open) => {
-          if (!open) setEmailDrawerProvider(null);
-        }}
-      />
+      {showEmailProviders && (
+        <ConnectEmailProviderDrawer
+          provider={emailDrawerProvider}
+          onOpenChange={(open) => {
+            if (!open) setEmailDrawerProvider(null);
+          }}
+        />
+      )}
     </div>
   );
 }

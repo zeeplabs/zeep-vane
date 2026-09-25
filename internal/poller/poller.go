@@ -2,6 +2,7 @@ package poller
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"go.uber.org/zap"
@@ -82,6 +83,30 @@ type tenantLister interface {
 // cli.poolTenantTx (internal/cli/serve.go).
 type TenantTxFunc func(ctx context.Context, tenantID string) (tenantCtx context.Context, commit func(context.Context) error, rollback func(context.Context), err error)
 
+// DatadogClient is the subset of *datadog.Client this package depends on:
+// SLO status fetch (Poller.pollService, via the embedded datadog.SLOProvider)
+// and the error-tracking cause-hint lookup (SLOAnalyzer.resolveCauseHint,
+// via the embedded errorCauseProvider) alike. Exported (unlike
+// errorCauseProvider) so a resolver built outside this package
+// (cli.newPollerFromStoredIntegration) can declare a matching return type,
+// and so this package's own tests can fake both methods on one double.
+// Satisfied by the real *datadog.Client with no adapter needed.
+type DatadogClient interface {
+	datadog.SLOProvider
+	errorCauseProvider
+}
+
+// DatadogClientResolver resolves the Datadog client for whichever tenant is
+// active on ctx (integrations-tenant-scope, TENANT-05) - production
+// resolves this by reading that tenant's own `integrations` row
+// (RLS-scoped: ctx must carry that tenant's BeginTenantTx, same as every
+// other tenant-scoped repository call) and decrypting its stored
+// credentials fresh every cycle, never a client fixed once at boot for
+// every tenant. Returns db.ErrNotFound when this tenant hasn't connected
+// Datadog yet - pollCycle treats that as "nothing to poll this tenant this
+// cycle", not a failure.
+type DatadogClientResolver func(ctx context.Context) (DatadogClient, error)
+
 // serviceStatusUpdater is the subset of *db.ServiceRepository the poller
 // depends on to persist a service's newly observed status.
 type serviceStatusUpdater interface {
@@ -125,6 +150,15 @@ type Poller struct {
 	// ambient-context poll cycle unchanged.
 	tenants  tenantLister
 	tenantTx TenantTxFunc
+
+	// resolveDatadogClient, when set via EnableTenantDatadogClients, swaps
+	// p.provider (and the causeProvider threaded into HandleTransition) for
+	// whichever tenant pollCycle is currently iterating, instead of the
+	// single client fixed at NewPoller construction
+	// (integrations-tenant-scope). nil (the default) preserves the
+	// original single ambient provider for every existing test/caller that
+	// doesn't opt in.
+	resolveDatadogClient DatadogClientResolver
 
 	// breachStreak tracks, per service ID, how many consecutive cycles in a
 	// row Datadog has reported "breached" for that service's most recent
@@ -194,6 +228,17 @@ func (p *Poller) EnableTenantIteration(tenants tenantLister, tenantTx TenantTxFu
 	p.tenantTx = tenantTx
 }
 
+// EnableTenantDatadogClients wires per-tenant Datadog credential resolution
+// (integrations-tenant-scope, TENANT-05): once set, every pollCycle
+// iteration resolves and swaps in that tenant's own Datadog client - for
+// both SLO status fetches and HandleTransition's root-cause enrichment
+// lookup - before polling its services, instead of the single client fixed
+// at NewPoller construction. A tenant whose resolve returns db.ErrNotFound
+// (hasn't connected Datadog yet) is skipped for this cycle, not an error.
+func (p *Poller) EnableTenantDatadogClients(resolve DatadogClientResolver) {
+	p.resolveDatadogClient = resolve
+}
+
 // TenantIterationEnabled reports whether EnableTenantIteration has wired
 // both a tenant lister and a tenant transaction opener, i.e. whether
 // pollCycle iterates tenants instead of falling back to the single
@@ -241,6 +286,19 @@ func (p *Poller) pollCycle(ctx context.Context) {
 		}
 		tenantCtx = tenantTxCtx
 		tenantCtx = withTenantID(tenantCtx, tenant.ID)
+
+		if p.resolveDatadogClient != nil {
+			client, err := p.resolveDatadogClient(tenantCtx)
+			if err != nil {
+				if !errors.Is(err, db.ErrNotFound) {
+					p.logger.Error("poller: failed to resolve datadog client for tenant", zap.String("tenant_id", tenant.ID), zap.Error(err))
+				}
+				rollback(tenantCtx)
+				cancel()
+				continue
+			}
+			p.provider = client
+		}
 
 		p.pollOnce(tenantCtx)
 
@@ -415,7 +473,19 @@ func (p *Poller) pollService(ctx context.Context, svc db.Service) error {
 	// cycle until the write finally succeeds - persisting first makes the
 	// transition idempotent from HandleTransition's point of view.
 	if transitioned {
-		p.analyzer.HandleTransition(ctx, svc, svc.CurrentStatus, current, status, intervalID)
+		// causeProvider is derived from p.provider (already the current
+		// tenant's own client when EnableTenantDatadogClients is wired,
+		// integrations-tenant-scope) rather than read from a field inside
+		// HandleTransition's own async enrichment goroutine - the goroutine
+		// captures this value in its closure at dispatch time, so it can
+		// never race against pollCycle swapping p.provider for the next
+		// tenant while an earlier tenant's enrichment call is still in
+		// flight.
+		var causeProvider errorCauseProvider
+		if cp, ok := p.provider.(errorCauseProvider); ok {
+			causeProvider = cp
+		}
+		p.analyzer.HandleTransition(ctx, svc, svc.CurrentStatus, current, status, intervalID, causeProvider)
 	}
 
 	return nil

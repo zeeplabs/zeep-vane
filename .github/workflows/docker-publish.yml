@@ -1,9 +1,11 @@
 name: Docker Publish
 
+# Auto-trigger disabled: build/push/release moved to CircleCI
+# (.circleci/config.yml, workflow "release"). Kept in the repo,
+# workflow_dispatch-only, to run by hand if it's ever needed to compare
+# against a CircleCI result.
 on:
-  push:
-    tags:
-      - "v*"
+  workflow_dispatch: {}
 
 env:
   REGISTRY: ghcr.io

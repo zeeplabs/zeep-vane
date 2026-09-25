@@ -34,12 +34,14 @@ func NewIntegrationRepository(pool *Pool) *IntegrationRepository {
 
 // UpsertDatadog stores the Datadog integration's encrypted keys as active,
 // creating the row on first connect or overwriting it on reconnect - the
-// `provider` column is unique, so there is always at most one.
+// `(tenant_id, provider)` pair is unique, so there is always at most one per
+// tenant (0040_integrations_tenant_scope; RLS scopes tenant_id implicitly,
+// same as email_providers/llm_providers).
 func (r *IntegrationRepository) UpsertDatadog(ctx context.Context, encryptedAPIKey, encryptedAppKey []byte) error {
 	_, err := r.pool.Exec(ctx,
 		`INSERT INTO integrations (provider, encrypted_api_key, encrypted_app_key, status)
 		 VALUES ('datadog', $1, $2, 'active')
-		 ON CONFLICT (provider) DO UPDATE SET
+		 ON CONFLICT (tenant_id, provider) DO UPDATE SET
 		   encrypted_api_key = EXCLUDED.encrypted_api_key,
 		   encrypted_app_key = EXCLUDED.encrypted_app_key,
 		   status = 'active',

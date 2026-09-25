@@ -274,7 +274,7 @@ func TestSLOAnalyzer_HandleTransition_NoOp_SameStatus_CallsNothing(t *testing.T)
 	services := &fakeStatusAnalysisWriter{}
 	a := newTestAnalyzer(incidents, services, &fakeLLMGenerator{}, time.Second)
 
-	a.HandleTransition(context.Background(), db.Service{ID: "svc-1", Name: "API"}, "operational", "operational", datadog.SLOStatus{}, "test-interval")
+	a.HandleTransition(context.Background(), db.Service{ID: "svc-1", Name: "API"}, "operational", "operational", datadog.SLOStatus{}, "test-interval", nil)
 
 	createCalls, _, _ := incidents.snapshot()
 	if createCalls != 0 {
@@ -299,7 +299,7 @@ func TestSLOAnalyzer_HandleTransition_NoOp_SameStatus_Degraded_CallsNothing(t *t
 	services := &fakeStatusAnalysisWriter{}
 	a := newTestAnalyzer(incidents, services, &fakeLLMGenerator{}, time.Second)
 
-	a.HandleTransition(context.Background(), db.Service{ID: "svc-1", Name: "API"}, "degraded", "degraded", datadog.SLOStatus{}, "test-interval")
+	a.HandleTransition(context.Background(), db.Service{ID: "svc-1", Name: "API"}, "degraded", "degraded", datadog.SLOStatus{}, "test-interval", nil)
 
 	if len(services.snapshot()) != 0 {
 		t.Errorf("UpdateStatusAnalysis called %d times, want 0 (no-op guard must prevent re-clearing/re-dispatching for an unchanged degraded status)", len(services.snapshot()))
@@ -319,7 +319,7 @@ func TestSLOAnalyzer_HandleTransition_NoOp_SameStatus_Outage_CallsNothing(t *tes
 	services := &fakeStatusAnalysisWriter{}
 	a := newTestAnalyzer(incidents, services, &fakeLLMGenerator{}, time.Second)
 
-	a.HandleTransition(context.Background(), db.Service{ID: "svc-1", Name: "API"}, "outage", "outage", datadog.SLOStatus{}, "test-interval")
+	a.HandleTransition(context.Background(), db.Service{ID: "svc-1", Name: "API"}, "outage", "outage", datadog.SLOStatus{}, "test-interval", nil)
 
 	createCalls, setDescriptionCalls, _ := incidents.snapshot()
 	if createCalls != 0 {
@@ -336,7 +336,7 @@ func TestSLOAnalyzer_HandleTransition_OutageNoExistingIncident_CreatesAutoIncide
 	llmSvc := &fakeLLMGenerator{outageResult: "A real outage description."}
 	a := newTestAnalyzer(incidents, services, llmSvc, time.Second)
 
-	a.HandleTransition(context.Background(), db.Service{ID: "svc-1", Name: "API"}, "operational", "outage", datadog.SLOStatus{}, "test-interval")
+	a.HandleTransition(context.Background(), db.Service{ID: "svc-1", Name: "API"}, "operational", "outage", datadog.SLOStatus{}, "test-interval", nil)
 
 	createCalls, _, _ := incidents.snapshot()
 	if createCalls != 1 {
@@ -365,7 +365,7 @@ func TestSLOAnalyzer_HandleTransition_OutageAlreadyOpenIncident_CreatesNothing(t
 	services := &fakeStatusAnalysisWriter{}
 	a := newTestAnalyzer(incidents, services, &fakeLLMGenerator{}, time.Second)
 
-	a.HandleTransition(context.Background(), db.Service{ID: "svc-1", Name: "API"}, "operational", "outage", datadog.SLOStatus{}, "test-interval")
+	a.HandleTransition(context.Background(), db.Service{ID: "svc-1", Name: "API"}, "operational", "outage", datadog.SLOStatus{}, "test-interval", nil)
 
 	createCalls, _, _ := incidents.snapshot()
 	if createCalls != 0 {
@@ -379,7 +379,7 @@ func TestSLOAnalyzer_HandleTransition_IntoDegraded_ClearsStatusAnalysisSynchrono
 	llmSvc := &fakeLLMGenerator{degradedDelay: 50 * time.Millisecond, degradedResult: "tooltip text"}
 	a := newTestAnalyzer(incidents, services, llmSvc, time.Second)
 
-	a.HandleTransition(context.Background(), db.Service{ID: "svc-1", Name: "API"}, "operational", "degraded", datadog.SLOStatus{}, "test-interval")
+	a.HandleTransition(context.Background(), db.Service{ID: "svc-1", Name: "API"}, "operational", "degraded", datadog.SLOStatus{}, "test-interval", nil)
 
 	// The synchronous clear must be visible immediately, before the async
 	// enrichment (delayed 50ms above) has had a chance to run.
@@ -397,7 +397,7 @@ func TestSLOAnalyzer_HandleTransition_AwayFromDegraded_ClearsStatusAnalysis(t *t
 	services := &fakeStatusAnalysisWriter{}
 	a := newTestAnalyzer(incidents, services, &fakeLLMGenerator{}, time.Second)
 
-	a.HandleTransition(context.Background(), db.Service{ID: "svc-1", Name: "API"}, "degraded", "operational", datadog.SLOStatus{}, "test-interval")
+	a.HandleTransition(context.Background(), db.Service{ID: "svc-1", Name: "API"}, "degraded", "operational", datadog.SLOStatus{}, "test-interval", nil)
 
 	calls := services.snapshot()
 	if len(calls) != 1 {
@@ -413,7 +413,7 @@ func TestSLOAnalyzer_HandleTransition_DegradedToOutage_ClearsStatusAnalysisAndCr
 	services := &fakeStatusAnalysisWriter{}
 	a := newTestAnalyzer(incidents, services, &fakeLLMGenerator{}, time.Second)
 
-	a.HandleTransition(context.Background(), db.Service{ID: "svc-1", Name: "API"}, "degraded", "outage", datadog.SLOStatus{}, "test-interval")
+	a.HandleTransition(context.Background(), db.Service{ID: "svc-1", Name: "API"}, "degraded", "outage", datadog.SLOStatus{}, "test-interval", nil)
 
 	if len(services.snapshot()) != 1 {
 		t.Errorf("UpdateStatusAnalysis called %d times, want 1 (leaving degraded)", len(services.snapshot()))
@@ -433,7 +433,7 @@ func TestSLOAnalyzer_HandleTransition_OperationalWithOpenIncident_DispatchesClos
 	llmSvc := &fakeLLMGenerator{closingResult: "Service has recovered."}
 	a := newTestAnalyzer(incidents, services, llmSvc, time.Second)
 
-	a.HandleTransition(context.Background(), db.Service{ID: "svc-1", Name: "API"}, "outage", "operational", datadog.SLOStatus{}, "test-interval")
+	a.HandleTransition(context.Background(), db.Service{ID: "svc-1", Name: "API"}, "outage", "operational", datadog.SLOStatus{}, "test-interval", nil)
 
 	createCalls, _, _ := incidents.snapshot()
 	if createCalls != 0 {
@@ -452,7 +452,7 @@ func TestSLOAnalyzer_HandleTransition_OperationalWithNoOpenIncident_DoesNothing(
 	services := &fakeStatusAnalysisWriter{}
 	a := newTestAnalyzer(incidents, services, &fakeLLMGenerator{}, time.Second)
 
-	a.HandleTransition(context.Background(), db.Service{ID: "svc-1", Name: "API"}, "degraded", "operational", datadog.SLOStatus{}, "test-interval")
+	a.HandleTransition(context.Background(), db.Service{ID: "svc-1", Name: "API"}, "degraded", "operational", datadog.SLOStatus{}, "test-interval", nil)
 
 	createCalls, _, pendingCalls := incidents.snapshot()
 	if createCalls != 0 {
@@ -476,7 +476,7 @@ func TestSLOAnalyzer_HandleTransition_RecoveryWithOtherLinkedServiceStillDown_Sk
 	services := &fakeStatusAnalysisWriter{}
 	a := newTestAnalyzer(incidents, services, &fakeLLMGenerator{}, time.Second)
 
-	a.HandleTransition(context.Background(), db.Service{ID: "svc-1", Name: "API"}, "outage", "operational", datadog.SLOStatus{}, "test-interval")
+	a.HandleTransition(context.Background(), db.Service{ID: "svc-1", Name: "API"}, "outage", "operational", datadog.SLOStatus{}, "test-interval", nil)
 
 	_, _, pendingCalls := incidents.snapshot()
 	if len(pendingCalls) != 0 {
@@ -489,7 +489,7 @@ func TestSLOAnalyzer_HandleTransition_HasOpenIncidentError_LogsAndDoesNotPanic(t
 	services := &fakeStatusAnalysisWriter{}
 	a := newTestAnalyzer(incidents, services, &fakeLLMGenerator{}, time.Second)
 
-	a.HandleTransition(context.Background(), db.Service{ID: "svc-1", Name: "API"}, "operational", "outage", datadog.SLOStatus{}, "test-interval")
+	a.HandleTransition(context.Background(), db.Service{ID: "svc-1", Name: "API"}, "operational", "outage", datadog.SLOStatus{}, "test-interval", nil)
 
 	createCalls, _, _ := incidents.snapshot()
 	if createCalls != 0 {
@@ -503,7 +503,7 @@ func TestSLOAnalyzer_HandleTransition_CreateError_LogsAndDoesNotPanic(t *testing
 	a := newTestAnalyzer(incidents, services, &fakeLLMGenerator{}, time.Second)
 
 	// Must not panic.
-	a.HandleTransition(context.Background(), db.Service{ID: "svc-1", Name: "API"}, "operational", "outage", datadog.SLOStatus{}, "test-interval")
+	a.HandleTransition(context.Background(), db.Service{ID: "svc-1", Name: "API"}, "operational", "outage", datadog.SLOStatus{}, "test-interval", nil)
 }
 
 // --- T14: async enrichment dispatch ---
@@ -514,7 +514,7 @@ func TestSLOAnalyzer_DegradedEnrichment_Success_UpdatesStatusAnalysis(t *testing
 	llmSvc := &fakeLLMGenerator{degradedResult: "SLO is approaching its error budget limit."}
 	a := newTestAnalyzer(incidents, services, llmSvc, time.Second)
 
-	a.HandleTransition(context.Background(), db.Service{ID: "svc-1", Name: "API"}, "operational", "degraded", datadog.SLOStatus{}, "test-interval")
+	a.HandleTransition(context.Background(), db.Service{ID: "svc-1", Name: "API"}, "operational", "degraded", datadog.SLOStatus{}, "test-interval", nil)
 
 	// Two calls: the synchronous clear, then the async write.
 	waitOrTimeout(t, services.done)
@@ -543,14 +543,14 @@ func TestSLOAnalyzer_DegradedEnrichment_WritesToIntervalCapturedAtDispatch(t *te
 	llmSvc := &fakeLLMGenerator{degradedResult: "Latência elevada.", degradedDelay: 100 * time.Millisecond}
 	a := NewSLOAnalyzer(incidents, services, intervals, llmSvc, time.Second, zap.NewNop())
 
-	a.HandleTransition(context.Background(), db.Service{ID: "svc-1", Name: "API"}, "operational", "degraded", datadog.SLOStatus{}, "interval-A")
+	a.HandleTransition(context.Background(), db.Service{ID: "svc-1", Name: "API"}, "operational", "degraded", datadog.SLOStatus{}, "interval-A", nil)
 
 	// Before the delayed goroutine above finishes, simulate the service
 	// recovering (closes interval-A, opens interval-B) - HandleTransition
 	// itself takes no interval action on this branch besides the
 	// synchronous status_analysis clear, mirroring what pollService would
 	// have already done at the DB layer.
-	a.HandleTransition(context.Background(), db.Service{ID: "svc-1", Name: "API"}, "degraded", "operational", datadog.SLOStatus{}, "interval-B")
+	a.HandleTransition(context.Background(), db.Service{ID: "svc-1", Name: "API"}, "degraded", "operational", datadog.SLOStatus{}, "interval-B", nil)
 
 	waitOrTimeout(t, intervals.done)
 
@@ -572,7 +572,7 @@ func TestSLOAnalyzer_DegradedEnrichment_Failure_LeavesStatusAnalysisNull(t *test
 	llmSvc := &fakeLLMGenerator{degradedErr: errors.New("provider unreachable")}
 	a := newTestAnalyzer(incidents, services, llmSvc, time.Second)
 
-	a.HandleTransition(context.Background(), db.Service{ID: "svc-1", Name: "API"}, "operational", "degraded", datadog.SLOStatus{}, "test-interval")
+	a.HandleTransition(context.Background(), db.Service{ID: "svc-1", Name: "API"}, "operational", "degraded", datadog.SLOStatus{}, "test-interval", nil)
 
 	// Only the synchronous clear fires - GenerateDegradedAnalysis fails, so
 	// the goroutine returns before calling UpdateStatusAnalysis a second
@@ -597,7 +597,7 @@ func TestSLOAnalyzer_DegradedEnrichment_EmptyResult_LeavesStatusAnalysisNull(t *
 	llmSvc := &fakeLLMGenerator{degradedResult: "   "}
 	a := newTestAnalyzer(incidents, services, llmSvc, time.Second)
 
-	a.HandleTransition(context.Background(), db.Service{ID: "svc-1", Name: "API"}, "operational", "degraded", datadog.SLOStatus{}, "test-interval")
+	a.HandleTransition(context.Background(), db.Service{ID: "svc-1", Name: "API"}, "operational", "degraded", datadog.SLOStatus{}, "test-interval", nil)
 
 	// Only the synchronous clear fires - the goroutine must discard the
 	// whitespace-only result instead of writing it.
@@ -616,7 +616,7 @@ func TestSLOAnalyzer_OutageEnrichment_EmptyResult_LeavesGenericDescriptionInPlac
 	llmSvc := &fakeLLMGenerator{outageResult: ""}
 	a := newTestAnalyzer(incidents, services, llmSvc, time.Second)
 
-	a.HandleTransition(context.Background(), db.Service{ID: "svc-1", Name: "API"}, "operational", "outage", datadog.SLOStatus{}, "test-interval")
+	a.HandleTransition(context.Background(), db.Service{ID: "svc-1", Name: "API"}, "operational", "outage", datadog.SLOStatus{}, "test-interval", nil)
 
 	time.Sleep(50 * time.Millisecond) // let the goroutine finish
 
@@ -632,7 +632,7 @@ func TestSLOAnalyzer_ClosingCommentEnrichment_EmptyResult_LeavesIncidentOpenWith
 	llmSvc := &fakeLLMGenerator{closingResult: "  \n "}
 	a := newTestAnalyzer(incidents, services, llmSvc, time.Second)
 
-	a.HandleTransition(context.Background(), db.Service{ID: "svc-1", Name: "API"}, "outage", "operational", datadog.SLOStatus{}, "test-interval")
+	a.HandleTransition(context.Background(), db.Service{ID: "svc-1", Name: "API"}, "outage", "operational", datadog.SLOStatus{}, "test-interval", nil)
 
 	time.Sleep(50 * time.Millisecond) // let the goroutine finish
 
@@ -648,7 +648,7 @@ func TestSLOAnalyzer_OutageEnrichment_Success_OverwritesGenericDescription(t *te
 	llmSvc := &fakeLLMGenerator{outageResult: "The payments service is returning 5xx errors for most requests."}
 	a := newTestAnalyzer(incidents, services, llmSvc, time.Second)
 
-	a.HandleTransition(context.Background(), db.Service{ID: "svc-1", Name: "API"}, "operational", "outage", datadog.SLOStatus{}, "test-interval")
+	a.HandleTransition(context.Background(), db.Service{ID: "svc-1", Name: "API"}, "operational", "outage", datadog.SLOStatus{}, "test-interval", nil)
 
 	waitOrTimeout(t, incidents.setDescriptionDone)
 	_, setDescriptionCalls, _ := incidents.snapshot()
@@ -667,7 +667,7 @@ func TestSLOAnalyzer_OutageEnrichment_Failure_LeavesGenericDescriptionInPlace(t 
 	llmSvc := &fakeLLMGenerator{outageErr: errors.New("provider unreachable")}
 	a := newTestAnalyzer(incidents, services, llmSvc, time.Second)
 
-	a.HandleTransition(context.Background(), db.Service{ID: "svc-1", Name: "API"}, "operational", "outage", datadog.SLOStatus{}, "test-interval")
+	a.HandleTransition(context.Background(), db.Service{ID: "svc-1", Name: "API"}, "operational", "outage", datadog.SLOStatus{}, "test-interval", nil)
 
 	time.Sleep(50 * time.Millisecond) // let the failed goroutine finish
 
@@ -687,7 +687,7 @@ func TestSLOAnalyzer_ClosingCommentEnrichment_Failure_LeavesIncidentOpenWithNoPr
 	llmSvc := &fakeLLMGenerator{closingErr: errors.New("provider unreachable")}
 	a := newTestAnalyzer(incidents, services, llmSvc, time.Second)
 
-	a.HandleTransition(context.Background(), db.Service{ID: "svc-1", Name: "API"}, "outage", "operational", datadog.SLOStatus{}, "test-interval")
+	a.HandleTransition(context.Background(), db.Service{ID: "svc-1", Name: "API"}, "outage", "operational", datadog.SLOStatus{}, "test-interval", nil)
 
 	time.Sleep(50 * time.Millisecond) // let the failed goroutine finish
 
@@ -712,7 +712,7 @@ func TestSLOAnalyzer_HandleTransition_ReturnsWellBeforeBlockedLLMCallUnblocks(t 
 	a := newTestAnalyzer(incidents, services, llmSvc, 5*time.Second)
 
 	start := time.Now()
-	a.HandleTransition(context.Background(), db.Service{ID: "svc-1", Name: "API"}, "operational", "degraded", datadog.SLOStatus{}, "test-interval")
+	a.HandleTransition(context.Background(), db.Service{ID: "svc-1", Name: "API"}, "operational", "degraded", datadog.SLOStatus{}, "test-interval", nil)
 	elapsed := time.Since(start)
 
 	if elapsed > 200*time.Millisecond {
@@ -745,7 +745,7 @@ func TestSLOAnalyzer_AutoCreatedOutage_NotifiesIncidentOpened(t *testing.T) {
 	a.SetNotifier(notifier)
 
 	ctx := withTenantID(context.Background(), "tenant-1")
-	a.HandleTransition(ctx, db.Service{ID: "svc-1", Name: "API"}, "operational", "outage", datadog.SLOStatus{}, "test-interval")
+	a.HandleTransition(ctx, db.Service{ID: "svc-1", Name: "API"}, "operational", "outage", datadog.SLOStatus{}, "test-interval", nil)
 
 	if len(notifier.tenants) != 1 {
 		t.Fatalf("notifications fired = %d, want exactly 1", len(notifier.tenants))
@@ -771,7 +771,7 @@ func TestSLOAnalyzer_AutoCreatedOutage_NoTenantContext_NoNotify(t *testing.T) {
 	a := newTestAnalyzer(incidents, &fakeStatusAnalysisWriter{}, &fakeLLMGenerator{}, time.Second)
 	a.SetNotifier(notifier)
 
-	a.HandleTransition(context.Background(), db.Service{ID: "svc-1", Name: "API"}, "operational", "outage", datadog.SLOStatus{}, "test-interval")
+	a.HandleTransition(context.Background(), db.Service{ID: "svc-1", Name: "API"}, "operational", "outage", datadog.SLOStatus{}, "test-interval", nil)
 
 	if len(notifier.tenants) != 0 {
 		t.Errorf("notifications fired = %d, want 0 without a tenant context", len(notifier.tenants))
@@ -788,7 +788,7 @@ func TestSLOAnalyzer_OutageAlreadyOpenIncident_NoNotify(t *testing.T) {
 	a.SetNotifier(notifier)
 
 	ctx := withTenantID(context.Background(), "tenant-1")
-	a.HandleTransition(ctx, db.Service{ID: "svc-1", Name: "API"}, "operational", "outage", datadog.SLOStatus{}, "test-interval")
+	a.HandleTransition(ctx, db.Service{ID: "svc-1", Name: "API"}, "operational", "outage", datadog.SLOStatus{}, "test-interval", nil)
 
 	if len(notifier.tenants) != 0 {
 		t.Errorf("notifications fired = %d, want 0 when no new incident was created", len(notifier.tenants))
@@ -805,7 +805,7 @@ func TestSLOAnalyzer_AutoCreatedOutage_NotifierError_StillCreatesIncident(t *tes
 	a.SetNotifier(notifier)
 
 	ctx := withTenantID(context.Background(), "tenant-1")
-	a.HandleTransition(ctx, db.Service{ID: "svc-1", Name: "API"}, "operational", "outage", datadog.SLOStatus{}, "test-interval")
+	a.HandleTransition(ctx, db.Service{ID: "svc-1", Name: "API"}, "operational", "outage", datadog.SLOStatus{}, "test-interval", nil)
 
 	createCalls, _, _ := incidents.snapshot()
 	if createCalls != 1 {
@@ -856,7 +856,7 @@ func metricSLOService() db.Service {
 func TestSLOAnalyzer_ResolveCauseHint_Unset_ReturnsEmpty(t *testing.T) {
 	a := newTestAnalyzer(&fakeIncidentStore{}, &fakeStatusAnalysisWriter{}, &fakeLLMGenerator{}, time.Second)
 
-	causeType, causeMessage := a.resolveCauseHint(context.Background(), metricSLOService())
+	causeType, causeMessage := a.resolveCauseHint(context.Background(), metricSLOService(), nil)
 
 	if causeType != "" || causeMessage != "" {
 		t.Errorf("resolveCauseHint = (%q, %q), want (\"\", \"\") when SetErrorCauseEnrichment was never called", causeType, causeMessage)
@@ -870,7 +870,7 @@ func TestSLOAnalyzer_ResolveCauseHint_ToggleOff_ReturnsEmptyAndSkipsProvider(t *
 	provider := &fakeErrorCauseProvider{found: true, hint: datadog.CauseHint{ErrorType: "X", ErrorMessage: "Y"}}
 	a.SetErrorCauseEnrichment(&fakeEnrichmentSettingsReader{enabled: false}, provider)
 
-	causeType, causeMessage := a.resolveCauseHint(context.Background(), metricSLOService())
+	causeType, causeMessage := a.resolveCauseHint(context.Background(), metricSLOService(), nil)
 
 	if causeType != "" || causeMessage != "" {
 		t.Errorf("resolveCauseHint = (%q, %q), want (\"\", \"\") when the toggle is off", causeType, causeMessage)
@@ -889,7 +889,7 @@ func TestSLOAnalyzer_ResolveCauseHint_WrongSLOType_ReturnsEmptyAndSkipsProvider(
 
 	svc := metricSLOService()
 	svc.SLOType = "monitor"
-	causeType, causeMessage := a.resolveCauseHint(context.Background(), svc)
+	causeType, causeMessage := a.resolveCauseHint(context.Background(), svc, nil)
 
 	if causeType != "" || causeMessage != "" {
 		t.Errorf("resolveCauseHint = (%q, %q), want (\"\", \"\") for a monitor-type SLO", causeType, causeMessage)
@@ -909,7 +909,7 @@ func TestSLOAnalyzer_ResolveCauseHint_NoServiceTag_ReturnsEmptyAndSkipsProvider(
 
 	svc := metricSLOService()
 	svc.DatadogServiceTag = ""
-	causeType, causeMessage := a.resolveCauseHint(context.Background(), svc)
+	causeType, causeMessage := a.resolveCauseHint(context.Background(), svc, nil)
 
 	if causeType != "" || causeMessage != "" {
 		t.Errorf("resolveCauseHint = (%q, %q), want (\"\", \"\") when DatadogServiceTag is empty", causeType, causeMessage)
@@ -927,7 +927,7 @@ func TestSLOAnalyzer_ResolveCauseHint_ProviderError_ReturnsEmpty(t *testing.T) {
 	provider := &fakeErrorCauseProvider{err: datadog.ErrUnauthorized}
 	a.SetErrorCauseEnrichment(&fakeEnrichmentSettingsReader{enabled: true}, provider)
 
-	causeType, causeMessage := a.resolveCauseHint(context.Background(), metricSLOService())
+	causeType, causeMessage := a.resolveCauseHint(context.Background(), metricSLOService(), nil)
 
 	if causeType != "" || causeMessage != "" {
 		t.Errorf("resolveCauseHint = (%q, %q), want (\"\", \"\") when the provider errors", causeType, causeMessage)
@@ -941,7 +941,7 @@ func TestSLOAnalyzer_ResolveCauseHint_NotFound_ReturnsEmpty(t *testing.T) {
 	provider := &fakeErrorCauseProvider{found: false}
 	a.SetErrorCauseEnrichment(&fakeEnrichmentSettingsReader{enabled: true}, provider)
 
-	causeType, causeMessage := a.resolveCauseHint(context.Background(), metricSLOService())
+	causeType, causeMessage := a.resolveCauseHint(context.Background(), metricSLOService(), nil)
 
 	if causeType != "" || causeMessage != "" {
 		t.Errorf("resolveCauseHint = (%q, %q), want (\"\", \"\") when the query finds nothing", causeType, causeMessage)
@@ -960,7 +960,7 @@ func TestSLOAnalyzer_ResolveCauseHint_Success_ReturnsCauseTypeAndMessage(t *test
 	}
 	a.SetErrorCauseEnrichment(&fakeEnrichmentSettingsReader{enabled: true}, provider)
 
-	causeType, causeMessage := a.resolveCauseHint(context.Background(), metricSLOService())
+	causeType, causeMessage := a.resolveCauseHint(context.Background(), metricSLOService(), nil)
 
 	if causeType != "MongooseError" || causeMessage != "Operation timed out" {
 		t.Errorf("resolveCauseHint = (%q, %q), want (%q, %q)", causeType, causeMessage, "MongooseError", "Operation timed out")
@@ -994,7 +994,7 @@ func TestSLOAnalyzer_DegradedEnrichment_CausePopulated_PassesCauseIntoAnalysisIn
 	}
 	a.SetErrorCauseEnrichment(&fakeEnrichmentSettingsReader{enabled: true}, provider)
 
-	a.HandleTransition(context.Background(), metricSLOService(), "operational", "degraded", datadog.SLOStatus{}, "test-interval")
+	a.HandleTransition(context.Background(), metricSLOService(), "operational", "degraded", datadog.SLOStatus{}, "test-interval", nil)
 
 	waitOrTimeout(t, services.done) // synchronous clear
 	waitOrTimeout(t, services.done) // async write, after Generate* ran
@@ -1002,6 +1002,46 @@ func TestSLOAnalyzer_DegradedEnrichment_CausePopulated_PassesCauseIntoAnalysisIn
 	in := llmSvc.snapshotDegradedInput()
 	if in.CauseType != "MongooseError" || in.CauseMessage != "Operation timed out" {
 		t.Errorf("GenerateDegradedAnalysis received CauseType=%q CauseMessage=%q, want %q/%q", in.CauseType, in.CauseMessage, "MongooseError", "Operation timed out")
+	}
+}
+
+// TestSLOAnalyzer_HandleTransition_ExplicitCauseProvider_OverridesStaticDefault
+// covers integrations-tenant-scope (TENANT-05): the caller-supplied
+// causeProvider passed to HandleTransition - Poller.pollService's per-tenant
+// resolved Datadog client, in production - must win over whatever static
+// default SetErrorCauseEnrichment installed at boot, never the reverse.
+// This is what makes per-tenant Datadog credentials actually reach
+// root-cause enrichment instead of one installation-wide client answering
+// every tenant's lookup (the pre-fix bug).
+func TestSLOAnalyzer_HandleTransition_ExplicitCauseProvider_OverridesStaticDefault(t *testing.T) {
+	incidents := &fakeIncidentStore{openIncidents: map[string]string{}}
+	services := &fakeStatusAnalysisWriter{done: make(chan struct{}, 2)}
+	llmSvc := &fakeLLMGenerator{degradedResult: "tooltip text"}
+	a := newTestAnalyzer(incidents, services, llmSvc, time.Second)
+
+	staticProvider := &fakeErrorCauseProvider{
+		found: true,
+		hint:  datadog.CauseHint{ErrorType: "WrongTenantError", ErrorMessage: "must never surface"},
+	}
+	a.SetErrorCauseEnrichment(&fakeEnrichmentSettingsReader{enabled: true}, staticProvider)
+
+	explicitProvider := &fakeErrorCauseProvider{
+		found: true,
+		hint:  datadog.CauseHint{ErrorType: "RightTenantError", ErrorMessage: "the calling tenant's own cause"},
+	}
+
+	a.HandleTransition(context.Background(), metricSLOService(), "operational", "degraded", datadog.SLOStatus{}, "test-interval", explicitProvider)
+
+	waitOrTimeout(t, services.done) // synchronous clear
+	waitOrTimeout(t, services.done) // async write, after Generate* ran
+
+	in := llmSvc.snapshotDegradedInput()
+	if in.CauseType != "RightTenantError" || in.CauseMessage != "the calling tenant's own cause" {
+		t.Fatalf("GenerateDegradedAnalysis received CauseType=%q CauseMessage=%q, want the explicit per-call provider's hint (%q/%q), not the static SetErrorCauseEnrichment default",
+			in.CauseType, in.CauseMessage, "RightTenantError", "the calling tenant's own cause")
+	}
+	if staticProvider.lastService != "" {
+		t.Errorf("static provider was queried (lastService=%q), want it never called once an explicit provider is supplied", staticProvider.lastService)
 	}
 }
 
@@ -1018,7 +1058,7 @@ func TestSLOAnalyzer_OutageEnrichment_CausePopulated_PassesCauseIntoAnalysisInpu
 	}
 	a.SetErrorCauseEnrichment(&fakeEnrichmentSettingsReader{enabled: true}, provider)
 
-	a.HandleTransition(context.Background(), metricSLOService(), "operational", "outage", datadog.SLOStatus{}, "test-interval")
+	a.HandleTransition(context.Background(), metricSLOService(), "operational", "outage", datadog.SLOStatus{}, "test-interval", nil)
 
 	waitOrTimeout(t, incidents.setDescriptionDone)
 
@@ -1042,14 +1082,14 @@ func TestSLOAnalyzer_DegradedEnrichment_CauseEnrichmentEnabled_StillRespectsCool
 	a.SetErrorCauseEnrichment(&fakeEnrichmentSettingsReader{enabled: true}, provider)
 
 	svc := metricSLOService()
-	a.HandleTransition(context.Background(), svc, "operational", "degraded", datadog.SLOStatus{}, "interval-A")
+	a.HandleTransition(context.Background(), svc, "operational", "degraded", datadog.SLOStatus{}, "interval-A", nil)
 	waitOrTimeout(t, services.done) // synchronous clear
 	waitOrTimeout(t, services.done) // async write
 
 	// Same dedupe key ("degraded:"+svc.ID) dispatched again immediately -
 	// enrichmentCooldown (2 min) must refuse this second one, exactly as it
 	// did before root-cause enrichment existed.
-	a.HandleTransition(context.Background(), svc, "operational", "degraded", datadog.SLOStatus{}, "interval-B")
+	a.HandleTransition(context.Background(), svc, "operational", "degraded", datadog.SLOStatus{}, "interval-B", nil)
 
 	calls := services.snapshot()
 	if len(calls) != 3 {
