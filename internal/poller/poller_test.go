@@ -104,14 +104,36 @@ func createTestService(t *testing.T, pool *db.Pool, services *db.ServiceReposito
 
 // createTestIntegration seeds an active Datadog integration row so
 // MarkDatadogInvalid has a row to update, and cleans it up afterwards.
+// integrations.tenant_id is NOT NULL since 0040_integrations_tenant_scope -
+// UpsertDatadog's INSERT relies on the column's own DEFAULT (the session's
+// app.tenant_id GUC) to fill it in, so the insert itself needs a real
+// tenant-scoped transaction. This suite's later MarkDatadogInvalid/
+// MarkDatadogChecked calls (via pollOnce's plain context.Background())
+// don't need one themselves: they're UPDATEs that never touch tenant_id,
+// and this suite's pool connection is the disposable container's superuser
+// role, which bypasses the FORCE ROW LEVEL SECURITY visibility filter
+// entirely (see rls_test.go's rlsTestRole doc comment) - so an unfiltered
+// UPDATE ... WHERE provider = 'datadog' still reaches the row regardless of
+// which tenant inserted it. This suite tests pollOnce's own plumbing, not
+// tenant isolation (that's rls_test.go's job), so a throwaway tenant
+// independent of the service's own is sufficient.
 func createTestIntegration(t *testing.T, pool *db.Pool, dsn string, integrations *db.IntegrationRepository) {
 	t.Helper()
 	ctx := context.Background()
 
 	dbtest.LockDatadogIntegration(t, ctx, dsn)
 
-	if err := integrations.UpsertDatadog(ctx, []byte("encrypted-key"), []byte("encrypted-app-key")); err != nil {
+	tenantID := seedTestTenant(t, pool)
+	tx, err := pool.BeginTenantTx(ctx, "", tenantID)
+	if err != nil {
+		t.Fatalf("BeginTenantTx() returned unexpected error: %v", err)
+	}
+	if err := integrations.UpsertDatadog(db.WithTenantTx(ctx, tx), []byte("encrypted-key"), []byte("encrypted-app-key")); err != nil {
+		_ = tx.Rollback(ctx)
 		t.Fatalf("UpsertDatadog() returned unexpected error: %v", err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		t.Fatalf("commit returned unexpected error: %v", err)
 	}
 	t.Cleanup(func() { _, _ = pool.Exec(ctx, "DELETE FROM integrations WHERE provider = 'datadog'") })
 }

@@ -85,9 +85,16 @@ func TestPollerManager_Restart_WithStoredIntegration_StartsAndTracksRunning(t *t
 	}
 }
 
-// TestPollerManager_Restart_NoIntegration_ReturnsFalseWithoutError covers
-// PLD-02/PLD-03's "nothing to start" contract at the manager level.
-func TestPollerManager_Restart_NoIntegration_ReturnsFalseWithoutError(t *testing.T) {
+// TestPollerManager_Restart_NoIntegrationAnywhere_StillStartsRunning covers
+// integrations-tenant-scope's (TENANT-05) simplification of PLD-02/PLD-03:
+// with `integrations` now per-tenant, "is Datadog connected" is no longer a
+// single installation-wide boolean deciding whether the poller runs at all
+// - some tenant not having connected yet is normal in SaaS (and even a
+// self-hosted install's one tenant can connect after boot), not a reason to
+// not run. newPollerFromStoredIntegration always returns started=true now;
+// its per-tenant EnableTenantDatadogClients resolver is what makes a tenant
+// with nothing connected a no-op each cycle, not "poller not started".
+func TestPollerManager_Restart_NoIntegrationAnywhere_StillStartsRunning(t *testing.T) {
 	pool := newServeTestPool(t)
 	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), "DELETE FROM integrations WHERE provider = 'datadog'") })
 	// Deliberately no storeTestDatadogIntegration call.
@@ -103,8 +110,8 @@ func TestPollerManager_Restart_NoIntegration_ReturnsFalseWithoutError(t *testing
 	if err != nil {
 		t.Fatalf("Restart() returned unexpected error: %v", err)
 	}
-	if started {
-		t.Fatal("Restart() started = true, want false - no integration is stored")
+	if !started {
+		t.Fatal("Restart() started = false, want true - the poller always runs now, regardless of any tenant's Datadog connection state")
 	}
 }
 
@@ -272,21 +279,20 @@ func TestPollerManager_RunLeaderLoop_ManualScheduler_StartsWithoutDatadogIntegra
 	}
 }
 
-// TestPollerManager_RunLeaderLoop_IntegrationConnectedAfterAcquisition_HeartbeatStartsPoller
-// covers AD-034: RunLeaderLoop's own Restart call at leadership acquisition
-// is a one-shot attempt, so a Datadog credential connected afterward -
-// including via IntegrationsHandler.ConnectDatadog landing on a different,
-// non-leading replica, where Restart is a documented no-op - must still
-// reach the real leader without it ever losing and re-acquiring the lock or
-// the process restarting. Deliberately acquires leadership with no
-// integration stored (so the acquisition-time Restart is the "not started"
-// no-op this bug leaves stuck forever), stores one afterward exactly like a
-// separate replica's successful connect would, and asserts the leader picks
-// it up on its own within a couple of heartbeat ticks.
-func TestPollerManager_RunLeaderLoop_IntegrationConnectedAfterAcquisition_HeartbeatStartsPoller(t *testing.T) {
+// TestPollerManager_RunLeaderLoop_AcquiresAndStartsPoller_WithNoIntegrationAnywhere
+// covers integrations-tenant-scope (TENANT-05): AD-034's prior version of
+// this test proved a heartbeat-retry mechanism that recovered from the
+// pre-fix "poller not started until some integration exists" state - with
+// `integrations` now per-tenant, that state doesn't exist any more (some
+// tenant not having connected Datadog yet is normal, not a "not started"
+// condition; see newPollerFromStoredIntegration). So the leader now starts
+// the poller immediately on acquisition, before any tenant has ever
+// connected Datadog - proving there's no window where an already-leading
+// replica sits with no running poller waiting for a first connect.
+func TestPollerManager_RunLeaderLoop_AcquiresAndStartsPoller_WithNoIntegrationAnywhere(t *testing.T) {
 	pool := newServeTestPool(t)
 	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), "DELETE FROM integrations WHERE provider = 'datadog'") })
-	// Deliberately no storeTestDatadogIntegration call yet.
+	// Deliberately no storeTestDatadogIntegration call.
 
 	ctx, cancel := context.WithCancel(context.Background())
 
@@ -302,18 +308,8 @@ func TestPollerManager_RunLeaderLoop_IntegrationConnectedAfterAcquisition_Heartb
 	if !waitUntil(3*time.Second, func() bool { return mgr.leading.Load() }) {
 		t.Fatal("single-replica RunLeaderLoop did not acquire leadership within 3s")
 	}
-	if isLeading(mgr) {
-		t.Fatal("poller tracked as running before any integration was ever stored")
-	}
-
-	// Simulates a Datadog connect succeeding on some other replica: nothing
-	// here calls mgr.Restart directly, only the stored row changes underneath
-	// this already-leading manager - the heartbeat retry is the only thing
-	// that can notice it.
-	storeTestDatadogIntegration(t, pool)
-
 	if !waitUntil(2*time.Second, func() bool { return isLeading(mgr) }) {
-		t.Fatal("leader did not start the poller after an integration appeared post-acquisition, want the heartbeat loop to retry Restart until one is found (AD-034)")
+		t.Fatal("poller not tracked as running after leadership acquisition, want it to always start regardless of any tenant's Datadog connection state")
 	}
 }
 

@@ -25,6 +25,11 @@ var tenantScopedTables = []string{
 	"email_settings",
 	"llm_providers",
 	"llm_settings",
+	// integrations added by 0040_integrations_tenant_scope, same shape as
+	// email_providers/llm_providers (one row per connected provider per
+	// tenant) - not part of 0024's original AC1 list since it predates
+	// this table's own tenant-isolation fix.
+	"integrations",
 }
 
 // extraPolicies records, per table, the policies deliberately added on top

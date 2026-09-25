@@ -220,6 +220,107 @@ func TestPollCycle_OneTenantBeginTxFails_OtherTenantsStillProcessed(t *testing.T
 	}
 }
 
+// fakeDatadogResolverByTenant is a DatadogClientResolver double returning a
+// different fixed *fakeProvider per tenant (keyed by the tenant id
+// fakeTenantTx tagged the context with), or db.ErrNotFound for a tenant
+// with no entry - proving pollCycle resolves and swaps in each tenant's
+// own client instead of a single one fixed at construction
+// (integrations-tenant-scope, TENANT-05: the pre-fix bug this replaces was
+// exactly one installation-wide Datadog client answering every tenant's
+// poll cycle).
+type fakeDatadogResolverByTenant struct {
+	providerByTenant map[string]*fakeProvider
+	resolveCalls     []string
+}
+
+func (f *fakeDatadogResolverByTenant) fn(ctx context.Context) (DatadogClient, error) {
+	tenantID, _ := ctx.Value(fakeTenantTxKey{}).(string)
+	f.resolveCalls = append(f.resolveCalls, tenantID)
+
+	provider, ok := f.providerByTenant[tenantID]
+	if !ok {
+		return nil, db.ErrNotFound
+	}
+	return provider, nil
+}
+
+// TestPollCycle_ResolvesDatadogClientPerTenant proves pollCycle calls
+// EnableTenantDatadogClients's resolver once per tenant, inside that
+// tenant's own tenant-scoped context, and that each tenant's services are
+// polled through its own resolved client - never a single client shared
+// across tenants.
+func TestPollCycle_ResolvesDatadogClientPerTenant(t *testing.T) {
+	tenants := &fakeTenantLister{tenants: []db.Tenant{{ID: "tenant-a"}, {ID: "tenant-b"}}}
+	tx := &fakeTenantTx{beginErrForTenant: map[string]error{}, commitErrForTenant: map[string]error{}}
+	services := &fakeServiceListerByTenant{servicesByTenant: map[string][]db.Service{
+		"tenant-a": {{ID: "svc-a1", SLOID: "slo-a1", CurrentStatus: "not_configured"}},
+		"tenant-b": {{ID: "svc-b1", SLOID: "slo-b1", CurrentStatus: "not_configured"}},
+	}}
+	statuses := &fakeStatusUpdater{}
+	intervals := &fakeIntervalWriter{}
+	integrations := &fakeIntegrationUpdater{}
+
+	providerA := &fakeProvider{errs: []error{nil}, status: datadog.SLOStatus{State: "ok", RequestCount: 10}}
+	providerB := &fakeProvider{errs: []error{nil}, status: datadog.SLOStatus{State: "ok", RequestCount: 10}}
+	resolver := &fakeDatadogResolverByTenant{providerByTenant: map[string]*fakeProvider{
+		"tenant-a": providerA,
+		"tenant-b": providerB,
+	}}
+
+	p := newTenantIterationPoller(t, tenants, tx.fn, services, statuses, intervals, integrations)
+	p.EnableTenantDatadogClients(resolver.fn)
+	p.pollCycle(context.Background())
+
+	if len(resolver.resolveCalls) != 2 || resolver.resolveCalls[0] != "tenant-a" || resolver.resolveCalls[1] != "tenant-b" {
+		t.Fatalf("resolveCalls = %v, want [tenant-a tenant-b]", resolver.resolveCalls)
+	}
+	if providerA.calls != 1 {
+		t.Errorf("providerA.calls = %d, want 1 (tenant-a's own service polled through tenant-a's own client)", providerA.calls)
+	}
+	if providerB.calls != 1 {
+		t.Errorf("providerB.calls = %d, want 1 (tenant-b's own service polled through tenant-b's own client)", providerB.calls)
+	}
+	if len(tx.commitCalls) != 2 {
+		t.Fatalf("commitCalls = %v, want one commit per tenant", tx.commitCalls)
+	}
+}
+
+// TestPollCycle_TenantWithNoDatadogConnected_SkippedWithoutError proves a
+// tenant whose resolver returns db.ErrNotFound (never connected Datadog) is
+// skipped for this cycle - its transaction rolls back cleanly instead of
+// committing, and it never reaches pollOnce - while a different tenant that
+// *has* connected Datadog still gets polled normally in the same cycle.
+func TestPollCycle_TenantWithNoDatadogConnected_SkippedWithoutError(t *testing.T) {
+	tenants := &fakeTenantLister{tenants: []db.Tenant{{ID: "tenant-none"}, {ID: "tenant-connected"}}}
+	tx := &fakeTenantTx{beginErrForTenant: map[string]error{}, commitErrForTenant: map[string]error{}}
+	services := &fakeServiceListerByTenant{servicesByTenant: map[string][]db.Service{
+		"tenant-none":      {{ID: "svc-none", SLOID: "slo-none", CurrentStatus: "not_configured"}},
+		"tenant-connected": {{ID: "svc-connected", SLOID: "slo-connected", CurrentStatus: "not_configured"}},
+	}}
+	statuses := &fakeStatusUpdater{}
+	intervals := &fakeIntervalWriter{}
+	integrations := &fakeIntegrationUpdater{}
+
+	providerConnected := &fakeProvider{errs: []error{nil}, status: datadog.SLOStatus{State: "ok", RequestCount: 10}}
+	resolver := &fakeDatadogResolverByTenant{providerByTenant: map[string]*fakeProvider{
+		"tenant-connected": providerConnected,
+	}}
+
+	p := newTenantIterationPoller(t, tenants, tx.fn, services, statuses, intervals, integrations)
+	p.EnableTenantDatadogClients(resolver.fn)
+	p.pollCycle(context.Background())
+
+	if len(statuses.calls) != 1 || statuses.calls[0].serviceID != "svc-connected" {
+		t.Fatalf("UpdateStatus calls = %+v, want exactly svc-connected (tenant-none must be skipped, not polled with a stale/wrong client)", statuses.calls)
+	}
+	if len(tx.commitCalls) != 1 || tx.commitCalls[0] != "tenant-connected" {
+		t.Fatalf("commitCalls = %v, want exactly [tenant-connected]", tx.commitCalls)
+	}
+	if len(tx.rollbackCalls) != 1 || tx.rollbackCalls[0] != "tenant-none" {
+		t.Fatalf("rollbackCalls = %v, want exactly [tenant-none] (rolled back cleanly, not left hanging)", tx.rollbackCalls)
+	}
+}
+
 // TestPollCycle_TenantIterationDisabled_FallsBackToAmbientPollOnce proves
 // backward compatibility: a Poller built without EnableTenantIteration
 // (every existing NewPoller caller) behaves exactly as before - a single

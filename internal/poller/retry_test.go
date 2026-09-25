@@ -48,6 +48,15 @@ func (f *fakeProvider) FetchSLOStatus(ctx context.Context, sloID string, from, t
 	return f.status, nil
 }
 
+// SearchErrorTrackingIssues is a no-op stub so fakeProvider satisfies
+// poller.DatadogClient in full (not just datadog.SLOProvider) - needed by
+// any test resolving fakeProvider through a DatadogClientResolver
+// (integrations-tenant-scope). Every existing test only exercises
+// FetchSLOStatus and never calls this.
+func (f *fakeProvider) SearchErrorTrackingIssues(ctx context.Context, service, env string, from, to time.Time) (datadog.CauseHint, bool, error) {
+	return datadog.CauseHint{}, false, nil
+}
+
 func TestFetchWithRetry_SuccessFirstAttempt_NoRetry(t *testing.T) {
 	backoffBase = time.Millisecond
 	provider := &fakeProvider{errs: []error{nil}, status: datadog.SLOStatus{State: "ok"}}
