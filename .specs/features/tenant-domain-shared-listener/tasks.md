@@ -189,10 +189,10 @@ Tasks: T5, T6 - see dependency graph below.
 - Skill: NONE
 
 **Done when**:
-- [ ] Config table has a new row for `VANE_TENANT_DOMAINS_ON_ADMIN_LISTENER` (Required: No, Default: `false`, Notes explain the shared-reverse-proxy use case and point at `newHTTPSServer`/`:443` as the alternative for dedicated infra)
-- [ ] New runbook subsection lists the concrete EasyPanel steps end to end, with no undocumented step
-- [ ] Runbook explicitly states this registration step is manual today and names the deferred automation (Out of Scope in `spec.md`) as the future improvement
-- [ ] Gate check passes: manual review (no automated test for prose)
+- [x] Config table has a new row for `VANE_TENANT_DOMAINS_ON_ADMIN_LISTENER` (Required: No, Default: `false`, Notes explain the shared-reverse-proxy use case and point at `newHTTPSServer`/`:443` as the alternative for dedicated infra)
+- [x] New runbook subsection lists the concrete EasyPanel steps end to end, with no undocumented step
+- [x] Runbook explicitly states this registration step is manual today and names the deferred automation (Out of Scope in `spec.md`) as the future improvement
+- [x] Gate check passes: manual review (no automated test for prose)
 
 **Tests**: none
 **Gate**: n/a (docs)
