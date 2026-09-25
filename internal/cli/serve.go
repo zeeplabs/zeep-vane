@@ -232,7 +232,7 @@ func newHTTPSServer(pool *db.Pool, dsn, masterKey string, logger *zap.Logger) *h
 
 	// hsts=true - this listener really does terminate TLS, unlike the admin
 	// HTTP listener (M14).
-	handler := api.SecurityHeaders(true)(router.HostRouter(statusPages, pool, newPublicStatusMux(pool, logger)))
+	handler := api.SecurityHeaders(true)(router.HostRouter(statusPages, pool, newPublicStatusMux(pool, logger), http.HandlerFunc(http.NotFound)))
 
 	tlsConfig := manager.TLSConfig()
 	tlsConfig.NextProtos = append([]string{"h2", "http/1.1"}, tlsConfig.NextProtos...)

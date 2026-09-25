@@ -110,12 +110,12 @@ Tasks: T5, T6 - see dependency graph below.
 - Skill: NONE
 
 **Done when**:
-- [ ] Every pre-existing `HostRouter` test still passes with its original assertions, using `http.HandlerFunc(http.NotFound)` as the 4th argument (matched-case behavior fully unchanged)
-- [ ] A new test proves the unmatched-hostname case now invokes an arbitrary `fallback` handler instead of a literal `404` - e.g. a fallback that writes a distinguishable response body, asserted on directly (not just re-asserting `404`, since a fallback that happens to also return `404` would pass a weaker test without proving the new behavior)
-- [ ] `newHTTPSServer`'s own behavior is unchanged (still `404` for an unmatched hostname on the `:443` listener) - confirmed by keeping `newHTTPSServer`'s existing tests, if any, green
-- [ ] Doc comment no longer contains the stale "not implemented here" / unconditional-404 claims
-- [ ] Gate check passes: `go test ./... && gofmt -l . && go vet ./...`
-- [ ] Test count: at least the same as before this task, plus 1+ new (no silent deletions)
+- [x] Every pre-existing `HostRouter` test still passes with its original assertions, using `http.HandlerFunc(http.NotFound)` as the 4th argument (matched-case behavior fully unchanged)
+- [x] A new test proves the unmatched-hostname case now invokes an arbitrary `fallback` handler instead of a literal `404` - e.g. a fallback that writes a distinguishable response body, asserted on directly (not just re-asserting `404`, since a fallback that happens to also return `404` would pass a weaker test without proving the new behavior)
+- [x] `newHTTPSServer`'s own behavior is unchanged (still `404` for an unmatched hostname on the `:443` listener) - confirmed by keeping `newHTTPSServer`'s existing tests, if any, green
+- [x] Doc comment no longer contains the stale "not implemented here" / unconditional-404 claims
+- [x] Gate check passes: `go test ./... && gofmt -l . && go vet ./...`
+- [x] Test count: at least the same as before this task, plus 1+ new (no silent deletions)
 
 **Tests**: unit
 **Gate**: quick
