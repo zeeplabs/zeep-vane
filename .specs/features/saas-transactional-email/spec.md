@@ -111,14 +111,14 @@ Decisão de negócio (Julio, nesta sessão): em modo SaaS, tenants contratantes 
 
 | Requirement ID | Story | Phase | Status |
 | --- | --- | --- | --- |
-| SAASMAIL-01 | P1: Signup SaaS deixa de travar | Execute (T1: boot fails without env vars in saas mode) | Partial - edge case only, envio real ainda pendente (T4/T6/T7) |
-| SAASMAIL-02 | P1: Signup SaaS deixa de travar | Design | Pending |
-| SAASMAIL-03 | P1: Signup SaaS deixa de travar | Design | Pending |
-| SAASMAIL-04 | P1: Signup SaaS deixa de travar | Design | Pending |
-| SAASMAIL-05 | P1: As outras 5 categorias | Execute (T4: NotificationServiceSender, todas as 6 categorias) | Partial - Sender implementado e testado, wiring de boot pendente (T6) |
-| SAASMAIL-06 | P1: As outras 5 categorias | Execute (T4: NotificationServiceSender, todas as 6 categorias) | Partial - Sender implementado e testado, wiring de boot pendente (T6) |
-| SAASMAIL-07 | P1: As outras 5 categorias | Execute (T4: NotificationServiceSender, todas as 6 categorias) | Partial - Sender implementado e testado, wiring de boot pendente (T6) |
-| SAASMAIL-08 | P1: As outras 5 categorias | Design | Pending |
+| SAASMAIL-01 | P1: Signup SaaS deixa de travar | Execute (T1: boot fails without env vars; T6: wiring) | Partial - envio real ligado, prova de regressão fica pra T7 |
+| SAASMAIL-02 | P1: Signup SaaS deixa de travar | Execute (T6: wiring) | Partial - `SignupHandler` já usa `email.Sender`, prova de regressão fica pra T7 |
+| SAASMAIL-03 | P1: Signup SaaS deixa de travar | Execute (T6: wiring) | Verified |
+| SAASMAIL-04 | P1: Signup SaaS deixa de travar | Execute (T6: wiring) | Verified |
+| SAASMAIL-05 | P1: As outras 5 categorias | Execute (T4+T6: NotificationServiceSender + wiring) | Verified |
+| SAASMAIL-06 | P1: As outras 5 categorias | Execute (T4+T6: NotificationServiceSender + wiring) | Verified |
+| SAASMAIL-07 | P1: As outras 5 categorias | Execute (T4+T6: NotificationServiceSender + wiring) | Verified |
+| SAASMAIL-08 | P1: As outras 5 categorias | Execute (T3+T6: client HTTP + wiring) | Verified |
 | SAASMAIL-09 | P1: Tenant SaaS nunca conecta provider próprio | Execute (T5: requireSelfHostedMode) | Verified |
 | SAASMAIL-10 | P1: Tenant SaaS nunca conecta provider próprio | Execute (T5: requireSelfHostedMode) | Verified |
 | SAASMAIL-11 | P1: Tenant SaaS nunca conecta provider próprio | Execute (T5: requireSelfHostedMode) | Verified |

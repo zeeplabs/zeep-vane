@@ -37,7 +37,7 @@ type AdminsHandler struct {
 	users           *db.UserRepository
 	memberships     *db.TenantMembershipRepository
 	invites         *db.TenantInviteRepository
-	emailSvc        *email.Service
+	emailSvc        email.Sender
 	tenants         *db.TenantRepository
 	sessions        *db.SessionRepository
 	audit           *audit.Log
@@ -59,7 +59,7 @@ type AdminsHandler struct {
 // sessions is the per-device session row repository (user-sessions):
 // AcceptInvite creates a row for the newly-accepted invitee so the
 // same revocation machinery that backs Login also covers this flow.
-func NewAdminsHandler(pool *db.Pool, users *db.UserRepository, memberships *db.TenantMembershipRepository, invites *db.TenantInviteRepository, emailSvc *email.Service, tenants *db.TenantRepository, sessions *db.SessionRepository, auditLog *audit.Log, logger *zap.Logger, devTokenLogging bool, adminBaseURL string, sessionSecret string, secureCookies bool) *AdminsHandler {
+func NewAdminsHandler(pool *db.Pool, users *db.UserRepository, memberships *db.TenantMembershipRepository, invites *db.TenantInviteRepository, emailSvc email.Sender, tenants *db.TenantRepository, sessions *db.SessionRepository, auditLog *audit.Log, logger *zap.Logger, devTokenLogging bool, adminBaseURL string, sessionSecret string, secureCookies bool) *AdminsHandler {
 	return &AdminsHandler{
 		pool: pool, users: users, memberships: memberships, invites: invites,
 		emailSvc: emailSvc, tenants: tenants, sessions: sessions,

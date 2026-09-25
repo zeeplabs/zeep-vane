@@ -222,12 +222,12 @@ T1 → T8
 - Skill: NONE
 
 **Done when**:
-- [ ] `newEmailSender` construído e usado nos 2 pontos de wiring, eliminando a duplicação de `email.NewService(...)`
-- [ ] `AdminsHandler`/`SignupHandler` compilam contra `email.Sender`, zero mudança de comportamento em `self_hosted` (suíte de testes existente de `internal/api` continua 100% verde sem nenhuma edição de asserção)
-- [ ] `saas`: `buildAdminRouter`/`newNotifyService` recebem um `*NotificationServiceSender` de fato quando `VANE_NOTIFICATION_SERVICE_BASE_URL`/`_API_KEY` estão setadas
-- [ ] `EmailProvidersHandler` inalterado (continua só com o `*email.Service` self-hosted)
-- [ ] Gate check passes: `go build ./... && go test ./... && go vet ./... && gofmt -l internal/cli/routes.go internal/cli/serve.go internal/api/admins.go internal/api/signup_handler.go && make test-integration`
-- [ ] Test count: suíte completa de `internal/api`/`internal/cli` sem nenhum teste removido, todos verdes
+- [x] `newEmailSender` construído e usado nos 2 pontos de wiring, eliminando a duplicação de `email.NewService(...)`
+- [x] `AdminsHandler`/`SignupHandler` compilam contra `email.Sender`, zero mudança de comportamento em `self_hosted` (suíte de testes existente de `internal/api` continua 100% verde sem nenhuma edição de asserção)
+- [x] `saas`: `buildAdminRouter`/`newNotifyService` recebem um `*NotificationServiceSender` de fato quando `VANE_NOTIFICATION_SERVICE_BASE_URL`/`_API_KEY` estão setadas
+- [x] `EmailProvidersHandler` inalterado (continua só com o `*email.Service` self-hosted)
+- [x] Gate check passes: `go build ./... && go test ./... && go vet ./... && gofmt -l internal/cli/routes.go internal/cli/serve.go internal/api/admins.go internal/api/signup_handler.go && make test-integration`
+- [x] Test count: suíte completa de `internal/api`/`internal/cli` sem nenhum teste removido, todos verdes (flake pré-existente e não relacionado — `TestPublicStatusGet_HourlyHistory_KnownHourStatusAppearsAsSingleBucket`, teste dependente de wall-clock cruzando fronteira de hora — confirmado 3x verde isolado e verde na re-corrida completa)
 
 **Tests**: integration
 **Gate**: full

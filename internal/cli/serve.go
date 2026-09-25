@@ -18,7 +18,6 @@ import (
 	"github.com/zeeplabs/zeep-vane/internal/connectors/datadog"
 	"github.com/zeeplabs/zeep-vane/internal/crypto"
 	"github.com/zeeplabs/zeep-vane/internal/db"
-	"github.com/zeeplabs/zeep-vane/internal/email"
 	"github.com/zeeplabs/zeep-vane/internal/llm"
 	"github.com/zeeplabs/zeep-vane/internal/logging"
 	"github.com/zeeplabs/zeep-vane/internal/notify"
@@ -362,11 +361,11 @@ func poolTenantTx(pool *db.Pool) poller.TenantTxFunc {
 // lifecycle (HTTP handler and poller's auto-created incidents) and the weekly
 // digest scheduler.
 func newNotifyService(pool *db.Pool, cfg config.Config, logger *zap.Logger) (*notify.Service, error) {
-	emailService, err := email.NewService(db.NewEmailProviderRepository(pool), emailProviderFactory, cfg.MasterKey, logger)
+	emailSender, err := newEmailSender(cfg, pool, logger)
 	if err != nil {
-		return nil, fmt.Errorf("serve: failed to build email service for notifications: %w", err)
+		return nil, fmt.Errorf("serve: failed to build email sender for notifications: %w", err)
 	}
-	return notify.NewService(db.NewTenantMembershipRepository(pool), db.NewNotificationPreferenceRepository(pool), emailService, cfg.AdminBaseURL, logger), nil
+	return notify.NewService(db.NewTenantMembershipRepository(pool), db.NewNotificationPreferenceRepository(pool), emailSender, cfg.AdminBaseURL, logger), nil
 }
 
 // newDigestScheduler builds the weekly digest scheduler with its production

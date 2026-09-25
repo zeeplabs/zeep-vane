@@ -55,14 +55,19 @@ func buildAdminRouter(pool *db.Pool, cfg config.Config, logger *zap.Logger, poll
 	tenantsRepo := db.NewTenantRepository(pool)
 	tenantMembershipsRepo := db.NewTenantMembershipRepository(pool)
 
-	// emailService is built with a ProviderFactory closure rather than a
-	// direct import of internal/connectors/sendgrid|resend from
+	// emailProvidersService is built with a ProviderFactory closure rather
+	// than a direct import of internal/connectors/sendgrid|resend from
 	// internal/email itself - the same function-typed dependency injection
 	// pattern used above for the Datadog integration
 	// (validateDatadogCredentials/searchDatadogSLOs), keeping internal/email
 	// decoupled from which concrete connector packages exist (design.md).
+	// EmailProvidersHandler always gets this self-hosted *email.Service
+	// specifically, never the deployment-mode-aware Sender below - its 4
+	// routes are already gated to self_hosted only by requireSelfHostedMode
+	// (AD-034), so a tenant's own connected provider is what it manages
+	// regardless of which Sender the rest of the app is using.
 	emailProviderRepo := db.NewEmailProviderRepository(pool)
-	emailService, err := email.NewService(emailProviderRepo, emailProviderFactory, cfg.MasterKey, logger)
+	emailProvidersService, err := email.NewService(emailProviderRepo, emailProviderFactory, cfg.MasterKey, logger)
 	if err != nil {
 		// NewService only errors if the embedded admin-invite templates
 		// fail to parse (fail-fast-at-boot, design.md) - that source is
@@ -72,7 +77,17 @@ func buildAdminRouter(pool *db.Pool, cfg config.Config, logger *zap.Logger, poll
 		// (matches this package's existing boot-assembly style).
 		logger.Fatal("cli: failed to build email service", zap.Error(err))
 	}
-	emailProvidersHandler := api.NewEmailProvidersHandler(emailService, emailProviderRepo, auditLog, logger)
+	emailProvidersHandler := api.NewEmailProvidersHandler(emailProvidersService, emailProviderRepo, auditLog, logger)
+
+	// emailSender is the deployment-mode-aware email.Sender (AD-034) every
+	// other consumer below (signup, password reset, admin invite,
+	// incident/digest notifications) depends on - self-hosted uses the same
+	// *email.Service as emailProvidersHandler above; saas uses
+	// zeep-notification-service instead, never consulting email_providers.
+	emailSender, err := newEmailSender(cfg, pool, logger)
+	if err != nil {
+		logger.Fatal("cli: failed to build email sender", zap.Error(err))
+	}
 
 	llmProviderRepo := db.NewLLMProviderRepository(pool)
 	llmService := llm.NewService(db.NewLLMProviderStore(llmProviderRepo), llmProviderFactory, cfg.MasterKey, logger)
@@ -88,15 +103,15 @@ func buildAdminRouter(pool *db.Pool, cfg config.Config, logger *zap.Logger, poll
 
 	authHandler := api.NewAuthHandler(users, tenantMembershipsRepo, db.NewTwoFactorRepository(pool), db.NewTwoFactorChallengeRepository(pool), sessions, pool, logger, cfg.SessionSecret, cfg.SecureCookies, cfg.MasterKey)
 	bootstrapHandler := api.NewBootstrapHandler(pool, users, tenantsRepo, tenantMembershipsRepo, sessions, logger, cfg.SessionSecret, cfg.SecureCookies, cfg.DeploymentMode)
-	signupHandler := api.NewSignupHandler(pool, users, tenantsRepo, tenantMembershipsRepo, db.NewEmailVerificationRepository(pool), emailService, logger, cfg.DevTokenLogging, cfg.AdminBaseURL)
-	passwordResetHandler := api.NewPasswordResetHandler(users, db.NewPasswordResetRepository(pool), emailService, tenantsRepo, logger, cfg.DevTokenLogging, cfg.AdminBaseURL)
-	adminsHandler := api.NewAdminsHandler(pool, users, tenantMembershipsRepo, invites, emailService, tenantsRepo, sessions, auditLog, logger, cfg.DevTokenLogging, cfg.AdminBaseURL, cfg.SessionSecret, cfg.SecureCookies)
+	signupHandler := api.NewSignupHandler(pool, users, tenantsRepo, tenantMembershipsRepo, db.NewEmailVerificationRepository(pool), emailSender, logger, cfg.DevTokenLogging, cfg.AdminBaseURL)
+	passwordResetHandler := api.NewPasswordResetHandler(users, db.NewPasswordResetRepository(pool), emailSender, tenantsRepo, logger, cfg.DevTokenLogging, cfg.AdminBaseURL)
+	adminsHandler := api.NewAdminsHandler(pool, users, tenantMembershipsRepo, invites, emailSender, tenantsRepo, sessions, auditLog, logger, cfg.DevTokenLogging, cfg.AdminBaseURL, cfg.SessionSecret, cfg.SecureCookies)
 	domainsHandler := api.NewDomainsHandler(db.NewDomainRepository(pool), db.NewStatusPageRepository(pool), auditLog, cfg.PublicDNSTarget, logger)
 	servicesHandler := api.NewServicesHandler(db.NewServiceRepository(pool), db.NewStatusIntervalRepository(pool), db.NewIncidentRepository(pool), auditLog, logger)
 	integrationsHandler := api.NewIntegrationsHandler(db.NewIntegrationRepository(pool), validateDatadogCredentials, searchDatadogSLOs, pollerManager, auditLog, cfg.MasterKey, logger)
 	incidentsHandler := api.NewIncidentsHandler(
 		db.NewIncidentRepository(pool),
-		notify.NewService(db.NewTenantMembershipRepository(pool), db.NewNotificationPreferenceRepository(pool), emailService, cfg.AdminBaseURL, logger),
+		notify.NewService(db.NewTenantMembershipRepository(pool), db.NewNotificationPreferenceRepository(pool), emailSender, cfg.AdminBaseURL, logger),
 		logger,
 	)
 	statusPagesHandler := api.NewStatusPagesHandler(db.NewStatusPageRepository(pool), auditLog, cfg.PublicDNSTarget, logger)
