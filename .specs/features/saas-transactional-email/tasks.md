@@ -115,9 +115,9 @@ T1 → T8
 - Skill: NONE
 
 **Done when**:
-- [ ] Tipos definidos e exportados, compilam sem erro
-- [ ] Comentário no arquivo aponta que a implementação concreta vive em `internal/connectors/notificationservice` (T3), nunca o inverso
-- [ ] Gate check passes: `go build ./... && go vet ./internal/email/... && gofmt -l internal/email/notification_service.go`
+- [x] Tipos definidos e exportados, compilam sem erro
+- [x] Comentário no arquivo aponta que a implementação concreta vive em `internal/connectors/notificationservice` (T3), nunca o inverso
+- [x] Gate check passes: `go build ./... && go vet ./internal/email/... && gofmt -l internal/email/notification_service.go`
 
 **Tests**: none (camada de tipo puro, sem lógica - mesmo tratamento de config/entity da matriz)
 **Gate**: quick
