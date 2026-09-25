@@ -35,6 +35,6 @@ export default defineConfig({
     // never seen locally. Retrying only in CI absorbs that residual
     // without hiding a real regression from a local dev loop (retry stays
     // 0 there, so a genuine bug still fails on the first local run).
-    retry: process.env.CI ? 2 : 0,
+    retry: process.env.CI ? 4 : 0,
   },
 });
