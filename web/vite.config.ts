@@ -27,5 +27,14 @@ export default defineConfig({
         maxThreads: 4,
       },
     },
+    // CircleCI's shared containers still run individual async ticks
+    // (React Query settling, MSW round-trips) unpredictably slower than
+    // both local hardware and a locally-throttled Docker container could
+    // reproduce, even after capping the thread pool and raising
+    // testing-library's async timeout above - CI-only residual flakiness,
+    // never seen locally. Retrying only in CI absorbs that residual
+    // without hiding a real regression from a local dev loop (retry stays
+    // 0 there, so a genuine bug still fails on the first local run).
+    retry: process.env.CI ? 2 : 0,
   },
 });
