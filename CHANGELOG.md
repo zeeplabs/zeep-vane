@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.0] — 2026-09-25
+
+### Added
+
+- **SaaS transactional email via `zeep-notification-service`**: in `saas` deployment mode, all outbound transactional email (invites, verification, 2FA, password reset, incident notifications, weekly digest) is sent through Zeep's own platform notification service instead of a tenant-connected SendGrid/Resend integration. Self-hosted mode is unaffected — tenants there keep connecting their own email provider. New required config in `saas` mode: `NOTIFICATION_SERVICE_URL`, `NOTIFICATION_SERVICE_API_KEY`.
+- CircleCI now runs the CI/CD pipeline (`go-gate`, `go-integration`, `full-build`); the GitHub Actions equivalents remain in the repo as `workflow_dispatch`-only fallbacks.
+
+### Fixed
+
+- The Integrations page no longer shows email-provider cards (SendGrid/Resend) in `saas` mode, where tenants can't connect their own provider — dead UI for that deployment mode.
+
+### Security
+
+- **Cross-tenant credential isolation for the Datadog integration (`integrations` table)**: this table never received `tenant_id`/RLS during the AD-022 multi-tenancy rewrite. In practice, one tenant connecting Datadog could silently overwrite another tenant's stored API/app key (`ON CONFLICT (provider)` had no tenant dimension), and the poller ran a single shared Datadog client for every tenant regardless of who actually owned the credentials. Migration `0040` adds `tenant_id` + `FORCE ROW LEVEL SECURITY` to `integrations`; the poller and root-cause-enrichment analyzer now resolve and use a per-tenant Datadog client (see AD-037 in `.specs/STATE.md`). Deployments with more than one tenant connected to Datadog before this release should verify each tenant's stored key is still the one they expect after upgrading.
+
 ## [0.6.0] — 2026-09-22
 
 ### Added
