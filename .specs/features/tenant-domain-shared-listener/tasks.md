@@ -137,10 +137,10 @@ Tasks: T5, T6 - see dependency graph below.
 - Skill: NONE
 
 **Done when**:
-- [ ] `VANE_TENANT_DOMAINS_ON_ADMIN_LISTENER=true` → `Config.TenantDomainsOnAdminListener == true`
-- [ ] Unset, empty, or any value other than the literal `"true"` → `false`
-- [ ] Gate check passes: `go test ./internal/config`
-- [ ] Test count: at least the same as before this task, plus 2+ new (no silent deletions)
+- [x] `VANE_TENANT_DOMAINS_ON_ADMIN_LISTENER=true` → `Config.TenantDomainsOnAdminListener == true`
+- [x] Unset, empty, or any value other than the literal `"true"` → `false`
+- [x] Gate check passes: `go test ./internal/config`
+- [x] Test count: at least the same as before this task, plus 2+ new (no silent deletions)
 
 **Tests**: unit
 **Gate**: quick
