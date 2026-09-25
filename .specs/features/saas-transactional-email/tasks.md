@@ -89,12 +89,12 @@ T1 → T8
 - Skill: NONE
 
 **Done when**:
-- [ ] `Config` ganha os 2 campos novos
-- [ ] `saas` + ambas setadas → boot ok, campos populados
-- [ ] `saas` + qualquer uma ausente → `Load()` retorna erro claro
-- [ ] `self_hosted` + ambas ausentes → boot ok (comportamento inalterado)
-- [ ] Gate check passes: `go build ./... && go test ./internal/config/... && go vet ./internal/config/... && gofmt -l internal/config/config.go`
-- [ ] Traceability de SAASMAIL-01 (edge case) atualizada em `spec.md`
+- [x] `Config` ganha os 2 campos novos
+- [x] `saas` + ambas setadas → boot ok, campos populados
+- [x] `saas` + qualquer uma ausente → `Load()` retorna erro claro
+- [x] `self_hosted` + ambas ausentes → boot ok (comportamento inalterado)
+- [x] Gate check passes: `go build ./... && go test ./internal/config/... && go vet ./internal/config/... && gofmt -l internal/config/config.go`
+- [x] Traceability de SAASMAIL-01 (edge case) atualizada em `spec.md`
 
 **Tests**: unit
 **Gate**: quick

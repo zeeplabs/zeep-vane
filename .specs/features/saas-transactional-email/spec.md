@@ -111,7 +111,7 @@ Decisão de negócio (Julio, nesta sessão): em modo SaaS, tenants contratantes 
 
 | Requirement ID | Story | Phase | Status |
 | --- | --- | --- | --- |
-| SAASMAIL-01 | P1: Signup SaaS deixa de travar | Design | Pending |
+| SAASMAIL-01 | P1: Signup SaaS deixa de travar | Execute (T1: boot fails without env vars in saas mode) | Partial - edge case only, envio real ainda pendente (T4/T6/T7) |
 | SAASMAIL-02 | P1: Signup SaaS deixa de travar | Design | Pending |
 | SAASMAIL-03 | P1: Signup SaaS deixa de travar | Design | Pending |
 | SAASMAIL-04 | P1: Signup SaaS deixa de travar | Design | Pending |
