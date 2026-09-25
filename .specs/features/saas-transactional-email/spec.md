@@ -121,7 +121,7 @@ Decisão de negócio (Julio, nesta sessão): em modo SaaS, tenants contratantes 
 | SAASMAIL-08 | P1: As outras 5 categorias | Execute (T3+T6: client HTTP + wiring) | Verified |
 | SAASMAIL-09 | P1: Tenant SaaS nunca conecta provider próprio | Execute (T5: requireSelfHostedMode) | Verified |
 | SAASMAIL-10 | P1: Tenant SaaS nunca conecta provider próprio | Execute (T5: requireSelfHostedMode) | Verified |
-| SAASMAIL-11 | P1: Tenant SaaS nunca conecta provider próprio | Execute (T5: requireSelfHostedMode) | Verified |
+| SAASMAIL-11 | P1: Tenant SaaS nunca conecta provider próprio | Execute (T5: backend 404 + T9: frontend hide) | Verified |
 
 **ID format:** `SAASMAIL-NN`
 

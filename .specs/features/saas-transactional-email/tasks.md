@@ -284,6 +284,28 @@ T1 → T8
 
 ---
 
+### T9 (fix task, gap found by Verifier): frontend hides email-provider category in saas mode
+
+**What**: Verifier caught SAASMAIL-11 AC3 unimplemented (`.specs/features/saas-transactional-email/validation.md`): the spec explicitly requires `EmailProvidersPage`/its integration-page equivalent to stop being shown in `saas` mode, not just be 404'd on the backend (T5 only closed the backend half). `IntegrationsPage`'s email-provider `CategorySection` (+ its `ConnectEmailProviderDrawer`) now renders only when `useAuth().deploymentMode === "self_hosted"` - same signal (`deployment_mode` from `GET /api/bootstrap/status`) already used by `LoginPage`'s "Criar conta" link (AD-033). `useEmailProviders` gained an `enabled` parameter so the query itself doesn't fire in `saas` mode either (the routes 404 there per T5, so fetching would only ever produce a spurious error state for a card that isn't rendered).
+**Where**: `web/src/features/integrations/IntegrationsPage.tsx`, `web/src/features/email-providers/hooks.ts`, `web/src/features/integrations/IntegrationsPage.test.tsx`
+**Depends on**: T5 (backend gate), T6 (wiring) - purely additive frontend gap-fix, no backend change
+**Requirement**: SAASMAIL-11 AC3
+
+**Done when**:
+- [x] Email-provider `CategorySection` + `ConnectEmailProviderDrawer` render only in `self_hosted` mode
+- [x] `useEmailProviders` doesn't fetch in `saas` mode
+- [x] Existing email-provider tests in `IntegrationsPage.test.tsx` set `self_hosted` explicitly (they were implicitly relying on the MSW mock's `saas`-by-default state, per `handlers.ts`'s own documented convention) - all 31 pre-existing tests still pass, no assertion weakened
+- [x] New test: in `saas` mode, email category/cards/drawer never render
+- [x] Gate check passes: `npx tsc -b --noEmit && npm run test && npm run i18n:check && npm run build` (707/707 tests, 854 keys parity)
+- [x] Traceability of SAASMAIL-11 updated to `Verified` in `spec.md`
+
+**Tests**: unit (vitest, MSW)
+**Gate**: quick (frontend)
+
+**Commit**: `fix(web): hide email-provider integrations in saas mode`
+
+---
+
 ## Phase Execution Map
 
 ```

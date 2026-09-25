@@ -1,4 +1,4 @@
-import { describe, it, expect, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
@@ -8,6 +8,7 @@ import { AuthProvider } from "../../auth/AuthProvider";
 import { TestQueryProvider } from "../../test/queryClient";
 import { server } from "../../test/msw/server";
 import { apiFetch } from "../../lib/apiClient";
+import { resetDeploymentMode, setDeploymentMode } from "../../test/msw/handlers";
 import { IntegrationsPage } from "./IntegrationsPage";
 
 async function loginAs(email: string) {
@@ -17,7 +18,15 @@ async function loginAs(email: string) {
   });
 }
 
+// Every email-provider assertion in this file exercises the self_hosted
+// path (AD-034, SAASMAIL-11 AC3): in saas mode the email category doesn't
+// render at all (see the dedicated saas-mode test below).
+beforeEach(() => {
+  setDeploymentMode("self_hosted");
+});
+
 afterEach(async () => {
+  resetDeploymentMode();
   await apiFetch("/api/auth/logout", { method: "POST" });
 });
 
@@ -537,5 +546,19 @@ describe("IntegrationsPage", () => {
 
     const resendCard = await cardOf("Resend");
     expect(await within(resendCard).findByText("Não conectado")).toBeInTheDocument();
+  });
+
+  // AD-034, SAASMAIL-11 AC3: a saas tenant never sees the email-provider
+  // category at all - the same treatment LoginPage/SignupPage already give
+  // the signup link (AD-033).
+  it("saas mode - email provider category and drawer never render", async () => {
+    setDeploymentMode("saas");
+    await loginAs("owner@vane.app");
+    renderPage();
+
+    await screen.findByText("Datadog");
+    expect(screen.queryByText("Resend")).not.toBeInTheDocument();
+    expect(screen.queryByText("SendGrid")).not.toBeInTheDocument();
+    expect(screen.queryByText(i18n.t("integrations.categories.email"))).not.toBeInTheDocument();
   });
 });
