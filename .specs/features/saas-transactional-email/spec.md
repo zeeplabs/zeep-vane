@@ -119,9 +119,9 @@ Decisão de negócio (Julio, nesta sessão): em modo SaaS, tenants contratantes 
 | SAASMAIL-06 | P1: As outras 5 categorias | Execute (T4: NotificationServiceSender, todas as 6 categorias) | Partial - Sender implementado e testado, wiring de boot pendente (T6) |
 | SAASMAIL-07 | P1: As outras 5 categorias | Execute (T4: NotificationServiceSender, todas as 6 categorias) | Partial - Sender implementado e testado, wiring de boot pendente (T6) |
 | SAASMAIL-08 | P1: As outras 5 categorias | Design | Pending |
-| SAASMAIL-09 | P1: Tenant SaaS nunca conecta provider próprio | Design | Pending |
-| SAASMAIL-10 | P1: Tenant SaaS nunca conecta provider próprio | Design | Pending |
-| SAASMAIL-11 | P1: Tenant SaaS nunca conecta provider próprio | Design | Pending |
+| SAASMAIL-09 | P1: Tenant SaaS nunca conecta provider próprio | Execute (T5: requireSelfHostedMode) | Verified |
+| SAASMAIL-10 | P1: Tenant SaaS nunca conecta provider próprio | Execute (T5: requireSelfHostedMode) | Verified |
+| SAASMAIL-11 | P1: Tenant SaaS nunca conecta provider próprio | Execute (T5: requireSelfHostedMode) | Verified |
 
 **ID format:** `SAASMAIL-NN`
 

@@ -234,12 +234,15 @@ func buildAdminRouter(pool *db.Pool, cfg config.Config, logger *zap.Logger, poll
 		// service-delete SVCDEL-05: ownerOnly, same tier as the rename above.
 		protected.With(ownerOnly).Delete("/api/services/{id}", servicesHandler.Delete)
 		protected.With(writeRoles).Post("/api/integrations/datadog", integrationsHandler.ConnectDatadog)
-		protected.With(writeRoles).Post("/api/integrations/email/{provider}", emailProvidersHandler.Connect)
-		protected.With(writeRoles).Post("/api/integrations/email/{provider}/activate", emailProvidersHandler.Activate)
+		protected.With(writeRoles, requireSelfHostedMode(cfg.DeploymentMode)).Post("/api/integrations/email/{provider}", emailProvidersHandler.Connect)
+		protected.With(writeRoles, requireSelfHostedMode(cfg.DeploymentMode)).Post("/api/integrations/email/{provider}/activate", emailProvidersHandler.Activate)
 		// provider-disconnect PROVDISC-01/02/03: same writeRoles gate as
 		// Connect/Activate above - disconnect is the same write/destructive
-		// action class.
-		protected.With(writeRoles).Delete("/api/integrations/email/{provider}", emailProvidersHandler.Disconnect)
+		// action class. requireSelfHostedMode (AD-034, SAASMAIL-09/10/11):
+		// a saas tenant never connects/activates/disconnects its own
+		// provider - email always goes through
+		// zeep-notification-service instead.
+		protected.With(writeRoles, requireSelfHostedMode(cfg.DeploymentMode)).Delete("/api/integrations/email/{provider}", emailProvidersHandler.Disconnect)
 		protected.With(writeRoles).Post("/api/integrations/llm/{provider}", llmProvidersHandler.Connect)
 		protected.With(writeRoles).Post("/api/integrations/llm/{provider}/model", llmProvidersHandler.SetModel)
 		protected.With(writeRoles).Post("/api/integrations/llm/{provider}/activate", llmProvidersHandler.Activate)
@@ -276,7 +279,7 @@ func buildAdminRouter(pool *db.Pool, cfg config.Config, logger *zap.Logger, poll
 		protected.With(anyRole).Get("/api/incidents/{id}/updates", incidentsHandler.ListUpdates)
 		protected.With(anyRole).Get("/api/status-pages/{id}/public-preview", publicStatusPreviewHandler.Get)
 		protected.With(anyRole).Get("/api/integrations/datadog/status", integrationsHandler.Status)
-		protected.With(anyRole).Get("/api/integrations/email", emailProvidersHandler.List)
+		protected.With(anyRole, requireSelfHostedMode(cfg.DeploymentMode)).Get("/api/integrations/email", emailProvidersHandler.List)
 		protected.With(anyRole).Get("/api/integrations/llm", llmProvidersHandler.List)
 
 		// SLO search decrypts the stored Datadog key pair server-side and
@@ -319,6 +322,24 @@ func requireSaaSMode(deploymentMode string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if deploymentMode != config.DeploymentModeSaaS {
+				http.NotFound(w, r)
+				return
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
+}
+
+// requireSelfHostedMode (AD-034, SAASMAIL-09/10/11) 404s the wrapped route
+// unless deploymentMode is self_hosted - the exact mirror of
+// requireSaaSMode. Used only on the 4 /api/integrations/email* routes: in
+// saas mode a tenant never connects its own provider (email always goes
+// through zeep-notification-service instead), so these routes must not
+// exist there, not just be hidden by the frontend.
+func requireSelfHostedMode(deploymentMode string) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if deploymentMode != config.DeploymentModeSelfHosted {
 				http.NotFound(w, r)
 				return
 			}

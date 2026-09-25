@@ -195,12 +195,12 @@ T1 → T8
 - Skill: NONE
 
 **Done when**:
-- [ ] `requireSelfHostedMode(deploymentMode string) func(http.Handler) http.Handler` criado e aplicado às 4 rotas
-- [ ] `TestAdminRouter_Viewer_EmailProvidersList_200` corrigido pra construir roteador `self_hosted` dedicado (continua verde)
-- [ ] Novo teste `TestAdminRouter_EmailProvidersRoutes_SaaSMode_404` prova as 4 rotas retornando 404 em `saas`
-- [ ] Comportamento em `self_hosted` continua idêntico ao de hoje pras 4 rotas (asserção explícita)
-- [ ] Gate check passes: `go build ./... && go test ./... && go vet ./... && gofmt -l internal/cli/routes.go internal/cli/routes_test.go && make test-integration`
-- [ ] Traceability de SAASMAIL-09/10/11 atualizada em `spec.md`
+- [x] `requireSelfHostedMode(deploymentMode string) func(http.Handler) http.Handler` criado e aplicado às 4 rotas
+- [x] `TestAdminRouter_Viewer_EmailProvidersList_200` corrigido pra construir roteador `self_hosted` dedicado (continua verde)
+- [x] Novo teste `TestAdminRouter_EmailProvidersRoutes_SaaSMode_404` prova as 4 rotas retornando 404 em `saas`
+- [x] Comportamento em `self_hosted` continua idêntico ao de hoje pras 4 rotas (asserção explícita)
+- [x] Gate check passes: `go build ./... && go test ./... && go vet ./... && gofmt -l internal/cli/routes.go internal/cli/routes_test.go && make test-integration`
+- [x] Traceability de SAASMAIL-09/10/11 atualizada em `spec.md`
 
 **Tests**: integration
 **Gate**: full

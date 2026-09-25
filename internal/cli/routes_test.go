@@ -695,9 +695,16 @@ func TestAdminRouter_AuditLog_NoSession_401(t *testing.T) {
 // TestAdminRouter_Viewer_EmailProvidersList_200 asserts EMAIL-06: viewer
 // must be able to read GET /api/integrations/email (anyRole), the same
 // read/write role split as the existing Datadog integration routes
-// (design.md's auth boundary assumption).
+// (design.md's auth boundary assumption). Uses its own self_hosted router
+// (not the shared saas one from newAdminRouterAndTenantForTest) since
+// requireSelfHostedMode (AD-034, SAASMAIL-09/10/11) 404s these 4 routes in
+// saas mode - see TestAdminRouter_EmailProvidersRoutes_SaaSMode_404 below.
 func TestAdminRouter_Viewer_EmailProvidersList_200(t *testing.T) {
-	r, pool, admins, tenantID := newAdminRouterAndTenantForTest(t)
+	pool, tenantID := newServeTestPoolWithTenant(t)
+	cfg := config.Config{SessionSecret: routesTestSessionSecret, MasterKey: "cli-routes-test-master-key", DeploymentMode: config.DeploymentModeSelfHosted}
+	pollerManager := NewPollerManager(context.Background(), pool, cfg, zap.NewNop(), testDatabaseURL(t))
+	r := buildAdminRouter(pool, cfg, zap.NewNop(), pollerManager)
+	admins := db.NewUserRepository(pool)
 	token := issueRoutesTestToken(t, admins, pool, tenantID, db.RoleViewer)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/integrations/email", nil)
@@ -707,6 +714,47 @@ func TestAdminRouter_Viewer_EmailProvidersList_200(t *testing.T) {
 
 	if rec.Code != http.StatusOK {
 		t.Errorf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+}
+
+// TestAdminRouter_EmailProvidersRoutes_SaaSMode_404 asserts AD-034,
+// SAASMAIL-09/10/11: in saas mode, a tenant can never connect, activate,
+// list, or disconnect its own email provider - not just hidden by the
+// frontend, a direct API call 404s too, since Vane always guarantees
+// delivery itself via zeep-notification-service in that mode.
+func TestAdminRouter_EmailProvidersRoutes_SaaSMode_404(t *testing.T) {
+	r, pool, admins, tenantID := newAdminRouterAndTenantForTest(t)
+	ownerToken := issueRoutesTestToken(t, admins, pool, tenantID, db.RoleOwner)
+	viewerToken := issueRoutesTestToken(t, admins, pool, tenantID, db.RoleViewer)
+
+	cases := []struct {
+		name   string
+		method string
+		path   string
+		token  string
+		body   []byte
+	}{
+		{"connect", http.MethodPost, "/api/integrations/email/resend", ownerToken, []byte(`{"api_key":"x","from_email":"a@example.com","from_name":"Acme"}`)},
+		{"activate", http.MethodPost, "/api/integrations/email/resend/activate", ownerToken, nil},
+		{"disconnect", http.MethodDelete, "/api/integrations/email/resend", ownerToken, nil},
+		{"list", http.MethodGet, "/api/integrations/email", viewerToken, nil},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var req *http.Request
+			if tc.body != nil {
+				req = httptest.NewRequest(tc.method, tc.path, bytes.NewReader(tc.body))
+				req.Header.Set("Content-Type", "application/json")
+			} else {
+				req = httptest.NewRequest(tc.method, tc.path, nil)
+			}
+			req.Header.Set("Authorization", "Bearer "+tc.token)
+			rec := httptest.NewRecorder()
+			r.ServeHTTP(rec, req)
+			if rec.Code != http.StatusNotFound {
+				t.Errorf("status = %d, want 404 in saas mode, body = %s", rec.Code, rec.Body.String())
+			}
+		})
 	}
 }
 
