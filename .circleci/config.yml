@@ -17,16 +17,16 @@ version: 2.1
 #   effect (disposable Postgres on localhost:5432, max_connections=300 per
 #   AGENTS.md SS3), simpler than reaching for setup_remote_docker for a job
 #   that doesn't otherwise need a real Docker daemon.
-# - release needs real Docker (multi-arch buildx) and the `gh` CLI, so it
-#   runs on a machine executor and installs both by hand -- no
-#   docker/setup-qemu-action or softprops/action-gh-release equivalent.
+# - release needs real Docker (multi-arch buildx), so it runs on a machine
+#   executor and installs QEMU/buildx by hand -- no docker/setup-qemu-action
+#   equivalent. GitHub Release creation goes through the REST API via curl,
+#   not the `gh` CLI (see the "Create GitHub Release" step comment).
 # - GitHub Actions' automatic `secrets.GITHUB_TOKEN` has no CircleCI
-#   equivalent -- release needs 2 project env vars instead:
+#   equivalent -- release needs 1 context ("Github Context") with:
 #     - GHCR_USER / GHCR_TOKEN: GitHub PAT (classic, scopes write:packages,
-#       read:packages) to push the image to ghcr.io.
-#     - GH_TOKEN: GitHub PAT (classic, scope public_repo -- this repo is
-#       public) so the `gh` CLI can create the GitHub Release and upload
-#       the Helm chart .tgz to it.
+#       read:packages, public_repo) used both to push the image to ghcr.io
+#       and, via the REST API, to create the GitHub Release and upload the
+#       Helm chart .tgz to it.
 
 executors:
   go:
@@ -249,28 +249,32 @@ jobs:
               echo '```'
             } >> "$OUT"
       - run:
-          name: Install gh CLI
-          command: |
-            curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | sudo dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg
-            sudo chmod go+r /usr/share/keyrings/githubcli-archive-keyring.gpg
-            echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | sudo tee /etc/apt/sources.list.d/github-cli.list > /dev/null
-            sudo apt-get update
-            sudo apt-get install -y gh
-      - run:
           name: Create GitHub Release
+          # Uses curl against the REST API directly (not the gh CLI) so
+          # release only needs GHCR_USER/GHCR_TOKEN (same PAT already used
+          # for the GHCR push, scoped for both packages and public_repo) --
+          # no separate GH_TOKEN/context wiring to keep in sync. Mirrors
+          # zeep-notti's release job, which hit the same "gh CLI needs its
+          # own GH_TOKEN env var" gap and moved to the API for this reason.
           command: |
-            if [ "$RELEASE_NOTES_FOUND" = "true" ]; then
-              gh release create "$CIRCLE_TAG" .helm-packages/*.tgz \
-                --repo zeeplabs/zeep-vane \
-                --title "$CIRCLE_TAG" \
-                --notes-file release-body.md
-            else
-              gh release create "$CIRCLE_TAG" .helm-packages/*.tgz \
-                --repo zeeplabs/zeep-vane \
-                --title "$CIRCLE_TAG" \
-                --notes-file release-body.md \
-                --generate-notes
-            fi
+            BODY_JSON=$(jq -Rs --arg tag "$CIRCLE_TAG" '{tag_name: $tag, name: $tag, body: .}' release-body.md)
+            RESPONSE=$(curl -sSf -X POST \
+              -H "Authorization: Bearer $GHCR_TOKEN" \
+              -H "Accept: application/vnd.github+json" \
+              "https://api.github.com/repos/zeeplabs/zeep-vane/releases" \
+              -d "$BODY_JSON")
+            UPLOAD_URL=$(echo "$RESPONSE" | jq -r '.upload_url' | sed 's/{.*}//')
+            echo "export UPLOAD_URL=$UPLOAD_URL" >> "$BASH_ENV"
+      - run:
+          name: Upload Helm chart asset
+          command: |
+            ASSET=$(ls .helm-packages/*.tgz | head -n1)
+            NAME=$(basename "$ASSET")
+            curl -sSf -X POST \
+              -H "Authorization: Bearer $GHCR_TOKEN" \
+              -H "Content-Type: application/gzip" \
+              --data-binary @"$ASSET" \
+              "${UPLOAD_URL}?name=${NAME}"
 
 workflows:
   version: 2

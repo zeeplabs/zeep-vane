@@ -56,7 +56,7 @@ Keep an empty `[Unreleased]` heading at the top for the next round of changes to
 
 ## 3. Write release notes
 
-Create `.github/release-notes-v0.2.0.md` summarizing the release for humans (features, fixes, breaking changes, upgrade instructions). This becomes the **GitHub Release body**: CircleCI's `release` job (`.circleci/config.yml`) reads `.github/release-notes-<tag>.md` verbatim and appends a Docker/Helm install snippet automatically. If the file is missing for a given tag, it falls back to `gh release create --generate-notes` instead — so skipping this step doesn't fail the release, it just publishes generic notes.
+Create `.github/release-notes-v0.2.0.md` summarizing the release for humans (features, fixes, breaking changes, upgrade instructions). This becomes the **GitHub Release body**: CircleCI's `release` job (`.circleci/config.yml`) reads `.github/release-notes-<tag>.md` verbatim and appends a Docker/Helm install snippet automatically. If the file is missing for a given tag, the release still publishes — just with only the Docker/Helm snippet as its body (a warning is logged in the job output) instead of real release notes.
 
 ## 4. Commit, push, and merge the release PR
 
@@ -85,11 +85,11 @@ Pushing the tag triggers CircleCI's `release` workflow (`.circleci/config.yml`),
 |---|---|
 | Build & push | Multi-arch (`linux/amd64`, `linux/arm64`) Docker image, pushed to GHCR (tags: `<version>` and `<major>.<minor>`, version = tag stripped of `v`) |
 | Package Helm chart | `helm package charts/zeep-vane --version <version> --app-version <version>` |
-| Create GitHub Release | Via `gh release create`, attaches the Helm chart `.tgz`, body from `.github/release-notes-<tag>.md` (or `--generate-notes` if missing) |
+| Create GitHub Release | Via the GitHub REST API (`curl`, not the `gh` CLI), body from `.github/release-notes-<tag>.md` plus an appended Docker/Helm snippet, then the Helm chart `.tgz` uploaded as a release asset |
 
 The old GitHub Actions equivalents (`ci.yml`, `docker-publish.yml`) still exist in the repo but are `workflow_dispatch`-only (auto-trigger disabled) — run by hand only to compare against a CircleCI result. `docs.yml` (Helm chart → GitHub Pages) is unaffected and still runs automatically on `main` pushes touching `charts/**`.
 
-CircleCI project env vars this depends on: `GHCR_USER`/`GHCR_TOKEN` (GitHub PAT, scopes `write:packages`/`read:packages`, for the image push) and `GH_TOKEN` (GitHub PAT, scope `public_repo`, for `gh release create`).
+CircleCI dependency: a project **context** named `Github Context`, providing `GHCR_USER`/`GHCR_TOKEN` (GitHub PAT, scopes `write:packages`/`read:packages`/`public_repo`) — used both to push the image to GHCR and, via the REST API, to create the GitHub Release and upload the Helm chart asset. No separate `GH_TOKEN`/`gh` CLI dependency (dropped 2026-09-25 after hitting the same "gh needs its own token env var" gap `zeep-notti` hit first).
 
 ## 7. Reconcile `develop` with `main`
 
