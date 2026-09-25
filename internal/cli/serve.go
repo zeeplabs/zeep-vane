@@ -230,6 +230,30 @@ func newHTTPSServer(pool *db.Pool, dsn, masterKey string, logger *zap.Logger) *h
 
 	manager := vanetls.NewManager(statusPages, encryptedStorage)
 
+	// hsts=true - this listener really does terminate TLS, unlike the admin
+	// HTTP listener (M14).
+	handler := api.SecurityHeaders(true)(router.HostRouter(statusPages, pool, newPublicStatusMux(pool, logger)))
+
+	tlsConfig := manager.TLSConfig()
+	tlsConfig.NextProtos = append([]string{"h2", "http/1.1"}, tlsConfig.NextProtos...)
+
+	return &http.Server{
+		Addr:      ":" + httpsPort,
+		Handler:   handler,
+		TLSConfig: tlsConfig,
+	}
+}
+
+// newPublicStatusMux builds the three-route mux every listener that serves a
+// tenant's custom status-page hostname mounts behind router.HostRouter: the
+// public status JSON at "/api/public-status", the public logo file handler at
+// "/uploads/", and the embedded SPA at "/" (AD-018). Both the dedicated :443
+// listener (newHTTPSServer) and, when VANE_TENANT_DOMAINS_ON_ADMIN_LISTENER is
+// enabled, the admin listener build it identically - HostRouter forwards every
+// path on a matched hostname to whatever single handler it is given, so these
+// three routes must live on one mux or a status page's own logo request would
+// hit the JSON handler instead of the file.
+func newPublicStatusMux(pool *db.Pool, logger *zap.Logger) *http.ServeMux {
 	services := db.NewServiceRepository(pool)
 	intervals := db.NewStatusIntervalRepository(pool)
 	incidents := db.NewIncidentRepository(pool)
@@ -242,18 +266,7 @@ func newHTTPSServer(pool *db.Pool, dsn, masterKey string, logger *zap.Logger) *h
 	publicMux.HandleFunc("/api/public-status", publicHandler.Get)
 	publicMux.Handle("/", web.StaticHandler())
 
-	// hsts=true - this listener really does terminate TLS, unlike the admin
-	// HTTP listener (M14).
-	handler := api.SecurityHeaders(true)(router.HostRouter(statusPages, pool, publicMux))
-
-	tlsConfig := manager.TLSConfig()
-	tlsConfig.NextProtos = append([]string{"h2", "http/1.1"}, tlsConfig.NextProtos...)
-
-	return &http.Server{
-		Addr:      ":" + httpsPort,
-		Handler:   handler,
-		TLSConfig: tlsConfig,
-	}
+	return publicMux
 }
 
 // newPollerFromStoredIntegration builds the shared Poller. started is
