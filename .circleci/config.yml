@@ -296,6 +296,8 @@ workflows:
   release:
     jobs:
       - release:
+          context:
+            - Github Context
           filters:
             branches:
               ignore: /.*/
