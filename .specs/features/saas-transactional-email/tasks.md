@@ -274,8 +274,8 @@ T1 → T8
 - Skill: NONE
 
 **Done when**:
-- [ ] Tabela atualizada com as 2 env vars novas, obrigatoriedade condicional documentada
-- [ ] Nenhuma outra seção do README fica desatualizada por esta mudança
+- [x] Tabela atualizada com as 2 env vars novas, obrigatoriedade condicional documentada
+- [x] Nenhuma outra seção do README fica desatualizada por esta mudança
 
 **Tests**: none
 **Gate**: docs (leitura manual, sem comando)
