@@ -166,14 +166,14 @@ T1 → T8
 - Skill: NONE
 
 **Done when**:
-- [ ] `NewNotificationServiceSender(client, tenantKey, logger) (*NotificationServiceSender, error)` construído, erro só se `parseTemplates()` falhar
-- [ ] As 6 categorias mapeiam `category`/`priority`/`type` exatamente conforme a tabela do design (1 teste por categoria)
-- [ ] Idempotency-key: mesmo `to`+`subject`+`html` → mesma chave; conteúdo diferente → chave diferente (2 testes mínimo)
-- [ ] Falha do client (fake retornando erro) é propagada ao chamador sem wrapping que esconda o erro original de classificação (`errors.Is` continua funcionando)
-- [ ] `NotificationServiceSender` satisfaz `email.Sender` em tempo de compilação (`var _ email.Sender = (*NotificationServiceSender)(nil)`)
-- [ ] Gate check passes: `go build ./... && go test ./internal/email/... && go vet ./internal/email/... && gofmt -l internal/email/notification_service_sender.go internal/email/notification_service_sender_test.go`
-- [ ] Test count: >= 10 testes passam (6 categorias + 2 idempotência + falha propagada + assertion de compilação)
-- [ ] Traceability de SAASMAIL-05/06/07 atualizada em `spec.md`
+- [x] `NewNotificationServiceSender(client, tenantKey, logger) (*NotificationServiceSender, error)` construído, erro só se `parseTemplates()` falhar
+- [x] As 6 categorias mapeiam `category`/`priority`/`type` exatamente conforme a tabela do design (1 teste por categoria)
+- [x] Idempotency-key: mesmo `to`+`subject`+`html` → mesma chave; conteúdo diferente → chave diferente (2 testes mínimo)
+- [x] Falha do client (fake retornando erro) é propagada ao chamador sem wrapping que esconda o erro original de classificação (`errors.Is` continua funcionando)
+- [x] `NotificationServiceSender` satisfaz `email.Sender` em tempo de compilação (`var _ email.Sender = (*NotificationServiceSender)(nil)`)
+- [x] Gate check passes: `go build ./... && go test ./internal/email/... && go vet ./internal/email/... && gofmt -l internal/email/notification_service_sender.go internal/email/notification_service_sender_test.go`
+- [x] Test count: >= 10 testes passam (6 categorias + 2 idempotência + falha propagada + assertion de compilação) — 11 passam
+- [x] Traceability de SAASMAIL-05/06/07 atualizada em `spec.md`
 
 **Tests**: unit
 **Gate**: quick
