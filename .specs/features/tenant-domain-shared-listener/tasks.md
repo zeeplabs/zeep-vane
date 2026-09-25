@@ -162,12 +162,12 @@ Tasks: T5, T6 - see dependency graph below.
 - Skill: NONE
 
 **Done when**:
-- [ ] Flag `false` (default): `serveAdminHandler(...)` returns `buildAdminRouter(...)` unchanged - a request to any hostname reaches the admin router directly, with no `GetByHostname` call happening anywhere in the path (proven via a call-counting fake `statusPageHostLookup`, confirming it is never even constructed/invoked on this path)
-- [ ] Flag `true` + request with a `Host` header matching a published status page: response body/behavior matches what `newPublicStatusMux` would serve directly (public status JSON / logo / SPA), and the request's tenant-scoped RLS transaction is opened against that status page's `TenantID`
-- [ ] Flag `true` + request with a `Host` header that does not match any published status page (including the admin's own domain): response matches `buildAdminRouter(...)`'s behavior unchanged (e.g. `/healthz` still responds `200`)
-- [ ] `newHTTPSServer`/`RunE`'s `:443` listener wiring is untouched by this task - still built and started exactly as before when `cfg.HTTPSEnabled`
-- [ ] Gate check passes: `go test -tags=integration ./internal/cli && gofmt -l . && go vet ./...`
-- [ ] Test count: at least the same as before this task, plus 3+ new (no silent deletions)
+- [x] Flag `false` (default): `serveAdminHandler(...)` returns `buildAdminRouter(...)` unchanged - a request to any hostname reaches the admin router directly, with no `GetByHostname` call happening anywhere in the path (proven via a call-counting fake `statusPageHostLookup`, confirming it is never even constructed/invoked on this path)
+- [x] Flag `true` + request with a `Host` header matching a published status page: response body/behavior matches what `newPublicStatusMux` would serve directly (public status JSON / logo / SPA), and the request's tenant-scoped RLS transaction is opened against that status page's `TenantID`
+- [x] Flag `true` + request with a `Host` header that does not match any published status page (including the admin's own domain): response matches `buildAdminRouter(...)`'s behavior unchanged (e.g. `/healthz` still responds `200`)
+- [x] `newHTTPSServer`/`RunE`'s `:443` listener wiring is untouched by this task - still built and started exactly as before when `cfg.HTTPSEnabled`
+- [x] Gate check passes: `go test -tags=integration ./internal/cli && gofmt -l . && go vet ./...`
+- [x] Test count: at least the same as before this task, plus 3+ new (no silent deletions)
 
 **Tests**: integration
 **Gate**: full

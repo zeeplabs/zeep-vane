@@ -120,7 +120,7 @@ func NewServeCmd() *cobra.Command {
 			go digestScheduler.Run(ctx)
 
 			addr := fmt.Sprintf(":%d", cfg.Port)
-			srv := &http.Server{Addr: addr, Handler: buildAdminRouter(pool, cfg, logger, pollerManager)}
+			srv := &http.Server{Addr: addr, Handler: serveAdminHandler(pool, cfg, logger, pollerManager)}
 
 			var httpsSrv *http.Server
 			serverErrs := make(chan error, 2)
@@ -242,6 +242,26 @@ func newHTTPSServer(pool *db.Pool, dsn, masterKey string, logger *zap.Logger) *h
 		Handler:   handler,
 		TLSConfig: tlsConfig,
 	}
+}
+
+// serveAdminHandler builds the admin HTTP listener's handler. By default it
+// is buildAdminRouter, unchanged. When cfg.TenantDomainsOnAdminListener is
+// set (AD-038), it wraps that router with router.HostRouter so a request
+// whose Host header resolves to a published status page is served by the
+// same public mux newHTTPSServer uses, while every other Host - including
+// the admin's own domain - falls through to the admin router untouched.
+// This is what lets a tenant custom domain and the admin SPA/API share one
+// port behind an external TLS-terminating reverse proxy that owns 80/443.
+//
+// The disabled path constructs no status-page repository and performs no
+// Host lookup, so a deployment that doesn't opt in pays nothing extra on
+// its admin request path.
+func serveAdminHandler(pool *db.Pool, cfg config.Config, logger *zap.Logger, pollerManager *PollerManager) http.Handler {
+	adminHandler := buildAdminRouter(pool, cfg, logger, pollerManager)
+	if !cfg.TenantDomainsOnAdminListener {
+		return adminHandler
+	}
+	return router.HostRouter(db.NewStatusPageRepository(pool), pool, newPublicStatusMux(pool, logger), adminHandler)
 }
 
 // newPublicStatusMux builds the three-route mux every listener that serves a
