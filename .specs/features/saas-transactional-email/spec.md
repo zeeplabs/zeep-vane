@@ -111,8 +111,8 @@ Decisão de negócio (Julio, nesta sessão): em modo SaaS, tenants contratantes 
 
 | Requirement ID | Story | Phase | Status |
 | --- | --- | --- | --- |
-| SAASMAIL-01 | P1: Signup SaaS deixa de travar | Execute (T1: boot fails without env vars; T6: wiring) | Partial - envio real ligado, prova de regressão fica pra T7 |
-| SAASMAIL-02 | P1: Signup SaaS deixa de travar | Execute (T6: wiring) | Partial - `SignupHandler` já usa `email.Sender`, prova de regressão fica pra T7 |
+| SAASMAIL-01 | P1: Signup SaaS deixa de travar | Execute (T1+T6+T7) | Verified |
+| SAASMAIL-02 | P1: Signup SaaS deixa de travar | Execute (T6+T7) | Verified |
 | SAASMAIL-03 | P1: Signup SaaS deixa de travar | Execute (T6: wiring) | Verified |
 | SAASMAIL-04 | P1: Signup SaaS deixa de travar | Execute (T6: wiring) | Verified |
 | SAASMAIL-05 | P1: As outras 5 categorias | Execute (T4+T6: NotificationServiceSender + wiring) | Verified |

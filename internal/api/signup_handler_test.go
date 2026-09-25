@@ -23,7 +23,7 @@ import (
 
 // newSignupRouterWithEmail builds a router exercising Signup, backed by
 // emailSvc.
-func newSignupRouterWithEmail(t *testing.T, emailSvc *email.Service) (http.Handler, *db.Pool, *db.UserRepository) {
+func newSignupRouterWithEmail(t *testing.T, emailSvc email.Sender) (http.Handler, *db.Pool, *db.UserRepository) {
 	t.Helper()
 	dsn := testDatabaseURL(t)
 	pool, _ := newAPITenantScopedPool(t)
@@ -478,5 +478,91 @@ func TestResendVerification_UnknownEmail_404(t *testing.T) {
 
 	if rec.Code != http.StatusNotFound {
 		t.Errorf("status = %d, want %d, body = %s", rec.Code, http.StatusNotFound, rec.Body.String())
+	}
+}
+
+// --- saas-transactional-email T7: signup SaaS never depends on email_providers ---
+
+// fakeSaaSNotificationSender is a minimal email.Sender that never touches
+// email_providers/GetActiveProvider - it stands in for
+// email.NotificationServiceSender to prove the bug AD-034 closes (a saas
+// tenant with zero email_providers rows can still complete signup) without
+// depending on the real zeep-notification-service.
+type fakeSaaSNotificationSender struct {
+	lastTo     string
+	lastVerify string
+	sendErr    error
+	sendCount  int
+}
+
+func (f *fakeSaaSNotificationSender) SendAdminInvite(ctx context.Context, to string, data email.AdminInviteEmailData) error {
+	return nil
+}
+func (f *fakeSaaSNotificationSender) SendPasswordReset(ctx context.Context, to string, data email.PasswordResetEmailData) error {
+	return nil
+}
+func (f *fakeSaaSNotificationSender) SendSignupVerification(ctx context.Context, to string, data email.SignupVerificationEmailData) error {
+	f.sendCount++
+	f.lastTo = to
+	f.lastVerify = data.VerifyURL
+	return f.sendErr
+}
+func (f *fakeSaaSNotificationSender) SendIncidentOpened(ctx context.Context, to string, data email.IncidentOpenedEmailData) error {
+	return nil
+}
+func (f *fakeSaaSNotificationSender) SendIncidentResolved(ctx context.Context, to string, data email.IncidentResolvedEmailData) error {
+	return nil
+}
+func (f *fakeSaaSNotificationSender) SendWeeklyDigest(ctx context.Context, to string, data email.WeeklyDigestEmailData) error {
+	return nil
+}
+
+var _ email.Sender = (*fakeSaaSNotificationSender)(nil)
+
+// TestSignup_SaaSMode_ZeroEmailProviders_VerificationSentLoginUnblocked is
+// the direct reproduction of the bug AD-034 closes: a saas tenant created
+// via /signup with literally zero email_providers rows for its tenant (the
+// real state of every brand-new SaaS tenant, never reproduced by
+// TestSignup_NewEmail_201_..., whose fixture already has an active
+// provider connected) must still receive its verification email and reach
+// a working login - not the ErrNoActiveProvider dead end the bug caused.
+// Would fail if SignupHandler's dependency on email_providers/
+// GetActiveProvider were ever reintroduced, since fakeSaaSNotificationSender
+// has no email_providers backing at all.
+func TestSignup_SaaSMode_ZeroEmailProviders_VerificationSentLoginUnblocked(t *testing.T) {
+	fake := &fakeSaaSNotificationSender{}
+	r, pool, users := newSignupRouterWithEmail(t, fake)
+	testEmail := uniqueTestEmail(t)
+	cleanupSignupTestData(t, pool, testEmail)
+
+	rec := postSignup(t, r, testEmail, "correct-horse-battery-staple", "Acme SaaS Inc")
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("signup status = %d, want %d, body = %s", rec.Code, http.StatusCreated, rec.Body.String())
+	}
+
+	if fake.sendCount != 1 {
+		t.Fatalf("SendSignupVerification calls = %d, want 1 (sent even with zero email_providers rows)", fake.sendCount)
+	}
+	if fake.lastTo != testEmail {
+		t.Errorf("SendSignupVerification To = %q, want %q", fake.lastTo, testEmail)
+	}
+
+	rawToken := extractVerifyToken(t, fake.lastVerify)
+	verifyRec := getVerify(t, r, rawToken)
+	if verifyRec.Code != http.StatusOK {
+		t.Fatalf("verify status = %d, want %d, body = %s", verifyRec.Code, http.StatusOK, verifyRec.Body.String())
+	}
+
+	created, err := users.GetByEmail(context.Background(), testEmail)
+	if err != nil {
+		t.Fatalf("GetByEmail() returned unexpected error: %v", err)
+	}
+	if created.EmailVerifiedAt == nil {
+		t.Fatal("EmailVerifiedAt = nil after verify, want a timestamp")
+	}
+
+	loginRec := postLogin(t, r, testEmail, "correct-horse-battery-staple")
+	if loginRec.Code != http.StatusOK {
+		t.Errorf("login after verification status = %d, want %d, body = %s", loginRec.Code, http.StatusOK, loginRec.Body.String())
 	}
 }

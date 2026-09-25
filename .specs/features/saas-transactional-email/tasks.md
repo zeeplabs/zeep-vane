@@ -249,10 +249,10 @@ T1 → T8
 - Skill: NONE
 
 **Done when**:
-- [ ] Novo teste prova envio + verificação + login liberado, com um `email.Sender` fake que nunca consulta `email_providers`
-- [ ] Teste falharia se o bug original (dependência de `GetActiveProvider`) fosse reintroduzido
-- [ ] Gate check passes: `go build ./... && go test ./internal/api/... && go vet ./internal/api/... && gofmt -l internal/api/signup_handler_test.go`
-- [ ] Traceability de SAASMAIL-01/02 marcada "Verified" em `spec.md`
+- [x] Novo teste prova envio + verificação + login liberado, com um `email.Sender` fake que nunca consulta `email_providers`
+- [x] Teste falharia se o bug original (dependência de `GetActiveProvider`) fosse reintroduzido
+- [x] Gate check passes: `go build ./... && go test ./internal/api/... && go vet ./internal/api/... && gofmt -l internal/api/signup_handler_test.go`
+- [x] Traceability de SAASMAIL-01/02 marcada "Verified" em `spec.md`
 
 **Tests**: unit
 **Gate**: quick
