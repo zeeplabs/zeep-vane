@@ -139,12 +139,12 @@ T1 → T8
 - Skill: NONE
 
 **Done when**:
-- [ ] `NewClient(baseURL, apiKey string) *Client` construído
-- [ ] `Send` monta o payload de conteúdo inline corretamente (nunca `template.key`)
-- [ ] Testes cobrindo: envio válido (payload/headers corretos, incluindo `Idempotency-Key`), 401/403, timeout, 5xx, 400/409/413/422 (`httptest.Server` fake, mesmo padrão de `resend/client_test.go`)
-- [ ] Chave de API nunca aparece em nenhum log/erro retornado
-- [ ] Gate check passes: `go build ./... && go test ./internal/connectors/notificationservice/... && go vet ./internal/connectors/notificationservice/... && gofmt -l internal/connectors/notificationservice/client.go internal/connectors/notificationservice/client_test.go`
-- [ ] Test count: >= 6 testes passam (mínimo, um por cenário de classificação)
+- [x] `NewClient(baseURL, apiKey string) *Client` construído
+- [x] `Send` monta o payload de conteúdo inline corretamente (nunca `template.key`)
+- [x] Testes cobrindo: envio válido (payload/headers corretos, incluindo `Idempotency-Key`), 401/403, timeout, 5xx, 400/409/413/422 (`httptest.Server` fake, mesmo padrão de `resend/client_test.go`)
+- [x] Chave de API nunca aparece em nenhum log/erro retornado
+- [x] Gate check passes: `go build ./... && go test ./internal/connectors/notificationservice/... && go vet ./internal/connectors/notificationservice/... && gofmt -l internal/connectors/notificationservice/client.go internal/connectors/notificationservice/client_test.go`
+- [x] Test count: >= 6 testes passam (mínimo, um por cenário de classificação) — 7 passam
 
 **Tests**: unit
 **Gate**: quick
