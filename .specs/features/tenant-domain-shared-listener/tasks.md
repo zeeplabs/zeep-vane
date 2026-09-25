@@ -214,8 +214,8 @@ Tasks: T5, T6 - see dependency graph below.
 - Skill: NONE
 
 **Done when**:
-- [ ] `AD-038` entry present with Decision/Reason/Trade-off/Scope/Date/Status fields, same shape as `AD-037`
-- [ ] Gate check passes: manual review (no automated test for docs)
+- [x] `AD-038` entry present with Decision/Reason/Trade-off/Scope/Date/Status fields, same shape as `AD-037`
+- [x] Gate check passes: manual review (no automated test for docs)
 
 **Tests**: none
 **Gate**: n/a (docs)
