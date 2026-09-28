@@ -336,6 +336,16 @@ func newPollerFromStoredIntegration(ctx context.Context, pool *db.Pool, cfg conf
 	// tenant connected Datadog first.
 	analyzer.SetErrorCauseEnrichment(llmProviderRepo, nil)
 
+	// Each enrichment goroutine (degraded/outage/closing-comment) must open
+	// its own tenant-scoped transaction rather than reuse the poll cycle's:
+	// pollCycle commits/rolls back that transaction the instant pollOnce
+	// returns, before any dispatched goroutine's LLM call has finished, so
+	// every DB write it attempted on the borrowed transaction failed with
+	// "tx is closed" (2026-09-28 incident). Same TenantTxFunc
+	// (poolTenantTx) EnableTenantIteration below already uses for the
+	// synchronous poll cycle.
+	analyzer.SetTenantTx(poolTenantTx(pool))
+
 	p = poller.NewPoller(services, services, intervals, integrations, nil, interval, analyzer, logger)
 
 	// TENANT-04: every production poll cycle iterates tenants explicitly,

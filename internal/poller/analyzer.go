@@ -173,6 +173,25 @@ type SLOAnalyzer struct {
 	enrichmentSettings enrichmentSettingsReader
 	causeProvider      errorCauseProvider
 
+	// tenantTx opens a fresh tenant-scoped transaction for an enrichment
+	// goroutine's own DB work (LLM provider-checked write, status_analysis/
+	// interval/incident persist). Required in production: the ctx an
+	// enrichment goroutine runs under is derived via context.WithoutCancel
+	// from the poll cycle's ctx, which still carries that cycle's own
+	// tenant transaction as a context *value* - WithoutCancel strips
+	// cancellation, not values. That transaction is committed/rolled back
+	// by pollCycle the moment the synchronous pollOnce call returns, before
+	// any dispatched goroutine's LLM call (up to AnalysisTimeout) has a
+	// chance to finish, so every DB write the goroutine attempts on the
+	// borrowed transaction fails with "tx is closed" (observed 2026-09-28:
+	// llm/service.go's mark-provider-checked write and this file's own
+	// persist calls, across all three dispatchers). nil (the default, and
+	// every existing test that calls HandleTransition directly) preserves
+	// the old borrowed-context behavior - set via SetTenantTx from boot
+	// wiring (cli.poolTenantTx, the same TenantTxFunc Poller.
+	// EnableTenantIteration already uses for the synchronous poll cycle).
+	tenantTx TenantTxFunc
+
 	sem chan struct{} // bounds concurrent enrichment goroutines (maxConcurrentEnrichments)
 
 	mu           sync.Mutex
@@ -198,6 +217,29 @@ func (a *SLOAnalyzer) SetNotifier(n incidentNotifier) {
 func (a *SLOAnalyzer) SetErrorCauseEnrichment(settings enrichmentSettingsReader, provider errorCauseProvider) {
 	a.enrichmentSettings = settings
 	a.causeProvider = provider
+}
+
+// SetTenantTx installs the TenantTxFunc every enrichment goroutine uses to
+// open its own tenant-scoped transaction, independent of the poll cycle's
+// transaction lifetime - see the tenantTx field comment for why this is
+// required in production. Optional only in the sense that nil preserves the
+// pre-fix borrowed-context behavior, which every existing test relies on.
+func (a *SLOAnalyzer) SetTenantTx(tx TenantTxFunc) {
+	a.tenantTx = tx
+}
+
+// openEnrichmentTx opens a fresh tenant-scoped transaction for an enrichment
+// goroutine's DB work, scoped to tenantID (from tenantIDFromContext at
+// dispatch time, same capture-before-goroutine convention as causeProvider).
+// Returns dctx itself unchanged, a no-op commit/rollback pair, and no error
+// when a.tenantTx is unset (nil - existing tests, see SetTenantTx) - callers
+// don't need a separate nil check, only a single defer rollback() / final
+// commit() pair that's always safe to call.
+func (a *SLOAnalyzer) openEnrichmentTx(dctx context.Context, tenantID string) (writeCtx context.Context, commit func(context.Context) error, rollback func(context.Context), err error) {
+	if a.tenantTx == nil {
+		return dctx, func(context.Context) error { return nil }, func(context.Context) {}, nil
+	}
+	return a.tenantTx(dctx, tenantID)
 }
 
 // resolveCauseHint resolves a root-cause hint for svc's degraded/outage
@@ -460,6 +502,8 @@ func (a *SLOAnalyzer) dispatchDegradedEnrichment(ctx context.Context, svc db.Ser
 		return
 	}
 
+	tenantID := tenantIDFromContext(ctx)
+
 	go func() {
 		defer a.release()
 		defer a.recoverEnrichmentPanic("degraded", svc.ID)
@@ -467,18 +511,34 @@ func (a *SLOAnalyzer) dispatchDegradedEnrichment(ctx context.Context, svc db.Ser
 		dctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), a.timeout)
 		defer cancel()
 
-		// resolveCauseHint runs inside this same bounded dctx - no second
-		// timeout context is created for it (slo-root-cause-enrichment
-		// RCA-05); it's a no-op (returns "", "") unless SetErrorCauseEnrichment
-		// was called and the tenant's toggle is on. causeProvider was
-		// captured by this closure above, at dispatch time, on the caller's
-		// goroutine - never read lazily from a shared field here, which
-		// would race against pollCycle moving on to the next tenant
-		// (integrations-tenant-scope, TENANT-05).
-		in := buildAnalysisInput(svc, sloStatus)
-		in.CauseType, in.CauseMessage = a.resolveCauseHint(dctx, svc, causeProvider)
+		// openEnrichmentTx opens this goroutine's own tenant-scoped
+		// transaction rather than reusing whatever tx dctx's value chain
+		// still carries from the poll cycle - that borrowed tx is
+		// committed/rolled back by pollCycle the moment pollOnce returns,
+		// before this goroutine's LLM call (up to a.timeout) can finish,
+		// so every DB write below (including the LLM service's own
+		// provider-checked write, inside GenerateDegradedAnalysis) must run
+		// on writeCtx instead of dctx. See the tenantTx field comment.
+		writeCtx, commit, rollback, err := a.openEnrichmentTx(dctx, tenantID)
+		if err != nil {
+			a.logger.Error("slo-analyzer: failed to open enrichment transaction",
+				zap.String("service_id", svc.ID), zap.Error(err))
+			return
+		}
+		defer rollback(writeCtx)
 
-		analysis, err := a.llmSvc.GenerateDegradedAnalysis(dctx, in)
+		// resolveCauseHint runs inside this same bounded writeCtx - no
+		// second timeout context is created for it (slo-root-cause-
+		// enrichment RCA-05); it's a no-op (returns "", "") unless
+		// SetErrorCauseEnrichment was called and the tenant's toggle is on.
+		// causeProvider was captured by this closure above, at dispatch
+		// time, on the caller's goroutine - never read lazily from a shared
+		// field here, which would race against pollCycle moving on to the
+		// next tenant (integrations-tenant-scope, TENANT-05).
+		in := buildAnalysisInput(svc, sloStatus)
+		in.CauseType, in.CauseMessage = a.resolveCauseHint(writeCtx, svc, causeProvider)
+
+		analysis, err := a.llmSvc.GenerateDegradedAnalysis(writeCtx, in)
 		if err != nil {
 			a.logger.Error("slo-analyzer: failed to generate degraded analysis",
 				zap.String("service_id", svc.ID), zap.Error(err))
@@ -490,13 +550,18 @@ func (a *SLOAnalyzer) dispatchDegradedEnrichment(ctx context.Context, svc db.Ser
 			return
 		}
 
-		if err := a.services.UpdateStatusAnalysis(dctx, svc.ID, &analysis); err != nil {
+		if err := a.services.UpdateStatusAnalysis(writeCtx, svc.ID, &analysis); err != nil {
 			a.logger.Error("slo-analyzer: failed to persist generated degraded analysis",
 				zap.String("service_id", svc.ID), zap.Error(err))
 		}
-		if err := a.statusIntervals.SetIntervalAnalysis(dctx, intervalID, analysis); err != nil {
+		if err := a.statusIntervals.SetIntervalAnalysis(writeCtx, intervalID, analysis); err != nil {
 			a.logger.Error("slo-analyzer: failed to persist generated degraded analysis on interval",
 				zap.String("service_id", svc.ID), zap.String("interval_id", intervalID), zap.Error(err))
+		}
+
+		if err := commit(writeCtx); err != nil {
+			a.logger.Error("slo-analyzer: failed to commit degraded enrichment transaction",
+				zap.String("service_id", svc.ID), zap.Error(err))
 		}
 	}()
 }
@@ -516,6 +581,8 @@ func (a *SLOAnalyzer) dispatchOutageEnrichment(ctx context.Context, svc db.Servi
 		return
 	}
 
+	tenantID := tenantIDFromContext(ctx)
+
 	go func() {
 		defer a.release()
 		defer a.recoverEnrichmentPanic("outage", incidentID)
@@ -523,14 +590,25 @@ func (a *SLOAnalyzer) dispatchOutageEnrichment(ctx context.Context, svc db.Servi
 		dctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), a.timeout)
 		defer cancel()
 
-		// Same reasoning as dispatchDegradedEnrichment: resolveCauseHint
-		// runs inside this dctx, no second timeout context (RCA-05), and
-		// causeProvider was captured by this closure at dispatch time, not
-		// read lazily from a shared field (integrations-tenant-scope).
-		in := buildAnalysisInput(svc, sloStatus)
-		in.CauseType, in.CauseMessage = a.resolveCauseHint(dctx, svc, causeProvider)
+		// Same reasoning as dispatchDegradedEnrichment: writeCtx is this
+		// goroutine's own tenant-scoped transaction, never the poll cycle's
+		// borrowed one - see the tenantTx field comment.
+		writeCtx, commit, rollback, err := a.openEnrichmentTx(dctx, tenantID)
+		if err != nil {
+			a.logger.Error("slo-analyzer: failed to open enrichment transaction",
+				zap.String("incident_id", incidentID), zap.Error(err))
+			return
+		}
+		defer rollback(writeCtx)
 
-		description, err := a.llmSvc.GenerateOutageDescription(dctx, in)
+		// resolveCauseHint runs inside this writeCtx, no second timeout
+		// context (RCA-05), and causeProvider was captured by this closure
+		// at dispatch time, not read lazily from a shared field
+		// (integrations-tenant-scope).
+		in := buildAnalysisInput(svc, sloStatus)
+		in.CauseType, in.CauseMessage = a.resolveCauseHint(writeCtx, svc, causeProvider)
+
+		description, err := a.llmSvc.GenerateOutageDescription(writeCtx, in)
 		if err != nil {
 			a.logger.Error("slo-analyzer: failed to generate outage description",
 				zap.String("incident_id", incidentID), zap.Error(err))
@@ -542,13 +620,19 @@ func (a *SLOAnalyzer) dispatchOutageEnrichment(ctx context.Context, svc db.Servi
 			return
 		}
 
-		if err := a.incidents.SetDescription(dctx, incidentID, description); err != nil {
+		if err := a.incidents.SetDescription(writeCtx, incidentID, description); err != nil {
 			if errors.Is(err, db.ErrIncidentAlreadyResolved) {
 				a.logger.Info("slo-analyzer: incident resolved before outage enrichment completed, discarding description",
 					zap.String("incident_id", incidentID))
 				return
 			}
 			a.logger.Error("slo-analyzer: failed to persist generated outage description",
+				zap.String("incident_id", incidentID), zap.Error(err))
+			return
+		}
+
+		if err := commit(writeCtx); err != nil {
+			a.logger.Error("slo-analyzer: failed to commit outage enrichment transaction",
 				zap.String("incident_id", incidentID), zap.Error(err))
 		}
 	}()
@@ -570,6 +654,7 @@ func (a *SLOAnalyzer) dispatchClosingCommentEnrichment(ctx context.Context, svc 
 	}
 
 	in := buildAnalysisInput(svc, sloStatus)
+	tenantID := tenantIDFromContext(ctx)
 
 	go func() {
 		defer a.release()
@@ -578,7 +663,18 @@ func (a *SLOAnalyzer) dispatchClosingCommentEnrichment(ctx context.Context, svc 
 		dctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), a.timeout)
 		defer cancel()
 
-		comment, err := a.llmSvc.GenerateClosingComment(dctx, in)
+		// Same reasoning as dispatchDegradedEnrichment: writeCtx is this
+		// goroutine's own tenant-scoped transaction, never the poll cycle's
+		// borrowed one - see the tenantTx field comment.
+		writeCtx, commit, rollback, err := a.openEnrichmentTx(dctx, tenantID)
+		if err != nil {
+			a.logger.Error("slo-analyzer: failed to open enrichment transaction",
+				zap.String("incident_id", incidentID), zap.Error(err))
+			return
+		}
+		defer rollback(writeCtx)
+
+		comment, err := a.llmSvc.GenerateClosingComment(writeCtx, in)
 		if err != nil {
 			a.logger.Error("slo-analyzer: failed to generate closing comment",
 				zap.String("incident_id", incidentID), zap.Error(err))
@@ -590,13 +686,19 @@ func (a *SLOAnalyzer) dispatchClosingCommentEnrichment(ctx context.Context, svc 
 			return
 		}
 
-		if err := a.incidents.SetPendingCloseComment(dctx, incidentID, comment); err != nil {
+		if err := a.incidents.SetPendingCloseComment(writeCtx, incidentID, comment); err != nil {
 			if errors.Is(err, db.ErrIncidentAlreadyResolved) {
 				a.logger.Info("slo-analyzer: incident resolved before closing-comment enrichment completed, discarding proposal",
 					zap.String("incident_id", incidentID))
 				return
 			}
 			a.logger.Error("slo-analyzer: failed to persist generated closing comment",
+				zap.String("incident_id", incidentID), zap.Error(err))
+			return
+		}
+
+		if err := commit(writeCtx); err != nil {
+			a.logger.Error("slo-analyzer: failed to commit closing-comment enrichment transaction",
 				zap.String("incident_id", incidentID), zap.Error(err))
 		}
 	}()
