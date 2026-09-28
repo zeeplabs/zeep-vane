@@ -444,9 +444,9 @@ Tasks: T13, T14
 - Skill: NONE
 
 **Done when**:
-- [ ] `AD-NNN` entry present with Decision/Reason/Trade-off/Scope/Date/Status fields, same shape as `AD-038`
-- [ ] Number confirmed against `STATE.md`'s actual current state at the time this task runs, not assumed from this tasks.md
-- [ ] Gate check passes: manual review (no automated test for docs)
+- [x] `AD-NNN` entry present with Decision/Reason/Trade-off/Scope/Date/Status fields, same shape as `AD-038`
+- [x] Number confirmed against `STATE.md`'s actual current state at the time this task runs, not assumed from this tasks.md
+- [x] Gate check passes: manual review (no automated test for docs)
 
 **Tests**: none
 **Gate**: n/a (docs)
