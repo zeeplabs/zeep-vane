@@ -8,7 +8,7 @@ import { EmptyState } from "../../layout/EmptyState";
 import { formatDateTime } from "../../lib/formatDate";
 import type { Domain } from "../../types/api";
 import { useDomains } from "./hooks";
-import { attachedPageColumn, domainTypeLabel, sslStatusColor, sslStatusLabel } from "./domainStatusMeta";
+import { attachedPageColumn, domainRisk, domainTypeLabel, sslStatusColor, sslStatusLabel } from "./domainStatusMeta";
 import { DomainStatusTag } from "./DomainStatusTag";
 
 export interface DomainsTableProps {
@@ -31,19 +31,20 @@ export function DomainsTable({ onSelect }: DomainsTableProps) {
     return (
       <Card elevation="none" aria-busy="true" className="overflow-hidden border border-divider">
         <span className="sr-only">{t("domains.loading")}</span>
-        <div className="grid grid-cols-[110px_1fr_140px_1fr_90px_140px_20px] items-center gap-3 border-b border-divider bg-card-header-bg px-5 py-2.5">
+        <div className="grid grid-cols-[110px_1fr_140px_1fr_90px_140px_100px_20px] items-center gap-3 border-b border-divider bg-card-header-bg px-5 py-2.5">
           <span className="text-[11px] font-bold uppercase tracking-wide text-neutral-400">{t("common.status")}</span>
           <span className="text-[11px] font-bold uppercase tracking-wide text-neutral-400">{t("domains.table.domain")}</span>
           <span className="text-[11px] font-bold uppercase tracking-wide text-neutral-400">{t("domains.table.type")}</span>
           <span className="text-[11px] font-bold uppercase tracking-wide text-neutral-400">{t("domains.table.pointsTo")}</span>
           <span className="text-[11px] font-bold uppercase tracking-wide text-neutral-400">{t("domains.table.ssl")}</span>
           <span className="text-[11px] font-bold uppercase tracking-wide text-neutral-400">{t("domains.table.verified")}</span>
+          <span className="text-[11px] font-bold uppercase tracking-wide text-neutral-400">{t("domains.table.risk")}</span>
           <span />
         </div>
         {Array.from({ length: 5 }).map((_, i) => (
           <div
             key={i}
-            className="grid grid-cols-[110px_1fr_140px_1fr_90px_140px_20px] items-center gap-3 border-b border-divider px-5 py-3.5 last:border-b-0"
+            className="grid grid-cols-[110px_1fr_140px_1fr_90px_140px_100px_20px] items-center gap-3 border-b border-divider px-5 py-3.5 last:border-b-0"
           >
             <Skeleton width={70} height={20} radius={999} />
             <Skeleton width={160} height={14} />
@@ -51,6 +52,7 @@ export function DomainsTable({ onSelect }: DomainsTableProps) {
             <Skeleton width={110} height={14} />
             <Skeleton width={50} height={14} />
             <Skeleton width={80} height={14} />
+            <Skeleton width={60} height={16} radius={999} />
             <Skeleton width={16} height={16} />
           </div>
         ))}
@@ -65,13 +67,14 @@ export function DomainsTable({ onSelect }: DomainsTableProps) {
   return (
     <div className="flex flex-col gap-3">
       <Card elevation="none" className="overflow-hidden border border-divider">
-        <div className="grid grid-cols-[110px_1fr_140px_1fr_90px_140px_20px] items-center gap-3 border-b border-divider bg-card-header-bg px-5 py-2.5">
+        <div className="grid grid-cols-[110px_1fr_140px_1fr_90px_140px_100px_20px] items-center gap-3 border-b border-divider bg-card-header-bg px-5 py-2.5">
           <span className="text-[11px] font-bold uppercase tracking-wide text-neutral-400">{t("common.status")}</span>
           <span className="text-[11px] font-bold uppercase tracking-wide text-neutral-400">{t("domains.table.domain")}</span>
           <span className="text-[11px] font-bold uppercase tracking-wide text-neutral-400">{t("domains.table.type")}</span>
           <span className="text-[11px] font-bold uppercase tracking-wide text-neutral-400">{t("domains.table.pointsTo")}</span>
           <span className="text-[11px] font-bold uppercase tracking-wide text-neutral-400">{t("domains.table.ssl")}</span>
           <span className="text-[11px] font-bold uppercase tracking-wide text-neutral-400">{t("domains.table.verified")}</span>
+          <span className="text-[11px] font-bold uppercase tracking-wide text-neutral-400">{t("domains.table.risk")}</span>
           <span />
         </div>
         {domains.map((domain) => (
@@ -79,7 +82,7 @@ export function DomainsTable({ onSelect }: DomainsTableProps) {
             key={domain.id}
             data-testid="domain-row"
             onClick={() => onSelect(domain)}
-            className="grid cursor-pointer grid-cols-[110px_1fr_140px_1fr_90px_140px_20px] items-center gap-3 border-b border-divider px-5 py-3.5 last:border-b-0 hover:bg-card-header-bg"
+            className="grid cursor-pointer grid-cols-[110px_1fr_140px_1fr_90px_140px_100px_20px] items-center gap-3 border-b border-divider px-5 py-3.5 last:border-b-0 hover:bg-card-header-bg"
           >
             <DomainStatusTag status={domain.status} />
             <div className="min-w-0 truncate font-mono text-[13px] text-text">{domain.hostname}</div>
@@ -91,11 +94,34 @@ export function DomainsTable({ onSelect }: DomainsTableProps) {
             <div className="text-xs text-text-muted">
               {domain.verified_at ? formatDateTime(domain.verified_at, i18n.language) : "—"}
             </div>
+            <DomainRiskBadge domain={domain} />
             <MdChevronRight size={16} className="text-neutral-500" aria-hidden="true" />
           </div>
         ))}
       </Card>
       <Pager page={page} totalPages={totalPages} onChange={setPage} />
     </div>
+  );
+}
+
+/** At-a-glance health warning for a row (domain-health-monitoring DHM-08):
+ * NS drift or an expiration within the 30-day window, visible without
+ * opening the detail drawer. Renders nothing for a healthy or
+ * not-yet-checked domain. */
+function DomainRiskBadge({ domain }: { domain: Domain }) {
+  const { t } = useTranslation();
+  const risk = domainRisk(domain);
+  if (!risk) return null;
+
+  const color = risk === "drift" ? "var(--color-critical)" : "var(--color-warning)";
+  return (
+    <span
+      data-testid="domain-at-risk"
+      data-risk={risk}
+      className="justify-self-start rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide"
+      style={{ color, backgroundColor: `color-mix(in srgb, ${color} 15%, transparent)` }}
+    >
+      {t(`domains.atRisk.${risk}`)}
+    </span>
   );
 }

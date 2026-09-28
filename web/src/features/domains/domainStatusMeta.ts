@@ -67,7 +67,14 @@ export function expirationColor(daysRemaining: number): string {
 // the list: NS drift detected, or expiration within the 30-day window
 // (domain-health-monitoring DHM-08).
 export function isDomainAtRisk(domain: Pick<Domain, "ns_drift_detected" | "expires_at">, now: Date = new Date()): boolean {
-  if (domain.ns_drift_detected) return true;
+  return domainRisk(domain, now) !== null;
+}
+
+// domainRisk classifies a domain's at-a-glance list warning (DHM-08): NS
+// drift takes precedence over an approaching expiration, and a healthy or
+// not-yet-checked domain is null.
+export function domainRisk(domain: Pick<Domain, "ns_drift_detected" | "expires_at">, now: Date = new Date()): "drift" | "expiring" | null {
+  if (domain.ns_drift_detected) return "drift";
   const days = daysRemainingFromExpiry(domain.expires_at, now);
-  return days !== null && days <= 30;
+  return days !== null && days <= 30 ? "expiring" : null;
 }

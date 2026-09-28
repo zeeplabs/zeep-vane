@@ -106,7 +106,12 @@
       "type": "Type",
       "pointsTo": "Points to",
       "ssl": "SSL",
-      "verified": "Verified"
+      "verified": "Verified",
+      "risk": "Risk"
+    },
+    "atRisk": {
+      "drift": "NS drift",
+      "expiring": "Expiring soon"
     },
     "empty": {
       "title": "No domains registered",

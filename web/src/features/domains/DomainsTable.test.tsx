@@ -40,6 +40,13 @@ function baseDomain(overrides: Partial<Domain>): Domain {
     last_error: null,
     attached_page_name: null,
     attached_page_count: 0,
+    expires_at: null,
+    registrar: null,
+    expected_ns: null,
+    current_ns: null,
+    ns_drift_detected: false,
+    last_rdap_check_at: null,
+    rdap_last_error: null,
     ...overrides,
   };
 }
@@ -178,5 +185,78 @@ describe("DomainsTable", () => {
     await screen.findByText("click.example.com");
     await userEvent.click(screen.getAllByTestId("domain-row")[0]);
     expect(selected).toEqual(domain);
+  });
+
+  it("shows the drift indicator for a domain with ns_drift_detected (DHM-08)", async () => {
+    mockDomainsPage([
+      baseDomain({
+        id: "dom-drift",
+        hostname: "drift-row.example.com",
+        ns_drift_detected: true,
+        expires_at: new Date(Date.now() + 200 * 24 * 60 * 60 * 1000).toISOString(),
+      }),
+    ]);
+    await loginAsOwner();
+    renderTable();
+
+    await screen.findByText("drift-row.example.com");
+    const row = screen.getAllByTestId("domain-row")[0];
+    const badge = within(row).getByTestId("domain-at-risk");
+    expect(badge).toHaveAttribute("data-risk", "drift");
+    expect(badge).toHaveTextContent("Drift de NS");
+  });
+
+  it("shows the expiring-soon indicator for a domain expiring within 30 days (DHM-08)", async () => {
+    mockDomainsPage([
+      baseDomain({
+        id: "dom-expiring",
+        hostname: "expiring-row.example.com",
+        ns_drift_detected: false,
+        expires_at: new Date(Date.now() + 10 * 24 * 60 * 60 * 1000).toISOString(),
+      }),
+    ]);
+    await loginAsOwner();
+    renderTable();
+
+    await screen.findByText("expiring-row.example.com");
+    const row = screen.getAllByTestId("domain-row")[0];
+    const badge = within(row).getByTestId("domain-at-risk");
+    expect(badge).toHaveAttribute("data-risk", "expiring");
+    expect(badge).toHaveTextContent("Expira em breve");
+  });
+
+  it("shows neither indicator for a healthy domain with a far-out expiration (DHM-08)", async () => {
+    mockDomainsPage([
+      baseDomain({
+        id: "dom-healthy",
+        hostname: "healthy-row.example.com",
+        ns_drift_detected: false,
+        expires_at: new Date(Date.now() + 200 * 24 * 60 * 60 * 1000).toISOString(),
+      }),
+    ]);
+    await loginAsOwner();
+    renderTable();
+
+    await screen.findByText("healthy-row.example.com");
+    const row = screen.getAllByTestId("domain-row")[0];
+    expect(within(row).queryByTestId("domain-at-risk")).not.toBeInTheDocument();
+  });
+
+  it("shows neither indicator for a domain never health-checked (DHM-08)", async () => {
+    mockDomainsPage([
+      baseDomain({
+        id: "dom-unchecked",
+        hostname: "unchecked-row.example.com",
+        ns_drift_detected: false,
+        expires_at: null,
+        last_rdap_check_at: null,
+      }),
+    ]);
+    await loginAsOwner();
+    renderTable();
+
+    await screen.findByText("unchecked-row.example.com");
+    const row = screen.getAllByTestId("domain-row")[0];
+    expect(within(row).queryByTestId("domain-at-risk")).not.toBeInTheDocument();
   });
 });

@@ -106,7 +106,12 @@
       "type": "Tipo",
       "pointsTo": "Aponta para",
       "ssl": "SSL",
-      "verified": "Verificado"
+      "verified": "Verificado",
+      "risk": "Risco"
+    },
+    "atRisk": {
+      "drift": "Drift de NS",
+      "expiring": "Expira em breve"
     },
     "empty": {
       "title": "Nenhum domínio cadastrado",

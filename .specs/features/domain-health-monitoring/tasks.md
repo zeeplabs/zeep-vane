@@ -369,11 +369,11 @@ Tasks: T13, T14
 - Skill: NONE
 
 **Done when**:
-- [ ] A row for a domain with `nsDriftDetected === true` shows the drift indicator
-- [ ] A row for a domain with `expiresAt` inside 30 days shows the expiring-soon indicator
-- [ ] A row for a healthy domain (no drift, expiration far out or unchecked) shows neither indicator
-- [ ] Gate check passes: `cd web && npm run test`
-- [ ] Test count: at least 3 new tests (no silent deletions)
+- [x] A row for a domain with `nsDriftDetected === true` shows the drift indicator
+- [x] A row for a domain with `expiresAt` inside 30 days shows the expiring-soon indicator
+- [x] A row for a healthy domain (no drift, expiration far out or unchecked) shows neither indicator
+- [x] Gate check passes: `cd web && npm run test`
+- [x] Test count: at least 3 new tests (no silent deletions)
 
 **Tests**: unit
 **Gate**: quick (frontend)
