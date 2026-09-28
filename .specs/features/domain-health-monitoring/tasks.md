@@ -132,12 +132,12 @@ Tasks: T13, T14
 - Skill: NONE
 
 **Done when**:
-- [ ] CHECK constraint admits all five types (three existing + two new); a row with an unrecognized sixth value still fails to insert
-- [ ] `NotificationTypeDomainExpiring = "domain_expiring"`, `NotificationTypeDomainNSDrift = "domain_ns_drift"` constants added
-- [ ] `notificationDefaultEnabled` includes both new types set `true`
-- [ ] `NotificationDefaultEnabled("domain_expiring")` and `NotificationDefaultEnabled("domain_ns_drift")` both return `true` in a new/updated unit test alongside the existing ones in `internal/db/notification_preference_repository_test.go`
-- [ ] Gate check passes: `go test ./internal/db && gofmt -l . && go vet ./...`
-- [ ] Test count: at least the same as before this task, plus 2+ new (no silent deletions)
+- [x] CHECK constraint admits all five types (three existing + two new); a row with an unrecognized sixth value still fails to insert
+- [x] `NotificationTypeDomainExpiring = "domain_expiring"`, `NotificationTypeDomainNSDrift = "domain_ns_drift"` constants added
+- [x] `notificationDefaultEnabled` includes both new types set `true`
+- [x] `NotificationDefaultEnabled("domain_expiring")` and `NotificationDefaultEnabled("domain_ns_drift")` both return `true` in a new/updated unit test alongside the existing ones in `internal/db/notification_preference_repository_test.go`
+- [x] Gate check passes: `go test ./internal/db && gofmt -l . && go vet ./...`
+- [x] Test count: at least the same as before this task, plus 2+ new (no silent deletions)
 
 **Tests**: unit
 **Gate**: quick

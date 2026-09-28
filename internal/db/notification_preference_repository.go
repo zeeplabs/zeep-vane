@@ -9,22 +9,30 @@ const (
 	NotificationTypeIncidentOpened   = "incident_opened"
 	NotificationTypeIncidentResolved = "incident_resolved"
 	NotificationTypeWeeklyDigest     = "weekly_digest"
+	// The two domain-health types (domain-health-monitoring DHM-02/DHM-06)
+	// reuse this same preference table and pipeline.
+	NotificationTypeDomainExpiring = "domain_expiring"
+	NotificationTypeDomainNSDrift  = "domain_ns_drift"
 )
 
 // notificationDefaultEnabled is the documented default for a user with no
-// stored row: the two incident emails on, the weekly digest off. It matches
-// the redesigned Meu Perfil mock's own seeded state, and it means users
-// created before this feature get sensible defaults without a backfill
-// writing a row per existing user.
+// stored row: the two incident emails and the two domain-health emails on,
+// the weekly digest off. It matches the redesigned Meu Perfil mock's own
+// seeded state, and it means users created before this feature get sensible
+// defaults without a backfill writing a row per existing user. The
+// domain-health types default on deliberately - they are safety alerts
+// (renewal/payment failure), not cosmetic digests.
 var notificationDefaultEnabled = map[string]bool{
 	NotificationTypeIncidentOpened:   true,
 	NotificationTypeIncidentResolved: true,
 	NotificationTypeWeeklyDigest:     false,
+	NotificationTypeDomainExpiring:   true,
+	NotificationTypeDomainNSDrift:    true,
 }
 
 // NotificationDefaultEnabled reports the documented default for
-// notificationType when a user has no stored row: the two incident types
-// default on, the weekly digest defaults off.
+// notificationType when a user has no stored row: the two incident types and
+// the two domain-health types default on, the weekly digest defaults off.
 func NotificationDefaultEnabled(notificationType string) bool {
 	return notificationDefaultEnabled[notificationType]
 }
@@ -45,7 +53,7 @@ func NewNotificationPreferenceRepository(pool *Pool) *NotificationPreferenceRepo
 
 // Get returns the stored rows for userID as a type->enabled map. A type with
 // no row is absent from the map; applying defaults is the caller's concern.
-// The table's CHECK constraint only admits the three known types, so no
+// The table's CHECK constraint only admits the five known types, so no
 // unknown key can come back.
 func (r *NotificationPreferenceRepository) Get(ctx context.Context, userID string) (map[string]bool, error) {
 	rows, err := r.pool.Query(ctx,
