@@ -395,8 +395,9 @@ func TestDomainHealthScheduler_ExpirationCrossing_FiresOnceNotEveryCycle(t *test
 }
 
 // TestExpirationAlert_Thresholds covers DHM-02's threshold-crossing logic:
-// each of 30/15/7 fires once, a same-band repeat does not, and a first check
-// already inside a band alerts.
+// each of 30/15/7 fires once, a same-band repeat does not, a widening band
+// (renewal) does not re-alert, and a first check already inside a band
+// alerts.
 func TestExpirationAlert_Thresholds(t *testing.T) {
 	now := time.Date(2026, 9, 28, 12, 0, 0, 0, time.UTC)
 	at := func(days int) *time.Time { tm := now.Add(time.Duration(days) * 24 * time.Hour); return &tm }
@@ -416,6 +417,8 @@ func TestExpirationAlert_Thresholds(t *testing.T) {
 		{"crossing 15 to 7", at(6), at(-9), *at(6), expirationThreshold7, 6, true},
 		{"same 7-day band does not re-alert", at(6), at(-1), *at(6), expirationThreshold7, 6, false},
 		{"same 30-day band does not re-alert", at(29), at(0), *at(25), expirationThreshold30, 25, false},
+		{"renewal widening 7 to 30 does not re-alert", at(5), at(-1), *at(20), expirationThreshold30, 20, false},
+		{"renewal widening 15 to 30 does not re-alert", at(10), at(-5), *at(20), expirationThreshold30, 20, false},
 		{"farther than 30 days never alerts", nil, nil, *at(100), 0, 100, false},
 	}
 

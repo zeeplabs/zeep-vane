@@ -305,10 +305,12 @@ func (s *DomainHealthScheduler) persist(ctx context.Context, tenantID, domainID 
 // remaining (DHM-02). The previous threshold is derived from the domain's
 // previously stored ExpiresAt at the time of its previous check
 // (LastRDAPCheckAt): a crossing is new only when the current band is
-// narrower than the previous one, so a domain sitting inside a band for
-// several daily checks alerts once, not every day. A domain whose first
-// successful check already sits inside a band (previous state empty, band 0)
-// alerts on that first check.
+// narrower than the previous one. A domain sitting inside a band for several
+// daily checks therefore alerts once, not every day, and a widening band -
+// e.g. a renewal pushing the expiry back out from 5 to 20 days - is not a
+// new crossing and does not re-alert. A domain whose first successful check
+// already sits inside a band (previous state empty, band 0) alerts on that
+// first check.
 func expirationAlert(now time.Time, prevExpiresAt, prevCheckedAt *time.Time, expiresAt time.Time) (threshold, daysRemaining int, crossed bool) {
 	daysRemaining = daysUntil(now, expiresAt)
 	threshold = expirationThreshold(daysRemaining)
@@ -320,7 +322,7 @@ func expirationAlert(now time.Time, prevExpiresAt, prevCheckedAt *time.Time, exp
 	if prevExpiresAt != nil && prevCheckedAt != nil {
 		previous = expirationThreshold(daysUntil(*prevCheckedAt, *prevExpiresAt))
 	}
-	if threshold == previous {
+	if previous != 0 && threshold >= previous {
 		return threshold, daysRemaining, false
 	}
 	return threshold, daysRemaining, true
