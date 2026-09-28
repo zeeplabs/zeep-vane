@@ -159,12 +159,12 @@ Tasks: T13, T14
 - Skill: NONE
 
 **Done when**:
-- [ ] `Domain` struct has `ExpiresAt *time.Time`, `Registrar *string`, `ExpectedNS []string`, `CurrentNS []string`, `NSDriftDetected bool`, `LastRDAPCheckAt *time.Time`, `RDAPLastError *string`
-- [ ] `SetHealthCheckResult` writes all seven fields under RLS, correctly scoped when a tenant transaction already exists on `ctx` (proven directly, not just "doesn't error")
-- [ ] `SetHealthCheckResult` against a nonexistent domain id returns a clear not-found-shaped error, not a silent no-op
-- [ ] A write attempted with a `ctx` scoped to a different tenant than the domain's owner is rejected by RLS (cross-tenant isolation proven, not assumed)
-- [ ] Gate check passes: `make test-integration`
-- [ ] Test count: at least the same as before this task, plus 4+ new (no silent deletions)
+- [x] `Domain` struct has `ExpiresAt *time.Time`, `Registrar *string`, `ExpectedNS []string`, `CurrentNS []string`, `NSDriftDetected bool`, `LastRDAPCheckAt *time.Time`, `RDAPLastError *string`
+- [x] `SetHealthCheckResult` writes all seven fields under RLS, correctly scoped when a tenant transaction already exists on `ctx` (proven directly, not just "doesn't error")
+- [x] `SetHealthCheckResult` against a nonexistent domain id returns a clear not-found-shaped error, not a silent no-op
+- [x] A write attempted with a `ctx` scoped to a different tenant than the domain's owner is rejected by RLS (cross-tenant isolation proven, not assumed)
+- [x] Gate check passes: `make test-integration`
+- [x] Test count: at least the same as before this task, plus 4+ new (no silent deletions)
 
 **Tests**: integration
 **Gate**: full

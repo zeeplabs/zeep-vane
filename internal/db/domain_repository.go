@@ -43,6 +43,22 @@ type Domain struct {
 	// LastError describes the most recent verification failure, or nil if
 	// the last attempt (if any) succeeded, or none has run yet.
 	LastError *string
+
+	// Health-check state (domain-health-monitoring DHM-01/05/06/07),
+	// written by SetHealthCheckResult and read by the admin API/scheduler.
+	// ExpiresAt/Registrar come from the latest successful RDAP lookup;
+	// ExpectedNS is the baseline learned on the domain's first successful NS
+	// check; CurrentNS is the latest resolved set; NSDriftDetected is true
+	// when CurrentNS differs from ExpectedNS; LastRDAPCheckAt stamps the most
+	// recent health-check cycle; RDAPLastError records the last RDAP failure
+	// (nil on success or when none has run yet).
+	ExpiresAt       *time.Time
+	Registrar       *string
+	ExpectedNS      []string
+	CurrentNS       []string
+	NSDriftDetected bool
+	LastRDAPCheckAt *time.Time
+	RDAPLastError   *string
 }
 
 // DomainRepository accesses the domains table.
@@ -88,7 +104,9 @@ func (r *DomainRepository) ListPaginated(ctx context.Context, page, pageSize int
 	offset := (page - 1) * pageSize
 
 	rows, err := r.pool.Query(ctx,
-		`SELECT id, hostname, created_at, domain_type, status, ssl_status, verified_at, last_error, COUNT(*) OVER() AS total
+		`SELECT id, hostname, created_at, domain_type, status, ssl_status, verified_at, last_error,
+		        expires_at, registrar, expected_ns, current_ns, ns_drift_detected, last_rdap_check_at, rdap_last_error,
+		        COUNT(*) OVER() AS total
 		 FROM domains
 		 ORDER BY hostname
 		 LIMIT $1 OFFSET $2`,
@@ -104,7 +122,9 @@ func (r *DomainRepository) ListPaginated(ctx context.Context, page, pageSize int
 	for rows.Next() {
 		var domain Domain
 		if err := rows.Scan(&domain.ID, &domain.Hostname, &domain.CreatedAt, &domain.DomainType,
-			&domain.Status, &domain.SSLStatus, &domain.VerifiedAt, &domain.LastError, &total); err != nil {
+			&domain.Status, &domain.SSLStatus, &domain.VerifiedAt, &domain.LastError,
+			&domain.ExpiresAt, &domain.Registrar, &domain.ExpectedNS, &domain.CurrentNS,
+			&domain.NSDriftDetected, &domain.LastRDAPCheckAt, &domain.RDAPLastError, &total); err != nil {
 			return nil, 0, fmt.Errorf("db: failed to scan domain: %w", err)
 		}
 		domains = append(domains, domain)
@@ -127,14 +147,17 @@ func (r *DomainRepository) ListPaginated(ctx context.Context, page, pageSize int
 // matches.
 func (r *DomainRepository) GetByID(ctx context.Context, id string) (*Domain, error) {
 	row := r.pool.QueryRow(ctx,
-		`SELECT id, hostname, created_at, domain_type, status, ssl_status, verified_at, last_error
+		`SELECT id, hostname, created_at, domain_type, status, ssl_status, verified_at, last_error,
+		        expires_at, registrar, expected_ns, current_ns, ns_drift_detected, last_rdap_check_at, rdap_last_error
 		 FROM domains WHERE id = $1`,
 		id,
 	)
 
 	var domain Domain
 	if err := row.Scan(&domain.ID, &domain.Hostname, &domain.CreatedAt, &domain.DomainType,
-		&domain.Status, &domain.SSLStatus, &domain.VerifiedAt, &domain.LastError); err != nil {
+		&domain.Status, &domain.SSLStatus, &domain.VerifiedAt, &domain.LastError,
+		&domain.ExpiresAt, &domain.Registrar, &domain.ExpectedNS, &domain.CurrentNS,
+		&domain.NSDriftDetected, &domain.LastRDAPCheckAt, &domain.RDAPLastError); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, ErrNotFound
 		}
@@ -167,6 +190,64 @@ func (r *DomainRepository) SetVerificationResult(ctx context.Context, id, status
 	}
 
 	return &domain, nil
+}
+
+// SetHealthCheckResult persists one domain health-check cycle's outcome for
+// the domain identified by id (domain-health-monitoring DHM-01/05/06/07):
+// RDAP expiration/registrar/error and the resolved NS set. ExpectedNS (the
+// baseline) is learned from currentNS on the domain's first successful NS
+// check and is never overwritten afterwards; a nil currentNS (NS lookup
+// failure) leaves both CurrentNS and ExpectedNS untouched, so a transient
+// DNS failure can never erase the learned baseline. LastRDAPCheckAt is
+// stamped to the database clock. It returns ErrNotFound if id doesn't exist.
+//
+// Like IncidentRepository.Create/StatusPageRepository.Create, this reuses a
+// tenant transaction already present on ctx (the scheduler path) and opens
+// one only as a fallback - never a bare pool.Begin that would discard the
+// caller's RLS session settings.
+func (r *DomainRepository) SetHealthCheckResult(ctx context.Context, id string, expiresAt *time.Time, registrar *string, currentNS []string, driftDetected bool, rdapErr *string) error {
+	if _, ok := TenantTxFromContext(ctx); ok {
+		return r.setHealthCheckResult(ctx, id, expiresAt, registrar, currentNS, driftDetected, rdapErr)
+	}
+
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("db: failed to begin domain health check transaction: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	if err := r.setHealthCheckResult(WithTenantTx(ctx, tx), id, expiresAt, registrar, currentNS, driftDetected, rdapErr); err != nil {
+		return err
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("db: failed to commit domain health check transaction: %w", err)
+	}
+	return nil
+}
+
+// setHealthCheckResult performs SetHealthCheckResult's write on whatever
+// transaction ctx carries, mirroring IncidentRepository.insert.
+func (r *DomainRepository) setHealthCheckResult(ctx context.Context, id string, expiresAt *time.Time, registrar *string, currentNS []string, driftDetected bool, rdapErr *string) error {
+	tag, err := r.pool.Exec(ctx,
+		`UPDATE domains
+		 SET expires_at = $2,
+		     registrar = $3,
+		     current_ns = COALESCE($4, current_ns),
+		     expected_ns = COALESCE(expected_ns, $4),
+		     ns_drift_detected = $5,
+		     rdap_last_error = $6,
+		     last_rdap_check_at = now()
+		 WHERE id = $1`,
+		id, expiresAt, registrar, currentNS, driftDetected, rdapErr,
+	)
+	if err != nil {
+		return fmt.Errorf("db: failed to set domain health check result: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
 }
 
 // Delete removes the domain identified by id. It returns ErrNotFound if no
