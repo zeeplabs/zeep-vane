@@ -16,10 +16,12 @@ import (
 )
 
 // domainHealthLeaderLockKey guards the daily domain-health fire so exactly
-// one replica runs it (domain-health-monitoring). Distinct from
-// db.PollerLeaderLockKey (727200001) and digestLeaderLockKey (727200002)
-// within pglock's reserved 727200000-727299999 block.
-const domainHealthLeaderLockKey int64 = 727200003
+// one replica runs it (domain-health-monitoring). Within pglock's reserved
+// 727200000-727299999 block, distinct from db.PollerLeaderLockKey (727200001),
+// digestLeaderLockKey (727200002), and the keys already claimed by
+// retention.pruneLeaderLockKey and tls.backfillAdvisoryLockKey (both
+// 727200003). 727200004 is the next free key in the block.
+const domainHealthLeaderLockKey int64 = 727200004
 
 // domainHealthPageSize is the page size used when listing every domain of a
 // tenant; the loop pages until all are read.

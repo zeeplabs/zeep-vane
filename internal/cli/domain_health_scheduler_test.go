@@ -429,6 +429,25 @@ func TestNewDomainHealthScheduler_BootWiring_RunStopsOnContextCancel(t *testing.
 	}
 }
 
+// TestDomainHealthLeaderLockKey_DistinctFromOtherProductionLocks guards against
+// two schedulers sharing one pglock key: on a collision the losing scheduler
+// silently no-ops for that cycle (TryAcquire returns not-acquired) instead of
+// erroring, so the only reliable detection is key uniqueness. Keys live in
+// pglock's reserved 727200000-727299999 block; 727200003 is already claimed by
+// retention.pruneLeaderLockKey and tls.backfillAdvisoryLockKey.
+func TestDomainHealthLeaderLockKey_DistinctFromOtherProductionLocks(t *testing.T) {
+	known := map[string]int64{
+		"poller":                       db.PollerLeaderLockKey,
+		"digest":                       digestLeaderLockKey,
+		"retention.prune/tls.backfill": 727200003,
+	}
+	for name, key := range known {
+		if domainHealthLeaderLockKey == key {
+			t.Errorf("domainHealthLeaderLockKey %d collides with %s (%d)", domainHealthLeaderLockKey, name, key)
+		}
+	}
+}
+
 // mustDomainID looks up a domain's id by hostname for the pool's tenant.
 func mustDomainID(t *testing.T, repo *db.DomainRepository, hostname string) string {
 	t.Helper()
