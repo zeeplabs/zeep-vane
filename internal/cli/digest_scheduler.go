@@ -15,10 +15,9 @@ import (
 )
 
 // digestLeaderLockKey guards the weekly digest fire so exactly one replica
-// sends it (notification-preferences NOTIFPREF-11). Distinct from
-// db.PollerLeaderLockKey (727200001) within pglock's reserved
-// 727200000-727299999 block.
-const digestLeaderLockKey int64 = 727200002
+// sends it (notification-preferences NOTIFPREF-11). Value from pglock's
+// reserved-key registry.
+const digestLeaderLockKey int64 = pglock.DigestLeaderLockKey
 
 // digestWindow is how far back the weekly digest summarizes.
 const digestWindow = 7 * 24 * time.Hour

@@ -7,15 +7,16 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+
+	"github.com/zeeplabs/zeep-vane/internal/pglock"
 )
 
 // PollerLeaderLockKey identifies the Postgres advisory lock guarding poller
-// leadership across replicas (ha-multi-replica AD-013). Exported here -
-// rather than kept internal to internal/cli, the actual lock holder - so
-// PollerLeadershipRepository can query pg_locks for the same key without an
-// import cycle: internal/cli already imports internal/db, not the other way
-// around.
-const PollerLeaderLockKey int64 = 727200001
+// leadership across replicas (ha-multi-replica AD-013). The value lives in
+// pglock's reserved-key registry so it can never collide with another
+// production lock; exported here so PollerLeadershipRepository can query
+// pg_locks for the same key.
+const PollerLeaderLockKey int64 = pglock.PollerLeaderLockKey
 
 // PollerLeader is the replica currently holding PollerLeaderLockKey.
 type PollerLeader struct {

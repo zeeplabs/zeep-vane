@@ -15,10 +15,9 @@ import (
 
 // pruneLeaderLockKey guards the retention prune so exactly one replica
 // deletes on a given tick (HA: the admin API and every background job run on
-// every replica, but the pruner is a single-writer job). Distinct from
-// db.PollerLeaderLockKey (727200001) and the digest scheduler's key
-// (727200002) within pglock's reserved 727200000-727299999 block.
-const pruneLeaderLockKey int64 = 727200003
+// every replica, but the pruner is a single-writer job). Value from pglock's
+// reserved-key registry.
+const pruneLeaderLockKey int64 = pglock.PruneLeaderLockKey
 
 // intervalDeleter is the subset of *db.StatusIntervalRepository the Pruner
 // depends on to delete old, closed interval rows.
