@@ -483,6 +483,13 @@ function toDomainResponse(domain: Domain) {
     last_error: domain.last_error,
     attached_page_name: domain.attached_page_name,
     attached_page_count: domain.attached_page_count,
+    expires_at: domain.expires_at ?? null,
+    registrar: domain.registrar ?? null,
+    expected_ns: domain.expected_ns ?? null,
+    current_ns: domain.current_ns ?? null,
+    ns_drift_detected: domain.ns_drift_detected ?? false,
+    last_rdap_check_at: domain.last_rdap_check_at ?? null,
+    rdap_last_error: domain.rdap_last_error ?? null,
   };
 }
 
@@ -1076,6 +1083,13 @@ export const handlers = [
       last_error: null,
       attached_page_name: null,
       attached_page_count: 0,
+      expires_at: null,
+      registrar: null,
+      expected_ns: null,
+      current_ns: null,
+      ns_drift_detected: false,
+      last_rdap_check_at: null,
+      rdap_last_error: null,
     };
     domainsState.push(created);
     return HttpResponse.json(toDomainResponse(created), { status: 201 });

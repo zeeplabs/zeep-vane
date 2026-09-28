@@ -128,6 +128,23 @@ export interface Domain {
   // name and the full count otherwise.
   attached_page_name: string | null;
   attached_page_count: number;
+  // Health-check fields (domain-health-monitoring DHM-04/DHM-08), mirroring
+  // DomainsHandler's domainResponse. Null/absent for a domain whose health
+  // check has not run yet; the API always emits the keys, so they are typed
+  // nullable rather than required-with-value.
+  //
+  // SPEC_DEVIATION: tasks.md T9 names these camelCase (expiresAt, expectedNs,
+  // ...). Reason: Domain - like every sibling type in this file - mirrors
+  // the backend JSON keys directly (snake_case) with no camelCase mapping
+  // layer; camelCase would desync the type from the real API and the MSW
+  // mocks (AGENTS.md §5).
+  expires_at?: string | null;
+  registrar?: string | null;
+  expected_ns?: string[] | null;
+  current_ns?: string[] | null;
+  ns_drift_detected?: boolean;
+  last_rdap_check_at?: string | null;
+  rdap_last_error?: string | null;
 }
 
 export type StatusPageState = "draft" | "pending_tls" | "published" | "tls_failed";

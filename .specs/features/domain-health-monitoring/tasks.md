@@ -317,10 +317,10 @@ Tasks: T13, T14
 - Skill: NONE
 
 **Done when**:
-- [ ] `Domain` type includes `expiresAt`, `registrar`, `expectedNs`, `currentNs`, `nsDriftDetected`, `lastRdapCheckAt`, `rdapLastError`, correctly typed as optional/nullable matching the API's `null` behavior for unchecked domains
-- [ ] MSW mock returns both a domain with full health data and one with no health data yet, covering both states for T10/T11's tests
-- [ ] Gate check passes: `cd web && npx tsc -b --noEmit`
-- [ ] Test count: unchanged (type-only change, verified by typecheck)
+- [x] `Domain` type includes `expiresAt`, `registrar`, `expectedNs`, `currentNs`, `nsDriftDetected`, `lastRdapCheckAt`, `rdapLastError`, correctly typed as optional/nullable matching the API's `null` behavior for unchecked domains (SPEC_DEVIATION: fields use the backend's snake_case keys - `expires_at`, `registrar`, `expected_ns`, `current_ns`, `ns_drift_detected`, `last_rdap_check_at`, `rdap_last_error` - see the marker in `web/src/types/api.ts`)
+- [x] MSW mock returns both a domain with full health data and one with no health data yet, covering both states for T10/T11's tests
+- [x] Gate check passes: `cd web && npx tsc -b --noEmit`
+- [x] Test count: unchanged (type-only change, verified by typecheck)
 
 **Tests**: none
 **Gate**: n/a (typecheck only, see Gate Check Commands)
