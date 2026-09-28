@@ -167,7 +167,21 @@
       "notConfigured": "não configurado",
       "recheckButton": "Verificar novamente",
       "removeButton": "Remover domínio",
-      "removeError": "Não foi possível remover o domínio."
+      "removeError": "Não foi possível remover o domínio.",
+      "health": {
+        "title": "Saúde do domínio",
+        "notChecked": "Ainda não verificado",
+        "expiresLabel": "Expira em",
+        "daysRemainingLabel": "Dias restantes",
+        "daysRemaining": "{{days}} dias restantes",
+        "registrarLabel": "Registrador",
+        "lastCheckLabel": "Última verificação",
+        "nameserversLabel": "Nameservers",
+        "expectedNsLabel": "Esperado",
+        "currentNsLabel": "Atual",
+        "driftBadge": "Drift de NS",
+        "rdapError": "Falha na consulta RDAP: {{error}}"
+      }
     }
   },
   "statusPages": {

@@ -47,3 +47,27 @@ export function attachedPageColumn(domain: Pick<Domain, "attached_page_name" | "
   const extra = domain.attached_page_count - 1;
   return extra > 0 ? `${domain.attached_page_name} +${extra}` : domain.attached_page_name;
 }
+
+// daysRemainingFromExpiry returns whole days from now until expiresAt, or
+// null when there is no expiry to show (domain-health-monitoring DHM-04).
+export function daysRemainingFromExpiry(expiresAt: string | null | undefined, now: Date = new Date()): number | null {
+  if (!expiresAt) return null;
+  return Math.floor((new Date(expiresAt).getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+}
+
+// expirationColor maps days remaining to its badge color: green farther than
+// 30 days, yellow 15-30 days, red under 15 days (including already expired).
+export function expirationColor(daysRemaining: number): string {
+  if (daysRemaining < 15) return "var(--color-critical)";
+  if (daysRemaining <= 30) return "var(--color-warning)";
+  return "var(--color-success)";
+}
+
+// isDomainAtRisk reports whether a domain warrants an at-a-glance warning in
+// the list: NS drift detected, or expiration within the 30-day window
+// (domain-health-monitoring DHM-08).
+export function isDomainAtRisk(domain: Pick<Domain, "ns_drift_detected" | "expires_at">, now: Date = new Date()): boolean {
+  if (domain.ns_drift_detected) return true;
+  const days = daysRemainingFromExpiry(domain.expires_at, now);
+  return days !== null && days <= 30;
+}

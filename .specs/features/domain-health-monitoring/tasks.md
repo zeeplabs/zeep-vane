@@ -342,12 +342,12 @@ Tasks: T13, T14
 - Skill: NONE
 
 **Done when**:
-- [ ] Drawer renders expiration date, days remaining, and registrar for a domain with health data
-- [ ] Drawer renders NS drift state distinctly (expected vs. current visibly different) when `nsDriftDetected` is `true`
-- [ ] Drawer shows the RDAP error indicator without breaking/hiding the rest of the drawer when `rdapLastError` is set
-- [ ] Drawer for a domain with no health data yet (all new fields `null`) renders without error, showing an appropriate "not checked yet" state rather than blank/broken UI
-- [ ] Gate check passes: `cd web && npm run test`
-- [ ] Test count: at least 4 new tests (no silent deletions)
+- [x] Drawer renders expiration date, days remaining, and registrar for a domain with health data
+- [x] Drawer renders NS drift state distinctly (expected vs. current visibly different) when `nsDriftDetected` is `true`
+- [x] Drawer shows the RDAP error indicator without breaking/hiding the rest of the drawer when `rdapLastError` is set
+- [x] Drawer for a domain with no health data yet (all new fields `null`) renders without error, showing an appropriate "not checked yet" state rather than blank/broken UI
+- [x] Gate check passes: `cd web && npm run test`
+- [x] Test count: at least 4 new tests (no silent deletions)
 
 **Tests**: unit
 **Gate**: quick (frontend)

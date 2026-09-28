@@ -167,7 +167,21 @@
       "notConfigured": "not configured",
       "recheckButton": "Recheck",
       "removeButton": "Remove domain",
-      "removeError": "Couldn't remove the domain."
+      "removeError": "Couldn't remove the domain.",
+      "health": {
+        "title": "Domain health",
+        "notChecked": "Not checked yet",
+        "expiresLabel": "Expires on",
+        "daysRemainingLabel": "Days remaining",
+        "daysRemaining": "{{days}} days remaining",
+        "registrarLabel": "Registrar",
+        "lastCheckLabel": "Last check",
+        "nameserversLabel": "Nameservers",
+        "expectedNsLabel": "Expected",
+        "currentNsLabel": "Current",
+        "driftBadge": "NS drift",
+        "rdapError": "RDAP lookup failed: {{error}}"
+      }
     }
   },
   "statusPages": {
