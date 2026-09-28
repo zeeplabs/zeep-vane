@@ -237,11 +237,11 @@ Tasks: T13, T14
 - Skill: NONE
 
 **Done when**:
-- [ ] Successful RDAP JSON response (fixture matching a real registry's shape) parses `expiresAt` and `registrar` correctly
-- [ ] Response missing the expiration event parses to `expiresAt == nil` without erroring (some registries omit it)
-- [ ] Non-2xx HTTP response, malformed JSON, and network timeout all return a clear error, never a panic or a zero-value success
-- [ ] Gate check passes: `go test ./internal/rdap` (or `./internal/cli`, matching final placement)
-- [ ] Test count: at least 4 new tests (no silent deletions)
+- [x] Successful RDAP JSON response (fixture matching a real registry's shape) parses `expiresAt` and `registrar` correctly
+- [x] Response missing the expiration event parses to `expiresAt == nil` without erroring (some registries omit it)
+- [x] Non-2xx HTTP response, malformed JSON, and network timeout all return a clear error, never a panic or a zero-value success
+- [x] Gate check passes: `go test ./internal/rdap` (or `./internal/cli`, matching final placement)
+- [x] Test count: at least 4 new tests (no silent deletions)
 
 **Tests**: unit
 **Gate**: quick

@@ -98,7 +98,7 @@ This blind spot caused a real production incident (Starbem, `eks-starbem-dev`, 2
 | --- | --- | --- |
 | DHM-01 | P1-AC1: daily RDAP query per domain, expiration/registrar persisted | implemented |
 | DHM-02 | P1-AC2: notification at 30/15/7-day thresholds, once per crossing | implemented |
-| DHM-03 | P1-AC3: RDAP failure recorded, no spurious alert, cycle continues for other domains, retried next cycle | pending |
+| DHM-03 | P1-AC3: RDAP failure recorded, no spurious alert, cycle continues for other domains, retried next cycle | implemented |
 | DHM-04 | P1-AC4: domain detail view shows expiration date, days remaining, registrar | implemented |
 | DHM-05 | P2-AC1: first check with no baseline records current NS as baseline, no alert | implemented |
 | DHM-06 | P2-AC2: NS differing from baseline marks drift and notifies | implemented |
