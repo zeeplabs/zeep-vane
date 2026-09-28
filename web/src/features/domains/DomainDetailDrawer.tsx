@@ -159,7 +159,7 @@ export function DomainDetailDrawer({ domain, onClose }: DomainDetailDrawerProps)
                         <div className="mb-1 text-[10.5px] font-bold uppercase tracking-wide text-text-muted">
                           {t("domains.detail.health.expiresLabel")}
                         </div>
-                        <div className="text-[15px] font-bold text-text">
+                        <div data-testid="expires-at" className="text-[15px] font-bold text-text">
                           {current.expires_at ? formatDateTime(current.expires_at, i18n.language) : "—"}
                         </div>
                       </div>

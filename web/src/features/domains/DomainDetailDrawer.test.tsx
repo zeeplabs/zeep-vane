@@ -7,6 +7,7 @@ import { http, HttpResponse } from "msw";
 import { server } from "../../test/msw/server";
 import { TestQueryProvider } from "../../test/queryClient";
 import { apiFetch } from "../../lib/apiClient";
+import { formatDateTime } from "../../lib/formatDate";
 import type { Domain, Page } from "../../types/api";
 import { DomainsTable } from "./DomainsTable";
 import { DomainDetailDrawer } from "./DomainDetailDrawer";
@@ -176,6 +177,7 @@ describe("DomainDetailDrawer", () => {
     await userEvent.click(await screen.findByText("health.example.com"));
 
     expect(await screen.findByText("GoDaddy.com, LLC")).toBeInTheDocument();
+    expect(screen.getByTestId("expires-at")).toHaveTextContent(formatDateTime(expiresAt, "pt-BR"));
     expect(screen.getByTestId("days-remaining")).toHaveTextContent("20 dias restantes");
     expect(screen.queryByTestId("ns-drift-badge")).not.toBeInTheDocument();
   });
