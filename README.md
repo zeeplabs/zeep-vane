@@ -301,6 +301,17 @@ Core tables (see `internal/db/migrations/` for exact schema and `internal/db/*_r
 | `status_pages` | A publishable page: a set of services + incidents to expose, an optional `domain_id`/`subdomain` (nullable — a page can exist and be previewed before any domain is attached, see AD-008), and a `state` (`draft`/`published`). |
 | `incidents` + updates | Incident timeline entries linked to one or more services, surfaced on the public page for 90 days after resolution. |
 
+### Domain health monitoring
+
+Vane runs one health check per day for every domain registered under **Domains**, whether or not it has a status page or CNAME attached — a bare root domain like `suaempresa.com` is covered the same way. The schedule is fixed (00:00 UTC daily); there is nothing to configure and no new environment variable to set.
+
+Each run checks two things per domain:
+
+- **Registration (RDAP)** — queries the registry's RDAP service for the domain's expiration date and registrar. When the expiration date falls inside the 30-day, 15-day, or 7-day window, Vane alerts **once per threshold crossed** — a domain sitting at 6 days for a week is not re-alerted every day. A failed RDAP lookup (unsupported TLD, timeout, rate limit) is recorded and retried on the next daily run; it never raises a spurious alert, and it never stops the other domains in the same run from being checked.
+- **Nameservers (NS drift)** — resolves the domain's current nameservers and compares them against a baseline Vane learns automatically on the first successful check. If they differ, Vane flags NS drift and alerts. This is the signal behind registrar/DNS-host mismatches (the class of problem that made a real incident's recovery slow). A DNS lookup failure is recorded without ever overwriting the learned baseline.
+
+Expiration and drift alerts go through the **existing notification preferences**, the same ones incident and SLO notifications use — email today, no separate channel to configure, and each admin can opt out in Settings like any other notification. The expiration date, registrar, and drift state also show up in the domain's detail view, with an at-risk indicator in the Domains list.
+
 ---
 
 ## 🔐 Authentication & authorization

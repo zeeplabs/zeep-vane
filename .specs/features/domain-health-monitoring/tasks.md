@@ -420,9 +420,9 @@ Tasks: T13, T14
 - Skill: NONE
 
 **Done when**:
-- [ ] New/extended section describes the RDAP expiration check, the NS drift check, and the alert thresholds in plain operator-facing language
-- [ ] States explicitly that this covers domains with no attached status page (the root-domain case)
-- [ ] Gate check passes: manual review (no automated test for prose)
+- [x] New/extended section describes the RDAP expiration check, the NS drift check, and the alert thresholds in plain operator-facing language
+- [x] States explicitly that this covers domains with no attached status page (the root-domain case)
+- [x] Gate check passes: manual review (no automated test for prose)
 
 **Tests**: none
 **Gate**: n/a (docs)
