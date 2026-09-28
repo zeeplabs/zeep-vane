@@ -107,10 +107,10 @@ Tasks: T13, T14
 - Skill: NONE
 
 **Done when**:
-- [ ] `.up.sql` adds all seven columns with correct types/defaults; `.down.sql` drops them
-- [ ] Migration numbered `0041` (next after `0040`), matches naming convention exactly
-- [ ] Gate check passes: `go build ./... && gofmt -l . && go vet ./...`
-- [ ] Test count: unchanged (this task adds no Go tests, verified via T3's integration tests exercising the new columns)
+- [x] `.up.sql` adds all seven columns with correct types/defaults; `.down.sql` drops them
+- [x] Migration numbered `0041` (next after `0040`), matches naming convention exactly
+- [x] Gate check passes: `go build ./... && gofmt -l . && go vet ./...`
+- [x] Test count: unchanged (this task adds no Go tests, verified via T3's integration tests exercising the new columns)
 
 **Tests**: none
 **Gate**: build
