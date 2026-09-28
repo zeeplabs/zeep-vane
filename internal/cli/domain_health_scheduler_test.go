@@ -295,6 +295,61 @@ func TestDomainHealthScheduler_Failures_DoNotAbortCycle(t *testing.T) {
 	}
 }
 
+// TestDomainHealthScheduler_RDAPFailureWithStoredExpiry_NoSpuriousAlert covers
+// DHM-03's "record the failure without alerting spuriously" clause: when RDAP
+// fails, the last known expiration is preserved for display but must NOT be
+// re-evaluated for a threshold crossing. Seeding a stored expiry inside the
+// 30-day band with a previous check 15 days earlier (when it was still >30
+// days out) means re-evaluating the preserved expiry at `now` would look like
+// a fresh 30-day crossing - the exact spurious alert the guard must prevent.
+func TestDomainHealthScheduler_RDAPFailureWithStoredExpiry_NoSpuriousAlert(t *testing.T) {
+	pool, tenantID := newServeTestPoolWithTenant(t)
+	repo := db.NewDomainRepository(pool)
+	ctx := context.Background()
+	now := time.Now().UTC().Truncate(time.Second)
+
+	hostname := "dhm-rdap-fail-stored.example.com"
+	expires := now.Add(20 * 24 * time.Hour)
+	prevCheck := now.Add(-15 * 24 * time.Hour)
+	registrar := "GoDaddy.com, LLC"
+	domain := seedHealthDomain(t, pool, repo, hostname, &expires, []string{"ns1.example.net"}, &prevCheck)
+	if _, err := pool.Exec(ctx, "UPDATE domains SET registrar = $2 WHERE id = $1", domain.ID, registrar); err != nil {
+		t.Fatalf("seeding registrar returned unexpected error: %v", err)
+	}
+
+	notifier := &fakeDomainHealthNotifier{}
+	s := newDomainHealthSchedulerForTest(t, pool,
+		&staticTenantLister{tenants: []db.Tenant{{ID: tenantID, Name: "cli-test-tenant"}}},
+		repo,
+		&fakeRDAPClient{errs: map[string]error{hostname: errors.New("rdap: timeout")}},
+		notifier,
+	).WithNSLookup(func(context.Context, string) ([]string, error) {
+		return []string{"ns1.example.net"}, nil
+	})
+
+	if err := s.runOnce(ctx, now); err != nil {
+		t.Fatalf("runOnce() returned unexpected error: %v", err)
+	}
+
+	if len(notifier.expiring) != 0 {
+		t.Errorf("expiration notifications = %d, want 0: an RDAP failure must never re-alert off the preserved expiry", len(notifier.expiring))
+	}
+
+	got, err := repo.GetByID(ctx, mustDomainID(t, repo, hostname))
+	if err != nil {
+		t.Fatalf("GetByID() returned unexpected error: %v", err)
+	}
+	if got.RDAPLastError == nil {
+		t.Error("RDAPLastError = nil, want the RDAP failure recorded")
+	}
+	if got.ExpiresAt == nil || !got.ExpiresAt.Equal(expires) {
+		t.Errorf("ExpiresAt = %v, want the last known %v preserved across the failure", got.ExpiresAt, expires)
+	}
+	if got.Registrar == nil || *got.Registrar != registrar {
+		t.Errorf("Registrar = %v, want %q preserved across the failure", got.Registrar, registrar)
+	}
+}
+
 // TestDomainHealthScheduler_ExpirationCrossing_FiresOnceNotEveryCycle covers
 // DHM-02 end to end: a crossing fires exactly one notification, and a second
 // cycle inside the same band sends none.
