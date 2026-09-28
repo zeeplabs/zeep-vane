@@ -105,4 +105,4 @@ This blind spot caused a real production incident (Starbem, `eks-starbem-dev`, 2
 | DHM-07 | P2-AC3: DNS lookup failure recorded, existing baseline never overwritten/cleared | implemented |
 | DHM-08 | P2-AC4: domain detail view + domains list visibly indicate NS drift | implemented |
 | DHM-09 | P3-AC1: every domain in `domains` table included in the cycle, with or without an attached status page | implemented |
-| DHM-10 | P3-AC2: `AddDomainDrawer` hostname placeholder reads as a root-domain example, not a subdomain | pending |
+| DHM-10 | P3-AC2: `AddDomainDrawer` hostname placeholder reads as a root-domain example, not a subdomain | implemented |

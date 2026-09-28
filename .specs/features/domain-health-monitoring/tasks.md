@@ -395,10 +395,10 @@ Tasks: T13, T14
 - Skill: NONE
 
 **Done when**:
-- [ ] `hostnamePlaceholder` in both locale files reads as a root-domain example
-- [ ] `npm run i18n:check` still passes (key parity unaffected, values-only change)
-- [ ] Gate check passes: `cd web && npm run i18n:check`
-- [ ] Test count: unchanged (copy-only change)
+- [x] `hostnamePlaceholder` in both locale files reads as a root-domain example
+- [x] `npm run i18n:check` still passes (key parity unaffected, values-only change)
+- [x] Gate check passes: `cd web && npm run i18n:check`
+- [x] Test count: unchanged (copy-only change)
 
 **Tests**: none
 **Gate**: n/a (i18n parity check only)

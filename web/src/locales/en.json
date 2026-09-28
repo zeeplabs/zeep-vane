@@ -145,7 +145,7 @@
     },
     "form": {
       "hostnameLabel": "Hostname",
-      "hostnamePlaceholder": "status.yourcompany.com",
+      "hostnamePlaceholder": "yourcompany.com",
       "saveButton": "Save",
       "error": "Couldn't register the domain."
     },

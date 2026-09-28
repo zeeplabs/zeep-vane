@@ -145,7 +145,7 @@
     },
     "form": {
       "hostnameLabel": "Hostname",
-      "hostnamePlaceholder": "status.suaempresa.com",
+      "hostnamePlaceholder": "suaempresa.com",
       "saveButton": "Salvar",
       "error": "Não foi possível cadastrar o domínio."
     },
