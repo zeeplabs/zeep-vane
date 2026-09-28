@@ -7,6 +7,7 @@ package email
 import (
 	"context"
 	"errors"
+	"fmt"
 )
 
 // Message is a single email to send, fully rendered and provider-agnostic -
@@ -122,6 +123,21 @@ type DomainExpiringEmailData struct {
 	ThresholdDays int
 	// DashboardURL links to the domains screen in the admin dashboard.
 	DashboardURL string
+}
+
+// DaysRemainingText renders DaysRemaining as reader-friendly copy: a
+// crossing can fire with a zero or negative day count (the domain already
+// expired, or expires today, by the time the alert is dispatched), and
+// "expires in -3 days" reads as broken rather than urgent.
+func (d DomainExpiringEmailData) DaysRemainingText() string {
+	switch {
+	case d.DaysRemaining < 0:
+		return fmt.Sprintf("expired %d days ago", -d.DaysRemaining)
+	case d.DaysRemaining == 0:
+		return "expires today"
+	default:
+		return fmt.Sprintf("expires in %d days", d.DaysRemaining)
+	}
 }
 
 // DomainNSDriftEmailData is the data the domain NS-drift template renders

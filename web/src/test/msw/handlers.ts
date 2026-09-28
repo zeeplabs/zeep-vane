@@ -61,6 +61,8 @@ const notificationPreferenceDefaults: Record<string, boolean> = {
   incident_opened: true,
   incident_resolved: true,
   weekly_digest: false,
+  domain_expiring: true,
+  domain_ns_drift: true,
 };
 
 function resolveNotificationPreferences(): Record<string, boolean> {
@@ -74,6 +76,12 @@ function resolveNotificationPreferences(): Record<string, boolean> {
     weekly_digest:
       notificationPreferencesState.weekly_digest ??
       notificationPreferenceDefaults.weekly_digest,
+    domain_expiring:
+      notificationPreferencesState.domain_expiring ??
+      notificationPreferenceDefaults.domain_expiring,
+    domain_ns_drift:
+      notificationPreferencesState.domain_ns_drift ??
+      notificationPreferenceDefaults.domain_ns_drift,
   };
 }
 
@@ -871,7 +879,13 @@ export const handlers = [
     if (!body) {
       return HttpResponse.json({ error: "invalid request body" }, { status: 422 });
     }
-    for (const key of ["incident_opened", "incident_resolved", "weekly_digest"]) {
+    for (const key of [
+      "incident_opened",
+      "incident_resolved",
+      "weekly_digest",
+      "domain_expiring",
+      "domain_ns_drift",
+    ]) {
       if (typeof body[key] === "boolean") {
         notificationPreferencesState[key] = body[key];
       }

@@ -40,6 +40,8 @@ describe("NotificationsSection", () => {
     expect(await screen.findByText("Novo incidente")).toBeInTheDocument();
     expect(screen.getByText("Incidente resolvido")).toBeInTheDocument();
     expect(screen.getByText("Resumo semanal")).toBeInTheDocument();
+    expect(screen.getByText("Domínio expirando")).toBeInTheDocument();
+    expect(screen.getByText("Alteração de nameservers")).toBeInTheDocument();
 
     await waitFor(() =>
       expect(screen.getByRole("switch", { name: "Novo incidente" })).toHaveAttribute(
@@ -54,6 +56,14 @@ describe("NotificationsSection", () => {
     expect(screen.getByRole("switch", { name: "Resumo semanal" })).toHaveAttribute(
       "aria-checked",
       "false",
+    );
+    expect(screen.getByRole("switch", { name: "Domínio expirando" })).toHaveAttribute(
+      "aria-checked",
+      "true",
+    );
+    expect(screen.getByRole("switch", { name: "Alteração de nameservers" })).toHaveAttribute(
+      "aria-checked",
+      "true",
     );
   });
 

@@ -225,6 +225,25 @@ describe("DomainsTable", () => {
     expect(badge).toHaveTextContent("Expira em breve");
   });
 
+  it("shows the expired indicator, not expiring-soon, for a domain past its expiration date", async () => {
+    mockDomainsPage([
+      baseDomain({
+        id: "dom-expired",
+        hostname: "expired-row.example.com",
+        ns_drift_detected: false,
+        expires_at: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString(),
+      }),
+    ]);
+    await loginAsOwner();
+    renderTable();
+
+    await screen.findByText("expired-row.example.com");
+    const row = screen.getAllByTestId("domain-row")[0];
+    const badge = within(row).getByTestId("domain-at-risk");
+    expect(badge).toHaveAttribute("data-risk", "expired");
+    expect(badge).toHaveTextContent("Expirado");
+  });
+
   it("shows neither indicator for a healthy domain with a far-out expiration (DHM-08)", async () => {
     mockDomainsPage([
       baseDomain({

@@ -483,6 +483,46 @@ func TestDomainRepository_SetHealthCheckResult_NSFailure_PreservesBaseline(t *te
 	}
 }
 
+// TestDomainRepository_SetHealthCheckResult_NSFailure_PreservesDriftFlag
+// covers a bug where a DNS lookup failure (nil currentNS, so the scheduler
+// always passes driftDetected=false) silently cleared a previously detected
+// ns_drift_detected back to false - making a real, still-unresolved drift
+// disappear from the UI, and re-triggering the drift notification on the
+// next cycle that could resolve the NS lookup again. ns_drift_detected must
+// be preserved exactly like current_ns/expected_ns are.
+func TestDomainRepository_SetHealthCheckResult_NSFailure_PreservesDriftFlag(t *testing.T) {
+	repo, pool := newDomainRepoTestPool(t)
+	domain := &Domain{Hostname: fmt.Sprintf("health-driftpreserve-%d.example.com", time.Now().UnixNano())}
+	if err := repo.Create(context.Background(), domain); err != nil {
+		t.Fatalf("setup Create() returned unexpected error: %v", err)
+	}
+	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), "DELETE FROM domains WHERE id = $1", domain.ID) })
+
+	ctx := context.Background()
+	// First cycle learns the baseline.
+	if err := repo.SetHealthCheckResult(ctx, domain.ID, nil, nil, []string{"ns1.example.net"}, false, nil); err != nil {
+		t.Fatalf("baseline SetHealthCheckResult() returned unexpected error: %v", err)
+	}
+	// Second cycle: NS actually changed, drift detected.
+	if err := repo.SetHealthCheckResult(ctx, domain.ID, nil, nil, []string{"ns2.example.net"}, true, nil); err != nil {
+		t.Fatalf("drift SetHealthCheckResult() returned unexpected error: %v", err)
+	}
+	// Third cycle: transient DNS failure (nil currentNS); the scheduler
+	// always passes driftDetected=false in this path since it has no fresh
+	// NS set to compare.
+	if err := repo.SetHealthCheckResult(ctx, domain.ID, nil, nil, nil, false, nil); err != nil {
+		t.Fatalf("DNS-failure SetHealthCheckResult() returned unexpected error: %v", err)
+	}
+
+	got, err := repo.GetByID(ctx, domain.ID)
+	if err != nil {
+		t.Fatalf("GetByID() returned unexpected error: %v", err)
+	}
+	if !got.NSDriftDetected {
+		t.Error("NSDriftDetected = false, want true - a DNS lookup failure must not clear a previously detected drift")
+	}
+}
+
 // TestDomainRepository_SetHealthCheckResult_Unknown_ErrNotFound covers the
 // not-found path (T3 done-when: a clear not-found-shaped error, not a silent
 // no-op).

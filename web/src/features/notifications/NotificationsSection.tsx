@@ -38,6 +38,16 @@ const TOGGLES: ToggleDef[] = [
     labelKey: "profile.notifications.weeklyDigest",
     hintKey: "profile.notifications.weeklyDigestHint",
   },
+  {
+    type: "domain_expiring",
+    labelKey: "profile.notifications.domainExpiring",
+    hintKey: "profile.notifications.domainExpiringHint",
+  },
+  {
+    type: "domain_ns_drift",
+    labelKey: "profile.notifications.domainNsDrift",
+    hintKey: "profile.notifications.domainNsDriftHint",
+  },
 ];
 
 export function NotificationsSection() {

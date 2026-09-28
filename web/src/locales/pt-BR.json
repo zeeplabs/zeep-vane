@@ -111,6 +111,7 @@
     },
     "atRisk": {
       "drift": "Drift de NS",
+      "expired": "Expirado",
       "expiring": "Expira em breve"
     },
     "empty": {
@@ -945,7 +946,11 @@
       "incidentResolved": "Incidente resolvido",
       "incidentResolvedHint": "Quando um incidente que você acompanha é encerrado.",
       "weeklyDigest": "Resumo semanal",
-      "weeklyDigestHint": "Uptime e principais eventos da semana, toda segunda."
+      "weeklyDigestHint": "Uptime e principais eventos da semana, toda segunda.",
+      "domainExpiring": "Domínio expirando",
+      "domainExpiringHint": "Quando um dos seus domínios está próximo da data de expiração.",
+      "domainNsDrift": "Alteração de nameservers",
+      "domainNsDriftHint": "Quando os nameservers de um domínio mudam em relação ao esperado."
     }
   },
   "twoFactor": {

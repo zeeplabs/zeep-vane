@@ -13,6 +13,8 @@ export interface NotificationPreferences {
   incident_opened: boolean;
   incident_resolved: boolean;
   weekly_digest: boolean;
+  domain_expiring: boolean;
+  domain_ns_drift: boolean;
 }
 
 export type NotificationType = keyof NotificationPreferences;

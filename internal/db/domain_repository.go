@@ -50,15 +50,20 @@ type Domain struct {
 	// ExpectedNS is the baseline learned on the domain's first successful NS
 	// check; CurrentNS is the latest resolved set; NSDriftDetected is true
 	// when CurrentNS differs from ExpectedNS; LastRDAPCheckAt stamps the most
-	// recent health-check cycle; RDAPLastError records the last RDAP failure
+	// recent health-check cycle attempt (success or failure);
+	// LastRDAPSuccessAt stamps only the most recent cycle that got real RDAP
+	// data - the scheduler compares expiration bands against this, not
+	// LastRDAPCheckAt, so a failed lookup can never mask a threshold crossing
+	// on the next successful one. RDAPLastError records the last RDAP failure
 	// (nil on success or when none has run yet).
-	ExpiresAt       *time.Time
-	Registrar       *string
-	ExpectedNS      []string
-	CurrentNS       []string
-	NSDriftDetected bool
-	LastRDAPCheckAt *time.Time
-	RDAPLastError   *string
+	ExpiresAt         *time.Time
+	Registrar         *string
+	ExpectedNS        []string
+	CurrentNS         []string
+	NSDriftDetected   bool
+	LastRDAPCheckAt   *time.Time
+	LastRDAPSuccessAt *time.Time
+	RDAPLastError     *string
 }
 
 // DomainRepository accesses the domains table.
@@ -105,7 +110,7 @@ func (r *DomainRepository) ListPaginated(ctx context.Context, page, pageSize int
 
 	rows, err := r.pool.Query(ctx,
 		`SELECT id, hostname, created_at, domain_type, status, ssl_status, verified_at, last_error,
-		        expires_at, registrar, expected_ns, current_ns, ns_drift_detected, last_rdap_check_at, rdap_last_error,
+		        expires_at, registrar, expected_ns, current_ns, ns_drift_detected, last_rdap_check_at, last_rdap_success_at, rdap_last_error,
 		        COUNT(*) OVER() AS total
 		 FROM domains
 		 ORDER BY hostname
@@ -124,7 +129,7 @@ func (r *DomainRepository) ListPaginated(ctx context.Context, page, pageSize int
 		if err := rows.Scan(&domain.ID, &domain.Hostname, &domain.CreatedAt, &domain.DomainType,
 			&domain.Status, &domain.SSLStatus, &domain.VerifiedAt, &domain.LastError,
 			&domain.ExpiresAt, &domain.Registrar, &domain.ExpectedNS, &domain.CurrentNS,
-			&domain.NSDriftDetected, &domain.LastRDAPCheckAt, &domain.RDAPLastError, &total); err != nil {
+			&domain.NSDriftDetected, &domain.LastRDAPCheckAt, &domain.LastRDAPSuccessAt, &domain.RDAPLastError, &total); err != nil {
 			return nil, 0, fmt.Errorf("db: failed to scan domain: %w", err)
 		}
 		domains = append(domains, domain)
@@ -148,7 +153,7 @@ func (r *DomainRepository) ListPaginated(ctx context.Context, page, pageSize int
 func (r *DomainRepository) GetByID(ctx context.Context, id string) (*Domain, error) {
 	row := r.pool.QueryRow(ctx,
 		`SELECT id, hostname, created_at, domain_type, status, ssl_status, verified_at, last_error,
-		        expires_at, registrar, expected_ns, current_ns, ns_drift_detected, last_rdap_check_at, rdap_last_error
+		        expires_at, registrar, expected_ns, current_ns, ns_drift_detected, last_rdap_check_at, last_rdap_success_at, rdap_last_error
 		 FROM domains WHERE id = $1`,
 		id,
 	)
@@ -157,7 +162,7 @@ func (r *DomainRepository) GetByID(ctx context.Context, id string) (*Domain, err
 	if err := row.Scan(&domain.ID, &domain.Hostname, &domain.CreatedAt, &domain.DomainType,
 		&domain.Status, &domain.SSLStatus, &domain.VerifiedAt, &domain.LastError,
 		&domain.ExpiresAt, &domain.Registrar, &domain.ExpectedNS, &domain.CurrentNS,
-		&domain.NSDriftDetected, &domain.LastRDAPCheckAt, &domain.RDAPLastError); err != nil {
+		&domain.NSDriftDetected, &domain.LastRDAPCheckAt, &domain.LastRDAPSuccessAt, &domain.RDAPLastError); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, ErrNotFound
 		}
@@ -228,6 +233,15 @@ func (r *DomainRepository) SetHealthCheckResult(ctx context.Context, id string, 
 
 // setHealthCheckResult performs SetHealthCheckResult's write on whatever
 // transaction ctx carries, mirroring IncidentRepository.insert.
+//
+// ns_drift_detected is only overwritten when currentNS is non-nil (a real NS
+// lookup ran this cycle) - like current_ns/expected_ns, a transient DNS
+// failure (currentNS nil) must leave the previously detected drift state
+// untouched rather than silently clearing it. last_rdap_success_at is
+// stamped to now() only when rdapErr is nil (a real successful RDAP lookup),
+// distinct from last_rdap_check_at which stamps every attempt - the
+// scheduler's threshold-crossing comparison needs the former, not the
+// latter, or a failed lookup on the crossing day would hide the crossing.
 func (r *DomainRepository) setHealthCheckResult(ctx context.Context, id string, expiresAt *time.Time, registrar *string, currentNS []string, driftDetected bool, rdapErr *string) error {
 	tag, err := r.pool.Exec(ctx,
 		`UPDATE domains
@@ -235,9 +249,10 @@ func (r *DomainRepository) setHealthCheckResult(ctx context.Context, id string, 
 		     registrar = $3,
 		     current_ns = COALESCE($4, current_ns),
 		     expected_ns = COALESCE(expected_ns, $4),
-		     ns_drift_detected = $5,
+		     ns_drift_detected = CASE WHEN $4 IS NULL THEN ns_drift_detected ELSE $5 END,
 		     rdap_last_error = $6,
-		     last_rdap_check_at = now()
+		     last_rdap_check_at = now(),
+		     last_rdap_success_at = CASE WHEN $6::text IS NULL THEN now() ELSE last_rdap_success_at END
 		 WHERE id = $1`,
 		id, expiresAt, registrar, currentNS, driftDetected, rdapErr,
 	)

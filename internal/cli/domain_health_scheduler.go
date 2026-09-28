@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"sort"
@@ -220,10 +221,25 @@ func (s *DomainHealthScheduler) checkAndPersist(ctx context.Context, tenant db.T
 	if rdapErr != nil {
 		// Preserve the last known expiration/registrar so a transient RDAP
 		// failure never erases them from the UI or re-arms an alert; only
-		// the error is recorded and the next cycle retries (DHM-03).
+		// the error is recorded and the next cycle retries (DHM-03). The
+		// full error (with hostname/status/transport detail) is logged here
+		// server-side; only rdap.LookupError's sanitized Message rides into
+		// rdap_last_error and from there to the admin API/UI.
+		logErr := rdapErr
+		if unwrapped := errors.Unwrap(rdapErr); unwrapped != nil {
+			logErr = unwrapped
+		}
+		s.logger.Warn("domain-health: RDAP lookup failed", zap.String("hostname", domain.Hostname), zap.Error(logErr))
 		msg := rdapErr.Error()
 		rdapErrMsg = &msg
 		expiresAt, registrar = domain.ExpiresAt, domain.Registrar
+	} else if expiresAt == nil {
+		// RDAP succeeded but the response carried no expiration event
+		// (rdap.Client.Lookup's documented (nil, nil, nil) case) - keep the
+		// last known expiration instead of persisting NULL, which would both
+		// erase it from the UI and reset the threshold-crossing dedupe on
+		// the next successful lookup.
+		expiresAt = domain.ExpiresAt
 	}
 
 	currentNS, nsErr := s.lookupNS(ctx, domain.Hostname)
@@ -251,7 +267,7 @@ func (s *DomainHealthScheduler) checkAndPersist(ctx context.Context, tenant db.T
 
 	var expiringSummary *notify.DomainExpiringSummary
 	if rdapErrMsg == nil && expiresAt != nil {
-		if threshold, days, crossed := expirationAlert(now, domain.ExpiresAt, domain.LastRDAPCheckAt, *expiresAt); crossed {
+		if threshold, days, crossed := expirationAlert(now, domain.ExpiresAt, domain.LastRDAPSuccessAt, *expiresAt); crossed {
 			expiringSummary = &notify.DomainExpiringSummary{
 				DomainID:      domain.ID,
 				Hostname:      domain.Hostname,
@@ -303,8 +319,11 @@ func (s *DomainHealthScheduler) persist(ctx context.Context, tenantID, domainID 
 // expirationAlert reports whether a new expiration threshold crossing
 // happened since the previous check, plus the crossed threshold and days
 // remaining (DHM-02). The previous threshold is derived from the domain's
-// previously stored ExpiresAt at the time of its previous check
-// (LastRDAPCheckAt): a crossing is new only when the current band is
+// previously stored ExpiresAt at the time of its previous successful check
+// (LastRDAPSuccessAt, not LastRDAPCheckAt - a cycle where RDAP failed must
+// never be treated as "the previous check", or a threshold crossed on that
+// exact day would be silently lost): a crossing is new only when the current
+// band is
 // narrower than the previous one. A domain sitting inside a band for several
 // daily checks therefore alerts once, not every day, and a widening band -
 // e.g. a renewal pushing the expiry back out from 5 to 20 days - is not a

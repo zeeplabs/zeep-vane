@@ -42,6 +42,37 @@ func TestRenderDomainExpiring_IncludesHostnameDaysAndThreshold(t *testing.T) {
 	}
 }
 
+// TestRenderDomainExpiring_AlreadyExpired_ReadsAsExpiredNotNegativeDays covers
+// a bug where a crossing firing with a zero or negative DaysRemaining (the
+// domain already expired, or expires today, by the time the alert sends)
+// rendered as "expires in -3 days" - broken-looking copy instead of urgent
+// copy.
+func TestRenderDomainExpiring_AlreadyExpired_ReadsAsExpiredNotNegativeDays(t *testing.T) {
+	tmpls, err := parseTemplates()
+	if err != nil {
+		t.Fatalf("parseTemplates() returned unexpected error: %v", err)
+	}
+
+	htmlBody, textBody, err := tmpls.renderDomainExpiring(DomainExpiringEmailData{
+		Hostname:      "starbem.app",
+		DaysRemaining: -3,
+		ThresholdDays: 7,
+		DashboardURL:  "https://vane.example.com/domains",
+	})
+	if err != nil {
+		t.Fatalf("renderDomainExpiring() returned unexpected error: %v", err)
+	}
+
+	for _, body := range []string{htmlBody, textBody} {
+		if strings.Contains(body, "-3") {
+			t.Errorf("body still renders a negative day count: %q", body)
+		}
+		if !strings.Contains(body, "expired 3 days ago") {
+			t.Errorf("body = %q, want it to read as already expired", body)
+		}
+	}
+}
+
 // TestRenderDomainNSDrift_IncludesHostnameAndExpectedVsCurrentNS covers T5's
 // done-when: the NS-drift template renders the hostname and both the expected
 // and current nameserver sets.

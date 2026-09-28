@@ -11,6 +11,7 @@ package rdap
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -31,6 +32,21 @@ const defaultTimeout = 10 * time.Second
 // maxResponseBytes caps how much of a response body is read, so a hostile or
 // broken server cannot make a lookup allocate unbounded memory.
 const maxResponseBytes = 1 << 20 // 1 MiB
+
+// LookupError describes an RDAP lookup failure. Message is a stable,
+// internals-free classification - it names no hostname, status body, or
+// transport detail - because it rides unsanitized into
+// domains.rdap_last_error and from there straight to the admin API/UI
+// (AGENTS.md: never leak raw internal errors to a client). Unwrap exposes
+// the real underlying error so the caller can still log full detail
+// server-side.
+type LookupError struct {
+	Message string
+	Cause   error
+}
+
+func (e *LookupError) Error() string { return e.Message }
+func (e *LookupError) Unwrap() error { return e.Cause }
 
 // Client fetches RDAP data. baseURL is an injected field (not a package
 // constant) so tests point it at a local httptest.Server instead of the real
@@ -66,33 +82,41 @@ func (c *Client) Lookup(ctx context.Context, hostname string) (*time.Time, *stri
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
-		return nil, nil, fmt.Errorf("rdap: failed to build request for %q: %w", hostname, err)
+		return nil, nil, &LookupError{Message: "failed to build RDAP request", Cause: fmt.Errorf("rdap: failed to build request for %q: %w", hostname, err)}
 	}
 	req.Header.Set("Accept", "application/rdap+json")
 
 	resp, err := c.http.Do(req)
 	if err != nil {
-		return nil, nil, fmt.Errorf("rdap: request for %q failed: %w", hostname, err)
+		msg := "RDAP request failed"
+		if errors.Is(err, context.DeadlineExceeded) {
+			msg = "RDAP lookup timed out"
+		}
+		return nil, nil, &LookupError{Message: msg, Cause: fmt.Errorf("rdap: request for %q failed: %w", hostname, err)}
 	}
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, nil, fmt.Errorf("rdap: unexpected status %d for %q", resp.StatusCode, hostname)
+		cause := fmt.Errorf("rdap: unexpected status %d for %q", resp.StatusCode, hostname)
+		if resp.StatusCode == http.StatusNotFound {
+			return nil, nil, &LookupError{Message: "domain not found in RDAP registry", Cause: cause}
+		}
+		return nil, nil, &LookupError{Message: fmt.Sprintf("RDAP request failed with status %d", resp.StatusCode), Cause: cause}
 	}
 
 	body, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBytes))
 	if err != nil {
-		return nil, nil, fmt.Errorf("rdap: failed to read response for %q: %w", hostname, err)
+		return nil, nil, &LookupError{Message: "failed to read RDAP response", Cause: fmt.Errorf("rdap: failed to read response for %q: %w", hostname, err)}
 	}
 
 	var parsed domainResponse
 	if err := json.Unmarshal(body, &parsed); err != nil {
-		return nil, nil, fmt.Errorf("rdap: malformed RDAP response for %q: %w", hostname, err)
+		return nil, nil, &LookupError{Message: "malformed RDAP response", Cause: fmt.Errorf("rdap: malformed RDAP response for %q: %w", hostname, err)}
 	}
 
 	expiresAt, err := parseExpiration(parsed.Events)
 	if err != nil {
-		return nil, nil, fmt.Errorf("rdap: %w", err)
+		return nil, nil, &LookupError{Message: "malformed RDAP response", Cause: fmt.Errorf("rdap: %w", err)}
 	}
 	return expiresAt, parseRegistrar(parsed.Entities), nil
 }

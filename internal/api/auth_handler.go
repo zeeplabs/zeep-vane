@@ -586,6 +586,8 @@ type notificationPreferencesResponse struct {
 	IncidentOpened   bool `json:"incident_opened"`
 	IncidentResolved bool `json:"incident_resolved"`
 	WeeklyDigest     bool `json:"weekly_digest"`
+	DomainExpiring   bool `json:"domain_expiring"`
+	DomainNSDrift    bool `json:"domain_ns_drift"`
 }
 
 // resolveNotificationPreferences fills in the documented default for any type
@@ -601,6 +603,8 @@ func resolveNotificationPreferences(stored map[string]bool) notificationPreferen
 		IncidentOpened:   resolve(db.NotificationTypeIncidentOpened),
 		IncidentResolved: resolve(db.NotificationTypeIncidentResolved),
 		WeeklyDigest:     resolve(db.NotificationTypeWeeklyDigest),
+		DomainExpiring:   resolve(db.NotificationTypeDomainExpiring),
+		DomainNSDrift:    resolve(db.NotificationTypeDomainNSDrift),
 	}
 }
 
@@ -632,6 +636,8 @@ type updateNotificationPreferencesRequest struct {
 	IncidentOpened   *bool `json:"incident_opened"`
 	IncidentResolved *bool `json:"incident_resolved"`
 	WeeklyDigest     *bool `json:"weekly_digest"`
+	DomainExpiring   *bool `json:"domain_expiring"`
+	DomainNSDrift    *bool `json:"domain_ns_drift"`
 }
 
 const invalidNotificationPreferencesBody = `{"error":"invalid request body"}`
@@ -663,6 +669,12 @@ func (h *AuthHandler) UpdateNotificationPreferences(w http.ResponseWriter, r *ht
 	}
 	if req.WeeklyDigest != nil {
 		values[db.NotificationTypeWeeklyDigest] = *req.WeeklyDigest
+	}
+	if req.DomainExpiring != nil {
+		values[db.NotificationTypeDomainExpiring] = *req.DomainExpiring
+	}
+	if req.DomainNSDrift != nil {
+		values[db.NotificationTypeDomainNSDrift] = *req.DomainNSDrift
 	}
 
 	if len(values) > 0 {

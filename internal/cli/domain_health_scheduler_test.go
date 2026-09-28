@@ -52,8 +52,19 @@ func newDomainHealthSchedulerForTest(t *testing.T, pool *db.Pool, tenants domain
 // seedHealthDomain creates one domain owned by the pool's fixture tenant and
 // overwrites its health columns directly, so a test can control the
 // "previous check" state (expires_at/last_rdap_check_at/baseline) that the
-// scheduler derives its crossing decision from.
+// scheduler derives its crossing decision from. lastCheckAt seeds both
+// last_rdap_check_at and last_rdap_success_at (the common case: the
+// previous cycle was a success) - use seedHealthDomainWithSuccess directly
+// when a test needs them to diverge (an intervening RDAP failure).
 func seedHealthDomain(t *testing.T, pool *db.Pool, repo *db.DomainRepository, hostname string, expiresAt *time.Time, ns []string, lastCheckAt *time.Time) *db.Domain {
+	t.Helper()
+	return seedHealthDomainWithSuccess(t, pool, repo, hostname, expiresAt, ns, lastCheckAt, lastCheckAt)
+}
+
+// seedHealthDomainWithSuccess is seedHealthDomain with last_rdap_check_at
+// (every attempt) and last_rdap_success_at (only successful attempts) set
+// independently.
+func seedHealthDomainWithSuccess(t *testing.T, pool *db.Pool, repo *db.DomainRepository, hostname string, expiresAt *time.Time, ns []string, lastCheckAt, lastSuccessAt *time.Time) *db.Domain {
 	t.Helper()
 	ctx := context.Background()
 
@@ -64,8 +75,8 @@ func seedHealthDomain(t *testing.T, pool *db.Pool, repo *db.DomainRepository, ho
 	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), "DELETE FROM domains WHERE id = $1", domain.ID) })
 
 	if _, err := pool.Exec(ctx,
-		`UPDATE domains SET expires_at = $2, expected_ns = $3, current_ns = $3, ns_drift_detected = false, last_rdap_check_at = $4 WHERE id = $1`,
-		domain.ID, expiresAt, ns, lastCheckAt,
+		`UPDATE domains SET expires_at = $2, expected_ns = $3, current_ns = $3, ns_drift_detected = false, last_rdap_check_at = $4, last_rdap_success_at = $5 WHERE id = $1`,
+		domain.ID, expiresAt, ns, lastCheckAt, lastSuccessAt,
 	); err != nil {
 		t.Fatalf("seeding health columns for %q returned unexpected error: %v", hostname, err)
 	}
@@ -391,6 +402,98 @@ func TestDomainHealthScheduler_ExpirationCrossing_FiresOnceNotEveryCycle(t *test
 	}
 	if len(notifier.expiring) != 1 {
 		t.Errorf("expiration notifications after second same-band cycle = %d, want still 1 (alerts once per crossing)", len(notifier.expiring))
+	}
+}
+
+// TestDomainHealthScheduler_ExpirationCrossing_NotMaskedByInterveningRDAPFailure
+// covers a bug where a threshold crossing landing on a day RDAP happened to
+// fail could be lost forever: last_rdap_check_at (which the crossing
+// calculation used to read as "the previous check") advances on every
+// attempt, success or failure, so a failed attempt sitting between the
+// previous successful check and today made the "previous band" look like
+// today's band instead of the real one - the crossing that occurred is never
+// re-detected. The domain's last successful check (16 days ago) saw it 30
+// days out (band 30); a failed attempt one day ago updated
+// last_rdap_check_at without ever seeing the current 14-day-out state
+// (band 15). Today's RDAP call succeeds and must still fire the 30->15
+// crossing by comparing against the last *successful* check, not the last
+// attempt.
+func TestDomainHealthScheduler_ExpirationCrossing_NotMaskedByInterveningRDAPFailure(t *testing.T) {
+	pool, tenantID := newServeTestPoolWithTenant(t)
+	repo := db.NewDomainRepository(pool)
+	ctx := context.Background()
+	now := time.Now().UTC().Truncate(time.Second)
+
+	hostname := "dhm-crossing-masked.example.com"
+	expires := now.Add(14 * 24 * time.Hour)
+	lastSuccess := now.Add(-16 * 24 * time.Hour)
+	lastAttempt := now.Add(-1 * 24 * time.Hour)
+	seedHealthDomainWithSuccess(t, pool, repo, hostname, &expires, nil, &lastAttempt, &lastSuccess)
+
+	notifier := &fakeDomainHealthNotifier{}
+	s := newDomainHealthSchedulerForTest(t, pool,
+		&staticTenantLister{tenants: []db.Tenant{{ID: tenantID, Name: "cli-test-tenant"}}},
+		repo,
+		&fakeRDAPClient{expiresAt: map[string]*time.Time{hostname: &expires}},
+		notifier,
+	).WithNSLookup(func(context.Context, string) ([]string, error) {
+		return []string{"ns1.example.net"}, nil
+	})
+
+	if err := s.runOnce(ctx, now); err != nil {
+		t.Fatalf("runOnce() returned unexpected error: %v", err)
+	}
+	if len(notifier.expiring) != 1 {
+		t.Fatalf("expiration notifications = %d, want exactly 1: the 30->15 crossing must not be masked by the intervening RDAP failure", len(notifier.expiring))
+	}
+	if notifier.expiring[0].ThresholdDays != expirationThreshold15 {
+		t.Errorf("crossed threshold = %d, want %d", notifier.expiring[0].ThresholdDays, expirationThreshold15)
+	}
+}
+
+// TestDomainHealthScheduler_RDAPSuccessNoExpirationEvent_PreservesLastKnown
+// covers a bug where an RDAP lookup that succeeds but returns no expiration
+// event (rdap.Client.Lookup's documented (nil, nil, nil) case for a registry
+// that omits it) was persisted as expires_at = NULL, erasing a previously
+// known expiration from the UI and resetting the threshold-crossing dedupe
+// so the next successful lookup could re-alert an already-handled crossing.
+func TestDomainHealthScheduler_RDAPSuccessNoExpirationEvent_PreservesLastKnown(t *testing.T) {
+	pool, tenantID := newServeTestPoolWithTenant(t)
+	repo := db.NewDomainRepository(pool)
+	ctx := context.Background()
+	now := time.Now().UTC().Truncate(time.Second)
+
+	hostname := "dhm-no-expiration-event.example.com"
+	expires := now.Add(100 * 24 * time.Hour)
+	prevCheck := now.Add(-1 * 24 * time.Hour)
+	seedHealthDomain(t, pool, repo, hostname, &expires, nil, &prevCheck)
+
+	notifier := &fakeDomainHealthNotifier{}
+	s := newDomainHealthSchedulerForTest(t, pool,
+		&staticTenantLister{tenants: []db.Tenant{{ID: tenantID, Name: "cli-test-tenant"}}},
+		repo,
+		// No entry for hostname in expiresAt/errs: Lookup succeeds (nil err)
+		// but returns a nil expiration, mirroring a registry response with
+		// no expiration event.
+		&fakeRDAPClient{},
+		notifier,
+	).WithNSLookup(func(context.Context, string) ([]string, error) {
+		return []string{"ns1.example.net"}, nil
+	})
+
+	if err := s.runOnce(ctx, now); err != nil {
+		t.Fatalf("runOnce() returned unexpected error: %v", err)
+	}
+
+	got, err := repo.GetByID(ctx, mustDomainID(t, repo, hostname))
+	if err != nil {
+		t.Fatalf("GetByID() returned unexpected error: %v", err)
+	}
+	if got.ExpiresAt == nil || !got.ExpiresAt.Equal(expires) {
+		t.Errorf("ExpiresAt = %v, want the last known %v preserved when RDAP returns no expiration event", got.ExpiresAt, expires)
+	}
+	if got.RDAPLastError != nil {
+		t.Errorf("RDAPLastError = %v, want nil - this is a successful lookup", got.RDAPLastError)
 	}
 }
 

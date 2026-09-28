@@ -113,7 +113,7 @@ function DomainRiskBadge({ domain }: { domain: Domain }) {
   const risk = domainRisk(domain);
   if (!risk) return null;
 
-  const color = risk === "drift" ? "var(--color-critical)" : "var(--color-warning)";
+  const color = risk === "drift" || risk === "expired" ? "var(--color-critical)" : "var(--color-warning)";
   return (
     <span
       data-testid="domain-at-risk"
