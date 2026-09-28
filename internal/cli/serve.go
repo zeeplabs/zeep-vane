@@ -120,7 +120,7 @@ func NewServeCmd() *cobra.Command {
 			go digestScheduler.Run(ctx)
 
 			addr := fmt.Sprintf(":%d", cfg.Port)
-			srv := &http.Server{Addr: addr, Handler: buildAdminRouter(pool, cfg, logger, pollerManager)}
+			srv := &http.Server{Addr: addr, Handler: serveAdminHandler(pool, cfg, logger, pollerManager)}
 
 			var httpsSrv *http.Server
 			serverErrs := make(chan error, 2)
@@ -230,6 +230,50 @@ func newHTTPSServer(pool *db.Pool, dsn, masterKey string, logger *zap.Logger) *h
 
 	manager := vanetls.NewManager(statusPages, encryptedStorage)
 
+	// hsts=true - this listener really does terminate TLS, unlike the admin
+	// HTTP listener (M14).
+	handler := api.SecurityHeaders(true)(router.HostRouter(statusPages, pool, newPublicStatusMux(pool, logger), http.HandlerFunc(http.NotFound)))
+
+	tlsConfig := manager.TLSConfig()
+	tlsConfig.NextProtos = append([]string{"h2", "http/1.1"}, tlsConfig.NextProtos...)
+
+	return &http.Server{
+		Addr:      ":" + httpsPort,
+		Handler:   handler,
+		TLSConfig: tlsConfig,
+	}
+}
+
+// serveAdminHandler builds the admin HTTP listener's handler. By default it
+// is buildAdminRouter, unchanged. When cfg.TenantDomainsOnAdminListener is
+// set (AD-038), it wraps that router with router.HostRouter so a request
+// whose Host header resolves to a published status page is served by the
+// same public mux newHTTPSServer uses, while every other Host - including
+// the admin's own domain - falls through to the admin router untouched.
+// This is what lets a tenant custom domain and the admin SPA/API share one
+// port behind an external TLS-terminating reverse proxy that owns 80/443.
+//
+// The disabled path constructs no status-page repository and performs no
+// Host lookup, so a deployment that doesn't opt in pays nothing extra on
+// its admin request path.
+func serveAdminHandler(pool *db.Pool, cfg config.Config, logger *zap.Logger, pollerManager *PollerManager) http.Handler {
+	adminHandler := buildAdminRouter(pool, cfg, logger, pollerManager)
+	if !cfg.TenantDomainsOnAdminListener {
+		return adminHandler
+	}
+	return router.HostRouter(db.NewStatusPageRepository(pool), pool, newPublicStatusMux(pool, logger), adminHandler)
+}
+
+// newPublicStatusMux builds the three-route mux every listener that serves a
+// tenant's custom status-page hostname mounts behind router.HostRouter: the
+// public status JSON at "/api/public-status", the public logo file handler at
+// "/uploads/", and the embedded SPA at "/" (AD-018). Both the dedicated :443
+// listener (newHTTPSServer) and, when VANE_TENANT_DOMAINS_ON_ADMIN_LISTENER is
+// enabled, the admin listener build it identically - HostRouter forwards every
+// path on a matched hostname to whatever single handler it is given, so these
+// three routes must live on one mux or a status page's own logo request would
+// hit the JSON handler instead of the file.
+func newPublicStatusMux(pool *db.Pool, logger *zap.Logger) *http.ServeMux {
 	services := db.NewServiceRepository(pool)
 	intervals := db.NewStatusIntervalRepository(pool)
 	incidents := db.NewIncidentRepository(pool)
@@ -242,18 +286,7 @@ func newHTTPSServer(pool *db.Pool, dsn, masterKey string, logger *zap.Logger) *h
 	publicMux.HandleFunc("/api/public-status", publicHandler.Get)
 	publicMux.Handle("/", web.StaticHandler())
 
-	// hsts=true - this listener really does terminate TLS, unlike the admin
-	// HTTP listener (M14).
-	handler := api.SecurityHeaders(true)(router.HostRouter(statusPages, pool, publicMux))
-
-	tlsConfig := manager.TLSConfig()
-	tlsConfig.NextProtos = append([]string{"h2", "http/1.1"}, tlsConfig.NextProtos...)
-
-	return &http.Server{
-		Addr:      ":" + httpsPort,
-		Handler:   handler,
-		TLSConfig: tlsConfig,
-	}
+	return publicMux
 }
 
 // newPollerFromStoredIntegration builds the shared Poller. started is
@@ -302,6 +335,16 @@ func newPollerFromStoredIntegration(ctx context.Context, pool *db.Pool, cfg conf
 	// tenant's poll cycle and root-cause lookup answered by whichever
 	// tenant connected Datadog first.
 	analyzer.SetErrorCauseEnrichment(llmProviderRepo, nil)
+
+	// Each enrichment goroutine (degraded/outage/closing-comment) must open
+	// its own tenant-scoped transaction rather than reuse the poll cycle's:
+	// pollCycle commits/rolls back that transaction the instant pollOnce
+	// returns, before any dispatched goroutine's LLM call has finished, so
+	// every DB write it attempted on the borrowed transaction failed with
+	// "tx is closed" (2026-09-28 incident). Same TenantTxFunc
+	// (poolTenantTx) EnableTenantIteration below already uses for the
+	// synchronous poll cycle.
+	analyzer.SetTenantTx(poolTenantTx(pool))
 
 	p = poller.NewPoller(services, services, intervals, integrations, nil, interval, analyzer, logger)
 

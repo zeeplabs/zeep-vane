@@ -68,10 +68,16 @@ func TenantIDFromContext(ctx context.Context) (string, bool) {
 // publicHandler, with that StatusPage's ID attached to the request context
 // (SP-15 - lets publicHandler scope its services/incidents queries to this
 // status page instead of returning every row in the installation); any
-// other hostname - unregistered, or registered but not yet published - gets
-// a 404. Admin API/SPA dispatch by Host is a design.md placeholder, not
-// implemented here: the admin API is served on its own listener (see
-// cmd/vane serve, router.New), which HostRouter does not touch.
+// other hostname - unregistered, or registered but not yet published - is
+// passed to fallback with the original request untouched, so each listener
+// decides what an unmatched Host means for itself. newHTTPSServer passes
+// http.NotFound (the pre-AD-038 behavior, unchanged); the admin listener
+// optionally passes its own admin router instead, so a tenant custom domain
+// and the admin SPA/API can share one port behind an external
+// TLS-terminating reverse proxy (AD-038,
+// VANE_TENANT_DOMAINS_ON_ADMIN_LISTENER). The fallback never runs for a
+// matched, published hostname, and a request it serves gets no tenant
+// transaction or context from this function.
 //
 // It also opens the request's tenant-scoped transaction (TENANT-01/02/03
 // for the unauthenticated path). Every table the public handler reads is
@@ -89,17 +95,17 @@ func TenantIDFromContext(ctx context.Context) (string, bool) {
 // behind HostRouter is read-only (public status JSON, the logo file, the
 // static SPA), so there is nothing to persist and no reason to give an
 // unauthenticated request commit semantics.
-func HostRouter(statusPages statusPageHostLookup, pool tenantTxBeginner, publicHandler http.Handler) http.Handler {
+func HostRouter(statusPages statusPageHostLookup, pool tenantTxBeginner, publicHandler, fallback http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		hostname := stripPort(r.Host)
 
 		statusPage, err := statusPages.GetByHostname(r.Context(), hostname)
 		if err != nil {
-			http.NotFound(w, r)
+			fallback.ServeHTTP(w, r)
 			return
 		}
 		if statusPage.State != "published" {
-			http.NotFound(w, r)
+			fallback.ServeHTTP(w, r)
 			return
 		}
 

@@ -433,3 +433,51 @@ func TestLoad_DeploymentModeInvalid_Error(t *testing.T) {
 		t.Fatal("Load() with an invalid VANE_DEPLOYMENT_MODE returned nil error, want error")
 	}
 }
+
+// TestLoad_TenantDomainsOnAdminListenerTrue_SetsTrue asserts AD-038: the
+// opt-in flag is reflected when an operator explicitly enables shared-
+// listener tenant-domain routing.
+func TestLoad_TenantDomainsOnAdminListenerTrue_SetsTrue(t *testing.T) {
+	setAllRequiredEnv(t)
+	t.Setenv("VANE_TENANT_DOMAINS_ON_ADMIN_LISTENER", "true")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() returned unexpected error: %v", err)
+	}
+	if !cfg.TenantDomainsOnAdminListener {
+		t.Error("TenantDomainsOnAdminListener = false, want true when VANE_TENANT_DOMAINS_ON_ADMIN_LISTENER=true")
+	}
+}
+
+// TestLoad_TenantDomainsOnAdminListenerNotTrue_DefaultsFalse asserts the
+// flag stays off unless the literal "true" is set - unset, empty, "false",
+// and any other value alike. This is what guarantees zero added Host lookup
+// on the admin request path for every deployment that doesn't need it
+// (AD-038).
+func TestLoad_TenantDomainsOnAdminListenerNotTrue_DefaultsFalse(t *testing.T) {
+	tests := []struct {
+		name  string
+		value string
+	}{
+		{"unset", ""},
+		{"false", "false"},
+		{"1", "1"},
+		{"TRUE", "TRUE"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			setAllRequiredEnv(t)
+			t.Setenv("VANE_TENANT_DOMAINS_ON_ADMIN_LISTENER", tt.value)
+
+			cfg, err := Load()
+			if err != nil {
+				t.Fatalf("Load() returned unexpected error: %v", err)
+			}
+			if cfg.TenantDomainsOnAdminListener {
+				t.Errorf("TenantDomainsOnAdminListener = true with VANE_TENANT_DOMAINS_ON_ADMIN_LISTENER=%q, want false", tt.value)
+			}
+		})
+	}
+}

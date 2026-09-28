@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.0] — 2026-09-28
+
+### Added
+
+- **Tenant custom domains behind a shared reverse proxy**: on a SaaS deployment where an external reverse proxy already owns ports 80/443 (e.g. EasyPanel's Traefik), a new opt-in flag `VANE_TENANT_DOMAINS_ON_ADMIN_LISTENER` (default `false`) serves published status pages' custom domains through the existing admin HTTP listener instead — no way to also bind 80/443 directly in that setup. A request whose `Host` resolves to a published status page is served by the same public mux the dedicated `:443` listener uses; every other `Host`, including the admin domain, falls through to the admin API/SPA unchanged. See [AD-038](.specs/STATE.md) and the README's [Tenant custom domains behind a shared reverse proxy](README.md#-tenant-custom-domains-behind-a-shared-reverse-proxy) runbook. Off by default: no existing deployment's behavior changes.
+
+### Fixed
+
+- **SLO degraded/outage enrichment silently discarded (`tx is closed`)**: the async LLM enrichment goroutines dispatched on a degraded/outage/recovery transition derived their working context via `context.WithoutCancel`, which strips cancellation but keeps context *values* - including the poll cycle's own database transaction. That transaction was committed the instant the synchronous poll cycle returned, before the goroutine's LLM call (up to 30s) could finish, so every write it attempted - the generated analysis/description/closing-comment text, and the LLM provider's own "checked" bookkeeping - failed and was discarded. Each enrichment goroutine now opens its own tenant-scoped transaction, independent of the poll cycle's.
+- **Auto-detected outage incidents failing to create (`tenant_id` NOT NULL violation)**: `IncidentRepository.Create` unconditionally opened a bare transaction with no tenant session context, instead of reusing the caller's already tenant-scoped one - every SLOAnalyzer-created outage incident hit `incidents.tenant_id`'s NOT NULL constraint and was never created. Now reuses the caller's tenant transaction when present, mirroring `StatusPageRepository.Create`'s existing pattern.
+
 ## [0.7.0] — 2026-09-25
 
 ### Added

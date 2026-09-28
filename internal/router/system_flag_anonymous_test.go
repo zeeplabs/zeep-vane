@@ -41,7 +41,7 @@ func TestHostRouter_AnonymousRequest_AppIsSystemNeverSet(t *testing.T) {
 	req.Host = fixture.hostname
 	rec := httptest.NewRecorder()
 
-	HostRouter(db.NewStatusPageRepository(pool), &rlsRoleBeginner{pool: pool}, publicHandler).ServeHTTP(rec, req)
+	HostRouter(db.NewStatusPageRepository(pool), &rlsRoleBeginner{pool: pool}, publicHandler, http.HandlerFunc(http.NotFound)).ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)

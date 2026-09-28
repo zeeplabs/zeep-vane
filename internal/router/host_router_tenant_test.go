@@ -260,7 +260,7 @@ func TestHostRouter_PublicRequest_ScopedToHostnameTenant(t *testing.T) {
 			req.Host = tc.want.hostname
 			rec := httptest.NewRecorder()
 
-			HostRouter(statusPages, beginner, publicHandler).ServeHTTP(rec, req)
+			HostRouter(statusPages, beginner, publicHandler, http.HandlerFunc(http.NotFound)).ServeHTTP(rec, req)
 
 			if rec.Code != http.StatusOK {
 				t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
@@ -317,7 +317,7 @@ func TestHostRouter_UnknownHostname_404_NoTenantTransaction(t *testing.T) {
 	req.Host = fmt.Sprintf("no-such-page-%d.example.com", tRouterUniqueSuffix())
 	rec := httptest.NewRecorder()
 
-	HostRouter(statusPages, beginner, publicHandler).ServeHTTP(rec, req)
+	HostRouter(statusPages, beginner, publicHandler, http.HandlerFunc(http.NotFound)).ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusNotFound {
 		t.Errorf("status = %d, want %d", rec.Code, http.StatusNotFound)
@@ -397,7 +397,7 @@ func TestHostRouter_AnonymousSession_ResolvesPublishedPageAndScopesData(t *testi
 	req.Host = want.hostname
 	rec := httptest.NewRecorder()
 
-	HostRouter(statusPages, beginner, publicHandler).ServeHTTP(rec, req)
+	HostRouter(statusPages, beginner, publicHandler, http.HandlerFunc(http.NotFound)).ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
@@ -447,7 +447,7 @@ func TestHostRouter_AnonymousSession_DraftPageStaysInvisible(t *testing.T) {
 	req.Host = draft.hostname
 	rec := httptest.NewRecorder()
 
-	HostRouter(statusPages, beginner, publicHandler).ServeHTTP(rec, req)
+	HostRouter(statusPages, beginner, publicHandler, http.HandlerFunc(http.NotFound)).ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusNotFound {
 		t.Errorf("status = %d, want %d", rec.Code, http.StatusNotFound)

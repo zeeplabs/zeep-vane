@@ -76,18 +76,45 @@ func NewIncidentRepository(pool *Pool) *IncidentRepository {
 // StatusPageRepository.Create: an incident is never left without its
 // intended service links because a later insert failed partway through.
 func (r *IncidentRepository) Create(ctx context.Context, incident *Incident, serviceIDs []string) error {
+	if _, ok := TenantTxFromContext(ctx); ok {
+		return r.insert(ctx, incident, serviceIDs)
+	}
+
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
 		return fmt.Errorf("db: failed to begin incident create transaction: %w", err)
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
+	if err := r.insert(WithTenantTx(ctx, tx), incident, serviceIDs); err != nil {
+		return err
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("db: failed to commit incident create transaction: %w", err)
+	}
+
+	return nil
+}
+
+// insert performs Create's writes on whatever transaction ctx carries -
+// either the caller's own tenant transaction (the normal SLOAnalyzer/poller
+// path, ctx already RLS-scoped via app.tenant_id) or the one Create just
+// opened as a fallback for a caller with no tenant transaction of its own.
+// Splitting this out mirrors StatusPageRepository.Create/insert: Create
+// itself must never unconditionally r.pool.Begin - doing so silently
+// discarded any tenant transaction already on ctx and opened a fresh one
+// with no app.tenant_id session setting, which left the incidents.tenant_id
+// column NULL and tripped its NOT NULL constraint (SLOAnalyzer's
+// auto-detected outage incidents, which always call Create with a
+// tenant-scoped ctx from the poll cycle).
+func (r *IncidentRepository) insert(ctx context.Context, incident *Incident, serviceIDs []string) error {
 	// COALESCE(NULLIF($4, ''), 'moderate'): callers that don't set Severity
 	// (SLOAnalyzer's auto-created incidents, repository-level test helpers)
 	// fall back to the same DB default a bare NOT NULL column would apply -
 	// an explicit empty string is treated as "not set", not as a request to
 	// store an empty severity (the CHECK constraint would reject it anyway).
-	row := tx.QueryRow(ctx,
+	row := r.pool.QueryRow(ctx,
 		`INSERT INTO incidents (title, description, auto_created, severity)
 		 VALUES ($1, $2, $3, COALESCE(NULLIF($4, ''), 'moderate'))
 		 RETURNING id, status, created_at, severity`,
@@ -98,16 +125,12 @@ func (r *IncidentRepository) Create(ctx context.Context, incident *Incident, ser
 	}
 
 	for _, serviceID := range serviceIDs {
-		if _, err := tx.Exec(ctx,
+		if _, err := r.pool.Exec(ctx,
 			"INSERT INTO incident_services (incident_id, service_id) VALUES ($1, $2)",
 			incident.ID, serviceID,
 		); err != nil {
 			return fmt.Errorf("db: failed to link service %s to incident: %w", serviceID, err)
 		}
-	}
-
-	if err := tx.Commit(ctx); err != nil {
-		return fmt.Errorf("db: failed to commit incident create transaction: %w", err)
 	}
 
 	return nil

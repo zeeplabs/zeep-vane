@@ -39,6 +39,7 @@ docker compose up -d
 - [Domain model](#-domain-model)
 - [Authentication & authorization](#-authentication--authorization)
 - [Public status page routing](#-public-status-page-routing)
+- [Tenant custom domains behind a shared reverse proxy](#-tenant-custom-domains-behind-a-shared-reverse-proxy)
 - [Configuration](#-configuration)
 - [Running in development](#%EF%B8%8F-running-in-development)
 - [Docker Compose](#-docker-compose)
@@ -327,6 +328,28 @@ There is also an **authenticated preview endpoint**, `GET /api/status-pages/{id}
 
 ---
 
+## 🔀 Tenant custom domains behind a shared reverse proxy
+
+By default a tenant's custom status-page domain is served by Vane's own CertMagic listener on `HTTPS_PORT` (default `443`), which needs ports `80`/`443` bound to the `vane` process to complete an ACME HTTP-01/TLS-ALPN-01 challenge. That works wherever `vane` can own those ports — the self-hosted default, or a SaaS deployment with a spare public IP.
+
+On a SaaS deployment where an external reverse proxy already owns `80`/`443` — EasyPanel's Traefik, for example — there is no way to also bind them to `vane`. Set `VANE_TENANT_DOMAINS_ON_ADMIN_LISTENER=true` to serve tenant domains through the existing admin HTTP listener (`PORT`) instead: a request whose `Host` header resolves to a **published** status page is served by the same public mux the `:443` listener uses, and every other `Host` (including the admin domain) falls through to the admin API/SPA, unchanged (AD-038). Certificate issuance for that domain is then the external proxy's job, not Vane's.
+
+### Registering a tenant domain (EasyPanel)
+
+This registration is **manual, per tenant domain, today** — automating it against the EasyPanel API is deliberately out of scope (see the deferred note below). The procedure:
+
+1. In Vane's admin dashboard, attach the tenant's domain to their status page (**Domains → attach**, then publish the page). Vane records the domain and, with this flag on, will route its `Host` header.
+2. Make sure the domain's DNS points at the EasyPanel host — the same target the admin domain uses (`PUBLIC_DNS_TARGET` is the operator-configured equivalent Vane surfaces to admins).
+3. In EasyPanel, open the app that runs Vane and add the tenant's hostname under **Domains** (EasyPanel's per-app Domains feature), pointed at the app's exposed port — the same port Vane's admin listener binds (`PORT`). EasyPanel/Traefik terminates TLS for that hostname.
+4. Wait for DNS to propagate and EasyPanel to provision the certificate for the new hostname.
+5. Open `https://<tenant-domain>/` and confirm the status page renders over HTTPS; open the admin domain and confirm the admin SPA still loads.
+
+Point a given tenant domain at exactly one listener — either this shared listener or Vane's dedicated `HTTPS_PORT` listener, never both. Both paths enforce the same published-only gate and the same tenant-scoped RLS, so a misroute is not a cross-tenant leak, but it is confusing to debug.
+
+> **Deferred automation**: registering the domain with the external proxy automatically when `POST /api/domains/{id}/attach` succeeds is out of scope for this feature — it needs a new EasyPanel credential and a dedicated connector. Until it ships, step 3 above stays a manual operator action for every tenant domain.
+
+---
+
 ## 📋 Configuration
 
 Loaded by `internal/config.Load()` (`internal/config/config.go`). A `.env` file at the repo root is loaded automatically if present (via `godotenv`); its absence is not an error.
@@ -344,6 +367,7 @@ Loaded by `internal/config.Load()` (`internal/config/config.go`). A `.env` file 
 | `VANE_ADMIN_BASE_URL` | No | *(empty)* | Scheme+host every admin-facing email link (password-reset, admin-invite) is built from, e.g. `https://admin.example.com`. Never derived from the incoming request's `Host` header — that header is attacker-controlled, and the password-reset request endpoint in particular is unauthenticated, so trusting it would let anyone email a real admin a reset link pointing at a host of their choosing. Left unset, those emails link to a visibly broken placeholder host instead of silently trusting `Host` — **set this before connecting an email provider**. If set, it must be a full URL with both a scheme and a host (`https://admin.example.com`, not `admin.example.com` or a bare `https://`) — **`vane serve` refuses to start otherwise**, so double-check this value before an upgrade |
 | `VANE_HTTPS_ENABLED` | No | `true` | Set to `false` to skip starting the public HTTPS listener entirely — e.g. no custom status-page domain to serve yet, or the environment can't bind `HTTPS_PORT` (unprivileged container, port already owned by a reverse proxy). With HTTPS enabled and its bind failing, `vane serve` still exits non-zero (unchanged) — this flag is how an operator avoids that failure mode altogether, rather than a way to survive it |
 | `HTTPS_PORT` | No | `443` | Port the public, TLS-terminated status page listener binds to |
+| `VANE_TENANT_DOMAINS_ON_ADMIN_LISTENER` | No | `false` | Set to `true` to also serve published status pages' custom domains through the admin HTTP listener (`PORT`) — for a deployment where an external reverse proxy already owns ports 80/443 and forwards tenant domains there. See [Tenant custom domains behind a shared reverse proxy](#-tenant-custom-domains-behind-a-shared-reverse-proxy). Off by default: wherever `vane` can bind 80/443 directly, the dedicated CertMagic `:443` listener (`VANE_HTTPS_ENABLED`) is the right path, and enabling this adds a `Host` lookup to every admin request (AD-038) |
 | `VANE_DEV_TOKEN_LOGGING` | No | `false` | Set to `true` to additionally log the raw password-reset/admin-invite token — useful for local development with no email provider connected yet. The token is a bearer credential for account takeover — **leave this off in any deployment whose logs reach a shared sink** |
 | `VANE_SECURE_COOKIES` | No | `true` | Set to `false` if this instance is reached over plain HTTP by anything other than `http://localhost` — browsers only send a `Secure` cookie back over HTTPS (or the `localhost` exception), so with the default `true` the admin API returns `200` on login and a silent `401` on every request after, on any other HTTP-only host. Setting it `false` means the session token then travels unencrypted on whatever network reaches this instance — **only do this on a network you trust**, and prefer terminating TLS in front of Vane instead |
 | `VANE_DEPLOYMENT_MODE` | No | `self_hosted` | `self_hosted` or `saas` (AD-033). Vane is distributed to run on anyone's own infrastructure — defaulting to `self_hosted` (exactly 1 tenant, provisioned via `/bootstrap`) is what makes that safe out of the box. `saas` is meant only for Zeep's own hosted servers, where `POST /api/signup` (and its verify/resend-verification routes) creates a new paying tenant per account. In `self_hosted` mode, those 3 routes return `404` outright — not just hidden in the UI. Any value other than the two above **fails the boot** |

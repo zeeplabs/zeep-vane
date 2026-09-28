@@ -26,7 +26,15 @@ type Config struct {
 	DevTokenLogging     bool
 	HTTPSEnabled        bool
 	SecureCookies       bool
-	DeploymentMode      string
+	// TenantDomainsOnAdminListener opts the admin HTTP listener into also
+	// dispatching requests by Host header, serving a published status
+	// page's custom domain through the same port as the admin SPA/API
+	// (AD-038). Off by default: the dedicated CertMagic :443 listener
+	// already serves tenant domains wherever ports 80/443 can be bound to
+	// vane directly, and wrapping every admin request in a Host lookup has
+	// no benefit where it can't.
+	TenantDomainsOnAdminListener bool
+	DeploymentMode               string
 
 	NotificationServiceBaseURL string
 	NotificationServiceAPIKey  string
@@ -162,6 +170,15 @@ func Load() (Config, error) {
 	// the session token then travels in the clear on their own network.
 	secureCookies := os.Getenv("VANE_SECURE_COOKIES") != "false"
 
+	// tenantDomainsOnAdminListener defaults to false (opt-in, unlike the
+	// three opt-out flags above): it only makes sense on a deployment whose
+	// external reverse proxy already owns ports 80/443 and forwards tenant
+	// domains to this HTTP port (AD-038). Every other deployment - the
+	// self-hosted default especially - must see zero behavior change and
+	// pay no added Host lookup on the admin request path, which is exactly
+	// what leaving it unset preserves.
+	tenantDomainsOnAdminListener := os.Getenv("VANE_TENANT_DOMAINS_ON_ADMIN_LISTENER") == "true"
+
 	// deploymentMode defaults to self-hosted: Vane is distributed open
 	// source to run on anyone's infrastructure, and a self-hosted install
 	// is exactly 1 tenant (AD-022). "saas" is set only on Zeep's own
@@ -198,19 +215,20 @@ func Load() (Config, error) {
 	}
 
 	return Config{
-		DatabaseURL:         databaseURL,
-		MasterKey:           masterKey,
-		SessionSecret:       sessionSecret,
-		Port:                port,
-		PollIntervalSeconds: pollIntervalSeconds,
-		LogLevel:            logLevel,
-		CORSAllowedOrigin:   corsAllowedOrigin,
-		PublicDNSTarget:     publicDNSTarget,
-		AdminBaseURL:        adminBaseURL,
-		DevTokenLogging:     devTokenLogging,
-		HTTPSEnabled:        httpsEnabled,
-		SecureCookies:       secureCookies,
-		DeploymentMode:      deploymentMode,
+		DatabaseURL:                  databaseURL,
+		MasterKey:                    masterKey,
+		SessionSecret:                sessionSecret,
+		Port:                         port,
+		PollIntervalSeconds:          pollIntervalSeconds,
+		LogLevel:                     logLevel,
+		CORSAllowedOrigin:            corsAllowedOrigin,
+		PublicDNSTarget:              publicDNSTarget,
+		AdminBaseURL:                 adminBaseURL,
+		DevTokenLogging:              devTokenLogging,
+		HTTPSEnabled:                 httpsEnabled,
+		SecureCookies:                secureCookies,
+		TenantDomainsOnAdminListener: tenantDomainsOnAdminListener,
+		DeploymentMode:               deploymentMode,
 
 		NotificationServiceBaseURL: notificationServiceBaseURL,
 		NotificationServiceAPIKey:  notificationServiceAPIKey,
