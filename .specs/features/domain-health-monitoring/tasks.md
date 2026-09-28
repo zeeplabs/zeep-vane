@@ -292,10 +292,10 @@ Tasks: T13, T14
 - Skill: NONE
 
 **Done when**:
-- [ ] `DomainHealthScheduler.Run(ctx)` starts as a goroutine in `RunE`, alongside the existing digest scheduler and poller manager wiring
-- [ ] Graceful shutdown (context cancellation) stops it the same way it stops the existing schedulers - no orphaned goroutine
-- [ ] Gate check passes: `go build ./... && gofmt -l . && go vet ./...`
-- [ ] Test count: unchanged (pure wiring, verified by T7's own tests plus the existing boot-wiring test style used for `DigestScheduler`, e.g. `TestNewDigestScheduler_BootWiring_RunStopsOnContextCancel` - add the equivalent for this scheduler if that pattern applies)
+- [x] `DomainHealthScheduler.Run(ctx)` starts as a goroutine in `RunE`, alongside the existing digest scheduler and poller manager wiring
+- [x] Graceful shutdown (context cancellation) stops it the same way it stops the existing schedulers - no orphaned goroutine
+- [x] Gate check passes: `go build ./... && gofmt -l . && go vet ./...`
+- [x] Test count: unchanged (pure wiring, verified by T7's own tests plus the existing boot-wiring test style used for `DigestScheduler`, e.g. `TestNewDigestScheduler_BootWiring_RunStopsOnContextCancel` - add the equivalent for this scheduler if that pattern applies)
 
 **Tests**: none (wiring covered by T7's tests; add a boot-wiring test only if it mirrors an existing one for `DigestScheduler` 1:1)
 **Gate**: build

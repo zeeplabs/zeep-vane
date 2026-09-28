@@ -11,6 +11,7 @@ import (
 
 	"go.uber.org/zap"
 
+	"github.com/zeeplabs/zeep-vane/internal/config"
 	"github.com/zeeplabs/zeep-vane/internal/db"
 	"github.com/zeeplabs/zeep-vane/internal/notify"
 )
@@ -398,6 +399,33 @@ func TestNextDomainHealthFire(t *testing.T) {
 				t.Errorf("nextDomainHealthFire(%s) = %s, want %s", tc.now, got, tc.want)
 			}
 		})
+	}
+}
+
+// TestNewDomainHealthScheduler_BootWiring_RunStopsOnContextCancel covers the
+// boot wiring: the scheduler the serve path constructs starts and stops
+// cleanly when the serve context is canceled, mirroring
+// TestNewDigestScheduler_BootWiring_RunStopsOnContextCancel.
+func TestNewDomainHealthScheduler_BootWiring_RunStopsOnContextCancel(t *testing.T) {
+	pool := newServeTestPool(t)
+
+	s, err := newDomainHealthScheduler(pool, config.Config{DatabaseURL: testDatabaseURL(t), MasterKey: "cli-domain-health-test-master-key"}, zap.NewNop())
+	if err != nil {
+		t.Fatalf("newDomainHealthScheduler() returned unexpected error: %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() {
+		s.Run(ctx)
+		close(done)
+	}()
+
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("DomainHealthScheduler.Run did not stop on context cancellation")
 	}
 }
 
