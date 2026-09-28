@@ -263,14 +263,14 @@ Tasks: T13, T14
 - Skill: NONE
 
 **Done when**:
-- [ ] Leader election: exactly one of two concurrent scheduler instances runs a given cycle (test mirrors `TestDigestScheduler_LeaderElection_ExactlyOneReplicaRuns` exactly)
-- [ ] Zero domains registered: cycle completes as a no-op, no error, no notification
-- [ ] First check for a domain (no baseline): `ExpectedNS` gets set to the resolved NS, `NSDriftDetected` stays `false`, no drift notification fires
-- [ ] Second check with NS changed from baseline: `NSDriftDetected` becomes `true`, `NotifyDomainNSDrift` is called exactly once
-- [ ] Expiration crossing 30/15/7-day thresholds: `NotifyDomainExpiring` fires exactly once per threshold crossing, not on every daily check while still within that threshold band
-- [ ] RDAP failure for one domain in a multi-domain cycle: that domain's `RDAPLastError` is recorded, its `ExpectedNS`/`CurrentNS` untouched if the failure was NS-side, and every other domain in the same cycle still gets processed
-- [ ] Gate check passes: `make test-integration`
-- [ ] Test count: at least 6 new tests (no silent deletions)
+- [x] Leader election: exactly one of two concurrent scheduler instances runs a given cycle (test mirrors `TestDigestScheduler_LeaderElection_ExactlyOneReplicaRuns` exactly)
+- [x] Zero domains registered: cycle completes as a no-op, no error, no notification
+- [x] First check for a domain (no baseline): `ExpectedNS` gets set to the resolved NS, `NSDriftDetected` stays `false`, no drift notification fires
+- [x] Second check with NS changed from baseline: `NSDriftDetected` becomes `true`, `NotifyDomainNSDrift` is called exactly once
+- [x] Expiration crossing 30/15/7-day thresholds: `NotifyDomainExpiring` fires exactly once per threshold crossing, not on every daily check while still within that threshold band
+- [x] RDAP failure for one domain in a multi-domain cycle: that domain's `RDAPLastError` is recorded, its `ExpectedNS`/`CurrentNS` untouched if the failure was NS-side, and every other domain in the same cycle still gets processed
+- [x] Gate check passes: `make test-integration`
+- [x] Test count: at least 6 new tests (no silent deletions)
 
 **Tests**: integration
 **Gate**: full
