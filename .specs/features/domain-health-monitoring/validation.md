@@ -165,3 +165,28 @@ M7 re-sensor (iteration 2): re-applied the exact previous mutant in a fresh scra
 **Issues found**: none blocking. Minor non-asserted details remain (expiration date string, the attached-status-page variant of DHM-09, and the band-widening renewal case) — documented above.
 
 **Next steps**: None. Feature is verified; the two fix commits (`5643edd`, `f512ee3`) close the prior FAIL gaps.
+
+---
+
+## Post-validation addendum (2026-09-28): non-blocking gaps closed
+
+After the PASS verdict, the non-blocking gaps it flagged were addressed (issue a follow-up, not a re-verification).
+
+### Gap A — band-widening on renewal (spec-precision) → fixed
+
+The `expirationAlert` doc comment already described narrowing-only semantics ("a crossing is new only when the current band is narrower than the previous one"), but the code only checked `threshold == previous`, so a widening band (a renewal pushing expiry from e.g. 5 days out to 20) fired a spurious wider-band alert. `internal/cli/domain_health_scheduler.go:323` now skips any non-narrowing band change. Covered by `internal/cli/domain_health_scheduler_test.go:417` (`renewal widening 7 to 30 does not re-alert`) and `:418` (widening 15 → 30); the new cases fail against the old condition (sensor re-run, 2/2 killed).
+
+### Gap B — expiration date string not asserted → fixed
+
+`DomainDetailDrawer` now exposes `data-testid="expires-at"` (`web/src/features/domains/DomainDetailDrawer.tsx:162`), asserted in `web/src/features/domains/DomainDetailDrawer.test.tsx:180` against `formatDateTime(expiresAt, "pt-BR")`.
+
+### Gap C — DHM-09 with an attached status page → not added (intentional)
+
+The unattached-status-page case is the one a naive implementation could get wrong (a filter/join would silently drop the root-domain case that motivated the feature); the attached case is the ordinary path and is implicitly covered. Adding it is low value and was deliberately skipped.
+
+### Accepted deviations (no change)
+
+- T4: tasks.md named `GET /api/domains/{id}`, which does not exist; fields ride the list response, which is what design.md specified.
+- T9: frontend fields use snake_case, matching `web/src/types/api.ts`'s convention and the MSW mocks.
+
+**Gate after this follow-up**: `make test-integration` all packages ok; frontend `tsc` clean + 715 tests passed.
