@@ -80,6 +80,24 @@ type domainResponse struct {
 	SSLStatus  string     `json:"ssl_status"`
 	VerifiedAt *time.Time `json:"verified_at"`
 	LastError  *string    `json:"last_error"`
+	// Health-check fields (domain-health-monitoring DHM-04/DHM-08): the
+	// latest RDAP/NS result from DomainRepository.SetHealthCheckResult.
+	// ExpiresAt/Registrar/LastRDAPCheckAt/RDAPLastError are null and
+	// ExpectedNS/CurrentNS null (NSDriftDetected false) for a domain whose
+	// health check has not run yet.
+	//
+	// SPEC_DEVIATION: tasks.md T4 names GET /api/domains/{id} too, but no such
+	// route exists and design.md scopes the API wiring to GET /api/domains.
+	// Reason: adding a detail route is outside this task's Where (routes.go);
+	// the fields instead ride on every existing Domain serialization (list,
+	// create, verify) via toDomainResponse.
+	ExpiresAt       *time.Time `json:"expires_at"`
+	Registrar       *string    `json:"registrar"`
+	ExpectedNS      []string   `json:"expected_ns"`
+	CurrentNS       []string   `json:"current_ns"`
+	NSDriftDetected bool       `json:"ns_drift_detected"`
+	LastRDAPCheckAt *time.Time `json:"last_rdap_check_at"`
+	RDAPLastError   *string    `json:"rdap_last_error"`
 	// AttachedPageName/AttachedPageCount are the read-side join over
 	// status_pages.domain_id (design.md, spec.md DSP-02/03/04) - nil/0 when
 	// no status page is attached, the first attached page's name (by
@@ -95,6 +113,10 @@ func toDomainResponse(domain *db.Domain) domainResponse {
 		ID: domain.ID, Hostname: domain.Hostname, CreatedAt: domain.CreatedAt,
 		DomainType: domain.DomainType, Status: domain.Status, SSLStatus: domain.SSLStatus,
 		VerifiedAt: domain.VerifiedAt, LastError: domain.LastError,
+		ExpiresAt: domain.ExpiresAt, Registrar: domain.Registrar,
+		ExpectedNS: domain.ExpectedNS, CurrentNS: domain.CurrentNS,
+		NSDriftDetected: domain.NSDriftDetected, LastRDAPCheckAt: domain.LastRDAPCheckAt,
+		RDAPLastError: domain.RDAPLastError,
 	}
 }
 

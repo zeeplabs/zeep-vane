@@ -186,10 +186,10 @@ Tasks: T13, T14
 - Skill: NONE
 
 **Done when**:
-- [ ] A domain with health data populated (via `SetHealthCheckResult` in the test setup) returns all seven fields correctly in both `GET /api/domains` (list) and `GET /api/domains/{id}` (detail) responses
-- [ ] A domain with no health check run yet returns `null`/zero-value for the new fields without erroring
-- [ ] Gate check passes: `make test-integration`
-- [ ] Test count: at least the same as before this task, plus 2+ new (no silent deletions)
+- [x] A domain with health data populated (via `SetHealthCheckResult` in the test setup) returns all seven fields correctly in both `GET /api/domains` (list) and `GET /api/domains/{id}` (detail) responses (SPEC_DEVIATION: no `GET /api/domains/{id}` route exists and design.md scopes to `GET /api/domains`; fields ride on the list response — see the marker in `domains_handler.go`)
+- [x] A domain with no health check run yet returns `null`/zero-value for the new fields without erroring
+- [x] Gate check passes: `make test-integration`
+- [x] Test count: at least the same as before this task, plus 2+ new (no silent deletions)
 
 **Tests**: integration
 **Gate**: full

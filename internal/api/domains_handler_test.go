@@ -834,6 +834,101 @@ func TestVerifyDomain_NoAuth_401(t *testing.T) {
 	}
 }
 
+// TestListDomains_HealthDataPopulated_ReturnsAllSevenFields covers
+// DHM-04/DHM-08: a domain whose health check has run returns expiration,
+// registrar, expected/current NS, drift, last-check timestamp and RDAP error
+// on GET /api/domains.
+func TestListDomains_HealthDataPopulated_ReturnsAllSevenFields(t *testing.T) {
+	r, pool, admins := newDomainsRouter(t)
+	token := issueTestSessionToken(t, admins)
+	hostname := uniqueHostname(t)
+	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), "DELETE FROM domains WHERE hostname = $1", hostname) })
+
+	createRec := postCreateDomain(t, r, token, hostname)
+	if createRec.Code != http.StatusCreated {
+		t.Fatalf("setup create status = %d, want %d, body = %s", createRec.Code, http.StatusCreated, createRec.Body.String())
+	}
+	var created domainResponse
+	if err := json.Unmarshal(createRec.Body.Bytes(), &created); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+
+	repo := db.NewDomainRepository(pool)
+	expires := time.Now().UTC().Add(6 * 24 * time.Hour).Truncate(time.Second)
+	registrar := "GoDaddy"
+	ns := []string{"ns1.example.net", "ns2.example.net"}
+	if err := repo.SetHealthCheckResult(context.Background(), created.ID, &expires, &registrar, ns, false, nil); err != nil {
+		t.Fatalf("SetHealthCheckResult() returned unexpected error: %v", err)
+	}
+
+	got, found := findDomainResponseAcrossPages(t, r, token, hostname)
+	if !found {
+		t.Fatalf("created hostname %q not found across any page of GET /api/domains", hostname)
+	}
+	if got.ExpiresAt == nil || got.ExpiresAt.Unix() != expires.Unix() {
+		t.Errorf("ExpiresAt = %v, want %v", got.ExpiresAt, expires)
+	}
+	if got.Registrar == nil || *got.Registrar != registrar {
+		t.Errorf("Registrar = %v, want %q", got.Registrar, registrar)
+	}
+	if len(got.ExpectedNS) != len(ns) || got.ExpectedNS[0] != ns[0] || got.ExpectedNS[1] != ns[1] {
+		t.Errorf("ExpectedNS = %v, want %v", got.ExpectedNS, ns)
+	}
+	if len(got.CurrentNS) != len(ns) || got.CurrentNS[0] != ns[0] || got.CurrentNS[1] != ns[1] {
+		t.Errorf("CurrentNS = %v, want %v", got.CurrentNS, ns)
+	}
+	if got.NSDriftDetected {
+		t.Error("NSDriftDetected = true, want false")
+	}
+	if got.LastRDAPCheckAt == nil {
+		t.Error("LastRDAPCheckAt = nil, want the check's timestamp")
+	}
+	if got.RDAPLastError != nil {
+		t.Errorf("RDAPLastError = %v, want nil", got.RDAPLastError)
+	}
+}
+
+// TestListDomains_NoHealthData_NullHealthFields covers T4's edge case: a
+// domain whose health check has not run yet serializes the new fields as
+// null/zero without erroring.
+func TestListDomains_NoHealthData_NullHealthFields(t *testing.T) {
+	r, pool, admins := newDomainsRouter(t)
+	token := issueTestSessionToken(t, admins)
+	hostname := uniqueHostname(t)
+	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), "DELETE FROM domains WHERE hostname = $1", hostname) })
+
+	createRec := postCreateDomain(t, r, token, hostname)
+	if createRec.Code != http.StatusCreated {
+		t.Fatalf("setup create status = %d, want %d, body = %s", createRec.Code, http.StatusCreated, createRec.Body.String())
+	}
+
+	got, found := findDomainResponseAcrossPages(t, r, token, hostname)
+	if !found {
+		t.Fatalf("created hostname %q not found across any page of GET /api/domains", hostname)
+	}
+	if got.ExpiresAt != nil {
+		t.Errorf("ExpiresAt = %v, want nil", got.ExpiresAt)
+	}
+	if got.Registrar != nil {
+		t.Errorf("Registrar = %v, want nil", got.Registrar)
+	}
+	if got.ExpectedNS != nil {
+		t.Errorf("ExpectedNS = %v, want nil", got.ExpectedNS)
+	}
+	if got.CurrentNS != nil {
+		t.Errorf("CurrentNS = %v, want nil", got.CurrentNS)
+	}
+	if got.NSDriftDetected {
+		t.Error("NSDriftDetected = true, want false")
+	}
+	if got.LastRDAPCheckAt != nil {
+		t.Errorf("LastRDAPCheckAt = %v, want nil", got.LastRDAPCheckAt)
+	}
+	if got.RDAPLastError != nil {
+		t.Errorf("RDAPLastError = %v, want nil", got.RDAPLastError)
+	}
+}
+
 // TestCreateDomain_NewHostname_RecordsDomainCreatedAudit covers
 // AUDITEXP-07.
 func TestCreateDomain_NewHostname_RecordsDomainCreatedAudit(t *testing.T) {
