@@ -211,11 +211,11 @@ Tasks: T13, T14
 - Skill: NONE
 
 **Done when**:
-- [ ] `NotifyDomainExpiring`/`NotifyDomainNSDrift` send to every member with that notification type enabled, and skip members with it disabled - proven directly (not inferred from the incident-notification tests' behavior)
-- [ ] Both new templates render hostname and their type-specific content (days remaining/threshold for expiring; expected vs. current NS for drift) without placeholder/blank fields
-- [ ] `(s *Service) send`'s `switch notificationType` handles both new types; an unrecognized type still returns the existing `"notify: unknown notification type %q"` error unchanged
-- [ ] Gate check passes: `go test ./internal/notify ./internal/email`
-- [ ] Test count: at least the same as before this task, plus 4+ new (no silent deletions)
+- [x] `NotifyDomainExpiring`/`NotifyDomainNSDrift` send to every member with that notification type enabled, and skip members with it disabled - proven directly (not inferred from the incident-notification tests' behavior)
+- [x] Both new templates render hostname and their type-specific content (days remaining/threshold for expiring; expected vs. current NS for drift) without placeholder/blank fields
+- [x] `(s *Service) send`'s `switch notificationType` handles both new types; an unrecognized type still returns the existing `"notify: unknown notification type %q"` error unchanged
+- [x] Gate check passes: `go test ./internal/notify ./internal/email`
+- [x] Test count: at least the same as before this task, plus 4+ new (no silent deletions)
 
 **Tests**: unit
 **Gate**: quick

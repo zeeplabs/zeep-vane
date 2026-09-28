@@ -8,7 +8,7 @@ import (
 	texttemplate "text/template"
 )
 
-//go:embed templates/admin_invite.html.tmpl templates/admin_invite.txt.tmpl templates/password_reset.html.tmpl templates/password_reset.txt.tmpl templates/signup_verification.html.tmpl templates/signup_verification.txt.tmpl templates/incident_opened.html.tmpl templates/incident_opened.txt.tmpl templates/incident_resolved.html.tmpl templates/incident_resolved.txt.tmpl templates/weekly_digest.html.tmpl templates/weekly_digest.txt.tmpl
+//go:embed templates/admin_invite.html.tmpl templates/admin_invite.txt.tmpl templates/password_reset.html.tmpl templates/password_reset.txt.tmpl templates/signup_verification.html.tmpl templates/signup_verification.txt.tmpl templates/incident_opened.html.tmpl templates/incident_opened.txt.tmpl templates/incident_resolved.html.tmpl templates/incident_resolved.txt.tmpl templates/weekly_digest.html.tmpl templates/weekly_digest.txt.tmpl templates/domain_expiring.html.tmpl templates/domain_expiring.txt.tmpl templates/domain_ns_drift.html.tmpl templates/domain_ns_drift.txt.tmpl
 var templateFS embed.FS
 
 const (
@@ -24,6 +24,10 @@ const (
 	incidentResolvedTextTemplatePath   = "templates/incident_resolved.txt.tmpl"
 	weeklyDigestHTMLTemplatePath       = "templates/weekly_digest.html.tmpl"
 	weeklyDigestTextTemplatePath       = "templates/weekly_digest.txt.tmpl"
+	domainExpiringHTMLTemplatePath     = "templates/domain_expiring.html.tmpl"
+	domainExpiringTextTemplatePath     = "templates/domain_expiring.txt.tmpl"
+	domainNSDriftHTMLTemplatePath      = "templates/domain_ns_drift.html.tmpl"
+	domainNSDriftTextTemplatePath      = "templates/domain_ns_drift.txt.tmpl"
 )
 
 // templates holds every parsed template this package renders. Parsed once
@@ -43,6 +47,10 @@ type templates struct {
 	incidentResolvedText   *texttemplate.Template
 	weeklyDigestHTML       *htmltemplate.Template
 	weeklyDigestText       *texttemplate.Template
+	domainExpiringHTML     *htmltemplate.Template
+	domainExpiringText     *texttemplate.Template
+	domainNSDriftHTML      *htmltemplate.Template
+	domainNSDriftText      *texttemplate.Template
 }
 
 // parseTemplates parses every embedded email template, returning an error
@@ -108,6 +116,26 @@ func parseTemplates() (*templates, error) {
 		return nil, fmt.Errorf("email: failed to parse weekly digest text template: %w", err)
 	}
 
+	domainExpiringHTML, err := htmltemplate.ParseFS(templateFS, domainExpiringHTMLTemplatePath)
+	if err != nil {
+		return nil, fmt.Errorf("email: failed to parse domain expiring html template: %w", err)
+	}
+
+	domainExpiringText, err := texttemplate.ParseFS(templateFS, domainExpiringTextTemplatePath)
+	if err != nil {
+		return nil, fmt.Errorf("email: failed to parse domain expiring text template: %w", err)
+	}
+
+	domainNSDriftHTML, err := htmltemplate.ParseFS(templateFS, domainNSDriftHTMLTemplatePath)
+	if err != nil {
+		return nil, fmt.Errorf("email: failed to parse domain ns drift html template: %w", err)
+	}
+
+	domainNSDriftText, err := texttemplate.ParseFS(templateFS, domainNSDriftTextTemplatePath)
+	if err != nil {
+		return nil, fmt.Errorf("email: failed to parse domain ns drift text template: %w", err)
+	}
+
 	return &templates{
 		adminInviteHTML:        adminInviteHTML,
 		adminInviteText:        adminInviteText,
@@ -121,6 +149,10 @@ func parseTemplates() (*templates, error) {
 		incidentResolvedText:   incidentResolvedText,
 		weeklyDigestHTML:       weeklyDigestHTML,
 		weeklyDigestText:       weeklyDigestText,
+		domainExpiringHTML:     domainExpiringHTML,
+		domainExpiringText:     domainExpiringText,
+		domainNSDriftHTML:      domainNSDriftHTML,
+		domainNSDriftText:      domainNSDriftText,
 	}, nil
 }
 
@@ -215,6 +247,38 @@ func (t *templates) renderWeeklyDigest(data WeeklyDigestEmailData) (htmlBody, te
 	var textBuf bytes.Buffer
 	if err := t.weeklyDigestText.Execute(&textBuf, data); err != nil {
 		return "", "", fmt.Errorf("email: failed to render weekly digest text template: %w", err)
+	}
+
+	return htmlBuf.String(), textBuf.String(), nil
+}
+
+// renderDomainExpiring renders both the HTML and plain-text domain-expiring
+// bodies from data.
+func (t *templates) renderDomainExpiring(data DomainExpiringEmailData) (htmlBody, textBody string, err error) {
+	var htmlBuf bytes.Buffer
+	if err := t.domainExpiringHTML.Execute(&htmlBuf, data); err != nil {
+		return "", "", fmt.Errorf("email: failed to render domain expiring html template: %w", err)
+	}
+
+	var textBuf bytes.Buffer
+	if err := t.domainExpiringText.Execute(&textBuf, data); err != nil {
+		return "", "", fmt.Errorf("email: failed to render domain expiring text template: %w", err)
+	}
+
+	return htmlBuf.String(), textBuf.String(), nil
+}
+
+// renderDomainNSDrift renders both the HTML and plain-text domain NS-drift
+// bodies from data.
+func (t *templates) renderDomainNSDrift(data DomainNSDriftEmailData) (htmlBody, textBody string, err error) {
+	var htmlBuf bytes.Buffer
+	if err := t.domainNSDriftHTML.Execute(&htmlBuf, data); err != nil {
+		return "", "", fmt.Errorf("email: failed to render domain ns drift html template: %w", err)
+	}
+
+	var textBuf bytes.Buffer
+	if err := t.domainNSDriftText.Execute(&textBuf, data); err != nil {
+		return "", "", fmt.Errorf("email: failed to render domain ns drift text template: %w", err)
 	}
 
 	return htmlBuf.String(), textBuf.String(), nil

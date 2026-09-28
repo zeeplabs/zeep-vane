@@ -3,6 +3,8 @@ package notify
 import (
 	"context"
 	"errors"
+	"reflect"
+	"strings"
 	"testing"
 
 	"go.uber.org/zap"
@@ -40,9 +42,13 @@ type recordingSender struct {
 	openedTo     []string
 	resolvedTo   []string
 	digestTo     []string
+	expiringTo   []string
+	driftTo      []string
 	lastOpened   email.IncidentOpenedEmailData
 	lastResolved email.IncidentResolvedEmailData
 	lastDigest   email.WeeklyDigestEmailData
+	lastExpiring email.DomainExpiringEmailData
+	lastDrift    email.DomainNSDriftEmailData
 	sendErrFor   map[string]error
 }
 
@@ -52,6 +58,24 @@ func (s *recordingSender) SendWeeklyDigest(_ context.Context, to string, data em
 	}
 	s.digestTo = append(s.digestTo, to)
 	s.lastDigest = data
+	return nil
+}
+
+func (s *recordingSender) SendDomainExpiring(_ context.Context, to string, data email.DomainExpiringEmailData) error {
+	if err := s.sendErrFor[to]; err != nil {
+		return err
+	}
+	s.expiringTo = append(s.expiringTo, to)
+	s.lastExpiring = data
+	return nil
+}
+
+func (s *recordingSender) SendDomainNSDrift(_ context.Context, to string, data email.DomainNSDriftEmailData) error {
+	if err := s.sendErrFor[to]; err != nil {
+		return err
+	}
+	s.driftTo = append(s.driftTo, to)
+	s.lastDrift = data
 	return nil
 }
 
@@ -316,5 +340,142 @@ func TestWeeklyDigestRecipients_NoEligible_EmptyList(t *testing.T) {
 	}
 	if len(recipients) != 0 {
 		t.Errorf("recipients = %+v, want empty when nobody opted in", recipients)
+	}
+}
+
+func domainExpiringSummary() DomainExpiringSummary {
+	return DomainExpiringSummary{
+		DomainID:      "dom-1",
+		Hostname:      "starbem.app",
+		DaysRemaining: 6,
+		ThresholdDays: 7,
+		TenantName:    "Acme",
+	}
+}
+
+func domainNSDriftSummary() DomainNSDriftSummary {
+	return DomainNSDriftSummary{
+		DomainID:   "dom-1",
+		Hostname:   "starbem.app",
+		ExpectedNS: []string{"ns1.old.net", "ns2.old.net"},
+		CurrentNS:  []string{"ns1.new.net"},
+		TenantName: "Acme",
+	}
+}
+
+// TestNotifyDomainExpiring_SendsOnlyToEnabledOwnerOperator covers DHM-02's
+// notification path: exactly the owner/operator members whose domain_expiring
+// preference is enabled receive the email, carrying the domain/threshold data
+// and the domains dashboard link.
+func TestNotifyDomainExpiring_SendsOnlyToEnabledOwnerOperator(t *testing.T) {
+	members := &fakeMembers{members: []db.TenantMember{
+		{UserID: "owner-on", Email: "owner-on@example.com", Role: "owner"},
+		{UserID: "operator-off", Email: "operator-off@example.com", Role: "operator"},
+		{UserID: "viewer-on", Email: "viewer-on@example.com", Role: "viewer"},
+	}}
+	prefs := &fakePreferences{enabled: map[string]bool{
+		"owner-on": true, "operator-off": false, "viewer-on": true,
+	}}
+	sender := &recordingSender{}
+	svc := newTestService(members, prefs, sender, "https://vane.example.com")
+
+	if err := svc.NotifyDomainExpiring(context.Background(), "tenant-1", domainExpiringSummary()); err != nil {
+		t.Fatalf("NotifyDomainExpiring() returned unexpected error: %v", err)
+	}
+	if len(sender.expiringTo) != 1 || sender.expiringTo[0] != "owner-on@example.com" {
+		t.Errorf("expiringTo = %v, want exactly [owner-on@example.com]", sender.expiringTo)
+	}
+	if prefs.lastType != db.NotificationTypeDomainExpiring {
+		t.Errorf("resolved notification type = %q, want %q", prefs.lastType, db.NotificationTypeDomainExpiring)
+	}
+	if sender.lastExpiring.Hostname != "starbem.app" || sender.lastExpiring.DaysRemaining != 6 || sender.lastExpiring.ThresholdDays != 7 {
+		t.Errorf("expiring data = %+v, want hostname=starbem.app days=6 threshold=7", sender.lastExpiring)
+	}
+	if sender.lastExpiring.DashboardURL != "https://vane.example.com/domains" {
+		t.Errorf("DashboardURL = %q, want %q", sender.lastExpiring.DashboardURL, "https://vane.example.com/domains")
+	}
+}
+
+// TestNotifyDomainExpiring_DisabledPreference_NoSend covers the opted-out
+// path for the expiring type.
+func TestNotifyDomainExpiring_DisabledPreference_NoSend(t *testing.T) {
+	members := &fakeMembers{members: []db.TenantMember{
+		{UserID: "owner", Email: "owner@example.com", Role: "owner"},
+	}}
+	prefs := &fakePreferences{enabled: map[string]bool{"owner": false}}
+	sender := &recordingSender{}
+	svc := newTestService(members, prefs, sender, "")
+
+	if err := svc.NotifyDomainExpiring(context.Background(), "tenant-1", domainExpiringSummary()); err != nil {
+		t.Fatalf("NotifyDomainExpiring() returned unexpected error: %v", err)
+	}
+	if len(sender.expiringTo) != 0 {
+		t.Errorf("expiringTo = %v, want none (recipient opted out)", sender.expiringTo)
+	}
+}
+
+// TestNotifyDomainNSDrift_SendsOnlyToEnabledOwnerOperator covers DHM-06's
+// notification path: the expected-vs-current NS sets ride on the email.
+func TestNotifyDomainNSDrift_SendsOnlyToEnabledOwnerOperator(t *testing.T) {
+	members := &fakeMembers{members: []db.TenantMember{
+		{UserID: "owner-on", Email: "owner-on@example.com", Role: "owner"},
+		{UserID: "operator-off", Email: "operator-off@example.com", Role: "operator"},
+	}}
+	prefs := &fakePreferences{enabled: map[string]bool{"owner-on": true, "operator-off": false}}
+	sender := &recordingSender{}
+	svc := newTestService(members, prefs, sender, "https://vane.example.com")
+
+	if err := svc.NotifyDomainNSDrift(context.Background(), "tenant-1", domainNSDriftSummary()); err != nil {
+		t.Fatalf("NotifyDomainNSDrift() returned unexpected error: %v", err)
+	}
+	if len(sender.driftTo) != 1 || sender.driftTo[0] != "owner-on@example.com" {
+		t.Errorf("driftTo = %v, want exactly [owner-on@example.com]", sender.driftTo)
+	}
+	if prefs.lastType != db.NotificationTypeDomainNSDrift {
+		t.Errorf("resolved notification type = %q, want %q", prefs.lastType, db.NotificationTypeDomainNSDrift)
+	}
+	if sender.lastDrift.Hostname != "starbem.app" {
+		t.Errorf("drift Hostname = %q, want %q", sender.lastDrift.Hostname, "starbem.app")
+	}
+	if !reflect.DeepEqual(sender.lastDrift.ExpectedNS, []string{"ns1.old.net", "ns2.old.net"}) {
+		t.Errorf("ExpectedNS = %v, want the baseline set", sender.lastDrift.ExpectedNS)
+	}
+	if !reflect.DeepEqual(sender.lastDrift.CurrentNS, []string{"ns1.new.net"}) {
+		t.Errorf("CurrentNS = %v, want the newly resolved set", sender.lastDrift.CurrentNS)
+	}
+	if sender.lastDrift.DashboardURL != "https://vane.example.com/domains" {
+		t.Errorf("DashboardURL = %q, want %q", sender.lastDrift.DashboardURL, "https://vane.example.com/domains")
+	}
+}
+
+// TestNotifyDomainNSDrift_DisabledPreference_NoSend covers the opted-out path
+// for the drift type.
+func TestNotifyDomainNSDrift_DisabledPreference_NoSend(t *testing.T) {
+	members := &fakeMembers{members: []db.TenantMember{
+		{UserID: "owner", Email: "owner@example.com", Role: "owner"},
+	}}
+	prefs := &fakePreferences{enabled: map[string]bool{"owner": false}}
+	sender := &recordingSender{}
+	svc := newTestService(members, prefs, sender, "")
+
+	if err := svc.NotifyDomainNSDrift(context.Background(), "tenant-1", domainNSDriftSummary()); err != nil {
+		t.Fatalf("NotifyDomainNSDrift() returned unexpected error: %v", err)
+	}
+	if len(sender.driftTo) != 0 {
+		t.Errorf("driftTo = %v, want none (recipient opted out)", sender.driftTo)
+	}
+}
+
+// TestSend_UnknownNotificationType_ReturnsError covers T5's done-when: the
+// switch still rejects an unrecognized type with the existing error message.
+func TestSend_UnknownNotificationType_ReturnsError(t *testing.T) {
+	svc := newTestService(&fakeMembers{}, &fakePreferences{}, &recordingSender{}, "")
+
+	err := svc.send(context.Background(), "to@example.com", "bogus_type", notificationPayload{}, "")
+	if err == nil {
+		t.Fatal("send(unknown type) returned nil error, want the unknown-type error")
+	}
+	if !strings.Contains(err.Error(), `notify: unknown notification type "bogus_type"`) {
+		t.Errorf("error = %q, want the unchanged unknown-type message", err)
 	}
 }

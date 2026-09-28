@@ -47,6 +47,8 @@ type Sender interface {
 	SendIncidentOpened(ctx context.Context, to string, data IncidentOpenedEmailData) error
 	SendIncidentResolved(ctx context.Context, to string, data IncidentResolvedEmailData) error
 	SendWeeklyDigest(ctx context.Context, to string, data WeeklyDigestEmailData) error
+	SendDomainExpiring(ctx context.Context, to string, data DomainExpiringEmailData) error
+	SendDomainNSDrift(ctx context.Context, to string, data DomainNSDriftEmailData) error
 }
 
 // AdminInviteEmailData is the data the admin-invite template renders.
@@ -104,6 +106,36 @@ type IncidentResolvedEmailData struct {
 	// Severity is the incident's severity (e.g. critical/major/minor).
 	Severity string
 	// DashboardURL links to the incident in the admin dashboard.
+	DashboardURL string
+}
+
+// DomainExpiringEmailData is the data the domain-expiring template renders
+// (domain-health-monitoring DHM-02).
+type DomainExpiringEmailData struct {
+	// TenantName is the tenant the domain belongs to, for context.
+	TenantName string
+	// Hostname is the registered domain approaching expiration.
+	Hostname string
+	// DaysRemaining is how many days remain until expiration at alert time.
+	DaysRemaining int
+	// ThresholdDays is the crossed alert threshold (30, 15 or 7).
+	ThresholdDays int
+	// DashboardURL links to the domains screen in the admin dashboard.
+	DashboardURL string
+}
+
+// DomainNSDriftEmailData is the data the domain NS-drift template renders
+// (domain-health-monitoring DHM-06).
+type DomainNSDriftEmailData struct {
+	// TenantName is the tenant the domain belongs to, for context.
+	TenantName string
+	// Hostname is the registered domain whose nameservers changed.
+	Hostname string
+	// ExpectedNS is the learned baseline nameserver set.
+	ExpectedNS []string
+	// CurrentNS is the freshly resolved nameserver set that differs from it.
+	CurrentNS []string
+	// DashboardURL links to the domains screen in the admin dashboard.
 	DashboardURL string
 }
 
