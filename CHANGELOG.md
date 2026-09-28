@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **SaaS first access no longer shows the self-hosted bootstrap screen**: on a fresh `saas` instance with no users yet, the frontend bootstrap guard redirected every anonymous visitor to `/bootstrap` ("Crie a conta do primeiro administrador"), because it decided only on `bootstrapped` and ignored the deployment mode. In `saas` mode the app now always opens `/login`, with account creation through the public `/signup` flow; the bootstrap screen is rendered only in `self_hosted`. `POST /api/bootstrap` also returns `404` in `saas` (it is now self-hosted-only in the backend too, mirroring the `/api/signup` gate), while `GET /api/bootstrap/status` stays public in every mode (AD-041).
+
 ## [0.8.0] — 2026-09-28
 
 ### Added

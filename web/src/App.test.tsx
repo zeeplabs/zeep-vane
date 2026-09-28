@@ -3,7 +3,7 @@ import { render, screen, waitFor, act } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { http, HttpResponse } from "msw";
 import App from "./App";
-import { setBootstrapped } from "./test/msw/handlers";
+import { setBootstrapped, setDeploymentMode } from "./test/msw/handlers";
 import { server } from "./test/msw/server";
 import { TestQueryProvider } from "./test/queryClient";
 import { apiFetch } from "./lib/apiClient";
@@ -20,10 +20,14 @@ function renderAppAt(path: string) {
 
 // All scenarios below are anonymous visitor (no session) - the
 // bootstrap guard (SHD-19, SHD-21) only decides between /bootstrap and /login,
-// never interacts with RequireAuth/RequireRole.
-describe("App - bootstrap redirect guard", () => {
+// never interacts with RequireAuth/RequireRole. Only the self-hosted
+// deployment mode ever shows the first-admin screen (AD-041), so every
+// self-hosted expectation below pins the mode explicitly instead of relying
+// on the MSW default ("saas").
+describe("App - bootstrap redirect guard (self_hosted)", () => {
   it("loading /login with needsBootstrap=true redirects to /bootstrap (SHD-19)", async () => {
     setBootstrapped(false);
+    setDeploymentMode("self_hosted");
     renderAppAt("/login");
 
     await waitFor(() =>
@@ -33,6 +37,7 @@ describe("App - bootstrap redirect guard", () => {
 
   it("loading / with needsBootstrap=true redirects to /bootstrap (SHD-19)", async () => {
     setBootstrapped(false);
+    setDeploymentMode("self_hosted");
     renderAppAt("/");
 
     await waitFor(() =>
@@ -42,6 +47,7 @@ describe("App - bootstrap redirect guard", () => {
 
   it("loading /bootstrap with needsBootstrap=false redirects to /login (SHD-21)", async () => {
     setBootstrapped(true);
+    setDeploymentMode("self_hosted");
     renderAppAt("/bootstrap");
 
     await waitFor(() => expect(screen.getByRole("heading", { name: "Entrar" })).toBeInTheDocument());
@@ -50,6 +56,7 @@ describe("App - bootstrap redirect guard", () => {
 
   it("loading /bootstrap with needsBootstrap=true renders BootstrapPage without a redirect loop (SHD-21)", async () => {
     setBootstrapped(false);
+    setDeploymentMode("self_hosted");
     renderAppAt("/bootstrap");
 
     await waitFor(() =>
@@ -62,6 +69,38 @@ describe("App - bootstrap redirect guard", () => {
     });
     expect(screen.getByText("Crie a conta do primeiro administrador")).toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "Entrar" })).not.toBeInTheDocument();
+  });
+});
+
+// AD-041: in saas mode the first-admin bootstrap flow is never shown. A
+// fresh instance (needsBootstrap=true) still opens /login - account creation
+// goes through the public /signup flow, not the self-hosted bootstrap screen.
+describe("App - saas mode never shows the bootstrap flow (AD-041)", () => {
+  it("loading /login with needsBootstrap=true stays on LoginPage (AD-041)", async () => {
+    setBootstrapped(false);
+    setDeploymentMode("saas");
+    renderAppAt("/login");
+
+    await waitFor(() => expect(screen.getByRole("heading", { name: "Entrar" })).toBeInTheDocument());
+    expect(screen.queryByText("Crie a conta do primeiro administrador")).not.toBeInTheDocument();
+  });
+
+  it("loading / with needsBootstrap=true follows the login flow, not /bootstrap (AD-041)", async () => {
+    setBootstrapped(false);
+    setDeploymentMode("saas");
+    renderAppAt("/");
+
+    await waitFor(() => expect(screen.getByRole("heading", { name: "Entrar" })).toBeInTheDocument());
+    expect(screen.queryByText("Crie a conta do primeiro administrador")).not.toBeInTheDocument();
+  });
+
+  it("direct visit to /bootstrap redirects to /login (AD-041)", async () => {
+    setBootstrapped(false);
+    setDeploymentMode("saas");
+    renderAppAt("/bootstrap");
+
+    await waitFor(() => expect(screen.getByRole("heading", { name: "Entrar" })).toBeInTheDocument());
+    expect(screen.queryByText("Crie a conta do primeiro administrador")).not.toBeInTheDocument();
   });
 });
 

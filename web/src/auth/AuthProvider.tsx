@@ -87,6 +87,12 @@ export interface AuthContextValue {
    * flash the wrong screen on every real SaaS instance while the check is
    * in flight. */
   deploymentMode: "self_hosted" | "saas";
+  /** true once the bootstrap-status check above has settled (success OR
+   * failure). The bootstrap guards (AD-041) wait on this before acting, so
+   * they never treat the optimistic "saas" default as the real mode - which
+   * would bounce a fresh self-hosted instance's direct /bootstrap visit to
+   * /login before the mode resolved. */
+  bootstrapStatusResolved: boolean;
   /** true once an authenticated admin has more than 1 tenant_membership and
    * hasn't picked an active tenant yet - gates the /select-tenant screen
    * (T17, TENANT-19/20/21). Always false for the every-day self-hosted
@@ -129,6 +135,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   );
   const [needsBootstrap, setNeedsBootstrap] = useState(false);
   const [deploymentMode, setDeploymentMode] = useState<"self_hosted" | "saas">("saas");
+  const [bootstrapStatusResolved, setBootstrapStatusResolved] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -171,6 +178,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       } catch {
         // Fails closed: an unreachable/erroring check never traps a real
         // install behind a bootstrap redirect it can't get past.
+      } finally {
+        // Marks the optimistic "saas"/needsBootstrap=false defaults as
+        // settled either way (AD-041) - the bootstrap guards render nothing
+        // until this is true, then decide on the real values.
+        if (!cancelled) setBootstrapStatusResolved(true);
       }
     })();
     return () => {
@@ -302,6 +314,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         status: state.status,
         needsBootstrap,
         deploymentMode,
+        bootstrapStatusResolved,
         needsTenantSelection,
         login,
         verifyTwoFactor,

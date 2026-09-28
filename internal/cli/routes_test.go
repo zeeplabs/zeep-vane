@@ -37,6 +37,9 @@ func newAdminRouterAndTenantForTest(t *testing.T) (http.Handler, *db.Pool, *db.U
 	// tests below (rate-limit burst/shared-budget), which predate AD-033
 	// and assume /api/signup is reachable; the self-hosted 404 gate itself
 	// gets its own dedicated router in TestAdminRouter_SignupRoutes_SelfHostedMode_404.
+	// POST /api/bootstrap is self-hosted-only (AD-041), so its
+	// reachability test builds its own self_hosted router, and its
+	// saas-mode 404 test lives in TestAdminRouter_BootstrapCreate_SaaSMode_404.
 	cfg := config.Config{SessionSecret: routesTestSessionSecret, MasterKey: "cli-routes-test-master-key", DeploymentMode: config.DeploymentModeSaaS}
 	pollerManager := NewPollerManager(context.Background(), pool, cfg, zap.NewNop(), testDatabaseURL(t))
 	handler := buildAdminRouter(pool, cfg, zap.NewNop(), pollerManager)
@@ -1067,9 +1070,15 @@ func clearAdminsForBootstrapRoutesTest(t *testing.T, pool *db.Pool) func() {
 // SHD-14/SHD-15: GET /api/bootstrap/status and POST /api/bootstrap are
 // mounted on the exact router buildAdminRouter returns for production,
 // not a hand-rolled test router - and a full status-then-create round
-// trip against an admin-less table behaves as designed (SHD-16).
+// trip against an admin-less table behaves as designed (SHD-16). It builds
+// its own self_hosted router (AD-041): POST /api/bootstrap only exists in
+// self_hosted mode, so the shared saas-mode test router would 404 it.
 func TestAdminRouter_BootstrapRoutes_ReachableThroughRealRouter(t *testing.T) {
-	r, pool, _, _ := newAdminRouterAndTenantForTest(t)
+	pool, _ := newServeTestPoolWithTenant(t)
+	cfg := config.Config{SessionSecret: routesTestSessionSecret, MasterKey: "cli-routes-test-master-key", DeploymentMode: config.DeploymentModeSelfHosted}
+	pollerManager := NewPollerManager(context.Background(), pool, cfg, zap.NewNop(), testDatabaseURL(t))
+	r := buildAdminRouter(pool, cfg, zap.NewNop(), pollerManager)
+
 	restore := clearAdminsForBootstrapRoutesTest(t, pool)
 	t.Cleanup(restore)
 
@@ -1502,5 +1511,43 @@ func TestAdminRouter_SignupRoutes_SelfHostedMode_404(t *testing.T) {
 				t.Errorf("status = %d, want 404 in self-hosted mode, body = %s", rec.Code, rec.Body.String())
 			}
 		})
+	}
+}
+
+// TestAdminRouter_BootstrapCreate_SaaSMode_404 asserts AD-041: in saas mode
+// there is no first-admin bootstrap flow, so POST /api/bootstrap 404s
+// outright - a fresh saas instance opens /login and accounts come through
+// /api/signup. GET /api/bootstrap/status stays reachable in every mode, since
+// the SPA reads deployment_mode off it before deciding anything.
+func TestAdminRouter_BootstrapCreate_SaaSMode_404(t *testing.T) {
+	r, _, _, _ := newAdminRouterAndTenantForTest(t)
+
+	createBody, err := json.Marshal(map[string]string{
+		"name":     "Saas Bootstrap Should 404",
+		"email":    "saas-bootstrap-gate@example.com",
+		"password": "correct-horse-battery-staple",
+	})
+	if err != nil {
+		t.Fatalf("json.Marshal() returned unexpected error: %v", err)
+	}
+	createReq := httptest.NewRequest(http.MethodPost, "/api/bootstrap", bytes.NewReader(createBody))
+	createReq.Header.Set("Content-Type", "application/json")
+	createRec := httptest.NewRecorder()
+	r.ServeHTTP(createRec, createReq)
+	if createRec.Code != http.StatusNotFound {
+		t.Errorf("POST /api/bootstrap status = %d, want 404 in saas mode, body = %s", createRec.Code, createRec.Body.String())
+	}
+
+	statusRec := httptest.NewRecorder()
+	r.ServeHTTP(statusRec, httptest.NewRequest(http.MethodGet, "/api/bootstrap/status", nil))
+	if statusRec.Code != http.StatusOK {
+		t.Fatalf("GET /api/bootstrap/status status = %d, want 200 in saas mode", statusRec.Code)
+	}
+	var statusBody map[string]any
+	if err := json.Unmarshal(statusRec.Body.Bytes(), &statusBody); err != nil {
+		t.Fatalf("status response is not valid JSON: %v", err)
+	}
+	if mode, _ := statusBody["deployment_mode"].(string); mode != config.DeploymentModeSaaS {
+		t.Errorf("deployment_mode = %q, want %q", mode, config.DeploymentModeSaaS)
 	}
 }

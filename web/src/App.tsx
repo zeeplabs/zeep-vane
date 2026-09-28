@@ -32,28 +32,35 @@ import "./lib/i18n";
 
 // RedirectToBootstrapIfNeeded gates the anonymous-facing admin routes
 // (login, reset-password, the authenticated area) on whether the instance
-// still needs its first admin (SHD-19, SHD-21). Deliberately never wraps
-// /status/:id - that route serves public status-page visitors, a wholly
-// separate audience the admin instance's bootstrap state has no bearing
-// on. Follows RequireAuth's own "status === loading → render nothing yet"
-// convention so it never redirects on a guess before the boot check
-// resolves.
+// still needs its first admin (SHD-19, SHD-21). Only self-hosted ever has a
+// first-admin bootstrap flow (AD-041): in saas mode a fresh instance
+// (needsBootstrap=true) still opens /login, with account creation going
+// through the public /signup flow. Deliberately never wraps /status/:id -
+// that route serves public status-page visitors, a wholly separate audience
+// the admin instance's bootstrap state has no bearing on. Follows
+// RequireAuth's own "render nothing yet" convention, extended to wait for the
+// bootstrap-status check itself (bootstrapStatusResolved) so the mode is
+// never read from the optimistic "saas" default.
 function RedirectToBootstrapIfNeeded({ children }: { children: ReactNode }) {
-  const { needsBootstrap, status } = useAuth();
+  const { needsBootstrap, status, deploymentMode, bootstrapStatusResolved } = useAuth();
 
-  if (status === "loading") return null;
-  if (needsBootstrap) return <Navigate to="/bootstrap" replace />;
+  if (status === "loading" || !bootstrapStatusResolved) return null;
+  if (needsBootstrap && deploymentMode === "self_hosted") {
+    return <Navigate to="/bootstrap" replace />;
+  }
   return <>{children}</>;
 }
 
-// BootstrapRoute is the mirror-image guard for /bootstrap itself: once an
-// admin already exists, the bootstrap form is a dead end, so a direct
-// visit redirects to /login instead of showing the form (SHD-21, spec.md
-// AC7 under "First-run bootstrap").
+// BootstrapRoute is the mirror-image guard for /bootstrap itself: the
+// first-admin flow exists only in self-hosted (AD-041), and once an admin
+// already exists it is a dead end. Either way a direct visit redirects to
+// /login instead of showing the form (SHD-21, spec.md AC7 under "First-run
+// bootstrap").
 function BootstrapRoute() {
-  const { needsBootstrap, status } = useAuth();
+  const { needsBootstrap, status, deploymentMode, bootstrapStatusResolved } = useAuth();
 
-  if (status === "loading") return null;
+  if (status === "loading" || !bootstrapStatusResolved) return null;
+  if (deploymentMode !== "self_hosted") return <Navigate to="/login" replace />;
   if (!needsBootstrap) return <Navigate to="/login" replace />;
   return <BootstrapPage />;
 }
