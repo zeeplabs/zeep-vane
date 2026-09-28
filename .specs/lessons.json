@@ -3,7 +3,7 @@
   "promote_threshold": 2,
   "window_days": 45,
   "quarantine_threshold": 2,
-  "next_id": 68,
+  "next_id": 70,
   "lessons": [
     {
       "id": "L-001",
@@ -1210,6 +1210,42 @@
       ],
       "created": "2026-09-22T17:29:16Z",
       "last_seen": "2026-09-22T17:29:16Z"
+    },
+    {
+      "id": "L-068",
+      "key": "surviving_mutant::when a check falls back to stale stored data after a failed external lookup assert no notification fires on that path not only that the failure was recorded",
+      "text": "When a check falls back to stale stored data after a failed external lookup, assert no notification fires on that path, not only that the failure was recorded.",
+      "signal": "surviving_mutant",
+      "scope": "cli,notify",
+      "status": "candidate",
+      "features": [
+        "domain-health-monitoring"
+      ],
+      "recurrence": 1,
+      "harmful": 0,
+      "evidence": [
+        "internal/cli/domain_health_scheduler.go:256 (mutant M7, DHM-03) (cli,notify)"
+      ],
+      "created": "2026-09-28T17:41:39Z",
+      "last_seen": "2026-09-28T17:41:39Z"
+    },
+    {
+      "id": "L-069",
+      "key": "spec_precision_gap::define and test the widening direction of a threshold band crossing too an expiry extended into a wider band must not re alert not only the narrowing direction",
+      "text": "Define and test the widening direction of a threshold-band crossing too: an expiry extended into a wider band must not re-alert, not only the narrowing direction.",
+      "signal": "spec_precision_gap",
+      "scope": "cli",
+      "status": "candidate",
+      "features": [
+        "domain-health-monitoring"
+      ],
+      "recurrence": 1,
+      "harmful": 0,
+      "evidence": [
+        "internal/cli/domain_health_scheduler.go:326-329 (band-widening renewal) (cli)"
+      ],
+      "created": "2026-09-28T17:41:39Z",
+      "last_seen": "2026-09-28T17:41:39Z"
     }
   ]
 }

@@ -96,13 +96,13 @@ This blind spot caused a real production incident (Starbem, `eks-starbem-dev`, 2
 
 | ID | Acceptance Criterion (User Story) | Status |
 | --- | --- | --- |
-| DHM-01 | P1-AC1: daily RDAP query per domain, expiration/registrar persisted | implemented |
-| DHM-02 | P1-AC2: notification at 30/15/7-day thresholds, once per crossing | implemented |
-| DHM-03 | P1-AC3: RDAP failure recorded, no spurious alert, cycle continues for other domains, retried next cycle | implemented |
-| DHM-04 | P1-AC4: domain detail view shows expiration date, days remaining, registrar | implemented |
-| DHM-05 | P2-AC1: first check with no baseline records current NS as baseline, no alert | implemented |
-| DHM-06 | P2-AC2: NS differing from baseline marks drift and notifies | implemented |
-| DHM-07 | P2-AC3: DNS lookup failure recorded, existing baseline never overwritten/cleared | implemented |
-| DHM-08 | P2-AC4: domain detail view + domains list visibly indicate NS drift | implemented |
-| DHM-09 | P3-AC1: every domain in `domains` table included in the cycle, with or without an attached status page | implemented |
-| DHM-10 | P3-AC2: `AddDomainDrawer` hostname placeholder reads as a root-domain example, not a subdomain | implemented |
+| DHM-01 | P1-AC1: daily RDAP query per domain, expiration/registrar persisted | verified |
+| DHM-02 | P1-AC2: notification at 30/15/7-day thresholds, once per crossing | verified |
+| DHM-03 | P1-AC3: RDAP failure recorded, no spurious alert, cycle continues for other domains, retried next cycle | verified |
+| DHM-04 | P1-AC4: domain detail view shows expiration date, days remaining, registrar | verified |
+| DHM-05 | P2-AC1: first check with no baseline records current NS as baseline, no alert | verified |
+| DHM-06 | P2-AC2: NS differing from baseline marks drift and notifies | verified |
+| DHM-07 | P2-AC3: DNS lookup failure recorded, existing baseline never overwritten/cleared | verified |
+| DHM-08 | P2-AC4: domain detail view + domains list visibly indicate NS drift | verified |
+| DHM-09 | P3-AC1: every domain in `domains` table included in the cycle, with or without an attached status page | verified |
+| DHM-10 | P3-AC2: `AddDomainDrawer` hostname placeholder reads as a root-domain example, not a subdomain | verified |

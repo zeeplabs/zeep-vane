@@ -416,6 +416,18 @@ Seen once or not yet corroborated. Tracked, not trusted.
 - evidence: commit dad22ea (T14) (internal/llm)
 - last seen: 2026-09-22T17:29:16Z
 
+### L-068 - When a check falls back to stale stored data after a failed external lookup, assert no notification fires on that path, not only that the failure was recorded.
+- signal: `surviving_mutant` · recurrence: 1 feature(s) · scope: `cli,notify` · harmful: 0
+- features: domain-health-monitoring
+- evidence: internal/cli/domain_health_scheduler.go:256 (mutant M7, DHM-03) (cli,notify)
+- last seen: 2026-09-28T17:41:39Z
+
+### L-069 - Define and test the widening direction of a threshold-band crossing too: an expiry extended into a wider band must not re-alert, not only the narrowing direction.
+- signal: `spec_precision_gap` · recurrence: 1 feature(s) · scope: `cli` · harmful: 0
+- features: domain-health-monitoring
+- evidence: internal/cli/domain_health_scheduler.go:326-329 (band-widening renewal) (cli)
+- last seen: 2026-09-28T17:41:39Z
+
 ## Quarantined (failed when applied - ignore)
 
 A confirmed lesson that recurred alongside failure. Kept for the maintainer to review.
