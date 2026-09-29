@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.1] — 2026-09-29
+
+### Fixed
+
+- **Domain health: expiration and NS-drift email alerts were silently never delivered** — `DomainHealthScheduler` called the notifier with the poll cycle's bare context, carrying no tenant transaction. `tenant_memberships` enforces row-level security with a fail-closed policy (`user_id = app.user_id OR tenant_id = app.tenant_id`, `NULL OR NULL` is never `true`), so the recipient lookup silently resolved to zero rows and the notification path reported success with no error and no log line. Every domain-expiring and NS-drift alert introduced in `v0.9.0` was affected. Both notifier calls now run inside a tenant-scoped transaction (`BeginTenantTx`/`WithTenantTx`), the same pattern already used by `DigestScheduler` and the incident poller.
+
 ## [0.9.0] — 2026-09-28
 
 ### Added
