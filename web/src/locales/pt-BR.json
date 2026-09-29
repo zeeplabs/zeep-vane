@@ -106,7 +106,13 @@
       "type": "Tipo",
       "pointsTo": "Aponta para",
       "ssl": "SSL",
-      "verified": "Verificado"
+      "verified": "Verificado",
+      "risk": "Risco"
+    },
+    "atRisk": {
+      "drift": "Drift de NS",
+      "expired": "Expirado",
+      "expiring": "Expira em breve"
     },
     "empty": {
       "title": "Nenhum domínio cadastrado",
@@ -140,7 +146,7 @@
     },
     "form": {
       "hostnameLabel": "Hostname",
-      "hostnamePlaceholder": "status.suaempresa.com",
+      "hostnamePlaceholder": "suaempresa.com",
       "saveButton": "Salvar",
       "error": "Não foi possível cadastrar o domínio."
     },
@@ -167,7 +173,21 @@
       "notConfigured": "não configurado",
       "recheckButton": "Verificar novamente",
       "removeButton": "Remover domínio",
-      "removeError": "Não foi possível remover o domínio."
+      "removeError": "Não foi possível remover o domínio.",
+      "health": {
+        "title": "Saúde do domínio",
+        "notChecked": "Ainda não verificado",
+        "expiresLabel": "Expira em",
+        "daysRemainingLabel": "Dias restantes",
+        "daysRemaining": "{{days}} dias restantes",
+        "registrarLabel": "Registrador",
+        "lastCheckLabel": "Última verificação",
+        "nameserversLabel": "Nameservers",
+        "expectedNsLabel": "Esperado",
+        "currentNsLabel": "Atual",
+        "driftBadge": "Drift de NS",
+        "rdapError": "Falha na consulta RDAP: {{error}}"
+      }
     }
   },
   "statusPages": {
@@ -926,7 +946,11 @@
       "incidentResolved": "Incidente resolvido",
       "incidentResolvedHint": "Quando um incidente que você acompanha é encerrado.",
       "weeklyDigest": "Resumo semanal",
-      "weeklyDigestHint": "Uptime e principais eventos da semana, toda segunda."
+      "weeklyDigestHint": "Uptime e principais eventos da semana, toda segunda.",
+      "domainExpiring": "Domínio expirando",
+      "domainExpiringHint": "Quando um dos seus domínios está próximo da data de expiração.",
+      "domainNsDrift": "Alteração de nameservers",
+      "domainNsDriftHint": "Quando os nameservers de um domínio mudam em relação ao esperado."
     }
   },
   "twoFactor": {

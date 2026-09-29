@@ -38,6 +38,8 @@ describe("notification preference hooks", () => {
       incident_opened: true,
       incident_resolved: true,
       weekly_digest: false,
+      domain_expiring: true,
+      domain_ns_drift: true,
     });
   });
 
@@ -65,6 +67,8 @@ describe("notification preference hooks", () => {
         incident_opened: true,
         incident_resolved: true,
         weekly_digest: true,
+        domain_expiring: true,
+        domain_ns_drift: true,
       }),
     );
   });

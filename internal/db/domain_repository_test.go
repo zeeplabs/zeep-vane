@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"reflect"
 	"testing"
 	"time"
 
@@ -400,5 +401,227 @@ func TestDomainRepository_CountAll_NoDomains_ReturnsZero(t *testing.T) {
 	}
 	if got != 0 {
 		t.Errorf("CountAll() = %d, want 0 for a tenant with no domains", got)
+	}
+}
+
+// TestDomainRepository_SetHealthCheckResult_AllFields_WritesSevenColumns
+// covers DHM-01/DHM-05: one health-check cycle's result is persisted in
+// full, and the NS baseline is learned from the first successful check.
+func TestDomainRepository_SetHealthCheckResult_AllFields_WritesSevenColumns(t *testing.T) {
+	repo, pool := newDomainRepoTestPool(t)
+	domain := &Domain{Hostname: fmt.Sprintf("health-all-%d.example.com", time.Now().UnixNano())}
+	if err := repo.Create(context.Background(), domain); err != nil {
+		t.Fatalf("setup Create() returned unexpected error: %v", err)
+	}
+	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), "DELETE FROM domains WHERE id = $1", domain.ID) })
+
+	ctx := context.Background()
+	expires := time.Now().UTC().Add(20 * 24 * time.Hour).Truncate(time.Millisecond)
+	registrar := "GoDaddy"
+	ns := []string{"ns1.example.net", "ns2.example.net"}
+	if err := repo.SetHealthCheckResult(ctx, domain.ID, &expires, &registrar, ns, false, nil); err != nil {
+		t.Fatalf("SetHealthCheckResult() returned unexpected error: %v", err)
+	}
+
+	got, err := repo.GetByID(ctx, domain.ID)
+	if err != nil {
+		t.Fatalf("GetByID() returned unexpected error: %v", err)
+	}
+	if got.ExpiresAt == nil || !got.ExpiresAt.Equal(expires) {
+		t.Errorf("ExpiresAt = %v, want %v", got.ExpiresAt, expires)
+	}
+	if got.Registrar == nil || *got.Registrar != registrar {
+		t.Errorf("Registrar = %v, want %q", got.Registrar, registrar)
+	}
+	if !reflect.DeepEqual(got.ExpectedNS, ns) {
+		t.Errorf("ExpectedNS = %v, want %v (baseline learned on first check)", got.ExpectedNS, ns)
+	}
+	if !reflect.DeepEqual(got.CurrentNS, ns) {
+		t.Errorf("CurrentNS = %v, want %v", got.CurrentNS, ns)
+	}
+	if got.NSDriftDetected {
+		t.Error("NSDriftDetected = true, want false (no drift on the first check)")
+	}
+	if got.LastRDAPCheckAt == nil {
+		t.Error("LastRDAPCheckAt = nil, want the check's timestamp")
+	}
+	if got.RDAPLastError != nil {
+		t.Errorf("RDAPLastError = %v, want nil", got.RDAPLastError)
+	}
+}
+
+// TestDomainRepository_SetHealthCheckResult_NSFailure_PreservesBaseline
+// covers DHM-07: an NS lookup failure (nil currentNS) never overwrites or
+// clears the learned ExpectedNS/CurrentNS.
+func TestDomainRepository_SetHealthCheckResult_NSFailure_PreservesBaseline(t *testing.T) {
+	repo, pool := newDomainRepoTestPool(t)
+	domain := &Domain{Hostname: fmt.Sprintf("health-nsfail-%d.example.com", time.Now().UnixNano())}
+	if err := repo.Create(context.Background(), domain); err != nil {
+		t.Fatalf("setup Create() returned unexpected error: %v", err)
+	}
+	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), "DELETE FROM domains WHERE id = $1", domain.ID) })
+
+	ctx := context.Background()
+	baseline := []string{"ns1.example.net", "ns2.example.net"}
+	if err := repo.SetHealthCheckResult(ctx, domain.ID, nil, nil, baseline, false, nil); err != nil {
+		t.Fatalf("first SetHealthCheckResult() returned unexpected error: %v", err)
+	}
+	// Second cycle: DNS lookup failed entirely (nil NS set).
+	if err := repo.SetHealthCheckResult(ctx, domain.ID, nil, nil, nil, false, nil); err != nil {
+		t.Fatalf("second SetHealthCheckResult() returned unexpected error: %v", err)
+	}
+
+	got, err := repo.GetByID(ctx, domain.ID)
+	if err != nil {
+		t.Fatalf("GetByID() returned unexpected error: %v", err)
+	}
+	if !reflect.DeepEqual(got.ExpectedNS, baseline) {
+		t.Errorf("ExpectedNS = %v, want %v (baseline must survive a DNS lookup failure)", got.ExpectedNS, baseline)
+	}
+	if !reflect.DeepEqual(got.CurrentNS, baseline) {
+		t.Errorf("CurrentNS = %v, want %v (must not be cleared by a DNS lookup failure)", got.CurrentNS, baseline)
+	}
+}
+
+// TestDomainRepository_SetHealthCheckResult_NSFailure_PreservesDriftFlag
+// covers a bug where a DNS lookup failure (nil currentNS, so the scheduler
+// always passes driftDetected=false) silently cleared a previously detected
+// ns_drift_detected back to false - making a real, still-unresolved drift
+// disappear from the UI, and re-triggering the drift notification on the
+// next cycle that could resolve the NS lookup again. ns_drift_detected must
+// be preserved exactly like current_ns/expected_ns are.
+func TestDomainRepository_SetHealthCheckResult_NSFailure_PreservesDriftFlag(t *testing.T) {
+	repo, pool := newDomainRepoTestPool(t)
+	domain := &Domain{Hostname: fmt.Sprintf("health-driftpreserve-%d.example.com", time.Now().UnixNano())}
+	if err := repo.Create(context.Background(), domain); err != nil {
+		t.Fatalf("setup Create() returned unexpected error: %v", err)
+	}
+	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), "DELETE FROM domains WHERE id = $1", domain.ID) })
+
+	ctx := context.Background()
+	// First cycle learns the baseline.
+	if err := repo.SetHealthCheckResult(ctx, domain.ID, nil, nil, []string{"ns1.example.net"}, false, nil); err != nil {
+		t.Fatalf("baseline SetHealthCheckResult() returned unexpected error: %v", err)
+	}
+	// Second cycle: NS actually changed, drift detected.
+	if err := repo.SetHealthCheckResult(ctx, domain.ID, nil, nil, []string{"ns2.example.net"}, true, nil); err != nil {
+		t.Fatalf("drift SetHealthCheckResult() returned unexpected error: %v", err)
+	}
+	// Third cycle: transient DNS failure (nil currentNS); the scheduler
+	// always passes driftDetected=false in this path since it has no fresh
+	// NS set to compare.
+	if err := repo.SetHealthCheckResult(ctx, domain.ID, nil, nil, nil, false, nil); err != nil {
+		t.Fatalf("DNS-failure SetHealthCheckResult() returned unexpected error: %v", err)
+	}
+
+	got, err := repo.GetByID(ctx, domain.ID)
+	if err != nil {
+		t.Fatalf("GetByID() returned unexpected error: %v", err)
+	}
+	if !got.NSDriftDetected {
+		t.Error("NSDriftDetected = false, want true - a DNS lookup failure must not clear a previously detected drift")
+	}
+}
+
+// TestDomainRepository_SetHealthCheckResult_Unknown_ErrNotFound covers the
+// not-found path (T3 done-when: a clear not-found-shaped error, not a silent
+// no-op).
+func TestDomainRepository_SetHealthCheckResult_Unknown_ErrNotFound(t *testing.T) {
+	repo, _ := newDomainRepoTestPool(t)
+
+	err := repo.SetHealthCheckResult(context.Background(), "00000000-0000-0000-0000-000000000000", nil, nil, nil, false, nil)
+	if !errors.Is(err, ErrNotFound) {
+		t.Fatalf("SetHealthCheckResult() error = %v, want ErrNotFound", err)
+	}
+}
+
+// domainRLSTestPool boots the non-superuser RLS pool and grants its role DML
+// on domains - the fixed GRANT list in newRLSTestPool predates this suite's
+// use of that table. status_pages needs SELECT because the domains
+// public_published_read policy (0025) subqueries it, and INSERT ... RETURNING
+// re-reads the new row through every SELECT policy.
+func domainRLSTestPool(t *testing.T) *Pool {
+	t.Helper()
+	pool := newRLSTestPool(t)
+	if _, err := pool.Exec(context.Background(),
+		"GRANT SELECT, INSERT, UPDATE, DELETE ON domains TO "+rlsTestRole); err != nil {
+		t.Fatalf("granting DML on domains to %s returned unexpected error: %v", rlsTestRole, err)
+	}
+	if _, err := pool.Exec(context.Background(),
+		"GRANT SELECT ON status_pages TO "+rlsTestRole); err != nil {
+		t.Fatalf("granting SELECT on status_pages to %s returned unexpected error: %v", rlsTestRole, err)
+	}
+	return pool
+}
+
+// seedTenantWithDomain creates and commits one tenant plus one domain it
+// owns, mirroring rls_test.go's seedTenantWithService.
+func seedTenantWithDomain(t *testing.T, pool *Pool, prefix string) (tenantID, domainID string) {
+	t.Helper()
+	ctx := context.Background()
+
+	if err := pool.QueryRow(ctx, "SELECT gen_random_uuid()").Scan(&tenantID); err != nil {
+		t.Fatalf("generating tenant id returned unexpected error: %v", err)
+	}
+
+	tx, txCtx := beginRLSTx(t, pool, "", tenantID)
+	if _, err := pool.Exec(txCtx,
+		"INSERT INTO tenants (id, name) VALUES ($1, $2)", tenantID, prefix+"-tenant",
+	); err != nil {
+		_ = tx.Rollback(ctx)
+		t.Fatalf("seed tenant insert returned unexpected error: %v", err)
+	}
+	if err := pool.QueryRow(txCtx,
+		"INSERT INTO domains (hostname) VALUES ($1) RETURNING id", prefix+"-domain.example.com",
+	).Scan(&domainID); err != nil {
+		_ = tx.Rollback(ctx)
+		t.Fatalf("seed domain insert returned unexpected error: %v", err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		t.Fatalf("commit returned unexpected error: %v", err)
+	}
+
+	t.Cleanup(func() {
+		cleanupTx, cleanupCtx := beginRLSTx(t, pool, "", tenantID)
+		_, _ = pool.Exec(cleanupCtx, "DELETE FROM domains WHERE tenant_id = $1", tenantID)
+		_, _ = pool.Exec(cleanupCtx, "DELETE FROM tenants WHERE id = $1", tenantID)
+		_ = cleanupTx.Commit(context.Background())
+	})
+
+	return tenantID, domainID
+}
+
+// TestDomainRepository_SetHealthCheckResult_CrossTenant_RejectedByRLS is the
+// load-bearing isolation proof for T3: a write attempted with a transaction
+// scoped to a different tenant than the domain's owner must not reach the
+// row. RLS's USING clause filters it out, so the UPDATE affects zero rows and
+// surfaces as ErrNotFound - and the owner's row must be verifiably unchanged
+// afterward, not merely "the write didn't error".
+func TestDomainRepository_SetHealthCheckResult_CrossTenant_RejectedByRLS(t *testing.T) {
+	pool := domainRLSTestPool(t)
+	tenantA, domainA := seedTenantWithDomain(t, pool, fmt.Sprintf("rls-dhm-a-%d", tUniqueSuffix()))
+	tenantB, _ := seedTenantWithDomain(t, pool, fmt.Sprintf("rls-dhm-b-%d", tUniqueSuffix()))
+	repo := NewDomainRepository(pool)
+
+	registrar := "evil-registrar"
+	expires := time.Now().UTC().Add(24 * time.Hour)
+
+	txB, ctxB := beginRLSTx(t, pool, "", tenantB)
+	err := repo.SetHealthCheckResult(ctxB, domainA, &expires, &registrar, []string{"ns.evil.example"}, true, nil)
+	_ = txB.Rollback(context.Background())
+	if !errors.Is(err, ErrNotFound) {
+		t.Fatalf("SetHealthCheckResult() from a foreign tenant error = %v, want ErrNotFound (RLS must filter the row out)", err)
+	}
+
+	txA, ctxA := beginRLSTx(t, pool, "", tenantA)
+	defer func() { _ = txA.Rollback(context.Background()) }()
+
+	got, err := repo.GetByID(ctxA, domainA)
+	if err != nil {
+		t.Fatalf("GetByID() for the owner returned unexpected error: %v", err)
+	}
+	if got.ExpiresAt != nil || got.Registrar != nil || got.ExpectedNS != nil || got.CurrentNS != nil ||
+		got.NSDriftDetected || got.LastRDAPCheckAt != nil || got.RDAPLastError != nil {
+		t.Errorf("owner's domain health fields changed after a cross-tenant write attempt: %+v", got)
 	}
 }

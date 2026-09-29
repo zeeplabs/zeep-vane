@@ -7,6 +7,7 @@ import { http, HttpResponse } from "msw";
 import { server } from "../../test/msw/server";
 import { TestQueryProvider } from "../../test/queryClient";
 import { apiFetch } from "../../lib/apiClient";
+import { formatDateTime } from "../../lib/formatDate";
 import type { Domain, Page } from "../../types/api";
 import { DomainsTable } from "./DomainsTable";
 import { DomainDetailDrawer } from "./DomainDetailDrawer";
@@ -42,6 +43,13 @@ function baseDomain(overrides: Partial<Domain>): Domain {
     last_error: null,
     attached_page_name: null,
     attached_page_count: 0,
+    expires_at: null,
+    registrar: null,
+    expected_ns: null,
+    current_ns: null,
+    ns_drift_detected: false,
+    last_rdap_check_at: null,
+    rdap_last_error: null,
     ...overrides,
   };
 }
@@ -146,5 +154,89 @@ describe("DomainDetailDrawer", () => {
 
     expect(await screen.findByRole("alert")).toHaveTextContent("domain is still attached to a status page");
     expect(screen.getByRole("button", { name: "Remover domínio" })).toBeInTheDocument();
+  });
+
+  it("renders the health section's expiration, days remaining and registrar (DHM-04)", async () => {
+    // 20 days and 6 hours out, so whole-day truncation is deterministically 20.
+    const expiresAt = new Date(Date.now() + (20 * 24 + 6) * 60 * 60 * 1000).toISOString();
+    mockDomainsPage([
+      baseDomain({
+        id: "dom-health",
+        hostname: "health.example.com",
+        expires_at: expiresAt,
+        registrar: "GoDaddy.com, LLC",
+        expected_ns: ["ns1.example.net"],
+        current_ns: ["ns1.example.net"],
+        ns_drift_detected: false,
+        last_rdap_check_at: new Date(Date.now() - 60 * 60 * 1000).toISOString(),
+      }),
+    ]);
+    await loginAsOwner();
+    renderHarness();
+
+    await userEvent.click(await screen.findByText("health.example.com"));
+
+    expect(await screen.findByText("GoDaddy.com, LLC")).toBeInTheDocument();
+    expect(screen.getByTestId("expires-at")).toHaveTextContent(formatDateTime(expiresAt, "pt-BR"));
+    expect(screen.getByTestId("days-remaining")).toHaveTextContent("20 dias restantes");
+    expect(screen.queryByTestId("ns-drift-badge")).not.toBeInTheDocument();
+  });
+
+  it("renders NS drift distinctly with expected vs current and a drift badge (DHM-08)", async () => {
+    mockDomainsPage([
+      baseDomain({
+        id: "dom-drift",
+        hostname: "drift.example.com",
+        expires_at: new Date(Date.now() + 200 * 24 * 60 * 60 * 1000).toISOString(),
+        expected_ns: ["ns1.example.net", "ns2.example.net"],
+        current_ns: ["ns9.other.net"],
+        ns_drift_detected: true,
+        last_rdap_check_at: new Date().toISOString(),
+      }),
+    ]);
+    await loginAsOwner();
+    renderHarness();
+
+    await userEvent.click(await screen.findByText("drift.example.com"));
+
+    expect(await screen.findByTestId("ns-drift-badge")).toHaveTextContent("Drift de NS");
+    expect(screen.getByTestId("expected-ns")).toHaveTextContent("ns1.example.net, ns2.example.net");
+    expect(screen.getByTestId("current-ns")).toHaveTextContent("ns9.other.net");
+  });
+
+  it("shows the RDAP error indicator without hiding the rest of the drawer (DHM-04)", async () => {
+    mockDomainsPage([
+      baseDomain({
+        id: "dom-rdap-err",
+        hostname: "rdap-error.example.com",
+        expires_at: null,
+        registrar: null,
+        last_rdap_check_at: new Date().toISOString(),
+        rdap_last_error: "rdap: unexpected status 404",
+      }),
+    ]);
+    await loginAsOwner();
+    renderHarness();
+
+    await userEvent.click(await screen.findByText("rdap-error.example.com"));
+
+    expect(await screen.findByTestId("rdap-error")).toHaveTextContent("rdap: unexpected status 404");
+    // The rest of the drawer still renders normally alongside the warning.
+    expect(screen.getByTestId("domain-health")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Verificar novamente" })).toBeInTheDocument();
+  });
+
+  it("renders a not-checked-yet state when the domain has no health data (DHM-04)", async () => {
+    mockDomainsPage([
+      baseDomain({ id: "dom-nohealth", hostname: "nohealth.example.com", last_rdap_check_at: null }),
+    ]);
+    await loginAsOwner();
+    renderHarness();
+
+    await userEvent.click(await screen.findByText("nohealth.example.com"));
+
+    expect(await screen.findByText("Ainda não verificado")).toBeInTheDocument();
+    expect(screen.queryByTestId("days-remaining")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("ns-drift-badge")).not.toBeInTheDocument();
   });
 });

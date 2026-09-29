@@ -1,0 +1,6 @@
+The nameservers for {{.Hostname}}{{if .TenantName}} in {{.TenantName}}{{end}} changed unexpectedly.
+
+Expected: {{range $i, $ns := .ExpectedNS}}{{if $i}}, {{end}}{{$ns}}{{end}}
+Current: {{range $i, $ns := .CurrentNS}}{{if $i}}, {{end}}{{$ns}}{{end}}
+
+View the domain: {{.DashboardURL}}

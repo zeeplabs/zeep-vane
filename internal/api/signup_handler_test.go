@@ -516,6 +516,12 @@ func (f *fakeSaaSNotificationSender) SendIncidentResolved(ctx context.Context, t
 func (f *fakeSaaSNotificationSender) SendWeeklyDigest(ctx context.Context, to string, data email.WeeklyDigestEmailData) error {
 	return nil
 }
+func (f *fakeSaaSNotificationSender) SendDomainExpiring(ctx context.Context, to string, data email.DomainExpiringEmailData) error {
+	return nil
+}
+func (f *fakeSaaSNotificationSender) SendDomainNSDrift(ctx context.Context, to string, data email.DomainNSDriftEmailData) error {
+	return nil
+}
 
 var _ email.Sender = (*fakeSaaSNotificationSender)(nil)
 

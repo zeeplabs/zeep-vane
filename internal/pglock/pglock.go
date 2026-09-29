@@ -15,7 +15,9 @@
 // keys in the 727200000-727299999 block, deliberately distinct from
 // internal/dbtest's test-only keys (727100001-727100003) so a production
 // lock can never collide with (and deadlock against) a test-only one that
-// happens to share a database.
+// happens to share a database. The anonymous int64 keys are allocated from
+// the single reserved registry in keys.go; take a new one from there rather
+// than hard-coding a number at the call site.
 package pglock
 
 import (

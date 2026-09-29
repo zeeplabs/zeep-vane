@@ -1,0 +1,9 @@
+<!doctype html>
+<html>
+  <body style="font-family: sans-serif; color: #1a1a1a;">
+    <p>The nameservers for <strong>{{.Hostname}}</strong>{{if .TenantName}} in {{.TenantName}}{{end}} changed unexpectedly.</p>
+    <p>Expected: {{range $i, $ns := .ExpectedNS}}{{if $i}}, {{end}}{{$ns}}{{end}}</p>
+    <p>Current: {{range $i, $ns := .CurrentNS}}{{if $i}}, {{end}}{{$ns}}{{end}}</p>
+    <p><a href="{{.DashboardURL}}">View the domain</a></p>
+  </body>
+</html>

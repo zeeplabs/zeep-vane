@@ -493,3 +493,99 @@ func (s *Service) SendWeeklyDigest(ctx context.Context, to string, data WeeklyDi
 
 	return provider.Send(ctx, msg)
 }
+
+// SendDomainExpiring renders the domain-expiring template and sends it through
+// whichever provider is currently active (domain-health-monitoring DHM-02).
+// Same active-provider and send-failure handling as SendIncidentOpened - no
+// retry, no queue; the caller (notify.Service) treats a failure here as
+// non-fatal to the health-check cycle.
+func (s *Service) SendDomainExpiring(ctx context.Context, to string, data DomainExpiringEmailData) error {
+	active, err := s.repo.GetActiveProvider(ctx)
+	if err != nil {
+		return fmt.Errorf("email: failed to get active provider: %w", err)
+	}
+	if active == "" {
+		return ErrNoActiveProvider
+	}
+
+	ep, err := s.repo.Get(ctx, active)
+	if err != nil {
+		if errors.Is(err, db.ErrNotFound) {
+			return ErrNoActiveProvider
+		}
+		return fmt.Errorf("email: failed to get active provider row: %w", err)
+	}
+
+	apiKey, err := crypto.Decrypt(s.masterKey, ep.EncryptedAPIKey)
+	if err != nil {
+		return fmt.Errorf("email: failed to decrypt active provider api key: %w", err)
+	}
+
+	provider, err := s.factory(active, string(apiKey))
+	if err != nil {
+		return fmt.Errorf("email: failed to build active provider client: %w", err)
+	}
+
+	htmlBody, textBody, err := s.templates.renderDomainExpiring(data)
+	if err != nil {
+		return err
+	}
+
+	msg := Message{
+		To:        to,
+		FromEmail: ep.FromEmail,
+		FromName:  ep.FromName,
+		Subject:   fmt.Sprintf("Domain expiring soon: %s", data.Hostname),
+		HTMLBody:  htmlBody,
+		TextBody:  textBody,
+	}
+
+	return provider.Send(ctx, msg)
+}
+
+// SendDomainNSDrift renders the domain NS-drift template and sends it through
+// whichever provider is currently active (domain-health-monitoring DHM-06).
+// Same handling as SendDomainExpiring.
+func (s *Service) SendDomainNSDrift(ctx context.Context, to string, data DomainNSDriftEmailData) error {
+	active, err := s.repo.GetActiveProvider(ctx)
+	if err != nil {
+		return fmt.Errorf("email: failed to get active provider: %w", err)
+	}
+	if active == "" {
+		return ErrNoActiveProvider
+	}
+
+	ep, err := s.repo.Get(ctx, active)
+	if err != nil {
+		if errors.Is(err, db.ErrNotFound) {
+			return ErrNoActiveProvider
+		}
+		return fmt.Errorf("email: failed to get active provider row: %w", err)
+	}
+
+	apiKey, err := crypto.Decrypt(s.masterKey, ep.EncryptedAPIKey)
+	if err != nil {
+		return fmt.Errorf("email: failed to decrypt active provider api key: %w", err)
+	}
+
+	provider, err := s.factory(active, string(apiKey))
+	if err != nil {
+		return fmt.Errorf("email: failed to build active provider client: %w", err)
+	}
+
+	htmlBody, textBody, err := s.templates.renderDomainNSDrift(data)
+	if err != nil {
+		return err
+	}
+
+	msg := Message{
+		To:        to,
+		FromEmail: ep.FromEmail,
+		FromName:  ep.FromName,
+		Subject:   fmt.Sprintf("Nameserver change detected: %s", data.Hostname),
+		HTMLBody:  htmlBody,
+		TextBody:  textBody,
+	}
+
+	return provider.Send(ctx, msg)
+}

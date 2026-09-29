@@ -7,6 +7,7 @@ package email
 import (
 	"context"
 	"errors"
+	"fmt"
 )
 
 // Message is a single email to send, fully rendered and provider-agnostic -
@@ -47,6 +48,8 @@ type Sender interface {
 	SendIncidentOpened(ctx context.Context, to string, data IncidentOpenedEmailData) error
 	SendIncidentResolved(ctx context.Context, to string, data IncidentResolvedEmailData) error
 	SendWeeklyDigest(ctx context.Context, to string, data WeeklyDigestEmailData) error
+	SendDomainExpiring(ctx context.Context, to string, data DomainExpiringEmailData) error
+	SendDomainNSDrift(ctx context.Context, to string, data DomainNSDriftEmailData) error
 }
 
 // AdminInviteEmailData is the data the admin-invite template renders.
@@ -104,6 +107,51 @@ type IncidentResolvedEmailData struct {
 	// Severity is the incident's severity (e.g. critical/major/minor).
 	Severity string
 	// DashboardURL links to the incident in the admin dashboard.
+	DashboardURL string
+}
+
+// DomainExpiringEmailData is the data the domain-expiring template renders
+// (domain-health-monitoring DHM-02).
+type DomainExpiringEmailData struct {
+	// TenantName is the tenant the domain belongs to, for context.
+	TenantName string
+	// Hostname is the registered domain approaching expiration.
+	Hostname string
+	// DaysRemaining is how many days remain until expiration at alert time.
+	DaysRemaining int
+	// ThresholdDays is the crossed alert threshold (30, 15 or 7).
+	ThresholdDays int
+	// DashboardURL links to the domains screen in the admin dashboard.
+	DashboardURL string
+}
+
+// DaysRemainingText renders DaysRemaining as reader-friendly copy: a
+// crossing can fire with a zero or negative day count (the domain already
+// expired, or expires today, by the time the alert is dispatched), and
+// "expires in -3 days" reads as broken rather than urgent.
+func (d DomainExpiringEmailData) DaysRemainingText() string {
+	switch {
+	case d.DaysRemaining < 0:
+		return fmt.Sprintf("expired %d days ago", -d.DaysRemaining)
+	case d.DaysRemaining == 0:
+		return "expires today"
+	default:
+		return fmt.Sprintf("expires in %d days", d.DaysRemaining)
+	}
+}
+
+// DomainNSDriftEmailData is the data the domain NS-drift template renders
+// (domain-health-monitoring DHM-06).
+type DomainNSDriftEmailData struct {
+	// TenantName is the tenant the domain belongs to, for context.
+	TenantName string
+	// Hostname is the registered domain whose nameservers changed.
+	Hostname string
+	// ExpectedNS is the learned baseline nameserver set.
+	ExpectedNS []string
+	// CurrentNS is the freshly resolved nameserver set that differs from it.
+	CurrentNS []string
+	// DashboardURL links to the domains screen in the admin dashboard.
 	DashboardURL string
 }
 

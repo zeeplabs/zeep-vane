@@ -119,3 +119,21 @@ func (s *NotificationServiceSender) SendWeeklyDigest(ctx context.Context, to str
 	}
 	return s.send(ctx, to, subject, "marketing", "low", "WEEKLY_DIGEST", htmlBody, textBody)
 }
+
+func (s *NotificationServiceSender) SendDomainExpiring(ctx context.Context, to string, data DomainExpiringEmailData) error {
+	htmlBody, textBody, err := s.templates.renderDomainExpiring(data)
+	if err != nil {
+		return err
+	}
+	subject := fmt.Sprintf("Domain expiring soon: %s", data.Hostname)
+	return s.send(ctx, to, subject, "transactional", "critical", "DOMAIN_EXPIRING", htmlBody, textBody)
+}
+
+func (s *NotificationServiceSender) SendDomainNSDrift(ctx context.Context, to string, data DomainNSDriftEmailData) error {
+	htmlBody, textBody, err := s.templates.renderDomainNSDrift(data)
+	if err != nil {
+		return err
+	}
+	subject := fmt.Sprintf("Nameserver change detected: %s", data.Hostname)
+	return s.send(ctx, to, subject, "transactional", "normal", "DOMAIN_NS_DRIFT", htmlBody, textBody)
+}

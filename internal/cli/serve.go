@@ -22,6 +22,7 @@ import (
 	"github.com/zeeplabs/zeep-vane/internal/logging"
 	"github.com/zeeplabs/zeep-vane/internal/notify"
 	"github.com/zeeplabs/zeep-vane/internal/poller"
+	"github.com/zeeplabs/zeep-vane/internal/rdap"
 	"github.com/zeeplabs/zeep-vane/internal/retention"
 	"github.com/zeeplabs/zeep-vane/internal/router"
 	vanetls "github.com/zeeplabs/zeep-vane/internal/tls"
@@ -118,6 +119,16 @@ func NewServeCmd() *cobra.Command {
 				return err
 			}
 			go digestScheduler.Run(ctx)
+
+			// The daily domain-health scheduler runs on its own 00:00-UTC
+			// timer, gated by a third advisory lock so only one replica runs
+			// it (domain-health-monitoring DHM-01..DHM-09). Stopped by the
+			// same ctx cancellation as the poller, pruner and digest.
+			domainHealthScheduler, err := newDomainHealthScheduler(pool, cfg, logger)
+			if err != nil {
+				return err
+			}
+			go domainHealthScheduler.Run(ctx)
 
 			addr := fmt.Sprintf(":%d", cfg.Port)
 			srv := &http.Server{Addr: addr, Handler: serveAdminHandler(pool, cfg, logger, pollerManager)}
@@ -444,6 +455,26 @@ func newDigestScheduler(pool *db.Pool, cfg config.Config, logger *zap.Logger) (*
 		db.NewServiceRepository(pool),
 		db.NewStatusIntervalRepository(pool),
 		db.NewIncidentRepository(pool),
+		notifier,
+		logger,
+	), nil
+}
+
+// newDomainHealthScheduler builds the daily domain-health scheduler with its
+// production dependencies: the system tenant lister, the domain repository,
+// the RDAP client pointed at the IANA-bootstrapped default endpoint, and the
+// shared notification service.
+func newDomainHealthScheduler(pool *db.Pool, cfg config.Config, logger *zap.Logger) (*DomainHealthScheduler, error) {
+	notifier, err := newNotifyService(pool, cfg, logger)
+	if err != nil {
+		return nil, err
+	}
+	return NewDomainHealthScheduler(
+		cfg.DatabaseURL,
+		pool,
+		db.NewSystemTenantLister(pool),
+		db.NewDomainRepository(pool),
+		rdap.NewClient(rdap.DefaultBaseURL),
 		notifier,
 		logger,
 	), nil

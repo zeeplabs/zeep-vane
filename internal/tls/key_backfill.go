@@ -7,12 +7,16 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/zeeplabs/zeep-vane/internal/db"
+	"github.com/zeeplabs/zeep-vane/internal/pglock"
 )
 
-// backfillAdvisoryLockKey is a fixed advisory-lock key that serializes the
-// legacy-key backfill across replicas booting at the same time (AD-030). It
-// is unrelated to the pglock keys CertMagic uses for storage locking.
-const backfillAdvisoryLockKey int64 = 727200003
+// backfillAdvisoryLockKey is the advisory-lock key that serializes the
+// legacy-key backfill across replicas booting at the same time (AD-030).
+// Value from pglock's reserved-key registry: it previously reused
+// 727200003, which retention's prune leader lock also held, so a boot
+// backfill could silently skip (or make the pruner skip a tick). It is
+// unrelated to the pglock keys CertMagic uses for storage locking.
+const backfillAdvisoryLockKey int64 = pglock.TLSKeyBackfillLockKey
 
 // EncryptLegacyKeys seals every private-key row ("key" ending in ".key") that
 // is still plaintext, so databases created before key encryption (AD-030) do

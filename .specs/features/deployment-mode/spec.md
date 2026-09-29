@@ -19,7 +19,7 @@ Decisão de negócio (Julio, 2026-09-15): criar um env var de modo de distribui�
 | Feature | Reason |
 | --- | --- |
 | Badge visual "Self-hosted" no canto da tela de login (do mock) | Fora do pedido explícito desta feature (só link de criar conta + gate de rota); pode ser adicionado depois trivialmente já que o sinal (`deployment_mode`) passa a existir — decisão de UI separada, não travada aqui. |
-| Bloquear `/bootstrap` por modo | `/bootstrap` já se autolimita (só funciona 1 vez, `bootstrapped=false`→`true`, 409 depois) independente do modo — SaaS também precisa rodar `/bootstrap` uma única vez pra criar o admin da própria Zeep. Nenhuma mudança necessária aqui. |
+| Bloquear `/bootstrap` por modo | **Revisão 2026-09-28 (`AD-041`): revertida.** A premissa original ("SaaS também precisa rodar `/bootstrap` uma única vez pra criar o admin da própria Zeep") estava errada — não existe papel de superadmin (`AD-003`), e o `bootstrap` só cria um `owner` do próprio tenant (`bootstrap_handler.go:181`), indistinguível de um `/signup` normal. Numa instância `saas` com banco zerado, `bootstrapped = COUNT(users) > 0` é `false` e todo visitante anônimo era mandado pra tela de primeiro-admin self-hosted. Decisão: `saas` **nunca** mostra o fluxo de primeiro-admin; `/bootstrap` é `self_hosted`-only, e SaaS sempre abre `/login` (cadastro via `/signup`). **Implementado** (`AD-041`): `AuthProvider` ganhou `bootstrapStatusResolved`; `RedirectToBootstrapIfNeeded`/`BootstrapRoute` (`App.tsx`) exigem `deploymentMode === "self_hosted"`. Pendente (hardening separado): `POST /api/bootstrap` responder `404` em `saas`. |
 | Migração de instalações já rodando | Nenhuma instalação self-hosted externa real em produção hoje (mesma premissa de `AD-022`) — sem preocupação de compatibilidade retroativa. |
 | Enforcement de billing/plano por modo | Já modelado como fora de escopo em `multi-tenancy-core`'s design.md; `deployment_mode` não mexe em `tenants.plan`. |
 
@@ -51,7 +51,7 @@ Decisão de negócio (Julio, 2026-09-15): criar um env var de modo de distribui�
 1. The system SHALL ler `VANE_DEPLOYMENT_MODE` no boot (`internal/config.Load`), aceitando somente `""` (ausente, equivale a `self_hosted`), `"self_hosted"` ou `"saas"`; qualquer outro valor SHALL falhar o boot com um erro claro (mesmo padrão das demais validações de `config.go`).
 2. WHILE `deployment_mode == self_hosted` (incluindo o default), `POST /api/signup`, `GET /api/signup/verify/{token}` e `POST /api/signup/resend-verification` SHALL responder 404, sem tocar o handler/repositório de signup.
 3. WHILE `deployment_mode == saas`, as 3 rotas acima SHALL se comportar exatamente como hoje, sem nenhuma mudança de contrato.
-4. `POST /api/bootstrap` SHALL continuar funcionando de forma idêntica em ambos os modos (sem gate novo) — sua própria checagem de `bootstrapped` já é a única proteção necessária.
+4. **Revisão 2026-09-28 (`AD-041`): revertida.** `POST /api/bootstrap` SHALL funcionar apenas em `self_hosted`; em `saas` SHALL responder `404` (mesmo gate da story acima, espelhado via `requireSelfHostedMode`). `GET /api/bootstrap/status` SHALL continuar público e sem gate em ambos os modos — o SPA lê `deployment_mode` dele antes de decidir qualquer coisa.
 
 **Independent Test**: sem `VANE_DEPLOYMENT_MODE` setado, `curl -X POST /api/signup` retorna 404; com `VANE_DEPLOYMENT_MODE=saas`, o mesmo `curl` funciona como hoje (cria tenant/envia verificação).
 

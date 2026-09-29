@@ -47,3 +47,31 @@ export function attachedPageColumn(domain: Pick<Domain, "attached_page_name" | "
   const extra = domain.attached_page_count - 1;
   return extra > 0 ? `${domain.attached_page_name} +${extra}` : domain.attached_page_name;
 }
+
+// daysRemainingFromExpiry returns whole days from now until expiresAt, or
+// null when there is no expiry to show (domain-health-monitoring DHM-04).
+export function daysRemainingFromExpiry(expiresAt: string | null | undefined, now: Date = new Date()): number | null {
+  if (!expiresAt) return null;
+  return Math.floor((new Date(expiresAt).getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+}
+
+// expirationColor maps days remaining to its badge color: green farther than
+// 30 days, yellow 15-30 days, red under 15 days (including already expired).
+export function expirationColor(daysRemaining: number): string {
+  if (daysRemaining < 15) return "var(--color-critical)";
+  if (daysRemaining <= 30) return "var(--color-warning)";
+  return "var(--color-success)";
+}
+
+// domainRisk classifies a domain's at-a-glance list warning (DHM-08): NS
+// drift takes precedence over expiration state; a domain already past its
+// expiration date is "expired" (not "expiring soon" - a negative day count
+// read as still-upcoming), one inside the 30-day window is "expiring", and a
+// healthy or not-yet-checked domain is null.
+export function domainRisk(domain: Pick<Domain, "ns_drift_detected" | "expires_at">, now: Date = new Date()): "drift" | "expired" | "expiring" | null {
+  if (domain.ns_drift_detected) return "drift";
+  const days = daysRemainingFromExpiry(domain.expires_at, now);
+  if (days === null) return null;
+  if (days < 0) return "expired";
+  return days <= 30 ? "expiring" : null;
+}

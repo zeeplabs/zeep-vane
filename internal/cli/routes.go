@@ -163,8 +163,13 @@ func buildAdminRouter(pool *db.Pool, cfg config.Config, logger *zap.Logger, poll
 	// First-run bootstrap (SHD-14/SHD-15) - public and unauthenticated by
 	// necessity: no authenticated caller can exist before the very first
 	// admin does, same structural reason AcceptInvite above is public.
+	// The create route is self-hosted-only (AD-041): in saas mode a fresh
+	// instance opens /login and accounts come through /api/signup, so
+	// bootstrap must not exist there either - not just be hidden by the
+	// frontend. Status stays ungated in every mode: the SPA reads
+	// deployment_mode off it before it can decide anything.
 	r.Get("/api/bootstrap/status", bootstrapHandler.Status)
-	r.With(credentialLimiter.Middleware).Post("/api/bootstrap", bootstrapHandler.Create)
+	r.With(requireSelfHostedMode(cfg.DeploymentMode), credentialLimiter.Middleware).Post("/api/bootstrap", bootstrapHandler.Create)
 
 	// Public branding (login screen + sidebar, both render without an
 	// owner-role check) - deliberately not behind ownerOnly like
@@ -347,10 +352,12 @@ func requireSaaSMode(deploymentMode string) func(http.Handler) http.Handler {
 
 // requireSelfHostedMode (AD-034, SAASMAIL-09/10/11) 404s the wrapped route
 // unless deploymentMode is self_hosted - the exact mirror of
-// requireSaaSMode. Used only on the 4 /api/integrations/email* routes: in
-// saas mode a tenant never connects its own provider (email always goes
-// through zeep-notification-service instead), so these routes must not
-// exist there, not just be hidden by the frontend.
+// requireSaaSMode. Used on the 4 /api/integrations/email* routes (in saas
+// mode a tenant never connects its own provider - email always goes through
+// zeep-notification-service instead) and on POST /api/bootstrap (AD-041: in
+// saas mode there is no first-admin bootstrap flow - a fresh instance opens
+// /login and accounts come through /api/signup). These routes must not exist
+// there, not just be hidden by the frontend.
 func requireSelfHostedMode(deploymentMode string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

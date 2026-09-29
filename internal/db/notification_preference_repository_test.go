@@ -245,3 +245,43 @@ func TestNotificationPreferenceRepository_ResolveEnabledForUsers_EmptyInput_Retu
 		t.Errorf("ResolveEnabledForUsers(nil) = %v, want empty map", got)
 	}
 }
+
+// TestNotificationPreferenceRepository_Upsert_DomainHealthTypes_Admitted
+// covers T2's done-when: migration 0042's CHECK constraint admits both new
+// domain-health types alongside the original three.
+func TestNotificationPreferenceRepository_Upsert_DomainHealthTypes_Admitted(t *testing.T) {
+	repo, pool := newNotificationPreferenceRepositoryForTest(t)
+	ctx := context.Background()
+	userID := notificationFixtureUser(t, pool)
+
+	if err := repo.Upsert(ctx, userID, map[string]bool{
+		NotificationTypeDomainExpiring: true,
+		NotificationTypeDomainNSDrift:  false,
+	}); err != nil {
+		t.Fatalf("Upsert(domain health types) returned unexpected error: %v", err)
+	}
+
+	got, err := repo.Get(ctx, userID)
+	if err != nil {
+		t.Fatalf("Get() returned unexpected error: %v", err)
+	}
+	if !got[NotificationTypeDomainExpiring] {
+		t.Errorf("Get()[%s] = false, want true", NotificationTypeDomainExpiring)
+	}
+	if got[NotificationTypeDomainNSDrift] {
+		t.Errorf("Get()[%s] = true, want false", NotificationTypeDomainNSDrift)
+	}
+}
+
+// TestNotificationPreferenceRepository_Upsert_UnknownType_Rejected covers
+// T2's done-when: a sixth, unrecognized notification type still fails the
+// CHECK constraint instead of being silently stored.
+func TestNotificationPreferenceRepository_Upsert_UnknownType_Rejected(t *testing.T) {
+	repo, pool := newNotificationPreferenceRepositoryForTest(t)
+	userID := notificationFixtureUser(t, pool)
+
+	err := repo.Upsert(context.Background(), userID, map[string]bool{"domain_unknown": true})
+	if err == nil {
+		t.Fatal("Upsert(unknown type) returned nil error, want a CHECK constraint violation")
+	}
+}

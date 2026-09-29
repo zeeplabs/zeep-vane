@@ -8,7 +8,14 @@ import { formatDateTime } from "../../lib/formatDate";
 import { useDNSTarget } from "../status-pages/hooks";
 import type { Domain } from "../../types/api";
 import { useDeleteDomain, useRecheckDomain } from "./hooks";
-import { attachedPageColumn, domainTypeLabel, sslStatusColor, sslStatusLabel } from "./domainStatusMeta";
+import {
+  attachedPageColumn,
+  daysRemainingFromExpiry,
+  domainTypeLabel,
+  expirationColor,
+  sslStatusColor,
+  sslStatusLabel,
+} from "./domainStatusMeta";
 import { DomainStatusTag } from "./DomainStatusTag";
 
 export interface DomainDetailDrawerProps {
@@ -32,6 +39,7 @@ export function DomainDetailDrawer({ domain, onClose }: DomainDetailDrawerProps)
   const { data: dnsTarget } = useDNSTarget();
   const recheckDomain = useRecheckDomain();
   const deleteDomain = useDeleteDomain();
+  const healthDaysRemaining = current ? daysRemainingFromExpiry(current.expires_at) : null;
 
   useEffect(() => {
     setCurrent(domain);
@@ -131,6 +139,116 @@ export function DomainDetailDrawer({ domain, onClose }: DomainDetailDrawerProps)
                   </div>
                 </div>
               ) : null}
+
+              {/* Domain health (domain-health-monitoring DHM-04/DHM-08):
+                  RDAP expiration/registrar plus the NS baseline/drift state,
+                  all read-only. A domain whose health check has not run yet
+                  (last_rdap_check_at null) shows a "not checked yet" state
+                  instead of blank fields. */}
+              <div data-testid="domain-health" className="flex flex-col gap-3">
+                <div className="text-[10.5px] font-bold uppercase tracking-wide text-text-muted">
+                  {t("domains.detail.health.title")}
+                </div>
+
+                {!current.last_rdap_check_at ? (
+                  <p className="text-[13px] text-text-muted">{t("domains.detail.health.notChecked")}</p>
+                ) : (
+                  <>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <div className="mb-1 text-[10.5px] font-bold uppercase tracking-wide text-text-muted">
+                          {t("domains.detail.health.expiresLabel")}
+                        </div>
+                        <div data-testid="expires-at" className="text-[15px] font-bold text-text">
+                          {current.expires_at ? formatDateTime(current.expires_at, i18n.language) : "—"}
+                        </div>
+                      </div>
+                      <div>
+                        <div className="mb-1 text-[10.5px] font-bold uppercase tracking-wide text-text-muted">
+                          {t("domains.detail.health.daysRemainingLabel")}
+                        </div>
+                        {healthDaysRemaining !== null ? (
+                          <div
+                            data-testid="days-remaining"
+                            className="text-[15px] font-bold"
+                            style={{ color: expirationColor(healthDaysRemaining) }}
+                          >
+                            {t("domains.detail.health.daysRemaining", { days: healthDaysRemaining })}
+                          </div>
+                        ) : (
+                          <div className="text-[15px] font-bold text-text-muted">—</div>
+                        )}
+                      </div>
+                      <div>
+                        <div className="mb-1 text-[10.5px] font-bold uppercase tracking-wide text-text-muted">
+                          {t("domains.detail.health.registrarLabel")}
+                        </div>
+                        <div className="text-[15px] font-bold text-text">{current.registrar ?? "—"}</div>
+                      </div>
+                      <div>
+                        <div className="mb-1 text-[10.5px] font-bold uppercase tracking-wide text-text-muted">
+                          {t("domains.detail.health.lastCheckLabel")}
+                        </div>
+                        <div className="text-[15px] font-bold text-text">
+                          {formatDateTime(current.last_rdap_check_at, i18n.language)}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div>
+                      <div className="mb-1 flex items-center gap-2 text-[10.5px] font-bold uppercase tracking-wide text-text-muted">
+                        {t("domains.detail.health.nameserversLabel")}
+                        {current.ns_drift_detected ? (
+                          <span
+                            data-testid="ns-drift-badge"
+                            className="rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-critical"
+                            style={{ backgroundColor: "color-mix(in srgb, var(--color-critical) 15%, transparent)" }}
+                          >
+                            {t("domains.detail.health.driftBadge")}
+                          </span>
+                        ) : null}
+                      </div>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <div className="mb-1 text-[10.5px] font-bold uppercase tracking-wide text-text-muted">
+                            {t("domains.detail.health.expectedNsLabel")}
+                          </div>
+                          <div data-testid="expected-ns" className="font-mono text-[12.5px] text-text-muted">
+                            {(current.expected_ns ?? []).join(", ") || "—"}
+                          </div>
+                        </div>
+                        <div>
+                          <div className="mb-1 text-[10.5px] font-bold uppercase tracking-wide text-text-muted">
+                            {t("domains.detail.health.currentNsLabel")}
+                          </div>
+                          <div
+                            data-testid="current-ns"
+                            className="font-mono text-[12.5px]"
+                            style={{ color: current.ns_drift_detected ? "var(--color-critical)" : undefined }}
+                          >
+                            {(current.current_ns ?? []).join(", ") || "—"}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {current.rdap_last_error ? (
+                      <p
+                        role="status"
+                        data-testid="rdap-error"
+                        className="rounded-md border px-3 py-2 text-xs"
+                        style={{
+                          borderColor: "color-mix(in srgb, var(--color-warning) 40%, transparent)",
+                          backgroundColor: "color-mix(in srgb, var(--color-warning) 10%, transparent)",
+                          color: "var(--color-warning)",
+                        }}
+                      >
+                        {t("domains.detail.health.rdapError", { error: current.rdap_last_error })}
+                      </p>
+                    ) : null}
+                  </>
+                )}
+              </div>
 
               {removeError ? (
                 <p role="alert" className="text-xs text-critical">

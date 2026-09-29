@@ -214,6 +214,15 @@ export const domains: Domain[] = [
     last_error: null,
     attached_page_name: "Status Acme",
     attached_page_count: 1,
+    // Health-checked domain (DHM-04/DHM-08): expiration, registrar and a
+    // learned, matching NS baseline.
+    expires_at: new Date(Date.now() + 1000 * 60 * 60 * 24 * 20).toISOString(),
+    registrar: "GoDaddy.com, LLC",
+    expected_ns: ["ns1.acme.com", "ns2.acme.com"],
+    current_ns: ["ns1.acme.com", "ns2.acme.com"],
+    ns_drift_detected: false,
+    last_rdap_check_at: new Date(Date.now() - 1000 * 60 * 60 * 24).toISOString(),
+    rdap_last_error: null,
   },
   {
     id: "dom-2",
@@ -226,6 +235,15 @@ export const domains: Domain[] = [
     last_error: null,
     attached_page_name: null,
     attached_page_count: 0,
+    // Never health-checked: every health field is null (DHM-04's "not
+    // checked yet" state).
+    expires_at: null,
+    registrar: null,
+    expected_ns: null,
+    current_ns: null,
+    ns_drift_detected: false,
+    last_rdap_check_at: null,
+    rdap_last_error: null,
   },
 ];
 

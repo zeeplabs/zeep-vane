@@ -61,6 +61,8 @@ const notificationPreferenceDefaults: Record<string, boolean> = {
   incident_opened: true,
   incident_resolved: true,
   weekly_digest: false,
+  domain_expiring: true,
+  domain_ns_drift: true,
 };
 
 function resolveNotificationPreferences(): Record<string, boolean> {
@@ -74,6 +76,12 @@ function resolveNotificationPreferences(): Record<string, boolean> {
     weekly_digest:
       notificationPreferencesState.weekly_digest ??
       notificationPreferenceDefaults.weekly_digest,
+    domain_expiring:
+      notificationPreferencesState.domain_expiring ??
+      notificationPreferenceDefaults.domain_expiring,
+    domain_ns_drift:
+      notificationPreferencesState.domain_ns_drift ??
+      notificationPreferenceDefaults.domain_ns_drift,
   };
 }
 
@@ -483,6 +491,13 @@ function toDomainResponse(domain: Domain) {
     last_error: domain.last_error,
     attached_page_name: domain.attached_page_name,
     attached_page_count: domain.attached_page_count,
+    expires_at: domain.expires_at ?? null,
+    registrar: domain.registrar ?? null,
+    expected_ns: domain.expected_ns ?? null,
+    current_ns: domain.current_ns ?? null,
+    ns_drift_detected: domain.ns_drift_detected ?? false,
+    last_rdap_check_at: domain.last_rdap_check_at ?? null,
+    rdap_last_error: domain.rdap_last_error ?? null,
   };
 }
 
@@ -864,7 +879,13 @@ export const handlers = [
     if (!body) {
       return HttpResponse.json({ error: "invalid request body" }, { status: 422 });
     }
-    for (const key of ["incident_opened", "incident_resolved", "weekly_digest"]) {
+    for (const key of [
+      "incident_opened",
+      "incident_resolved",
+      "weekly_digest",
+      "domain_expiring",
+      "domain_ns_drift",
+    ]) {
       if (typeof body[key] === "boolean") {
         notificationPreferencesState[key] = body[key];
       }
@@ -1076,6 +1097,13 @@ export const handlers = [
       last_error: null,
       attached_page_name: null,
       attached_page_count: 0,
+      expires_at: null,
+      registrar: null,
+      expected_ns: null,
+      current_ns: null,
+      ns_drift_detected: false,
+      last_rdap_check_at: null,
+      rdap_last_error: null,
     };
     domainsState.push(created);
     return HttpResponse.json(toDomainResponse(created), { status: 201 });
