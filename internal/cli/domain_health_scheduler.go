@@ -283,18 +283,46 @@ func (s *DomainHealthScheduler) checkAndPersist(ctx context.Context, tenant db.T
 	}
 
 	if expiringSummary != nil {
-		if err := s.notifier.NotifyDomainExpiring(ctx, tenant.ID, *expiringSummary); err != nil {
+		summary := *expiringSummary
+		if err := s.notifyTenantScoped(ctx, tenant.ID, func(tenantCtx context.Context) error {
+			return s.notifier.NotifyDomainExpiring(tenantCtx, tenant.ID, summary)
+		}); err != nil {
 			s.logger.Error("domain-health: failed to send expiration notification",
 				zap.String("hostname", domain.Hostname), zap.Error(err))
 		}
 	}
 	if driftSummary != nil {
-		if err := s.notifier.NotifyDomainNSDrift(ctx, tenant.ID, *driftSummary); err != nil {
+		summary := *driftSummary
+		if err := s.notifyTenantScoped(ctx, tenant.ID, func(tenantCtx context.Context) error {
+			return s.notifier.NotifyDomainNSDrift(tenantCtx, tenant.ID, summary)
+		}); err != nil {
 			s.logger.Error("domain-health: failed to send NS drift notification",
 				zap.String("hostname", domain.Hostname), zap.Error(err))
 		}
 	}
 	return nil
+}
+
+// notifyTenantScoped runs fn under tenantID's own tenant transaction, so the
+// notifier's member/preference lookups (both RLS-scoped reads) see
+// app.tenant_id set on the connection. Without this, the notification path's
+// RLS-enforced tables resolve to zero rows and every alert silently vanishes
+// (no error, no log) - the notifier's connection would otherwise be a bare
+// pool connection with no tenant session variables at all. The transaction
+// stays open across fn's outbound email sends, mirroring the poller's
+// per-tenant notification calls (analyzer.go), which accept the same
+// trade-off rather than splitting read/send phases like DigestScheduler does.
+func (s *DomainHealthScheduler) notifyTenantScoped(ctx context.Context, tenantID string, fn func(context.Context) error) error {
+	tx, err := s.pool.BeginTenantTx(ctx, "", tenantID)
+	if err != nil {
+		return fmt.Errorf("domain-health: failed to begin tenant transaction for notification: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	if err := fn(db.WithTenantTx(ctx, tx)); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
 }
 
 // persist writes one domain's health-check result under its tenant's own
