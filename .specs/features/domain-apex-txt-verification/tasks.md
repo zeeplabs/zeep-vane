@@ -327,8 +327,8 @@ Tasks: T10, T11
 - Skill: NONE
 
 **Done when**:
-- [ ] New AD entry added with the *why*, not just the *what*, per `AGENTS.md` §6
-- [ ] Cross-reference to the `domain-health-monitoring` AD is explicit and accurate
+- [x] New AD entry added with the *why*, not just the *what*, per `AGENTS.md` §6
+- [x] Cross-reference to the `domain-health-monitoring` AD is explicit and accurate
 
 **Tests**: none
 **Gate**: none (docs)
