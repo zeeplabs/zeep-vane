@@ -278,9 +278,9 @@ Tasks: T10, T11
 - Skill: NONE
 
 **Done when**:
-- [ ] `sslStatusLabel`/`sslStatusColor` removed from the module and its test file
-- [ ] No remaining import of either symbol anywhere in `web/src` (grep confirms zero hits)
-- [ ] Gate check passes: `cd web && npm run test`
+- [x] `sslStatusLabel`/`sslStatusColor` removed from the module and its test file
+- [x] No remaining import of either symbol anywhere in `web/src` (grep confirms zero hits)
+- [x] Gate check passes: `cd web && npm run test`
 
 **Tests**: `web/src/features/domains/domainStatusMeta.test.ts`
 **Gate**: frontend (unit)

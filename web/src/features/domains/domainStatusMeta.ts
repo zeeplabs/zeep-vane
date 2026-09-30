@@ -1,11 +1,11 @@
 import type { TagVariant } from "../../components/ui/Tag";
-import type { Domain, DomainSSLStatus, DomainStatus } from "../../types/api";
+import type { Domain, DomainStatus } from "../../types/api";
 
 type Translator = (key: string, options?: Record<string, unknown>) => string;
 
-// Shared status badge metadata for every DomainStatus/DomainSSLStatus value
+// Shared status badge metadata for every DomainStatus value
 // (domains-status-pages-page T5), mirroring services/statusMeta.ts's
-// pattern so the redesigned Domínios tab's Status/SSL columns and detail
+// pattern so the redesigned Domínios tab's Status column and detail
 // drawer read from a single source of truth.
 export function domainStatusLabel(t: Translator, status: DomainStatus): string {
   return t(`domains.statusLabel.${status}`);
@@ -20,16 +20,6 @@ export const domainStatusVariant: Record<DomainStatus, TagVariant> = {
 export const domainStatusDotColor: Record<DomainStatus, string> = {
   pending: "var(--color-warning)",
   verified: "var(--color-success)",
-  error: "var(--color-critical)",
-};
-
-export function sslStatusLabel(t: Translator, status: DomainSSLStatus): string {
-  return t(`domains.sslStatusLabel.${status}`);
-}
-
-export const sslStatusColor: Record<DomainSSLStatus, string> = {
-  pending: "var(--color-warning)",
-  active: "var(--color-success)",
   error: "var(--color-critical)",
 };
 
