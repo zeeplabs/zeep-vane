@@ -150,11 +150,11 @@ Tasks: T10, T11
 - Skill: NONE
 
 **Done when**:
-- [ ] `netApexTXTVerifier.Verify` performs a real `LookupTXT` against `_vane-verify.<hostname>` and reports `TXTFound`/`TXTMatches` correctly for: exact match, value mismatch, absent record, multiple records with exactly one matching
-- [ ] No TCP/TLS dial exists in this file
-- [ ] Unit tests cover all branches above via an injected fake resolver - DATV-03, DATV-04
-- [ ] Existing `domainVerifier`/`netDomainVerifier`/`domainVerificationResult` are unchanged
-- [ ] Gate check passes: `go test ./internal/api && go build ./... && gofmt -l . && go vet ./...`
+- [x] `netApexTXTVerifier.Verify` performs a real `LookupTXT` against `_vane-verify.<hostname>` and reports `TXTFound`/`TXTMatches` correctly for: exact match, value mismatch, absent record, multiple records with exactly one matching
+- [x] No TCP/TLS dial exists in this file
+- [x] Unit tests cover all branches above via an injected fake resolver - DATV-03, DATV-04
+- [x] Existing `domainVerifier`/`netDomainVerifier`/`domainVerificationResult` are unchanged
+- [x] Gate check passes: `go test ./internal/api && go build ./... && gofmt -l . && go vet ./...`
 
 **Tests**: `internal/api/domain_txt_verifier_test.go`
 **Gate**: quick
