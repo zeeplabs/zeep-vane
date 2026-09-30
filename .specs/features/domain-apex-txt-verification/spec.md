@@ -92,5 +92,5 @@ The subdomain side (`AttachDomainDrawer.tsx`, `StatusPagesHandler.VerifyDomain`,
 | DATV-04 | P1-AC4: TXT lookup failure maps to a distinct, non-CNAME/TLS error message | complete |
 | DATV-05 | P1-AC5: re-verification of an already-verified domain still performs a real check | complete |
 | DATV-06 | P2-AC1: SSL status card removed from domain detail view | complete |
-| DATV-07 | P2-AC2: SSL status column removed from domains list table | pending |
+| DATV-07 | P2-AC2: SSL status column removed from domains list table | complete |
 | DATV-08 | P2-AC3: `ssl_status` field removed from API responses | complete |

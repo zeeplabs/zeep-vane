@@ -253,10 +253,10 @@ Tasks: T10, T11
 - Skill: NONE
 
 **Done when**:
-- [ ] SSL column removed from table header and body
-- [ ] Existing Status/health-risk columns (unrelated to this change) still render correctly
-- [ ] Component test updated to assert no SSL column/header text present
-- [ ] Gate check passes: `cd web && npm run test`
+- [x] SSL column removed from table header and body
+- [x] Existing Status/health-risk columns (unrelated to this change) still render correctly
+- [x] Component test updated to assert no SSL column/header text present
+- [x] Gate check passes: `cd web && npm run test`
 
 **Tests**: `web/src/features/domains/DomainsTable.test.tsx`
 **Gate**: frontend (unit)
