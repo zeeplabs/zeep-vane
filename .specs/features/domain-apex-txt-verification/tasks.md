@@ -124,11 +124,11 @@ Tasks: T10, T11
 - Skill: NONE
 
 **Done when**:
-- [ ] `Domain.VerificationToken` populated by `Create`, never empty
-- [ ] `ListPaginated`/`GetByID` scans include `verification_token`
-- [ ] `SSLStatus`/`sslStatus` parameter intentionally untouched (removed in T4)
-- [ ] Integration tests added for token presence, run under RLS per `AGENTS.md` §3 (disposable container only)
-- [ ] Gate check passes: `make test-integration`
+- [x] `Domain.VerificationToken` populated by `Create`, never empty
+- [x] `ListPaginated`/`GetByID` scans include `verification_token`
+- [x] `SSLStatus`/`sslStatus` parameter intentionally untouched (removed in T4)
+- [x] Integration tests added for token presence, run under RLS per `AGENTS.md` §3 (disposable container only)
+- [x] Gate check passes: `make test-integration`
 
 **Tests**: `internal/db/domain_repository_test.go`
 **Gate**: full (integration)

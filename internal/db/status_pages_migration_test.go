@@ -36,7 +36,7 @@ func TestStatusPagesMigration_DuplicateDomainSubdomainPair_RejectedByPartialInde
 
 	hostname := fmt.Sprintf("status-pages-migration-test-%d.example.com", time.Now().UnixNano())
 	var domainID string
-	row := pool.QueryRow(ctx, "INSERT INTO domains (hostname) VALUES ($1) RETURNING id", hostname)
+	row := pool.QueryRow(ctx, "INSERT INTO domains (hostname, verification_token) VALUES ($1, $2) RETURNING id", hostname, "status-pages-fixture-token")
 	if err := row.Scan(&domainID); err != nil {
 		t.Fatalf("domain fixture insert returned unexpected error: %v", err)
 	}

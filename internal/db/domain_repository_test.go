@@ -177,6 +177,98 @@ func TestDomainRepository_Create_DefaultsToPendingCustom(t *testing.T) {
 	}
 }
 
+// TestDomainRepository_Create_PersistsNonEmptyVerificationToken covers
+// DATV-01: Create generates and persists a non-empty verification token.
+func TestDomainRepository_Create_PersistsNonEmptyVerificationToken(t *testing.T) {
+	repo, pool := newDomainRepoTestPool(t)
+	domain := &Domain{Hostname: fmt.Sprintf("verify-token-%d.example.com", time.Now().UnixNano())}
+
+	if err := repo.Create(context.Background(), domain); err != nil {
+		t.Fatalf("Create() returned unexpected error: %v", err)
+	}
+	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), "DELETE FROM domains WHERE id = $1", domain.ID) })
+
+	if domain.VerificationToken == "" {
+		t.Error("VerificationToken = \"\", want a non-empty generated token")
+	}
+	if len(domain.VerificationToken) != 32 {
+		t.Errorf("len(VerificationToken) = %d, want 32 (16 random bytes, hex-encoded)", len(domain.VerificationToken))
+	}
+}
+
+// TestDomainRepository_Create_TwoDomains_DistinctVerificationTokens covers
+// the spec's "unique verification token" requirement: two domains never
+// share a token.
+func TestDomainRepository_Create_TwoDomains_DistinctVerificationTokens(t *testing.T) {
+	repo, pool := newDomainRepoTestPool(t)
+	ctx := context.Background()
+	a := &Domain{Hostname: fmt.Sprintf("verify-token-a-%d.example.com", time.Now().UnixNano())}
+	b := &Domain{Hostname: fmt.Sprintf("verify-token-b-%d.example.com", time.Now().UnixNano())}
+	if err := repo.Create(ctx, a); err != nil {
+		t.Fatalf("Create(a) returned unexpected error: %v", err)
+	}
+	t.Cleanup(func() { _, _ = pool.Exec(ctx, "DELETE FROM domains WHERE id = $1", a.ID) })
+	if err := repo.Create(ctx, b); err != nil {
+		t.Fatalf("Create(b) returned unexpected error: %v", err)
+	}
+	t.Cleanup(func() { _, _ = pool.Exec(ctx, "DELETE FROM domains WHERE id = $1", b.ID) })
+
+	if a.VerificationToken == b.VerificationToken {
+		t.Errorf("both domains got the same VerificationToken %q, want distinct tokens", a.VerificationToken)
+	}
+}
+
+// TestDomainRepository_GetByID_ReturnsPersistedVerificationToken covers T2's
+// Done-when: GetByID's scan includes verification_token.
+func TestDomainRepository_GetByID_ReturnsPersistedVerificationToken(t *testing.T) {
+	repo, pool := newDomainRepoTestPool(t)
+	domain := &Domain{Hostname: fmt.Sprintf("verify-token-getbyid-%d.example.com", time.Now().UnixNano())}
+	if err := repo.Create(context.Background(), domain); err != nil {
+		t.Fatalf("setup Create() returned unexpected error: %v", err)
+	}
+	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), "DELETE FROM domains WHERE id = $1", domain.ID) })
+
+	got, err := repo.GetByID(context.Background(), domain.ID)
+	if err != nil {
+		t.Fatalf("GetByID() returned unexpected error: %v", err)
+	}
+	if got.VerificationToken == "" {
+		t.Error("GetByID() VerificationToken = \"\", want the persisted token")
+	}
+	if got.VerificationToken != domain.VerificationToken {
+		t.Errorf("GetByID() VerificationToken = %q, want %q", got.VerificationToken, domain.VerificationToken)
+	}
+}
+
+// TestDomainRepository_ListPaginated_IncludesVerificationToken covers T2's
+// Done-when: ListPaginated's scan includes verification_token.
+func TestDomainRepository_ListPaginated_IncludesVerificationToken(t *testing.T) {
+	repo, pool := newDomainRepoTestPool(t)
+	domain := &Domain{Hostname: fmt.Sprintf("verify-token-list-%d.example.com", time.Now().UnixNano())}
+	if err := repo.Create(context.Background(), domain); err != nil {
+		t.Fatalf("setup Create() returned unexpected error: %v", err)
+	}
+	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), "DELETE FROM domains WHERE id = $1", domain.ID) })
+
+	items, _, err := repo.ListPaginated(context.Background(), 1, 1000)
+	if err != nil {
+		t.Fatalf("ListPaginated() returned unexpected error: %v", err)
+	}
+	var found *Domain
+	for i := range items {
+		if items[i].ID == domain.ID {
+			found = &items[i]
+			break
+		}
+	}
+	if found == nil {
+		t.Fatalf("created domain %s not found in ListPaginated()", domain.ID)
+	}
+	if found.VerificationToken != domain.VerificationToken {
+		t.Errorf("ListPaginated() VerificationToken = %q, want %q", found.VerificationToken, domain.VerificationToken)
+	}
+}
+
 // TestDomainRepository_GetByID_Existing_ReturnsDomain covers a basic lookup.
 func TestDomainRepository_GetByID_Existing_ReturnsDomain(t *testing.T) {
 	repo, pool := newDomainRepoTestPool(t)
@@ -572,7 +664,8 @@ func seedTenantWithDomain(t *testing.T, pool *Pool, prefix string) (tenantID, do
 		t.Fatalf("seed tenant insert returned unexpected error: %v", err)
 	}
 	if err := pool.QueryRow(txCtx,
-		"INSERT INTO domains (hostname) VALUES ($1) RETURNING id", prefix+"-domain.example.com",
+		"INSERT INTO domains (hostname, verification_token) VALUES ($1, $2) RETURNING id",
+		prefix+"-domain.example.com", "rls-fixture-verification-token",
 	).Scan(&domainID); err != nil {
 		_ = tx.Rollback(ctx)
 		t.Fatalf("seed domain insert returned unexpected error: %v", err)

@@ -86,7 +86,7 @@ The subdomain side (`AttachDomainDrawer.tsx`, `StatusPagesHandler.VerifyDomain`,
 
 | ID | Acceptance Criterion (User Story) | Status |
 | --- | --- | --- |
-| DATV-01 | P1-AC1: verification token generated and persisted at domain creation | pending |
+| DATV-01 | P1-AC1: verification token generated and persisted at domain creation | complete |
 | DATV-02 | P1-AC2: detail view shows TXT record name/value instruction, not CNAME | pending |
 | DATV-03 | P1-AC3: verify performs real TXT lookup, matches token exactly to mark verified | pending |
 | DATV-04 | P1-AC4: TXT lookup failure maps to a distinct, non-CNAME/TLS error message | pending |
