@@ -203,9 +203,9 @@ Tasks: T10, T11
 - Skill: NONE
 
 **Done when**:
-- [ ] `verification_txt_value` typed on `Domain`, matching the backend JSON key exactly
-- [ ] MSW domain fixtures include the field (shape parity with T4's response)
-- [ ] `npx tsc -b --noEmit` passes (in `web/`) with zero new errors
+- [x] `verification_txt_value` typed on `Domain`, matching the backend JSON key exactly
+- [x] MSW domain fixtures include the field (shape parity with T4's response)
+- [x] `npx tsc -b --noEmit` passes (in `web/`) with zero new errors
 
 **Tests**: none (type + fixture; exercised by downstream component tests)
 **Gate**: frontend (typecheck)

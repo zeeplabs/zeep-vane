@@ -38,6 +38,7 @@ function baseDomain(overrides: Partial<Domain>): Domain {
     ssl_status: "active",
     verified_at: new Date().toISOString(),
     last_error: null,
+    verification_txt_value: "dom-fixture-token",
     attached_page_name: null,
     attached_page_count: 0,
     expires_at: null,

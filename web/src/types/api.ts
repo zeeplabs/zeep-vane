@@ -122,6 +122,11 @@ export interface Domain {
   ssl_status: DomainSSLStatus;
   verified_at: string | null;
   last_error: string | null;
+  // verification_txt_value is the exact value the operator must publish as a
+  // TXT record at _vane-verify.<hostname> to prove root-domain ownership
+  // (domain-apex-txt-verification DATV-02), mirroring DomainsHandler's
+  // domainResponse. It is always present (never empty) on a domain row.
+  verification_txt_value: string;
   // attached_page_name/attached_page_count are the read-side join over
   // status_pages.domain_id (domains-status-pages-page DSP-02/03/04) - null/0
   // when no status page is attached, the earliest-created attached page's

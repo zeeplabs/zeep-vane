@@ -212,6 +212,7 @@ export const domains: Domain[] = [
     ssl_status: "active",
     verified_at: new Date(Date.now() - 1000 * 60 * 60 * 24 * 9).toISOString(),
     last_error: null,
+    verification_txt_value: "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6",
     attached_page_name: "Status Acme",
     attached_page_count: 1,
     // Health-checked domain (DHM-04/DHM-08): expiration, registrar and a
@@ -233,6 +234,7 @@ export const domains: Domain[] = [
     ssl_status: "pending",
     verified_at: null,
     last_error: null,
+    verification_txt_value: "f6e5d4c3b2a1f0e9d8c7b6a5f4e3d2c1",
     attached_page_name: null,
     attached_page_count: 0,
     // Never health-checked: every health field is null (DHM-04's "not
