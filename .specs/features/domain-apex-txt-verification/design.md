@@ -1,7 +1,7 @@
 # Domain Apex TXT Verification Design
 
 **Spec**: `.specs/features/domain-apex-txt-verification/spec.md`
-**Status**: Draft
+**Status**: Approved (amended during Execute — see Amendments at end)
 
 ---
 
@@ -115,3 +115,14 @@ graph TD
 - **Unit**: `checkTXT` against an injected fake resolver (mirroring today's `domainVerifier` interface fake used by `domains_handler_test.go`) — exact match, mismatch, absent-record, multiple-TXT-records-only-one-matches cases. `mapDomainVerificationResult` table-driven cases for the new result shape.
 - **Integration**: `DomainRepository.Create` persists a non-empty `VerificationToken`; migration `0044` backfills existing rows (test against a pre-migration fixture if the migration test harness supports it, otherwise covered by the migration itself running cleanly in the disposable-Postgres integration gate per `AGENTS.md` §3).
 - **Frontend**: `DomainDetailDrawer.test.tsx` updated for the TXT table (record name/value rendered, copy interaction if added) and asserts no SSL card renders; `DomainsTable.test.tsx` asserts no SSL column; MSW mocks (`web/src/test/msw/handlers.ts` if `Domain` fixtures live there) updated to drop `ssl_status` and add the new TXT-value field; pt-BR/en i18n parity check (`npm run i18n:check`).
+
+---
+
+## Amendments (during Execute)
+
+Two defects in the original Task Breakdown surfaced before T1 (found by the Batch A worker, confirmed against the code, resolution approved by the user). This section supersedes the affected lines above; the task file (`tasks.md`) carries the same SPEC_DEVIATION note.
+
+**A1 — the verifier is shared, not domains-private.** `domainVerifier` and `domainVerificationResult` (`internal/api/domain_verifier.go`) are consumed by **both** `DomainsHandler` and `StatusPagesHandler.VerifyDomain` (status_pages_handler.go:51, 371-395, whose `verifyDomainResponse` serializes `ResolvedIPs`/`DNSResolved`/`DNSMatchesTarget`/`TLS*`). The original design ("internals rewritten in place") would therefore have silently changed the subdomain CNAME/TLS verify endpoint — which the spec marks Out of Scope and design.md §Architecture Overview requires to stay untouched. **Resolution:** the root-domain check is a new, separate `apexTXTVerifier` (+ `apexTXTResult{TXTFound,TXTMatches}`) in `internal/api/domain_txt_verifier.go`, injected into `DomainsHandler` only. `domainVerifier`/`netDomainVerifier`/`domainVerificationResult` stay byte-identical for `StatusPagesHandler`. The Code Reuse table row "`netDomainVerifier`/`domainVerifier` interface … internals rewritten" and the `mapDomainVerificationResult` component note are superseded accordingly.
+
+**A2 — `ssl_status` removal is compile-coupled and must be expand/contract.** Dropping `Domain.SSLStatus` / `SetVerificationResult`'s `sslStatus` parameter breaks `internal/api/domains_handler.go` (Go compile coupling), so a repo-only task cannot keep `make test-integration` green; the same holds on the frontend, where removing `Domain.ssl_status` breaks `DomainDetailDrawer`, `DomainsTable`, `domainStatusMeta`, and several fixtures, so `tsc` fails until every consumer is gone. **Resolution:** removal is ordered last, in one commit, after all readers are gone (`T4` for backend, with migration `0045` dropping the column; `T9` for frontend). `0044` only adds `verification_token`; the frontend adds `verification_txt_value` first (`T5`, additive), removes UI consumers (`T6`-`T8`), then drops the type/fixtures/locale keys (`T9`). This keeps every commit's gate green instead of leaving `develop` red between tasks.
+

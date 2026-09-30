@@ -9,7 +9,15 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 ---
 
 **Design**: `.specs/features/domain-apex-txt-verification/design.md`
-**Status**: Approved
+**Status**: Approved (restructured during Execute — see SPEC_DEVIATION below)
+
+---
+
+> **SPEC_DEVIATION (raised by Batch A worker, resolved before T1; approved by the user):** The original Task Breakdown had two compile-coupling defects.
+> 1. `db.Domain.SSLStatus` and `DomainRepository.SetVerificationResult`'s `sslStatus` parameter are consumed by `internal/api/domains_handler.go` (interface, `domainResponse`, `toDomainResponse`, `mapDomainVerificationResult`, `Verify`). Removing them in a `internal/db`-only task cannot keep `make test-integration` green.
+> 2. `domainVerifier` + `domainVerificationResult` are **shared** with `StatusPagesHandler.VerifyDomain` (subdomain CNAME/TLS flow), which `spec.md` (Out of Scope, "not deferred") and `design.md` require to stay untouched. Rewriting that shared struct to TXT-only would break the subdomain verify endpoint.
+>
+> **Resolution:** (a) the root-domain TXT check gets its **own** `apexTXTVerifier` interface + result type; `domainVerifier`/`netDomainVerifier`/`domainVerificationResult` stay byte-identical for status pages; (b) the `ssl_status` removal is **expand/contract** across two migrations — `0044` only adds `verification_token`, and `0045` drops `ssl_status` in T4 after every Go read path is gone, so no commit leaves `develop`'s integration gate red; (c) `Where` scopes widened to include the compile-coupled files. This supersedes `design.md`'s "internals rewritten in place" line (see its Amendments section).
 
 ---
 
@@ -35,8 +43,8 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 | Code Layer | Required Test Type | Coverage Expectation | Location Pattern | Run Command |
 | --- | --- | --- | --- | --- |
 | Go migration (`domains` columns) | none | Build/gate only - schema change verified by the repository tests that exercise it | `internal/db/migrations/` | `go build ./...` (embedded migration compile check) |
-| Go repository (`DomainRepository`) | integration | `Create` persists a non-empty `VerificationToken`; `SetVerificationResult` no longer touches `ssl_status`; existing `ListPaginated`/`GetByID` scans updated and still RLS-correct - DATV-01 | `internal/db/domain_repository_test.go` | `go test -tags=integration ./internal/db` |
-| Go domain logic (`netDomainVerifier.checkTXT`) | unit | All branches: exact match, value mismatch, record absent, multiple TXT records at the name with only one matching, resolver timeout - DATV-03, DATV-04 | `internal/api/domain_verifier_test.go` | `go test ./internal/api` |
+| Go repository (`DomainRepository`) | integration | `Create` persists a non-empty `VerificationToken`; `ListPaginated`/`GetByID` scans include `verification_token` and stay RLS-correct; `SetVerificationResult` drops `ssl_status` in T4 - DATV-01 | `internal/db/domain_repository_test.go` | `go test -tags=integration ./internal/db` |
+| Go domain logic (`netApexTXTVerifier`) | unit | All branches: exact match, value mismatch, record absent, multiple TXT records at the name with only one matching, resolver timeout - DATV-03, DATV-04 | `internal/api/domain_txt_verifier_test.go` | `go test ./internal/api` |
 | Go domain logic (`mapDomainVerificationResult`) | unit | Table-driven: found+match → verified/nil error; found+mismatch → error/mismatch message; not found → error/not-found message - DATV-03, DATV-04 | `internal/api/domains_handler_test.go` | `go test ./internal/api` |
 | Go API (`DomainsHandler.Verify`, `.Create`, `.List`) | integration | `Create` response has no `ssl_status` and (if exposed) a TXT value field; `Verify` end-to-end against an injected fake verifier persists `status`/`verified_at` correctly on both match and mismatch; re-verify-when-already-verified still calls the verifier (not short-circuited by state) - DATV-01, DATV-03, DATV-05, DATV-08 | `internal/api/domains_handler_test.go` | `go test -tags=integration ./internal/api` |
 | Frontend components (`DomainDetailDrawer`, `DomainsTable`) | unit (vitest + Testing Library) | TXT table renders record name/value; no SSL card/column renders anywhere; existing health-section/status-badge tests untouched - DATV-02, DATV-06, DATV-07 | `web/src/features/domains/DomainDetailDrawer.test.tsx`, `web/src/features/domains/DomainsTable.test.tsx` | `npm run test` (in `web/`) |
@@ -78,33 +86,34 @@ Tasks: T10, T11
 
 ## Task Breakdown
 
-### T1: Migration - `domains.verification_token` added, `domains.ssl_status` dropped
+### T1: Migration `0044` - add `domains.verification_token`
 
-**What**: New migration adds `verification_token TEXT NOT NULL` to `domains`, backfilling existing rows with a real generated value (`DEFAULT encode(gen_random_bytes(16), 'hex')` at add-time, then `ALTER COLUMN ... DROP DEFAULT` so new rows must supply their own token from application code, not the database). Same migration drops `ssl_status`. `.down.sql` reverses both: drops `verification_token`, re-adds `ssl_status TEXT NOT NULL DEFAULT 'pending'` matching `0029`'s original definition (including its `CHECK (ssl_status IN ('pending','active','error'))`).
-**Where**: `internal/db/migrations/0044_domain_txt_verification.up.sql`, `.down.sql`
+**What**: New migration adds `verification_token TEXT NOT NULL` to `domains`, backfilling existing rows with a real generated value (`DEFAULT encode(gen_random_bytes(16), 'hex')` at add-time, then `ALTER COLUMN ... DROP DEFAULT` so new rows must supply their own token from application code, not the database). This migration intentionally does **not** touch `ssl_status` — the drop is deferred to T4's second migration `0045`, after every Go read path stops selecting the column (expand/contract; see SPEC_DEVIATION above), so the integration gate stays green across commits. `.down.sql` drops `verification_token` only.
+**Where**: `internal/db/migrations/0044_domain_verification_token.up.sql`, `internal/db/migrations/0044_domain_verification_token.down.sql`
 **Depends on**: None
 **Reuses**: existing migration file-pair convention (see `0043_domain_last_rdap_success.up.sql`/`.down.sql`)
-**Requirement**: DATV-01 (prerequisite), DATV-08 (prerequisite)
+**Requirement**: DATV-01 (prerequisite)
 
 **Tools**:
 - MCP: NONE
 - Skill: NONE
 
 **Done when**:
-- [ ] `.up.sql` adds `verification_token` (backfilled, non-null, no lingering default) and drops `ssl_status`; `.down.sql` exactly reverses both, including the original `CHECK` constraint on the restored `ssl_status`
-- [ ] Migration numbered `0044` (next after `0043`), matches naming convention exactly
-- [ ] Gate check passes: `go build ./... && gofmt -l . && go vet ./...`
+- [x] `.up.sql` adds `verification_token` (backfilled, non-null, no lingering `DEFAULT`); `.down.sql` drops it
+- [x] `ssl_status` is deliberately left intact in this migration (dropped in T4/`0045`)
+- [x] Migration numbered `0044` (next after `0043`), matches naming convention exactly
+- [x] Gate check passes: `go build ./... && gofmt -l . && go vet ./...`
 
 **Tests**: none directly (exercised by T2's integration tests)
 **Gate**: build
 
-**Commit**: `feat(db): add domain verification token, drop ssl_status`
+**Commit**: `feat(db): add domain verification token`
 
 ---
 
-### T2: `DomainRepository` - `VerificationToken` field, drop `SSLStatus`
+### T2: `DomainRepository` - add `VerificationToken` (additive)
 
-**What**: `Domain` struct gains `VerificationToken string`; `SSLStatus` field removed. `Create`'s `INSERT`/`RETURNING`, `ListPaginated`/`GetByID`'s `SELECT` column lists, and `SetVerificationResult`'s `UPDATE`/signature are all updated to match (drop `ssl_status` everywhere, add `verification_token` to `Create`/`ListPaginated`/`GetByID`). `SetVerificationResult` drops its `sslStatus string` parameter. Token generation itself happens in `Create` (or the caller, per whichever existing `crypto/rand`-based token helper the codebase already uses elsewhere - confirm exact call site before writing a new one).
+**What**: `Domain` struct gains `VerificationToken string`. `Create` generates a token via the existing `crypto/rand`-based helper (confirm exact call site before writing a new one) and includes it in its `INSERT`/`RETURNING`; `ListPaginated`/`GetByID`'s `SELECT` column lists add `verification_token`. `SSLStatus` and `SetVerificationResult`'s `sslStatus` parameter are deliberately left in place here — their removal, and the column drop, happen atomically in T4 once the handler stops reading them (expand/contract, see SPEC_DEVIATION).
 **Where**: `internal/db/domain_repository.go`, `internal/db/domain_repository_test.go`
 **Depends on**: T1
 **Reuses**: existing `crypto/rand` token-generation helper (exact location confirmed at implementation time)
@@ -116,9 +125,9 @@ Tasks: T10, T11
 
 **Done when**:
 - [ ] `Domain.VerificationToken` populated by `Create`, never empty
-- [ ] `Domain.SSLStatus` removed from struct and all SQL
-- [ ] `SetVerificationResult` signature no longer takes `sslStatus`
-- [ ] Integration tests updated/added for token presence and the new `SetVerificationResult` signature, run under RLS per `AGENTS.md` §3 (disposable container only)
+- [ ] `ListPaginated`/`GetByID` scans include `verification_token`
+- [ ] `SSLStatus`/`sslStatus` parameter intentionally untouched (removed in T4)
+- [ ] Integration tests added for token presence, run under RLS per `AGENTS.md` §3 (disposable container only)
 - [ ] Gate check passes: `make test-integration`
 
 **Tests**: `internal/db/domain_repository_test.go`
@@ -128,11 +137,11 @@ Tasks: T10, T11
 
 ---
 
-### T3: `domain_verifier.go` - TXT lookup replaces CNAME/TLS check
+### T3: new `apexTXTVerifier` - TXT lookup for root-domain ownership
 
-**What**: `domainVerificationResult` rewritten: drop `ResolvedIPs`, `DNSMatchesTarget`, `TLSReachable`, `TLSCertValid`, `TLSError`; add `TXTFound bool`, `TXTMatches bool`. `netDomainVerifier.Verify(ctx, hostname, expectedToken string)` performs `net.Resolver.LookupTXT(ctx, "_vane-verify."+hostname)` and checks whether any returned value equals `expectedToken` exactly. `checkDNS`, `resolveIPs`, `dialTLS`, `verifyServedCert`, `ipSetsOverlap`, and the TLS-related imports/fields (`dialTimeout`'s ACME-headroom comment, `crypto/tls`, `crypto/x509` imports) are deleted - replaced by a single `checkTXT` method with its own bounded lookup timeout (mirrors today's 5s `context.WithTimeout` on `checkDNS`). The `domainVerifier` interface's `Verify` signature keeps its shape (`ctx, hostname, expectedTarget/expectedToken string`) so `DomainsHandler`'s test fake pattern is unaffected beyond the field-name rename.
-**Where**: `internal/api/domain_verifier.go`, its test file (create if none exists, or extend `internal/api/domains_handler_test.go`'s existing fake verifier if that's where it lives today)
-**Depends on**: T1 (needs `verification_token` to exist as the thing being checked, though this task itself has no DB dependency directly)
+**What**: New self-contained verifier for the root-domain flow in `internal/api/domain_txt_verifier.go`: `type apexTXTResult struct { TXTFound, TXTMatches bool }` and `type apexTXTVerifier interface { Verify(ctx context.Context, hostname, expectedToken string) apexTXTResult }`, implemented by `netApexTXTVerifier` performing `net.Resolver.LookupTXT(ctx, "_vane-verify."+hostname)` under a bounded 5s `context.WithTimeout` (mirrors today's `checkDNS`). `TXTMatches` is true when **any** returned value equals `expectedToken` exactly; `TXTFound` is true when the lookup returned at least one TXT value (false on NXDOMAIN/empty/timeout). The existing `domainVerifier`/`netDomainVerifier`/`domainVerificationResult` are left **byte-identical** — they remain the verifier for `StatusPagesHandler.VerifyDomain` (subdomain CNAME/TLS, out of scope). Introduce a small resolver seam (interface or injected `*net.Resolver`) so tests inject a fake, mirroring the existing fake-injection pattern.
+**Where**: `internal/api/domain_txt_verifier.go`, `internal/api/domain_txt_verifier_test.go`
+**Depends on**: None (pure unit; logically placed after T2 since it checks the token T2 stores)
 **Reuses**: existing `net.Resolver`/context-timeout pattern from today's `checkDNS`
 **Requirement**: DATV-03, DATV-04
 
@@ -141,24 +150,25 @@ Tasks: T10, T11
 - Skill: NONE
 
 **Done when**:
-- [ ] `checkTXT` performs a real `LookupTXT` against `_vane-verify.<hostname>` and reports `TXTFound`/`TXTMatches` correctly for: exact match, mismatch, absent record, multiple records with one matching
-- [ ] All TLS-dial code paths removed - no code in this file ever opens a TCP/TLS connection
-- [ ] Unit tests cover all branches listed above via an injected fake `*net.Resolver`-equivalent (mirror whatever seam today's tests use, or introduce a small resolver interface if none exists) - DATV-03, DATV-04
+- [ ] `netApexTXTVerifier.Verify` performs a real `LookupTXT` against `_vane-verify.<hostname>` and reports `TXTFound`/`TXTMatches` correctly for: exact match, value mismatch, absent record, multiple records with exactly one matching
+- [ ] No TCP/TLS dial exists in this file
+- [ ] Unit tests cover all branches above via an injected fake resolver - DATV-03, DATV-04
+- [ ] Existing `domainVerifier`/`netDomainVerifier`/`domainVerificationResult` are unchanged
 - [ ] Gate check passes: `go test ./internal/api && go build ./... && gofmt -l . && go vet ./...`
 
-**Tests**: `internal/api/domain_verifier_test.go` (or colocated per final file layout)
+**Tests**: `internal/api/domain_txt_verifier_test.go`
 **Gate**: quick
 
-**Commit**: `feat(api): verify root domain ownership via TXT record, not CNAME/TLS`
+**Commit**: `feat(api): add TXT-based domain ownership verifier`
 
 ---
 
-### T4: `domains_handler.go` - wire TXT verification through `Verify`/`Create`/`List`
+### T4: `domains_handler.go` + repository contract - wire TXT, drop `ssl_status` (migration `0045`)
 
-**What**: `domainResponse` drops `SSLStatus`, gains a TXT-instruction field carrying the expected record value (mirrors the existing `dns_target` pattern - exact JSON field name decided here, e.g. `verification_txt_value`). `toDomainResponse` updated accordingly. `Verify` calls `h.verifier.Verify(r.Context(), domain.Hostname, domain.VerificationToken)` (no longer passing `h.dnsTarget` into this call - that field/config stays on the handler only for the unrelated `dns_target` API field the subdomain-attach flow still needs). `mapDomainVerificationResult` rewritten around `TXTFound`/`TXTMatches`, returns `(status string, lastError *string)` (no more `sslStatus`). `dnsNotResolvedError`/`dnsMismatchError` replaced with TXT-specific constants and copy. Audit log entries (`"domain_verified"`) unchanged.
-**Where**: `internal/api/domains_handler.go`, `internal/api/domains_handler_test.go`
+**What**: `DomainsHandler` gains a verifier field typed `apexTXTVerifier`, constructed in `NewDomainsHandler` as `newNetApexTXTVerifier()`. `domainResponse` drops `SSLStatus` and gains a TXT-instruction field carrying the expected record value (`verification_txt_value string`, sourced from `domain.VerificationToken`; mirrors the loose `dns_target` convention, `AGENTS.md` §4). `toDomainResponse` updated. `Verify` calls the new verifier with `domain.VerificationToken` (no longer passing `h.dnsTarget`). `mapDomainVerificationResult` rewritten around `apexTXTResult`, returning `(status string, lastError *string)`. `dnsNotResolvedError`/`dnsMismatchError` replaced with TXT-specific copy — no residual "CNAME"/"TLS"/"DNS not resolved" wording reachable from this handler. Then the contract cleanup + column drop, all in this commit: `Domain.SSLStatus` removed from the struct and every SQL column list, and `SetVerificationResult` drops its `sslStatus` parameter and `ssl_status` from its `UPDATE`. A second migration pair `0045_drop_domain_ssl_status.up.sql`/`.down.sql` drops the column, with `.down.sql` re-adding `ssl_status TEXT NOT NULL DEFAULT 'pending'` matching `0029`'s original `CHECK (ssl_status IN ('pending','active','error'))`. `h.dnsTarget` and the `dns_target` API field stay — still used by the subdomain-attach flow (`AttachDomainDrawer.tsx`), out of scope. `verifyDomainCooldown` and the audit-log entry are unchanged.
+**Where**: `internal/api/domains_handler.go`, `internal/api/domains_handler_test.go`, `internal/db/domain_repository.go`, `internal/db/domain_repository_test.go`, `internal/db/migrations/0045_drop_domain_ssl_status.up.sql`, `internal/db/migrations/0045_drop_domain_ssl_status.down.sql`
 **Depends on**: T2, T3
-**Reuses**: existing `verifyDomainCooldown`/`checkVerifyCooldown`, existing audit-log call pattern, existing `Page`-adjacent response-shape convention (`domainsPageResponse`'s loose `dns_target` field, per `AGENTS.md` §4)
+**Reuses**: existing `verifyDomainCooldown`/`checkVerifyCooldown`, existing audit-log call pattern, existing `domainsPageResponse` loose-field convention
 **Requirement**: DATV-01, DATV-03, DATV-04, DATV-05, DATV-08
 
 **Tools**:
@@ -166,25 +176,26 @@ Tasks: T10, T11
 - Skill: NONE
 
 **Done when**:
-- [ ] `GET /api/domains`, `POST /api/domains`, `POST /api/domains/{id}/verify` responses contain no `ssl_status` key and do contain the new TXT-value field
+- [ ] `GET /api/domains`, `POST /api/domains`, `POST /api/domains/{id}/verify` responses contain no `ssl_status` key and do contain `verification_txt_value`
 - [ ] `Verify` on an already-`verified` domain still invokes the verifier (not skipped by current state) and updates `status`/`verified_at` from the fresh result, subject only to the existing cooldown
 - [ ] New error copy is TXT-specific, no residual "CNAME"/"DNS not resolved" language reachable from this handler
+- [ ] `Domain.SSLStatus` and the `sslStatus` parameter are gone; `0045` drops the column and its `.down.sql` restores it with the original `CHECK`
 - [ ] Integration tests updated/added for all of the above, run under RLS per `AGENTS.md` §3
 - [ ] Gate check passes: `make test-integration`
 
-**Tests**: `internal/api/domains_handler_test.go`
+**Tests**: `internal/api/domains_handler_test.go`, `internal/db/domain_repository_test.go`
 **Gate**: full (integration)
 
-**Commit**: `feat(api): drop ssl_status from domain API responses, surface TXT verification value`
+**Commit**: `feat(api): verify root domains via TXT, drop ssl_status from domain API`
 
 ---
 
-### T5: `web/src/types/api.ts` - drop `DomainSSLStatus`/`ssl_status`, add TXT field
+### T5: `web/src/types/api.ts` + MSW - add `verification_txt_value` (additive)
 
-**What**: `DomainSSLStatus` type and `Domain.ssl_status` field removed. `Domain` gains the new TXT-value field matching T4's API shape (e.g. `verification_txt_value: string | null`).
-**Where**: `web/src/types/api.ts`
+**What**: `Domain` gains the new TXT-value field matching T4's API shape (`verification_txt_value: string`). `DomainSSLStatus` and `Domain.ssl_status` are **kept for now** — deleting them before their consumers (`DomainDetailDrawer`, `DomainsTable`, `domainStatusMeta`, fixtures) are gone would break `tsc` (expand/contract, SPEC_DEVIATION). MSW domain fixtures (`web/src/test/msw/handlers.ts`) gain the field so the mock mirrors the real backend response shape (`AGENTS.md` §5).
+**Where**: `web/src/types/api.ts`, `web/src/test/msw/handlers.ts`
 **Depends on**: T4
-**Reuses**: existing `Domain` type shape/conventions
+**Reuses**: existing `Domain` type shape/conventions, existing MSW domain fixture
 **Requirement**: DATV-02, DATV-08
 
 **Tools**:
@@ -192,46 +203,23 @@ Tasks: T10, T11
 - Skill: NONE
 
 **Done when**:
-- [ ] `DomainSSLStatus` type deleted, no remaining reference anywhere in `web/src`
-- [ ] New TXT field typed and matches the backend JSON key exactly
+- [ ] `verification_txt_value` typed on `Domain`, matching the backend JSON key exactly
+- [ ] MSW domain fixtures include the field (shape parity with T4's response)
 - [ ] `npx tsc -b --noEmit` passes (in `web/`) with zero new errors
 
-**Tests**: none (type-only change, exercised by downstream component tests)
-**Gate**: frontend (unit not required for this task alone; full typecheck sufficient here)
+**Tests**: none (type + fixture; exercised by downstream component tests)
+**Gate**: frontend (typecheck)
 
-**Commit**: `chore(web): drop ssl_status from Domain type, add verification TXT value field`
-
----
-
-### T6: `domainStatusMeta.ts` - remove SSL status helpers
-
-**What**: `sslStatusLabel` and `sslStatusColor` exports deleted (dead once T7/T8 remove their only call sites).
-**Where**: `web/src/features/domains/domainStatusMeta.ts`, `web/src/features/domains/domainStatusMeta.test.ts`
-**Depends on**: T5
-**Reuses**: n/a (deletion)
-**Requirement**: DATV-06, DATV-07
-
-**Tools**:
-- MCP: NONE
-- Skill: NONE
-
-**Done when**:
-- [ ] `sslStatusLabel`/`sslStatusColor` removed from the module and its test file
-- [ ] No remaining import of either symbol anywhere in `web/src` (grep confirms zero hits)
-
-**Tests**: `web/src/features/domains/domainStatusMeta.test.ts`
-**Gate**: frontend (unit)
-
-**Commit**: `chore(web): remove dead SSL status helpers from domainStatusMeta`
+**Commit**: `feat(web): add verification TXT value field to Domain type and MSW fixtures`
 
 ---
 
-### T7: `DomainDetailDrawer.tsx` - TXT table replaces CNAME table, SSL card removed
+### T6: `DomainDetailDrawer.tsx` - TXT record section replaces CNAME, SSL card removed
 
-**What**: The existing `current.domain_type === "custom"` CNAME block (record name `CNAME`, value from `useDNSTarget()`) is replaced with a TXT block: record name `_vane-verify.<hostname>`, value from the new `verification_txt_value` field, using the same card/grid styling. The adjacent SSL status grid cell (`domains.detail.sslLabel`) is deleted; the "verified at" cell is regrouped to stand alone or with the domain-health section per implementation's layout judgment (no behavior change either way). A copy-to-clipboard affordance is added for the TXT value if an existing reusable "copyable value" component is found elsewhere in `web/src/components/ui/`; otherwise this task ships without one (not blocking - clipboard convenience is not an acceptance criterion).
+**What**: The existing `current.domain_type === "custom"` CNAME block (record name `CNAME`, value from `useDNSTarget()`) is replaced with a TXT block: record name `_vane-verify.<hostname>`, value from the new `verification_txt_value` field, using the same card/grid styling. The adjacent SSL status grid cell (`domains.detail.sslLabel`) is deleted; the "verified at" cell is regrouped to stand alone or with the domain-health section per implementation's layout judgment (no behavior change either way). A copy-to-clipboard affordance is added for the TXT value only if an existing reusable "copyable value" component is found in `web/src/components/ui/`; otherwise this task ships without one (clipboard convenience is not an acceptance criterion). `sslStatusLabel`/`sslStatusColor` are no longer called from this file (the untouched exports are removed in T8).
 **Where**: `web/src/features/domains/DomainDetailDrawer.tsx`, `web/src/features/domains/DomainDetailDrawer.test.tsx`
-**Depends on**: T5, T6
-**Reuses**: existing drawer card/grid layout, `useDNSTarget()`'s sibling hook pattern (a new hook or an extension of the existing domain-fetch path surfaces `verification_txt_value` - no new endpoint)
+**Depends on**: T5
+**Reuses**: existing drawer card/grid layout, `useDNSTarget()`'s sibling hook pattern (the existing domain-fetch path already surfaces `verification_txt_value` - no new endpoint)
 **Requirement**: DATV-02, DATV-06
 
 **Tools**:
@@ -252,11 +240,11 @@ Tasks: T10, T11
 
 ---
 
-### T8: `DomainsTable.tsx` - SSL column removed
+### T7: `DomainsTable.tsx` - SSL column removed
 
-**What**: SSL status column (using `sslStatusColor`/`sslStatusLabel`, current lines ~91-92) deleted from the table. No replacement column added.
+**What**: The SSL status column (using `sslStatusColor`/`sslStatusLabel`, current lines ~91-92) is deleted from the table header and body. No replacement column is added. The Status/health-risk columns are untouched. `sslStatusLabel`/`sslStatusColor` are no longer called from this file (their exports are removed in T8).
 **Where**: `web/src/features/domains/DomainsTable.tsx`, `web/src/features/domains/DomainsTable.test.tsx`
-**Depends on**: T6
+**Depends on**: T5
 **Reuses**: n/a (deletion)
 **Requirement**: DATV-07
 
@@ -277,27 +265,52 @@ Tasks: T10, T11
 
 ---
 
-### T9: i18n - drop dead SSL keys, add TXT instruction keys (pt-BR/en parity)
+### T8: `domainStatusMeta.ts` - remove dead SSL status helpers
 
-**What**: `domains.detail.sslLabel` and `domains.sslStatusLabel.*` keys removed from both locale files. New keys added for the TXT instruction block (e.g. `domains.detail.txtConfigLabel`, `domains.detail.txtRecordName`, `domains.detail.txtRecordValue`, plus any copy-button label if T7 ships one) - both `pt-BR.json` and `en.json` updated together, never one without the other.
-**Where**: `web/src/locales/pt-BR.json`, `web/src/locales/en.json`
-**Depends on**: T7 (keys must match what the component actually references)
-**Reuses**: existing locale-key naming convention under `domains.detail.*`
-**Requirement**: DATV-02, DATV-06, DATV-07
+**What**: `sslStatusLabel` and `sslStatusColor` exports deleted, now that T6 and T7 removed their last call sites; the corresponding cases in `domainStatusMeta.test.ts` are removed. No remaining import of either symbol anywhere in `web/src` (grep confirms zero hits).
+**Where**: `web/src/features/domains/domainStatusMeta.ts`, `web/src/features/domains/domainStatusMeta.test.ts`
+**Depends on**: T6, T7
+**Reuses**: n/a (deletion)
+**Requirement**: DATV-06, DATV-07
 
 **Tools**:
 - MCP: NONE
 - Skill: NONE
 
 **Done when**:
-- [ ] No orphaned SSL-related key remains in either locale file
-- [ ] Every new key referenced by T7/T8 exists in both locales with equivalent meaning
-- [ ] `npm run i18n:check` passes (in `web/`)
+- [ ] `sslStatusLabel`/`sslStatusColor` removed from the module and its test file
+- [ ] No remaining import of either symbol anywhere in `web/src` (grep confirms zero hits)
+- [ ] Gate check passes: `cd web && npm run test`
 
-**Tests**: covered by `i18n:check`, no dedicated test file
-**Gate**: frontend (full, since this is the last frontend task in the phase)
+**Tests**: `web/src/features/domains/domainStatusMeta.test.ts`
+**Gate**: frontend (unit)
 
-**Commit**: `chore(web): update pt-BR/en locale keys for TXT domain verification`
+**Commit**: `chore(web): remove dead SSL status helpers from domainStatusMeta`
+
+---
+
+### T9: drop `ssl_status` from Domain type/fixtures + locale keys (final frontend cleanup)
+
+**What**: `DomainSSLStatus` type and `Domain.ssl_status` field removed from `web/src/types/api.ts`; every remaining fixture/test that references `ssl_status` is updated (`web/src/test/msw/handlers.ts`, `web/src/features/domains/hooks.test.ts`, `web/src/features/domains/DomainsStatusPagesPage.test.tsx`, `web/src/features/status-pages/StatusPageDetailDrawer.test.tsx`). Both locale files drop the now-dead `domains.detail.sslLabel` and `domains.sslStatusLabel.*` keys and gain the TXT-instruction keys the components reference (`domains.detail.txtConfigLabel`, `domains.detail.txtRecordName`, `domains.detail.txtRecordValue`, plus a copy-button label if T6 shipped one) — `pt-BR.json` and `en.json` updated together, never one without the other.
+**Where**: `web/src/types/api.ts`, `web/src/test/msw/handlers.ts`, `web/src/features/domains/hooks.test.ts`, `web/src/features/domains/DomainsStatusPagesPage.test.tsx`, `web/src/features/status-pages/StatusPageDetailDrawer.test.tsx`, `web/src/locales/pt-BR.json`, `web/src/locales/en.json`
+**Depends on**: T6, T7, T8
+**Reuses**: existing `domains.detail.*` locale-key naming convention
+**Requirement**: DATV-02, DATV-06, DATV-07, DATV-08
+
+**Tools**:
+- MCP: NONE
+- Skill: NONE
+
+**Done when**:
+- [ ] No `ssl_status`/`DomainSSLStatus` reference remains anywhere in `web/src`
+- [ ] No orphaned SSL-related locale key remains in either locale file
+- [ ] Every new TXT key referenced by T6 exists in both locales with equivalent meaning
+- [ ] Gate check passes: `cd web && npx tsc -b --noEmit && npm run test && npm run i18n:check`
+
+**Tests**: covered by typecheck + `npm run test` + `i18n:check`
+**Gate**: frontend (full - last frontend task in the phase)
+
+**Commit**: `chore(web): drop ssl_status from Domain type, update locales for TXT verification`
 
 ---
 
