@@ -1,7 +1,7 @@
 import { useState } from "react";
 import "../../lib/i18n";
 import { describe, it, expect, afterEach } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { http, HttpResponse } from "msw";
 import { server } from "../../test/msw/server";
@@ -77,7 +77,7 @@ function renderHarness() {
 }
 
 describe("DomainDetailDrawer", () => {
-  it("renders status, error banner (last_error), SSL/Verified and the DNS block for a custom domain (DSP-05)", async () => {
+  it("renders status, error banner (last_error) and the TXT instruction block for a custom domain, with no SSL card (DSP-05, DATV-06)", async () => {
     mockDomainsPage([
       baseDomain({
         id: "dom-error",
@@ -93,8 +93,33 @@ describe("DomainDetailDrawer", () => {
     await userEvent.click(await screen.findByText("error.example.com"));
 
     expect(await screen.findByText("DNS not resolved: no record found for this hostname")).toBeInTheDocument();
-    expect(screen.getByText("Configuração DNS")).toBeInTheDocument();
+    expect(screen.getByTestId("domain-txt")).toBeInTheDocument();
+    expect(screen.getByText("_vane-verify.error.example.com")).toBeInTheDocument();
+    expect(screen.getByText("dom-fixture-token")).toBeInTheDocument();
+    // DATV-06: the SSL status card is gone entirely.
+    expect(screen.queryByText("SSL/TLS")).not.toBeInTheDocument();
+    expect(screen.queryByText("domains.detail.sslLabel")).not.toBeInTheDocument();
     expect(screen.getAllByText("Erro").length).toBeGreaterThan(0);
+  });
+
+  it("shows the TXT record name and value for an unverified domain (DATV-02)", async () => {
+    mockDomainsPage([
+      baseDomain({
+        id: "dom-txt",
+        hostname: "txt.example.com",
+        status: "pending",
+        verified_at: null,
+        verification_txt_value: "abc123token",
+      }),
+    ]);
+    await loginAsOwner();
+    renderHarness();
+
+    await userEvent.click(await screen.findByText("txt.example.com"));
+
+    const block = await screen.findByTestId("domain-txt");
+    expect(within(block).getByText("_vane-verify.txt.example.com")).toBeInTheDocument();
+    expect(within(block).getByText("abc123token")).toBeInTheDocument();
   });
 
   it("'Verificar novamente' calls useRecheckDomain and the drawer reflects the returned new state (DSP-06)", async () => {
@@ -117,7 +142,7 @@ describe("DomainDetailDrawer", () => {
     await userEvent.click(await screen.findByText("recheck.example.com"));
     await userEvent.click(screen.getByRole("button", { name: "Verificar novamente" }));
 
-    await waitFor(() => expect(screen.getByText("Ativo")).toBeInTheDocument());
+    await waitFor(() => expect(within(screen.getByRole("dialog")).getByText("Verificado")).toBeInTheDocument());
   });
 
   it("successful 'Remover domínio' closes the drawer and removes the row from the table (DSP-07)", async () => {

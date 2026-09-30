@@ -227,11 +227,11 @@ Tasks: T10, T11
 - Skill: NONE
 
 **Done when**:
-- [ ] TXT record name and value render correctly for an unverified domain
-- [ ] No SSL card renders anywhere in the drawer
-- [ ] `data-testid="domain-health"` section (unrelated, from `domain-health-monitoring`) untouched and still passes its existing tests
-- [ ] Component tests updated: TXT table renders, no SSL text/testid present
-- [ ] Gate check passes: `cd web && npm run test`
+- [x] TXT record name and value render correctly for an unverified domain
+- [x] No SSL card renders anywhere in the drawer
+- [x] `data-testid="domain-health"` section (unrelated, from `domain-health-monitoring`) untouched and still passes its existing tests
+- [x] Component tests updated: TXT table renders, no SSL text/testid present
+- [x] Gate check passes: `cd web && npm run test`
 
 **Tests**: `web/src/features/domains/DomainDetailDrawer.test.tsx`
 **Gate**: frontend (unit)

@@ -5,7 +5,6 @@ import { MdClose } from "react-icons/md";
 import { Button } from "../../components/ui/Button";
 import { ApiError } from "../../lib/apiClient";
 import { formatDateTime } from "../../lib/formatDate";
-import { useDNSTarget } from "../status-pages/hooks";
 import type { Domain } from "../../types/api";
 import { useDeleteDomain, useRecheckDomain } from "./hooks";
 import {
@@ -13,8 +12,6 @@ import {
   daysRemainingFromExpiry,
   domainTypeLabel,
   expirationColor,
-  sslStatusColor,
-  sslStatusLabel,
 } from "./domainStatusMeta";
 import { DomainStatusTag } from "./DomainStatusTag";
 
@@ -36,7 +33,6 @@ export function DomainDetailDrawer({ domain, onClose }: DomainDetailDrawerProps)
   const { t, i18n } = useTranslation();
   const [current, setCurrent] = useState<Domain | null>(domain);
   const [removeError, setRemoveError] = useState<string | null>(null);
-  const { data: dnsTarget } = useDNSTarget();
   const recheckDomain = useRecheckDomain();
   const deleteDomain = useDeleteDomain();
   const healthDaysRemaining = current ? daysRemainingFromExpiry(current.expires_at) : null;
@@ -105,35 +101,29 @@ export function DomainDetailDrawer({ domain, onClose }: DomainDetailDrawerProps)
                 </p>
               ) : null}
 
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <div className="mb-1 text-[10.5px] font-bold uppercase tracking-wide text-text-muted">{t("domains.detail.sslLabel")}</div>
-                  <div className="text-[15px] font-bold" style={{ color: sslStatusColor[current.ssl_status] }}>
-                    {sslStatusLabel(t, current.ssl_status)}
-                  </div>
-                </div>
-                <div>
-                  <div className="mb-1 text-[10.5px] font-bold uppercase tracking-wide text-text-muted">{t("domains.detail.verifiedAtLabel")}</div>
-                  <div className="text-[15px] font-bold text-text">
-                    {current.verified_at ? formatDateTime(current.verified_at, i18n.language) : "—"}
-                  </div>
+              <div>
+                <div className="mb-1 text-[10.5px] font-bold uppercase tracking-wide text-text-muted">{t("domains.detail.verifiedAtLabel")}</div>
+                <div className="text-[15px] font-bold text-text">
+                  {current.verified_at ? formatDateTime(current.verified_at, i18n.language) : "—"}
                 </div>
               </div>
 
               {current.domain_type === "custom" ? (
-                <div>
+                <div data-testid="domain-txt">
                   <div className="mb-1 text-[10.5px] font-bold uppercase tracking-wide text-text-muted">
-                    {t("domains.detail.dnsConfigLabel")}
+                    {t("domains.detail.txtConfigLabel")}
                   </div>
                   <div className="overflow-hidden rounded-md border border-divider">
-                    <div className="grid grid-cols-[70px_1fr] gap-2 border-b border-divider bg-card-header-bg px-3.5 py-2.5">
-                      <span className="text-[11px] font-bold text-text-muted">{t("domains.detail.dnsType")}</span>
-                      <span className="text-[11px] font-bold text-text-muted">{t("domains.detail.dnsValue")}</span>
+                    <div className="grid grid-cols-[140px_1fr] gap-2 border-b border-divider bg-card-header-bg px-3.5 py-2.5">
+                      <span className="text-[11px] font-bold text-text-muted">{t("domains.detail.txtRecordName")}</span>
+                      <span className="text-[11px] font-bold text-text-muted">{t("domains.detail.txtRecordValue")}</span>
                     </div>
-                    <div className="grid grid-cols-[70px_1fr] items-center gap-2 px-3.5 py-3">
-                      <span className="font-mono text-[12.5px] font-bold text-text">CNAME</span>
+                    <div className="grid grid-cols-[140px_1fr] items-center gap-2 px-3.5 py-3">
+                      <span className="min-w-0 truncate font-mono text-[12.5px] font-bold text-text">
+                        {`_vane-verify.${current.hostname}`}
+                      </span>
                       <span className="min-w-0 truncate font-mono text-[12.5px] text-text-muted">
-                        {dnsTarget ?? t("domains.detail.notConfigured")}
+                        {current.verification_txt_value}
                       </span>
                     </div>
                   </div>

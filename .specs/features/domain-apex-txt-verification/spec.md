@@ -87,10 +87,10 @@ The subdomain side (`AttachDomainDrawer.tsx`, `StatusPagesHandler.VerifyDomain`,
 | ID | Acceptance Criterion (User Story) | Status |
 | --- | --- | --- |
 | DATV-01 | P1-AC1: verification token generated and persisted at domain creation | complete |
-| DATV-02 | P1-AC2: detail view shows TXT record name/value instruction, not CNAME | pending |
+| DATV-02 | P1-AC2: detail view shows TXT record name/value instruction, not CNAME | complete |
 | DATV-03 | P1-AC3: verify performs real TXT lookup, matches token exactly to mark verified | complete |
 | DATV-04 | P1-AC4: TXT lookup failure maps to a distinct, non-CNAME/TLS error message | complete |
 | DATV-05 | P1-AC5: re-verification of an already-verified domain still performs a real check | complete |
-| DATV-06 | P2-AC1: SSL status card removed from domain detail view | pending |
+| DATV-06 | P2-AC1: SSL status card removed from domain detail view | complete |
 | DATV-07 | P2-AC2: SSL status column removed from domains list table | pending |
 | DATV-08 | P2-AC3: `ssl_status` field removed from API responses | complete |
