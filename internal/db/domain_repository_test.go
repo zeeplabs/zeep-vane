@@ -150,7 +150,7 @@ func TestDomainRepository_ListPaginated_OrderByHostnameUnchanged(t *testing.T) {
 
 // TestDomainRepository_Create_DefaultsToPendingCustom covers DOMVER-02: a
 // newly created domain starts as domain_type=custom, status=pending,
-// ssl_status=pending, verified_at=NULL.
+// verified_at=NULL.
 func TestDomainRepository_Create_DefaultsToPendingCustom(t *testing.T) {
 	repo, pool := newDomainRepoTestPool(t)
 	domain := &Domain{Hostname: fmt.Sprintf("create-defaults-%d.example.com", time.Now().UnixNano())}
@@ -165,9 +165,6 @@ func TestDomainRepository_Create_DefaultsToPendingCustom(t *testing.T) {
 	}
 	if domain.Status != "pending" {
 		t.Errorf("Status = %q, want %q", domain.Status, "pending")
-	}
-	if domain.SSLStatus != "pending" {
-		t.Errorf("SSLStatus = %q, want %q", domain.SSLStatus, "pending")
 	}
 	if domain.VerifiedAt != nil {
 		t.Errorf("VerifiedAt = %v, want nil", domain.VerifiedAt)
@@ -309,15 +306,12 @@ func TestDomainRepository_SetVerificationResult_Success_UpdatesAllFields(t *test
 	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), "DELETE FROM domains WHERE id = $1", domain.ID) })
 
 	checkedAt := time.Now().UTC().Truncate(time.Millisecond)
-	updated, err := repo.SetVerificationResult(context.Background(), domain.ID, "verified", "active", nil, checkedAt)
+	updated, err := repo.SetVerificationResult(context.Background(), domain.ID, "verified", nil, checkedAt)
 	if err != nil {
 		t.Fatalf("SetVerificationResult() returned unexpected error: %v", err)
 	}
 	if updated.Status != "verified" {
 		t.Errorf("Status = %q, want %q", updated.Status, "verified")
-	}
-	if updated.SSLStatus != "active" {
-		t.Errorf("SSLStatus = %q, want %q", updated.SSLStatus, "active")
 	}
 	if updated.LastError != nil {
 		t.Errorf("LastError = %v, want nil", updated.LastError)
@@ -337,16 +331,13 @@ func TestDomainRepository_SetVerificationResult_Failure_PersistsLastError(t *tes
 	}
 	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), "DELETE FROM domains WHERE id = $1", domain.ID) })
 
-	errMsg := "DNS not resolved"
-	updated, err := repo.SetVerificationResult(context.Background(), domain.ID, "error", "error", &errMsg, time.Now())
+	errMsg := "TXT record not found"
+	updated, err := repo.SetVerificationResult(context.Background(), domain.ID, "error", &errMsg, time.Now())
 	if err != nil {
 		t.Fatalf("SetVerificationResult() returned unexpected error: %v", err)
 	}
 	if updated.Status != "error" {
 		t.Errorf("Status = %q, want %q", updated.Status, "error")
-	}
-	if updated.SSLStatus != "error" {
-		t.Errorf("SSLStatus = %q, want %q", updated.SSLStatus, "error")
 	}
 	if updated.LastError == nil || *updated.LastError != errMsg {
 		t.Errorf("LastError = %v, want %q", updated.LastError, errMsg)
@@ -358,7 +349,7 @@ func TestDomainRepository_SetVerificationResult_Failure_PersistsLastError(t *tes
 func TestDomainRepository_SetVerificationResult_Unknown_ErrNotFound(t *testing.T) {
 	repo, _ := newDomainRepoTestPool(t)
 
-	_, err := repo.SetVerificationResult(context.Background(), "00000000-0000-0000-0000-000000000000", "verified", "active", nil, time.Now())
+	_, err := repo.SetVerificationResult(context.Background(), "00000000-0000-0000-0000-000000000000", "verified", nil, time.Now())
 	if !errors.Is(err, ErrNotFound) {
 		t.Fatalf("SetVerificationResult() error = %v, want ErrNotFound", err)
 	}
@@ -420,10 +411,10 @@ func TestDomainRepository_CountVerified_MixedStatuses_CountsOnlyVerified(t *test
 	if err := repo.Create(ctx, pendingC); err != nil {
 		t.Fatalf("Create(pendingC) returned unexpected error: %v", err)
 	}
-	if _, err := repo.SetVerificationResult(ctx, verifiedA.ID, "verified", "active", nil, time.Now()); err != nil {
+	if _, err := repo.SetVerificationResult(ctx, verifiedA.ID, "verified", nil, time.Now()); err != nil {
 		t.Fatalf("SetVerificationResult(verifiedA) returned unexpected error: %v", err)
 	}
-	if _, err := repo.SetVerificationResult(ctx, verifiedB.ID, "verified", "active", nil, time.Now()); err != nil {
+	if _, err := repo.SetVerificationResult(ctx, verifiedB.ID, "verified", nil, time.Now()); err != nil {
 		t.Fatalf("SetVerificationResult(verifiedB) returned unexpected error: %v", err)
 	}
 
@@ -471,7 +462,7 @@ func TestDomainRepository_CountAll_MixedStatuses_CountsRegardlessOfStatus(t *tes
 	if err := repo.Create(ctx, pendingB); err != nil {
 		t.Fatalf("Create(pendingB) returned unexpected error: %v", err)
 	}
-	if _, err := repo.SetVerificationResult(ctx, verifiedA.ID, "verified", "active", nil, time.Now()); err != nil {
+	if _, err := repo.SetVerificationResult(ctx, verifiedA.ID, "verified", nil, time.Now()); err != nil {
 		t.Fatalf("SetVerificationResult(verifiedA) returned unexpected error: %v", err)
 	}
 

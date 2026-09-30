@@ -177,7 +177,7 @@ func TestOverviewHandler_Get_RealData_ReturnsAllAggregates(t *testing.T) {
 	if err := domains.Create(ctx, verified); err != nil {
 		t.Fatalf("DomainRepository.Create() returned unexpected error: %v", err)
 	}
-	if _, err := domains.SetVerificationResult(ctx, verified.ID, "verified", "active", nil, now); err != nil {
+	if _, err := domains.SetVerificationResult(ctx, verified.ID, "verified", nil, now); err != nil {
 		t.Fatalf("SetVerificationResult() returned unexpected error: %v", err)
 	}
 	pending := &db.Domain{Hostname: "overview-pending.example.com"}

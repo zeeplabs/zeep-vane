@@ -27,7 +27,7 @@ type domainCreatorLister interface {
 	ListPaginated(ctx context.Context, page, pageSize int) ([]db.Domain, int, error)
 	Delete(ctx context.Context, id string) error
 	GetByID(ctx context.Context, id string) (*db.Domain, error)
-	SetVerificationResult(ctx context.Context, id, status, sslStatus string, lastError *string, verifiedAt time.Time) (*db.Domain, error)
+	SetVerificationResult(ctx context.Context, id, status string, lastError *string, verifiedAt time.Time) (*db.Domain, error)
 }
 
 // statusPageNameLister is the subset of *db.StatusPageRepository the
@@ -43,7 +43,7 @@ type DomainsHandler struct {
 	statusPageNames statusPageNameLister
 	audit           *audit.Log
 	logger          *zap.Logger
-	verifier        domainVerifier
+	verifier        apexTXTVerifier
 	// dnsTarget is config.Config.PublicDNSTarget - the real CNAME target
 	// shown to the operator (domain-verification-state DOMVER-03), never a
 	// hardcoded example. Empty means the operator never configured it.
@@ -61,7 +61,7 @@ func NewDomainsHandler(domains domainCreatorLister, statusPageNames statusPageNa
 		statusPageNames: statusPageNames,
 		audit:           auditLog,
 		logger:          logger,
-		verifier:        newNetDomainVerifier(),
+		verifier:        newNetApexTXTVerifier(),
 		dnsTarget:       dnsTarget,
 		lastVerifyAt:    make(map[string]time.Time),
 	}
@@ -77,9 +77,13 @@ type domainResponse struct {
 	CreatedAt  time.Time  `json:"created_at"`
 	DomainType string     `json:"domain_type"`
 	Status     string     `json:"status"`
-	SSLStatus  string     `json:"ssl_status"`
 	VerifiedAt *time.Time `json:"verified_at"`
 	LastError  *string    `json:"last_error"`
+	// VerificationTxtValue is the exact value the operator must publish as a
+	// TXT record at _vane-verify.<hostname> to prove ownership (DATV-02) - it
+	// mirrors the raw db.Domain.VerificationToken; the raw column name is not
+	// exposed.
+	VerificationTxtValue string `json:"verification_txt_value"`
 	// Health-check fields (domain-health-monitoring DHM-04/DHM-08): the
 	// latest RDAP/NS result from DomainRepository.SetHealthCheckResult.
 	// ExpiresAt/Registrar/LastRDAPCheckAt/RDAPLastError are null and
@@ -111,9 +115,10 @@ type domainResponse struct {
 func toDomainResponse(domain *db.Domain) domainResponse {
 	return domainResponse{
 		ID: domain.ID, Hostname: domain.Hostname, CreatedAt: domain.CreatedAt,
-		DomainType: domain.DomainType, Status: domain.Status, SSLStatus: domain.SSLStatus,
+		DomainType: domain.DomainType, Status: domain.Status,
 		VerifiedAt: domain.VerifiedAt, LastError: domain.LastError,
-		ExpiresAt: domain.ExpiresAt, Registrar: domain.Registrar,
+		VerificationTxtValue: domain.VerificationToken,
+		ExpiresAt:            domain.ExpiresAt, Registrar: domain.Registrar,
 		ExpectedNS: domain.ExpectedNS, CurrentNS: domain.CurrentNS,
 		NSDriftDetected: domain.NSDriftDetected, LastRDAPCheckAt: domain.LastRDAPCheckAt,
 		RDAPLastError: domain.RDAPLastError,
@@ -245,58 +250,33 @@ func (h *DomainsHandler) checkVerifyCooldown(id string) bool {
 	return true
 }
 
-const dnsNotResolvedError = "DNS not resolved: no record found for this hostname"
-const dnsMismatchError = "DNS resolved but does not point to the configured target"
+const txtNotFoundError = "TXT record not found: publish the verification token as a TXT record at _vane-verify.<hostname>"
+const txtMismatchError = "TXT record found but its value does not match the verification token"
 
-// mapDomainVerificationResult derives status/ssl_status/last_error from a
-// domainVerificationResult (domain-verification-state's Assumptions table):
-// DNS resolving and either matching the configured target or having no
-// target to compare against maps to status "verified"; anything else maps
-// to "error" with a description. ssl_status mirrors TLSCertValid
-// independently. Both fields' failure messages are combined into the single
-// last_error column when both stages fail.
-func mapDomainVerificationResult(result domainVerificationResult) (status, sslStatus string, lastError *string) {
-	var dnsErr, tlsErr *string
-
+// mapDomainVerificationResult derives status/last_error from an
+// apexTXTResult (DATV-03/DATV-04): the expected TXT record present with a
+// matching value maps to "verified"; an absent record or a value that
+// doesn't match maps to "error" with the case-specific description. Neither
+// message ever suggests a CNAME or TLS action - a root domain proves
+// ownership of its own DNS, it never serves vane traffic.
+func mapDomainVerificationResult(result apexTXTResult) (status string, lastError *string) {
 	switch {
-	case !result.DNSResolved:
-		status = "error"
-		msg := dnsNotResolvedError
-		dnsErr = &msg
-	case result.DNSMatchesTarget != nil && !*result.DNSMatchesTarget:
-		status = "error"
-		msg := dnsMismatchError
-		dnsErr = &msg
+	case !result.TXTFound:
+		msg := txtNotFoundError
+		return "error", &msg
+	case !result.TXTMatches:
+		msg := txtMismatchError
+		return "error", &msg
 	default:
-		status = "verified"
+		return "verified", nil
 	}
-
-	if result.TLSCertValid {
-		sslStatus = "active"
-	} else {
-		sslStatus = "error"
-		tlsErr = result.TLSError
-		if tlsErr == nil {
-			msg := "TLS certificate could not be verified"
-			tlsErr = &msg
-		}
-	}
-
-	switch {
-	case dnsErr != nil && tlsErr != nil:
-		combined := *dnsErr + "; " + *tlsErr
-		lastError = &combined
-	case dnsErr != nil:
-		lastError = dnsErr
-	case tlsErr != nil:
-		lastError = tlsErr
-	}
-	return status, sslStatus, lastError
 }
 
-// Verify handles POST /api/domains/{id}/verify, performing a real DNS+TLS
-// check via the existing domainVerifier and persisting the result
-// (DOMVER-04/07/08). Returns 404 if the domain doesn't exist. Within
+// Verify handles POST /api/domains/{id}/verify, performing a real DNS TXT
+// lookup for the domain's expected record and persisting the result
+// (DATV-03/DATV-04). Every call re-checks, even when the domain is already
+// "verified" (DATV-05) - proving continued ownership, not a one-time check.
+// Returns 404 if the domain doesn't exist. Within
 // verifyDomainCooldown of the previous check for the same domain, it
 // returns the existing persisted state instead of making a fresh network
 // call (DOMVER-06) - unlike StatusPagesHandler.VerifyDomain's 429, this
@@ -322,10 +302,10 @@ func (h *DomainsHandler) Verify(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	result := h.verifier.Verify(r.Context(), domain.Hostname, h.dnsTarget)
-	status, sslStatus, lastError := mapDomainVerificationResult(result)
+	result := h.verifier.Verify(r.Context(), domain.Hostname, domain.VerificationToken)
+	status, lastError := mapDomainVerificationResult(result)
 
-	updated, err := h.domains.SetVerificationResult(r.Context(), id, status, sslStatus, lastError, time.Now())
+	updated, err := h.domains.SetVerificationResult(r.Context(), id, status, lastError, time.Now())
 	if err != nil {
 		if errors.Is(err, db.ErrNotFound) {
 			http.NotFound(w, r)

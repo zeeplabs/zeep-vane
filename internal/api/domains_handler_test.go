@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -207,6 +208,37 @@ func TestListDomains_AnyRole_200IncludesCreated(t *testing.T) {
 	}
 }
 
+// TestListDomains_ResponseHasVerificationTxtValueNoSSLStatus covers DATV-02/
+// DATV-08: each listed domain carries the TXT value the operator must publish
+// at their DNS provider, and the response never contains an ssl_status key.
+func TestListDomains_ResponseHasVerificationTxtValueNoSSLStatus(t *testing.T) {
+	r, pool, admins := newDomainsRouter(t)
+	token := issueTestSessionToken(t, admins)
+	hostname := uniqueHostname(t)
+	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), "DELETE FROM domains WHERE hostname = $1", hostname) })
+
+	createRec := postCreateDomain(t, r, token, hostname)
+	if createRec.Code != http.StatusCreated {
+		t.Fatalf("setup create status = %d, want %d", createRec.Code, http.StatusCreated)
+	}
+
+	rec := getListDomains(t, r, token)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	if strings.Contains(rec.Body.String(), "ssl_status") {
+		t.Errorf("List response contains an ssl_status key, want none")
+	}
+
+	got, found := findDomainResponseAcrossPages(t, r, token, hostname)
+	if !found {
+		t.Fatalf("created hostname %q not found across any page of GET /api/domains", hostname)
+	}
+	if got.VerificationTxtValue == "" {
+		t.Error("listed domain VerificationTxtValue = \"\", want a non-empty verification token")
+	}
+}
+
 func TestListDomains_InvalidPage_ClampsToPage1(t *testing.T) {
 	r, pool, admins := newDomainsRouter(t)
 	token := issueTestSessionToken(t, admins)
@@ -398,9 +430,9 @@ func TestDeleteDomain_NoAuth_401(t *testing.T) {
 	}
 }
 
-// TestCreateDomain_DefaultsToPendingCustom covers DOMVER-02: a newly
-// created domain's response shows domain_type=custom, status=pending,
-// ssl_status=pending, verified_at=null.
+// TestCreateDomain_DefaultsToPendingCustom covers DOMVER-02 and DATV-01: a
+// newly created domain's response shows domain_type=custom, status=pending,
+// verified_at=null, a non-empty verification_txt_value, and no ssl_status key.
 func TestCreateDomain_DefaultsToPendingCustom(t *testing.T) {
 	r, pool, admins := newDomainsRouter(t)
 	token := issueTestSessionToken(t, admins)
@@ -422,11 +454,14 @@ func TestCreateDomain_DefaultsToPendingCustom(t *testing.T) {
 	if created.Status != "pending" {
 		t.Errorf("Status = %q, want %q", created.Status, "pending")
 	}
-	if created.SSLStatus != "pending" {
-		t.Errorf("SSLStatus = %q, want %q", created.SSLStatus, "pending")
-	}
 	if created.VerifiedAt != nil {
 		t.Errorf("VerifiedAt = %v, want nil", created.VerifiedAt)
+	}
+	if created.VerificationTxtValue == "" {
+		t.Error("VerificationTxtValue = \"\", want a non-empty verification token")
+	}
+	if strings.Contains(rec.Body.String(), "ssl_status") {
+		t.Errorf("Create response contains an ssl_status key, want none: %s", rec.Body.String())
 	}
 }
 
@@ -642,13 +677,12 @@ func createVerifiableTestDomain(t *testing.T, r http.Handler, pool *db.Pool, tok
 	return created
 }
 
-// TestVerifyDomain_Success_VerifiedActive covers DOMVER-04/07: a
-// successful DNS+TLS check persists status=verified, ssl_status=active.
-func TestVerifyDomain_Success_VerifiedActive(t *testing.T) {
+// TestVerifyDomain_Success_Verified covers DATV-03: a successful TXT check
+// (record found, value matches the token) persists status=verified, stamps
+// verified_at, clears last_error, and returns no ssl_status key.
+func TestVerifyDomain_Success_Verified(t *testing.T) {
 	r, pool, admins := newDomainsRouter(t, func(h *DomainsHandler) {
-		h.verifier = &fakeDomainVerifier{result: domainVerificationResult{
-			DNSResolved: true, TLSReachable: true, TLSCertValid: true,
-		}}
+		h.verifier = &fakeApexTXTVerifier{result: apexTXTResult{TXTFound: true, TXTMatches: true}}
 	})
 	token := issueTestSessionToken(t, admins)
 	domain := createVerifiableTestDomain(t, r, pool, token)
@@ -665,14 +699,17 @@ func TestVerifyDomain_Success_VerifiedActive(t *testing.T) {
 	if updated.Status != "verified" {
 		t.Errorf("Status = %q, want %q", updated.Status, "verified")
 	}
-	if updated.SSLStatus != "active" {
-		t.Errorf("SSLStatus = %q, want %q", updated.SSLStatus, "active")
-	}
 	if updated.VerifiedAt == nil {
 		t.Error("VerifiedAt = nil, want a timestamp")
 	}
 	if updated.LastError != nil {
 		t.Errorf("LastError = %v, want nil", updated.LastError)
+	}
+	if updated.VerificationTxtValue == "" {
+		t.Error("VerificationTxtValue = \"\", want a non-empty verification token")
+	}
+	if strings.Contains(rec.Body.String(), "ssl_status") {
+		t.Errorf("Verify response contains an ssl_status key, want none: %s", rec.Body.String())
 	}
 }
 
@@ -681,9 +718,7 @@ func TestVerifyDomain_Success_VerifiedActive(t *testing.T) {
 // the domain's own hostname, not a bare target_id.
 func TestVerifyDomain_Success_RecordsDomainVerifiedAuditLabel(t *testing.T) {
 	r, pool, admins := newDomainsRouter(t, func(h *DomainsHandler) {
-		h.verifier = &fakeDomainVerifier{result: domainVerificationResult{
-			DNSResolved: true, TLSReachable: true, TLSCertValid: true,
-		}}
+		h.verifier = &fakeApexTXTVerifier{result: apexTXTResult{TXTFound: true, TXTMatches: true}}
 	})
 	token := issueTestSessionToken(t, admins)
 	domain := createVerifiableTestDomain(t, r, pool, token)
@@ -704,11 +739,12 @@ func TestVerifyDomain_Success_RecordsDomainVerifiedAuditLabel(t *testing.T) {
 	}
 }
 
-// TestVerifyDomain_DNSFailure_ErrorWithLastError covers DOMVER-08: a DNS
-// resolution failure persists status=error with a populated last_error.
-func TestVerifyDomain_DNSFailure_ErrorWithLastError(t *testing.T) {
+// TestVerifyDomain_TXTNotFound_ErrorWithTXTMessage covers DATV-04: an absent
+// TXT record persists status=error with a TXT-specific message, never one
+// suggesting a CNAME or TLS action.
+func TestVerifyDomain_TXTNotFound_ErrorWithTXTMessage(t *testing.T) {
 	r, pool, admins := newDomainsRouter(t, func(h *DomainsHandler) {
-		h.verifier = &fakeDomainVerifier{result: domainVerificationResult{DNSResolved: false}}
+		h.verifier = &fakeApexTXTVerifier{result: apexTXTResult{TXTFound: false}}
 	})
 	token := issueTestSessionToken(t, admins)
 	domain := createVerifiableTestDomain(t, r, pool, token)
@@ -726,19 +762,22 @@ func TestVerifyDomain_DNSFailure_ErrorWithLastError(t *testing.T) {
 		t.Errorf("Status = %q, want %q", updated.Status, "error")
 	}
 	if updated.LastError == nil || *updated.LastError == "" {
-		t.Error("LastError is nil/empty, want a populated description")
+		t.Fatal("LastError is nil/empty, want a populated description")
+	}
+	if !strings.Contains(*updated.LastError, "TXT") {
+		t.Errorf("LastError = %q, want TXT-specific wording", *updated.LastError)
+	}
+	if strings.Contains(*updated.LastError, "CNAME") || strings.Contains(*updated.LastError, "DNS not resolved") {
+		t.Errorf("LastError = %q, must not mention a CNAME or DNS resolution", *updated.LastError)
 	}
 }
 
-// TestVerifyDomain_DNSMismatch_ErrorWithLastError covers DOMVER-08's other
-// failure branch: DNS resolves but doesn't match the configured target
-// (DNSMatchesTarget = false, not just "DNS doesn't resolve at all").
-func TestVerifyDomain_DNSMismatch_ErrorWithLastError(t *testing.T) {
-	mismatch := false
+// TestVerifyDomain_TXTMismatch_ErrorWithTXTMessage covers DATV-04's other
+// failure branch: a TXT record exists but none of its values equals the
+// token (TXTFound=true, TXTMatches=false), distinct from "no record at all".
+func TestVerifyDomain_TXTMismatch_ErrorWithTXTMessage(t *testing.T) {
 	r, pool, admins := newDomainsRouter(t, func(h *DomainsHandler) {
-		h.verifier = &fakeDomainVerifier{result: domainVerificationResult{
-			DNSResolved: true, DNSMatchesTarget: &mismatch, TLSReachable: true, TLSCertValid: true,
-		}}
+		h.verifier = &fakeApexTXTVerifier{result: apexTXTResult{TXTFound: true, TXTMatches: false}}
 	})
 	token := issueTestSessionToken(t, admins)
 	domain := createVerifiableTestDomain(t, r, pool, token)
@@ -753,23 +792,34 @@ func TestVerifyDomain_DNSMismatch_ErrorWithLastError(t *testing.T) {
 		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
 	}
 	if updated.Status != "error" {
-		t.Errorf("Status = %q, want %q (DNS resolved but doesn't match the configured target)", updated.Status, "error")
+		t.Errorf("Status = %q, want %q (TXT found but value does not match)", updated.Status, "error")
 	}
 	if updated.LastError == nil || *updated.LastError == "" {
-		t.Error("LastError is nil/empty, want a populated mismatch description")
+		t.Fatal("LastError is nil/empty, want a populated mismatch description")
 	}
-	// TLS succeeded independently of the DNS mismatch - ssl_status must
-	// still reflect that, proving status and ssl_status are derived
-	// independently rather than one failure blanking both.
-	if updated.SSLStatus != "active" {
-		t.Errorf("SSLStatus = %q, want %q (TLS check succeeded independently of the DNS mismatch)", updated.SSLStatus, "active")
+	if !strings.Contains(*updated.LastError, "does not match") {
+		t.Errorf("LastError = %q, want a value-mismatch description", *updated.LastError)
 	}
+	if strings.Contains(*updated.LastError, "CNAME") || strings.Contains(*updated.LastError, "not resolved") {
+		t.Errorf("LastError = %q, must not mention a CNAME or DNS resolution", *updated.LastError)
+	}
+}
+
+// fakeApexTXTVerifier lets DomainsHandler Verify tests control the TXT check
+// outcome without real DNS. Distinct from fakeDomainVerifier, which serves
+// the unrelated StatusPagesHandler.VerifyDomain subdomain flow.
+type fakeApexTXTVerifier struct {
+	result apexTXTResult
+}
+
+func (f *fakeApexTXTVerifier) Verify(ctx context.Context, hostname, expectedToken string) apexTXTResult {
+	return f.result
 }
 
 // TestVerifyDomain_UnknownDomain_404 covers DOMVER-05.
 func TestVerifyDomain_UnknownDomain_404(t *testing.T) {
 	r, _, admins := newDomainsRouter(t, func(h *DomainsHandler) {
-		h.verifier = &fakeDomainVerifier{}
+		h.verifier = &fakeApexTXTVerifier{}
 	})
 	token := issueTestSessionToken(t, admins)
 
@@ -779,14 +829,14 @@ func TestVerifyDomain_UnknownDomain_404(t *testing.T) {
 	}
 }
 
-// countingDomainVerifier wraps fakeDomainVerifier to count Verify() calls,
-// so the cooldown test can assert no second network call was made.
-type countingDomainVerifier struct {
-	result domainVerificationResult
+// countingApexTXTVerifier wraps fakeApexTXTVerifier to count Verify() calls,
+// so the cooldown and re-verify tests can assert on the number of real checks.
+type countingApexTXTVerifier struct {
+	result apexTXTResult
 	calls  int
 }
 
-func (f *countingDomainVerifier) Verify(ctx context.Context, hostname, expectedTarget string) domainVerificationResult {
+func (f *countingApexTXTVerifier) Verify(ctx context.Context, hostname, expectedToken string) apexTXTResult {
 	f.calls++
 	return f.result
 }
@@ -796,7 +846,7 @@ func (f *countingDomainVerifier) Verify(ctx context.Context, hostname, expectedT
 // returns the existing persisted state (200) without a new network call,
 // unlike StatusPagesHandler.VerifyDomain's 429.
 func TestVerifyDomain_WithinCooldown_ReturnsExistingStateNoNewCheck(t *testing.T) {
-	counter := &countingDomainVerifier{result: domainVerificationResult{DNSResolved: true, TLSReachable: true, TLSCertValid: true}}
+	counter := &countingApexTXTVerifier{result: apexTXTResult{TXTFound: true, TXTMatches: true}}
 	r, pool, admins := newDomainsRouter(t, func(h *DomainsHandler) { h.verifier = counter })
 	token := issueTestSessionToken(t, admins)
 	domain := createVerifiableTestDomain(t, r, pool, token)
@@ -821,6 +871,59 @@ func TestVerifyDomain_WithinCooldown_ReturnsExistingStateNoNewCheck(t *testing.T
 	}
 	if second.Status != "verified" {
 		t.Errorf("second response Status = %q, want %q (existing persisted state)", second.Status, "verified")
+	}
+}
+
+// TestVerifyDomain_AlreadyVerified_ReVerifiesAndUpdates covers DATV-05: a
+// domain already "verified" still triggers a fresh TXT lookup on the next
+// verify (not short-circuited by the current state), and the fresh result
+// updates status/verified_at. The cooldown is simulated as elapsed by
+// backdating the handler's per-domain timestamp.
+func TestVerifyDomain_AlreadyVerified_ReVerifiesAndUpdates(t *testing.T) {
+	counter := &countingApexTXTVerifier{result: apexTXTResult{TXTFound: true, TXTMatches: true}}
+	var handler *DomainsHandler
+	r, pool, admins := newDomainsRouter(t, func(h *DomainsHandler) {
+		h.verifier = counter
+		handler = h
+	})
+	token := issueTestSessionToken(t, admins)
+	domain := createVerifiableTestDomain(t, r, pool, token)
+
+	firstRec := postDomainVerify(t, r, token, domain.ID)
+	if firstRec.Code != http.StatusOK {
+		t.Fatalf("first verify status = %d, want %d, body = %s", firstRec.Code, http.StatusOK, firstRec.Body.String())
+	}
+	var first domainResponse
+	if err := json.Unmarshal(firstRec.Body.Bytes(), &first); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+	if first.Status != "verified" {
+		t.Fatalf("first response Status = %q, want %q", first.Status, "verified")
+	}
+
+	// Simulate the cooldown window elapsing so the next call performs a real
+	// lookup instead of returning the persisted state.
+	handler.lastVerifyMu.Lock()
+	handler.lastVerifyAt[domain.ID] = time.Now().Add(-time.Minute)
+	handler.lastVerifyMu.Unlock()
+
+	// The record is now gone/mismatched: the fresh check must run and flip
+	// the already-verified domain back to error.
+	counter.result = apexTXTResult{TXTFound: true, TXTMatches: false}
+	secondRec := postDomainVerify(t, r, token, domain.ID)
+	if secondRec.Code != http.StatusOK {
+		t.Fatalf("second verify status = %d, want %d, body = %s", secondRec.Code, http.StatusOK, secondRec.Body.String())
+	}
+
+	if counter.calls != 2 {
+		t.Errorf("verifier.Verify() calls = %d, want 2 (an already-verified domain must still be re-checked)", counter.calls)
+	}
+	var second domainResponse
+	if err := json.Unmarshal(secondRec.Body.Bytes(), &second); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+	if second.Status != "error" {
+		t.Errorf("second response Status = %q, want %q (fresh TXT mismatch must update the already-verified state)", second.Status, "error")
 	}
 }
 

@@ -176,12 +176,12 @@ Tasks: T10, T11
 - Skill: NONE
 
 **Done when**:
-- [ ] `GET /api/domains`, `POST /api/domains`, `POST /api/domains/{id}/verify` responses contain no `ssl_status` key and do contain `verification_txt_value`
-- [ ] `Verify` on an already-`verified` domain still invokes the verifier (not skipped by current state) and updates `status`/`verified_at` from the fresh result, subject only to the existing cooldown
-- [ ] New error copy is TXT-specific, no residual "CNAME"/"DNS not resolved" language reachable from this handler
-- [ ] `Domain.SSLStatus` and the `sslStatus` parameter are gone; `0045` drops the column and its `.down.sql` restores it with the original `CHECK`
-- [ ] Integration tests updated/added for all of the above, run under RLS per `AGENTS.md` §3
-- [ ] Gate check passes: `make test-integration`
+- [x] `GET /api/domains`, `POST /api/domains`, `POST /api/domains/{id}/verify` responses contain no `ssl_status` key and do contain `verification_txt_value`
+- [x] `Verify` on an already-`verified` domain still invokes the verifier (not skipped by current state) and updates `status`/`verified_at` from the fresh result, subject only to the existing cooldown
+- [x] New error copy is TXT-specific, no residual "CNAME"/"DNS not resolved" language reachable from this handler
+- [x] `Domain.SSLStatus` and the `sslStatus` parameter are gone; `0045` drops the column and its `.down.sql` restores it with the original `CHECK`
+- [x] Integration tests updated/added for all of the above, run under RLS per `AGENTS.md` §3
+- [x] Gate check passes: `make test-integration`
 
 **Tests**: `internal/api/domains_handler_test.go`, `internal/db/domain_repository_test.go`
 **Gate**: full (integration)
