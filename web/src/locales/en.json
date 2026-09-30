@@ -105,7 +105,6 @@
       "domain": "Domain",
       "type": "Type",
       "pointsTo": "Points to",
-      "ssl": "SSL",
       "verified": "Verified",
       "risk": "Risk"
     },
@@ -121,11 +120,6 @@
     "statusLabel": {
       "pending": "Pending",
       "verified": "Verified",
-      "error": "Error"
-    },
-    "sslStatusLabel": {
-      "pending": "Pending",
-      "active": "Active",
       "error": "Error"
     },
     "typeLabel": {
@@ -165,8 +159,10 @@
     },
     "detail": {
       "pointsToConnector": "points to",
-      "sslLabel": "SSL/TLS",
       "verifiedAtLabel": "Verified on",
+      "txtConfigLabel": "TXT configuration",
+      "txtRecordName": "NAME",
+      "txtRecordValue": "VALUE",
       "dnsConfigLabel": "DNS configuration",
       "dnsType": "TYPE",
       "dnsValue": "VALUE",

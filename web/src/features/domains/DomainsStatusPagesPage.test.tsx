@@ -45,7 +45,6 @@ function baseDomain(overrides: Partial<Domain>): Domain {
     created_at: new Date().toISOString(),
     domain_type: "custom",
     status: "verified",
-    ssl_status: "active",
     verified_at: new Date().toISOString(),
     last_error: null,
     verification_txt_value: "dom-fixture-token",

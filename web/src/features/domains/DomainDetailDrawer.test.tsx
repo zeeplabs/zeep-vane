@@ -38,7 +38,6 @@ function baseDomain(overrides: Partial<Domain>): Domain {
     created_at: new Date().toISOString(),
     domain_type: "custom",
     status: "verified",
-    ssl_status: "active",
     verified_at: new Date().toISOString(),
     last_error: null,
     verification_txt_value: "dom-fixture-token",
@@ -83,7 +82,6 @@ describe("DomainDetailDrawer", () => {
         id: "dom-error",
         hostname: "error.example.com",
         status: "error",
-        ssl_status: "error",
         last_error: "DNS not resolved: no record found for this hostname",
       }),
     ]);
@@ -127,13 +125,12 @@ describe("DomainDetailDrawer", () => {
       id: "dom-recheck",
       hostname: "recheck.example.com",
       status: "pending",
-      ssl_status: "pending",
       verified_at: null,
     });
     mockDomainsPage([domain]);
     server.use(
       http.post("/api/domains/:id/verify", () =>
-        HttpResponse.json({ ...domain, status: "verified", ssl_status: "active", verified_at: new Date().toISOString() })
+        HttpResponse.json({ ...domain, status: "verified", verified_at: new Date().toISOString() })
       )
     );
     await loginAsOwner();

@@ -302,10 +302,10 @@ Tasks: T10, T11
 - Skill: NONE
 
 **Done when**:
-- [ ] No `ssl_status`/`DomainSSLStatus` reference remains anywhere in `web/src`
-- [ ] No orphaned SSL-related locale key remains in either locale file
-- [ ] Every new TXT key referenced by T6 exists in both locales with equivalent meaning
-- [ ] Gate check passes: `cd web && npx tsc -b --noEmit && npm run test && npm run i18n:check`
+- [x] No `ssl_status`/`DomainSSLStatus` reference remains anywhere in `web/src`
+- [x] No orphaned SSL-related locale key remains in either locale file
+- [x] Every new TXT key referenced by T6 exists in both locales with equivalent meaning
+- [x] Gate check passes: `cd web && npx tsc -b --noEmit && npm run test && npm run i18n:check`
 
 **Tests**: covered by typecheck + `npm run test` + `i18n:check`
 **Gate**: frontend (full - last frontend task in the phase)

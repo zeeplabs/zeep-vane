@@ -51,8 +51,8 @@ export function useDeleteDomain() {
 }
 
 // useRecheckDomain triggers POST /api/domains/{id}/verify (DomainsHandler.
-// Verify, spec.md DSP-06) - a real DNS+TLS check against the domain's own
-// hostname, persisting status/ssl_status/verified_at/last_error. Named
+// Verify, spec.md DSP-06) - a real TXT ownership check against the domain's
+// own hostname, persisting status/verified_at/last_error. Named
 // distinctly from status-pages/hooks.ts's useVerifyDomain, which hits a
 // different endpoint (POST /api/status-pages/{id}/verify-domain) against a
 // status page's public hostname - the two are not interchangeable.
