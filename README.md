@@ -297,7 +297,7 @@ Core tables (see `internal/db/migrations/` for exact schema and `internal/db/*_r
 | `integrations` | Stored (encrypted) Datadog API key + application key pair, one row per installation. Not tenant-scoped. |
 | `services` | Logical services the company wants to expose, each mapped to a Datadog SLO. |
 | `status_intervals` | Poller-written status per service as open/closed intervals (an interval opens on a status change and stays open, `ends_at IS NULL`, until the next one; at most one open interval per service, enforced by a partial unique index) — what both the admin dashboard and public page actually read, and what the public page's hourly bars/uptime % are computed from. |
-| `domains` | Custom hostnames the operator has registered with Vane (validated ownership, DNS target). |
+| `domains` | Root/apex domains the operator has registered with Vane; ownership is validated with a TXT record (`_vane-verify.<hostname>`), never by pointing the domain's own DNS at Vane (AD-042). |
 | `status_pages` | A publishable page: a set of services + incidents to expose, an optional `domain_id`/`subdomain` (nullable — a page can exist and be previewed before any domain is attached, see AD-008), and a `state` (`draft`/`published`). |
 | `incidents` + updates | Incident timeline entries linked to one or more services, surfaced on the public page for 90 days after resolution. |
 

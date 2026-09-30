@@ -350,8 +350,8 @@ Tasks: T10, T11
 - Skill: NONE
 
 **Done when**:
-- [ ] Domain model table wording accurately reflects TXT-based ownership proof for the root domain, with no leftover CNAME/DNS-target implication for that row
-- [ ] No other README section (e.g. the subdomain-attach/CertMagic sections) is touched - they remain accurate as-is
+- [x] Domain model table wording accurately reflects TXT-based ownership proof for the root domain, with no leftover CNAME/DNS-target implication for that row
+- [x] No other README section (e.g. the subdomain-attach/CertMagic sections) is touched - they remain accurate as-is
 
 **Tests**: none
 **Gate**: none (docs)
