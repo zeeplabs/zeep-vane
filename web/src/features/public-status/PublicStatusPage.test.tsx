@@ -112,6 +112,42 @@ function mockPublicPreviewMultiService(
   );
 }
 
+// mockPublicPreviewGrouped overrides the public-preview MSW handler with
+// caller-supplied services/groups, exercising the real
+// PreviewResponse/PublicStatusPageData shape's groups + group_id/
+// parent_service_id fields (service-groups-and-dependencies T14) instead of
+// the flat single-service fixtures above, which predate those fields.
+function mockPublicPreviewGrouped(
+  services: Array<{
+    id: string;
+    name: string;
+    status?: "operational" | "degraded" | "outage";
+    group_id?: string;
+    parent_service_id?: string;
+  }>,
+  groups: Array<{ id: string; name: string; position: number }>,
+) {
+  server.use(
+    http.get("/api/status-pages/:id/public-preview", () =>
+      HttpResponse.json({
+        company: { name: "Acme Status", logo_url: null },
+        services: services.map((s) => ({
+          id: s.id,
+          name: s.name,
+          status: s.status ?? "operational",
+          last_updated_at: new Date().toISOString(),
+          history: [],
+          uptime_percent: 99.9,
+          group_id: s.group_id,
+          parent_service_id: s.parent_service_id,
+        })),
+        incidents: { active: [], resolved: { items: [], total: 0, page: 1, page_size: 10 } },
+        groups,
+      }),
+    ),
+  );
+}
+
 function hourlyBars(serviceName: string) {
   return screen.getAllByTestId(new RegExp(`^hourly-bar-${serviceName}-\\d+$`));
 }
@@ -640,5 +676,118 @@ describe("PublicStatusPage - visitor language (isolated from the admin's vane:la
 
     expect(await screen.findByText("All systems operational")).toBeInTheDocument();
     expect(screen.getByText("Services")).toBeInTheDocument();
+  });
+});
+
+// service-groups-and-dependencies (T14): grouped rendering of
+// data.services/data.groups on the public status page. SGD-02/03 (group
+// sections, ordered by position), SGD-05 (group names), SGD-06 (parent/
+// child nesting, independent status badges, no aggregation), SGD-07
+// (service.id as React key, fixing the latent duplicate-name key bug),
+// SGD-09 (an empty group still shows its header).
+describe("PublicStatusPage - service groups and dependencies (SGD-02/03/05/06/07/09)", () => {
+  it("renders services under their group's labeled section, in group position order", async () => {
+    mockPublicPreviewGrouped(
+      [
+        { id: "svc-1", name: "API", group_id: "grp-infra" },
+        { id: "svc-2", name: "Banco de Dados", group_id: "grp-infra" },
+        { id: "svc-3", name: "Checkout", group_id: "grp-apps" },
+      ],
+      [
+        { id: "grp-apps", name: "Aplicações", position: 1 },
+        { id: "grp-infra", name: "Infraestrutura", position: 0 },
+      ],
+    );
+
+    await renderAt("/status/grouped-basic");
+
+    const infraHeading = await screen.findByText("Infraestrutura");
+    const appsHeading = await screen.findByText("Aplicações");
+    expect(infraHeading).toBeInTheDocument();
+    expect(appsHeading).toBeInTheDocument();
+    // Infraestrutura (position 0) renders before Aplicações (position 1) -
+    // DOM order mirrors documentPosition, not array order in the fixture.
+    expect(infraHeading.compareDocumentPosition(appsHeading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(screen.getByText("API")).toBeInTheDocument();
+    expect(screen.getByText("Banco de Dados")).toBeInTheDocument();
+    expect(screen.getByText("Checkout")).toBeInTheDocument();
+  });
+
+  it("renders ungrouped services in a trailing section with no visible 'ungrouped' label", async () => {
+    mockPublicPreviewGrouped(
+      [
+        { id: "svc-1", name: "Checkout", group_id: "grp-apps" },
+        { id: "svc-2", name: "Serviço Solto" },
+      ],
+      [{ id: "grp-apps", name: "Aplicações", position: 0 }],
+    );
+
+    await renderAt("/status/grouped-ungrouped");
+
+    const groupHeading = await screen.findByText("Aplicações");
+    const looseService = await screen.findByText("Serviço Solto");
+    expect(looseService).toBeInTheDocument();
+    // No synthetic "ungrouped"/"sem grupo" label rendered anywhere.
+    expect(screen.queryByText(/ungrouped/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/sem grupo/i)).not.toBeInTheDocument();
+    // The ungrouped service's section comes after the named group's.
+    expect(groupHeading.compareDocumentPosition(looseService) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it("still renders an empty group's header when it has zero services placed in it", async () => {
+    mockPublicPreviewGrouped(
+      [{ id: "svc-1", name: "Checkout", group_id: "grp-apps" }],
+      [
+        { id: "grp-apps", name: "Aplicações", position: 0 },
+        { id: "grp-empty", name: "Grupo Vazio", position: 1 },
+      ],
+    );
+
+    await renderAt("/status/grouped-empty-group");
+
+    expect(await screen.findByText("Grupo Vazio")).toBeInTheDocument();
+  });
+
+  it("nests a child service's card under its parent, each with its own independent status badge", async () => {
+    mockPublicPreviewGrouped(
+      [
+        { id: "svc-parent", name: "API Principal", status: "operational", group_id: "grp-apps" },
+        {
+          id: "svc-child",
+          name: "Fila de Jobs",
+          status: "degraded",
+          group_id: "grp-apps",
+          parent_service_id: "svc-parent",
+        },
+      ],
+      [{ id: "grp-apps", name: "Aplicações", position: 0 }],
+    );
+
+    await renderAt("/status/grouped-nested");
+
+    const parentCard = (await screen.findByText("API Principal")).closest("section,div");
+    expect(parentCard).toBeTruthy();
+    expect(screen.getByText("Fila de Jobs")).toBeInTheDocument();
+    // Independent status badges - no aggregation: the parent stays
+    // "Operacional" even though its child is "Degradado".
+    expect(screen.getByText("Operacional")).toBeInTheDocument();
+    expect(screen.getByText("Degradado")).toBeInTheDocument();
+  });
+
+  it("uses service.id as the React key, rendering two services that share the same name", async () => {
+    mockPublicPreviewGrouped(
+      [
+        { id: "svc-1", name: "Status API", group_id: "grp-a" },
+        { id: "svc-2", name: "Status API", group_id: "grp-b" },
+      ],
+      [
+        { id: "grp-a", name: "Grupo A", position: 0 },
+        { id: "grp-b", name: "Grupo B", position: 1 },
+      ],
+    );
+
+    await renderAt("/status/grouped-duplicate-names");
+
+    expect(await screen.findAllByText("Status API")).toHaveLength(2);
   });
 });
