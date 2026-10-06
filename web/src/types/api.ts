@@ -63,6 +63,12 @@ export type ServiceStatus = "not_configured" | "operational" | "degraded" | "out
 export type MonitorMode = "slo" | "polling";
 export type PollType = "http" | "tcp" | "ping";
 
+// ServiceEnvironment mirrors the backend's fixed enum
+// (internal/api/services_handler.go's validEnvironments,
+// service-environment-tag SET-01/SET-02) - "" means no tag (the default),
+// admin-only visual badge with no business-logic effect.
+export type ServiceEnvironment = "" | "development" | "staging" | "production";
+
 export interface Service {
   id: string;
   name: string;
@@ -78,6 +84,10 @@ export interface Service {
   poll_type: PollType | null;
   poll_target: string | null;
   poll_interval_seconds: number | null;
+  // environment is a visual-only admin tag (service-environment-tag
+  // SET-01/SET-04) - "" means no tag, always present on every Service-
+  // returning endpoint (never optional, unlike group_id/position below).
+  environment: ServiceEnvironment;
   current_status: ServiceStatus;
   last_status_change_at: string;
   // uptime_30d/last_seen_at (monitored-services-page SVC-01/SVC-06): null
@@ -177,6 +187,13 @@ export interface Domain {
 
 export type StatusPageState = "draft" | "pending_tls" | "published" | "tls_failed";
 
+// StatusPageEnvironment mirrors the backend's fixed enum
+// (internal/api/status_pages_handler.go's validStatusPageEnvironments,
+// status-page-environment-banner SPEB-01/02) - "" means no banner (the
+// default, production implied). Deliberately has no "production" member -
+// unlike ServiceEnvironment, which does.
+export type StatusPageEnvironment = "" | "staging" | "development";
+
 export interface StatusPage {
   id: string;
   name: string;
@@ -186,6 +203,11 @@ export interface StatusPage {
   tls_last_error: string | null;
   created_at: string;
   service_ids: string[];
+  // environment drives the public status page's fixed banner
+  // (status-page-environment-banner SPEB-02/05) - always present in the
+  // admin response (unlike the public response's omitted-when-empty
+  // field).
+  environment: StatusPageEnvironment;
 }
 
 export type IncidentStatus = "investigating" | "identified" | "monitoring" | "resolved";

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
-import { MdOutlineSchedule, MdOutlineWbSunny, MdOutlineNightlight } from "react-icons/md";
+import { MdOutlineSchedule, MdOutlineWbSunny, MdOutlineNightlight, MdOutlineVerified, MdOutlineWarningAmber } from "react-icons/md";
 import { Card } from "../../components/ui/Card";
 import { Button } from "../../components/ui/Button";
 import { Skeleton } from "../../components/ui/Skeleton";
@@ -12,6 +12,7 @@ import type { SegOption } from "../../components/ui/Seg";
 import { Popover } from "../../components/ui/Popover";
 import type {
   PublicDegradedEpisode,
+  PublicDomainHealth,
   PublicHistoryBucket,
   PublicHourlyStatus,
   PublicIncidentEntry,
@@ -147,6 +148,61 @@ function SunIcon() {
 
 function MoonIcon() {
   return <MdOutlineNightlight size={16} aria-hidden="true" data-testid="theme-icon-moon" />;
+}
+
+// DomainHealthIndicator renders a small icon + t()-routed tooltip for
+// domain_health (public-status-domain-health PSDH-05), only ever called
+// when the backend included the field (PSDH-01/03/04 already gate its
+// presence) - "ok" is a discreet, neutral-colored icon, "attention" gets
+// warning-colored emphasis. Never renders the underlying expiration date,
+// registrar, or NS values - only the derived status label.
+function DomainHealthIndicator({ domainHealth, t }: { domainHealth: PublicDomainHealth; t: Translator }) {
+  const label = t(`publicStatus.domainHealth.${domainHealth.status}`);
+  if (domainHealth.status === "attention") {
+    return (
+      <span
+        className="flex items-center text-[--color-warning]"
+        style={{ color: "var(--color-warning)" }}
+        title={label}
+        aria-label={label}
+        data-testid="domain-health-indicator"
+        data-domain-health-status="attention"
+      >
+        <MdOutlineWarningAmber size={16} aria-hidden="true" />
+      </span>
+    );
+  }
+  return (
+    <span
+      className="flex items-center text-neutral-400"
+      title={label}
+      aria-label={label}
+      data-testid="domain-health-indicator"
+      data-domain-health-status="ok"
+    >
+      <MdOutlineVerified size={16} aria-hidden="true" />
+    </span>
+  );
+}
+
+// EnvironmentBanner is a fixed, non-dismissible banner shown at the very
+// top of the public page when the status page has a non-"" environment
+// tag (status-page-environment-banner SPEB-04/05) - no close button, no
+// localStorage/session state, deliberately: the point is to always warn a
+// visitor this page doesn't reflect production, so letting it be hidden
+// would defeat that purpose (spec.md Decisões). The environment value
+// interpolated into the text is itself translated (statusPages.environment
+// keys, shared with the admin select), never the raw enum string.
+function EnvironmentBanner({ environment, t }: { environment: "staging" | "development"; t: Translator }) {
+  return (
+    <div
+      data-testid="environment-banner"
+      className="w-full bg-[--color-warning] px-4 py-2 text-center text-[13px] font-semibold text-white"
+      style={{ backgroundColor: "var(--color-warning)" }}
+    >
+      {t("publicStatus.environmentBanner", { environment: t(`statusPages.environment.${environment}`) })}
+    </div>
+  );
 }
 
 function IncidentCard({
@@ -530,6 +586,7 @@ export function PublicStatusPage() {
 
   return (
     <div data-theme={themeAttr} data-testid="public-status-theme-root" className="min-h-screen bg-bg">
+    {data.environment ? <EnvironmentBanner environment={data.environment} t={t} /> : null}
     <div className="mx-auto flex w-full max-w-[720px] flex-col gap-7 px-[24px] pt-[56px] pb-[80px]">
       <header className="flex flex-wrap items-center justify-between gap-3">
         {data.logo_url ? (
@@ -538,6 +595,7 @@ export function PublicStatusPage() {
           <span className="text-[17px] font-semibold tracking-tight text-text">{data.company_name}</span>
         )}
         <div className="flex items-center gap-3">
+          {data.domain_health ? <DomainHealthIndicator domainHealth={data.domain_health} t={t} /> : null}
           <button
             type="button"
             onClick={toggleTheme}

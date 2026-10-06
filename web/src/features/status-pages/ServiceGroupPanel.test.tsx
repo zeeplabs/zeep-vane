@@ -36,6 +36,7 @@ const svc1: Service = {
   poll_type: null,
   poll_target: null,
   poll_interval_seconds: null,
+  environment: "",
   current_status: "operational",
   last_status_change_at: new Date().toISOString(),
   uptime_30d: null,

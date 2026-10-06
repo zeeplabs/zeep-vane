@@ -781,6 +781,178 @@ func TestServiceRepository_List_IncludesSLOTypeAndDatadogServiceTag(t *testing.T
 	}
 }
 
+// TestServiceRepository_Create_PersistsEnvironment covers SET-01/SET-02:
+// Create persists a non-empty Environment value and Get reads it back
+// unchanged.
+func TestServiceRepository_Create_PersistsEnvironment(t *testing.T) {
+	repo, pool := newServiceRepoTestPool(t)
+	tenantID := seedPlainTenant(t, pool)
+	name := fmt.Sprintf("create-env-%d", time.Now().UnixNano())
+	service := &Service{Name: name, SLOID: "slo-env-1", Environment: "staging"}
+	withTenantTx(t, pool, tenantID, func(ctx context.Context) {
+		if err := repo.Create(ctx, service); err != nil {
+			t.Fatalf("Create() returned unexpected error: %v", err)
+		}
+	})
+	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), "DELETE FROM services WHERE id = $1", service.ID) })
+
+	got, found, err := repo.Get(context.Background(), service.ID)
+	if err != nil {
+		t.Fatalf("Get() returned unexpected error: %v", err)
+	}
+	if !found {
+		t.Fatalf("found = false, want true")
+	}
+	if got.Environment != "staging" {
+		t.Errorf("got.Environment = %q, want %q", got.Environment, "staging")
+	}
+}
+
+// TestServiceRepository_Create_EmptyEnvironment_DefaultsToEmpty covers the
+// ""-means-absent convention (SET-01): a Service with no Environment set
+// persists and reads back "" (no tag), same as every pre-feature caller.
+func TestServiceRepository_Create_EmptyEnvironment_DefaultsToEmpty(t *testing.T) {
+	repo, pool := newServiceRepoTestPool(t)
+	tenantID := seedPlainTenant(t, pool)
+	name := fmt.Sprintf("create-env-empty-%d", time.Now().UnixNano())
+	service := &Service{Name: name, SLOID: "slo-env-2"}
+	withTenantTx(t, pool, tenantID, func(ctx context.Context) {
+		if err := repo.Create(ctx, service); err != nil {
+			t.Fatalf("Create() returned unexpected error: %v", err)
+		}
+	})
+	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), "DELETE FROM services WHERE id = $1", service.ID) })
+
+	got, found, err := repo.Get(context.Background(), service.ID)
+	if err != nil {
+		t.Fatalf("Get() returned unexpected error: %v", err)
+	}
+	if !found {
+		t.Fatalf("found = false, want true")
+	}
+	if got.Environment != "" {
+		t.Errorf("got.Environment = %q, want empty", got.Environment)
+	}
+}
+
+// TestServiceRepository_Create_PollingMode_PersistsEnvironment covers that
+// Environment is independent of MonitorMode (SET-01): a polling-mode
+// service's environment column is set through the same Create branch that
+// skips slo_id/slo_name.
+func TestServiceRepository_Create_PollingMode_PersistsEnvironment(t *testing.T) {
+	repo, pool := newServiceRepoTestPool(t)
+	tenantID := seedPlainTenant(t, pool)
+	name := fmt.Sprintf("create-env-polling-%d", time.Now().UnixNano())
+	service := &Service{
+		Name:                name,
+		MonitorMode:         "polling",
+		PollType:            strPtr("http"),
+		PollTarget:          strPtr("https://example.com/health"),
+		PollIntervalSeconds: intPtr(60),
+		Environment:         "production",
+	}
+	withTenantTx(t, pool, tenantID, func(ctx context.Context) {
+		if err := repo.Create(ctx, service); err != nil {
+			t.Fatalf("Create() returned unexpected error: %v", err)
+		}
+	})
+	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), "DELETE FROM services WHERE id = $1", service.ID) })
+
+	got, found, err := repo.Get(context.Background(), service.ID)
+	if err != nil {
+		t.Fatalf("Get() returned unexpected error: %v", err)
+	}
+	if !found {
+		t.Fatalf("found = false, want true")
+	}
+	if got.Environment != "production" {
+		t.Errorf("got.Environment = %q, want %q", got.Environment, "production")
+	}
+}
+
+// TestServiceRepository_ListPaginated_IncludesEnvironment covers the admin
+// list read path (SET-04): ListPaginated returns Environment alongside the
+// other fields List/Get already return.
+func TestServiceRepository_ListPaginated_IncludesEnvironment(t *testing.T) {
+	repo, pool := newServiceRepoTestPool(t)
+	tenantID := seedPlainTenant(t, pool)
+	name := fmt.Sprintf("listpaginated-env-%d", time.Now().UnixNano())
+	service := &Service{Name: name, SLOID: "slo-env-3", Environment: "development"}
+	withTenantTx(t, pool, tenantID, func(ctx context.Context) {
+		if err := repo.Create(ctx, service); err != nil {
+			t.Fatalf("setup Create() returned unexpected error: %v", err)
+		}
+	})
+	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), "DELETE FROM services WHERE id = $1", service.ID) })
+
+	items, _, err := repo.ListPaginated(context.Background(), 1, 1000)
+	if err != nil {
+		t.Fatalf("ListPaginated() returned unexpected error: %v", err)
+	}
+	var found *Service
+	for i := range items {
+		if items[i].ID == service.ID {
+			found = &items[i]
+		}
+	}
+	if found == nil {
+		t.Fatalf("ListPaginated() did not return the seeded service")
+	}
+	if found.Environment != "development" {
+		t.Errorf("found.Environment = %q, want %q", found.Environment, "development")
+	}
+}
+
+// TestServiceRepository_UpdateEnvironment_SetsThenClears_RoundTrips covers
+// SET-03's admin-facing round trip: set the environment, read it back, then
+// clear it via "" and confirm it reads back empty again (not left stale) -
+// mirrors UpdateSLOMetadata's set/clear round trip above.
+func TestServiceRepository_UpdateEnvironment_SetsThenClears_RoundTrips(t *testing.T) {
+	repo, pool := newServiceRepoTestPool(t)
+	tenantID := seedPlainTenant(t, pool)
+	name := fmt.Sprintf("update-env-%d", time.Now().UnixNano())
+	service := &Service{Name: name, SLOID: "slo-env-4"}
+	withTenantTx(t, pool, tenantID, func(ctx context.Context) {
+		if err := repo.Create(ctx, service); err != nil {
+			t.Fatalf("setup Create() returned unexpected error: %v", err)
+		}
+	})
+	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), "DELETE FROM services WHERE id = $1", service.ID) })
+
+	if err := repo.UpdateEnvironment(context.Background(), service.ID, "production"); err != nil {
+		t.Fatalf("UpdateEnvironment() set returned unexpected error: %v", err)
+	}
+	got, _, err := repo.Get(context.Background(), service.ID)
+	if err != nil {
+		t.Fatalf("Get() after set returned unexpected error: %v", err)
+	}
+	if got.Environment != "production" {
+		t.Fatalf("after set: got.Environment = %q, want %q", got.Environment, "production")
+	}
+
+	if err := repo.UpdateEnvironment(context.Background(), service.ID, ""); err != nil {
+		t.Fatalf("UpdateEnvironment() clear returned unexpected error: %v", err)
+	}
+	got, _, err = repo.Get(context.Background(), service.ID)
+	if err != nil {
+		t.Fatalf("Get() after clear returned unexpected error: %v", err)
+	}
+	if got.Environment != "" {
+		t.Errorf("after clear: got.Environment = %q, want empty", got.Environment)
+	}
+}
+
+// TestServiceRepository_UpdateEnvironment_UnknownID_ReturnsErrNotFound
+// mirrors UpdateSLOMetadata's not-found convention.
+func TestServiceRepository_UpdateEnvironment_UnknownID_ReturnsErrNotFound(t *testing.T) {
+	repo, _ := newServiceRepoTestPool(t)
+
+	err := repo.UpdateEnvironment(context.Background(), "00000000-0000-0000-0000-000000000000", "production")
+	if !errors.Is(err, ErrNotFound) {
+		t.Errorf("UpdateEnvironment() error = %v, want ErrNotFound", err)
+	}
+}
+
 // TestServiceRepository_SoftDelete_SetsDeletedAtAndHidesFromReads covers
 // service-delete SVCDEL-01/02: deleted_at is set, and the service
 // disappears from Get/List/ListPaginated/ListPollingManual afterward.

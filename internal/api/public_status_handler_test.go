@@ -30,7 +30,8 @@ func newPublicStatusRouter(t *testing.T) (http.Handler, *db.Pool) {
 	incidents := db.NewIncidentRepository(pool)
 	companySettings := db.NewTenantRepository(pool)
 	statusPages := db.NewStatusPageRepository(pool)
-	handler := NewPublicStatusHandler(services, intervals, incidents, companySettings, statusPages, zap.NewNop())
+	domains := db.NewDomainRepository(pool)
+	handler := NewPublicStatusHandler(services, intervals, incidents, companySettings, statusPages, domains, zap.NewNop())
 
 	r := chi.NewRouter()
 	r.Get("/", handler.Get)
@@ -89,6 +90,18 @@ func insertStatusInterval(t *testing.T, pool *db.Pool, serviceID, status string,
 // hostname (SP-15 scoping).
 func createPublicStatusPageFixture(t *testing.T, pool *db.Pool, serviceIDs ...string) string {
 	t.Helper()
+	statusPageID, _ := createPublicStatusPageFixtureWithDomainID(t, pool, serviceIDs...)
+	return statusPageID
+}
+
+// createPublicStatusPageFixtureWithDomainID is createPublicStatusPageFixture,
+// additionally returning the attached domain's ID so
+// public-status-domain-health (PSDH-01..04) tests can mutate its health
+// columns via db.DomainRepository.SetHealthCheckResult - the same
+// AD-039-populated columns resolveDomainHealth reads, never a new write
+// path of its own.
+func createPublicStatusPageFixtureWithDomainID(t *testing.T, pool *db.Pool, serviceIDs ...string) (statusPageID, domainID string) {
+	t.Helper()
 	ctx := context.Background()
 
 	suffix := fmt.Sprintf("%d", time.Now().UnixNano())
@@ -113,7 +126,7 @@ func createPublicStatusPageFixture(t *testing.T, pool *db.Pool, serviceIDs ...st
 		_, _ = pool.Exec(cleanupCtx, "DELETE FROM status_pages WHERE id = $1", statusPage.ID)
 	})
 
-	return statusPage.ID
+	return statusPage.ID, domain.ID
 }
 
 // withStatusPageContext returns a shallow copy of req carrying
@@ -1171,7 +1184,8 @@ func TestPublicStatusGet_InvalidRange_422NoDBQueryIssued(t *testing.T) {
 	incidents := db.NewIncidentRepository(pool)
 	companySettings := db.NewTenantRepository(pool)
 	statusPages := db.NewStatusPageRepository(pool)
-	handler := NewPublicStatusHandler(spy, intervals, incidents, companySettings, statusPages, zap.NewNop())
+	domains := db.NewDomainRepository(pool)
+	handler := NewPublicStatusHandler(spy, intervals, incidents, companySettings, statusPages, domains, zap.NewNop())
 
 	r := chi.NewRouter()
 	r.Get("/", handler.Get)
@@ -1770,5 +1784,264 @@ func TestPublicStatusGet_NotConfiguredParent_ChildStillCarriesParentIDAndName(t 
 	}
 	if child.ParentServiceName == nil || *child.ParentServiceName != parentName {
 		t.Errorf("child ParentServiceName = %v, want %q (resolved from unfiltered service list)", child.ParentServiceName, parentName)
+	}
+}
+
+// TestPublicStatusGet_DomainHealthy_DomainHealthOK covers PSDH-01/02: a
+// status page whose attached domain has had a successful RDAP check, no
+// NS drift, and an expiration far in the future reports domain_health.status
+// "ok".
+func TestPublicStatusGet_DomainHealthy_DomainHealthOK(t *testing.T) {
+	r, pool := newPublicStatusRouter(t)
+	serviceID, cleanup := createPublicStatusServiceFixture(t, pool, "operational", time.Now())
+	t.Cleanup(cleanup)
+	statusPageID, domainID := createPublicStatusPageFixtureWithDomainID(t, pool, serviceID)
+
+	expiresAt := time.Now().Add(365 * 24 * time.Hour)
+	registrar := "Example Registrar"
+	domains := db.NewDomainRepository(pool)
+	if err := domains.SetHealthCheckResult(context.Background(), domainID, &expiresAt, &registrar, []string{"ns1.example.com"}, false, nil); err != nil {
+		t.Fatalf("setup SetHealthCheckResult() returned unexpected error: %v", err)
+	}
+
+	req := withStatusPageContext(httptest.NewRequest(http.MethodGet, "/", nil), statusPageID)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	var body publicStatusResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+	if body.DomainHealth == nil {
+		t.Fatalf("DomainHealth = nil, want non-nil")
+	}
+	if body.DomainHealth.Status != "ok" {
+		t.Errorf("DomainHealth.Status = %q, want %q", body.DomainHealth.Status, "ok")
+	}
+	if strings.Contains(rec.Body.String(), "registrar") || strings.Contains(rec.Body.String(), "expires_at") || strings.Contains(rec.Body.String(), "ns1.example.com") {
+		t.Errorf("response body leaks raw domain health data, want only derived status: %s", rec.Body.String())
+	}
+}
+
+// TestPublicStatusGet_DomainNSDrift_DomainHealthAttention covers PSDH-02:
+// NS drift alone (expiration far away) is enough to report "attention".
+func TestPublicStatusGet_DomainNSDrift_DomainHealthAttention(t *testing.T) {
+	r, pool := newPublicStatusRouter(t)
+	serviceID, cleanup := createPublicStatusServiceFixture(t, pool, "operational", time.Now())
+	t.Cleanup(cleanup)
+	statusPageID, domainID := createPublicStatusPageFixtureWithDomainID(t, pool, serviceID)
+
+	expiresAt := time.Now().Add(365 * 24 * time.Hour)
+	registrar := "Example Registrar"
+	domains := db.NewDomainRepository(pool)
+	if err := domains.SetHealthCheckResult(context.Background(), domainID, &expiresAt, &registrar, []string{"ns1.example.com"}, true, nil); err != nil {
+		t.Fatalf("setup SetHealthCheckResult() returned unexpected error: %v", err)
+	}
+
+	req := withStatusPageContext(httptest.NewRequest(http.MethodGet, "/", nil), statusPageID)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	var body publicStatusResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+	if body.DomainHealth == nil {
+		t.Fatalf("DomainHealth = nil, want non-nil")
+	}
+	if body.DomainHealth.Status != "attention" {
+		t.Errorf("DomainHealth.Status = %q, want %q (NS drift)", body.DomainHealth.Status, "attention")
+	}
+}
+
+// TestPublicStatusGet_DomainExpiringSoon_DomainHealthAttention covers
+// PSDH-02: expiration within 30 days alone (no NS drift) is enough to
+// report "attention" - reuses AD-039's first alert band, no new threshold.
+func TestPublicStatusGet_DomainExpiringSoon_DomainHealthAttention(t *testing.T) {
+	r, pool := newPublicStatusRouter(t)
+	serviceID, cleanup := createPublicStatusServiceFixture(t, pool, "operational", time.Now())
+	t.Cleanup(cleanup)
+	statusPageID, domainID := createPublicStatusPageFixtureWithDomainID(t, pool, serviceID)
+
+	expiresAt := time.Now().Add(10 * 24 * time.Hour)
+	registrar := "Example Registrar"
+	domains := db.NewDomainRepository(pool)
+	if err := domains.SetHealthCheckResult(context.Background(), domainID, &expiresAt, &registrar, []string{"ns1.example.com"}, false, nil); err != nil {
+		t.Fatalf("setup SetHealthCheckResult() returned unexpected error: %v", err)
+	}
+
+	req := withStatusPageContext(httptest.NewRequest(http.MethodGet, "/", nil), statusPageID)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	var body publicStatusResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+	if body.DomainHealth == nil {
+		t.Fatalf("DomainHealth = nil, want non-nil")
+	}
+	if body.DomainHealth.Status != "attention" {
+		t.Errorf("DomainHealth.Status = %q, want %q (expires in 10 days)", body.DomainHealth.Status, "attention")
+	}
+}
+
+// TestPublicStatusGet_DomainNeverRDAPChecked_DomainHealthOmitted covers
+// PSDH-03: a domain that has never had a successful RDAP check (the
+// fixture's default state right after Create - SetHealthCheckResult never
+// called) must not surface domain_health at all, not even an optimistic
+// "ok".
+func TestPublicStatusGet_DomainNeverRDAPChecked_DomainHealthOmitted(t *testing.T) {
+	r, pool := newPublicStatusRouter(t)
+	serviceID, cleanup := createPublicStatusServiceFixture(t, pool, "operational", time.Now())
+	t.Cleanup(cleanup)
+	statusPageID, _ := createPublicStatusPageFixtureWithDomainID(t, pool, serviceID)
+
+	req := withStatusPageContext(httptest.NewRequest(http.MethodGet, "/", nil), statusPageID)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	if strings.Contains(rec.Body.String(), "domain_health") {
+		t.Errorf("response contains domain_health field, want omitted entirely (never RDAP-checked): %s", rec.Body.String())
+	}
+
+	var body publicStatusResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+	if body.DomainHealth != nil {
+		t.Errorf("DomainHealth = %+v, want nil", body.DomainHealth)
+	}
+}
+
+// TestPublicStatusGet_NoDomainAttached_DomainHealthOmitted covers PSDH-04:
+// a status page with no domain attached at all never has domain_health in
+// its response - unchanged current behavior.
+func TestPublicStatusGet_NoDomainAttached_DomainHealthOmitted(t *testing.T) {
+	r, pool := newPublicStatusRouter(t)
+	ctx := context.Background()
+	serviceID, cleanup := createPublicStatusServiceFixture(t, pool, "operational", time.Now())
+	t.Cleanup(cleanup)
+
+	statusPages := db.NewStatusPageRepository(pool)
+	statusPage := &db.StatusPage{Name: "public-status-test-no-domain"}
+	if err := statusPages.Create(ctx, statusPage, []string{serviceID}); err != nil {
+		t.Fatalf("setup status page Create() returned unexpected error: %v", err)
+	}
+	t.Cleanup(func() {
+		cleanupCtx := context.Background()
+		_, _ = pool.Exec(cleanupCtx, "DELETE FROM status_page_services WHERE status_page_id = $1", statusPage.ID)
+		_, _ = pool.Exec(cleanupCtx, "DELETE FROM status_pages WHERE id = $1", statusPage.ID)
+	})
+
+	req := withStatusPageContext(httptest.NewRequest(http.MethodGet, "/", nil), statusPage.ID)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	if strings.Contains(rec.Body.String(), "domain_health") {
+		t.Errorf("response contains domain_health field, want omitted entirely (no domain attached): %s", rec.Body.String())
+	}
+
+	var body publicStatusResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+	if body.DomainHealth != nil {
+		t.Errorf("DomainHealth = %+v, want nil", body.DomainHealth)
+	}
+}
+
+// TestPublicStatusGet_EnvironmentSet_IncludedInResponse covers SPEB-04: a
+// status page with a non-empty environment tag surfaces it in the public
+// response.
+func TestPublicStatusGet_EnvironmentSet_IncludedInResponse(t *testing.T) {
+	r, pool := newPublicStatusRouter(t)
+	ctx := context.Background()
+	serviceID, cleanup := createPublicStatusServiceFixture(t, pool, "operational", time.Now())
+	t.Cleanup(cleanup)
+
+	statusPages := db.NewStatusPageRepository(pool)
+	statusPage := &db.StatusPage{Name: "public-status-test-env", Environment: "staging"}
+	if err := statusPages.Create(ctx, statusPage, []string{serviceID}); err != nil {
+		t.Fatalf("setup status page Create() returned unexpected error: %v", err)
+	}
+	t.Cleanup(func() {
+		cleanupCtx := context.Background()
+		_, _ = pool.Exec(cleanupCtx, "DELETE FROM status_page_services WHERE status_page_id = $1", statusPage.ID)
+		_, _ = pool.Exec(cleanupCtx, "DELETE FROM status_pages WHERE id = $1", statusPage.ID)
+	})
+
+	req := withStatusPageContext(httptest.NewRequest(http.MethodGet, "/", nil), statusPage.ID)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	var body publicStatusResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+	if body.Environment != "staging" {
+		t.Errorf("Environment = %q, want %q", body.Environment, "staging")
+	}
+}
+
+// TestPublicStatusGet_EnvironmentEmpty_OmittedFromResponse covers SPEB-04:
+// a status page with no environment tag ("" - the overwhelming majority)
+// never serializes the field at all, not even as an empty string.
+func TestPublicStatusGet_EnvironmentEmpty_OmittedFromResponse(t *testing.T) {
+	r, pool := newPublicStatusRouter(t)
+	ctx := context.Background()
+	serviceID, cleanup := createPublicStatusServiceFixture(t, pool, "operational", time.Now())
+	t.Cleanup(cleanup)
+
+	statusPages := db.NewStatusPageRepository(pool)
+	statusPage := &db.StatusPage{Name: "public-status-test-no-env"}
+	if err := statusPages.Create(ctx, statusPage, []string{serviceID}); err != nil {
+		t.Fatalf("setup status page Create() returned unexpected error: %v", err)
+	}
+	t.Cleanup(func() {
+		cleanupCtx := context.Background()
+		_, _ = pool.Exec(cleanupCtx, "DELETE FROM status_page_services WHERE status_page_id = $1", statusPage.ID)
+		_, _ = pool.Exec(cleanupCtx, "DELETE FROM status_pages WHERE id = $1", statusPage.ID)
+	})
+
+	req := withStatusPageContext(httptest.NewRequest(http.MethodGet, "/", nil), statusPage.ID)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	if strings.Contains(rec.Body.String(), `"environment"`) {
+		t.Errorf("response contains environment field, want omitted entirely (no tag set): %s", rec.Body.String())
+	}
+
+	var body publicStatusResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+	if body.Environment != "" {
+		t.Errorf("Environment = %q, want empty", body.Environment)
 	}
 }

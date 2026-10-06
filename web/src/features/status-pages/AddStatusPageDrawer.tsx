@@ -5,8 +5,15 @@ import { Drawer, drawerFooterPrimaryStyle, drawerFooterSecondaryStyle } from "..
 import { Button } from "../../components/ui/Button";
 import { Field } from "../../components/ui/Field";
 import { ApiError } from "../../lib/apiClient";
+import type { StatusPageEnvironment } from "../../types/api";
 import { useServices } from "../services/hooks";
 import { useCreateStatusPage } from "./hooks";
+
+// statusPageEnvironmentOptions drives the create form's environment
+// <select> (status-page-environment-banner SPEB-03): "" first (the
+// default, "no banner"), mirrors services/environmentMeta.ts's
+// environmentOptions pattern.
+const statusPageEnvironmentOptions: StatusPageEnvironment[] = ["", "staging", "development"];
 
 export interface AddStatusPageDrawerProps {
   open: boolean;
@@ -26,6 +33,7 @@ export function AddStatusPageDrawer({ open, onOpenChange }: AddStatusPageDrawerP
   const [visibility, setVisibility] = useState<VisibilityChoice>("public");
   const [name, setName] = useState("");
   const [serviceIds, setServiceIds] = useState<string[]>([]);
+  const [environment, setEnvironment] = useState<StatusPageEnvironment>("");
   const [error, setError] = useState<string | null>(null);
 
   // SPEC_DEVIATION: fixed page 1 for now - the service checklist source has
@@ -42,6 +50,7 @@ export function AddStatusPageDrawer({ open, onOpenChange }: AddStatusPageDrawerP
     setVisibility("public");
     setName("");
     setServiceIds([]);
+    setEnvironment("");
     setError(null);
   }
 
@@ -54,7 +63,7 @@ export function AddStatusPageDrawer({ open, onOpenChange }: AddStatusPageDrawerP
     e.preventDefault();
     setError(null);
     try {
-      await createStatusPage.mutateAsync({ name, service_ids: serviceIds });
+      await createStatusPage.mutateAsync({ name, service_ids: serviceIds, environment });
       resetForm();
       onOpenChange(false);
     } catch (err) {
@@ -120,6 +129,25 @@ export function AddStatusPageDrawer({ open, onOpenChange }: AddStatusPageDrawerP
               icon={<MdOutlineLock size={18} />}
             />
           </div>
+        </div>
+
+        <div className="flex flex-col gap-1">
+          <label htmlFor="add-status-page-environment" className="text-sm font-medium text-text">
+            {t("statusPages.add.environmentLabel")}
+          </label>
+          <select
+            id="add-status-page-environment"
+            value={environment}
+            onChange={(e) => setEnvironment(e.target.value as StatusPageEnvironment)}
+            className="min-h-9 rounded-md border border-transparent bg-card-header-bg px-3 text-sm text-text outline-none transition-colors focus:border-accent focus:bg-surface"
+          >
+            {statusPageEnvironmentOptions.map((value) => (
+              <option key={value} value={value}>
+                {value === "" ? t("statusPages.environment.none") : t(`statusPages.environment.${value}`)}
+              </option>
+            ))}
+          </select>
+          <span className="text-xs text-text-muted">{t("statusPages.add.environmentHelp")}</span>
         </div>
 
         <div className="flex flex-col gap-1">

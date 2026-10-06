@@ -10,10 +10,21 @@ import { ApiError } from "../../lib/apiClient";
 import { formatDateTime } from "../../lib/formatDate";
 import { useDomains } from "../domains/hooks";
 import { useServices } from "../services/hooks";
-import type { Service, StatusPage, StatusPageState } from "../../types/api";
-import { useDNSTarget, useSetStatusPageServices, useVerifyDomain, type VerifyDomainResult } from "./hooks";
+import type { Service, StatusPage, StatusPageEnvironment, StatusPageState } from "../../types/api";
+import {
+  useDNSTarget,
+  useSetStatusPageServices,
+  useUpdateStatusPageEnvironment,
+  useVerifyDomain,
+  type VerifyDomainResult,
+} from "./hooks";
 import { AttachDomainDrawer } from "./AttachDomainDrawer";
 import { ServiceGroupPanel } from "./ServiceGroupPanel";
+
+// statusPageEnvironmentOptions drives the edit form's environment
+// <select> (status-page-environment-banner SPEB-03), same order as
+// AddStatusPageDrawer's.
+const statusPageEnvironmentOptions: StatusPageEnvironment[] = ["", "staging", "development"];
 
 // publicUrl only composes a URL once both domain_id/subdomain are set
 // (SPD-01) - null-safe, same guard as StatusPagesSection.tsx's publicUrl.
@@ -111,9 +122,12 @@ export function StatusPageEditorContent({ page, showPreviewLink = true }: Status
   const { hasRole } = useAuth();
   const canManage = hasRole(["owner", "operator"]);
   const setServices = useSetStatusPageServices();
+  const updateEnvironment = useUpdateStatusPageEnvironment();
   const [attachOpen, setAttachOpen] = useState(false);
   const [selectedServiceIds, setSelectedServiceIds] = useState<string[]>([]);
+  const [environment, setEnvironment] = useState<StatusPageEnvironment>(page.environment);
   const [error, setError] = useState<string | null>(null);
+  const [environmentError, setEnvironmentError] = useState<string | null>(null);
   const [serviceQuery, setServiceQuery] = useState("");
 
   // Resyncs local selection whenever the server's linked set changes -
@@ -121,6 +135,7 @@ export function StatusPageEditorContent({ page, showPreviewLink = true }: Status
   // the query, which lands here as a new page.service_ids reference).
   useEffect(() => {
     setSelectedServiceIds(page.service_ids);
+    setEnvironment(page.environment);
   }, [page]);
 
   const hostname = domains?.find((d) => d.id === page.domain_id)?.hostname;
@@ -159,11 +174,58 @@ export function StatusPageEditorContent({ page, showPreviewLink = true }: Status
     }
   }
 
+  const isEnvironmentDirty = environment !== page.environment;
+
+  async function handleSaveEnvironment() {
+    setEnvironmentError(null);
+    try {
+      await updateEnvironment.mutateAsync({ id: pageId, environment });
+    } catch (err) {
+      if (err instanceof ApiError) setEnvironmentError(err.message);
+      else setEnvironmentError(t("statusPages.editor.saveEnvironmentError"));
+    }
+  }
+
   return (
     <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-center gap-2">
         <StatusPagePill page={page} />
       </div>
+
+      {canManage ? (
+        <div className="flex flex-col gap-2 border-t border-divider pt-4">
+          <label htmlFor="edit-status-page-environment" className="text-[10.5px] font-bold uppercase tracking-wide text-text-muted">
+            {t("statusPages.editor.environmentLabel")}
+          </label>
+          <div className="flex items-center gap-3">
+            <select
+              id="edit-status-page-environment"
+              value={environment}
+              onChange={(e) => setEnvironment(e.target.value as StatusPageEnvironment)}
+              className="min-h-9 rounded-md border border-transparent bg-card-header-bg px-3 text-sm text-text outline-none transition-colors focus:border-accent focus:bg-surface"
+            >
+              {statusPageEnvironmentOptions.map((value) => (
+                <option key={value} value={value}>
+                  {value === "" ? t("statusPages.environment.none") : t(`statusPages.environment.${value}`)}
+                </option>
+              ))}
+            </select>
+            <Button
+              type="button"
+              variant="solid"
+              disabled={!isEnvironmentDirty || updateEnvironment.isPending}
+              onClick={handleSaveEnvironment}
+            >
+              {t("statusPages.editor.saveEnvironmentButton")}
+            </Button>
+          </div>
+          {environmentError ? (
+            <p role="alert" className="text-xs text-critical">
+              {environmentError}
+            </p>
+          ) : null}
+        </div>
+      ) : null}
 
       {page.domain_id === null ? (
         <div className="flex items-center justify-between gap-3">

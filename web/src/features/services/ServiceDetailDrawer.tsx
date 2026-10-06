@@ -8,7 +8,9 @@ import { formatDateTime } from "../../lib/formatDate";
 import { Input } from "../../components/ui/Input";
 import { Button } from "../../components/ui/Button";
 import { Dialog } from "../../components/ui/Dialog";
-import type { HourlyBucket } from "../../types/api";
+import type { HourlyBucket, ServiceEnvironment } from "../../types/api";
+import { EnvironmentTag } from "./EnvironmentTag";
+import { environmentLabel, environmentOptions } from "./environmentMeta";
 import { useDeleteService, useServiceDetail, useUpdateService } from "./hooks";
 import { StatusTag } from "./StatusTag";
 import { serviceSubtitle } from "./statusMeta";
@@ -70,13 +72,29 @@ export function ServiceDetailDrawer({ serviceId, onClose }: ServiceDetailDrawerP
   const [renameError, setRenameError] = useState<string | null>(null);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [environmentError, setEnvironmentError] = useState<string | null>(null);
 
   useEffect(() => {
     setEditing(false);
     setRenameError(null);
     setConfirmingDelete(false);
     setDeleteError(null);
+    setEnvironmentError(null);
   }, [serviceId]);
+
+  // changeEnvironment (service-environment-tag SET-03/SET-05) auto-saves the
+  // select's new value immediately - separate from the name's explicit
+  // edit/save/cancel flow above, since it's a single-field admin-only tag
+  // with no draft state to confirm.
+  async function changeEnvironment(next: ServiceEnvironment) {
+    if (!detail) return;
+    setEnvironmentError(null);
+    try {
+      await updateService.mutateAsync({ id: serviceId, name: detail.name, environment: next });
+    } catch (err) {
+      setEnvironmentError(err instanceof ApiError ? err.message : t("services.detail.environmentError"));
+    }
+  }
 
   async function confirmDelete() {
     setDeleteError(null);
@@ -179,6 +197,7 @@ export function ServiceDetailDrawer({ serviceId, onClose }: ServiceDetailDrawerP
                 ) : (
                   <div className="flex items-center gap-1.5">
                     <h2 className="text-[19px] font-bold text-text">{detail.name}</h2>
+                    <EnvironmentTag environment={detail.environment} />
                     {isOwner ? (
                       <button
                         type="button"
@@ -197,6 +216,31 @@ export function ServiceDetailDrawer({ serviceId, onClose }: ServiceDetailDrawerP
                   </p>
                 ) : null}
                 <p className="mt-0.5 text-[13px] text-neutral-400">{serviceSubtitle(detail)}</p>
+                {isOwner ? (
+                  <div className="mt-2 flex flex-col gap-1">
+                    <label htmlFor="service-detail-environment" className="text-xs font-medium text-neutral-400">
+                      {t("services.environment.label")}
+                    </label>
+                    <select
+                      id="service-detail-environment"
+                      value={detail.environment ?? ""}
+                      onChange={(e) => void changeEnvironment(e.target.value as ServiceEnvironment)}
+                      disabled={updateService.isPending}
+                      className="min-h-8 w-fit rounded-md border border-transparent bg-card-header-bg px-2.5 text-xs text-text outline-none transition-colors focus:border-accent focus:bg-surface"
+                    >
+                      {environmentOptions.map((value) => (
+                        <option key={value} value={value}>
+                          {environmentLabel(t, value)}
+                        </option>
+                      ))}
+                    </select>
+                    {environmentError ? (
+                      <p role="alert" className="text-xs text-critical">
+                        {environmentError}
+                      </p>
+                    ) : null}
+                  </div>
+                ) : null}
               </div>
 
               <div className="grid grid-cols-2 gap-4">

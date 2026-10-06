@@ -60,6 +60,7 @@ func newStatusPagesRouter(t *testing.T, opts ...func(*StatusPagesHandler)) (http
 		protected.Post("/api/status-pages", handler.Create)
 		protected.Get("/api/status-pages", handler.List)
 		protected.Patch("/api/status-pages/{id}/domain", handler.AttachDomain)
+		protected.Patch("/api/status-pages/{id}/environment", handler.UpdateEnvironment)
 		protected.Patch("/api/status-pages/{id}/services", handler.SetServices)
 		protected.Post("/api/status-pages/{id}/verify-domain", handler.VerifyDomain)
 		protected.Delete("/api/status-pages/{id}", handler.Delete)
@@ -427,6 +428,63 @@ func TestCreateStatusPage_EmptyName_422(t *testing.T) {
 	}
 }
 
+// TestCreateStatusPage_WithEnvironment_201PersistsValue asserts SPEB-01/02:
+// a valid non-empty environment given on create is accepted and reflected
+// in the response.
+func TestCreateStatusPage_WithEnvironment_201PersistsValue(t *testing.T) {
+	r, pool, admins := newStatusPagesRouter(t)
+	token := issueTestSessionToken(t, admins)
+
+	rec := postCreateStatusPage(t, r, token, createStatusPageRequest{Name: "Staging Page", Environment: "staging"})
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusCreated, rec.Body.String())
+	}
+
+	var created statusPageResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &created); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+	cleanupStatusPage(t, pool, created.ID)
+	if created.Environment != "staging" {
+		t.Errorf("Environment = %q, want %q", created.Environment, "staging")
+	}
+}
+
+// TestCreateStatusPage_OmittedEnvironment_201DefaultsToEmpty asserts the
+// ""-means-absent convention (SPEB-01): omitting environment on create
+// still succeeds and defaults to "" (no banner).
+func TestCreateStatusPage_OmittedEnvironment_201DefaultsToEmpty(t *testing.T) {
+	r, pool, admins := newStatusPagesRouter(t)
+	token := issueTestSessionToken(t, admins)
+
+	rec := postCreateStatusPage(t, r, token, createStatusPageRequest{Name: "No Env Page"})
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusCreated, rec.Body.String())
+	}
+
+	var created statusPageResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &created); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+	cleanupStatusPage(t, pool, created.ID)
+	if created.Environment != "" {
+		t.Errorf("Environment = %q, want empty", created.Environment)
+	}
+}
+
+// TestCreateStatusPage_InvalidEnvironment_422 asserts SPEB-02: a value
+// outside the fixed enum ("", "staging", "development") is rejected, same
+// 422 convention as the service-environment-tag feature's validation.
+func TestCreateStatusPage_InvalidEnvironment_422(t *testing.T) {
+	r, _, admins := newStatusPagesRouter(t)
+	token := issueTestSessionToken(t, admins)
+
+	rec := postCreateStatusPage(t, r, token, createStatusPageRequest{Name: "Bad Env Page", Environment: "production"})
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Errorf("status = %d, want %d, body = %s", rec.Code, http.StatusUnprocessableEntity, rec.Body.String())
+	}
+}
+
 // createDomainlessStatusPageViaAPI creates a domain-less status page
 // through the handler under test and registers its cleanup, returning
 // its ID.
@@ -567,6 +625,69 @@ func TestAttachDomain_NonexistentStatusPageID_404(t *testing.T) {
 	rec := patchAttachDomain(t, r, token, "00000000-0000-0000-0000-000000000000", attachDomainRequest{
 		DomainID: domainID, Subdomain: "status",
 	})
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("status = %d, want %d, body = %s", rec.Code, http.StatusNotFound, rec.Body.String())
+	}
+}
+
+func patchUpdateEnvironment(t *testing.T, r http.Handler, token, statusPageID string, req updateStatusPageEnvironmentRequest) *httptest.ResponseRecorder {
+	t.Helper()
+	body, err := json.Marshal(req)
+	if err != nil {
+		t.Fatalf("json.Marshal() returned unexpected error: %v", err)
+	}
+
+	httpReq := httptest.NewRequest(http.MethodPatch, "/api/status-pages/"+statusPageID+"/environment", bytes.NewReader(body))
+	httpReq.Header.Set("Content-Type", "application/json")
+	if token != "" {
+		httpReq.Header.Set("Authorization", "Bearer "+token)
+	}
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, httpReq)
+	return rec
+}
+
+// TestUpdateEnvironment_ValidRequest_200ReflectsNewValue asserts SPEB-02:
+// a valid PATCH sets the environment and the response reflects it.
+func TestUpdateEnvironment_ValidRequest_200ReflectsNewValue(t *testing.T) {
+	r, pool, admins := newStatusPagesRouter(t)
+	token := issueTestSessionToken(t, admins)
+	pageID := createDomainlessStatusPageViaAPI(t, r, pool, token, "Update Env Page")
+
+	rec := patchUpdateEnvironment(t, r, token, pageID, updateStatusPageEnvironmentRequest{Environment: "development"})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	var updated statusPageResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &updated); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+	if updated.Environment != "development" {
+		t.Errorf("Environment = %q, want %q", updated.Environment, "development")
+	}
+}
+
+// TestUpdateEnvironment_InvalidValue_422 asserts SPEB-02's enum
+// validation on the update path, same as create.
+func TestUpdateEnvironment_InvalidValue_422(t *testing.T) {
+	r, pool, admins := newStatusPagesRouter(t)
+	token := issueTestSessionToken(t, admins)
+	pageID := createDomainlessStatusPageViaAPI(t, r, pool, token, "Bad Update Env Page")
+
+	rec := patchUpdateEnvironment(t, r, token, pageID, updateStatusPageEnvironmentRequest{Environment: "production"})
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Errorf("status = %d, want %d, body = %s", rec.Code, http.StatusUnprocessableEntity, rec.Body.String())
+	}
+}
+
+// TestUpdateEnvironment_NonexistentStatusPageID_404 mirrors AttachDomain's
+// not-found convention.
+func TestUpdateEnvironment_NonexistentStatusPageID_404(t *testing.T) {
+	r, _, admins := newStatusPagesRouter(t)
+	token := issueTestSessionToken(t, admins)
+
+	rec := patchUpdateEnvironment(t, r, token, "00000000-0000-0000-0000-000000000000", updateStatusPageEnvironmentRequest{Environment: "staging"})
 	if rec.Code != http.StatusNotFound {
 		t.Errorf("status = %d, want %d, body = %s", rec.Code, http.StatusNotFound, rec.Body.String())
 	}

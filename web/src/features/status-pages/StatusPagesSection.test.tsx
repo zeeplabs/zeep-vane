@@ -147,6 +147,7 @@ describe("StatusPagesSection", () => {
       tls_last_error: null,
       created_at: new Date().toISOString(),
       service_ids: [],
+      environment: "",
     };
     server.use(
       http.get("/api/status-pages", () =>

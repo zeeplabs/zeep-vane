@@ -320,6 +320,81 @@ func TestCreateService_WithSLOTypeAndDatadogServiceTag_PersistsAndReturnsThem(t 
 	}
 }
 
+// TestCreateService_WithEnvironment_PersistsAndReturnsIt covers
+// service-environment-tag SET-01/SET-03: Create accepts an environment
+// value, persists it, and returns it in the response.
+func TestCreateService_WithEnvironment_PersistsAndReturnsIt(t *testing.T) {
+	r, pool, admins := newServicesRouter(t)
+	token := issueTestSessionTokenWithTenant(t, admins, pool)
+	name := uniqueServiceName(t)
+	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), "DELETE FROM services WHERE name = $1", name) })
+
+	rawBody := fmt.Sprintf(`{"name":%q,"slo_id":"slo-env-create-1","environment":"staging"}`, name)
+	rec := postCreateServiceRaw(t, r, token, rawBody)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusCreated, rec.Body.String())
+	}
+
+	var created serviceResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &created); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+	if created.Environment != "staging" {
+		t.Errorf("response Environment = %q, want %q", created.Environment, "staging")
+	}
+
+	var stored string
+	row := pool.QueryRow(context.Background(), "SELECT environment FROM services WHERE name = $1", name)
+	if err := row.Scan(&stored); err != nil {
+		t.Fatalf("Scan() returned unexpected error: %v", err)
+	}
+	if stored != "staging" {
+		t.Errorf("stored environment = %q, want %q", stored, "staging")
+	}
+}
+
+// TestCreateService_OmittedEnvironment_DefaultsToEmpty covers the
+// ""-means-absent convention (SET-01): omitting environment entirely
+// creates a service with no tag, same as every pre-feature caller.
+func TestCreateService_OmittedEnvironment_DefaultsToEmpty(t *testing.T) {
+	r, pool, admins := newServicesRouter(t)
+	token := issueTestSessionTokenWithTenant(t, admins, pool)
+	name := uniqueServiceName(t)
+	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), "DELETE FROM services WHERE name = $1", name) })
+
+	rec := postCreateService(t, r, token, name, "slo-env-create-2")
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusCreated, rec.Body.String())
+	}
+
+	var created serviceResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &created); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+	if created.Environment != "" {
+		t.Errorf("response Environment = %q, want empty", created.Environment)
+	}
+}
+
+// TestCreateService_InvalidEnvironment_422NoServiceCreated covers SET-03: a
+// value outside the fixed enum is rejected with 422 and persists nothing,
+// same "fixed generic body, nothing written" posture as the polling-mode
+// validation failures above.
+func TestCreateService_InvalidEnvironment_422NoServiceCreated(t *testing.T) {
+	r, pool, admins := newServicesRouter(t)
+	token := issueTestSessionTokenWithTenant(t, admins, pool)
+	name := uniqueServiceName(t)
+
+	rawBody := fmt.Sprintf(`{"name":%q,"slo_id":"slo-env-create-3","environment":"prod"}`, name)
+	rec := postCreateServiceRaw(t, r, token, rawBody)
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusUnprocessableEntity, rec.Body.String())
+	}
+	if got := countServicesNamed(t, pool, name); got != 0 {
+		t.Errorf("countServicesNamed() = %d, want 0 (nothing should have been created)", got)
+	}
+}
+
 func TestListServices_ReturnsAllWithCurrentStatus(t *testing.T) {
 	r, pool, admins := newServicesRouter(t)
 	token := issueTestSessionTokenWithTenant(t, admins, pool)
@@ -1107,6 +1182,113 @@ func TestUpdateService_PlainRename_LeavesSLOTypeAndTagUnchanged(t *testing.T) {
 	}
 	if resp.DatadogServiceTag != "service:checkout-svc" {
 		t.Errorf("resp.DatadogServiceTag = %q, want unchanged %q (plain rename must not clobber it)", resp.DatadogServiceTag, "service:checkout-svc")
+	}
+}
+
+// TestUpdateService_WithEnvironment_SetsIt covers service-environment-tag
+// SET-03: including environment in the update body sets it, and the
+// response/read-back reflect the new value.
+func TestUpdateService_WithEnvironment_SetsIt(t *testing.T) {
+	r, pool, admins := newServicesRouter(t)
+	token := issueTestSessionTokenWithTenant(t, admins, pool)
+	name := uniqueServiceName(t)
+	created := createServiceForDetail(t, r, pool, token, name, "slo-env-update-1", "")
+
+	rec := patchServiceRaw(t, r, token, created.ID, fmt.Sprintf(`{"name":%q,"environment":"production"}`, name))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	var resp serviceResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+	if resp.Environment != "production" {
+		t.Errorf("resp.Environment = %q, want %q", resp.Environment, "production")
+	}
+}
+
+// TestUpdateService_ClearingEnvironment_SetsItEmpty covers "update clearing
+// it": submitting explicit "" clears a previously-set environment back to
+// empty, not left stale - mirrors slo_type/datadog_service_tag's clearing
+// test above.
+func TestUpdateService_ClearingEnvironment_SetsItEmpty(t *testing.T) {
+	r, pool, admins := newServicesRouter(t)
+	token := issueTestSessionTokenWithTenant(t, admins, pool)
+	name := uniqueServiceName(t)
+	created := createServiceForDetail(t, r, pool, token, name, "slo-env-update-2", "")
+
+	setRec := patchServiceRaw(t, r, token, created.ID, fmt.Sprintf(`{"name":%q,"environment":"staging"}`, name))
+	if setRec.Code != http.StatusOK {
+		t.Fatalf("setup set status = %d, want %d, body = %s", setRec.Code, http.StatusOK, setRec.Body.String())
+	}
+
+	clearRec := patchServiceRaw(t, r, token, created.ID, fmt.Sprintf(`{"name":%q,"environment":""}`, name))
+	if clearRec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", clearRec.Code, http.StatusOK, clearRec.Body.String())
+	}
+
+	var resp serviceResponse
+	if err := json.Unmarshal(clearRec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+	if resp.Environment != "" {
+		t.Errorf("resp.Environment = %q, want empty after clearing", resp.Environment)
+	}
+}
+
+// TestUpdateService_PlainRename_LeavesEnvironmentUnchanged is a regression
+// guard: a bare {"name":"..."} rename (environment absent, not "") must
+// never clobber a previously set environment - updateServiceRequest uses
+// *string precisely so "absent" and "explicit empty" are distinguishable,
+// same convention as slo_type/datadog_service_tag.
+func TestUpdateService_PlainRename_LeavesEnvironmentUnchanged(t *testing.T) {
+	r, pool, admins := newServicesRouter(t)
+	token := issueTestSessionTokenWithTenant(t, admins, pool)
+	name := uniqueServiceName(t)
+	created := createServiceForDetail(t, r, pool, token, name, "slo-env-update-3", "")
+
+	setRec := patchServiceRaw(t, r, token, created.ID, fmt.Sprintf(`{"name":%q,"environment":"development"}`, name))
+	if setRec.Code != http.StatusOK {
+		t.Fatalf("setup set status = %d, want %d, body = %s", setRec.Code, http.StatusOK, setRec.Body.String())
+	}
+
+	newName := name + "-renamed"
+	rec := patchServiceName(t, r, token, created.ID, newName)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	var resp serviceResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+	if resp.Environment != "development" {
+		t.Errorf("resp.Environment = %q, want unchanged %q (plain rename must not clobber it)", resp.Environment, "development")
+	}
+}
+
+// TestUpdateService_InvalidEnvironment_422NoChange covers SET-03: a value
+// outside the fixed enum is rejected with 422 and leaves the stored
+// environment unchanged.
+func TestUpdateService_InvalidEnvironment_422NoChange(t *testing.T) {
+	r, pool, admins := newServicesRouter(t)
+	token := issueTestSessionTokenWithTenant(t, admins, pool)
+	name := uniqueServiceName(t)
+	created := createServiceForDetail(t, r, pool, token, name, "slo-env-update-4", "")
+
+	rec := patchServiceRaw(t, r, token, created.ID, fmt.Sprintf(`{"name":%q,"environment":"prod"}`, name))
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusUnprocessableEntity, rec.Body.String())
+	}
+
+	var stored string
+	row := pool.QueryRow(context.Background(), "SELECT environment FROM services WHERE id = $1", created.ID)
+	if err := row.Scan(&stored); err != nil {
+		t.Fatalf("Scan() returned unexpected error: %v", err)
+	}
+	if stored != "" {
+		t.Errorf("stored environment = %q, want unchanged empty", stored)
 	}
 }
 

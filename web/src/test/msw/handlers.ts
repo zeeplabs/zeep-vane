@@ -162,6 +162,20 @@ let statusPageGroupsState: StatusPageServiceGroup[] = [];
 let statusPagePlacementsState: Record<string, ServicePlacement[]> = {};
 let statusPageGroupIdCounter = 0;
 
+// publicStatusDomainHealthState drives the optional domain_health field on
+// both the production public-status and preview public-status MSW
+// responses (public-status-domain-health PSDH-06), mirroring the real
+// backend's 3 rules: null (default) omits the field entirely - matching a
+// status page with no domain attached (PSDH-04) or a domain never
+// successfully RDAP-checked (PSDH-03); a test calling
+// setPublicStatusDomainHealth({status:"ok"|"attention"}) simulates a
+// domain that has (PSDH-01/02).
+let publicStatusDomainHealthState: { status: "ok" | "attention" } | null = null;
+
+export function setPublicStatusDomainHealth(value: { status: "ok" | "attention" } | null): void {
+  publicStatusDomainHealthState = value;
+}
+
 export function resetDomainsAndStatusPages(): void {
   domainsState = seedDomains.map((d) => ({ ...d }));
   statusPagesState = seedStatusPages.map((p) => ({ ...p }));
@@ -170,6 +184,7 @@ export function resetDomainsAndStatusPages(): void {
   statusPageGroupsState = [];
   statusPagePlacementsState = {};
   statusPageGroupIdCounter = 0;
+  publicStatusDomainHealthState = null;
 }
 resetDomainsAndStatusPages();
 
@@ -491,7 +506,7 @@ function serviceUptimeAndLastSeen(service: Service): { uptime_30d: number | null
 
 // toServiceResponse mirrors the real serviceResponse
 // (internal/api/services_handler.go): id, name, slo_id, slo_name,
-// monitor_mode, poll_type, poll_target, poll_interval_seconds,
+// monitor_mode, poll_type, poll_target, poll_interval_seconds, environment,
 // current_status, last_status_change_at, uptime_30d, last_seen_at.
 function toServiceResponse(service: Service) {
   const { uptime_30d, last_seen_at } = serviceUptimeAndLastSeen(service);
@@ -504,12 +519,17 @@ function toServiceResponse(service: Service) {
     poll_type: service.poll_type,
     poll_target: service.poll_target,
     poll_interval_seconds: service.poll_interval_seconds,
+    environment: service.environment,
     current_status: service.current_status,
     last_status_change_at: service.last_status_change_at,
     uptime_30d,
     last_seen_at,
   };
 }
+
+// validServiceEnvironments mirrors the real backend's validEnvironments
+// (internal/api/services_handler.go, service-environment-tag SET-03).
+const validServiceEnvironments = new Set(["", "development", "staging", "production"]);
 
 // serviceDegradedNotes/serviceIncidentCounts back the detail endpoint's
 // status_analysis/incidents_30d fixtures (SVC-14..17) - keyed by id rather
@@ -562,6 +582,7 @@ function toStatusPageResponse(statusPage: StatusPage) {
     tls_last_error: statusPage.tls_last_error,
     created_at: statusPage.created_at,
     service_ids: statusPage.service_ids,
+    environment: statusPage.environment,
   };
 }
 
@@ -1210,6 +1231,7 @@ export const handlers = [
       subdomain?: string;
       domain_id?: string;
       service_ids?: string[];
+      environment?: string;
     };
     if (!body.name) {
       return HttpResponse.json({ error: "name is required" }, { status: 422 });
@@ -1217,6 +1239,16 @@ export const handlers = [
     if (Boolean(body.subdomain) !== Boolean(body.domain_id)) {
       return HttpResponse.json(
         { error: "subdomain and domain_id must be set together, or not at all" },
+        { status: 422 },
+      );
+    }
+    // Mirrors StatusPagesHandler.Create's validStatusPageEnvironments gate
+    // (status-page-environment-banner SPEB-01/02): "" (omitted/absent
+    // defaults here too), "staging", "development" only.
+    const environment = body.environment ?? "";
+    if (!["", "staging", "development"].includes(environment)) {
+      return HttpResponse.json(
+        { error: 'environment must be "", "staging", or "development"' },
         { status: 422 },
       );
     }
@@ -1230,6 +1262,7 @@ export const handlers = [
       tls_last_error: null,
       created_at: new Date().toISOString(),
       service_ids: body.service_ids ?? [],
+      environment: environment as StatusPage["environment"],
     };
     statusPagesState.push(created);
     return HttpResponse.json(toStatusPageResponse(created), { status: 201 });
@@ -1270,6 +1303,28 @@ export const handlers = [
     // ACME issuance for a "draft" hostname, so it can never leave draft on
     // its own - AttachDomain must do it).
     page.state = "pending_tls";
+    return HttpResponse.json(toStatusPageResponse(page));
+  }),
+
+  // PATCH /api/status-pages/:id/environment (status-page-environment-
+  // banner SPEB-02) - mirrors StatusPagesHandler.UpdateEnvironment: 404
+  // unknown page, 422 outside the fixed enum, else 200 with the updated
+  // page.
+  http.patch("/api/status-pages/:id/environment", async ({ request, params }) => {
+    if (!sessionAdminId) return HttpResponse.json({ error: "unauthorized" }, { status: 401 });
+    const page = statusPagesState.find((p) => p.id === params.id);
+    if (!page) {
+      return HttpResponse.json({ error: "status page not found" }, { status: 404 });
+    }
+    const body = (await request.json()) as { environment?: string };
+    const environment = body.environment ?? "";
+    if (!["", "staging", "development"].includes(environment)) {
+      return HttpResponse.json(
+        { error: 'environment must be "", "staging", or "development"' },
+        { status: 422 },
+      );
+    }
+    page.environment = environment as StatusPage["environment"];
     return HttpResponse.json(toStatusPageResponse(page));
   }),
 
@@ -1735,9 +1790,18 @@ export const handlers = [
       poll_type?: string;
       poll_target?: string;
       poll_interval_seconds?: number;
+      environment?: string;
     };
     if (!body.name) {
       return HttpResponse.json({ error: "name and slo_id are required" }, { status: 422 });
+    }
+
+    const environment = body.environment ?? "";
+    if (!validServiceEnvironments.has(environment)) {
+      return HttpResponse.json(
+        { error: 'environment must be "", "development", "staging", or "production"' },
+        { status: 422 }
+      );
     }
 
     const monitorMode = body.monitor_mode ?? "slo";
@@ -1762,6 +1826,7 @@ export const handlers = [
         poll_type: null,
         poll_target: null,
         poll_interval_seconds: null,
+        environment: environment as Service["environment"],
         current_status: "not_configured",
         last_status_change_at: new Date().toISOString(),
         uptime_30d: null,
@@ -1804,6 +1869,7 @@ export const handlers = [
         poll_type: body.poll_type as Service["poll_type"],
         poll_target: body.poll_target,
         poll_interval_seconds: body.poll_interval_seconds,
+        environment: environment as Service["environment"],
         current_status: "not_configured",
         last_status_change_at: new Date().toISOString(),
         uptime_30d: null,
@@ -1834,20 +1900,33 @@ export const handlers = [
     });
   }),
 
-  // PATCH /api/services/:id (service-edit SVCEDIT-01..05) - mirrors
-  // ServicesHandler.Update: 422 on an empty name, 404 fixed body on an
-  // unknown id, else renames in place and returns the full serviceResponse.
+  // PATCH /api/services/:id (service-edit SVCEDIT-01..05 +
+  // service-environment-tag SET-03) - mirrors ServicesHandler.Update: 422 on
+  // an empty name or an environment outside the fixed enum, 404 fixed body
+  // on an unknown id, else renames in place (and sets environment only when
+  // the request explicitly includes it - absent means "leave unchanged",
+  // same convention as the real backend's *string field) and returns the
+  // full serviceResponse.
   http.patch("/api/services/:id", async ({ request, params }) => {
     if (!sessionAdminId) return HttpResponse.json({ error: "unauthorized" }, { status: 401 });
     const service = servicesState.find((s) => s.id === params.id);
     if (!service) {
       return HttpResponse.json({ error: "service not found" }, { status: 404 });
     }
-    const body = (await request.json()) as { name?: string };
+    const body = (await request.json()) as { name?: string; environment?: string };
     if (!body.name || !body.name.trim()) {
       return HttpResponse.json({ error: "name and slo_id are required" }, { status: 422 });
     }
+    if (body.environment !== undefined && !validServiceEnvironments.has(body.environment)) {
+      return HttpResponse.json(
+        { error: 'environment must be "", "development", "staging", or "production"' },
+        { status: 422 }
+      );
+    }
     service.name = body.name;
+    if (body.environment !== undefined) {
+      service.environment = body.environment as Service["environment"];
+    }
     return HttpResponse.json(toServiceResponse(service));
   }),
 
@@ -2262,6 +2341,15 @@ export const handlers = [
       }),
       incidents: { active, resolved: paginatedPage(request.url, resolved, 10) },
       groups: pageGroups,
+      // domain_health (PSDH-06): omitted entirely unless a test opts in via
+      // setPublicStatusDomainHealth, same as the real backend omits the
+      // field rather than emitting null (PSDH-03/04).
+      ...(publicStatusDomainHealthState ? { domain_health: publicStatusDomainHealthState } : {}),
+      // environment (status-page-environment-banner SPEB-04/06): omitted
+      // entirely when the page has no tag set ("" - the mockData default
+      // for every seed page except sp-3), same as the real backend's
+      // `omitempty`.
+      ...(page.environment ? { environment: page.environment } : {}),
     });
   }),
 

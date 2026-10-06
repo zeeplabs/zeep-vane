@@ -55,8 +55,15 @@ type StatusPage struct {
 	DomainID     *string
 	State        string
 	TLSLastError *string
-	CreatedAt    time.Time
-	ServiceIDs   []string
+	// Environment is a purely visual, non-functional banner tag shown on
+	// the public status page (status-page-environment-banner SPEB-01):
+	// "" (default - no banner, production implied), "staging", or
+	// "development". Enforced against those three values by 0048's CHECK
+	// constraint, not by this type - same ""-means-absent convention as
+	// Service.Environment/Service.MonitorMode.
+	Environment string
+	CreatedAt   time.Time
+	ServiceIDs  []string
 }
 
 // StatusPageRepository accesses the status_pages and status_page_services
@@ -109,8 +116,9 @@ func (r *StatusPageRepository) Create(ctx context.Context, statusPage *StatusPag
 // insert performs Create's writes on whatever transaction ctx carries.
 func (r *StatusPageRepository) insert(ctx context.Context, statusPage *StatusPage, serviceIDs []string) error {
 	row := r.pool.QueryRow(ctx,
-		"INSERT INTO status_pages (name, subdomain, domain_id) VALUES ($1, $2, $3) RETURNING id, state, created_at",
-		statusPage.Name, statusPage.Subdomain, statusPage.DomainID,
+		"INSERT INTO status_pages (name, subdomain, domain_id, environment) VALUES ($1, $2, $3, $4) "+
+			"RETURNING id, state, created_at",
+		statusPage.Name, statusPage.Subdomain, statusPage.DomainID, statusPage.Environment,
 	)
 	if err := row.Scan(&statusPage.ID, &statusPage.State, &statusPage.CreatedAt); err != nil {
 		return fmt.Errorf("db: failed to create status page: %w", err)
@@ -555,10 +563,10 @@ func (r *StatusPageRepository) AttachDomain(ctx context.Context, id, domainID, s
 	sp.ID = id
 	row = tx.QueryRow(ctx,
 		"UPDATE status_pages SET domain_id = $1, subdomain = $2, state = $3 WHERE id = $4 "+
-			"RETURNING name, subdomain, domain_id, state, tls_last_error, created_at",
+			"RETURNING name, subdomain, domain_id, state, tls_last_error, environment, created_at",
 		domainID, subdomain, pendingTLSState, id,
 	)
-	if err := row.Scan(&sp.Name, &sp.Subdomain, &sp.DomainID, &sp.State, &sp.TLSLastError, &sp.CreatedAt); err != nil {
+	if err := row.Scan(&sp.Name, &sp.Subdomain, &sp.DomainID, &sp.State, &sp.TLSLastError, &sp.Environment, &sp.CreatedAt); err != nil {
 		var pgErr *pgconn.PgError
 		if errors.As(err, &pgErr) {
 			switch pgErr.Code {
@@ -578,6 +586,31 @@ func (r *StatusPageRepository) AttachDomain(ctx context.Context, id, domainID, s
 	return &sp, nil
 }
 
+// UpdateEnvironment sets the public banner environment tag
+// (status-page-environment-banner SPEB-02) on the status page identified by
+// id to one of "", "staging", "development" - the handler validates the
+// value against that fixed enum before calling this, enforced here too by
+// 0048's CHECK constraint as defense in depth. Unlike Service.Environment
+// (a visual-only admin tag with no public exposure), this value also drives
+// PublicStatusHandler's banner (SPEB-04/05). Returns ErrNotFound if no
+// status page matches id.
+func (r *StatusPageRepository) UpdateEnvironment(ctx context.Context, id, environment string) (*StatusPage, error) {
+	var sp StatusPage
+	sp.ID = id
+	row := r.pool.QueryRow(ctx,
+		"UPDATE status_pages SET environment = $2 WHERE id = $1 "+
+			"RETURNING name, subdomain, domain_id, state, tls_last_error, environment, created_at",
+		id, environment,
+	)
+	if err := row.Scan(&sp.Name, &sp.Subdomain, &sp.DomainID, &sp.State, &sp.TLSLastError, &sp.Environment, &sp.CreatedAt); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrNotFound
+		}
+		return nil, fmt.Errorf("db: failed to update status page environment: %w", err)
+	}
+	return &sp, nil
+}
+
 // ListPaginated returns one page of registered status pages, ordered by
 // name, each with its linked service_ids (PAG-08). total is computed via
 // COUNT(*) OVER() in the same query, with a zero-row fallback COUNT(*),
@@ -588,7 +621,7 @@ func (r *StatusPageRepository) ListPaginated(ctx context.Context, page, pageSize
 	offset := (page - 1) * pageSize
 
 	rows, err := r.pool.Query(ctx,
-		`SELECT id, name, subdomain, domain_id, state, tls_last_error, created_at, COUNT(*) OVER() AS total
+		`SELECT id, name, subdomain, domain_id, state, tls_last_error, environment, created_at, COUNT(*) OVER() AS total
 		 FROM status_pages
 		 ORDER BY name
 		 LIMIT $1 OFFSET $2`,
@@ -603,7 +636,7 @@ func (r *StatusPageRepository) ListPaginated(ctx context.Context, page, pageSize
 	total := 0
 	for rows.Next() {
 		var sp StatusPage
-		if err := rows.Scan(&sp.ID, &sp.Name, &sp.Subdomain, &sp.DomainID, &sp.State, &sp.TLSLastError, &sp.CreatedAt, &total); err != nil {
+		if err := rows.Scan(&sp.ID, &sp.Name, &sp.Subdomain, &sp.DomainID, &sp.State, &sp.TLSLastError, &sp.Environment, &sp.CreatedAt, &total); err != nil {
 			return nil, 0, fmt.Errorf("db: failed to scan status page: %w", err)
 		}
 		statusPages = append(statusPages, sp)
@@ -711,12 +744,12 @@ func (r *StatusPageRepository) countStatusPages(ctx context.Context) (int, error
 // if no status page matches.
 func (r *StatusPageRepository) GetByID(ctx context.Context, id string) (*StatusPage, error) {
 	row := r.pool.QueryRow(ctx,
-		"SELECT id, name, subdomain, domain_id, state, tls_last_error, created_at FROM status_pages WHERE id = $1",
+		"SELECT id, name, subdomain, domain_id, state, tls_last_error, environment, created_at FROM status_pages WHERE id = $1",
 		id,
 	)
 
 	var sp StatusPage
-	if err := row.Scan(&sp.ID, &sp.Name, &sp.Subdomain, &sp.DomainID, &sp.State, &sp.TLSLastError, &sp.CreatedAt); err != nil {
+	if err := row.Scan(&sp.ID, &sp.Name, &sp.Subdomain, &sp.DomainID, &sp.State, &sp.TLSLastError, &sp.Environment, &sp.CreatedAt); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, ErrNotFound
 		}
@@ -770,13 +803,13 @@ func (r *StatusPageRepository) StateByHostname(ctx context.Context, hostname str
 // only tenant signal an anonymous visitor carries.
 func (r *StatusPageRepository) GetByHostname(ctx context.Context, hostname string) (*StatusPage, error) {
 	row := r.pool.QueryRow(ctx,
-		"SELECT sp.id, sp.tenant_id, sp.name, sp.subdomain, sp.domain_id, sp.state, sp.tls_last_error, sp.created_at "+
+		"SELECT sp.id, sp.tenant_id, sp.name, sp.subdomain, sp.domain_id, sp.state, sp.tls_last_error, sp.environment, sp.created_at "+
 			"FROM status_pages sp JOIN domains d ON "+hostnameMatch,
 		hostname,
 	)
 
 	var sp StatusPage
-	if err := row.Scan(&sp.ID, &sp.TenantID, &sp.Name, &sp.Subdomain, &sp.DomainID, &sp.State, &sp.TLSLastError, &sp.CreatedAt); err != nil {
+	if err := row.Scan(&sp.ID, &sp.TenantID, &sp.Name, &sp.Subdomain, &sp.DomainID, &sp.State, &sp.TLSLastError, &sp.Environment, &sp.CreatedAt); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, ErrNotFound
 		}

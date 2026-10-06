@@ -6,6 +6,7 @@ import { MemoryRouter, Routes, Route } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import "../../lib/i18n";
 import { server } from "../../test/msw/server";
+import { setPublicStatusDomainHealth } from "../../test/msw/handlers";
 import { apiFetch } from "../../lib/apiClient";
 import { PublicStatusPage } from "./PublicStatusPage";
 import publicStatusI18n from "./i18n";
@@ -789,5 +790,59 @@ describe("PublicStatusPage - service groups and dependencies (SGD-02/03/05/06/07
     await renderAt("/status/grouped-duplicate-names");
 
     expect(await screen.findAllByText("Status API")).toHaveLength(2);
+  });
+});
+
+// public-status-domain-health (PSDH-05): the small header indicator is
+// present only when the response carries domain_health, mirroring the
+// backend's own additive/omitted field (PSDH-01..04) - never a date,
+// registrar, or NS value, only the derived ok/attention status.
+describe("PublicStatusPage domain health indicator", () => {
+  it("shows no domain health indicator when the response omits domain_health", async () => {
+    await renderAt("/status/sp-4");
+
+    await screen.findByText("Sua Empresa Ltda.");
+    expect(screen.queryByTestId("domain-health-indicator")).not.toBeInTheDocument();
+  });
+
+  it("shows a discreet ok indicator when domain_health.status is ok", async () => {
+    setPublicStatusDomainHealth({ status: "ok" });
+
+    await renderAt("/status/sp-4");
+
+    const indicator = await screen.findByTestId("domain-health-indicator");
+    expect(indicator).toHaveAttribute("data-domain-health-status", "ok");
+    expect(indicator).toHaveAttribute("title", "Saúde do domínio: OK");
+  });
+
+  it("shows an emphasized attention indicator when domain_health.status is attention", async () => {
+    setPublicStatusDomainHealth({ status: "attention" });
+
+    await renderAt("/status/sp-4");
+
+    const indicator = await screen.findByTestId("domain-health-indicator");
+    expect(indicator).toHaveAttribute("data-domain-health-status", "attention");
+    expect(indicator).toHaveAttribute("title", "Saúde do domínio: requer atenção");
+  });
+});
+
+// status-page-environment-banner (SPEB-04/05): the fixed banner is present
+// only when the response carries a non-"" environment, mirroring the
+// backend's additive/omitted field (SPEB-04) - no close button, never a
+// raw enum string (only the translated label).
+describe("PublicStatusPage environment banner", () => {
+  it("shows no environment banner when the response omits environment", async () => {
+    await renderAt("/status/sp-4");
+
+    await screen.findByText("Sua Empresa Ltda.");
+    expect(screen.queryByTestId("environment-banner")).not.toBeInTheDocument();
+  });
+
+  it("shows a fixed banner mentioning staging when environment is staging", async () => {
+    await renderAt("/status/sp-1");
+
+    const banner = await screen.findByTestId("environment-banner");
+    expect(banner).toHaveTextContent("Esta é uma página de Staging — não reflete produção.");
+    expect(screen.queryByRole("button", { name: /fechar/i })).not.toBeInTheDocument();
   });
 });

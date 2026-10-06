@@ -178,6 +178,101 @@ func TestStatusPageRepository_Create_WithDomain_Unchanged(t *testing.T) {
 	}
 }
 
+// TestStatusPageRepository_Create_PersistsEnvironment covers
+// status-page-environment-banner SPEB-01: a non-empty Environment given to
+// Create persists and reads back via GetByID.
+func TestStatusPageRepository_Create_PersistsEnvironment(t *testing.T) {
+	pool, _ := newTenantScopedPool(t)
+
+	repo := NewStatusPageRepository(pool)
+	statusPage := &StatusPage{Name: fmt.Sprintf("env-page-%d", time.Now().UnixNano()), Environment: "staging"}
+	if err := repo.Create(context.Background(), statusPage, nil); err != nil {
+		t.Fatalf("Create() returned unexpected error: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = pool.Exec(context.Background(), "DELETE FROM status_pages WHERE id = $1", statusPage.ID)
+	})
+
+	got, err := repo.GetByID(context.Background(), statusPage.ID)
+	if err != nil {
+		t.Fatalf("GetByID() returned unexpected error: %v", err)
+	}
+	if got.Environment != "staging" {
+		t.Errorf("got.Environment = %q, want %q", got.Environment, "staging")
+	}
+}
+
+// TestStatusPageRepository_Create_EmptyEnvironment_DefaultsToEmpty covers
+// the ""-means-absent convention (SPEB-01): a StatusPage with no
+// Environment set persists and reads back "" (no banner).
+func TestStatusPageRepository_Create_EmptyEnvironment_DefaultsToEmpty(t *testing.T) {
+	pool, _ := newTenantScopedPool(t)
+
+	repo := NewStatusPageRepository(pool)
+	statusPage := &StatusPage{Name: fmt.Sprintf("env-page-empty-%d", time.Now().UnixNano())}
+	if err := repo.Create(context.Background(), statusPage, nil); err != nil {
+		t.Fatalf("Create() returned unexpected error: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = pool.Exec(context.Background(), "DELETE FROM status_pages WHERE id = $1", statusPage.ID)
+	})
+
+	got, err := repo.GetByID(context.Background(), statusPage.ID)
+	if err != nil {
+		t.Fatalf("GetByID() returned unexpected error: %v", err)
+	}
+	if got.Environment != "" {
+		t.Errorf("got.Environment = %q, want empty", got.Environment)
+	}
+}
+
+// TestStatusPageRepository_UpdateEnvironment_SetsThenClears_RoundTrips
+// covers SPEB-02's admin-facing round trip: set the environment, read it
+// back via GetByID, then clear it via "" and confirm it reads back empty
+// again (not left stale) - mirrors ServiceRepository's UpdateEnvironment
+// round-trip test.
+func TestStatusPageRepository_UpdateEnvironment_SetsThenClears_RoundTrips(t *testing.T) {
+	repo, pool := newAttachDomainTestRepo(t)
+	pageID := createDomainlessStatusPage(t, repo, pool, "update-env-page")
+
+	updated, err := repo.UpdateEnvironment(context.Background(), pageID, "development")
+	if err != nil {
+		t.Fatalf("UpdateEnvironment() set returned unexpected error: %v", err)
+	}
+	if updated.Environment != "development" {
+		t.Fatalf("after set: updated.Environment = %q, want %q", updated.Environment, "development")
+	}
+	got, err := repo.GetByID(context.Background(), pageID)
+	if err != nil {
+		t.Fatalf("GetByID() after set returned unexpected error: %v", err)
+	}
+	if got.Environment != "development" {
+		t.Fatalf("after set: got.Environment = %q, want %q", got.Environment, "development")
+	}
+
+	if _, err := repo.UpdateEnvironment(context.Background(), pageID, ""); err != nil {
+		t.Fatalf("UpdateEnvironment() clear returned unexpected error: %v", err)
+	}
+	got, err = repo.GetByID(context.Background(), pageID)
+	if err != nil {
+		t.Fatalf("GetByID() after clear returned unexpected error: %v", err)
+	}
+	if got.Environment != "" {
+		t.Errorf("after clear: got.Environment = %q, want empty", got.Environment)
+	}
+}
+
+// TestStatusPageRepository_UpdateEnvironment_UnknownID_ReturnsErrNotFound
+// mirrors ServiceRepository's UpdateEnvironment not-found convention.
+func TestStatusPageRepository_UpdateEnvironment_UnknownID_ReturnsErrNotFound(t *testing.T) {
+	repo, _ := newAttachDomainTestRepo(t)
+
+	_, err := repo.UpdateEnvironment(context.Background(), "00000000-0000-0000-0000-000000000000", "development")
+	if !errors.Is(err, ErrNotFound) {
+		t.Errorf("UpdateEnvironment() error = %v, want ErrNotFound", err)
+	}
+}
+
 // newUnscopedPool returns a migrated pool with NO session-level
 // app.tenant_id, unlike newTenantScopedPool. A test that needs to prove
 // something about how a repository handles the caller's transaction cannot

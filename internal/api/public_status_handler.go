@@ -50,11 +50,29 @@ type companySettingsGetter interface {
 // statusPageGroupLister is the subset of *db.StatusPageRepository the
 // public status handler depends on, to surface a status page's service
 // groups (service-groups-and-dependencies SGD-02/SGD-09) alongside its
-// services. Scoped to a single statusPageID, same as serviceLister and
-// publicIncidentLister.
+// services, and (public-status-domain-health PSDH-01) to look up the
+// status page's own row for its DomainID. Scoped to a single statusPageID,
+// same as serviceLister and publicIncidentLister.
 type statusPageGroupLister interface {
 	ListGroups(ctx context.Context, statusPageID string) ([]db.StatusPageServiceGroup, error)
+	GetByID(ctx context.Context, id string) (*db.StatusPage, error)
 }
+
+// domainHealthGetter is the subset of *db.DomainRepository the public
+// status handler depends on, to read the health-check state a status
+// page's attached domain already has (AD-039's domain-health-monitoring -
+// this handler never performs its own RDAP/NS lookup, only reads what the
+// daily scheduler already persisted, same no-live-external-call guarantee
+// as the rest of this handler, AGENTS.md S4).
+type domainHealthGetter interface {
+	GetByID(ctx context.Context, id string) (*db.Domain, error)
+}
+
+// domainHealthExpiryAttentionDays is the days-until-expiration threshold
+// below which domain_health.status becomes "attention" (PSDH-02) - reuses
+// AD-039's first alert band (30/15/7 days) rather than introducing a new
+// number.
+const domainHealthExpiryAttentionDays = 30
 
 // incidentRetentionDays is the public status page's incident history
 // retention window (spec.md Assumptions: "Janela de retenção de histórico
@@ -81,12 +99,13 @@ type PublicStatusHandler struct {
 	incidents       publicIncidentLister
 	companySettings companySettingsGetter
 	statusPages     statusPageGroupLister
+	domains         domainHealthGetter
 	logger          *zap.Logger
 	historyLoc      *time.Location
 }
 
 // NewPublicStatusHandler builds a PublicStatusHandler backed by services,
-// intervals, incidents, and companySettings.
+// intervals, incidents, companySettings, statusPages, and domains.
 //
 // It loads the America/Sao_Paulo location once here (UPT-04) rather than
 // per-request - cmd/vane/main.go blank-imports time/tzdata specifically so
@@ -94,12 +113,12 @@ type PublicStatusHandler struct {
 // availability; a failure here is a build/deployment defect, not a
 // per-request condition, so it panics at construction time instead of
 // turning every request into a 500.
-func NewPublicStatusHandler(services serviceLister, intervals statusIntervalReader, incidents publicIncidentLister, companySettings companySettingsGetter, statusPages statusPageGroupLister, logger *zap.Logger) *PublicStatusHandler {
+func NewPublicStatusHandler(services serviceLister, intervals statusIntervalReader, incidents publicIncidentLister, companySettings companySettingsGetter, statusPages statusPageGroupLister, domains domainHealthGetter, logger *zap.Logger) *PublicStatusHandler {
 	loc, err := time.LoadLocation("America/Sao_Paulo")
 	if err != nil {
 		panic(fmt.Sprintf("public-status: failed to load America/Sao_Paulo location: %v", err))
 	}
-	return &PublicStatusHandler{services: services, intervals: intervals, incidents: incidents, companySettings: companySettings, statusPages: statusPages, logger: logger, historyLoc: loc}
+	return &PublicStatusHandler{services: services, intervals: intervals, incidents: incidents, companySettings: companySettings, statusPages: statusPages, domains: domains, logger: logger, historyLoc: loc}
 }
 
 type publicServiceResponse struct {
@@ -206,6 +225,25 @@ type publicStatusResponse struct {
 	// dependencies SGD-09's "operator-visible empty state" decision), so
 	// this is ListGroups's raw, unfiltered output.
 	Groups []publicGroupResponse `json:"groups"`
+	// DomainHealth is present only when this status page has a domain
+	// attached AND that domain has had at least one successful RDAP check
+	// (PSDH-01/03/04) - omitted entirely otherwise, never a guessed "ok".
+	DomainHealth *publicDomainHealthResponse `json:"domain_health,omitempty"`
+	// Environment is present only when the status page's environment tag
+	// is non-empty (status-page-environment-banner SPEB-04) - omitted
+	// entirely (never serialized as "") when the page has no tag set, the
+	// overwhelming majority of status pages. Drives
+	// PublicStatusPage.tsx's fixed banner (SPEB-05).
+	Environment string `json:"environment,omitempty"`
+}
+
+// publicDomainHealthResponse is the derived, public-safe view of a status
+// page's attached domain's health (public-status-domain-health). It
+// deliberately carries only the derived ok/attention verdict - never the
+// raw expiration date, registrar, or NS values AD-039 persists (PSDH-05's
+// "no literal data exposed publicly" decision).
+type publicDomainHealthResponse struct {
+	Status string `json:"status"`
 }
 
 // publicGroupResponse is one status_page_service_groups row.
@@ -282,6 +320,19 @@ func (h *PublicStatusHandler) composeResponse(ctx context.Context, statusPageID 
 		return publicStatusResponse{}, fmt.Errorf("failed to list status page service groups: %w", err)
 	}
 
+	// Fetched once and reused by both resolveDomainHealth (DomainID) and
+	// the Environment field below (status-page-environment-banner SPEB-04)
+	// - avoids a second GetByID round trip for the same row.
+	statusPage, err := h.statusPages.GetByID(ctx, statusPageID)
+	if err != nil {
+		return publicStatusResponse{}, fmt.Errorf("failed to get status page: %w", err)
+	}
+
+	domainHealth, err := h.resolveDomainHealth(ctx, statusPage)
+	if err != nil {
+		return publicStatusResponse{}, fmt.Errorf("failed to resolve domain health: %w", err)
+	}
+
 	// serviceNameByID is built from the full, unfiltered services list (not
 	// shownServices below) so a service's ParentServiceName still resolves
 	// even if the parent itself is "not_configured" and gets filtered out
@@ -318,9 +369,11 @@ func (h *PublicStatusHandler) composeResponse(ctx context.Context, statusPageID 
 	}
 
 	resp := publicStatusResponse{
-		Company:  publicCompanyResponse{Name: companySettings.Name, LogoURL: companySettings.LogoServedURL()},
-		Services: []publicServiceResponse{},
-		Groups:   toPublicGroupResponses(groups),
+		Company:      publicCompanyResponse{Name: companySettings.Name, LogoURL: companySettings.LogoServedURL()},
+		Services:     []publicServiceResponse{},
+		Groups:       toPublicGroupResponses(groups),
+		DomainHealth: domainHealth,
+		Environment:  statusPage.Environment,
 		Incidents: publicIncidentsResponse{
 			Active: toPublicIncidentResponses(activeIncidents),
 			Resolved: Page[publicIncidentResponse]{
@@ -424,6 +477,37 @@ func toPublicGroupResponses(groups []db.StatusPageServiceGroup) []publicGroupRes
 		resp[i] = publicGroupResponse{ID: group.ID, Name: group.Name, Position: group.Position}
 	}
 	return resp
+}
+
+// resolveDomainHealth derives the public domain_health field for
+// statusPage (PSDH-01..04), reading only what AD-039's daily
+// DomainHealthScheduler has already persisted on the domains table - it
+// never performs its own RDAP/NS lookup (AGENTS.md S4). Returns nil
+// (field omitted) when the status page has no domain attached, or its
+// domain has never had a successful RDAP check yet. statusPage is already
+// loaded by composeResponse (also used for the Environment field), so
+// this no longer fetches it itself.
+func (h *PublicStatusHandler) resolveDomainHealth(ctx context.Context, statusPage *db.StatusPage) (*publicDomainHealthResponse, error) {
+	if statusPage.DomainID == nil {
+		return nil, nil
+	}
+
+	domain, err := h.domains.GetByID(ctx, *statusPage.DomainID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get domain: %w", err)
+	}
+	if domain.LastRDAPSuccessAt == nil || domain.LastRDAPSuccessAt.IsZero() {
+		return nil, nil
+	}
+
+	status := "ok"
+	expiringSoon := domain.ExpiresAt != nil && !domain.ExpiresAt.IsZero() &&
+		time.Until(*domain.ExpiresAt) <= domainHealthExpiryAttentionDays*24*time.Hour
+	if domain.NSDriftDetected || expiringSoon {
+		status = "attention"
+	}
+
+	return &publicDomainHealthResponse{Status: status}, nil
 }
 
 // toPublicIncidentResponses converts a slice of db.IncidentPublic (already

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { apiFetch } from "../../lib/apiClient";
 import type {
+  PublicDomainHealth,
   PublicHistoryBucket,
   PublicIncidentEntry,
   PublicStatusGroup,
@@ -56,6 +57,8 @@ interface PreviewResponse {
   services: PreviewService[];
   incidents: { active: PreviewIncident[]; resolved: PreviewResolvedPage };
   groups: PublicStatusGroup[];
+  domain_health?: PublicDomainHealth;
+  environment?: "staging" | "development";
 }
 
 // SPEC_DEVIATION (AD-007, I13): the real backend's public response has no
@@ -126,6 +129,8 @@ async function fetchPublicStatusPage(
     },
     resolvedTotal: data.incidents.resolved.total,
     groups: data.groups,
+    domain_health: data.domain_health,
+    environment: data.environment,
   };
 }
 

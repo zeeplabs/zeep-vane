@@ -207,6 +207,12 @@
     "serviceCount_one": "{{count}} serviço",
     "serviceCount_other": "{{count}} serviços",
     "createTitle": "Criar status page",
+    "environment": {
+      "label": "Ambiente",
+      "none": "Nenhum (produção)",
+      "staging": "Staging",
+      "development": "Desenvolvimento"
+    },
     "section": {
       "title": "Status pages",
       "createButton": "Criar status page",
@@ -243,7 +249,9 @@
         "title": "Privado",
         "description": "Somente membros do tenant logados"
       },
-      "servicesLabel": "Serviços exibidos"
+      "servicesLabel": "Serviços exibidos",
+      "environmentLabel": "Ambiente",
+      "environmentHelp": "Exibido como uma faixa fixa na página pública. Deixe em \"Nenhum\" para uma página de produção."
     },
     "attach": {
       "title": "Anexar domínio",
@@ -272,6 +280,9 @@
       "description": "Gerencie domínio, verificação e serviços exibidos nesta página."
     },
     "editor": {
+      "environmentLabel": "Ambiente",
+      "saveEnvironmentButton": "Salvar ambiente",
+      "saveEnvironmentError": "Não foi possível salvar o ambiente.",
       "noDomainAttached": "Nenhum domínio anexado ainda.",
       "linkedServicesLabel": "Serviços vinculados ({{selected}}/{{total}})",
       "noServices": "Nenhum serviço cadastrado.",
@@ -385,6 +396,11 @@
   },
   "publicStatus": {
     "loading": "Carregando…",
+    "environmentBanner": "Esta é uma página de {{environment}} — não reflete produção.",
+    "domainHealth": {
+      "ok": "Saúde do domínio: OK",
+      "attention": "Saúde do domínio: requer atenção"
+    },
     "episodePopover": {
       "heading": "Degradação registrada",
       "noReasonRecorded": "Motivo não disponível para este período."
@@ -1130,6 +1146,13 @@
       "outage": "Inativo",
       "not_configured": "Não configurado"
     },
+    "environment": {
+      "label": "Ambiente",
+      "none": "Sem tag",
+      "development": "Desenvolvimento",
+      "staging": "Staging",
+      "production": "Produção"
+    },
     "section": {
       "linkButton": "Vincular serviço",
       "empty": "Nenhum serviço cadastrado.",
@@ -1157,7 +1180,8 @@
       "deleteAction": "Excluir serviço",
       "deleteConfirmTitle": "Excluir serviço",
       "deleteConfirmDescription": "Excluir o serviço \"{{name}}\"? O histórico de verificações e incidentes é mantido, mas ele para de ser monitorado. Esta ação não pode ser desfeita.",
-      "deleteError": "Não foi possível excluir o serviço."
+      "deleteError": "Não foi possível excluir o serviço.",
+      "environmentError": "Não foi possível atualizar a tag de ambiente."
     },
     "addDrawer": {
       "drawerTitle": "Adicionar serviço",

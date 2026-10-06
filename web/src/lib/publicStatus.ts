@@ -78,6 +78,14 @@ export interface PublicServiceEntry {
   parent_service_name?: string;
 }
 
+// PublicDomainHealth mirrors the backend's publicDomainHealthResponse
+// (internal/api/public_status_handler.go, public-status-domain-health
+// PSDH-01) - the derived ok/attention verdict only, never the raw
+// expiration date, registrar, or NS values AD-039 persists (PSDH-05).
+export interface PublicDomainHealth {
+  status: "ok" | "attention";
+}
+
 export interface PublicIncidentUpdateEntry {
   body: string;
   created_at: string;
@@ -119,4 +127,14 @@ export interface PublicStatusPageData {
   // SGD-09) - mirrors the backend's publicStatusResponse.Groups, ListGroups'
   // raw, unfiltered output.
   groups: PublicStatusGroup[];
+  // domain_health is present only when this status page has a domain
+  // attached and that domain has had at least one successful RDAP check
+  // (public-status-domain-health PSDH-01/03/04) - absent (not null)
+  // otherwise, mirroring the backend's `omitempty`.
+  domain_health?: PublicDomainHealth;
+  // environment is present only when the status page has a non-""
+  // environment tag (status-page-environment-banner SPEB-04) - absent
+  // (not "") otherwise, mirroring the backend's `omitempty`. Drives
+  // PublicStatusPage.tsx's fixed banner (SPEB-05).
+  environment?: "staging" | "development";
 }

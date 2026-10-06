@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient, type Query } from "@tanstack/react-query";
 import { apiFetch } from "../../lib/apiClient";
-import type { Page, StatusPage, StatusPageServiceGroup, StatusPageState } from "../../types/api";
+import type { Page, StatusPage, StatusPageEnvironment, StatusPageServiceGroup, StatusPageState } from "../../types/api";
 
 const terminalStates: StatusPageState[] = ["published", "tls_failed"];
 
@@ -46,6 +46,12 @@ export function useStatusPage(id: string) {
 export interface CreateStatusPageInput {
   name: string;
   service_ids: string[];
+  // environment is optional (status-page-environment-banner SPEB-01/03):
+  // omitted/"" means no banner (production implied) - the backend
+  // defaults it the same way when the field is absent from the request
+  // body entirely, so callers that don't care about it can keep omitting
+  // it.
+  environment?: StatusPageEnvironment;
 }
 
 export function useCreateStatusPage() {
@@ -76,6 +82,30 @@ export function useAttachDomain() {
       apiFetch<StatusPage>(`/api/status-pages/${id}/domain`, {
         method: "PATCH",
         body: JSON.stringify({ domain_id, subdomain }),
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["status-pages"] });
+    },
+  });
+}
+
+export interface UpdateStatusPageEnvironmentInput {
+  id: string;
+  environment: StatusPageEnvironment;
+}
+
+// useUpdateStatusPageEnvironment sets a status page's banner environment
+// tag (status-page-environment-banner SPEB-02/03) via PATCH
+// /api/status-pages/{id}/environment - a dedicated single-purpose
+// mutation, same pattern as useAttachDomain above (this codebase has no
+// generic "update status page" endpoint).
+export function useUpdateStatusPageEnvironment() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, environment }: UpdateStatusPageEnvironmentInput) =>
+      apiFetch<StatusPage>(`/api/status-pages/${id}/environment`, {
+        method: "PATCH",
+        body: JSON.stringify({ environment }),
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["status-pages"] });

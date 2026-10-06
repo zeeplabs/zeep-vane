@@ -76,6 +76,53 @@ describe("AddServiceDrawer", () => {
     fetchSpy.mockRestore();
   });
 
+  // service-environment-tag SET-01/SET-05: the drawer offers an environment
+  // select with a "no tag" default, and leaving it untouched omits
+  // environment from the create payload entirely (same "" omitted, not
+  // sent" convention as the rest of this form - see the body.toEqual above).
+  it("renders an environment select defaulting to 'no tag' and omits environment from the payload when left untouched", async () => {
+    await loginAsOwner();
+    const fetchSpy = vi.spyOn(globalThis, "fetch");
+    renderDrawer();
+
+    const select = screen.getByLabelText("Ambiente") as HTMLSelectElement;
+    expect(select.value).toBe("");
+
+    await userEvent.type(screen.getByLabelText("Nome do serviço"), "Fila de pagamentos");
+    await userEvent.type(screen.getByLabelText("Buscar SLO"), "checkout");
+    const option = await screen.findByRole("button", { name: /Checkout/i });
+    await userEvent.click(option);
+    await userEvent.click(screen.getByRole("button", { name: "Adicionar serviço" }));
+
+    const call = fetchSpy.mock.calls.find(([url]) => String(url).endsWith("/api/services"));
+    expect(call).toBeDefined();
+    const body = JSON.parse((call![1] as RequestInit).body as string);
+    expect(body).not.toHaveProperty("environment");
+
+    fetchSpy.mockRestore();
+  });
+
+  // Selecting a non-empty environment includes it in the create payload.
+  it("selecting an environment includes it in the create payload", async () => {
+    await loginAsOwner();
+    const fetchSpy = vi.spyOn(globalThis, "fetch");
+    renderDrawer();
+
+    await userEvent.type(screen.getByLabelText("Nome do serviço"), "Fila de pagamentos");
+    await userEvent.selectOptions(screen.getByLabelText("Ambiente"), "production");
+    await userEvent.type(screen.getByLabelText("Buscar SLO"), "checkout");
+    const option = await screen.findByRole("button", { name: /Checkout/i });
+    await userEvent.click(option);
+    await userEvent.click(screen.getByRole("button", { name: "Adicionar serviço" }));
+
+    const call = fetchSpy.mock.calls.find(([url]) => String(url).endsWith("/api/services"));
+    expect(call).toBeDefined();
+    const body = JSON.parse((call![1] as RequestInit).body as string);
+    expect(body.environment).toBe("production");
+
+    fetchSpy.mockRestore();
+  });
+
   // TestAddServiceDrawer covers slo-root-cause-enrichment RCA-01: selecting
   // an SLO captures slo_type/datadog_service_tag from the same search
   // result and includes them in the create payload.

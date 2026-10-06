@@ -162,6 +162,39 @@ describe("services hooks", () => {
     await expect(result.current.update.mutateAsync({ id: target.id, name: "" })).rejects.toThrow(ApiError);
   });
 
+  // service-environment-tag SET-01/SET-03: useCreateService persists an
+  // environment tag, and useUpdateService can set/clear it independently of
+  // name, mirroring the other optional-field round trips above.
+  it("useCreateService persists and returns the environment tag, and useUpdateService can change it", async () => {
+    await loginAsOwner();
+    const { result } = renderHook(
+      () => ({ services: useServices(1), create: useCreateService(), update: useUpdateService() }),
+      { wrapper: TestQueryProvider }
+    );
+    await waitFor(() => expect(result.current.services.isSuccess).toBe(true));
+
+    const created = await result.current.create.mutateAsync({
+      name: "Serviço com ambiente",
+      slo_id: "slo-env-hook",
+      environment: "staging",
+    });
+    expect(created.environment).toBe("staging");
+
+    const updated = await result.current.update.mutateAsync({
+      id: created.id,
+      name: created.name,
+      environment: "production",
+    });
+    expect(updated.environment).toBe("production");
+
+    const cleared = await result.current.update.mutateAsync({
+      id: created.id,
+      name: created.name,
+      environment: "",
+    });
+    expect(cleared.environment).toBe("");
+  });
+
   // service-delete SVCDEL-01/02/09: useDeleteService removes an unattached
   // service and invalidates the list.
   it("useDeleteService removes an unattached service and invalidates the list", async () => {

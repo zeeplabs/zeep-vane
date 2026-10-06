@@ -37,6 +37,7 @@ type statusPageCreatorLister interface {
 	Create(ctx context.Context, statusPage *db.StatusPage, serviceIDs []string) error
 	ListPaginated(ctx context.Context, page, pageSize int) ([]db.StatusPage, int, error)
 	AttachDomain(ctx context.Context, id, domainID, subdomain string) (*db.StatusPage, error)
+	UpdateEnvironment(ctx context.Context, id, environment string) (*db.StatusPage, error)
 	SetServices(ctx context.Context, id string, placements []db.ServicePlacement) error
 	GetByID(ctx context.Context, id string) (*db.StatusPage, error)
 	Delete(ctx context.Context, id string) error
@@ -82,6 +83,22 @@ type createStatusPageRequest struct {
 	Subdomain  string   `json:"subdomain"`
 	DomainID   string   `json:"domain_id"`
 	ServiceIDs []string `json:"service_ids"`
+	// Environment is an optional banner tag
+	// (status-page-environment-banner SPEB-01/02): "" (default when
+	// omitted - no banner, production implied), "staging", or
+	// "development". Validated against validStatusPageEnvironments, 422
+	// on any other value.
+	Environment string `json:"environment"`
+}
+
+// validStatusPageEnvironments are the only accepted values for the
+// environment field on create/update (status-page-environment-banner
+// SPEB-01/02), "" included (no banner). Deliberately has no "production"
+// entry - "" already means production-implicit (spec.md Decisões).
+var validStatusPageEnvironments = map[string]bool{
+	"":            true,
+	"staging":     true,
+	"development": true,
 }
 
 type statusPageResponse struct {
@@ -93,6 +110,10 @@ type statusPageResponse struct {
 	TLSLastError *string   `json:"tls_last_error"`
 	CreatedAt    time.Time `json:"created_at"`
 	ServiceIDs   []string  `json:"service_ids"`
+	// Environment mirrors db.StatusPage.Environment (status-page-
+	// environment-banner SPEB-02) - always serialized here (admin-only
+	// response, unlike the public response's omitempty).
+	Environment string `json:"environment"`
 }
 
 // toStatusPageResponse converts sp to its wire shape, normalizing a nil
@@ -112,11 +133,13 @@ func toStatusPageResponse(sp *db.StatusPage) statusPageResponse {
 		TLSLastError: sp.TLSLastError,
 		CreatedAt:    sp.CreatedAt,
 		ServiceIDs:   serviceIDs,
+		Environment:  sp.Environment,
 	}
 }
 
 const invalidStatusPageRequestBody = `{"error":"name is required"}`
 const partialDomainStatusPageRequestBody = `{"error":"subdomain and domain_id must be set together, or not at all"}`
+const invalidStatusPageEnvironmentBody = `{"error":"environment must be \"\", \"staging\", or \"development\""}`
 
 // Create handles POST /api/status-pages, creating a status page starting
 // in the "draft" state (SP-15), optionally bound to a domain and a set of
@@ -142,8 +165,14 @@ func (h *StatusPagesHandler) Create(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte(partialDomainStatusPageRequestBody))
 		return
 	}
+	if !validStatusPageEnvironments[req.Environment] {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusUnprocessableEntity)
+		_, _ = w.Write([]byte(invalidStatusPageEnvironmentBody))
+		return
+	}
 
-	statusPage := &db.StatusPage{Name: req.Name}
+	statusPage := &db.StatusPage{Name: req.Name, Environment: req.Environment}
 	if req.Subdomain != "" {
 		statusPage.Subdomain = &req.Subdomain
 		statusPage.DomainID = &req.DomainID
@@ -217,6 +246,56 @@ func (h *StatusPagesHandler) AttachDomain(w http.ResponseWriter, r *http.Request
 
 	if actor, ok := UserFromContext(r.Context()); ok {
 		if err := h.audit.Record(r.Context(), actor.ID, statusPage.ID, statusPage.Name, "status_page_domain_attached"); err != nil {
+			h.logger.Error("status-pages: failed to record audit entry", zap.Error(err))
+		}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(toStatusPageResponse(statusPage))
+}
+
+type updateStatusPageEnvironmentRequest struct {
+	Environment string `json:"environment"`
+}
+
+// UpdateEnvironment handles PATCH /api/status-pages/{id}/environment,
+// setting the public banner environment tag
+// (status-page-environment-banner SPEB-02) on an existing status page. A
+// dedicated single-purpose endpoint, mirroring AttachDomain above, rather
+// than folding into Create's request shape - this codebase has no generic
+// "update status page" endpoint; every field is set through its own
+// narrow PATCH (domain, services, now environment).
+func (h *StatusPagesHandler) UpdateEnvironment(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+
+	var req updateStatusPageEnvironmentRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusUnprocessableEntity)
+		_, _ = w.Write([]byte(invalidStatusPageEnvironmentBody))
+		return
+	}
+	if !validStatusPageEnvironments[req.Environment] {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusUnprocessableEntity)
+		_, _ = w.Write([]byte(invalidStatusPageEnvironmentBody))
+		return
+	}
+
+	statusPage, err := h.statusPages.UpdateEnvironment(r.Context(), id, req.Environment)
+	if err != nil {
+		if errors.Is(err, db.ErrNotFound) {
+			http.NotFound(w, r)
+			return
+		}
+		h.logger.Error("status-pages: failed to update status page environment", zap.Error(err))
+		writeInternalError(w)
+		return
+	}
+
+	if actor, ok := UserFromContext(r.Context()); ok {
+		if err := h.audit.Record(r.Context(), actor.ID, statusPage.ID, statusPage.Name, "status_page_environment_updated"); err != nil {
 			h.logger.Error("status-pages: failed to record audit entry", zap.Error(err))
 		}
 	}

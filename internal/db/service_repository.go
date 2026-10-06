@@ -45,6 +45,13 @@ type Service struct {
 	// a row saved before this feature existed.
 	SLOType           string
 	DatadogServiceTag string
+	// Environment is a visual-only admin tag (service-environment-tag
+	// SET-01): "" (default, same ""-means-absent convention as SLOName/
+	// SLOType/DatadogServiceTag above) means no tag, otherwise one of
+	// "development"/"staging"/"production" - enforced by the
+	// 0047_service_environment CHECK constraint, not by this type. Purely
+	// cosmetic (an admin-only badge): no business logic reads it.
+	Environment string
 	// MonitorMode is "slo" (default, unchanged existing behavior) or
 	// "polling" (manual-polling-monitoring MP-01/MP-02).
 	MonitorMode string
@@ -115,16 +122,16 @@ func (r *ServiceRepository) Create(ctx context.Context, service *Service) error 
 	var row pgx.Row
 	if service.MonitorMode == "polling" {
 		row = r.pool.QueryRow(ctx,
-			`INSERT INTO services (name, monitor_mode, poll_type, poll_target, poll_interval_seconds)
-			 VALUES ($1, 'polling', $2, $3, $4) RETURNING id, current_status, last_status_change_at`,
-			service.Name, service.PollType, service.PollTarget, service.PollIntervalSeconds,
+			`INSERT INTO services (name, monitor_mode, poll_type, poll_target, poll_interval_seconds, environment)
+			 VALUES ($1, 'polling', $2, $3, $4, $5) RETURNING id, current_status, last_status_change_at`,
+			service.Name, service.PollType, service.PollTarget, service.PollIntervalSeconds, service.Environment,
 		)
 	} else {
 		row = r.pool.QueryRow(ctx,
-			`INSERT INTO services (name, slo_id, slo_name, slo_type, datadog_service_tag)
-			 VALUES ($1, $2, $3, NULLIF($4, ''), NULLIF($5, ''))
+			`INSERT INTO services (name, slo_id, slo_name, slo_type, datadog_service_tag, environment)
+			 VALUES ($1, $2, $3, NULLIF($4, ''), NULLIF($5, ''), $6)
 			 RETURNING id, current_status, last_status_change_at`,
-			service.Name, service.SLOID, service.SLOName, service.SLOType, service.DatadogServiceTag,
+			service.Name, service.SLOID, service.SLOName, service.SLOType, service.DatadogServiceTag, service.Environment,
 		)
 	}
 
@@ -148,11 +155,11 @@ func (r *ServiceRepository) Get(ctx context.Context, id string) (*Service, bool,
 	var service Service
 	row := r.pool.QueryRow(ctx,
 		`SELECT id, name, COALESCE(slo_id, ''), slo_name, COALESCE(slo_type, ''), COALESCE(datadog_service_tag, ''),
-		        current_status, last_status_change_at, status_analysis
+		        environment, current_status, last_status_change_at, status_analysis
 		 FROM services WHERE id = $1 AND deleted_at IS NULL`,
 		id,
 	)
-	if err := row.Scan(&service.ID, &service.Name, &service.SLOID, &service.SLOName, &service.SLOType, &service.DatadogServiceTag, &service.CurrentStatus, &service.LastStatusChangeAt, &service.StatusAnalysis); err != nil {
+	if err := row.Scan(&service.ID, &service.Name, &service.SLOID, &service.SLOName, &service.SLOType, &service.DatadogServiceTag, &service.Environment, &service.CurrentStatus, &service.LastStatusChangeAt, &service.StatusAnalysis); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, false, nil
 		}
@@ -171,7 +178,7 @@ func (r *ServiceRepository) ListPaginated(ctx context.Context, page, pageSize in
 
 	rows, err := r.pool.Query(ctx,
 		`SELECT id, name, COALESCE(slo_id, ''), slo_name, COALESCE(slo_type, ''), COALESCE(datadog_service_tag, ''),
-		        current_status, last_status_change_at, COUNT(*) OVER() AS total
+		        environment, current_status, last_status_change_at, COUNT(*) OVER() AS total
 		 FROM services
 		 WHERE deleted_at IS NULL
 		 ORDER BY name
@@ -187,7 +194,7 @@ func (r *ServiceRepository) ListPaginated(ctx context.Context, page, pageSize in
 	total := 0
 	for rows.Next() {
 		var service Service
-		if err := rows.Scan(&service.ID, &service.Name, &service.SLOID, &service.SLOName, &service.SLOType, &service.DatadogServiceTag, &service.CurrentStatus, &service.LastStatusChangeAt, &total); err != nil {
+		if err := rows.Scan(&service.ID, &service.Name, &service.SLOID, &service.SLOName, &service.SLOType, &service.DatadogServiceTag, &service.Environment, &service.CurrentStatus, &service.LastStatusChangeAt, &total); err != nil {
 			return nil, 0, fmt.Errorf("db: failed to scan service: %w", err)
 		}
 		services = append(services, service)
@@ -358,6 +365,30 @@ func (r *ServiceRepository) UpdateSLOMetadata(ctx context.Context, serviceID, sl
 	)
 	if err != nil {
 		return fmt.Errorf("db: failed to update service SLO metadata: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+// UpdateEnvironment sets serviceID's environment column (service-environment-
+// tag SET-03) - visual-only, no other side effect. Passing "" clears the tag
+// back to "no tag", the same ""-means-absent convention UpdateSLOMetadata
+// uses for slo_type/datadog_service_tag; unlike that method, no NULLIF is
+// needed since environment is NOT NULL DEFAULT ” (0047_service_environment),
+// not a nullable column. The handler is responsible for rejecting a value
+// outside the enum before calling this (422, AGENTS.md §4) - the
+// 0047_service_environment CHECK constraint is the last-resort backstop, not
+// the primary validation path. Returns ErrNotFound if no service matches
+// serviceID, the same convention Update/UpdateSLOMetadata use.
+func (r *ServiceRepository) UpdateEnvironment(ctx context.Context, serviceID, environment string) error {
+	tag, err := r.pool.Exec(ctx,
+		"UPDATE services SET environment = $2 WHERE id = $1 AND deleted_at IS NULL",
+		serviceID, environment,
+	)
+	if err != nil {
+		return fmt.Errorf("db: failed to update service environment: %w", err)
 	}
 	if tag.RowsAffected() == 0 {
 		return ErrNotFound

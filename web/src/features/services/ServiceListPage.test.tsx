@@ -16,6 +16,7 @@ interface FixtureService {
   slo_name: string | null;
   monitor_mode?: "slo" | "polling";
   poll_target?: string | null;
+  environment?: "" | "development" | "staging" | "production";
   current_status: "operational" | "degraded" | "outage" | "not_configured";
   last_status_change_at: string;
   uptime_30d: number | null;
@@ -157,6 +158,24 @@ describe("ServiceListPage", () => {
     expect(within(rows[1]).getByText("Degradado")).toBeInTheDocument();
     expect(within(rows[2]).getByText("Inativo")).toBeInTheDocument();
     expect(within(rows[3]).getByText("Não configurado")).toBeInTheDocument();
+  });
+
+  // service-environment-tag SET-05: the badge next to the service name shows
+  // the right label for a tagged row and nothing for an untagged one.
+  it("renders the environment badge next to the name when tagged, and nothing when untagged (SET-05)", async () => {
+    mockServicesPage([
+      { ...fourStatusFixture[0], environment: "production" },
+      { ...fourStatusFixture[1], environment: "" },
+    ]);
+    await loginAsOwner();
+    renderPage();
+
+    await screen.findByText("API Gateway");
+    const rows = screen.getAllByTestId("service-row");
+    expect(within(rows[0]).getByText("Produção")).toBeInTheDocument();
+    expect(within(rows[1]).queryByText("Produção")).not.toBeInTheDocument();
+    expect(within(rows[1]).queryByText("Staging")).not.toBeInTheDocument();
+    expect(within(rows[1]).queryByText("Desenvolvimento")).not.toBeInTheDocument();
   });
 
   it("shows '—' for uptime and last checked when the service has never been checked (SVC-06)", async () => {
