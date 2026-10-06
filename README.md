@@ -66,6 +66,9 @@ docker compose up -d
 | **White-label branding** | Company name + logo shown on the public page (`company_settings` singleton) |
 | **Paginated admin lists** | Domains, services, status pages, admins, incidents, poller status, and public resolved-incidents all paginate (`Page[T]` envelope, AD-012) |
 | **Service groups & dependencies** | Organize a status page's services into folder-like groups and link service-to-service dependencies, with a drag-and-drop admin editor (`@dnd-kit`); shown on both the admin editor and the public page (AD-043) |
+| **Service environment tag** | Optional `development` / `staging` / `production` badge per service, admin-only (color-coded, never shown on the public status page) — purely visual, no alerting/filtering behavior tied to it (AD-044) |
+| **Domain health on the public page** | Status page shows an "ok"/"attention" domain-health indicator when a domain is attached, reusing the RDAP/NS drift data already monitored by `domain-health-monitoring` (AD-039) — no raw expiration date/registrar/NS exposed publicly (AD-045) |
+| **Status page environment banner** | A status page can be tagged `staging`/`development`; the public page then shows a fixed, non-dismissible banner naming the environment so it's never mistaken for production (AD-046) |
 
 ### Datadog integration
 
