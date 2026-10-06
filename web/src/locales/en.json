@@ -292,7 +292,18 @@
       "tlsValid": "TLS certificate issued and valid",
       "tlsRespondedInvalid": "HTTPS connection responded, but the certificate isn't valid for {{hostname}}{{errorSuffix}}",
       "tlsUnreachable": "HTTPS connection still fails{{errorSuffix}}",
-      "lastCheckedLabel": "Last checked: {{date}}"
+      "lastCheckedLabel": "Last checked: {{date}}",
+      "groups": {
+        "ungroupedLabel": "Ungrouped",
+        "emptyGroup": "Drag a service here.",
+        "dragHandle": "Reorder {{name}}",
+        "newGroupLabel": "New group",
+        "newGroupPlaceholder": "Group name",
+        "createGroupButton": "Create group",
+        "createError": "Couldn't create the group.",
+        "saveButton": "Save placement",
+        "saveError": "Couldn't save the service placement."
+      }
     }
   },
   "incidents": {

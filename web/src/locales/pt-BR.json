@@ -292,7 +292,18 @@
       "tlsValid": "Certificado TLS emitido e válido",
       "tlsRespondedInvalid": "Conexão HTTPS respondeu, mas o certificado não é válido para {{hostname}}{{errorSuffix}}",
       "tlsUnreachable": "Conexão HTTPS ainda falha{{errorSuffix}}",
-      "lastCheckedLabel": "Última verificação: {{date}}"
+      "lastCheckedLabel": "Última verificação: {{date}}",
+      "groups": {
+        "ungroupedLabel": "Sem grupo",
+        "emptyGroup": "Arraste um serviço para cá.",
+        "dragHandle": "Reordenar {{name}}",
+        "newGroupLabel": "Novo grupo",
+        "newGroupPlaceholder": "Nome do grupo",
+        "createGroupButton": "Criar grupo",
+        "createError": "Não foi possível criar o grupo.",
+        "saveButton": "Salvar posicionamento",
+        "saveError": "Não foi possível salvar o posicionamento dos serviços."
+      }
     }
   },
   "incidents": {
