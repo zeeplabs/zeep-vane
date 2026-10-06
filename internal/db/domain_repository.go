@@ -2,6 +2,8 @@ package db
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"time"
@@ -35,8 +37,11 @@ type Domain struct {
 	// Status is "pending"/"verified"/"error" (DOMVER-01), set by Create's
 	// DB default and mutated only by SetVerificationResult.
 	Status string
-	// SSLStatus is "pending"/"active"/"error" (DOMVER-01).
-	SSLStatus string
+	// VerificationToken is the opaque, per-domain token the operator proves
+	// ownership with by publishing it as the value of a TXT record at
+	// _vane-verify.<hostname> (DATV-01). Generated once by Create and never
+	// mutated afterward.
+	VerificationToken string
 	// VerifiedAt is nil until the domain's first successful/failed
 	// verification attempt (DOMVER-02).
 	VerifiedAt *time.Time
@@ -76,18 +81,39 @@ func NewDomainRepository(pool *Pool) *DomainRepository {
 	return &DomainRepository{pool: pool}
 }
 
-// Create inserts domain, filling in its generated ID and CreatedAt. It
-// returns ErrDuplicateHostname if the hostname is already registered
-// (spec.md edge case: rejecting a duplicate root domain).
+// domainVerificationTokenBytes is the entropy of a generated verification
+// token (16 bytes = 32 hex characters).
+const domainVerificationTokenBytes = 16
+
+// generateDomainVerificationToken returns a random, opaque, hex-encoded
+// token (DATV-01), mirroring the codebase's other crypto/rand-based token
+// helpers (internal/api/auth_handler.go's generateRecoveryCode).
+func generateDomainVerificationToken() (string, error) {
+	raw := make([]byte, domainVerificationTokenBytes)
+	if _, err := rand.Read(raw); err != nil {
+		return "", fmt.Errorf("db: failed to generate domain verification token: %w", err)
+	}
+	return hex.EncodeToString(raw), nil
+}
+
+// Create inserts domain, filling in its generated ID, CreatedAt, and
+// VerificationToken. It returns ErrDuplicateHostname if the hostname is
+// already registered (spec.md edge case: rejecting a duplicate root domain).
 func (r *DomainRepository) Create(ctx context.Context, domain *Domain) error {
+	token, err := generateDomainVerificationToken()
+	if err != nil {
+		return err
+	}
+	domain.VerificationToken = token
+
 	row := r.pool.QueryRow(ctx,
-		`INSERT INTO domains (hostname) VALUES ($1)
-		 RETURNING id, created_at, domain_type, status, ssl_status, verified_at, last_error`,
-		domain.Hostname,
+		`INSERT INTO domains (hostname, verification_token) VALUES ($1, $2)
+		 RETURNING id, created_at, domain_type, status, verification_token, verified_at, last_error`,
+		domain.Hostname, token,
 	)
 
 	if err := row.Scan(&domain.ID, &domain.CreatedAt, &domain.DomainType, &domain.Status,
-		&domain.SSLStatus, &domain.VerifiedAt, &domain.LastError); err != nil {
+		&domain.VerificationToken, &domain.VerifiedAt, &domain.LastError); err != nil {
 		var pgErr *pgconn.PgError
 		if errors.As(err, &pgErr) && pgErr.Code == pgerrcode.UniqueViolation {
 			return ErrDuplicateHostname
@@ -109,7 +135,7 @@ func (r *DomainRepository) ListPaginated(ctx context.Context, page, pageSize int
 	offset := (page - 1) * pageSize
 
 	rows, err := r.pool.Query(ctx,
-		`SELECT id, hostname, created_at, domain_type, status, ssl_status, verified_at, last_error,
+		`SELECT id, hostname, created_at, domain_type, status, verification_token, verified_at, last_error,
 		        expires_at, registrar, expected_ns, current_ns, ns_drift_detected, last_rdap_check_at, last_rdap_success_at, rdap_last_error,
 		        COUNT(*) OVER() AS total
 		 FROM domains
@@ -127,7 +153,7 @@ func (r *DomainRepository) ListPaginated(ctx context.Context, page, pageSize int
 	for rows.Next() {
 		var domain Domain
 		if err := rows.Scan(&domain.ID, &domain.Hostname, &domain.CreatedAt, &domain.DomainType,
-			&domain.Status, &domain.SSLStatus, &domain.VerifiedAt, &domain.LastError,
+			&domain.Status, &domain.VerificationToken, &domain.VerifiedAt, &domain.LastError,
 			&domain.ExpiresAt, &domain.Registrar, &domain.ExpectedNS, &domain.CurrentNS,
 			&domain.NSDriftDetected, &domain.LastRDAPCheckAt, &domain.LastRDAPSuccessAt, &domain.RDAPLastError, &total); err != nil {
 			return nil, 0, fmt.Errorf("db: failed to scan domain: %w", err)
@@ -152,7 +178,7 @@ func (r *DomainRepository) ListPaginated(ctx context.Context, page, pageSize int
 // matches.
 func (r *DomainRepository) GetByID(ctx context.Context, id string) (*Domain, error) {
 	row := r.pool.QueryRow(ctx,
-		`SELECT id, hostname, created_at, domain_type, status, ssl_status, verified_at, last_error,
+		`SELECT id, hostname, created_at, domain_type, status, verification_token, verified_at, last_error,
 		        expires_at, registrar, expected_ns, current_ns, ns_drift_detected, last_rdap_check_at, last_rdap_success_at, rdap_last_error
 		 FROM domains WHERE id = $1`,
 		id,
@@ -160,7 +186,7 @@ func (r *DomainRepository) GetByID(ctx context.Context, id string) (*Domain, err
 
 	var domain Domain
 	if err := row.Scan(&domain.ID, &domain.Hostname, &domain.CreatedAt, &domain.DomainType,
-		&domain.Status, &domain.SSLStatus, &domain.VerifiedAt, &domain.LastError,
+		&domain.Status, &domain.VerificationToken, &domain.VerifiedAt, &domain.LastError,
 		&domain.ExpiresAt, &domain.Registrar, &domain.ExpectedNS, &domain.CurrentNS,
 		&domain.NSDriftDetected, &domain.LastRDAPCheckAt, &domain.LastRDAPSuccessAt, &domain.RDAPLastError); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -172,22 +198,22 @@ func (r *DomainRepository) GetByID(ctx context.Context, id string) (*Domain, err
 	return &domain, nil
 }
 
-// SetVerificationResult persists the outcome of a real DNS/TLS check
-// (domain-verification-state DOMVER-04/07/08): status, sslStatus, and
-// lastError (nil on full success) are set, and verifiedAt is stamped to the
-// check's timestamp. Returns ErrNotFound if id doesn't exist.
-func (r *DomainRepository) SetVerificationResult(ctx context.Context, id, status, sslStatus string, lastError *string, verifiedAt time.Time) (*Domain, error) {
+// SetVerificationResult persists the outcome of a real TXT ownership check
+// (DATV-03/DATV-04): status and lastError (nil on full success) are set, and
+// verifiedAt is stamped to the check's timestamp. Returns ErrNotFound if id
+// doesn't exist.
+func (r *DomainRepository) SetVerificationResult(ctx context.Context, id, status string, lastError *string, verifiedAt time.Time) (*Domain, error) {
 	row := r.pool.QueryRow(ctx,
 		`UPDATE domains
-		 SET status = $2, ssl_status = $3, last_error = $4, verified_at = $5
+		 SET status = $2, last_error = $3, verified_at = $4
 		 WHERE id = $1
-		 RETURNING id, hostname, created_at, domain_type, status, ssl_status, verified_at, last_error`,
-		id, status, sslStatus, lastError, verifiedAt,
+		 RETURNING id, hostname, created_at, domain_type, status, verification_token, verified_at, last_error`,
+		id, status, lastError, verifiedAt,
 	)
 
 	var domain Domain
 	if err := row.Scan(&domain.ID, &domain.Hostname, &domain.CreatedAt, &domain.DomainType,
-		&domain.Status, &domain.SSLStatus, &domain.VerifiedAt, &domain.LastError); err != nil {
+		&domain.Status, &domain.VerificationToken, &domain.VerifiedAt, &domain.LastError); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, ErrNotFound
 		}

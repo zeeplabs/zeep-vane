@@ -54,10 +54,12 @@ describe("domains hooks", () => {
   });
 
   // domains-status-pages-page T3: the Domain type/response drifted from the
-  // real backend (domain_type/status/ssl_status/verified_at/last_error/
+  // real backend (domain_type/status/verified_at/last_error/
   // attached_page_name/attached_page_count) - asserting every new field
   // round-trips guards against that regressing silently again.
-  it("useDomains(1) returns the domain_type/status/ssl_status/verified_at/last_error/attached_page_name/attached_page_count fields and dns_target in the envelope", async () => {
+  // domain-apex-txt-verification T9: ssl_status was dropped and
+  // verification_txt_value added.
+  it("useDomains(1) returns the domain_type/status/verification_txt_value/verified_at/last_error/attached_page_name/attached_page_count fields and dns_target in the envelope", async () => {
     await loginAsOwner();
     const { result } = renderHook(() => useDomains(1), { wrapper: TestQueryProvider });
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
@@ -68,7 +70,7 @@ describe("domains hooks", () => {
     expect(acme).toBeDefined();
     expect(acme!.domain_type).toBe("custom");
     expect(acme!.status).toBe("verified");
-    expect(acme!.ssl_status).toBe("active");
+    expect(acme!.verification_txt_value).toBe("a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6");
     expect(typeof acme!.verified_at).toBe("string");
     expect(acme!.last_error).toBeNull();
     expect(acme!.attached_page_name).toBe("Status Acme");

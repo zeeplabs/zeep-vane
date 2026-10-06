@@ -486,9 +486,9 @@ function toDomainResponse(domain: Domain) {
     created_at: domain.created_at,
     domain_type: domain.domain_type,
     status: domain.status,
-    ssl_status: domain.ssl_status,
     verified_at: domain.verified_at,
     last_error: domain.last_error,
+    verification_txt_value: domain.verification_txt_value,
     attached_page_name: domain.attached_page_name,
     attached_page_count: domain.attached_page_count,
     expires_at: domain.expires_at ?? null,
@@ -1092,9 +1092,9 @@ export const handlers = [
       created_at: new Date().toISOString(),
       domain_type: "custom",
       status: "pending",
-      ssl_status: "pending",
       verified_at: null,
       last_error: null,
+      verification_txt_value: `msw-verification-token-${domainIdCounter}`,
       attached_page_name: null,
       attached_page_count: 0,
       expires_at: null,
@@ -1110,7 +1110,7 @@ export const handlers = [
   }),
 
   // POST /api/domains/:id/verify - mirrors DomainsHandler.Verify: 404
-  // unknown domain, else 200 with the domain re-marked verified/active
+  // unknown domain, else 200 with the domain re-marked verified
   // (domains-status-pages-page T4's useRecheckDomain). Tests needing an
   // error response (e.g. status stays "error") override via
   // server.use(http.post("/api/domains/:id/verify", ...)).
@@ -1121,7 +1121,6 @@ export const handlers = [
       return HttpResponse.json({ error: "domain not found" }, { status: 404 });
     }
     domain.status = "verified";
-    domain.ssl_status = "active";
     domain.verified_at = new Date().toISOString();
     domain.last_error = null;
     return HttpResponse.json(toDomainResponse(domain));

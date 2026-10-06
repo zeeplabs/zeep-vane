@@ -69,7 +69,9 @@ func createTestDomain(t *testing.T, pool *db.Pool) string {
 	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), "DELETE FROM domains WHERE hostname = $1", hostname) })
 
 	var domainID string
-	row := pool.QueryRow(context.Background(), "INSERT INTO domains (hostname) VALUES ($1) RETURNING id", hostname)
+	row := pool.QueryRow(context.Background(),
+		"INSERT INTO domains (hostname, verification_token) VALUES ($1, $2) RETURNING id",
+		hostname, "status-pages-handler-fixture-token")
 	if err := row.Scan(&domainID); err != nil {
 		t.Fatalf("failed to insert domain fixture: %v", err)
 	}

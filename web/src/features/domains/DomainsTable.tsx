@@ -8,7 +8,7 @@ import { EmptyState } from "../../layout/EmptyState";
 import { formatDateTime } from "../../lib/formatDate";
 import type { Domain } from "../../types/api";
 import { useDomains } from "./hooks";
-import { attachedPageColumn, domainRisk, domainTypeLabel, sslStatusColor, sslStatusLabel } from "./domainStatusMeta";
+import { attachedPageColumn, domainRisk, domainTypeLabel } from "./domainStatusMeta";
 import { DomainStatusTag } from "./DomainStatusTag";
 
 export interface DomainsTableProps {
@@ -31,12 +31,11 @@ export function DomainsTable({ onSelect }: DomainsTableProps) {
     return (
       <Card elevation="none" aria-busy="true" className="overflow-hidden border border-divider">
         <span className="sr-only">{t("domains.loading")}</span>
-        <div className="grid grid-cols-[110px_1fr_140px_1fr_90px_140px_100px_20px] items-center gap-3 border-b border-divider bg-card-header-bg px-5 py-2.5">
+        <div className="grid grid-cols-[110px_1fr_140px_1fr_140px_100px_20px] items-center gap-3 border-b border-divider bg-card-header-bg px-5 py-2.5">
           <span className="text-[11px] font-bold uppercase tracking-wide text-neutral-400">{t("common.status")}</span>
           <span className="text-[11px] font-bold uppercase tracking-wide text-neutral-400">{t("domains.table.domain")}</span>
           <span className="text-[11px] font-bold uppercase tracking-wide text-neutral-400">{t("domains.table.type")}</span>
           <span className="text-[11px] font-bold uppercase tracking-wide text-neutral-400">{t("domains.table.pointsTo")}</span>
-          <span className="text-[11px] font-bold uppercase tracking-wide text-neutral-400">{t("domains.table.ssl")}</span>
           <span className="text-[11px] font-bold uppercase tracking-wide text-neutral-400">{t("domains.table.verified")}</span>
           <span className="text-[11px] font-bold uppercase tracking-wide text-neutral-400">{t("domains.table.risk")}</span>
           <span />
@@ -44,13 +43,12 @@ export function DomainsTable({ onSelect }: DomainsTableProps) {
         {Array.from({ length: 5 }).map((_, i) => (
           <div
             key={i}
-            className="grid grid-cols-[110px_1fr_140px_1fr_90px_140px_100px_20px] items-center gap-3 border-b border-divider px-5 py-3.5 last:border-b-0"
+            className="grid grid-cols-[110px_1fr_140px_1fr_140px_100px_20px] items-center gap-3 border-b border-divider px-5 py-3.5 last:border-b-0"
           >
             <Skeleton width={70} height={20} radius={999} />
             <Skeleton width={160} height={14} />
             <Skeleton width={90} height={14} />
             <Skeleton width={110} height={14} />
-            <Skeleton width={50} height={14} />
             <Skeleton width={80} height={14} />
             <Skeleton width={60} height={16} radius={999} />
             <Skeleton width={16} height={16} />
@@ -67,12 +65,11 @@ export function DomainsTable({ onSelect }: DomainsTableProps) {
   return (
     <div className="flex flex-col gap-3">
       <Card elevation="none" className="overflow-hidden border border-divider">
-        <div className="grid grid-cols-[110px_1fr_140px_1fr_90px_140px_100px_20px] items-center gap-3 border-b border-divider bg-card-header-bg px-5 py-2.5">
+        <div className="grid grid-cols-[110px_1fr_140px_1fr_140px_100px_20px] items-center gap-3 border-b border-divider bg-card-header-bg px-5 py-2.5">
           <span className="text-[11px] font-bold uppercase tracking-wide text-neutral-400">{t("common.status")}</span>
           <span className="text-[11px] font-bold uppercase tracking-wide text-neutral-400">{t("domains.table.domain")}</span>
           <span className="text-[11px] font-bold uppercase tracking-wide text-neutral-400">{t("domains.table.type")}</span>
           <span className="text-[11px] font-bold uppercase tracking-wide text-neutral-400">{t("domains.table.pointsTo")}</span>
-          <span className="text-[11px] font-bold uppercase tracking-wide text-neutral-400">{t("domains.table.ssl")}</span>
           <span className="text-[11px] font-bold uppercase tracking-wide text-neutral-400">{t("domains.table.verified")}</span>
           <span className="text-[11px] font-bold uppercase tracking-wide text-neutral-400">{t("domains.table.risk")}</span>
           <span />
@@ -82,15 +79,12 @@ export function DomainsTable({ onSelect }: DomainsTableProps) {
             key={domain.id}
             data-testid="domain-row"
             onClick={() => onSelect(domain)}
-            className="grid cursor-pointer grid-cols-[110px_1fr_140px_1fr_90px_140px_100px_20px] items-center gap-3 border-b border-divider px-5 py-3.5 last:border-b-0 hover:bg-card-header-bg"
+            className="grid cursor-pointer grid-cols-[110px_1fr_140px_1fr_140px_100px_20px] items-center gap-3 border-b border-divider px-5 py-3.5 last:border-b-0 hover:bg-card-header-bg"
           >
             <DomainStatusTag status={domain.status} />
             <div className="min-w-0 truncate font-mono text-[13px] text-text">{domain.hostname}</div>
             <div className="text-[13px] font-medium text-text-muted">{domainTypeLabel(t, domain.domain_type)}</div>
             <div className="min-w-0 truncate text-[13px] font-medium text-text-muted">{attachedPageColumn(domain)}</div>
-            <div className="text-[13px] font-semibold" style={{ color: sslStatusColor[domain.ssl_status] }}>
-              {sslStatusLabel(t, domain.ssl_status)}
-            </div>
             <div className="text-xs text-text-muted">
               {domain.verified_at ? formatDateTime(domain.verified_at, i18n.language) : "—"}
             </div>

@@ -35,9 +35,9 @@ function baseDomain(overrides: Partial<Domain>): Domain {
     created_at: new Date().toISOString(),
     domain_type: "custom",
     status: "verified",
-    ssl_status: "active",
     verified_at: new Date().toISOString(),
     last_error: null,
+    verification_txt_value: "dom-fixture-token",
     attached_page_name: null,
     attached_page_count: 0,
     expires_at: null,
@@ -90,14 +90,13 @@ describe("DomainsTable", () => {
     expect(screen.queryAllByTestId("skeleton")).toHaveLength(0);
   });
 
-  it("renders the row's Status/Tipo/SSL (DSP-01)", async () => {
+  it("renders the row's Status/Tipo and no SSL column (DSP-01, DATV-07)", async () => {
     mockDomainsPage([
       baseDomain({
         id: "dom-full",
         hostname: "full.example.com",
         domain_type: "custom",
         status: "verified",
-        ssl_status: "active",
       }),
     ]);
     await loginAsOwner();
@@ -107,7 +106,9 @@ describe("DomainsTable", () => {
     const row = screen.getAllByTestId("domain-row")[0];
     expect(within(row).getByText("Verificado")).toBeInTheDocument();
     expect(within(row).getByText("Domínio próprio")).toBeInTheDocument();
-    expect(within(row).getByText("Ativo")).toBeInTheDocument();
+    // DATV-07: the SSL column (header and per-row status cell) is gone.
+    expect(screen.queryByText("SSL")).not.toBeInTheDocument();
+    expect(within(row).queryByText("Ativo")).not.toBeInTheDocument();
   });
 
   it("renders '—' in the Aponta para column when the domain has no attached status page (DSP-02)", async () => {

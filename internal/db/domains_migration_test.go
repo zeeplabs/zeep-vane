@@ -18,12 +18,12 @@ func TestDomainsMigration_AppliesClean_AndEnforcesUniqueHostname(t *testing.T) {
 		_, _ = pool.Exec(ctx, "DELETE FROM domains WHERE hostname = $1", hostname)
 	})
 
-	_, err := pool.Exec(ctx, "INSERT INTO domains (hostname) VALUES ($1)", hostname)
+	_, err := pool.Exec(ctx, "INSERT INTO domains (hostname, verification_token) VALUES ($1, $2)", hostname, "migration-fixture-token-a")
 	if err != nil {
 		t.Fatalf("first insert returned unexpected error: %v", err)
 	}
 
-	_, err = pool.Exec(ctx, "INSERT INTO domains (hostname) VALUES ($1)", hostname)
+	_, err = pool.Exec(ctx, "INSERT INTO domains (hostname, verification_token) VALUES ($1, $2)", hostname, "migration-fixture-token-b")
 	if err == nil {
 		t.Fatal("second insert with duplicate hostname returned nil error, want unique constraint violation")
 	}

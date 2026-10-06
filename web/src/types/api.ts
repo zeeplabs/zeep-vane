@@ -104,14 +104,15 @@ export interface ServiceDetail extends Service {
   hourly_buckets: HourlyBucket[];
 }
 
-// DomainType/DomainStatus/DomainSSLStatus mirror the backend's
-// domain-verification-state contract (internal/api/domains_handler.go's
-// domainResponse) - "custom" is the only domain_type value the backend
-// ever produces today (domains-status-pages-page's Assumptions: "Vane
-// subdomain" ships disabled/decorative, no backend support).
+// DomainType/DomainStatus mirror the backend's domain-verification-state
+// contract (internal/api/domains_handler.go's domainResponse) - "custom" is
+// the only domain_type value the backend ever produces today
+// (domains-status-pages-page's Assumptions: "Vane subdomain" ships
+// disabled/decorative, no backend support). A root domain never has its own
+// SSL/TLS certificate, so ssl_status was removed
+// (domain-apex-txt-verification DATV-08).
 export type DomainType = "custom";
 export type DomainStatus = "pending" | "verified" | "error";
-export type DomainSSLStatus = "pending" | "active" | "error";
 
 export interface Domain {
   id: string;
@@ -119,9 +120,13 @@ export interface Domain {
   created_at: string;
   domain_type: DomainType;
   status: DomainStatus;
-  ssl_status: DomainSSLStatus;
   verified_at: string | null;
   last_error: string | null;
+  // verification_txt_value is the exact value the operator must publish as a
+  // TXT record at _vane-verify.<hostname> to prove root-domain ownership
+  // (domain-apex-txt-verification DATV-02), mirroring DomainsHandler's
+  // domainResponse. It is always present (never empty) on a domain row.
+  verification_txt_value: string;
   // attached_page_name/attached_page_count are the read-side join over
   // status_pages.domain_id (domains-status-pages-page DSP-02/03/04) - null/0
   // when no status page is attached, the earliest-created attached page's
