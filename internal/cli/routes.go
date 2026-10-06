@@ -299,6 +299,7 @@ func buildAdminRouter(pool *db.Pool, cfg config.Config, logger *zap.Logger, poll
 		protected.With(anyRole).Get("/api/services/{id}", servicesHandler.Get)
 		protected.With(anyRole).Get("/api/status-pages", statusPagesHandler.List)
 		protected.With(anyRole).Get("/api/status-pages/{id}/groups", statusPagesHandler.ListGroups)
+		protected.With(anyRole).Get("/api/status-pages/{id}/services", statusPagesHandler.ListServicePlacements)
 		protected.With(anyRole).Get("/api/incidents", incidentsHandler.List)
 		protected.With(anyRole).Get("/api/incidents/{id}/updates", incidentsHandler.ListUpdates)
 		protected.With(anyRole).Get("/api/status-pages/{id}/public-preview", publicStatusPreviewHandler.Get)

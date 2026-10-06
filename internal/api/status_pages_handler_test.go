@@ -67,6 +67,7 @@ func newStatusPagesRouter(t *testing.T, opts ...func(*StatusPagesHandler)) (http
 		protected.With(writeRoles).Patch("/api/status-pages/{id}/groups/{groupId}", handler.UpdateGroup)
 		protected.With(writeRoles).Delete("/api/status-pages/{id}/groups/{groupId}", handler.DeleteGroup)
 		protected.With(anyRole).Get("/api/status-pages/{id}/groups", handler.ListGroups)
+		protected.With(anyRole).Get("/api/status-pages/{id}/services", handler.ListServicePlacements)
 	})
 
 	return r, pool, admins
@@ -1526,5 +1527,166 @@ func TestListGroups_NoGroups_200EmptyArrayNotNull(t *testing.T) {
 	}
 	if len(groups) != 0 {
 		t.Errorf("groups = %+v, want empty", groups)
+	}
+}
+
+func getServicePlacements(t *testing.T, r http.Handler, token, statusPageID string) *httptest.ResponseRecorder {
+	t.Helper()
+	httpReq := httptest.NewRequest(http.MethodGet, "/api/status-pages/"+statusPageID+"/services", nil)
+	if token != "" {
+		httpReq.Header.Set("Authorization", "Bearer "+token)
+	}
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, httpReq)
+	return rec
+}
+
+// TestListServicePlacements_MixedPlacements_200ReturnsFullDetail asserts
+// T7's endpoint returns every placement's group_id/parent_service_id/
+// position detail - set up via a real SetServices call (T6) first, then
+// read back through the new read endpoint - covering a grouped+parented
+// child, an ungrouped parentless service, and a grouped parentless service
+// in the same page (SGD-02, SGD-03, SGD-06, SGD-07).
+func TestListServicePlacements_MixedPlacements_200ReturnsFullDetail(t *testing.T) {
+	r, pool, admins := newStatusPagesRouter(t)
+	token := issueTestSessionToken(t, admins)
+	parent := createTestService(t, pool)
+	child := createTestService(t, pool)
+	ungrouped := createTestService(t, pool)
+	pageID := createDomainlessStatusPageViaAPI(t, r, pool, token, "List Service Placements Page")
+	groupID := createTestGroup(t, r, token, pageID, "Core")
+
+	setRec := patchSetServices(t, r, token, pageID, setServicesRequest{Services: []servicePlacementRequest{
+		{ServiceID: parent, GroupID: &groupID, Position: 0},
+		{ServiceID: child, GroupID: &groupID, ParentServiceID: &parent, Position: 1},
+		{ServiceID: ungrouped, Position: 2},
+	}})
+	if setRec.Code != http.StatusOK {
+		t.Fatalf("setup SetServices status = %d, want %d, body = %s", setRec.Code, http.StatusOK, setRec.Body.String())
+	}
+
+	rec := getServicePlacements(t, r, token, pageID)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	var placements []servicePlacementResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &placements); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+	if len(placements) != 3 {
+		t.Fatalf("placements = %+v, want 3 entries", placements)
+	}
+
+	byID := make(map[string]servicePlacementResponse, len(placements))
+	for _, p := range placements {
+		byID[p.ServiceID] = p
+	}
+
+	gotParent, ok := byID[parent]
+	if !ok {
+		t.Fatalf("placements missing parent service %q: %+v", parent, placements)
+	}
+	if gotParent.GroupID == nil || *gotParent.GroupID != groupID {
+		t.Errorf("parent.GroupID = %v, want %q", gotParent.GroupID, groupID)
+	}
+	if gotParent.ParentServiceID != nil {
+		t.Errorf("parent.ParentServiceID = %v, want nil", gotParent.ParentServiceID)
+	}
+	if gotParent.Position != 0 {
+		t.Errorf("parent.Position = %d, want 0", gotParent.Position)
+	}
+
+	gotChild, ok := byID[child]
+	if !ok {
+		t.Fatalf("placements missing child service %q: %+v", child, placements)
+	}
+	if gotChild.GroupID == nil || *gotChild.GroupID != groupID {
+		t.Errorf("child.GroupID = %v, want %q", gotChild.GroupID, groupID)
+	}
+	if gotChild.ParentServiceID == nil || *gotChild.ParentServiceID != parent {
+		t.Errorf("child.ParentServiceID = %v, want %q", gotChild.ParentServiceID, parent)
+	}
+	if gotChild.Position != 1 {
+		t.Errorf("child.Position = %d, want 1", gotChild.Position)
+	}
+
+	gotUngrouped, ok := byID[ungrouped]
+	if !ok {
+		t.Fatalf("placements missing ungrouped service %q: %+v", ungrouped, placements)
+	}
+	if gotUngrouped.GroupID != nil {
+		t.Errorf("ungrouped.GroupID = %v, want nil", gotUngrouped.GroupID)
+	}
+	if gotUngrouped.ParentServiceID != nil {
+		t.Errorf("ungrouped.ParentServiceID = %v, want nil", gotUngrouped.ParentServiceID)
+	}
+	if gotUngrouped.Position != 2 {
+		t.Errorf("ungrouped.Position = %d, want 2", gotUngrouped.Position)
+	}
+}
+
+// TestListServicePlacements_NoServices_200EmptyArrayNotNull mirrors
+// TestListGroups_NoGroups_200EmptyArrayNotNull: a status page with no
+// linked services returns an empty JSON array, never null.
+func TestListServicePlacements_NoServices_200EmptyArrayNotNull(t *testing.T) {
+	r, pool, admins := newStatusPagesRouter(t)
+	token := issueTestSessionToken(t, admins)
+	pageID := createDomainlessStatusPageViaAPI(t, r, pool, token, "List Service Placements Empty Page")
+
+	rec := getServicePlacements(t, r, token, pageID)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	if rec.Body.String() == "null\n" || rec.Body.String() == "null" {
+		t.Fatalf("body = %q, want an empty JSON array, not null", rec.Body.String())
+	}
+	var placements []servicePlacementResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &placements); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+	if len(placements) != 0 {
+		t.Errorf("placements = %+v, want empty", placements)
+	}
+}
+
+// TestListServicePlacements_NonexistentStatusPageID_404 mirrors
+// TestSetServices_NonexistentStatusPageID_404 for the new read endpoint.
+func TestListServicePlacements_NonexistentStatusPageID_404(t *testing.T) {
+	r, _, admins := newStatusPagesRouter(t)
+	token := issueTestSessionToken(t, admins)
+
+	rec := getServicePlacements(t, r, token, "00000000-0000-0000-0000-000000000000")
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("status = %d, want %d, body = %s", rec.Code, http.StatusNotFound, rec.Body.String())
+	}
+}
+
+// TestListServicePlacements_ViewerRole_200 asserts this is a read endpoint
+// gated anyRole (unlike SetServices/CreateGroup's writeRoles) - a viewer can
+// read placement detail, mirroring TestListGroups_AnyRole_200ReturnsPositionOrdered's
+// use of a viewer token.
+func TestListServicePlacements_ViewerRole_200(t *testing.T) {
+	r, pool, admins := newStatusPagesRouter(t)
+	ownerToken := issueTestSessionToken(t, admins)
+	serviceID := createTestService(t, pool)
+	pageID := createDomainlessStatusPageViaAPI(t, r, pool, ownerToken, "List Service Placements Viewer Page")
+
+	setRec := patchSetServices(t, r, ownerToken, pageID, setServicesRequest{Services: placementsOf(serviceID)})
+	if setRec.Code != http.StatusOK {
+		t.Fatalf("setup SetServices status = %d, want %d, body = %s", setRec.Code, http.StatusOK, setRec.Body.String())
+	}
+
+	viewerToken := issueTestSessionTokenWithRole(t, admins, db.RoleViewer)
+	rec := getServicePlacements(t, r, viewerToken, pageID)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	var placements []servicePlacementResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &placements); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+	if len(placements) != 1 || placements[0].ServiceID != serviceID {
+		t.Fatalf("placements = %+v, want [%q]", placements, serviceID)
 	}
 }

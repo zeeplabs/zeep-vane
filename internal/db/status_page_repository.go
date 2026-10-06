@@ -447,6 +447,40 @@ func (r *StatusPageRepository) serviceIDsByStatusPage(ctx context.Context, pageI
 	return result, nil
 }
 
+// ListServicePlacements returns the full per-service placement detail
+// (service_id, group_id, parent_service_id, position) for every service
+// linked to statusPageID, position-ordered (T7: GET
+// /api/status-pages/{id}/services). Unlike serviceIDsByStatusPage, which
+// only returns bare service IDs for the unchanged GET /api/status-pages/{id}
+// response, this exposes each placement's group/parent/position so the
+// admin tree editor can render it alongside T5's ListGroups. A page with no
+// linked services returns an empty (nil) slice, not an error.
+func (r *StatusPageRepository) ListServicePlacements(ctx context.Context, statusPageID string) ([]ServicePlacement, error) {
+	rows, err := r.pool.Query(ctx,
+		"SELECT service_id, group_id, parent_service_id, position FROM status_page_services "+
+			"WHERE status_page_id = $1 ORDER BY position",
+		statusPageID,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("db: failed to list status page service placements: %w", err)
+	}
+	defer rows.Close()
+
+	var placements []ServicePlacement
+	for rows.Next() {
+		var p ServicePlacement
+		if err := rows.Scan(&p.ServiceID, &p.GroupID, &p.ParentServiceID, &p.Position); err != nil {
+			return nil, fmt.Errorf("db: failed to scan status page service placement: %w", err)
+		}
+		placements = append(placements, p)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("db: failed to iterate status page service placements: %w", err)
+	}
+
+	return placements, nil
+}
+
 // AttachedNamesByDomainIDs batch-loads, per domain ID in domainIDs, the
 // names of every status page whose domain_id matches it - ordered
 // created_at ASC so the caller (DomainsHandler.List) can treat the first

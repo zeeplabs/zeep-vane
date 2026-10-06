@@ -45,6 +45,7 @@ type statusPageCreatorLister interface {
 	UpdateGroup(ctx context.Context, id, name string, position int) (*db.StatusPageServiceGroup, error)
 	DeleteGroup(ctx context.Context, id string) error
 	ListGroups(ctx context.Context, statusPageID string) ([]db.StatusPageServiceGroup, error)
+	ListServicePlacements(ctx context.Context, statusPageID string) ([]db.ServicePlacement, error)
 }
 
 // StatusPagesHandler serves the status page admin routes.
@@ -506,6 +507,71 @@ func (h *StatusPagesHandler) ListGroups(w http.ResponseWriter, r *http.Request) 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	_ = json.NewEncoder(w).Encode(toStatusPageServiceGroupResponses(groups))
+}
+
+// servicePlacementResponse is the wire shape for a single service's
+// placement within a status page's service list, returned by
+// GET /api/status-pages/{id}/services (T7). It mirrors
+// servicePlacementRequest field-for-field, in the read direction: this is
+// the full per-service detail the admin tree editor needs alongside T5's
+// GET /groups, kept out of the existing GET /api/status-pages/{id} response
+// (whose ServiceIDs stays a flat []string) per design.md's explicit
+// decision not to grow that response.
+type servicePlacementResponse struct {
+	ServiceID       string  `json:"service_id"`
+	GroupID         *string `json:"group_id"`
+	ParentServiceID *string `json:"parent_service_id"`
+	Position        int     `json:"position"`
+}
+
+// toServicePlacementResponses converts placements to its wire shape,
+// normalizing a nil/empty slice (no linked services) to an empty JSON array
+// rather than null - same convention as toStatusPageResponse's ServiceIDs
+// and toStatusPageServiceGroupResponses.
+func toServicePlacementResponses(placements []db.ServicePlacement) []servicePlacementResponse {
+	resp := make([]servicePlacementResponse, len(placements))
+	for i, p := range placements {
+		resp[i] = servicePlacementResponse{
+			ServiceID:       p.ServiceID,
+			GroupID:         p.GroupID,
+			ParentServiceID: p.ParentServiceID,
+			Position:        p.Position,
+		}
+	}
+	return resp
+}
+
+// ListServicePlacements handles GET /api/status-pages/{id}/services,
+// returning the full per-service placement detail (service_id, group_id,
+// parent_service_id, position) for this status page (SGD-02, SGD-03,
+// SGD-06, SGD-07) - distinct from GET /api/status-pages/{id}'s unchanged
+// service_ids []string. It checks the status page exists first via GetByID,
+// same existence-check pattern as CreateGroup, so an unknown id surfaces a
+// clean 404 instead of a bare empty array indistinguishable from "no
+// services linked".
+func (h *StatusPagesHandler) ListServicePlacements(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+
+	if _, err := h.statusPages.GetByID(r.Context(), id); err != nil {
+		if errors.Is(err, db.ErrNotFound) {
+			http.NotFound(w, r)
+			return
+		}
+		h.logger.Error("status-pages: failed to look up status page before listing service placements", zap.Error(err))
+		writeInternalError(w)
+		return
+	}
+
+	placements, err := h.statusPages.ListServicePlacements(r.Context(), id)
+	if err != nil {
+		h.logger.Error("status-pages: failed to list service placements", zap.Error(err))
+		writeInternalError(w)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(toServicePlacementResponses(placements))
 }
 
 // Delete handles DELETE /api/status-pages/{id}, removing the status page and
