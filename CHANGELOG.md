@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.2] — 2026-10-06
+
+### Changed
+
+- **Root domain ownership verification switched from CNAME/TLS to a TXT record**: registering a root domain in `vane` now generates a unique verification token and asks the operator to create a `_vane-verify.<hostname>` TXT record with that token, instead of asking for a CNAME on the bare apex and attempting a TLS handshake against it. The old check was structurally unsatisfiable for any real root domain already in use (MX, SPF/DKIM, marketing site, etc.) and, if followed literally, would have broken the domain's existing routing — a CNAME cannot coexist with other record types at the zone apex (RFC 1034 §3.6.2). `POST /api/domains/{id}/verify` now performs a real DNS TXT lookup and marks the domain `verified` only on an exact token match, with distinct not-found/mismatch error messages. The subdomain-attach flow (`AttachDomainDrawer`, `PUBLIC_DNS_TARGET`, `HostPolicy`) is unchanged — it already verifies correctly via CNAME on `subdomain.hostname`.
+- **`ssl_status` removed from the root domain model**: a root domain never has its own TLS certificate by design (only the attached subdomain does). The SSL status card/column and `ssl_status` field are gone from the domain detail view, the domains list table, and `GET /api/domains`/`POST /api/domains/{id}/verify` responses.
+
+### Migration notes
+
+- Adds `domains.verification_token` (migration `0044`) and drops `domains.ssl_status` (migration `0045`). Every existing domain row gets a verification token backfilled on migration; previously `verified` domains are **not** re-verified automatically — re-running `Verify` now checks the new TXT record instead of the old CNAME, so an operator who already proved ownership under the old scheme will need to add the new TXT record before the next verification attempt succeeds.
+
 ## [0.9.1] — 2026-09-29
 
 ### Fixed
