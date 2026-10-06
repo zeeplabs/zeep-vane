@@ -29,7 +29,8 @@ func newPublicStatusRouter(t *testing.T) (http.Handler, *db.Pool) {
 	intervals := db.NewStatusIntervalRepository(pool)
 	incidents := db.NewIncidentRepository(pool)
 	companySettings := db.NewTenantRepository(pool)
-	handler := NewPublicStatusHandler(services, intervals, incidents, companySettings, zap.NewNop())
+	statusPages := db.NewStatusPageRepository(pool)
+	handler := NewPublicStatusHandler(services, intervals, incidents, companySettings, statusPages, zap.NewNop())
 
 	r := chi.NewRouter()
 	r.Get("/", handler.Get)
@@ -1169,7 +1170,8 @@ func TestPublicStatusGet_InvalidRange_422NoDBQueryIssued(t *testing.T) {
 	intervals := db.NewStatusIntervalRepository(pool)
 	incidents := db.NewIncidentRepository(pool)
 	companySettings := db.NewTenantRepository(pool)
-	handler := NewPublicStatusHandler(spy, intervals, incidents, companySettings, zap.NewNop())
+	statusPages := db.NewStatusPageRepository(pool)
+	handler := NewPublicStatusHandler(spy, intervals, incidents, companySettings, statusPages, zap.NewNop())
 
 	r := chi.NewRouter()
 	r.Get("/", handler.Get)
@@ -1525,5 +1527,248 @@ func TestPublicStatusGet_OperationalBucket_OmitsEpisodesField(t *testing.T) {
 	}
 	if strings.Contains(rec.Body.String(), `"episodes"`) {
 		t.Errorf("response body contains an \"episodes\" key for a bucket with no degraded episode: %s", rec.Body.String())
+	}
+}
+
+// findPublicServiceByID looks up a publicServiceResponse by its own ID
+// field (T9 adds ID to the DTO, unlike findPublicService above which
+// predates it and matches by name).
+func findPublicServiceByID(services []publicServiceResponse, id string) *publicServiceResponse {
+	for i := range services {
+		if services[i].ID == id {
+			return &services[i]
+		}
+	}
+	return nil
+}
+
+// TestPublicStatusGet_GroupedUngroupedParentChild_PopulatesPlacementFields
+// covers SGD-02, SGD-03, SGD-06, SGD-09: a status page mixing an ungrouped
+// service, a grouped parent, and a grouped child (ParentServiceID pointing
+// at the parent) exposes group_id/group_name/parent_service_id/
+// parent_service_name correctly, and groups (including one with zero
+// services, SGD-09) appear in the top-level groups array. It also asserts
+// each service's independently-computed Status/LastUpdatedAt/
+// StatusAnalysis are untouched by grouping (SGD-09's "grouping never
+// affects status computation" non-goal) - the same assertions T9's
+// pre-existing single-service tests already make, now proving the new
+// placement fields are purely additive.
+func TestPublicStatusGet_GroupedUngroupedParentChild_PopulatesPlacementFields(t *testing.T) {
+	r, pool := newPublicStatusRouter(t)
+	ctx := context.Background()
+
+	fetchedAt := time.Date(2026, 2, 1, 9, 0, 0, 0, time.UTC)
+	ungroupedID, cleanupUngrouped := createPublicStatusServiceFixture(t, pool, "operational", fetchedAt)
+	t.Cleanup(cleanupUngrouped)
+	parentID, cleanupParent := createPublicStatusServiceFixture(t, pool, "operational", fetchedAt)
+	t.Cleanup(cleanupParent)
+	childID, cleanupChild := createPublicStatusServiceFixture(t, pool, "degraded", fetchedAt)
+	t.Cleanup(cleanupChild)
+
+	analysis := "Downstream dependency degraded, propagating to this child service."
+	if err := db.NewServiceRepository(pool).UpdateStatusAnalysis(ctx, childID, &analysis); err != nil {
+		t.Fatalf("setup UpdateStatusAnalysis() returned unexpected error: %v", err)
+	}
+
+	statusPageID := createPublicStatusPageFixture(t, pool, ungroupedID, parentID, childID)
+
+	statusPages := db.NewStatusPageRepository(pool)
+	group, err := statusPages.CreateGroup(ctx, statusPageID, "Infra")
+	if err != nil {
+		t.Fatalf("setup CreateGroup() returned unexpected error: %v", err)
+	}
+	// An empty group with zero services placed in it - must still appear
+	// in the public groups array (SGD-09).
+	emptyGroup, err := statusPages.CreateGroup(ctx, statusPageID, "Empty")
+	if err != nil {
+		t.Fatalf("setup CreateGroup() returned unexpected error: %v", err)
+	}
+
+	err = statusPages.SetServices(ctx, statusPageID, []db.ServicePlacement{
+		{ServiceID: ungroupedID, GroupID: nil, ParentServiceID: nil, Position: 0},
+		{ServiceID: parentID, GroupID: &group.ID, ParentServiceID: nil, Position: 1},
+		{ServiceID: childID, GroupID: &group.ID, ParentServiceID: &parentID, Position: 2},
+	})
+	if err != nil {
+		t.Fatalf("setup SetServices() returned unexpected error: %v", err)
+	}
+
+	req := withStatusPageContext(httptest.NewRequest(http.MethodGet, "/", nil), statusPageID)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	var body publicStatusResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+
+	// Groups array: both groups present, including the empty one, each
+	// with its real name/position - unfiltered against which services use
+	// them.
+	if len(body.Groups) != 2 {
+		t.Fatalf("len(groups) = %d, want 2, body = %+v", len(body.Groups), body.Groups)
+	}
+	var foundGroup, foundEmptyGroup bool
+	for _, g := range body.Groups {
+		switch g.ID {
+		case group.ID:
+			foundGroup = true
+			if g.Name != "Infra" || g.Position != 0 {
+				t.Errorf("group = %+v, want Name=Infra Position=0", g)
+			}
+		case emptyGroup.ID:
+			foundEmptyGroup = true
+			if g.Name != "Empty" || g.Position != 1 {
+				t.Errorf("empty group = %+v, want Name=Empty Position=1", g)
+			}
+		}
+	}
+	if !foundGroup {
+		t.Errorf("groups %+v missing populated group %s", body.Groups, group.ID)
+	}
+	if !foundEmptyGroup {
+		t.Errorf("groups %+v missing empty group %s", body.Groups, emptyGroup.ID)
+	}
+
+	// Ungrouped, parentless service.
+	ungrouped := findPublicServiceByID(body.Services, ungroupedID)
+	if ungrouped == nil {
+		t.Fatalf("ungrouped service %s not present in response", ungroupedID)
+	}
+	if ungrouped.GroupID != nil || ungrouped.GroupName != nil {
+		t.Errorf("ungrouped service GroupID/GroupName = %v/%v, want nil/nil", ungrouped.GroupID, ungrouped.GroupName)
+	}
+	if ungrouped.ParentServiceID != nil || ungrouped.ParentServiceName != nil {
+		t.Errorf("ungrouped service ParentServiceID/ParentServiceName = %v/%v, want nil/nil", ungrouped.ParentServiceID, ungrouped.ParentServiceName)
+	}
+	// Status computation is untouched by grouping (SGD-09 non-goal).
+	if ungrouped.Status != "operational" {
+		t.Errorf("ungrouped service Status = %q, want %q", ungrouped.Status, "operational")
+	}
+	if !ungrouped.LastUpdatedAt.Equal(fetchedAt) {
+		t.Errorf("ungrouped service LastUpdatedAt = %v, want %v", ungrouped.LastUpdatedAt, fetchedAt)
+	}
+
+	// Grouped parent, no parent of its own.
+	parent := findPublicServiceByID(body.Services, parentID)
+	if parent == nil {
+		t.Fatalf("parent service %s not present in response", parentID)
+	}
+	if parent.GroupID == nil || *parent.GroupID != group.ID {
+		t.Errorf("parent service GroupID = %v, want %q", parent.GroupID, group.ID)
+	}
+	if parent.GroupName == nil || *parent.GroupName != "Infra" {
+		t.Errorf("parent service GroupName = %v, want %q", parent.GroupName, "Infra")
+	}
+	if parent.ParentServiceID != nil {
+		t.Errorf("parent service ParentServiceID = %v, want nil", parent.ParentServiceID)
+	}
+	if parent.Status != "operational" {
+		t.Errorf("parent service Status = %q, want %q", parent.Status, "operational")
+	}
+
+	// Grouped child, with a parent reference resolved to the parent's name.
+	child := findPublicServiceByID(body.Services, childID)
+	if child == nil {
+		t.Fatalf("child service %s not present in response", childID)
+	}
+	if child.GroupID == nil || *child.GroupID != group.ID {
+		t.Errorf("child service GroupID = %v, want %q", child.GroupID, group.ID)
+	}
+	if child.ParentServiceID == nil || *child.ParentServiceID != parentID {
+		t.Errorf("child service ParentServiceID = %v, want %q", child.ParentServiceID, parentID)
+	}
+	if child.ParentServiceName == nil || *child.ParentServiceName != parent.Name {
+		t.Errorf("child service ParentServiceName = %v, want %q", child.ParentServiceName, parent.Name)
+	}
+	// Each service's own status/analysis is unaffected by its placement -
+	// the child is independently degraded with its own analysis, exactly
+	// as TestPublicStatusGet_DegradedServiceWithAnalysis_IncludesStatusAnalysis
+	// asserts for an ungrouped service.
+	if child.Status != "degraded" {
+		t.Errorf("child service Status = %q, want %q", child.Status, "degraded")
+	}
+	if child.StatusAnalysis == nil || *child.StatusAnalysis != analysis {
+		t.Errorf("child service StatusAnalysis = %v, want %q", child.StatusAnalysis, analysis)
+	}
+}
+
+// TestPublicStatusGet_NotConfiguredParent_ChildStillCarriesParentIDAndName
+// covers the edge case T9 identifies but design.md leaves unresolved: a
+// child's ParentServiceID can reference a service that itself got filtered
+// out of the public response (status "not_configured", see
+// composeResponse's shownServices filter). The decision implemented here is
+// (a) ParentServiceID is still exposed (a client can know "this depends on
+// something" even if that something isn't separately listed) and
+// ParentServiceName is resolved from the *unfiltered* service list so the
+// name is never silently dropped just because the parent isn't publicly
+// shown.
+func TestPublicStatusGet_NotConfiguredParent_ChildStillCarriesParentIDAndName(t *testing.T) {
+	r, pool := newPublicStatusRouter(t)
+	ctx := context.Background()
+
+	childID, cleanupChild := createPublicStatusServiceFixture(t, pool, "operational", time.Now().UTC())
+	t.Cleanup(cleanupChild)
+
+	services := db.NewServiceRepository(pool)
+	parentName := uniqueServiceName(t)
+	notConfiguredParent := &db.Service{Name: parentName, SLOID: "slo-not-configured-parent-test"}
+	tenantID := seedTestTenant(t, pool)
+	withTenantTx(t, pool, tenantID, func(txCtx context.Context) {
+		if err := services.Create(txCtx, notConfiguredParent); err != nil {
+			t.Fatalf("setup Create() returned unexpected error: %v", err)
+		}
+	})
+	t.Cleanup(func() {
+		_, _ = pool.Exec(context.Background(), "DELETE FROM services WHERE id = $1", notConfiguredParent.ID)
+	})
+	if notConfiguredParent.CurrentStatus != "not_configured" {
+		t.Fatalf("setup: fresh service CurrentStatus = %q, want %q", notConfiguredParent.CurrentStatus, "not_configured")
+	}
+
+	statusPageID := createPublicStatusPageFixture(t, pool, childID, notConfiguredParent.ID)
+
+	statusPages := db.NewStatusPageRepository(pool)
+	parentIDCopy := notConfiguredParent.ID
+	err := statusPages.SetServices(ctx, statusPageID, []db.ServicePlacement{
+		{ServiceID: childID, GroupID: nil, ParentServiceID: &parentIDCopy, Position: 0},
+		{ServiceID: notConfiguredParent.ID, GroupID: nil, ParentServiceID: nil, Position: 1},
+	})
+	if err != nil {
+		t.Fatalf("setup SetServices() returned unexpected error: %v", err)
+	}
+
+	req := withStatusPageContext(httptest.NewRequest(http.MethodGet, "/", nil), statusPageID)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	var body publicStatusResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+
+	for _, s := range body.Services {
+		if s.ID == notConfiguredParent.ID {
+			t.Fatalf("not_configured parent %s present in public response, want hidden", notConfiguredParent.ID)
+		}
+	}
+
+	child := findPublicServiceByID(body.Services, childID)
+	if child == nil {
+		t.Fatalf("child service %s not present in response", childID)
+	}
+	if child.ParentServiceID == nil || *child.ParentServiceID != notConfiguredParent.ID {
+		t.Errorf("child ParentServiceID = %v, want %q (kept even though parent is hidden)", child.ParentServiceID, notConfiguredParent.ID)
+	}
+	if child.ParentServiceName == nil || *child.ParentServiceName != parentName {
+		t.Errorf("child ParentServiceName = %v, want %q (resolved from unfiltered service list)", child.ParentServiceName, parentName)
 	}
 }

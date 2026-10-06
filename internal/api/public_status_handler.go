@@ -47,6 +47,15 @@ type companySettingsGetter interface {
 	Active(ctx context.Context) (*db.Tenant, error)
 }
 
+// statusPageGroupLister is the subset of *db.StatusPageRepository the
+// public status handler depends on, to surface a status page's service
+// groups (service-groups-and-dependencies SGD-02/SGD-09) alongside its
+// services. Scoped to a single statusPageID, same as serviceLister and
+// publicIncidentLister.
+type statusPageGroupLister interface {
+	ListGroups(ctx context.Context, statusPageID string) ([]db.StatusPageServiceGroup, error)
+}
+
 // incidentRetentionDays is the public status page's incident history
 // retention window (spec.md Assumptions: "Janela de retenção de histórico
 // de incidentes/uptime" - 90 days).
@@ -71,6 +80,7 @@ type PublicStatusHandler struct {
 	intervals       statusIntervalReader
 	incidents       publicIncidentLister
 	companySettings companySettingsGetter
+	statusPages     statusPageGroupLister
 	logger          *zap.Logger
 	historyLoc      *time.Location
 }
@@ -84,15 +94,16 @@ type PublicStatusHandler struct {
 // availability; a failure here is a build/deployment defect, not a
 // per-request condition, so it panics at construction time instead of
 // turning every request into a 500.
-func NewPublicStatusHandler(services serviceLister, intervals statusIntervalReader, incidents publicIncidentLister, companySettings companySettingsGetter, logger *zap.Logger) *PublicStatusHandler {
+func NewPublicStatusHandler(services serviceLister, intervals statusIntervalReader, incidents publicIncidentLister, companySettings companySettingsGetter, statusPages statusPageGroupLister, logger *zap.Logger) *PublicStatusHandler {
 	loc, err := time.LoadLocation("America/Sao_Paulo")
 	if err != nil {
 		panic(fmt.Sprintf("public-status: failed to load America/Sao_Paulo location: %v", err))
 	}
-	return &PublicStatusHandler{services: services, intervals: intervals, incidents: incidents, companySettings: companySettings, logger: logger, historyLoc: loc}
+	return &PublicStatusHandler{services: services, intervals: intervals, incidents: incidents, companySettings: companySettings, statusPages: statusPages, logger: logger, historyLoc: loc}
 }
 
 type publicServiceResponse struct {
+	ID            string                        `json:"id"`
 	Name          string                        `json:"name"`
 	Status        string                        `json:"status"`
 	LastUpdatedAt time.Time                     `json:"last_updated_at"`
@@ -110,6 +121,22 @@ type publicServiceResponse struct {
 	// other transition (AI-15/AI-17) - a stale non-nil value on a
 	// non-degraded service must never leak here.
 	StatusAnalysis *string `json:"status_analysis,omitempty"`
+	// GroupID/GroupName and ParentServiceID/ParentServiceName describe this
+	// service's placement on this status page (service-groups-and-
+	// dependencies SGD-02/SGD-03/SGD-06/SGD-09), straight from db.Service's
+	// T8 fields - nil/omitted for an ungrouped, parentless service.
+	GroupID   *string `json:"group_id,omitempty"`
+	GroupName *string `json:"group_name,omitempty"`
+	// ParentServiceID is carried through even when the referenced parent
+	// service itself got filtered out of this response (e.g. the parent is
+	// "not_configured", see composeResponse's shownServices filter) - the
+	// id is still meaningful to a client that wants to know "this service
+	// depends on something", and ParentServiceName is resolved from the
+	// *unfiltered* full service list for the same reason, so the name is
+	// never silently dropped just because the parent itself isn't publicly
+	// listed.
+	ParentServiceID   *string `json:"parent_service_id,omitempty"`
+	ParentServiceName *string `json:"parent_service_name,omitempty"`
 }
 
 // publicHistoryBucketResponse is one bucket in a service's uptime history
@@ -173,6 +200,19 @@ type publicStatusResponse struct {
 	Company   publicCompanyResponse   `json:"company"`
 	Services  []publicServiceResponse `json:"services"`
 	Incidents publicIncidentsResponse `json:"incidents"`
+	// Groups lists every service group on this status page, including ones
+	// with zero services placed in them - operators can see and manage an
+	// empty group from the public page's own data (service-groups-and-
+	// dependencies SGD-09's "operator-visible empty state" decision), so
+	// this is ListGroups's raw, unfiltered output.
+	Groups []publicGroupResponse `json:"groups"`
+}
+
+// publicGroupResponse is one status_page_service_groups row.
+type publicGroupResponse struct {
+	ID       string `json:"id"`
+	Name     string `json:"name"`
+	Position int    `json:"position"`
 }
 
 // Get handles GET / on a published status page's hostname, returning every
@@ -237,6 +277,21 @@ func (h *PublicStatusHandler) composeResponse(ctx context.Context, statusPageID 
 		return publicStatusResponse{}, fmt.Errorf("failed to get company settings: %w", err)
 	}
 
+	groups, err := h.statusPages.ListGroups(ctx, statusPageID)
+	if err != nil {
+		return publicStatusResponse{}, fmt.Errorf("failed to list status page service groups: %w", err)
+	}
+
+	// serviceNameByID is built from the full, unfiltered services list (not
+	// shownServices below) so a service's ParentServiceName still resolves
+	// even if the parent itself is "not_configured" and gets filtered out
+	// of the public response - see publicServiceResponse.ParentServiceID's
+	// doc comment.
+	serviceNameByID := make(map[string]string, len(services))
+	for _, service := range services {
+		serviceNameByID[service.ID] = service.Name
+	}
+
 	// A service with no SLO linked yet stays "not_configured" and is never
 	// shown publicly (spec.md edge case) - it's an admin-side concept only,
 	// until a poller cycle gives it a real status. Filter before querying
@@ -265,6 +320,7 @@ func (h *PublicStatusHandler) composeResponse(ctx context.Context, statusPageID 
 	resp := publicStatusResponse{
 		Company:  publicCompanyResponse{Name: companySettings.Name, LogoURL: companySettings.LogoServedURL()},
 		Services: []publicServiceResponse{},
+		Groups:   toPublicGroupResponses(groups),
 		Incidents: publicIncidentsResponse{
 			Active: toPublicIncidentResponses(activeIncidents),
 			Resolved: Page[publicIncidentResponse]{
@@ -316,13 +372,25 @@ func (h *PublicStatusHandler) composeResponse(ctx context.Context, statusPageID 
 			statusAnalysis = service.StatusAnalysis
 		}
 
+		var parentServiceName *string
+		if service.ParentServiceID != nil {
+			if name, ok := serviceNameByID[*service.ParentServiceID]; ok {
+				parentServiceName = &name
+			}
+		}
+
 		resp.Services = append(resp.Services, publicServiceResponse{
-			Name:           service.Name,
-			Status:         service.CurrentStatus,
-			LastUpdatedAt:  openIntervals[service.ID].LastSeenAt,
-			History:        toPublicHistoryResponses(buckets),
-			UptimePercent:  uptimePercent,
-			StatusAnalysis: statusAnalysis,
+			ID:                service.ID,
+			Name:              service.Name,
+			Status:            service.CurrentStatus,
+			LastUpdatedAt:     openIntervals[service.ID].LastSeenAt,
+			History:           toPublicHistoryResponses(buckets),
+			UptimePercent:     uptimePercent,
+			StatusAnalysis:    statusAnalysis,
+			GroupID:           service.GroupID,
+			GroupName:         service.GroupName,
+			ParentServiceID:   service.ParentServiceID,
+			ParentServiceName: parentServiceName,
 		})
 	}
 
@@ -342,6 +410,18 @@ func toPublicHistoryResponses(buckets []history.Bucket) []publicHistoryBucketRes
 			}
 		}
 		resp[i] = publicHistoryBucketResponse{Start: bucket.Start, Status: bucket.Status, Episodes: episodes}
+	}
+	return resp
+}
+
+// toPublicGroupResponses converts db.StatusPageServiceGroup rows (already
+// ordered by position, ListGroups's own contract) into their public
+// response shape, unfiltered - including groups with zero services placed
+// in them (SGD-09).
+func toPublicGroupResponses(groups []db.StatusPageServiceGroup) []publicGroupResponse {
+	resp := make([]publicGroupResponse, len(groups))
+	for i, group := range groups {
+		resp[i] = publicGroupResponse{ID: group.ID, Name: group.Name, Position: group.Position}
 	}
 	return resp
 }

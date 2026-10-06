@@ -27,7 +27,7 @@ func newPublicStatusPreviewRouter(t *testing.T) (http.Handler, *db.Pool, *db.Use
 	incidents := db.NewIncidentRepository(pool)
 	statusPages := db.NewStatusPageRepository(pool)
 	companySettings := db.NewTenantRepository(pool)
-	inner := NewPublicStatusHandler(services, intervals, incidents, companySettings, zap.NewNop())
+	inner := NewPublicStatusHandler(services, intervals, incidents, companySettings, statusPages, zap.NewNop())
 	handler := NewPublicStatusPreviewHandler(statusPages, inner, zap.NewNop())
 
 	r := chi.NewRouter()

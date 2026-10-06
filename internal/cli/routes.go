@@ -117,7 +117,7 @@ func buildAdminRouter(pool *db.Pool, cfg config.Config, logger *zap.Logger, poll
 	statusPagesHandler := api.NewStatusPagesHandler(db.NewStatusPageRepository(pool), auditLog, cfg.PublicDNSTarget, logger)
 	pollerStatusHandler := api.NewPollerStatusHandler(db.NewIntegrationRepository(pool), db.NewPollerLeadershipRepository(pool), db.NewStatusIntervalRepository(pool), logger)
 	sessionsHandler := api.NewSessionsHandler(sessions, logger)
-	publicStatusHandler := api.NewPublicStatusHandler(db.NewServiceRepository(pool), db.NewStatusIntervalRepository(pool), db.NewIncidentRepository(pool), tenantsRepo, logger)
+	publicStatusHandler := api.NewPublicStatusHandler(db.NewServiceRepository(pool), db.NewStatusIntervalRepository(pool), db.NewIncidentRepository(pool), tenantsRepo, db.NewStatusPageRepository(pool), logger)
 	publicStatusPreviewHandler := api.NewPublicStatusPreviewHandler(db.NewStatusPageRepository(pool), publicStatusHandler, logger)
 	companySettingsHandler := api.NewCompanySettingsHandler(tenantsRepo, auditLog, logger)
 	tenantHandler := api.NewTenantHandler(tenantMembershipsRepo, tenantsRepo, auditLog, logger)
