@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient, type Query } from "@tanstack/react-query";
 import { apiFetch } from "../../lib/apiClient";
-import type { Page, StatusPage, StatusPageState } from "../../types/api";
+import type { Page, StatusPage, StatusPageServiceGroup, StatusPageState } from "../../types/api";
 
 const terminalStates: StatusPageState[] = ["published", "tls_failed"];
 
@@ -83,27 +83,124 @@ export function useAttachDomain() {
   });
 }
 
+// ServicePlacement mirrors internal/api/status_pages_handler.go's
+// servicePlacementRequest (T6) - one service's placement within a status
+// page's service list: which group it belongs to (if any), which service
+// it's nested under as a dependency (if any), and its display position.
+export interface ServicePlacement {
+  service_id: string;
+  group_id?: string;
+  parent_service_id?: string;
+  position: number;
+}
+
 export interface SetStatusPageServicesInput {
   id: string;
-  service_ids: string[];
+  services: ServicePlacement[];
 }
 
 // useSetStatusPageServices replaces the full set of services shown on a
-// status page (SPD-15) via PATCH /api/status-pages/{id}/services. Unlike
-// useCreateStatusPage's one-time service_ids, this can be called
-// repeatedly as an admin edits which services a page shows after
-// creation - each call replaces the set rather than merging into it.
+// status page (SPD-15, SGD-02/SGD-03/SGD-06) via PATCH
+// /api/status-pages/{id}/services. Unlike useCreateStatusPage's one-time
+// service_ids, this can be called repeatedly as an admin edits which
+// services a page shows (and how they're grouped/nested) after creation -
+// each call replaces the full placement set rather than merging into it.
 export function useSetStatusPageServices() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ id, service_ids }: SetStatusPageServicesInput) =>
+    mutationFn: ({ id, services }: SetStatusPageServicesInput) =>
       apiFetch<StatusPage>(`/api/status-pages/${id}/services`, {
         method: "PATCH",
-        body: JSON.stringify({ service_ids }),
+        body: JSON.stringify({ services }),
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["status-pages"] });
     },
+  });
+}
+
+// useStatusPageGroups reads the named service groups on a status page
+// (SGD-01) via GET /api/status-pages/{id}/groups, position-ordered.
+export function useStatusPageGroups(statusPageId: string) {
+  return useQuery({
+    queryKey: ["status-pages", statusPageId, "groups"],
+    queryFn: () =>
+      apiFetch<StatusPageServiceGroup[]>(`/api/status-pages/${statusPageId}/groups`),
+  });
+}
+
+export interface CreateGroupInput {
+  statusPageId: string;
+  name: string;
+}
+
+// useCreateGroup creates a new named, ordered service group scoped to a
+// status page (SGD-01) via POST /api/status-pages/{id}/groups.
+export function useCreateGroup() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ statusPageId, name }: CreateGroupInput) =>
+      apiFetch<StatusPageServiceGroup>(`/api/status-pages/${statusPageId}/groups`, {
+        method: "POST",
+        body: JSON.stringify({ name }),
+      }),
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({ queryKey: ["status-pages", variables.statusPageId, "groups"] });
+    },
+  });
+}
+
+export interface UpdateGroupInput {
+  statusPageId: string;
+  groupId: string;
+  name: string;
+  position: number;
+}
+
+// useUpdateGroup renames and/or repositions an existing service group
+// (SGD-05) via PATCH /api/status-pages/{id}/groups/{groupId}.
+export function useUpdateGroup() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ statusPageId, groupId, name, position }: UpdateGroupInput) =>
+      apiFetch<StatusPageServiceGroup>(`/api/status-pages/${statusPageId}/groups/${groupId}`, {
+        method: "PATCH",
+        body: JSON.stringify({ name, position }),
+      }),
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({ queryKey: ["status-pages", variables.statusPageId, "groups"] });
+    },
+  });
+}
+
+export interface DeleteGroupInput {
+  statusPageId: string;
+  groupId: string;
+}
+
+// useDeleteGroup removes a service group while leaving its member
+// services in place, ungrouped (SGD-04) via DELETE
+// /api/status-pages/{id}/groups/{groupId}.
+export function useDeleteGroup() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ statusPageId, groupId }: DeleteGroupInput) =>
+      apiFetch<void>(`/api/status-pages/${statusPageId}/groups/${groupId}`, { method: "DELETE" }),
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({ queryKey: ["status-pages", variables.statusPageId, "groups"] });
+    },
+  });
+}
+
+// useStatusPageServicePlacements reads the full per-service placement
+// detail (service_id, group_id, parent_service_id, position) for a status
+// page (SGD-02, SGD-03, SGD-06, SGD-07) via GET
+// /api/status-pages/{id}/services - distinct from useStatusPage(s)' plain
+// service_ids: string[].
+export function useStatusPageServicePlacements(statusPageId: string) {
+  return useQuery({
+    queryKey: ["status-pages", statusPageId, "service-placements"],
+    queryFn: () => apiFetch<ServicePlacement[]>(`/api/status-pages/${statusPageId}/services`),
   });
 }
 
