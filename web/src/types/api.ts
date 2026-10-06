@@ -85,6 +85,29 @@ export interface Service {
   // real value once the poller has run at least once.
   uptime_30d: number | null;
   last_seen_at: string | null;
+  // group_id/group_name/parent_service_id and position describe this
+  // service's placement on one specific status page (service-groups-and-
+  // dependencies SGD-02/SGD-03/SGD-06, migration 0046) - mirrors the
+  // additive db.Service fields (GroupID, GroupName, ParentServiceID,
+  // Position) populated only by ListForStatusPage-backed endpoints.
+  // Optional/undefined (not just null) here because most Service-returning
+  // endpoints (e.g. the plain admin services list) have no status-page
+  // context and never set these keys at all.
+  group_id?: string;
+  group_name?: string;
+  parent_service_id?: string;
+  position?: number;
+}
+
+// StatusPageServiceGroup mirrors db.StatusPageServiceGroup
+// (internal/db/status_page_repository.go) - one named group of services on
+// a single status page (service-groups-and-dependencies SGD-01).
+export interface StatusPageServiceGroup {
+  id: string;
+  status_page_id: string;
+  name: string;
+  position: number;
+  created_at: string;
 }
 
 // HourlyBucket is one bar of the detail drawer's 24-hour status history
