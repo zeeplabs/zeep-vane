@@ -41,6 +41,10 @@ type statusPageCreatorLister interface {
 	GetByID(ctx context.Context, id string) (*db.StatusPage, error)
 	Delete(ctx context.Context, id string) error
 	PublicHostnameByID(ctx context.Context, id string) (string, error)
+	CreateGroup(ctx context.Context, statusPageID, name string) (*db.StatusPageServiceGroup, error)
+	UpdateGroup(ctx context.Context, id, name string, position int) (*db.StatusPageServiceGroup, error)
+	DeleteGroup(ctx context.Context, id string) error
+	ListGroups(ctx context.Context, statusPageID string) ([]db.StatusPageServiceGroup, error)
 }
 
 // StatusPagesHandler serves the status page admin routes.
@@ -268,6 +272,187 @@ func (h *StatusPagesHandler) SetServices(w http.ResponseWriter, r *http.Request)
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	_ = json.NewEncoder(w).Encode(toStatusPageResponse(statusPage))
+}
+
+const invalidGroupNameRequestBody = `{"error":"name is required"}`
+
+type createGroupRequest struct {
+	Name string `json:"name"`
+}
+
+type updateGroupRequest struct {
+	Name     string `json:"name"`
+	Position int    `json:"position"`
+}
+
+type statusPageServiceGroupResponse struct {
+	ID           string    `json:"id"`
+	StatusPageID string    `json:"status_page_id"`
+	Name         string    `json:"name"`
+	Position     int       `json:"position"`
+	CreatedAt    time.Time `json:"created_at"`
+}
+
+func toStatusPageServiceGroupResponse(g *db.StatusPageServiceGroup) statusPageServiceGroupResponse {
+	return statusPageServiceGroupResponse{
+		ID:           g.ID,
+		StatusPageID: g.StatusPageID,
+		Name:         g.Name,
+		Position:     g.Position,
+		CreatedAt:    g.CreatedAt,
+	}
+}
+
+// toStatusPageServiceGroupResponses converts groups to its wire shape,
+// normalizing a nil/empty slice (no groups) to an empty JSON array rather
+// than null - same convention as toStatusPageResponse's ServiceIDs
+// normalization.
+func toStatusPageServiceGroupResponses(groups []db.StatusPageServiceGroup) []statusPageServiceGroupResponse {
+	resp := make([]statusPageServiceGroupResponse, len(groups))
+	for i := range groups {
+		resp[i] = toStatusPageServiceGroupResponse(&groups[i])
+	}
+	return resp
+}
+
+// CreateGroup handles POST /api/status-pages/{id}/groups, creating a new
+// named, ordered service group scoped to this status page (SGD-01). It
+// checks the status page exists first via GetByID rather than letting a
+// nonexistent status_page_id hit status_page_service_groups' foreign key
+// constraint, which would otherwise surface as a raw DB error (500) instead
+// of a clean 404 - CreateGroup's repository method has no existence check
+// of its own, it only INSERTs.
+func (h *StatusPagesHandler) CreateGroup(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+
+	var req createGroupRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Name == "" {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusUnprocessableEntity)
+		_, _ = w.Write([]byte(invalidGroupNameRequestBody))
+		return
+	}
+
+	if _, err := h.statusPages.GetByID(r.Context(), id); err != nil {
+		if errors.Is(err, db.ErrNotFound) {
+			http.NotFound(w, r)
+			return
+		}
+		h.logger.Error("status-pages: failed to look up status page before creating group", zap.Error(err))
+		writeInternalError(w)
+		return
+	}
+
+	group, err := h.statusPages.CreateGroup(r.Context(), id, req.Name)
+	if err != nil {
+		h.logger.Error("status-pages: failed to create service group", zap.Error(err))
+		writeInternalError(w)
+		return
+	}
+
+	if actor, ok := UserFromContext(r.Context()); ok {
+		if err := h.audit.Record(r.Context(), actor.ID, group.ID, group.Name, "status_page_group_created"); err != nil {
+			h.logger.Error("status-pages: failed to record audit entry", zap.Error(err))
+		}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	_ = json.NewEncoder(w).Encode(toStatusPageServiceGroupResponse(group))
+}
+
+// UpdateGroup handles PATCH /api/status-pages/{id}/groups/{groupId},
+// renaming and/or repositioning an existing service group (SGD-05). The
+// repository's UpdateGroup already returns db.ErrNotFound when groupId
+// doesn't match any row, so no separate existence check is needed here.
+func (h *StatusPagesHandler) UpdateGroup(w http.ResponseWriter, r *http.Request) {
+	groupID := chi.URLParam(r, "groupId")
+
+	var req updateGroupRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Name == "" {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusUnprocessableEntity)
+		_, _ = w.Write([]byte(invalidGroupNameRequestBody))
+		return
+	}
+
+	group, err := h.statusPages.UpdateGroup(r.Context(), groupID, req.Name, req.Position)
+	if err != nil {
+		if errors.Is(err, db.ErrNotFound) {
+			http.NotFound(w, r)
+			return
+		}
+		h.logger.Error("status-pages: failed to update service group", zap.Error(err))
+		writeInternalError(w)
+		return
+	}
+
+	if actor, ok := UserFromContext(r.Context()); ok {
+		if err := h.audit.Record(r.Context(), actor.ID, group.ID, group.Name, "status_page_group_updated"); err != nil {
+			h.logger.Error("status-pages: failed to record audit entry", zap.Error(err))
+		}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(toStatusPageServiceGroupResponse(group))
+}
+
+// DeleteGroup handles DELETE /api/status-pages/{id}/groups/{groupId},
+// removing the group itself while leaving its member services in place,
+// ungrouped (SGD-04) - group_id's ON DELETE SET NULL foreign key (migration
+// 0046) does the ungrouping, not Go code here. The group's name is captured
+// before the delete for the audit entry, mirroring Delete's own
+// before-the-fact name capture (once the row is gone there's nothing left
+// to read it back from).
+func (h *StatusPagesHandler) DeleteGroup(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	groupID := chi.URLParam(r, "groupId")
+
+	var name string
+	if groups, err := h.statusPages.ListGroups(r.Context(), id); err == nil {
+		for _, g := range groups {
+			if g.ID == groupID {
+				name = g.Name
+				break
+			}
+		}
+	}
+
+	if err := h.statusPages.DeleteGroup(r.Context(), groupID); err != nil {
+		if errors.Is(err, db.ErrNotFound) {
+			http.NotFound(w, r)
+			return
+		}
+		h.logger.Error("status-pages: failed to delete service group", zap.Error(err))
+		writeInternalError(w)
+		return
+	}
+
+	if actor, ok := UserFromContext(r.Context()); ok {
+		if err := h.audit.Record(r.Context(), actor.ID, groupID, name, "status_page_group_deleted"); err != nil {
+			h.logger.Error("status-pages: failed to record audit entry", zap.Error(err))
+		}
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// ListGroups handles GET /api/status-pages/{id}/groups, returning every
+// service group on this status page, position-ordered (SGD-01).
+func (h *StatusPagesHandler) ListGroups(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+
+	groups, err := h.statusPages.ListGroups(r.Context(), id)
+	if err != nil {
+		h.logger.Error("status-pages: failed to list service groups", zap.Error(err))
+		writeInternalError(w)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(toStatusPageServiceGroupResponses(groups))
 }
 
 // Delete handles DELETE /api/status-pages/{id}, removing the status page and

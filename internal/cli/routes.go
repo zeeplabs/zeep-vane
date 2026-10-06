@@ -283,6 +283,9 @@ func buildAdminRouter(pool *db.Pool, cfg config.Config, logger *zap.Logger, poll
 		protected.With(writeRoles).Patch("/api/status-pages/{id}/services", statusPagesHandler.SetServices)
 		protected.With(writeRoles).Post("/api/status-pages/{id}/verify-domain", statusPagesHandler.VerifyDomain)
 		protected.With(writeRoles).Delete("/api/status-pages/{id}", statusPagesHandler.Delete)
+		protected.With(writeRoles).Post("/api/status-pages/{id}/groups", statusPagesHandler.CreateGroup)
+		protected.With(writeRoles).Patch("/api/status-pages/{id}/groups/{groupId}", statusPagesHandler.UpdateGroup)
+		protected.With(writeRoles).Delete("/api/status-pages/{id}/groups/{groupId}", statusPagesHandler.DeleteGroup)
 		protected.With(writeRoles).Delete("/api/domains/{id}", domainsHandler.Delete)
 		protected.With(writeRoles).Post("/api/domains/{id}/verify", domainsHandler.Verify)
 		protected.With(writeRoles).Get("/api/instance/dns-target", instanceConfigHandler.DNSTarget)
@@ -295,6 +298,7 @@ func buildAdminRouter(pool *db.Pool, cfg config.Config, logger *zap.Logger, poll
 		// as List, read-only.
 		protected.With(anyRole).Get("/api/services/{id}", servicesHandler.Get)
 		protected.With(anyRole).Get("/api/status-pages", statusPagesHandler.List)
+		protected.With(anyRole).Get("/api/status-pages/{id}/groups", statusPagesHandler.ListGroups)
 		protected.With(anyRole).Get("/api/incidents", incidentsHandler.List)
 		protected.With(anyRole).Get("/api/incidents/{id}/updates", incidentsHandler.ListUpdates)
 		protected.With(anyRole).Get("/api/status-pages/{id}/public-preview", publicStatusPreviewHandler.Get)

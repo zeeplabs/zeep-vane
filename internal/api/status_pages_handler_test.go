@@ -43,6 +43,13 @@ func newStatusPagesRouter(t *testing.T, opts ...func(*StatusPagesHandler)) (http
 		opt(handler)
 	}
 
+	// writeRoles/anyRole mirror internal/cli/routes.go's gating convention
+	// for the group endpoints - the rest of this router's routes are left
+	// ungated (pre-existing, not this task's concern) to avoid changing
+	// the role requirements asserted by tests that predate T5.
+	writeRoles := RequireRole(db.RoleOwner, db.RoleOperator)
+	anyRole := RequireRole(db.RoleOwner, db.RoleOperator, db.RoleViewer)
+
 	r := chi.NewRouter()
 	r.Group(func(protected chi.Router) {
 		protected.Use(RequireAuth(middlewareTestSecret, admins, db.NewSessionRepository(pool), zap.NewNop()))
@@ -56,6 +63,10 @@ func newStatusPagesRouter(t *testing.T, opts ...func(*StatusPagesHandler)) (http
 		protected.Patch("/api/status-pages/{id}/services", handler.SetServices)
 		protected.Post("/api/status-pages/{id}/verify-domain", handler.VerifyDomain)
 		protected.Delete("/api/status-pages/{id}", handler.Delete)
+		protected.With(writeRoles).Post("/api/status-pages/{id}/groups", handler.CreateGroup)
+		protected.With(writeRoles).Patch("/api/status-pages/{id}/groups/{groupId}", handler.UpdateGroup)
+		protected.With(writeRoles).Delete("/api/status-pages/{id}/groups/{groupId}", handler.DeleteGroup)
+		protected.With(anyRole).Get("/api/status-pages/{id}/groups", handler.ListGroups)
 	})
 
 	return r, pool, admins
@@ -1007,5 +1018,367 @@ func TestSetServices_ReplacesLinkedSet_RecordsStatusPageServicesUpdatedAudit(t *
 	}
 	if gotTargetLabel != "Audit SetServices Page" {
 		t.Errorf("admin_audit_log target_label = %q, want %q", gotTargetLabel, "Audit SetServices Page")
+	}
+}
+
+// --- T5: service group endpoints ---
+
+func postCreateGroup(t *testing.T, r http.Handler, token, statusPageID string, req createGroupRequest) *httptest.ResponseRecorder {
+	t.Helper()
+	body, err := json.Marshal(req)
+	if err != nil {
+		t.Fatalf("json.Marshal() returned unexpected error: %v", err)
+	}
+	httpReq := httptest.NewRequest(http.MethodPost, "/api/status-pages/"+statusPageID+"/groups", bytes.NewReader(body))
+	httpReq.Header.Set("Content-Type", "application/json")
+	if token != "" {
+		httpReq.Header.Set("Authorization", "Bearer "+token)
+	}
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, httpReq)
+	return rec
+}
+
+func patchUpdateGroup(t *testing.T, r http.Handler, token, statusPageID, groupID string, req updateGroupRequest) *httptest.ResponseRecorder {
+	t.Helper()
+	body, err := json.Marshal(req)
+	if err != nil {
+		t.Fatalf("json.Marshal() returned unexpected error: %v", err)
+	}
+	httpReq := httptest.NewRequest(http.MethodPatch, "/api/status-pages/"+statusPageID+"/groups/"+groupID, bytes.NewReader(body))
+	httpReq.Header.Set("Content-Type", "application/json")
+	if token != "" {
+		httpReq.Header.Set("Authorization", "Bearer "+token)
+	}
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, httpReq)
+	return rec
+}
+
+func deleteGroup(t *testing.T, r http.Handler, token, statusPageID, groupID string) *httptest.ResponseRecorder {
+	t.Helper()
+	httpReq := httptest.NewRequest(http.MethodDelete, "/api/status-pages/"+statusPageID+"/groups/"+groupID, nil)
+	if token != "" {
+		httpReq.Header.Set("Authorization", "Bearer "+token)
+	}
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, httpReq)
+	return rec
+}
+
+func getGroups(t *testing.T, r http.Handler, token, statusPageID string) *httptest.ResponseRecorder {
+	t.Helper()
+	httpReq := httptest.NewRequest(http.MethodGet, "/api/status-pages/"+statusPageID+"/groups", nil)
+	if token != "" {
+		httpReq.Header.Set("Authorization", "Bearer "+token)
+	}
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, httpReq)
+	return rec
+}
+
+// createTestGroup creates a group via the API and returns its id.
+func createTestGroup(t *testing.T, r http.Handler, token, statusPageID, name string) string {
+	t.Helper()
+	rec := postCreateGroup(t, r, token, statusPageID, createGroupRequest{Name: name})
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("setup create group status = %d, want %d, body = %s", rec.Code, http.StatusCreated, rec.Body.String())
+	}
+	var created statusPageServiceGroupResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &created); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+	return created.ID
+}
+
+func TestCreateGroup_ValidRequest_201CreatedAtEndPosition(t *testing.T) {
+	r, pool, admins := newStatusPagesRouter(t)
+	token := issueTestSessionToken(t, admins)
+	pageID := createDomainlessStatusPageViaAPI(t, r, pool, token, "Create Group Page")
+
+	first := createTestGroup(t, r, token, pageID, "First Group")
+
+	rec := postCreateGroup(t, r, token, pageID, createGroupRequest{Name: "Second Group"})
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusCreated, rec.Body.String())
+	}
+	var created statusPageServiceGroupResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &created); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+	if created.StatusPageID != pageID {
+		t.Errorf("StatusPageID = %q, want %q", created.StatusPageID, pageID)
+	}
+	if created.Name != "Second Group" {
+		t.Errorf("Name = %q, want %q", created.Name, "Second Group")
+	}
+	if created.Position != 1 {
+		t.Errorf("Position = %d, want 1 (should append after %q)", created.Position, first)
+	}
+}
+
+func TestCreateGroup_EmptyName_422(t *testing.T) {
+	r, pool, admins := newStatusPagesRouter(t)
+	token := issueTestSessionToken(t, admins)
+	pageID := createDomainlessStatusPageViaAPI(t, r, pool, token, "Create Group Empty Name Page")
+
+	rec := postCreateGroup(t, r, token, pageID, createGroupRequest{Name: ""})
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Errorf("status = %d, want %d, body = %s", rec.Code, http.StatusUnprocessableEntity, rec.Body.String())
+	}
+}
+
+func TestCreateGroup_NonexistentStatusPageID_404(t *testing.T) {
+	r, _, admins := newStatusPagesRouter(t)
+	token := issueTestSessionToken(t, admins)
+
+	rec := postCreateGroup(t, r, token, "00000000-0000-0000-0000-000000000000", createGroupRequest{Name: "Orphan Group"})
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("status = %d, want %d, body = %s", rec.Code, http.StatusNotFound, rec.Body.String())
+	}
+}
+
+func TestCreateGroup_ViewerRole_403(t *testing.T) {
+	r, pool, admins := newStatusPagesRouter(t)
+	ownerToken := issueTestSessionToken(t, admins)
+	pageID := createDomainlessStatusPageViaAPI(t, r, pool, ownerToken, "Create Group Viewer Page")
+	viewerToken := issueTestSessionTokenWithRole(t, admins, db.RoleViewer)
+
+	rec := postCreateGroup(t, r, viewerToken, pageID, createGroupRequest{Name: "Viewer Group"})
+	if rec.Code != http.StatusForbidden {
+		t.Errorf("status = %d, want %d, body = %s", rec.Code, http.StatusForbidden, rec.Body.String())
+	}
+}
+
+func TestCreateGroup_ValidRequest_RecordsStatusPageGroupCreatedAudit(t *testing.T) {
+	r, pool, admins := newStatusPagesRouter(t)
+	token := issueTestSessionToken(t, admins)
+	pageID := createDomainlessStatusPageViaAPI(t, r, pool, token, "Audit Create Group Page")
+
+	rec := postCreateGroup(t, r, token, pageID, createGroupRequest{Name: "Audited Group"})
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusCreated, rec.Body.String())
+	}
+	var created statusPageServiceGroupResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &created); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+
+	var gotTargetLabel string
+	row := pool.QueryRow(context.Background(),
+		"SELECT target_label FROM admin_audit_log WHERE target_id = $1 AND action = 'status_page_group_created'", created.ID)
+	if err := row.Scan(&gotTargetLabel); err != nil {
+		t.Fatalf("Scan() returned unexpected error: %v", err)
+	}
+	if gotTargetLabel != "Audited Group" {
+		t.Errorf("admin_audit_log target_label = %q, want %q", gotTargetLabel, "Audited Group")
+	}
+}
+
+func TestUpdateGroup_ValidRequest_200RenamesAndRepositions(t *testing.T) {
+	r, pool, admins := newStatusPagesRouter(t)
+	token := issueTestSessionToken(t, admins)
+	pageID := createDomainlessStatusPageViaAPI(t, r, pool, token, "Update Group Page")
+	groupID := createTestGroup(t, r, token, pageID, "Original Name")
+
+	rec := patchUpdateGroup(t, r, token, pageID, groupID, updateGroupRequest{Name: "Renamed", Position: 3})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	var updated statusPageServiceGroupResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &updated); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+	if updated.Name != "Renamed" {
+		t.Errorf("Name = %q, want %q", updated.Name, "Renamed")
+	}
+	if updated.Position != 3 {
+		t.Errorf("Position = %d, want 3", updated.Position)
+	}
+}
+
+func TestUpdateGroup_EmptyName_422(t *testing.T) {
+	r, pool, admins := newStatusPagesRouter(t)
+	token := issueTestSessionToken(t, admins)
+	pageID := createDomainlessStatusPageViaAPI(t, r, pool, token, "Update Group Empty Name Page")
+	groupID := createTestGroup(t, r, token, pageID, "Has A Name")
+
+	rec := patchUpdateGroup(t, r, token, pageID, groupID, updateGroupRequest{Name: "", Position: 0})
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Errorf("status = %d, want %d, body = %s", rec.Code, http.StatusUnprocessableEntity, rec.Body.String())
+	}
+}
+
+func TestUpdateGroup_NonexistentGroupID_404(t *testing.T) {
+	r, pool, admins := newStatusPagesRouter(t)
+	token := issueTestSessionToken(t, admins)
+	pageID := createDomainlessStatusPageViaAPI(t, r, pool, token, "Update Group Missing Page")
+
+	rec := patchUpdateGroup(t, r, token, pageID, "00000000-0000-0000-0000-000000000000", updateGroupRequest{Name: "Ghost", Position: 0})
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("status = %d, want %d, body = %s", rec.Code, http.StatusNotFound, rec.Body.String())
+	}
+}
+
+func TestUpdateGroup_ViewerRole_403(t *testing.T) {
+	r, pool, admins := newStatusPagesRouter(t)
+	ownerToken := issueTestSessionToken(t, admins)
+	pageID := createDomainlessStatusPageViaAPI(t, r, pool, ownerToken, "Update Group Viewer Page")
+	groupID := createTestGroup(t, r, ownerToken, pageID, "Pre-existing Group")
+	viewerToken := issueTestSessionTokenWithRole(t, admins, db.RoleViewer)
+
+	rec := patchUpdateGroup(t, r, viewerToken, pageID, groupID, updateGroupRequest{Name: "Should Not Apply", Position: 0})
+	if rec.Code != http.StatusForbidden {
+		t.Errorf("status = %d, want %d, body = %s", rec.Code, http.StatusForbidden, rec.Body.String())
+	}
+}
+
+func TestUpdateGroup_ValidRequest_RecordsStatusPageGroupUpdatedAudit(t *testing.T) {
+	r, pool, admins := newStatusPagesRouter(t)
+	token := issueTestSessionToken(t, admins)
+	pageID := createDomainlessStatusPageViaAPI(t, r, pool, token, "Audit Update Group Page")
+	groupID := createTestGroup(t, r, token, pageID, "Pre-update Name")
+
+	rec := patchUpdateGroup(t, r, token, pageID, groupID, updateGroupRequest{Name: "Audited Update", Position: 0})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	var gotTargetLabel string
+	row := pool.QueryRow(context.Background(),
+		"SELECT target_label FROM admin_audit_log WHERE target_id = $1 AND action = 'status_page_group_updated'", groupID)
+	if err := row.Scan(&gotTargetLabel); err != nil {
+		t.Fatalf("Scan() returned unexpected error: %v", err)
+	}
+	if gotTargetLabel != "Audited Update" {
+		t.Errorf("admin_audit_log target_label = %q, want %q", gotTargetLabel, "Audited Update")
+	}
+}
+
+func TestDeleteGroup_Existing_204UngroupsMembersWithoutDeletingThem(t *testing.T) {
+	r, pool, admins := newStatusPagesRouter(t)
+	token := issueTestSessionToken(t, admins)
+	serviceID := createTestService(t, pool)
+	pageID := createDomainlessStatusPageViaAPI(t, r, pool, token, "Delete Group Page")
+	cleanupStatusPage(t, pool, pageID)
+	groupID := createTestGroup(t, r, token, pageID, "To Be Deleted")
+
+	if _, err := pool.Exec(context.Background(),
+		"INSERT INTO status_page_services (status_page_id, service_id, group_id, position) VALUES ($1, $2, $3, 0)",
+		pageID, serviceID, groupID); err != nil {
+		t.Fatalf("setup insert placement returned unexpected error: %v", err)
+	}
+
+	rec := deleteGroup(t, r, token, pageID, groupID)
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusNoContent, rec.Body.String())
+	}
+
+	var stillExists bool
+	row := pool.QueryRow(context.Background(),
+		"SELECT EXISTS(SELECT 1 FROM status_page_services WHERE status_page_id = $1 AND service_id = $2)", pageID, serviceID)
+	if err := row.Scan(&stillExists); err != nil {
+		t.Fatalf("Scan() returned unexpected error: %v", err)
+	}
+	if !stillExists {
+		t.Fatal("status_page_services row was deleted along with its group, want it left in place")
+	}
+
+	var groupIDAfter *string
+	row = pool.QueryRow(context.Background(),
+		"SELECT group_id FROM status_page_services WHERE status_page_id = $1 AND service_id = $2", pageID, serviceID)
+	if err := row.Scan(&groupIDAfter); err != nil {
+		t.Fatalf("Scan() returned unexpected error: %v", err)
+	}
+	if groupIDAfter != nil {
+		t.Errorf("group_id = %v, want nil (ON DELETE SET NULL)", *groupIDAfter)
+	}
+}
+
+func TestDeleteGroup_NotFound_404(t *testing.T) {
+	r, pool, admins := newStatusPagesRouter(t)
+	token := issueTestSessionToken(t, admins)
+	pageID := createDomainlessStatusPageViaAPI(t, r, pool, token, "Delete Group Missing Page")
+
+	rec := deleteGroup(t, r, token, pageID, "00000000-0000-0000-0000-000000000000")
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("status = %d, want %d, body = %s", rec.Code, http.StatusNotFound, rec.Body.String())
+	}
+}
+
+func TestDeleteGroup_ViewerRole_403(t *testing.T) {
+	r, pool, admins := newStatusPagesRouter(t)
+	ownerToken := issueTestSessionToken(t, admins)
+	pageID := createDomainlessStatusPageViaAPI(t, r, pool, ownerToken, "Delete Group Viewer Page")
+	groupID := createTestGroup(t, r, ownerToken, pageID, "Protected Group")
+	viewerToken := issueTestSessionTokenWithRole(t, admins, db.RoleViewer)
+
+	rec := deleteGroup(t, r, viewerToken, pageID, groupID)
+	if rec.Code != http.StatusForbidden {
+		t.Errorf("status = %d, want %d, body = %s", rec.Code, http.StatusForbidden, rec.Body.String())
+	}
+}
+
+func TestDeleteGroup_Existing_RecordsStatusPageGroupDeletedAudit(t *testing.T) {
+	r, pool, admins := newStatusPagesRouter(t)
+	token := issueTestSessionToken(t, admins)
+	pageID := createDomainlessStatusPageViaAPI(t, r, pool, token, "Audit Delete Group Page")
+	groupID := createTestGroup(t, r, token, pageID, "Audited Delete Group")
+
+	rec := deleteGroup(t, r, token, pageID, groupID)
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusNoContent, rec.Body.String())
+	}
+
+	var gotTargetLabel string
+	row := pool.QueryRow(context.Background(),
+		"SELECT target_label FROM admin_audit_log WHERE target_id = $1 AND action = 'status_page_group_deleted'", groupID)
+	if err := row.Scan(&gotTargetLabel); err != nil {
+		t.Fatalf("Scan() returned unexpected error: %v", err)
+	}
+	if gotTargetLabel != "Audited Delete Group" {
+		t.Errorf("admin_audit_log target_label = %q, want %q", gotTargetLabel, "Audited Delete Group")
+	}
+}
+
+func TestListGroups_AnyRole_200ReturnsPositionOrdered(t *testing.T) {
+	r, pool, admins := newStatusPagesRouter(t)
+	ownerToken := issueTestSessionToken(t, admins)
+	pageID := createDomainlessStatusPageViaAPI(t, r, pool, ownerToken, "List Groups Page")
+	first := createTestGroup(t, r, ownerToken, pageID, "First")
+	second := createTestGroup(t, r, ownerToken, pageID, "Second")
+
+	viewerToken := issueTestSessionTokenWithRole(t, admins, db.RoleViewer)
+	rec := getGroups(t, r, viewerToken, pageID)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	var groups []statusPageServiceGroupResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &groups); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+	if len(groups) != 2 || groups[0].ID != first || groups[1].ID != second {
+		t.Fatalf("groups = %+v, want [%q, %q] in that order", groups, first, second)
+	}
+}
+
+func TestListGroups_NoGroups_200EmptyArrayNotNull(t *testing.T) {
+	r, pool, admins := newStatusPagesRouter(t)
+	token := issueTestSessionToken(t, admins)
+	pageID := createDomainlessStatusPageViaAPI(t, r, pool, token, "List Groups Empty Page")
+
+	rec := getGroups(t, r, token, pageID)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	if rec.Body.String() == "null\n" || rec.Body.String() == "null" {
+		t.Fatalf("body = %q, want an empty JSON array, not null", rec.Body.String())
+	}
+	var groups []statusPageServiceGroupResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &groups); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+	if len(groups) != 0 {
+		t.Errorf("groups = %+v, want empty", groups)
 	}
 }
