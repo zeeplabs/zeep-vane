@@ -734,6 +734,18 @@ func TestCheckVerifyCooldown_AfterWindowElapsed_Allows(t *testing.T) {
 
 func strPtr(s string) *string { return &s }
 
+// placementsOf builds a setServicesRequest.Services slice for the given
+// serviceIDs with no group/parent (0-based position, in order) - a
+// convenience for tests that only care about which services are linked,
+// not their group/parent placement.
+func placementsOf(serviceIDs ...string) []servicePlacementRequest {
+	placements := make([]servicePlacementRequest, len(serviceIDs))
+	for i, id := range serviceIDs {
+		placements[i] = servicePlacementRequest{ServiceID: id, Position: i}
+	}
+	return placements
+}
+
 func patchSetServices(t *testing.T, r http.Handler, token, statusPageID string, req setServicesRequest) *httptest.ResponseRecorder {
 	t.Helper()
 	body, err := json.Marshal(req)
@@ -763,7 +775,7 @@ func TestSetServices_ReplacesLinkedSet(t *testing.T) {
 	pageID := createDomainlessStatusPageViaAPI(t, r, pool, token, "Set Services Page")
 	cleanupStatusPage(t, pool, pageID)
 
-	rec := patchSetServices(t, r, token, pageID, setServicesRequest{ServiceIDs: []string{serviceA}})
+	rec := patchSetServices(t, r, token, pageID, setServicesRequest{Services: placementsOf(serviceA)})
 	if rec.Code != http.StatusOK {
 		t.Fatalf("first PATCH status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
 	}
@@ -775,7 +787,7 @@ func TestSetServices_ReplacesLinkedSet(t *testing.T) {
 		t.Fatalf("ServiceIDs after first PATCH = %v, want [%q]", first.ServiceIDs, serviceA)
 	}
 
-	rec = patchSetServices(t, r, token, pageID, setServicesRequest{ServiceIDs: []string{serviceB}})
+	rec = patchSetServices(t, r, token, pageID, setServicesRequest{Services: placementsOf(serviceB)})
 	if rec.Code != http.StatusOK {
 		t.Fatalf("second PATCH status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
 	}
@@ -798,11 +810,11 @@ func TestSetServices_EmptyServiceIDs_200UnlinksAll(t *testing.T) {
 	pageID := createDomainlessStatusPageViaAPI(t, r, pool, token, "Set Services Unlink Page")
 	cleanupStatusPage(t, pool, pageID)
 
-	if rec := patchSetServices(t, r, token, pageID, setServicesRequest{ServiceIDs: []string{serviceA}}); rec.Code != http.StatusOK {
+	if rec := patchSetServices(t, r, token, pageID, setServicesRequest{Services: placementsOf(serviceA)}); rec.Code != http.StatusOK {
 		t.Fatalf("setup PATCH status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
 	}
 
-	rec := patchSetServices(t, r, token, pageID, setServicesRequest{ServiceIDs: []string{}})
+	rec := patchSetServices(t, r, token, pageID, setServicesRequest{Services: []servicePlacementRequest{}})
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
 	}
@@ -815,10 +827,10 @@ func TestSetServices_EmptyServiceIDs_200UnlinksAll(t *testing.T) {
 	}
 }
 
-// TestSetServices_MissingServiceIDs_422 asserts a request body with no
-// service_ids field at all is rejected, distinguishing it from the valid
+// TestSetServices_MissingServices_422 asserts a request body with no
+// services field at all is rejected, distinguishing it from the valid
 // "empty array" unlink-everything case above.
-func TestSetServices_MissingServiceIDs_422(t *testing.T) {
+func TestSetServices_MissingServices_422(t *testing.T) {
 	r, pool, admins := newStatusPagesRouter(t)
 	token := issueTestSessionToken(t, admins)
 	pageID := createDomainlessStatusPageViaAPI(t, r, pool, token, "Set Services Missing Field Page")
@@ -835,13 +847,147 @@ func TestSetServices_MissingServiceIDs_422(t *testing.T) {
 	}
 }
 
+// TestSetServices_GroupAndParentPlacement_200PersistsBoth asserts T6's new
+// request shape wires group_id and parent_service_id through to the
+// repository together on a single placement (SGD-02, SGD-03, SGD-06,
+// SGD-07): a child service can belong to a group AND have a parent in the
+// very same PATCH.
+func TestSetServices_GroupAndParentPlacement_200PersistsBoth(t *testing.T) {
+	r, pool, admins := newStatusPagesRouter(t)
+	token := issueTestSessionToken(t, admins)
+	parent := createTestService(t, pool)
+	child := createTestService(t, pool)
+	pageID := createDomainlessStatusPageViaAPI(t, r, pool, token, "Set Services Group Parent Page")
+	cleanupStatusPage(t, pool, pageID)
+	groupID := createTestGroup(t, r, token, pageID, "Core")
+
+	rec := patchSetServices(t, r, token, pageID, setServicesRequest{Services: []servicePlacementRequest{
+		{ServiceID: parent, Position: 0},
+		{ServiceID: child, GroupID: &groupID, ParentServiceID: &parent, Position: 1},
+	}})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	var gotGroupID, gotParentID *string
+	var gotPosition int
+	row := pool.QueryRow(context.Background(),
+		"SELECT group_id, parent_service_id, position FROM status_page_services WHERE status_page_id = $1 AND service_id = $2",
+		pageID, child)
+	if err := row.Scan(&gotGroupID, &gotParentID, &gotPosition); err != nil {
+		t.Fatalf("Scan() returned unexpected error: %v", err)
+	}
+	if gotGroupID == nil || *gotGroupID != groupID {
+		t.Errorf("group_id = %v, want %q", gotGroupID, groupID)
+	}
+	if gotParentID == nil || *gotParentID != parent {
+		t.Errorf("parent_service_id = %v, want %q", gotParentID, parent)
+	}
+	if gotPosition != 1 {
+		t.Errorf("position = %d, want 1", gotPosition)
+	}
+}
+
+// TestSetServices_GroupCrossPage_422 asserts a group_id that doesn't belong
+// to this status page surfaces as its own distinct 422 message (SGD-11),
+// not a generic error.
+func TestSetServices_GroupCrossPage_422(t *testing.T) {
+	r, pool, admins := newStatusPagesRouter(t)
+	token := issueTestSessionToken(t, admins)
+	serviceID := createTestService(t, pool)
+	pageID := createDomainlessStatusPageViaAPI(t, r, pool, token, "Group Cross Page A")
+	cleanupStatusPage(t, pool, pageID)
+	otherPageID := createDomainlessStatusPageViaAPI(t, r, pool, token, "Group Cross Page B")
+	cleanupStatusPage(t, pool, otherPageID)
+	foreignGroupID := createTestGroup(t, r, token, otherPageID, "Foreign Group")
+
+	rec := patchSetServices(t, r, token, pageID, setServicesRequest{Services: []servicePlacementRequest{
+		{ServiceID: serviceID, GroupID: &foreignGroupID, Position: 0},
+	}})
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusUnprocessableEntity, rec.Body.String())
+	}
+	if rec.Body.String() != groupCrossPageRequestBody {
+		t.Errorf("body = %s, want %s", rec.Body.String(), groupCrossPageRequestBody)
+	}
+}
+
+// TestSetServices_SelfReference_422 asserts a placement whose
+// parent_service_id equals its own service_id surfaces as its own distinct
+// 422 message (SGD-12), not the generic "parent not in set" one.
+func TestSetServices_SelfReference_422(t *testing.T) {
+	r, pool, admins := newStatusPagesRouter(t)
+	token := issueTestSessionToken(t, admins)
+	serviceID := createTestService(t, pool)
+	pageID := createDomainlessStatusPageViaAPI(t, r, pool, token, "Self Reference Page")
+	cleanupStatusPage(t, pool, pageID)
+
+	rec := patchSetServices(t, r, token, pageID, setServicesRequest{Services: []servicePlacementRequest{
+		{ServiceID: serviceID, ParentServiceID: &serviceID, Position: 0},
+	}})
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusUnprocessableEntity, rec.Body.String())
+	}
+	if rec.Body.String() != selfReferenceRequestBody {
+		t.Errorf("body = %s, want %s", rec.Body.String(), selfReferenceRequestBody)
+	}
+}
+
+// TestSetServices_ParentNotInSet_422 asserts a parent_service_id that
+// doesn't match any service_id in the same request surfaces as its own
+// distinct 422 message.
+func TestSetServices_ParentNotInSet_422(t *testing.T) {
+	r, pool, admins := newStatusPagesRouter(t)
+	token := issueTestSessionToken(t, admins)
+	serviceID := createTestService(t, pool)
+	missingParent := "00000000-0000-0000-0000-000000000000"
+	pageID := createDomainlessStatusPageViaAPI(t, r, pool, token, "Parent Not In Set Page")
+	cleanupStatusPage(t, pool, pageID)
+
+	rec := patchSetServices(t, r, token, pageID, setServicesRequest{Services: []servicePlacementRequest{
+		{ServiceID: serviceID, ParentServiceID: &missingParent, Position: 0},
+	}})
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusUnprocessableEntity, rec.Body.String())
+	}
+	if rec.Body.String() != parentNotInSetRequestBody {
+		t.Errorf("body = %s, want %s", rec.Body.String(), parentNotInSetRequestBody)
+	}
+}
+
+// TestSetServices_MaxDepthExceeded_422 asserts a placement that is itself
+// used as another placement's parent but also carries its own
+// parent_service_id (a 3-level chain) surfaces as its own distinct 422
+// message - nesting is capped at depth 2.
+func TestSetServices_MaxDepthExceeded_422(t *testing.T) {
+	r, pool, admins := newStatusPagesRouter(t)
+	token := issueTestSessionToken(t, admins)
+	grandparent := createTestService(t, pool)
+	parent := createTestService(t, pool)
+	child := createTestService(t, pool)
+	pageID := createDomainlessStatusPageViaAPI(t, r, pool, token, "Max Depth Page")
+	cleanupStatusPage(t, pool, pageID)
+
+	rec := patchSetServices(t, r, token, pageID, setServicesRequest{Services: []servicePlacementRequest{
+		{ServiceID: grandparent, Position: 0},
+		{ServiceID: parent, ParentServiceID: &grandparent, Position: 1},
+		{ServiceID: child, ParentServiceID: &parent, Position: 2},
+	}})
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusUnprocessableEntity, rec.Body.String())
+	}
+	if rec.Body.String() != maxDepthExceededRequestBody {
+		t.Errorf("body = %s, want %s", rec.Body.String(), maxDepthExceededRequestBody)
+	}
+}
+
 // TestSetServices_NonexistentStatusPageID_404 mirrors
 // TestAttachDomain_NonexistentStatusPageID_404 for the services endpoint.
 func TestSetServices_NonexistentStatusPageID_404(t *testing.T) {
 	r, _, admins := newStatusPagesRouter(t)
 	token := issueTestSessionToken(t, admins)
 
-	rec := patchSetServices(t, r, token, "00000000-0000-0000-0000-000000000000", setServicesRequest{ServiceIDs: []string{}})
+	rec := patchSetServices(t, r, token, "00000000-0000-0000-0000-000000000000", setServicesRequest{Services: []servicePlacementRequest{}})
 	if rec.Code != http.StatusNotFound {
 		t.Errorf("status = %d, want %d, body = %s", rec.Code, http.StatusNotFound, rec.Body.String())
 	}
@@ -1005,7 +1151,7 @@ func TestSetServices_ReplacesLinkedSet_RecordsStatusPageServicesUpdatedAudit(t *
 	pageID := createDomainlessStatusPageViaAPI(t, r, pool, token, "Audit SetServices Page")
 	cleanupStatusPage(t, pool, pageID)
 
-	rec := patchSetServices(t, r, token, pageID, setServicesRequest{ServiceIDs: []string{serviceA}})
+	rec := patchSetServices(t, r, token, pageID, setServicesRequest{Services: placementsOf(serviceA)})
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
 	}

@@ -37,7 +37,7 @@ type statusPageCreatorLister interface {
 	Create(ctx context.Context, statusPage *db.StatusPage, serviceIDs []string) error
 	ListPaginated(ctx context.Context, page, pageSize int) ([]db.StatusPage, int, error)
 	AttachDomain(ctx context.Context, id, domainID, subdomain string) (*db.StatusPage, error)
-	SetServices(ctx context.Context, id string, serviceIDs []string) error
+	SetServices(ctx context.Context, id string, placements []db.ServicePlacement) error
 	GetByID(ctx context.Context, id string) (*db.StatusPage, error)
 	Delete(ctx context.Context, id string) error
 	PublicHostnameByID(ctx context.Context, id string) (string, error)
@@ -225,30 +225,83 @@ func (h *StatusPagesHandler) AttachDomain(w http.ResponseWriter, r *http.Request
 	_ = json.NewEncoder(w).Encode(toStatusPageResponse(statusPage))
 }
 
-const invalidSetServicesRequestBody = `{"error":"service_ids is required"}`
+const invalidSetServicesRequestBody = `{"error":"services is required"}`
+const groupCrossPageRequestBody = `{"error":"group_id does not belong to this status page"}`
+const selfReferenceRequestBody = `{"error":"a service cannot be its own parent"}`
+const parentNotInSetRequestBody = `{"error":"parent_service_id must reference another service in this same request"}`
+const maxDepthExceededRequestBody = `{"error":"nesting is limited to one level: a service that is already a parent cannot also have a parent"}`
+
+// servicePlacementRequest is the wire shape for a single service's
+// placement within a status page's service list (SGD-02, SGD-03, SGD-06,
+// SGD-07): which group (if any) it belongs to, which service (if any) is
+// its parent, and its display position.
+type servicePlacementRequest struct {
+	ServiceID       string  `json:"service_id"`
+	GroupID         *string `json:"group_id"`
+	ParentServiceID *string `json:"parent_service_id"`
+	Position        int     `json:"position"`
+}
 
 type setServicesRequest struct {
-	ServiceIDs []string `json:"service_ids"`
+	Services []servicePlacementRequest `json:"services"`
+}
+
+// mapSetServicesValidationError maps one of validateServicePlacements' 4
+// sentinel errors (SGD-08, SGD-10, SGD-11, SGD-12) to its own distinct,
+// fixed 422 message - same pattern as domains_handler.go's
+// mapDomainVerificationResult: a raw Go/DB error string is never leaked to
+// the client. ok is false when err doesn't match any of the 4.
+func mapSetServicesValidationError(err error) (body []byte, ok bool) {
+	switch {
+	case errors.Is(err, db.ErrGroupCrossPage):
+		return []byte(groupCrossPageRequestBody), true
+	case errors.Is(err, db.ErrSelfReference):
+		return []byte(selfReferenceRequestBody), true
+	case errors.Is(err, db.ErrParentNotInSet):
+		return []byte(parentNotInSetRequestBody), true
+	case errors.Is(err, db.ErrMaxDepthExceeded):
+		return []byte(maxDepthExceededRequestBody), true
+	default:
+		return nil, false
+	}
 }
 
 // SetServices handles PATCH /api/status-pages/{id}/services, replacing the
-// full set of services shown on this status page with req.ServiceIDs
-// (SPD-15) - an empty array is valid (unlinks every service), so only a
-// missing/malformed field is rejected, not an empty one.
+// full set of services shown on this status page with req.Services,
+// including each service's group and parent placement (SPD-15, SGD-02,
+// SGD-03, SGD-06, SGD-07) - an empty array is valid (unlinks every
+// service), so only a missing/malformed field is rejected, not an empty
+// one.
 func (h *StatusPagesHandler) SetServices(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 
 	var req setServicesRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.ServiceIDs == nil {
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Services == nil {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusUnprocessableEntity)
 		_, _ = w.Write([]byte(invalidSetServicesRequestBody))
 		return
 	}
 
-	if err := h.statusPages.SetServices(r.Context(), id, req.ServiceIDs); err != nil {
+	placements := make([]db.ServicePlacement, len(req.Services))
+	for i, s := range req.Services {
+		placements[i] = db.ServicePlacement{
+			ServiceID:       s.ServiceID,
+			GroupID:         s.GroupID,
+			ParentServiceID: s.ParentServiceID,
+			Position:        s.Position,
+		}
+	}
+
+	if err := h.statusPages.SetServices(r.Context(), id, placements); err != nil {
 		if errors.Is(err, db.ErrNotFound) {
 			http.NotFound(w, r)
+			return
+		}
+		if body, ok := mapSetServicesValidationError(err); ok {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusUnprocessableEntity)
+			_, _ = w.Write(body)
 			return
 		}
 		h.logger.Error("status-pages: failed to set linked services", zap.Error(err))
