@@ -130,12 +130,25 @@ func (r *StatusPageRepository) insert(ctx context.Context, statusPage *StatusPag
 }
 
 // SetServices replaces the full set of services linked to the status page
-// identified by id with serviceIDs, inside a single transaction (delete
-// all existing links, then insert the given set) - the same replace-all
-// semantics as Create's initial linking, so a partial update never leaves
-// a mix of old and new links. It returns ErrNotFound if no status page
-// matches id.
-func (r *StatusPageRepository) SetServices(ctx context.Context, id string, serviceIDs []string) error {
+// identified by statusPageID with placements, inside a single transaction
+// (delete all existing links, then insert the given set) - the same
+// replace-all semantics as Create's initial linking, so a partial update
+// never leaves a mix of old and new links, and dropping a previously-set
+// GroupID/ParentServiceID for a service clears it rather than preserving
+// it (there is no merge). It returns ErrNotFound if no status page matches
+// statusPageID.
+//
+// Before touching the DB, it loads this page's valid group ids (a
+// lighter, tx-scoped id-only query rather than ListGroups - T4 only needs
+// the id set for validateServicePlacements, not the full
+// StatusPageServiceGroup rows, and running it on the same tx as the
+// existence check/delete/insert keeps the whole read-then-write under one
+// connection instead of borrowing a second one from the pool) and calls
+// validateServicePlacements (SGD-08, SGD-10, SGD-11, SGD-12). On a
+// validation error, the transaction is rolled back untouched (deferred
+// Rollback) and that sentinel error is returned directly - no partial
+// writes.
+func (r *StatusPageRepository) SetServices(ctx context.Context, statusPageID string, placements []ServicePlacement) error {
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
 		return fmt.Errorf("db: failed to begin set services transaction: %w", err)
@@ -143,7 +156,7 @@ func (r *StatusPageRepository) SetServices(ctx context.Context, id string, servi
 	defer func() { _ = tx.Rollback(ctx) }()
 
 	var exists bool
-	row := tx.QueryRow(ctx, "SELECT EXISTS(SELECT 1 FROM status_pages WHERE id = $1)", id)
+	row := tx.QueryRow(ctx, "SELECT EXISTS(SELECT 1 FROM status_pages WHERE id = $1)", statusPageID)
 	if err := row.Scan(&exists); err != nil {
 		return fmt.Errorf("db: failed to check status page existence: %w", err)
 	}
@@ -151,15 +164,24 @@ func (r *StatusPageRepository) SetServices(ctx context.Context, id string, servi
 		return ErrNotFound
 	}
 
-	if _, err := tx.Exec(ctx, "DELETE FROM status_page_services WHERE status_page_id = $1", id); err != nil {
+	validGroupIDs, err := r.validGroupIDsTx(ctx, tx, statusPageID)
+	if err != nil {
+		return err
+	}
+	if err := validateServicePlacements(placements, validGroupIDs); err != nil {
+		return err
+	}
+
+	if _, err := tx.Exec(ctx, "DELETE FROM status_page_services WHERE status_page_id = $1", statusPageID); err != nil {
 		return fmt.Errorf("db: failed to clear existing service links: %w", err)
 	}
-	for _, serviceID := range serviceIDs {
+	for _, placement := range placements {
 		if _, err := tx.Exec(ctx,
-			"INSERT INTO status_page_services (status_page_id, service_id) VALUES ($1, $2)",
-			id, serviceID,
+			"INSERT INTO status_page_services (status_page_id, service_id, group_id, parent_service_id, position) "+
+				"VALUES ($1, $2, $3, $4, $5)",
+			statusPageID, placement.ServiceID, placement.GroupID, placement.ParentServiceID, placement.Position,
 		); err != nil {
-			return fmt.Errorf("db: failed to link service %s to status page: %w", serviceID, err)
+			return fmt.Errorf("db: failed to link service %s to status page: %w", placement.ServiceID, err)
 		}
 	}
 
@@ -168,6 +190,36 @@ func (r *StatusPageRepository) SetServices(ctx context.Context, id string, servi
 	}
 
 	return nil
+}
+
+// validGroupIDsTx loads the set of status_page_service_groups ids
+// belonging to statusPageID, scoped to tx, as a map suitable for
+// validateServicePlacements. It exists instead of reusing ListGroups
+// because SetServices only needs the id set, not the full
+// StatusPageServiceGroup rows (name/position/created_at), and running it
+// on tx - rather than ListGroups' r.pool - keeps the read on the same
+// connection/transaction as the existence check and the delete+insert
+// that follow.
+func (r *StatusPageRepository) validGroupIDsTx(ctx context.Context, tx pgx.Tx, statusPageID string) (map[string]bool, error) {
+	rows, err := tx.Query(ctx, "SELECT id FROM status_page_service_groups WHERE status_page_id = $1", statusPageID)
+	if err != nil {
+		return nil, fmt.Errorf("db: failed to load valid group ids: %w", err)
+	}
+	defer rows.Close()
+
+	validGroupIDs := make(map[string]bool)
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, fmt.Errorf("db: failed to scan group id: %w", err)
+		}
+		validGroupIDs[id] = true
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("db: failed to iterate valid group ids: %w", err)
+	}
+
+	return validGroupIDs, nil
 }
 
 // ErrGroupCrossPage is returned by validateServicePlacements when a

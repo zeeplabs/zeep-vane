@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"testing"
 	"time"
+
+	"github.com/jackc/pgx/v5"
 )
 
 // createStatusPageFixture inserts a domain and a status page pointed at
@@ -639,7 +641,7 @@ func TestStatusPageRepository_SetServices_ReplacesFullSet(t *testing.T) {
 	serviceA := createSetServicesTestService(t, pool, "set-services-svc-a")
 	serviceB := createSetServicesTestService(t, pool, "set-services-svc-b")
 
-	if err := repo.SetServices(context.Background(), pageID, []string{serviceA}); err != nil {
+	if err := repo.SetServices(context.Background(), pageID, []ServicePlacement{{ServiceID: serviceA}}); err != nil {
 		t.Fatalf("SetServices() first call returned unexpected error: %v", err)
 	}
 	page, err := repo.GetByID(context.Background(), pageID)
@@ -650,7 +652,7 @@ func TestStatusPageRepository_SetServices_ReplacesFullSet(t *testing.T) {
 		t.Fatalf("ServiceIDs after first SetServices() = %v, want [%q]", page.ServiceIDs, serviceA)
 	}
 
-	if err := repo.SetServices(context.Background(), pageID, []string{serviceB}); err != nil {
+	if err := repo.SetServices(context.Background(), pageID, []ServicePlacement{{ServiceID: serviceB}}); err != nil {
 		t.Fatalf("SetServices() second call returned unexpected error: %v", err)
 	}
 	page, err = repo.GetByID(context.Background(), pageID)
@@ -669,10 +671,10 @@ func TestStatusPageRepository_SetServices_EmptySlice_UnlinksAll(t *testing.T) {
 	pageID := createDomainlessStatusPage(t, repo, pool, "set-services-unlink-page")
 	serviceA := createSetServicesTestService(t, pool, "set-services-unlink-svc")
 
-	if err := repo.SetServices(context.Background(), pageID, []string{serviceA}); err != nil {
+	if err := repo.SetServices(context.Background(), pageID, []ServicePlacement{{ServiceID: serviceA}}); err != nil {
 		t.Fatalf("SetServices() (link) returned unexpected error: %v", err)
 	}
-	if err := repo.SetServices(context.Background(), pageID, []string{}); err != nil {
+	if err := repo.SetServices(context.Background(), pageID, []ServicePlacement{}); err != nil {
 		t.Fatalf("SetServices() (unlink) returned unexpected error: %v", err)
 	}
 
@@ -692,9 +694,283 @@ func TestStatusPageRepository_SetServices_NonexistentPage_ErrNotFound(t *testing
 	repo, pool := newAttachDomainTestRepo(t)
 	serviceA := createSetServicesTestService(t, pool, "set-services-missing-page-svc")
 
-	err := repo.SetServices(context.Background(), "00000000-0000-0000-0000-000000000000", []string{serviceA})
+	err := repo.SetServices(context.Background(), "00000000-0000-0000-0000-000000000000", []ServicePlacement{{ServiceID: serviceA}})
 	if !errors.Is(err, ErrNotFound) {
 		t.Fatalf("SetServices() error = %v, want ErrNotFound", err)
+	}
+}
+
+// readServiceLink reads back a single status_page_services row's
+// group_id, parent_service_id and position directly, bypassing GetByID
+// (which only surfaces ServiceIDs) - used to assert T4's new columns and
+// to prove a rejected SetServices() call left the DB untouched.
+func readServiceLink(t *testing.T, pool *Pool, statusPageID, serviceID string) (groupID, parentServiceID *string, position int, found bool) {
+	t.Helper()
+	row := pool.QueryRow(context.Background(),
+		"SELECT group_id, parent_service_id, position FROM status_page_services WHERE status_page_id = $1 AND service_id = $2",
+		statusPageID, serviceID,
+	)
+	if err := row.Scan(&groupID, &parentServiceID, &position); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, nil, 0, false
+		}
+		t.Fatalf("reading back service link returned unexpected error: %v", err)
+	}
+	return groupID, parentServiceID, position, true
+}
+
+// countServiceLinks returns the number of status_page_services rows for
+// statusPageID - used to assert a rejected SetServices() call performed no
+// DELETE either.
+func countServiceLinks(t *testing.T, pool *Pool, statusPageID string) int {
+	t.Helper()
+	var count int
+	row := pool.QueryRow(context.Background(),
+		"SELECT COUNT(*) FROM status_page_services WHERE status_page_id = $1", statusPageID)
+	if err := row.Scan(&count); err != nil {
+		t.Fatalf("counting service links returned unexpected error: %v", err)
+	}
+	return count
+}
+
+// TestStatusPageRepository_SetServices_PersistsGroupParentPosition asserts
+// a full-replace SetServices() call persists all 3 new placement columns
+// (group_id, parent_service_id, position) - not just service_id (T4).
+func TestStatusPageRepository_SetServices_PersistsGroupParentPosition(t *testing.T) {
+	repo, pool := newAttachDomainTestRepo(t)
+	pageID := createDomainlessStatusPage(t, repo, pool, "set-services-placement-page")
+	parent := createSetServicesTestService(t, pool, "set-services-placement-parent")
+	child := createSetServicesTestService(t, pool, "set-services-placement-child")
+
+	group, err := repo.CreateGroup(context.Background(), pageID, "Placement Group")
+	if err != nil {
+		t.Fatalf("setup CreateGroup() returned unexpected error: %v", err)
+	}
+
+	placements := []ServicePlacement{
+		{ServiceID: parent, GroupID: &group.ID, Position: 0},
+		{ServiceID: child, GroupID: &group.ID, ParentServiceID: &parent, Position: 1},
+	}
+	if err := repo.SetServices(context.Background(), pageID, placements); err != nil {
+		t.Fatalf("SetServices() returned unexpected error: %v", err)
+	}
+
+	gotGroupID, gotParentID, gotPosition, found := readServiceLink(t, pool, pageID, parent)
+	if !found {
+		t.Fatalf("service link for parent not found after SetServices()")
+	}
+	if gotGroupID == nil || *gotGroupID != group.ID {
+		t.Errorf("parent link group_id = %v, want %q", gotGroupID, group.ID)
+	}
+	if gotParentID != nil {
+		t.Errorf("parent link parent_service_id = %v, want nil", *gotParentID)
+	}
+	if gotPosition != 0 {
+		t.Errorf("parent link position = %d, want 0", gotPosition)
+	}
+
+	gotGroupID, gotParentID, gotPosition, found = readServiceLink(t, pool, pageID, child)
+	if !found {
+		t.Fatalf("service link for child not found after SetServices()")
+	}
+	if gotGroupID == nil || *gotGroupID != group.ID {
+		t.Errorf("child link group_id = %v, want %q", gotGroupID, group.ID)
+	}
+	if gotParentID == nil || *gotParentID != parent {
+		t.Errorf("child link parent_service_id = %v, want %q", gotParentID, parent)
+	}
+	if gotPosition != 1 {
+		t.Errorf("child link position = %d, want 1", gotPosition)
+	}
+}
+
+// TestStatusPageRepository_SetServices_OmittingPlacementClearsIt asserts
+// replace-all semantics for the new columns specifically: a second
+// SetServices() call that omits a previously-set group_id/parent_service_id
+// for a service clears it rather than preserving it (no merge - this is
+// the easy place for a subtle bug per T4's brief).
+func TestStatusPageRepository_SetServices_OmittingPlacementClearsIt(t *testing.T) {
+	repo, pool := newAttachDomainTestRepo(t)
+	pageID := createDomainlessStatusPage(t, repo, pool, "set-services-clear-page")
+	parent := createSetServicesTestService(t, pool, "set-services-clear-parent")
+	child := createSetServicesTestService(t, pool, "set-services-clear-child")
+
+	group, err := repo.CreateGroup(context.Background(), pageID, "Clear Group")
+	if err != nil {
+		t.Fatalf("setup CreateGroup() returned unexpected error: %v", err)
+	}
+
+	first := []ServicePlacement{
+		{ServiceID: parent, GroupID: &group.ID, Position: 0},
+		{ServiceID: child, GroupID: &group.ID, ParentServiceID: &parent, Position: 1},
+	}
+	if err := repo.SetServices(context.Background(), pageID, first); err != nil {
+		t.Fatalf("SetServices() (first) returned unexpected error: %v", err)
+	}
+
+	// Second call re-submits both services but drops the group/parent
+	// assignment entirely - replace-all must clear it, not merge with the
+	// first call's values.
+	second := []ServicePlacement{
+		{ServiceID: parent, Position: 0},
+		{ServiceID: child, Position: 1},
+	}
+	if err := repo.SetServices(context.Background(), pageID, second); err != nil {
+		t.Fatalf("SetServices() (second) returned unexpected error: %v", err)
+	}
+
+	gotGroupID, gotParentID, _, found := readServiceLink(t, pool, pageID, child)
+	if !found {
+		t.Fatalf("service link for child not found after second SetServices()")
+	}
+	if gotGroupID != nil {
+		t.Errorf("child link group_id after clearing call = %v, want nil (replace-all, not merge)", *gotGroupID)
+	}
+	if gotParentID != nil {
+		t.Errorf("child link parent_service_id after clearing call = %v, want nil (replace-all, not merge)", *gotParentID)
+	}
+}
+
+// TestStatusPageRepository_SetServices_ValidationErrors_DBUntouched asserts
+// each of validateServicePlacements' 4 sentinel errors is surfaced by
+// SetServices() without any DB mutation - the pre-call state (including
+// zero rows, for the "no existing links" case) is read back unchanged
+// after the rejected call.
+func TestStatusPageRepository_SetServices_ValidationErrors_DBUntouched(t *testing.T) {
+	repo, pool := newAttachDomainTestRepo(t)
+
+	otherPageID := createDomainlessStatusPage(t, repo, pool, "set-services-other-page")
+	otherGroup, err := repo.CreateGroup(context.Background(), otherPageID, "Other Page Group")
+	if err != nil {
+		t.Fatalf("setup CreateGroup() (other page) returned unexpected error: %v", err)
+	}
+
+	svcA := createSetServicesTestService(t, pool, "set-services-err-a")
+	svcB := createSetServicesTestService(t, pool, "set-services-err-b")
+	svcC := createSetServicesTestService(t, pool, "set-services-err-c")
+
+	tests := []struct {
+		name       string
+		placements []ServicePlacement
+		wantErr    error
+	}{
+		{
+			name:       "group cross page",
+			placements: []ServicePlacement{{ServiceID: svcA, GroupID: &otherGroup.ID}},
+			wantErr:    ErrGroupCrossPage,
+		},
+		{
+			name:       "self reference",
+			placements: []ServicePlacement{{ServiceID: svcA, ParentServiceID: &svcA}},
+			wantErr:    ErrSelfReference,
+		},
+		{
+			name:       "parent not in set",
+			placements: []ServicePlacement{{ServiceID: svcA, ParentServiceID: &svcB}},
+			wantErr:    ErrParentNotInSet,
+		},
+		{
+			name: "max depth exceeded",
+			placements: []ServicePlacement{
+				{ServiceID: svcA},
+				{ServiceID: svcB, ParentServiceID: &svcA},
+				{ServiceID: svcC, ParentServiceID: &svcB},
+			},
+			wantErr: ErrMaxDepthExceeded,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			pageID := createDomainlessStatusPage(t, repo, pool, "set-services-validation-page")
+			preCount := countServiceLinks(t, pool, pageID)
+
+			err := repo.SetServices(context.Background(), pageID, tt.placements)
+			if !errors.Is(err, tt.wantErr) {
+				t.Fatalf("SetServices() error = %v, want %v", err, tt.wantErr)
+			}
+
+			postCount := countServiceLinks(t, pool, pageID)
+			if postCount != preCount {
+				t.Errorf("service link count after rejected SetServices() = %d, want unchanged %d", postCount, preCount)
+			}
+		})
+	}
+}
+
+// TestStatusPageRepository_SetServices_DeleteGroup_SetsGroupIDNull asserts
+// the group_id FK's ON DELETE SET NULL (migration 0046) is exercised by a
+// real DeleteGroup() after SetServices() has linked a service to that
+// group - the row survives, with group_id now NULL.
+func TestStatusPageRepository_SetServices_DeleteGroup_SetsGroupIDNull(t *testing.T) {
+	repo, pool := newAttachDomainTestRepo(t)
+	pageID := createDomainlessStatusPage(t, repo, pool, "set-services-fk-group-page")
+	svc := createSetServicesTestService(t, pool, "set-services-fk-group-svc")
+
+	group, err := repo.CreateGroup(context.Background(), pageID, "FK Group")
+	if err != nil {
+		t.Fatalf("setup CreateGroup() returned unexpected error: %v", err)
+	}
+	if err := repo.SetServices(context.Background(), pageID, []ServicePlacement{{ServiceID: svc, GroupID: &group.ID}}); err != nil {
+		t.Fatalf("SetServices() returned unexpected error: %v", err)
+	}
+
+	if err := repo.DeleteGroup(context.Background(), group.ID); err != nil {
+		t.Fatalf("DeleteGroup() returned unexpected error: %v", err)
+	}
+
+	gotGroupID, _, _, found := readServiceLink(t, pool, pageID, svc)
+	if !found {
+		t.Fatalf("service link not found after DeleteGroup() - row should survive, not cascade-delete")
+	}
+	if gotGroupID != nil {
+		t.Errorf("service link group_id after DeleteGroup() = %v, want nil (ON DELETE SET NULL)", *gotGroupID)
+	}
+}
+
+// TestStatusPageRepository_SetServices_DeleteParentService_SetsParentIDNull
+// asserts the parent_service_id FK's ON DELETE SET NULL (migration 0046)
+// is exercised by a real delete of the parent service's services row after
+// SetServices() has linked a child to it as parent - the child's link
+// survives, with parent_service_id now NULL.
+//
+// validateServicePlacements requires the parent to appear as its own
+// placement in the same SetServices() call (ErrParentNotInSet otherwise),
+// which links it to the page via status_page_services.service_id too -
+// a separate FK (status_page_services_service_id_fkey) with no ON DELETE
+// SET NULL of its own, unrelated to T4's new columns. That row is removed
+// directly first so the real DELETE FROM services below exercises only
+// the parent_service_id FK this test targets, not that other one.
+func TestStatusPageRepository_SetServices_DeleteParentService_SetsParentIDNull(t *testing.T) {
+	repo, pool := newAttachDomainTestRepo(t)
+	pageID := createDomainlessStatusPage(t, repo, pool, "set-services-fk-parent-page")
+	parent := createSetServicesTestService(t, pool, "set-services-fk-parent-parent")
+	child := createSetServicesTestService(t, pool, "set-services-fk-parent-child")
+
+	placements := []ServicePlacement{
+		{ServiceID: parent},
+		{ServiceID: child, ParentServiceID: &parent},
+	}
+	if err := repo.SetServices(context.Background(), pageID, placements); err != nil {
+		t.Fatalf("SetServices() returned unexpected error: %v", err)
+	}
+
+	if _, err := pool.Exec(context.Background(),
+		"DELETE FROM status_page_services WHERE status_page_id = $1 AND service_id = $2", pageID, parent,
+	); err != nil {
+		t.Fatalf("removing parent's own membership row returned unexpected error: %v", err)
+	}
+	if _, err := pool.Exec(context.Background(), "DELETE FROM services WHERE id = $1", parent); err != nil {
+		t.Fatalf("deleting parent service returned unexpected error: %v", err)
+	}
+
+	gotGroupID, gotParentID, _, found := readServiceLink(t, pool, pageID, child)
+	_ = gotGroupID
+	if !found {
+		t.Fatalf("child service link not found after parent service delete - row should survive, not cascade-delete")
+	}
+	if gotParentID != nil {
+		t.Errorf("child link parent_service_id after parent service delete = %v, want nil (ON DELETE SET NULL)", *gotParentID)
 	}
 }
 
