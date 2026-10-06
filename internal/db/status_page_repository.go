@@ -170,6 +170,106 @@ func (r *StatusPageRepository) SetServices(ctx context.Context, id string, servi
 	return nil
 }
 
+// StatusPageServiceGroup is a named, ordered grouping of services shown
+// together on a status page (SGD-01, migration 0046). Position determines
+// display order among a status page's own groups.
+type StatusPageServiceGroup struct {
+	ID           string
+	StatusPageID string
+	Name         string
+	Position     int
+	CreatedAt    time.Time
+}
+
+// CreateGroup inserts a new StatusPageServiceGroup for statusPageID, named
+// name, with Position set to the current count of groups already on that
+// page - so a freshly created group always appends after the existing
+// ones rather than colliding at position 0 (SGD-01).
+func (r *StatusPageRepository) CreateGroup(ctx context.Context, statusPageID, name string) (*StatusPageServiceGroup, error) {
+	var position int
+	countRow := r.pool.QueryRow(ctx,
+		"SELECT COUNT(*) FROM status_page_service_groups WHERE status_page_id = $1", statusPageID)
+	if err := countRow.Scan(&position); err != nil {
+		return nil, fmt.Errorf("db: failed to count existing status page service groups: %w", err)
+	}
+
+	group := &StatusPageServiceGroup{StatusPageID: statusPageID, Name: name, Position: position}
+	row := r.pool.QueryRow(ctx,
+		"INSERT INTO status_page_service_groups (status_page_id, name, position) VALUES ($1, $2, $3) RETURNING id, created_at",
+		statusPageID, name, position,
+	)
+	if err := row.Scan(&group.ID, &group.CreatedAt); err != nil {
+		return nil, fmt.Errorf("db: failed to create status page service group: %w", err)
+	}
+
+	return group, nil
+}
+
+// UpdateGroup renames and/or repositions the status page service group
+// identified by id. It returns ErrNotFound if no group matches id.
+func (r *StatusPageRepository) UpdateGroup(ctx context.Context, id, name string, position int) (*StatusPageServiceGroup, error) {
+	row := r.pool.QueryRow(ctx,
+		"UPDATE status_page_service_groups SET name = $2, position = $3 WHERE id = $1 "+
+			"RETURNING id, status_page_id, name, position, created_at",
+		id, name, position,
+	)
+
+	var group StatusPageServiceGroup
+	if err := row.Scan(&group.ID, &group.StatusPageID, &group.Name, &group.Position, &group.CreatedAt); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrNotFound
+		}
+		return nil, fmt.Errorf("db: failed to update status page service group: %w", err)
+	}
+
+	return &group, nil
+}
+
+// DeleteGroup removes the status page service group identified by id. Any
+// status_page_services row whose group_id referenced it is left in place
+// with group_id set to NULL by the column's ON DELETE SET NULL foreign key
+// (migration 0046), not by Go code here. It returns ErrNotFound if no group
+// matches id.
+func (r *StatusPageRepository) DeleteGroup(ctx context.Context, id string) error {
+	tag, err := r.pool.Exec(ctx, "DELETE FROM status_page_service_groups WHERE id = $1", id)
+	if err != nil {
+		return fmt.Errorf("db: failed to delete status page service group: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+
+	return nil
+}
+
+// ListGroups returns every StatusPageServiceGroup belonging to
+// statusPageID, ordered by position.
+func (r *StatusPageRepository) ListGroups(ctx context.Context, statusPageID string) ([]StatusPageServiceGroup, error) {
+	rows, err := r.pool.Query(ctx,
+		"SELECT id, status_page_id, name, position, created_at FROM status_page_service_groups "+
+			"WHERE status_page_id = $1 ORDER BY position",
+		statusPageID,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("db: failed to list status page service groups: %w", err)
+	}
+	defer rows.Close()
+
+	var groups []StatusPageServiceGroup
+	for rows.Next() {
+		var group StatusPageServiceGroup
+		if err := rows.Scan(&group.ID, &group.StatusPageID, &group.Name, &group.Position, &group.CreatedAt); err != nil {
+			return nil, fmt.Errorf("db: failed to scan status page service group: %w", err)
+		}
+		groups = append(groups, group)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("db: failed to iterate status page service groups: %w", err)
+	}
+
+	return groups, nil
+}
+
 // serviceIDsByStatusPage batch-loads every status_page_services link for
 // pageIDs into a map, so List can attach ServiceIDs to each row with one
 // extra query instead of one per page.
@@ -354,9 +454,10 @@ func (r *StatusPageRepository) ListPaginated(ctx context.Context, page, pageSize
 }
 
 // Delete removes the status page identified by id, along with its
-// status_page_services links (deleted first, in the same transaction,
-// since that join table has no ON DELETE CASCADE). It returns ErrNotFound
-// if no status page matches id.
+// status_page_services links and status_page_service_groups (both deleted
+// first, in the same transaction, since neither table has an ON DELETE
+// CASCADE from status_pages - 0046). It returns ErrNotFound if no status
+// page matches id.
 func (r *StatusPageRepository) Delete(ctx context.Context, id string) error {
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
@@ -366,6 +467,10 @@ func (r *StatusPageRepository) Delete(ctx context.Context, id string) error {
 
 	if _, err := tx.Exec(ctx, "DELETE FROM status_page_services WHERE status_page_id = $1", id); err != nil {
 		return fmt.Errorf("db: failed to clear service links before delete: %w", err)
+	}
+
+	if _, err := tx.Exec(ctx, "DELETE FROM status_page_service_groups WHERE status_page_id = $1", id); err != nil {
+		return fmt.Errorf("db: failed to clear service groups before delete: %w", err)
 	}
 
 	tag, err := tx.Exec(ctx, "DELETE FROM status_pages WHERE id = $1", id)

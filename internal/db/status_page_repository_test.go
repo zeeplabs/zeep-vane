@@ -951,3 +951,196 @@ func TestStatusPageRepository_ListPaginated_PopulatesServiceIDs(t *testing.T) {
 		t.Fatalf("status page %s not found across any page of ListPaginated()", statusPage.ID)
 	}
 }
+
+// TestStatusPageRepository_CreateGroup_AppendsAtEndPosition asserts
+// CreateGroup sets Position to the current count of groups already on the
+// page, so repeated calls append in order rather than colliding at 0.
+func TestStatusPageRepository_CreateGroup_AppendsAtEndPosition(t *testing.T) {
+	repo, pool := newAttachDomainTestRepo(t)
+	pageID := createDomainlessStatusPage(t, repo, pool, "create-group-page")
+
+	first, err := repo.CreateGroup(context.Background(), pageID, "First Group")
+	if err != nil {
+		t.Fatalf("CreateGroup() first call returned unexpected error: %v", err)
+	}
+	if first.Position != 0 {
+		t.Errorf("first group Position = %d, want 0", first.Position)
+	}
+	if first.StatusPageID != pageID {
+		t.Errorf("first group StatusPageID = %q, want %q", first.StatusPageID, pageID)
+	}
+	if first.Name != "First Group" {
+		t.Errorf("first group Name = %q, want %q", first.Name, "First Group")
+	}
+	if first.ID == "" {
+		t.Error("first group ID is empty, want generated id")
+	}
+
+	second, err := repo.CreateGroup(context.Background(), pageID, "Second Group")
+	if err != nil {
+		t.Fatalf("CreateGroup() second call returned unexpected error: %v", err)
+	}
+	if second.Position != 1 {
+		t.Errorf("second group Position = %d, want 1 (appended after first)", second.Position)
+	}
+}
+
+// TestStatusPageRepository_UpdateGroup_RenamesAndRepositions asserts
+// UpdateGroup can change both Name and Position on an existing group.
+func TestStatusPageRepository_UpdateGroup_RenamesAndRepositions(t *testing.T) {
+	repo, pool := newAttachDomainTestRepo(t)
+	pageID := createDomainlessStatusPage(t, repo, pool, "update-group-page")
+
+	group, err := repo.CreateGroup(context.Background(), pageID, "Original Name")
+	if err != nil {
+		t.Fatalf("setup CreateGroup() returned unexpected error: %v", err)
+	}
+
+	updated, err := repo.UpdateGroup(context.Background(), group.ID, "Renamed", 5)
+	if err != nil {
+		t.Fatalf("UpdateGroup() returned unexpected error: %v", err)
+	}
+	if updated.Name != "Renamed" {
+		t.Errorf("updated group Name = %q, want %q", updated.Name, "Renamed")
+	}
+	if updated.Position != 5 {
+		t.Errorf("updated group Position = %d, want 5", updated.Position)
+	}
+	if updated.ID != group.ID {
+		t.Errorf("updated group ID = %q, want %q (unchanged)", updated.ID, group.ID)
+	}
+}
+
+// TestStatusPageRepository_UpdateGroup_NonexistentID_ErrNotFound asserts
+// UpdateGroup distinguishes "group doesn't exist" rather than silently
+// succeeding on a no-op UPDATE.
+func TestStatusPageRepository_UpdateGroup_NonexistentID_ErrNotFound(t *testing.T) {
+	repo, _ := newAttachDomainTestRepo(t)
+
+	_, err := repo.UpdateGroup(context.Background(), "00000000-0000-0000-0000-000000000000", "Name", 0)
+	if !errors.Is(err, ErrNotFound) {
+		t.Fatalf("UpdateGroup() error = %v, want ErrNotFound", err)
+	}
+}
+
+// TestStatusPageRepository_DeleteGroup_RemovesGroupAndLeavesServiceGroupIDNull
+// asserts DeleteGroup removes the group row itself, and that a previously
+// assigned service's group_id becomes NULL (via the FK's ON DELETE SET
+// NULL from migration 0046) rather than the service row being deleted too.
+func TestStatusPageRepository_DeleteGroup_RemovesGroupAndLeavesServiceGroupIDNull(t *testing.T) {
+	repo, pool := newAttachDomainTestRepo(t)
+	pageID := createDomainlessStatusPage(t, repo, pool, "delete-group-page")
+	serviceID := createSetServicesTestService(t, pool, "delete-group-svc")
+
+	group, err := repo.CreateGroup(context.Background(), pageID, "To Delete")
+	if err != nil {
+		t.Fatalf("setup CreateGroup() returned unexpected error: %v", err)
+	}
+	if _, err := pool.Exec(context.Background(),
+		"INSERT INTO status_page_services (status_page_id, service_id, group_id) VALUES ($1, $2, $3)",
+		pageID, serviceID, group.ID,
+	); err != nil {
+		t.Fatalf("setup linking service to group returned unexpected error: %v", err)
+	}
+
+	if err := repo.DeleteGroup(context.Background(), group.ID); err != nil {
+		t.Fatalf("DeleteGroup() returned unexpected error: %v", err)
+	}
+
+	groups, err := repo.ListGroups(context.Background(), pageID)
+	if err != nil {
+		t.Fatalf("ListGroups() after delete returned unexpected error: %v", err)
+	}
+	for _, g := range groups {
+		if g.ID == group.ID {
+			t.Fatalf("group %s still present after DeleteGroup()", group.ID)
+		}
+	}
+
+	var groupID *string
+	row := pool.QueryRow(context.Background(),
+		"SELECT group_id FROM status_page_services WHERE status_page_id = $1 AND service_id = $2", pageID, serviceID,
+	)
+	if err := row.Scan(&groupID); err != nil {
+		t.Fatalf("reading back service link's group_id returned unexpected error: %v", err)
+	}
+	if groupID != nil {
+		t.Errorf("service link group_id after DeleteGroup() = %v, want nil (SET NULL via FK)", *groupID)
+	}
+}
+
+// TestStatusPageRepository_DeleteGroup_NonexistentID_ErrNotFound asserts
+// DeleteGroup distinguishes "group doesn't exist" rather than silently
+// succeeding on a no-op DELETE.
+func TestStatusPageRepository_DeleteGroup_NonexistentID_ErrNotFound(t *testing.T) {
+	repo, _ := newAttachDomainTestRepo(t)
+
+	err := repo.DeleteGroup(context.Background(), "00000000-0000-0000-0000-000000000000")
+	if !errors.Is(err, ErrNotFound) {
+		t.Fatalf("DeleteGroup() error = %v, want ErrNotFound", err)
+	}
+}
+
+// TestStatusPageRepository_ListGroups_OrderedByPosition asserts ListGroups
+// returns a page's groups sorted by position, not insertion/created_at
+// order.
+func TestStatusPageRepository_ListGroups_OrderedByPosition(t *testing.T) {
+	repo, pool := newAttachDomainTestRepo(t)
+	pageID := createDomainlessStatusPage(t, repo, pool, "list-groups-page")
+
+	groupA, err := repo.CreateGroup(context.Background(), pageID, "Group A")
+	if err != nil {
+		t.Fatalf("setup CreateGroup() (A) returned unexpected error: %v", err)
+	}
+	groupB, err := repo.CreateGroup(context.Background(), pageID, "Group B")
+	if err != nil {
+		t.Fatalf("setup CreateGroup() (B) returned unexpected error: %v", err)
+	}
+	// Reposition so B now sorts before A, proving ListGroups orders by the
+	// position column rather than created_at/insertion order.
+	if _, err := repo.UpdateGroup(context.Background(), groupA.ID, groupA.Name, 1); err != nil {
+		t.Fatalf("setup UpdateGroup() (A) returned unexpected error: %v", err)
+	}
+	if _, err := repo.UpdateGroup(context.Background(), groupB.ID, groupB.Name, 0); err != nil {
+		t.Fatalf("setup UpdateGroup() (B) returned unexpected error: %v", err)
+	}
+
+	groups, err := repo.ListGroups(context.Background(), pageID)
+	if err != nil {
+		t.Fatalf("ListGroups() returned unexpected error: %v", err)
+	}
+	if len(groups) != 2 {
+		t.Fatalf("len(groups) = %d, want 2", len(groups))
+	}
+	if groups[0].ID != groupB.ID || groups[1].ID != groupA.ID {
+		t.Fatalf("groups order = [%s, %s], want [%s, %s] (position-ordered)",
+			groups[0].ID, groups[1].ID, groupB.ID, groupA.ID)
+	}
+}
+
+// TestStatusPageRepository_Delete_AlsoRemovesServiceGroups asserts Delete's
+// manual-cleanup transaction also clears status_page_service_groups for the
+// deleted page, since that table has no cascade from status_pages either
+// (same reasoning as the existing status_page_services cleanup).
+func TestStatusPageRepository_Delete_AlsoRemovesServiceGroups(t *testing.T) {
+	repo, pool := newAttachDomainTestRepo(t)
+	pageID := createDomainlessStatusPage(t, repo, pool, "delete-page-groups")
+
+	group, err := repo.CreateGroup(context.Background(), pageID, "Orphaned Group")
+	if err != nil {
+		t.Fatalf("setup CreateGroup() returned unexpected error: %v", err)
+	}
+
+	if err := repo.Delete(context.Background(), pageID); err != nil {
+		t.Fatalf("Delete() returned unexpected error: %v", err)
+	}
+
+	var count int
+	row := pool.QueryRow(context.Background(), "SELECT COUNT(*) FROM status_page_service_groups WHERE id = $1", group.ID)
+	if err := row.Scan(&count); err != nil {
+		t.Fatalf("counting leftover group rows returned unexpected error: %v", err)
+	}
+	if count != 0 {
+		t.Errorf("status_page_service_groups rows remaining after Delete() = %d, want 0", count)
+	}
+}
