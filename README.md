@@ -65,6 +65,7 @@ docker compose up -d
 | **Selectable uptime history range** | Public page renders per-service status bars computed from `status_intervals`, switchable between 24h (1h bars), 7d (6h bars), 30d (1d bars), and 90d (1d bars) via a page-wide selector — no page reload |
 | **White-label branding** | Company name + logo shown on the public page (`company_settings` singleton) |
 | **Paginated admin lists** | Domains, services, status pages, admins, incidents, poller status, and public resolved-incidents all paginate (`Page[T]` envelope, AD-012) |
+| **Service groups & dependencies** | Organize a status page's services into folder-like groups and link service-to-service dependencies, with a drag-and-drop admin editor (`@dnd-kit`); shown on both the admin editor and the public page (AD-043) |
 
 ### Datadog integration
 
