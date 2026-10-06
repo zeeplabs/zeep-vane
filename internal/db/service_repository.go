@@ -64,6 +64,24 @@ type Service struct {
 	// it at its zero value since neither caller (poller, admin services
 	// list) reads it.
 	StatusAnalysis *string
+	// GroupID, GroupName, ParentServiceID, and Position describe this
+	// service's placement on one specific status page (status_page_services'
+	// group_id/parent_service_id/position columns and
+	// status_page_service_groups' name, migration 0046 - service-groups-
+	// and-dependencies SGD-02/SGD-03/SGD-06). They are populated only by
+	// ListForStatusPage; every other read path (Get, List, ListPaginated,
+	// ListPollingManual, Create) has no status-page context to place a
+	// service within and leaves them at their zero value (nil/nil/nil/0).
+	// Added directly to the shared struct rather than a separate wrapper
+	// type: no other caller serializes Service to JSON or otherwise reads
+	// every field blindly (internal/api builds its own response DTOs), so
+	// the always-empty fields in non-status-page contexts are inert, and
+	// ListForStatusPage's return type ([]Service) must stay exactly what
+	// api.ServiceLister's interface already declares.
+	GroupID         *string
+	GroupName       *string
+	ParentServiceID *string
+	Position        int
 }
 
 // ErrServiceInUse is returned by SoftDelete when the service is still
@@ -262,17 +280,30 @@ func (r *ServiceRepository) ListPollingManual(ctx context.Context) ([]Service, e
 }
 
 // ListForStatusPage returns every service linked to statusPageID via the
-// status_page_services junction table, ordered by name, with its current
-// status. This is the scoped counterpart to List (SP-15): a status page's
-// public page must show only its own linked services, never every service
-// in the installation.
+// status_page_services junction table, with its current status and its
+// placement on this page (group_id/parent_service_id/position, plus the
+// group's name via a LEFT JOIN - service-groups-and-dependencies SGD-02/
+// SGD-03/SGD-06). This is the scoped counterpart to List (SP-15): a status
+// page's public page must show only its own linked services, never every
+// service in the installation.
+//
+// Ordering is ORDER BY g.position NULLS LAST, sps.position: grouped
+// services sort by their group's own position first (so every service in
+// an earlier group precedes every service in a later one), then by each
+// service's own position within that group/ungrouped bucket; ungrouped
+// services (g.position NULL, since the LEFT JOIN has no matching group row)
+// sort after every grouped service, not interleaved by name as before this
+// task. NULLS LAST is standard SQL and valid as written for pgx/Postgres
+// (no query-builder translation needed - this file always writes raw SQL).
 func (r *ServiceRepository) ListForStatusPage(ctx context.Context, statusPageID string) ([]Service, error) {
 	rows, err := r.pool.Query(ctx,
-		`SELECT s.id, s.name, COALESCE(s.slo_id, ''), s.current_status, s.last_status_change_at, s.status_analysis
+		`SELECT s.id, s.name, COALESCE(s.slo_id, ''), s.current_status, s.last_status_change_at, s.status_analysis,
+		        sps.group_id, g.name, sps.parent_service_id, sps.position
 		 FROM services s
 		 JOIN status_page_services sps ON sps.service_id = s.id
+		 LEFT JOIN status_page_service_groups g ON g.id = sps.group_id
 		 WHERE sps.status_page_id = $1 AND s.deleted_at IS NULL
-		 ORDER BY s.name`,
+		 ORDER BY g.position NULLS LAST, sps.position`,
 		statusPageID,
 	)
 	if err != nil {
@@ -283,7 +314,8 @@ func (r *ServiceRepository) ListForStatusPage(ctx context.Context, statusPageID 
 	var services []Service
 	for rows.Next() {
 		var service Service
-		if err := rows.Scan(&service.ID, &service.Name, &service.SLOID, &service.CurrentStatus, &service.LastStatusChangeAt, &service.StatusAnalysis); err != nil {
+		if err := rows.Scan(&service.ID, &service.Name, &service.SLOID, &service.CurrentStatus, &service.LastStatusChangeAt, &service.StatusAnalysis,
+			&service.GroupID, &service.GroupName, &service.ParentServiceID, &service.Position); err != nil {
 			return nil, fmt.Errorf("db: failed to scan service: %w", err)
 		}
 		services = append(services, service)

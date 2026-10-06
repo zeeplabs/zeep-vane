@@ -1063,3 +1063,214 @@ func TestServiceRepository_SoftDelete_PreservesStatusIntervalsAndIncidents(t *te
 		t.Errorf("incident_services count after SoftDelete = %d, want 1 (preserved)", incidentServiceCount)
 	}
 }
+
+// newListForStatusPageTestRepos returns a *ServiceRepository and
+// *StatusPageRepository sharing one tenant-scoped pool (T8) - both
+// services and status pages/groups need a valid tenant_id to satisfy the
+// NOT NULL constraint 0024 added, and a tenant-scoped pool (session-level
+// app.tenant_id default, same helper status_page_repository_test.go's own
+// suite uses) lets every fixture call below go through plain
+// context.Background() instead of an explicit withTenantTx wrapper.
+func newListForStatusPageTestRepos(t *testing.T) (*ServiceRepository, *StatusPageRepository, *Pool) {
+	t.Helper()
+	pool, _ := newTenantScopedPool(t)
+	return NewServiceRepository(pool), NewStatusPageRepository(pool), pool
+}
+
+// TestServiceRepository_ListForStatusPage_TwoGroups_OrdersByGroupThenPosition
+// asserts T8's core ordering contract: services sort by their own group's
+// position first (every service in an earlier group precedes every service
+// in a later one), then by their own position within that group - not by
+// name, the pre-T8 behavior.
+func TestServiceRepository_ListForStatusPage_TwoGroups_OrdersByGroupThenPosition(t *testing.T) {
+	serviceRepo, pageRepo, pool := newListForStatusPageTestRepos(t)
+	pageID := createDomainlessStatusPage(t, pageRepo, pool, "lfsp-two-groups-page")
+
+	// Named so alphabetical order (zzz-later, aaa-first) is the OPPOSITE of
+	// the intended group-position order below - a passing test on
+	// coincidental name order would be a false positive.
+	svcInLaterGroup := createSetServicesTestService(t, pool, "lfsp-aaa-in-later-group")
+	svcInEarlierGroup := createSetServicesTestService(t, pool, "lfsp-zzz-in-earlier-group")
+
+	groupEarlier, err := pageRepo.CreateGroup(context.Background(), pageID, "Earlier Group")
+	if err != nil {
+		t.Fatalf("setup CreateGroup(earlier) returned unexpected error: %v", err)
+	}
+	groupLater, err := pageRepo.CreateGroup(context.Background(), pageID, "Later Group")
+	if err != nil {
+		t.Fatalf("setup CreateGroup(later) returned unexpected error: %v", err)
+	}
+
+	placements := []ServicePlacement{
+		{ServiceID: svcInLaterGroup, GroupID: &groupLater.ID, Position: 0},
+		{ServiceID: svcInEarlierGroup, GroupID: &groupEarlier.ID, Position: 0},
+	}
+	if err := pageRepo.SetServices(context.Background(), pageID, placements); err != nil {
+		t.Fatalf("setup SetServices() returned unexpected error: %v", err)
+	}
+
+	got, err := serviceRepo.ListForStatusPage(context.Background(), pageID)
+	if err != nil {
+		t.Fatalf("ListForStatusPage() returned unexpected error: %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("ListForStatusPage() len = %d, want 2", len(got))
+	}
+	if got[0].ID != svcInEarlierGroup || got[1].ID != svcInLaterGroup {
+		t.Fatalf("ListForStatusPage() order = [%s, %s], want [earlier-group service, later-group service]", got[0].Name, got[1].Name)
+	}
+	if got[0].GroupID == nil || *got[0].GroupID != groupEarlier.ID {
+		t.Errorf("got[0].GroupID = %v, want %q", got[0].GroupID, groupEarlier.ID)
+	}
+	if got[0].GroupName == nil || *got[0].GroupName != "Earlier Group" {
+		t.Errorf("got[0].GroupName = %v, want %q", got[0].GroupName, "Earlier Group")
+	}
+	if got[1].GroupID == nil || *got[1].GroupID != groupLater.ID {
+		t.Errorf("got[1].GroupID = %v, want %q", got[1].GroupID, groupLater.ID)
+	}
+	if got[1].GroupName == nil || *got[1].GroupName != "Later Group" {
+		t.Errorf("got[1].GroupName = %v, want %q", got[1].GroupName, "Later Group")
+	}
+}
+
+// TestServiceRepository_ListForStatusPage_MixedGroupedAndUngrouped_UngroupedLast
+// asserts NULLS LAST: a page mixing grouped and ungrouped services returns
+// every grouped service (ordered by its group's position) before every
+// ungrouped one, regardless of name.
+func TestServiceRepository_ListForStatusPage_MixedGroupedAndUngrouped_UngroupedLast(t *testing.T) {
+	serviceRepo, pageRepo, pool := newListForStatusPageTestRepos(t)
+	pageID := createDomainlessStatusPage(t, pageRepo, pool, "lfsp-mixed-page")
+
+	// Named so the ungrouped service would sort FIRST by name alone - again
+	// ruling out a false positive from coincidental name order.
+	svcUngrouped := createSetServicesTestService(t, pool, "lfsp-aaa-ungrouped")
+	svcGrouped := createSetServicesTestService(t, pool, "lfsp-zzz-grouped")
+
+	group, err := pageRepo.CreateGroup(context.Background(), pageID, "Only Group")
+	if err != nil {
+		t.Fatalf("setup CreateGroup() returned unexpected error: %v", err)
+	}
+
+	placements := []ServicePlacement{
+		{ServiceID: svcUngrouped, Position: 0},
+		{ServiceID: svcGrouped, GroupID: &group.ID, Position: 0},
+	}
+	if err := pageRepo.SetServices(context.Background(), pageID, placements); err != nil {
+		t.Fatalf("setup SetServices() returned unexpected error: %v", err)
+	}
+
+	got, err := serviceRepo.ListForStatusPage(context.Background(), pageID)
+	if err != nil {
+		t.Fatalf("ListForStatusPage() returned unexpected error: %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("ListForStatusPage() len = %d, want 2", len(got))
+	}
+	if got[0].ID != svcGrouped || got[1].ID != svcUngrouped {
+		t.Fatalf("ListForStatusPage() order = [%s, %s], want [grouped service, ungrouped service] (NULLS LAST)", got[0].Name, got[1].Name)
+	}
+	if got[1].GroupID != nil {
+		t.Errorf("got[1] (ungrouped).GroupID = %v, want nil", *got[1].GroupID)
+	}
+	if got[1].GroupName != nil {
+		t.Errorf("got[1] (ungrouped).GroupName = %v, want nil", *got[1].GroupName)
+	}
+}
+
+// TestServiceRepository_ListForStatusPage_ParentChild_BothReturnedWithCorrectParentServiceID
+// asserts a parent/child pair is returned as two independent placement
+// rows, position-ordered like any other pair - ParentServiceID carries the
+// relationship, but it imposes no extra ordering requirement of its own.
+func TestServiceRepository_ListForStatusPage_ParentChild_BothReturnedWithCorrectParentServiceID(t *testing.T) {
+	serviceRepo, pageRepo, pool := newListForStatusPageTestRepos(t)
+	pageID := createDomainlessStatusPage(t, pageRepo, pool, "lfsp-parent-child-page")
+	parent := createSetServicesTestService(t, pool, "lfsp-parent")
+	child := createSetServicesTestService(t, pool, "lfsp-child")
+
+	placements := []ServicePlacement{
+		{ServiceID: parent, Position: 0},
+		{ServiceID: child, ParentServiceID: &parent, Position: 1},
+	}
+	if err := pageRepo.SetServices(context.Background(), pageID, placements); err != nil {
+		t.Fatalf("setup SetServices() returned unexpected error: %v", err)
+	}
+
+	got, err := serviceRepo.ListForStatusPage(context.Background(), pageID)
+	if err != nil {
+		t.Fatalf("ListForStatusPage() returned unexpected error: %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("ListForStatusPage() len = %d, want 2", len(got))
+	}
+
+	byID := map[string]Service{got[0].ID: got[0], got[1].ID: got[1]}
+	gotParent, ok := byID[parent]
+	if !ok {
+		t.Fatalf("ListForStatusPage() result missing parent service %s", parent)
+	}
+	if gotParent.ParentServiceID != nil {
+		t.Errorf("parent.ParentServiceID = %v, want nil", *gotParent.ParentServiceID)
+	}
+	if gotParent.Position != 0 {
+		t.Errorf("parent.Position = %d, want 0", gotParent.Position)
+	}
+
+	gotChild, ok := byID[child]
+	if !ok {
+		t.Fatalf("ListForStatusPage() result missing child service %s", child)
+	}
+	if gotChild.ParentServiceID == nil || *gotChild.ParentServiceID != parent {
+		t.Errorf("child.ParentServiceID = %v, want %q", gotChild.ParentServiceID, parent)
+	}
+	if gotChild.Position != 1 {
+		t.Errorf("child.Position = %d, want 1", gotChild.Position)
+	}
+	if gotChild.GroupID != nil {
+		t.Errorf("child.GroupID = %v, want nil (no group assigned in this test)", *gotChild.GroupID)
+	}
+}
+
+// TestServiceRepository_ListForStatusPage_NoGroups_UnchangedResultNoRegression
+// is the pre-T8 regression check (tasks.md's Done-when): a page with no
+// groups at all still returns every linked service, in position order,
+// with every new field at its nil/zero value, and the pre-existing fields
+// (name, current status, status analysis) untouched by this task.
+func TestServiceRepository_ListForStatusPage_NoGroups_UnchangedResultNoRegression(t *testing.T) {
+	serviceRepo, pageRepo, pool := newListForStatusPageTestRepos(t)
+	pageID := createDomainlessStatusPage(t, pageRepo, pool, "lfsp-no-groups-page")
+	svcA := createSetServicesTestService(t, pool, "lfsp-nogroups-aaa")
+	svcB := createSetServicesTestService(t, pool, "lfsp-nogroups-bbb")
+
+	placements := []ServicePlacement{
+		{ServiceID: svcB, Position: 0},
+		{ServiceID: svcA, Position: 1},
+	}
+	if err := pageRepo.SetServices(context.Background(), pageID, placements); err != nil {
+		t.Fatalf("setup SetServices() returned unexpected error: %v", err)
+	}
+
+	got, err := serviceRepo.ListForStatusPage(context.Background(), pageID)
+	if err != nil {
+		t.Fatalf("ListForStatusPage() returned unexpected error: %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("ListForStatusPage() len = %d, want 2", len(got))
+	}
+	if got[0].ID != svcB || got[1].ID != svcA {
+		t.Fatalf("ListForStatusPage() order = [%s, %s], want position order [svcB, svcA], not alphabetical", got[0].Name, got[1].Name)
+	}
+	for i, service := range got {
+		if service.GroupID != nil {
+			t.Errorf("got[%d].GroupID = %v, want nil", i, *service.GroupID)
+		}
+		if service.GroupName != nil {
+			t.Errorf("got[%d].GroupName = %v, want nil", i, *service.GroupName)
+		}
+		if service.ParentServiceID != nil {
+			t.Errorf("got[%d].ParentServiceID = %v, want nil", i, *service.ParentServiceID)
+		}
+		if service.CurrentStatus == "" {
+			t.Errorf("got[%d].CurrentStatus = %q, want non-empty (pre-existing field untouched by this task)", i, service.CurrentStatus)
+		}
+	}
+}
