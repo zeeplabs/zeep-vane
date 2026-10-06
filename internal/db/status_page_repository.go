@@ -170,6 +170,101 @@ func (r *StatusPageRepository) SetServices(ctx context.Context, id string, servi
 	return nil
 }
 
+// ErrGroupCrossPage is returned by validateServicePlacements when a
+// placement's GroupID references a group that does not belong to the
+// status page being written to (SGD-11).
+var ErrGroupCrossPage = errors.New("db: group does not belong to this status page")
+
+// ErrParentNotInSet is returned by validateServicePlacements when a
+// placement's ParentServiceID does not match any ServiceID present in the
+// same placements slice.
+var ErrParentNotInSet = errors.New("db: parent service is not part of this status page's service set")
+
+// ErrSelfReference is returned by validateServicePlacements when a
+// placement's ParentServiceID equals its own ServiceID (SGD-12). Checked
+// ahead of the "parent not in set" rule: a self-reference technically also
+// fails "ParentServiceID must match some OTHER placement's ServiceID", but
+// spec.md's P2-AC6 calls for a distinct, more specific error for this case
+// rather than the generic "not in set" one, so it gets its own dedicated
+// check instead of falling through to ErrParentNotInSet.
+var ErrSelfReference = errors.New("db: service cannot be its own parent")
+
+// ErrMaxDepthExceeded is returned by validateServicePlacements when a
+// placement that is itself used as another placement's parent also has a
+// non-nil ParentServiceID of its own - i.e. it would be both a parent and
+// a child at once. Nesting is capped at depth 2 (parent -> child, never
+// parent -> child -> grandchild), per spec.md's explicit Out-of-Scope item
+// and P2-AC2.
+var ErrMaxDepthExceeded = errors.New("db: nesting depth is capped at parent and child, no grandchildren")
+
+// ServicePlacement describes where a single service sits within a status
+// page's service list: which group (if any) it belongs to, which service
+// (if any) is its parent, and its display position. It is the input to
+// validateServicePlacements and (T4) SetServices.
+type ServicePlacement struct {
+	ServiceID       string
+	GroupID         *string
+	ParentServiceID *string
+	Position        int
+}
+
+// validateServicePlacements enforces the placement rules for a status
+// page's full set of service placements (SGD-08, SGD-10, SGD-11, SGD-12):
+//
+//  1. every non-nil GroupID must reference a group that belongs to this
+//     status page (validGroupIDs), else ErrGroupCrossPage;
+//  2. every non-nil ParentServiceID must equal some OTHER placement's
+//     ServiceID in the same slice, else ErrParentNotInSet - except a
+//     self-reference (rule 3) is checked first and wins over this one;
+//  3. ParentServiceID must never equal that same placement's own
+//     ServiceID, else ErrSelfReference;
+//  4. no placement that is itself used as another placement's
+//     ParentServiceID (i.e. it is somebody's parent) may also carry a
+//     non-nil ParentServiceID of its own (i.e. be somebody else's child),
+//     else ErrMaxDepthExceeded - this caps nesting at depth 2.
+//
+// Rules are checked in that order per placement, so the error returned for
+// a placement that violates more than one rule is deterministic. This is a
+// pure function with no DB access - callers (T4's SetServices) are
+// responsible for loading validGroupIDs first.
+func validateServicePlacements(placements []ServicePlacement, validGroupIDs map[string]bool) error {
+	parentOf := make(map[string]bool, len(placements)) // ServiceID -> is some other placement's parent
+	for _, p := range placements {
+		if p.ParentServiceID != nil {
+			parentOf[*p.ParentServiceID] = true
+		}
+	}
+
+	for _, p := range placements {
+		if p.GroupID != nil && !validGroupIDs[*p.GroupID] {
+			return ErrGroupCrossPage
+		}
+
+		if p.ParentServiceID != nil {
+			if *p.ParentServiceID == p.ServiceID {
+				return ErrSelfReference
+			}
+
+			found := false
+			for _, other := range placements {
+				if other.ServiceID == *p.ParentServiceID {
+					found = true
+					break
+				}
+			}
+			if !found {
+				return ErrParentNotInSet
+			}
+		}
+
+		if parentOf[p.ServiceID] && p.ParentServiceID != nil {
+			return ErrMaxDepthExceeded
+		}
+	}
+
+	return nil
+}
+
 // StatusPageServiceGroup is a named, ordered grouping of services shown
 // together on a status page (SGD-01, migration 0046). Position determines
 // display order among a status page's own groups.
