@@ -448,6 +448,28 @@ func (p *Poller) pollService(ctx context.Context, svc db.Service) error {
 
 	transitioned := current != svc.CurrentStatus
 
+	// Debug-level, every cycle regardless of transition: the only record of
+	// what classification inputs pollService actually saw. Without this, a
+	// disputed status (public page shows degraded/outage, Datadog's own
+	// monitors/SLO never fired) is unfalsifiable after the fact - the public
+	// status interval records the outcome, never the SLI/Target/RequestCount
+	// that produced it, and pod logs don't survive a redeploy. Logged before
+	// the writes below so it's captured even if OpenOrExtend/UpdateStatus
+	// fails.
+	p.logger.Debug("poller: classified service",
+		zap.String("service_id", svc.ID),
+		zap.String("slo_id", svc.SLOID),
+		zap.String("previous_status", svc.CurrentStatus),
+		zap.String("new_status", current),
+		zap.Bool("transitioned", transitioned),
+		zap.Float64("sli", status.SLI),
+		zap.Float64("target", status.Target),
+		zap.String("datadog_state", status.State),
+		zap.Int64("request_count", status.RequestCount),
+		zap.Float64("breach_bound", breachBound(status.Target, status.RequestCount, breachThresholdSigmas)),
+		zap.Int("breach_streak", p.breachStreak[svc.ID]),
+	)
+
 	intervalID, err := p.statusIntervals.OpenOrExtend(ctx, svc.ID, current, status.ErrorBudgetRemaining, time.Now())
 	if err != nil {
 		p.logger.Error("poller: failed to open or extend status interval",
