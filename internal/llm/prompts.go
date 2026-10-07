@@ -40,18 +40,40 @@ func causeSentence(in AnalysisInput) string {
 	return fmt.Sprintf(" Causa técnica identificada: %s - %s.", in.CauseType, in.CauseMessage)
 }
 
-// analysisSystemPrompt is shared by all three builders: it instructs a
+// analysisSystemPrompt is shared by buildOutageDescriptionPrompt and
+// buildClosingCommentPrompt (buildDegradedTooltipPrompt has its own,
+// slightly more technical degradedSystemPrompt below): it instructs a
 // short, factual, non-alarmist response in plain Portuguese aimed at a
-// non-technical reader, since every caller (a status page tooltip, an
-// incident description, a closing comment) is visitor-facing text read by
-// people outside engineering (HR, managers) - jargon or an alarmist/verbose
-// response would be actively worse than no analysis at all.
+// non-technical reader, since every caller (an incident description, a
+// closing comment) is visitor-facing text read by people outside
+// engineering (HR, managers) - jargon or an alarmist/verbose response would
+// be actively worse than no analysis at all.
 const analysisSystemPrompt = "Você está escrevendo uma atualização curta e factual para uma página pública de status, " +
 	"em português do Brasil, para um leitor sem conhecimento técnico (ex: RH, gestor). " +
 	"Responda em 1-2 frases, em tom calmo e não alarmista, evitando jargão técnico (não use termos como " +
 	"\"SLO\", \"SLI\", \"error budget\", \"latência\" ou nomes internos de serviço) - descreva o impacto prático " +
 	"para quem está usando o produto. Não especule sobre causas que você não pode confirmar a partir dos dados " +
 	"fornecidos, e não use pontos de exclamação ou linguagem dramática."
+
+// degradedSystemPrompt is buildDegradedTooltipPrompt's own system prompt,
+// slightly more technical than analysisSystemPrompt (2026-10-07 feedback:
+// the fully jargon-free version read as too vague to be useful - "algo está
+// lento" with no detail at all). It still targets a non-technical reader
+// and still bans the internal SLO/SLI/error-budget vocabulary (meaningless
+// outside engineering), but now allows a plain-language technical term
+// (response time, error rate, intermittent slowness) when it helps describe
+// what's actually happening, as long as the model explains its practical
+// effect right after using it - a reader should come away understanding
+// *what kind* of problem this is, not just that "something" is degraded.
+// Only the degraded-tooltip prompt changed; outage descriptions and closing
+// comments keep analysisSystemPrompt's plainer tone unchanged.
+const degradedSystemPrompt = "Você está escrevendo uma atualização curta para uma página pública de status, " +
+	"em português do Brasil, para um leitor sem conhecimento técnico (ex: RH, gestor). " +
+	"Responda em 1-2 frases, em tom calmo e factual, não alarmista. Pode usar um termo técnico simples quando " +
+	"ajudar a explicar o que está acontecendo (ex: \"tempo de resposta\", \"taxa de erro\", \"lentidão intermitente\"), " +
+	"mas sempre explique o efeito prático logo em seguida - nunca use as siglas internas \"SLO\", \"SLI\" ou " +
+	"\"error budget\", nem nomes internos de serviço. Não especule sobre causas que você não pode confirmar a " +
+	"partir dos dados fornecidos, e não use pontos de exclamação ou linguagem dramática."
 
 // buildDegradedTooltipPrompt builds the prompt for the short tooltip shown
 // when a service's SLO is degraded (approaching its error budget limit but
@@ -63,7 +85,7 @@ func buildDegradedTooltipPrompt(in AnalysisInput) (systemPrompt, userPrompt stri
 			"Escreva um tooltip curto explicando o estado degradado para quem visita a página de status.",
 		in.ServiceName, in.SLOState, in.SLI, in.Target, in.Timeframe, in.ErrorBudgetRemaining, causeSentence(in),
 	)
-	return analysisSystemPrompt, userPrompt
+	return degradedSystemPrompt, userPrompt
 }
 
 // buildOutageDescriptionPrompt builds the prompt for an incident's
