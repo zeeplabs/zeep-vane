@@ -17,16 +17,29 @@ import {
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { MdAdd, MdCheck, MdDragIndicator } from "react-icons/md";
+import {
+  MdAdd,
+  MdCheck,
+  MdClose,
+  MdDragIndicator,
+  MdOutlineDeleteOutline,
+  MdOutlineEdit,
+  MdOutlineKeyboardArrowDown,
+  MdOutlineKeyboardArrowUp,
+} from "react-icons/md";
 import { Button } from "../../components/ui/Button";
+import { Dialog } from "../../components/ui/Dialog";
 import { Field } from "../../components/ui/Field";
+import { Input } from "../../components/ui/Input";
 import { ApiError } from "../../lib/apiClient";
-import type { Service } from "../../types/api";
+import type { Service, StatusPageServiceGroup } from "../../types/api";
 import {
   useCreateGroup,
+  useDeleteGroup,
   useSetStatusPageServices,
   useStatusPageGroups,
   useStatusPageServicePlacements,
+  useUpdateGroup,
   type ServicePlacement,
 } from "./hooks";
 
@@ -68,6 +81,65 @@ export function buildInitialPlacements(
       }));
   }
   return linkedServiceIds.map((serviceId) => ({ serviceId, groupId: null, parentServiceId: null }));
+}
+
+// reconcilePlacements treats linkedServiceIds (the "Available"/"Linked"
+// checklist's current selection) as the authoritative current membership
+// set, reconciling it against a working tree that may have come from
+// buildInitialPlacements' server-placements branch - which, on its own,
+// ignores linkedServiceIds whenever placements already exist (M2 bug).
+// Without this, a service just checked in "Available" never shows up here
+// (the panel only reads placements, which don't know about it yet), and a
+// service just unchecked stays in `nodes` - just not rendered - so Save
+// would silently re-link it. Applied on every linkedServiceIds change (see
+// the effect below) and again by StatusPageEditorContent's own "Save
+// services" path (M1), so both save paths agree on the same authoritative
+// tree instead of one silently overwriting the other's work.
+export function reconcilePlacements(nodes: PlacementNode[], linkedServiceIds: string[]): PlacementNode[] {
+  const linkedSet = new Set(linkedServiceIds);
+  const kept = nodes
+    .filter((n) => linkedSet.has(n.serviceId))
+    .map((n) =>
+      n.parentServiceId !== null && !linkedSet.has(n.parentServiceId) ? { ...n, parentServiceId: null } : n
+    );
+  const keptIds = new Set(kept.map((n) => n.serviceId));
+  const added: PlacementNode[] = linkedServiceIds
+    .filter((id) => !keptIds.has(id))
+    .map((serviceId) => ({ serviceId, groupId: null, parentServiceId: null }));
+  return [...kept, ...added];
+}
+
+export interface GroupPositionUpdate {
+  groupId: string;
+  position: number;
+}
+
+// reorderGroup computes the position swap needed to move one group a single
+// slot earlier/later (M3's group-reorder control) - a pure function so it's
+// unit-testable the same way moveNode is, without simulating a pointer
+// drag. Implemented as up/down controls rather than folding group headers
+// into the existing DndContext: that context's ids already disambiguate a
+// service drag (plain service id), a container drop (group id /
+// UNGROUPED), and a nest-zone drop (`nest:<id>`) - adding a fourth,
+// group-header-drag id risked colliding with GroupSection's own `id`
+// (already used as its useDroppable id) for no real gain over two buttons.
+// Returns [] at either boundary (no-op).
+export function reorderGroup(
+  groups: StatusPageServiceGroup[],
+  groupId: string,
+  direction: "up" | "down"
+): GroupPositionUpdate[] {
+  const sorted = [...groups].sort((a, b) => a.position - b.position);
+  const index = sorted.findIndex((g) => g.id === groupId);
+  if (index === -1) return [];
+  const swapWith = direction === "up" ? index - 1 : index + 1;
+  if (swapWith < 0 || swapWith >= sorted.length) return [];
+  const a = sorted[index];
+  const b = sorted[swapWith];
+  return [
+    { groupId: a.id, position: b.position },
+    { groupId: b.id, position: a.position },
+  ];
 }
 
 // toServicePlacements flattens the working tree back into the
@@ -118,11 +190,29 @@ export function moveNode(
   const active = nodes.find((n) => n.serviceId === activeId);
   if (!active) return nodes;
 
+  // withChildrenGroup keeps a moved parent's children attached to it after
+  // a group move (M4): the public page's nestServices only nests within
+  // the same group section, so leaving a dragged parent's children on
+  // their old group_id would render them in the wrong place (still
+  // "under" the parent conceptually via parent_service_id, but visually
+  // detached) once saved. The dependency relationship itself (parentServiceId)
+  // is untouched - only which group the whole parent+children cluster
+  // belongs to changes.
+  function withChildrenGroup(list: PlacementNode[], parentId: string, groupId: string | null): PlacementNode[] {
+    return list.map((n) => (n.parentServiceId === parentId ? { ...n, groupId } : n));
+  }
+
   if (overId.startsWith("nest:")) {
     const targetId = overId.slice("nest:".length);
     if (targetId === activeId) return nodes;
     const target = nodes.find((n) => n.serviceId === targetId);
     if (!target || target.parentServiceId !== null) return nodes;
+    // M4 (low-severity cleanup): refuse nesting a parent-with-children as
+    // someone else's child client-side - the backend would reject this
+    // anyway (ErrMaxDepthExceeded, depth cap SGD-12), this just avoids a
+    // guaranteed 422 round trip.
+    const activeHasChildren = nodes.some((n) => n.parentServiceId === activeId);
+    if (activeHasChildren) return nodes;
     return nodes.map((n) =>
       n.serviceId === activeId ? { ...n, groupId: target.groupId, parentServiceId: targetId } : n
     );
@@ -131,13 +221,18 @@ export function moveNode(
   if (overId === UNGROUPED || groupIds.includes(overId)) {
     const normalizedGroupId = overId === UNGROUPED ? null : overId;
     const moved: PlacementNode = { ...active, groupId: normalizedGroupId, parentServiceId: null };
-    return [...nodes.filter((n) => n.serviceId !== activeId), moved];
+    const rest = withChildrenGroup(nodes.filter((n) => n.serviceId !== activeId), activeId, normalizedGroupId);
+    return [...rest, moved];
   }
 
   const overNode = nodes.find((n) => n.serviceId === overId);
   if (!overNode) return nodes;
   const moved: PlacementNode = { ...active, groupId: overNode.groupId, parentServiceId: null };
-  const withoutActive = nodes.filter((n) => n.serviceId !== activeId);
+  const withoutActive = withChildrenGroup(
+    nodes.filter((n) => n.serviceId !== activeId),
+    activeId,
+    overNode.groupId
+  );
   const insertAt = withoutActive.findIndex((n) => n.serviceId === overId);
   withoutActive.splice(insertAt === -1 ? withoutActive.length : insertAt, 0, moved);
   return withoutActive;
@@ -169,6 +264,8 @@ export function ServiceGroupPanel({ statusPageId, services, canManage, onToggle 
   const { data: groups } = useStatusPageGroups(statusPageId);
   const { data: placements } = useStatusPageServicePlacements(statusPageId);
   const createGroup = useCreateGroup();
+  const updateGroup = useUpdateGroup();
+  const deleteGroup = useDeleteGroup();
   const setServices = useSetStatusPageServices();
 
   const linkedServiceIds = useMemo(() => services.map((s) => s.id), [services]);
@@ -181,12 +278,23 @@ export function ServiceGroupPanel({ statusPageId, services, canManage, onToggle 
   // an equality check.
   const linkedKey = linkedServiceIds.join(",");
 
-  const [nodes, setNodes] = useState<PlacementNode[]>(() => buildInitialPlacements(linkedServiceIds, placements));
+  const [nodes, setNodes] = useState<PlacementNode[]>(() =>
+    reconcilePlacements(buildInitialPlacements(linkedServiceIds, placements), linkedServiceIds)
+  );
   const [newGroupName, setNewGroupName] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [renamingGroupId, setRenamingGroupId] = useState<string | null>(null);
+  const [groupNameDraft, setGroupNameDraft] = useState("");
+  const [confirmingDeleteGroupId, setConfirmingDeleteGroupId] = useState<string | null>(null);
 
   useEffect(() => {
-    setNodes(buildInitialPlacements(linkedServiceIds, placements));
+    // M2: reconcilePlacements makes linkedServiceIds (this render's
+    // "Linked" selection) authoritative over whatever buildInitialPlacements
+    // read from the server - without it, a service just checked in
+    // "Available" never appears here (placements don't know about it yet),
+    // and a service just unchecked lingers in `nodes` (just not rendered),
+    // so Save would silently re-link it.
+    setNodes(reconcilePlacements(buildInitialPlacements(linkedServiceIds, placements), linkedServiceIds));
     // linkedServiceIds is intentionally represented by linkedKey here - see
     // comment above.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -228,6 +336,63 @@ export function ServiceGroupPanel({ statusPageId, services, canManage, onToggle 
     }
   }
 
+  function startRenameGroup(group: StatusPageServiceGroup) {
+    setRenamingGroupId(group.id);
+    setGroupNameDraft(group.name);
+    setError(null);
+  }
+
+  async function saveRenameGroup(group: StatusPageServiceGroup) {
+    const trimmed = groupNameDraft.trim();
+    if (!trimmed) {
+      setError(t("statusPages.editor.groups.nameRequired"));
+      return;
+    }
+    setError(null);
+    try {
+      await updateGroup.mutateAsync({ statusPageId, groupId: group.id, name: trimmed, position: group.position });
+      setRenamingGroupId(null);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : t("statusPages.editor.groups.renameError"));
+    }
+  }
+
+  async function confirmDeleteGroup() {
+    if (!confirmingDeleteGroupId) return;
+    setError(null);
+    try {
+      await deleteGroup.mutateAsync({ statusPageId, groupId: confirmingDeleteGroupId });
+      setConfirmingDeleteGroupId(null);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : t("statusPages.editor.groups.deleteError"));
+    }
+  }
+
+  // handleMoveGroup is M3's drag-to-reorder alternative (see reorderGroup's
+  // comment for why) - swaps the target group's position with its
+  // immediate neighbor and persists both via useUpdateGroup.
+  async function handleMoveGroup(groupId: string, direction: "up" | "down") {
+    const updates = reorderGroup(groupList, groupId, direction);
+    if (updates.length === 0) return;
+    setError(null);
+    try {
+      await Promise.all(
+        updates.map((update) => {
+          const target = groupList.find((g) => g.id === update.groupId);
+          if (!target) return Promise.resolve();
+          return updateGroup.mutateAsync({
+            statusPageId,
+            groupId: update.groupId,
+            name: target.name,
+            position: update.position,
+          });
+        })
+      );
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : t("statusPages.editor.groups.reorderError"));
+    }
+  }
+
   function topLevelOf(groupId: string | null): PlacementNode[] {
     return nodes.filter((n) => n.groupId === groupId && n.parentServiceId === null);
   }
@@ -249,7 +414,7 @@ export function ServiceGroupPanel({ statusPageId, services, canManage, onToggle 
           canManage={canManage}
           onToggle={onToggle}
         />
-        {groupList.map((g) => (
+        {groupList.map((g, index) => (
           <GroupSection
             key={g.id}
             id={g.id}
@@ -259,6 +424,19 @@ export function ServiceGroupPanel({ statusPageId, services, canManage, onToggle 
             childrenOf={childrenOf}
             canManage={canManage}
             onToggle={onToggle}
+            group={g}
+            isRenaming={renamingGroupId === g.id}
+            nameDraft={groupNameDraft}
+            onNameDraftChange={setGroupNameDraft}
+            onStartRename={() => startRenameGroup(g)}
+            onCancelRename={() => setRenamingGroupId(null)}
+            onSaveRename={() => void saveRenameGroup(g)}
+            onDelete={() => setConfirmingDeleteGroupId(g.id)}
+            onMoveUp={() => void handleMoveGroup(g.id, "up")}
+            onMoveDown={() => void handleMoveGroup(g.id, "down")}
+            canMoveUp={index > 0}
+            canMoveDown={index < groupList.length - 1}
+            renamePending={updateGroup.isPending}
           />
         ))}
       </DndContext>
@@ -297,6 +475,34 @@ export function ServiceGroupPanel({ statusPageId, services, canManage, onToggle 
           ) : null}
         </div>
       ) : null}
+
+      {canManage ? (
+        <Dialog
+          open={confirmingDeleteGroupId !== null}
+          onOpenChange={(open) => {
+            if (!open) setConfirmingDeleteGroupId(null);
+          }}
+          title={t("statusPages.editor.groups.deleteConfirmTitle")}
+          description={t("statusPages.editor.groups.deleteConfirmDescription", {
+            name: groupList.find((g) => g.id === confirmingDeleteGroupId)?.name ?? "",
+          })}
+          footer={
+            <>
+              <Button variant="secondary" onClick={() => setConfirmingDeleteGroupId(null)}>
+                {t("statusPages.editor.groups.deleteCancel")}
+              </Button>
+              <Button
+                variant="primary"
+                onClick={() => void confirmDeleteGroup()}
+                disabled={deleteGroup.isPending}
+                style={{ backgroundColor: "var(--color-critical)" }}
+              >
+                {t("statusPages.editor.groups.deleteConfirmButton")}
+              </Button>
+            </>
+          }
+        />
+      ) : null}
     </div>
   );
 }
@@ -309,26 +515,139 @@ interface GroupSectionProps {
   childrenOf: (serviceId: string) => PlacementNode[];
   canManage: boolean;
   onToggle: (serviceId: string) => void;
+  /** Present only for a real group section (never UNGROUPED) - enables the
+   * rename/delete/reorder header controls (M3). */
+  group?: StatusPageServiceGroup;
+  isRenaming?: boolean;
+  nameDraft?: string;
+  onNameDraftChange?: (value: string) => void;
+  onStartRename?: () => void;
+  onCancelRename?: () => void;
+  onSaveRename?: () => void;
+  onDelete?: () => void;
+  onMoveUp?: () => void;
+  onMoveDown?: () => void;
+  canMoveUp?: boolean;
+  canMoveDown?: boolean;
+  renamePending?: boolean;
 }
 
 // GroupSection is one drop target for "assign this service to this group"
 // (the whole section, not any particular row within it) - visually
 // distinct from a ServiceNode's own nest zone below, per the Design doc's
 // requirement that the two drop kinds be told apart.
-function GroupSection({ id, label, topLevel, servicesById, childrenOf, canManage, onToggle }: GroupSectionProps) {
+function GroupSection({
+  id,
+  label,
+  topLevel,
+  servicesById,
+  childrenOf,
+  canManage,
+  onToggle,
+  group,
+  isRenaming,
+  nameDraft,
+  onNameDraftChange,
+  onStartRename,
+  onCancelRename,
+  onSaveRename,
+  onDelete,
+  onMoveUp,
+  onMoveDown,
+  canMoveUp,
+  canMoveDown,
+  renamePending,
+}: GroupSectionProps) {
   const { t } = useTranslation();
   const { setNodeRef, isOver } = useDroppable({ id });
 
   return (
     <div className="flex flex-col gap-1">
-      <span className="text-[10.5px] font-bold uppercase tracking-wide text-text-muted">{label}</span>
+      {group && isRenaming ? (
+        <div className="flex items-center gap-1.5">
+          <Input
+            autoFocus
+            value={nameDraft}
+            onChange={(e) => onNameDraftChange?.(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") onSaveRename?.();
+              if (e.key === "Escape") onCancelRename?.();
+            }}
+            aria-label={t("statusPages.editor.groups.newGroupPlaceholder")}
+            className="h-7 text-[12.5px] font-bold"
+            disabled={renamePending}
+          />
+          <button
+            type="button"
+            onClick={onSaveRename}
+            disabled={renamePending}
+            aria-label={t("statusPages.editor.groups.renameSave")}
+            className="cursor-pointer text-success hover:opacity-80 disabled:opacity-50"
+          >
+            <MdCheck size={15} aria-hidden="true" />
+          </button>
+          <button
+            type="button"
+            onClick={onCancelRename}
+            aria-label={t("statusPages.editor.groups.renameCancel")}
+            className="cursor-pointer text-text-muted hover:text-text"
+          >
+            <MdClose size={15} aria-hidden="true" />
+          </button>
+        </div>
+      ) : (
+        <div className="flex items-center gap-1">
+          <span className="text-[10.5px] font-bold uppercase tracking-wide text-text-muted">{label}</span>
+          {group && canManage ? (
+            <div className="flex items-center gap-0.5">
+              <button
+                type="button"
+                onClick={onMoveUp}
+                disabled={!canMoveUp}
+                aria-label={t("statusPages.editor.groups.moveUp", { name: group.name })}
+                className="cursor-pointer text-text-muted hover:text-text disabled:cursor-not-allowed disabled:opacity-30"
+              >
+                <MdOutlineKeyboardArrowUp size={14} aria-hidden="true" />
+              </button>
+              <button
+                type="button"
+                onClick={onMoveDown}
+                disabled={!canMoveDown}
+                aria-label={t("statusPages.editor.groups.moveDown", { name: group.name })}
+                className="cursor-pointer text-text-muted hover:text-text disabled:cursor-not-allowed disabled:opacity-30"
+              >
+                <MdOutlineKeyboardArrowDown size={14} aria-hidden="true" />
+              </button>
+              <button
+                type="button"
+                onClick={onStartRename}
+                aria-label={t("statusPages.editor.groups.renameAction", { name: group.name })}
+                className="cursor-pointer text-text-muted hover:text-text"
+              >
+                <MdOutlineEdit size={13} aria-hidden="true" />
+              </button>
+              <button
+                type="button"
+                onClick={onDelete}
+                aria-label={t("statusPages.editor.groups.deleteAction", { name: group.name })}
+                className="cursor-pointer text-text-muted hover:text-critical"
+              >
+                <MdOutlineDeleteOutline size={13} aria-hidden="true" />
+              </button>
+            </div>
+          ) : null}
+        </div>
+      )}
       <div
         ref={setNodeRef}
         className={`flex flex-col gap-0.5 rounded-md border p-1.5 transition-colors ${
           isOver ? "border-accent bg-accent-900/20" : "border-divider"
         }`}
       >
-        <SortableContext items={topLevel.map((n) => n.serviceId)} strategy={verticalListSortingStrategy}>
+        <SortableContext
+          items={topLevel.flatMap((n) => [n.serviceId, ...childrenOf(n.serviceId).map((c) => c.serviceId)])}
+          strategy={verticalListSortingStrategy}
+        >
           {topLevel.length === 0 ? (
             <p className="px-2 py-1.5 text-[12.5px] text-text-muted">{t("statusPages.editor.groups.emptyGroup")}</p>
           ) : (
@@ -398,9 +717,7 @@ function ServiceNode({ service, childServices, canManage, onToggle }: ServiceNod
       </div>
 
       {childServices.map((child) => (
-        <div key={child.id} className="ml-7 flex items-center gap-1.5 border-l border-divider pl-2">
-          <ServiceToggleRow name={child.name} disabled={!canManage} onToggle={() => onToggle(child.id)} />
-        </div>
+        <ChildServiceNode key={child.id} service={child} canManage={canManage} onToggle={onToggle} />
       ))}
 
       {canManage ? (
@@ -411,6 +728,46 @@ function ServiceNode({ service, childServices, canManage, onToggle }: ServiceNod
           className={`ml-7 h-2 rounded transition-colors ${isNestOver ? "bg-accent/40" : ""}`}
         />
       ) : null}
+    </div>
+  );
+}
+
+interface ChildServiceNodeProps {
+  service: Service;
+  canManage: boolean;
+  onToggle: (serviceId: string) => void;
+}
+
+// ChildServiceNode is a nested dependent service's row - draggable (M3),
+// same sortable mechanics as a top-level ServiceNode's own handle, so a
+// child can be dropped back onto a group container (un-nesting it -
+// moveNode's container-drop branch clears parentServiceId) or onto another
+// service's nest zone (re-parenting), instead of the previous
+// unlink-then-relink-only workaround.
+function ChildServiceNode({ service, canManage, onToggle }: ChildServiceNodeProps) {
+  const { t } = useTranslation();
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: service.id });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+  };
+
+  return (
+    <div ref={setNodeRef} style={style} className="ml-7 flex items-center gap-1 border-l border-divider pl-2">
+      {canManage ? (
+        <button
+          type="button"
+          {...attributes}
+          {...listeners}
+          aria-label={t("statusPages.editor.groups.dragHandle", { name: service.name })}
+          className="flex h-6 w-6 flex-none cursor-grab items-center justify-center text-text-muted active:cursor-grabbing"
+        >
+          <MdDragIndicator size={16} aria-hidden="true" />
+        </button>
+      ) : null}
+      <ServiceToggleRow name={service.name} disabled={!canManage} onToggle={() => onToggle(service.id)} />
     </div>
   );
 }

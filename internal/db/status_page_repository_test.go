@@ -454,6 +454,21 @@ func newAttachDomainTestRepo(t *testing.T) (*StatusPageRepository, *Pool) {
 	return NewStatusPageRepository(pool), pool
 }
 
+// testTenantID reads back the app.tenant_id GUC newTenantScopedPool pinned
+// on every connection in pool (via dbtest.TenantScopedDSN's "-c
+// app.tenant_id=..." connection option) - used by UpdateGroup/DeleteGroup
+// call sites that now require an explicit tenantID argument, without
+// threading a third return value through newAttachDomainTestRepo's ~40
+// existing call sites.
+func testTenantID(t *testing.T, pool *Pool) string {
+	t.Helper()
+	var tenantID string
+	if err := pool.QueryRow(context.Background(), "SELECT current_setting('app.tenant_id', true)").Scan(&tenantID); err != nil {
+		t.Fatalf("reading app.tenant_id returned unexpected error: %v", err)
+	}
+	return tenantID
+}
+
 // TestAttachDomain_DomainlessPage_SucceedsAndMovesToPendingTLS asserts
 // SPD-06: attaching a domain to a domain-less page sets both fields and
 // moves state to "pending_tls". This used to assert state stayed "draft"
@@ -993,6 +1008,64 @@ func TestStatusPageRepository_SetServices_ValidationErrors_DBUntouched(t *testin
 	}
 }
 
+// TestStatusPageRepository_SetServices_RemovingParentFromPage_ChildBecomesParentless
+// covers SGD-13 (P2-AC7, spec.md's own Independent Test: "Remove A from the
+// page, verify B renders parentless"): a parent linked to the page by one
+// SetServices() call, then omitted from a second SetServices() call on the
+// same page whose placements still include its former child, must not
+// reject the second call with ErrParentNotInSet - the child's
+// parent_service_id is instead cleared (SGD-13), same as if the parent
+// service row had been deleted outright (migration 0046's ON DELETE SET
+// NULL, exercised by the sibling DeleteParentService test above).
+func TestStatusPageRepository_SetServices_RemovingParentFromPage_ChildBecomesParentless(t *testing.T) {
+	repo, pool := newAttachDomainTestRepo(t)
+	pageID := createDomainlessStatusPage(t, repo, pool, "set-services-sgd13-page")
+	parent := createSetServicesTestService(t, pool, "set-services-sgd13-parent")
+	child := createSetServicesTestService(t, pool, "set-services-sgd13-child")
+
+	if err := repo.SetServices(context.Background(), pageID, []ServicePlacement{
+		{ServiceID: parent},
+		{ServiceID: child, ParentServiceID: &parent},
+	}); err != nil {
+		t.Fatalf("setup SetServices() returned unexpected error: %v", err)
+	}
+
+	// Second call removes the parent from the page's placement set
+	// entirely, while the child - still referencing it - stays.
+	if err := repo.SetServices(context.Background(), pageID, []ServicePlacement{
+		{ServiceID: child, ParentServiceID: &parent},
+	}); err != nil {
+		t.Fatalf("SetServices() removing the parent returned unexpected error: %v, want nil (SGD-13, child should become parentless)", err)
+	}
+
+	_, gotParentID, _, found := readServiceLink(t, pool, pageID, child)
+	if !found {
+		t.Fatalf("child service link not found after removing its parent from the page")
+	}
+	if gotParentID != nil {
+		t.Errorf("child link parent_service_id after removing parent from page = %v, want nil (SGD-13)", *gotParentID)
+	}
+}
+
+// TestStatusPageRepository_SetServices_ParentNeverOnPage_StillRejected
+// guards the SGD-13 fix above against over-relaxing SGD-11: a
+// ParentServiceID that was never linked to this status page at all (not
+// just-removed by this call) must still be rejected with
+// ErrParentNotInSet, same as before the SGD-13 fix.
+func TestStatusPageRepository_SetServices_ParentNeverOnPage_StillRejected(t *testing.T) {
+	repo, pool := newAttachDomainTestRepo(t)
+	pageID := createDomainlessStatusPage(t, repo, pool, "set-services-sgd11-page")
+	neverOnPage := createSetServicesTestService(t, pool, "set-services-sgd11-never-on-page")
+	child := createSetServicesTestService(t, pool, "set-services-sgd11-child")
+
+	err := repo.SetServices(context.Background(), pageID, []ServicePlacement{
+		{ServiceID: child, ParentServiceID: &neverOnPage},
+	})
+	if !errors.Is(err, ErrParentNotInSet) {
+		t.Fatalf("SetServices() error = %v, want ErrParentNotInSet (parent never linked to this page)", err)
+	}
+}
+
 // TestStatusPageRepository_SetServices_DeleteGroup_SetsGroupIDNull asserts
 // the group_id FK's ON DELETE SET NULL (migration 0046) is exercised by a
 // real DeleteGroup() after SetServices() has linked a service to that
@@ -1010,7 +1083,7 @@ func TestStatusPageRepository_SetServices_DeleteGroup_SetsGroupIDNull(t *testing
 		t.Fatalf("SetServices() returned unexpected error: %v", err)
 	}
 
-	if err := repo.DeleteGroup(context.Background(), group.ID); err != nil {
+	if err := repo.DeleteGroup(context.Background(), testTenantID(t, pool), pageID, group.ID); err != nil {
 		t.Fatalf("DeleteGroup() returned unexpected error: %v", err)
 	}
 
@@ -1029,13 +1102,14 @@ func TestStatusPageRepository_SetServices_DeleteGroup_SetsGroupIDNull(t *testing
 // SetServices() has linked a child to it as parent - the child's link
 // survives, with parent_service_id now NULL.
 //
-// validateServicePlacements requires the parent to appear as its own
-// placement in the same SetServices() call (ErrParentNotInSet otherwise),
-// which links it to the page via status_page_services.service_id too -
-// a separate FK (status_page_services_service_id_fkey) with no ON DELETE
-// SET NULL of its own, unrelated to T4's new columns. That row is removed
-// directly first so the real DELETE FROM services below exercises only
-// the parent_service_id FK this test targets, not that other one.
+// validateAndSanitizeServicePlacements requires the parent to appear as its
+// own placement in the same SetServices() call, or to have at least been
+// linked to the page before this call (SGD-13, ErrParentNotInSet
+// otherwise), which links it to the page via status_page_services.service_id
+// too - a separate FK (status_page_services_service_id_fkey) with no ON
+// DELETE SET NULL of its own, unrelated to T4's new columns. That row is
+// removed directly first so the real DELETE FROM services below exercises
+// only the parent_service_id FK this test targets, not that other one.
 func TestStatusPageRepository_SetServices_DeleteParentService_SetsParentIDNull(t *testing.T) {
 	repo, pool := newAttachDomainTestRepo(t)
 	pageID := createDomainlessStatusPage(t, repo, pool, "set-services-fk-parent-page")
@@ -1324,8 +1398,8 @@ func TestStatusPageRepository_ListPaginated_PopulatesServiceIDs(t *testing.T) {
 }
 
 // TestStatusPageRepository_CreateGroup_AppendsAtEndPosition asserts
-// CreateGroup sets Position to the current count of groups already on the
-// page, so repeated calls append in order rather than colliding at 0.
+// CreateGroup sets Position to one past the highest position already used
+// on the page, so repeated calls append in order rather than colliding at 0.
 func TestStatusPageRepository_CreateGroup_AppendsAtEndPosition(t *testing.T) {
 	repo, pool := newAttachDomainTestRepo(t)
 	pageID := createDomainlessStatusPage(t, repo, pool, "create-group-page")
@@ -1356,6 +1430,50 @@ func TestStatusPageRepository_CreateGroup_AppendsAtEndPosition(t *testing.T) {
 	}
 }
 
+// TestStatusPageRepository_CreateGroup_AfterDeletingMiddleGroup_NoDuplicatePosition
+// is the regression test for the COUNT(*) bug this fix replaces: create
+// G0/G1/G2 (positions 0/1/2), delete G0 (positions 1/2 remain), then create
+// G3 - COUNT(*) would return 2 (only 2 rows exist), colliding with G2's own
+// position 2 and leaving their display order ambiguous. The
+// COALESCE(MAX(position), -1)+1 fix must give G3 position 3 instead,
+// regardless of how many rows currently exist.
+func TestStatusPageRepository_CreateGroup_AfterDeletingMiddleGroup_NoDuplicatePosition(t *testing.T) {
+	repo, pool := newAttachDomainTestRepo(t)
+	pageID := createDomainlessStatusPage(t, repo, pool, "create-group-after-delete-page")
+	tenantID := testTenantID(t, pool)
+
+	g0, err := repo.CreateGroup(context.Background(), pageID, "G0")
+	if err != nil {
+		t.Fatalf("CreateGroup() G0 returned unexpected error: %v", err)
+	}
+	g1, err := repo.CreateGroup(context.Background(), pageID, "G1")
+	if err != nil {
+		t.Fatalf("CreateGroup() G1 returned unexpected error: %v", err)
+	}
+	g2, err := repo.CreateGroup(context.Background(), pageID, "G2")
+	if err != nil {
+		t.Fatalf("CreateGroup() G2 returned unexpected error: %v", err)
+	}
+	if g1.Position != 1 || g2.Position != 2 {
+		t.Fatalf("setup positions = G1:%d G2:%d, want G1:1 G2:2", g1.Position, g2.Position)
+	}
+
+	if err := repo.DeleteGroup(context.Background(), tenantID, pageID, g0.ID); err != nil {
+		t.Fatalf("DeleteGroup() G0 returned unexpected error: %v", err)
+	}
+
+	g3, err := repo.CreateGroup(context.Background(), pageID, "G3")
+	if err != nil {
+		t.Fatalf("CreateGroup() G3 returned unexpected error: %v", err)
+	}
+	if g3.Position != 3 {
+		t.Errorf("G3 Position = %d, want 3 (one past G2's position, not COUNT(*)'s 2 which would collide with G2)", g3.Position)
+	}
+	if g3.Position == g2.Position {
+		t.Errorf("G3 Position = %d collides with G2 Position = %d", g3.Position, g2.Position)
+	}
+}
+
 // TestStatusPageRepository_UpdateGroup_RenamesAndRepositions asserts
 // UpdateGroup can change both Name and Position on an existing group.
 func TestStatusPageRepository_UpdateGroup_RenamesAndRepositions(t *testing.T) {
@@ -1367,7 +1485,7 @@ func TestStatusPageRepository_UpdateGroup_RenamesAndRepositions(t *testing.T) {
 		t.Fatalf("setup CreateGroup() returned unexpected error: %v", err)
 	}
 
-	updated, err := repo.UpdateGroup(context.Background(), group.ID, "Renamed", 5)
+	updated, err := repo.UpdateGroup(context.Background(), testTenantID(t, pool), pageID, group.ID, "Renamed", 5)
 	if err != nil {
 		t.Fatalf("UpdateGroup() returned unexpected error: %v", err)
 	}
@@ -1386,11 +1504,42 @@ func TestStatusPageRepository_UpdateGroup_RenamesAndRepositions(t *testing.T) {
 // UpdateGroup distinguishes "group doesn't exist" rather than silently
 // succeeding on a no-op UPDATE.
 func TestStatusPageRepository_UpdateGroup_NonexistentID_ErrNotFound(t *testing.T) {
-	repo, _ := newAttachDomainTestRepo(t)
+	repo, pool := newAttachDomainTestRepo(t)
+	pageID := createDomainlessStatusPage(t, repo, pool, "update-group-missing-page")
 
-	_, err := repo.UpdateGroup(context.Background(), "00000000-0000-0000-0000-000000000000", "Name", 0)
+	_, err := repo.UpdateGroup(context.Background(), testTenantID(t, pool), pageID, "00000000-0000-0000-0000-000000000000", "Name", 0)
 	if !errors.Is(err, ErrNotFound) {
 		t.Fatalf("UpdateGroup() error = %v, want ErrNotFound", err)
+	}
+}
+
+// TestStatusPageRepository_UpdateGroup_GroupBelongsToDifferentStatusPage_ErrNotFound
+// asserts UpdateGroup's status_page_id filter rejects a group id that
+// exists but belongs to a different status page, even one in the same
+// tenant - RLS (migration 0049) only stops cross-tenant access, so this
+// filter is the only thing stopping cross-page mutation within one tenant
+// (security review finding).
+func TestStatusPageRepository_UpdateGroup_GroupBelongsToDifferentStatusPage_ErrNotFound(t *testing.T) {
+	repo, pool := newAttachDomainTestRepo(t)
+	ownPageID := createDomainlessStatusPage(t, repo, pool, "update-group-cross-page-own")
+	otherPageID := createDomainlessStatusPage(t, repo, pool, "update-group-cross-page-other")
+
+	group, err := repo.CreateGroup(context.Background(), otherPageID, "Belongs To Other Page")
+	if err != nil {
+		t.Fatalf("setup CreateGroup() returned unexpected error: %v", err)
+	}
+
+	_, err = repo.UpdateGroup(context.Background(), testTenantID(t, pool), ownPageID, group.ID, "Hijacked", 0)
+	if !errors.Is(err, ErrNotFound) {
+		t.Fatalf("UpdateGroup() error = %v, want ErrNotFound when groupId belongs to a different status page", err)
+	}
+
+	unchanged, err := repo.ListGroups(context.Background(), otherPageID)
+	if err != nil {
+		t.Fatalf("ListGroups() returned unexpected error: %v", err)
+	}
+	if len(unchanged) != 1 || unchanged[0].Name != "Belongs To Other Page" {
+		t.Fatalf("group on otherPageID changed after cross-page UpdateGroup attempt: %+v", unchanged)
 	}
 }
 
@@ -1414,7 +1563,7 @@ func TestStatusPageRepository_DeleteGroup_RemovesGroupAndLeavesServiceGroupIDNul
 		t.Fatalf("setup linking service to group returned unexpected error: %v", err)
 	}
 
-	if err := repo.DeleteGroup(context.Background(), group.ID); err != nil {
+	if err := repo.DeleteGroup(context.Background(), testTenantID(t, pool), pageID, group.ID); err != nil {
 		t.Fatalf("DeleteGroup() returned unexpected error: %v", err)
 	}
 
@@ -1444,11 +1593,40 @@ func TestStatusPageRepository_DeleteGroup_RemovesGroupAndLeavesServiceGroupIDNul
 // DeleteGroup distinguishes "group doesn't exist" rather than silently
 // succeeding on a no-op DELETE.
 func TestStatusPageRepository_DeleteGroup_NonexistentID_ErrNotFound(t *testing.T) {
-	repo, _ := newAttachDomainTestRepo(t)
+	repo, pool := newAttachDomainTestRepo(t)
+	pageID := createDomainlessStatusPage(t, repo, pool, "delete-group-missing-page")
 
-	err := repo.DeleteGroup(context.Background(), "00000000-0000-0000-0000-000000000000")
+	err := repo.DeleteGroup(context.Background(), testTenantID(t, pool), pageID, "00000000-0000-0000-0000-000000000000")
 	if !errors.Is(err, ErrNotFound) {
 		t.Fatalf("DeleteGroup() error = %v, want ErrNotFound", err)
+	}
+}
+
+// TestStatusPageRepository_DeleteGroup_GroupBelongsToDifferentStatusPage_ErrNotFound
+// asserts DeleteGroup's status_page_id filter rejects a group id that
+// exists but belongs to a different status page, even one in the same
+// tenant - mirrors UpdateGroup's equivalent test (security review finding).
+func TestStatusPageRepository_DeleteGroup_GroupBelongsToDifferentStatusPage_ErrNotFound(t *testing.T) {
+	repo, pool := newAttachDomainTestRepo(t)
+	ownPageID := createDomainlessStatusPage(t, repo, pool, "delete-group-cross-page-own")
+	otherPageID := createDomainlessStatusPage(t, repo, pool, "delete-group-cross-page-other")
+
+	group, err := repo.CreateGroup(context.Background(), otherPageID, "Belongs To Other Page")
+	if err != nil {
+		t.Fatalf("setup CreateGroup() returned unexpected error: %v", err)
+	}
+
+	err = repo.DeleteGroup(context.Background(), testTenantID(t, pool), ownPageID, group.ID)
+	if !errors.Is(err, ErrNotFound) {
+		t.Fatalf("DeleteGroup() error = %v, want ErrNotFound when groupId belongs to a different status page", err)
+	}
+
+	stillThere, err := repo.ListGroups(context.Background(), otherPageID)
+	if err != nil {
+		t.Fatalf("ListGroups() returned unexpected error: %v", err)
+	}
+	if len(stillThere) != 1 || stillThere[0].ID != group.ID {
+		t.Fatalf("group on otherPageID was deleted by cross-page DeleteGroup attempt: %+v", stillThere)
 	}
 }
 
@@ -1469,10 +1647,11 @@ func TestStatusPageRepository_ListGroups_OrderedByPosition(t *testing.T) {
 	}
 	// Reposition so B now sorts before A, proving ListGroups orders by the
 	// position column rather than created_at/insertion order.
-	if _, err := repo.UpdateGroup(context.Background(), groupA.ID, groupA.Name, 1); err != nil {
+	tenantID := testTenantID(t, pool)
+	if _, err := repo.UpdateGroup(context.Background(), tenantID, pageID, groupA.ID, groupA.Name, 1); err != nil {
 		t.Fatalf("setup UpdateGroup() (A) returned unexpected error: %v", err)
 	}
-	if _, err := repo.UpdateGroup(context.Background(), groupB.ID, groupB.Name, 0); err != nil {
+	if _, err := repo.UpdateGroup(context.Background(), tenantID, pageID, groupB.ID, groupB.Name, 0); err != nil {
 		t.Fatalf("setup UpdateGroup() (B) returned unexpected error: %v", err)
 	}
 

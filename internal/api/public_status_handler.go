@@ -322,15 +322,24 @@ func (h *PublicStatusHandler) composeResponse(ctx context.Context, statusPageID 
 
 	// Fetched once and reused by both resolveDomainHealth (DomainID) and
 	// the Environment field below (status-page-environment-banner SPEB-04)
-	// - avoids a second GetByID round trip for the same row.
-	statusPage, err := h.statusPages.GetByID(ctx, statusPageID)
-	if err != nil {
-		return publicStatusResponse{}, fmt.Errorf("failed to get status page: %w", err)
-	}
-
-	domainHealth, err := h.resolveDomainHealth(ctx, statusPage)
-	if err != nil {
-		return publicStatusResponse{}, fmt.Errorf("failed to resolve domain health: %w", err)
+	// - avoids a second GetByID round trip for the same row. Both fields
+	// are cosmetic/optional (PSDH-01..04, SPEB-04): a failure loading the
+	// status page row here, or the domain row inside resolveDomainHealth,
+	// must never surface as a 500 to a visitor (AGENTS.md S4) - log it
+	// server-side and omit the fields instead of failing the whole
+	// request, which still has real content (services, incidents) to
+	// return.
+	var domainHealth *publicDomainHealthResponse
+	var environment string
+	if statusPage, err := h.statusPages.GetByID(ctx, statusPageID); err != nil {
+		h.logger.Error("public-status: failed to load status page for domain_health/environment, omitting both", zap.Error(err))
+	} else {
+		environment = statusPage.Environment
+		if dh, err := h.resolveDomainHealth(ctx, statusPage); err != nil {
+			h.logger.Error("public-status: failed to resolve domain health, omitting field", zap.Error(err))
+		} else {
+			domainHealth = dh
+		}
 	}
 
 	// serviceNameByID is built from the full, unfiltered services list (not
@@ -373,7 +382,7 @@ func (h *PublicStatusHandler) composeResponse(ctx context.Context, statusPageID 
 		Services:     []publicServiceResponse{},
 		Groups:       toPublicGroupResponses(groups),
 		DomainHealth: domainHealth,
-		Environment:  statusPage.Environment,
+		Environment:  environment,
 		Incidents: publicIncidentsResponse{
 			Active: toPublicIncidentResponses(activeIncidents),
 			Resolved: Page[publicIncidentResponse]{

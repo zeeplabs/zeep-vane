@@ -313,7 +313,21 @@
         "createGroupButton": "Criar grupo",
         "createError": "Não foi possível criar o grupo.",
         "saveButton": "Salvar posicionamento",
-        "saveError": "Não foi possível salvar o posicionamento dos serviços."
+        "saveError": "Não foi possível salvar o posicionamento dos serviços.",
+        "renameAction": "Renomear {{name}}",
+        "renameSave": "Salvar nome",
+        "renameCancel": "Cancelar renomeação",
+        "nameRequired": "O nome do grupo é obrigatório.",
+        "renameError": "Não foi possível renomear o grupo.",
+        "deleteAction": "Excluir {{name}}",
+        "deleteConfirmTitle": "Excluir grupo?",
+        "deleteConfirmDescription": "Os serviços em \"{{name}}\" ficarão sem grupo, sem serem removidos da página.",
+        "deleteConfirmButton": "Excluir grupo",
+        "deleteCancel": "Cancelar",
+        "deleteError": "Não foi possível excluir o grupo.",
+        "moveUp": "Mover {{name}} para cima",
+        "moveDown": "Mover {{name}} para baixo",
+        "reorderError": "Não foi possível reordenar os grupos."
       }
     }
   },
@@ -397,6 +411,10 @@
   "publicStatus": {
     "loading": "Carregando…",
     "environmentBanner": "Esta é uma página de {{environment}} — não reflete produção.",
+    "environmentLabel": {
+      "staging": "staging",
+      "development": "desenvolvimento"
+    },
     "domainHealth": {
       "ok": "Saúde do domínio: OK",
       "attention": "Saúde do domínio: requer atenção"
@@ -443,6 +461,7 @@
     "servicesHeading": "Serviços",
     "selectRangeLabel": "Selecionar período",
     "noDataLabel": "(sem dados)",
+    "dependsOn": "Depende de: {{parentName}}",
     "historyHeading": "Histórico (últimos 90 dias)",
     "noHistoryIncidents": "Nenhum incidente nos últimos 90 dias.",
     "loadMore": "Carregar mais",

@@ -294,14 +294,18 @@ func (r *ServiceRepository) ListPollingManual(ctx context.Context) ([]Service, e
 // page's public page must show only its own linked services, never every
 // service in the installation.
 //
-// Ordering is ORDER BY g.position NULLS LAST, sps.position: grouped
+// Ordering is ORDER BY g.position NULLS LAST, g.id, sps.position: grouped
 // services sort by their group's own position first (so every service in
-// an earlier group precedes every service in a later one), then by each
-// service's own position within that group/ungrouped bucket; ungrouped
-// services (g.position NULL, since the LEFT JOIN has no matching group row)
-// sort after every grouped service, not interleaved by name as before this
-// task. NULLS LAST is standard SQL and valid as written for pgx/Postgres
-// (no query-builder translation needed - this file always writes raw SQL).
+// an earlier group precedes every service in a later one), with the
+// group's own id as a tie-break so two groups sharing a position (a
+// concurrent CreateGroup race, or a manual UpdateGroup - see ListGroups'
+// doc comment) don't interleave their services against each other, then by
+// each service's own position within that group/ungrouped bucket;
+// ungrouped services (g.position NULL, since the LEFT JOIN has no matching
+// group row) sort after every grouped service, not interleaved by name as
+// before this task. NULLS LAST is standard SQL and valid as written for
+// pgx/Postgres (no query-builder translation needed - this file always
+// writes raw SQL).
 func (r *ServiceRepository) ListForStatusPage(ctx context.Context, statusPageID string) ([]Service, error) {
 	rows, err := r.pool.Query(ctx,
 		`SELECT s.id, s.name, COALESCE(s.slo_id, ''), s.current_status, s.last_status_change_at, s.status_analysis,
@@ -310,7 +314,7 @@ func (r *ServiceRepository) ListForStatusPage(ctx context.Context, statusPageID 
 		 JOIN status_page_services sps ON sps.service_id = s.id
 		 LEFT JOIN status_page_service_groups g ON g.id = sps.group_id
 		 WHERE sps.status_page_id = $1 AND s.deleted_at IS NULL
-		 ORDER BY g.position NULLS LAST, sps.position`,
+		 ORDER BY g.position NULLS LAST, g.id, sps.position`,
 		statusPageID,
 	)
 	if err != nil {
@@ -348,6 +352,72 @@ func (r *ServiceRepository) Update(ctx context.Context, id, name string) error {
 	if tag.RowsAffected() == 0 {
 		return ErrNotFound
 	}
+	return nil
+}
+
+// UpdateWithMetadata is Update, plus - inside the same transaction - the
+// SLO metadata and/or environment tag updates ServicesHandler.Update
+// (service-edit SVCEDIT-01..05) previously ran as 2-3 separate
+// pool-level calls (Update, then UpdateSLOMetadata, then UpdateEnvironment).
+// That left a window where a failure between calls (e.g. the process
+// crashing, or a transient DB error on the second/third statement) could
+// rename a service without applying its SLO metadata or environment tag,
+// or apply one but not the other - a partial update with no way to tell
+// from outside that it happened. All writes now commit or roll back
+// together.
+//
+// sloType/datadogServiceTag are both-or-neither, same convention
+// UpdateSLOMetadata uses: the handler only passes them non-nil when the
+// request explicitly included both fields, and either nil leaves SLO
+// metadata untouched (not cleared). environment nil leaves the
+// environment tag untouched; non-nil (including a pointer to "") sets or
+// clears it, same convention UpdateEnvironment uses. Returns ErrNotFound
+// if id doesn't exist or is already soft-deleted.
+func (r *ServiceRepository) UpdateWithMetadata(ctx context.Context, id, name string, sloType, datadogServiceTag, environment *string) error {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("db: failed to begin update transaction: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	tag, err := tx.Exec(ctx, "UPDATE services SET name = $2 WHERE id = $1 AND deleted_at IS NULL", id, name)
+	if err != nil {
+		return fmt.Errorf("db: failed to update service: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+
+	if sloType != nil && datadogServiceTag != nil {
+		sloTag, err := tx.Exec(ctx,
+			"UPDATE services SET slo_type = NULLIF($2, ''), datadog_service_tag = NULLIF($3, '') WHERE id = $1 AND deleted_at IS NULL",
+			id, *sloType, *datadogServiceTag,
+		)
+		if err != nil {
+			return fmt.Errorf("db: failed to update service SLO metadata: %w", err)
+		}
+		if sloTag.RowsAffected() == 0 {
+			return ErrNotFound
+		}
+	}
+
+	if environment != nil {
+		envTag, err := tx.Exec(ctx,
+			"UPDATE services SET environment = $2 WHERE id = $1 AND deleted_at IS NULL",
+			id, *environment,
+		)
+		if err != nil {
+			return fmt.Errorf("db: failed to update service environment: %w", err)
+		}
+		if envTag.RowsAffected() == 0 {
+			return ErrNotFound
+		}
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("db: failed to commit update transaction: %w", err)
+	}
+
 	return nil
 }
 

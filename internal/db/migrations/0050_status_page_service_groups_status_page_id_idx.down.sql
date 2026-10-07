@@ -1,0 +1,1 @@
+DROP INDEX status_page_service_groups_status_page_id_idx;

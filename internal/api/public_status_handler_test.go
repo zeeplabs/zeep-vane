@@ -2045,3 +2045,51 @@ func TestPublicStatusGet_EnvironmentEmpty_OmittedFromResponse(t *testing.T) {
 		t.Errorf("Environment = %q, want empty", body.Environment)
 	}
 }
+
+// TestPublicStatusGet_StatusPageLookupFails_200WithOptionalFieldsOmitted
+// covers the minor-findings fix to composeResponse: a failure resolving the
+// status page row used only for the optional domain_health/environment
+// fields (statusPageGroupLister.GetByID) must never turn into a 500 for a
+// visitor (AGENTS.md S4) - the rest of the response (services, incidents)
+// is still real, useful content and must still be served, just without
+// domain_health/environment. Simulated here with a statusPageID that
+// HostRouter would never actually hand the handler (it only resolves IDs of
+// status pages it just found), but that's exactly the shape of a
+// lookup-fails-after-routing race/bug this guards against.
+func TestPublicStatusGet_StatusPageLookupFails_200WithOptionalFieldsOmitted(t *testing.T) {
+	r, pool := newPublicStatusRouter(t)
+	serviceID, cleanup := createPublicStatusServiceFixture(t, pool, "operational", time.Now())
+	t.Cleanup(cleanup)
+	// Real status page the service is actually attached to, so
+	// ListForStatusPage/ListGroups/ListPublicForStatusPage below have
+	// something real to return - only statusPages.GetByID is made to fail,
+	// by swapping in a nonexistent ID on the request context after it was
+	// used to seed the fixture's join rows.
+	_ = createPublicStatusPageFixture(t, pool, serviceID)
+	bogusStatusPageID := "00000000-0000-0000-0000-000000000000"
+
+	req := withStatusPageContext(httptest.NewRequest(http.MethodGet, "/", nil), bogusStatusPageID)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d (lookup failure must degrade gracefully, not 500), body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	if strings.Contains(rec.Body.String(), "domain_health") {
+		t.Errorf("response contains domain_health field, want omitted when status page lookup fails: %s", rec.Body.String())
+	}
+	if strings.Contains(rec.Body.String(), `"environment"`) {
+		t.Errorf("response contains environment field, want omitted when status page lookup fails: %s", rec.Body.String())
+	}
+
+	var body publicStatusResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+	if body.DomainHealth != nil {
+		t.Errorf("DomainHealth = %+v, want nil", body.DomainHealth)
+	}
+	if body.Environment != "" {
+		t.Errorf("Environment = %q, want empty", body.Environment)
+	}
+}

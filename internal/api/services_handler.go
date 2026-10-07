@@ -42,16 +42,14 @@ type serviceCreatorLister interface {
 	ListPaginated(ctx context.Context, page, pageSize int) ([]db.Service, int, error)
 	Get(ctx context.Context, id string) (*db.Service, bool, error)
 	Update(ctx context.Context, id, name string) error
-	// UpdateSLOMetadata sets a service's slo_type/datadog_service_tag
-	// (slo-root-cause-enrichment RCA-01) - called only when the request
-	// explicitly includes both fields, so a plain rename never clobbers
-	// them (see Update handler).
-	UpdateSLOMetadata(ctx context.Context, id, sloType, datadogServiceTag string) error
-	// UpdateEnvironment sets a service's environment badge
-	// (service-environment-tag SET-03) - called only when the request
-	// explicitly includes environment, so a plain rename never clobbers it
-	// (see Update handler).
-	UpdateEnvironment(ctx context.Context, id, environment string) error
+	// UpdateWithMetadata is Update, plus - inside one transaction - the SLO
+	// metadata (slo-root-cause-enrichment RCA-01) and/or environment badge
+	// (service-environment-tag SET-03) updates, each only applied when its
+	// corresponding argument(s) are non-nil - a plain rename (all nil)
+	// never clobbers them. See ServiceRepository.UpdateWithMetadata's doc
+	// comment for why this replaced three separate non-transactional calls
+	// in the Update handler.
+	UpdateWithMetadata(ctx context.Context, id, name string, sloType, datadogServiceTag, environment *string) error
 	SoftDelete(ctx context.Context, id string) error
 }
 
@@ -489,7 +487,12 @@ func (h *ServicesHandler) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.services.Update(r.Context(), id, req.Name); err != nil {
+	// Name, SLO metadata (when both SLOType/DatadogServiceTag are present)
+	// and the environment tag (when present) are applied in a single
+	// transaction (ServiceRepository.UpdateWithMetadata) - a failure
+	// partway through previously could rename a service without applying
+	// its SLO metadata or environment tag, or apply one but not the other.
+	if err := h.services.UpdateWithMetadata(r.Context(), id, req.Name, req.SLOType, req.DatadogServiceTag, req.Environment); err != nil {
 		if errors.Is(err, db.ErrNotFound) {
 			writeAdminError(w, http.StatusNotFound, serviceNotFoundBody)
 			return
@@ -497,30 +500,6 @@ func (h *ServicesHandler) Update(w http.ResponseWriter, r *http.Request) {
 		h.logger.Error("services: failed to update service", zap.Error(err))
 		writeInternalError(w)
 		return
-	}
-
-	if req.SLOType != nil && req.DatadogServiceTag != nil {
-		if err := h.services.UpdateSLOMetadata(r.Context(), id, *req.SLOType, *req.DatadogServiceTag); err != nil {
-			if errors.Is(err, db.ErrNotFound) {
-				writeAdminError(w, http.StatusNotFound, serviceNotFoundBody)
-				return
-			}
-			h.logger.Error("services: failed to update service SLO metadata", zap.Error(err))
-			writeInternalError(w)
-			return
-		}
-	}
-
-	if req.Environment != nil {
-		if err := h.services.UpdateEnvironment(r.Context(), id, *req.Environment); err != nil {
-			if errors.Is(err, db.ErrNotFound) {
-				writeAdminError(w, http.StatusNotFound, serviceNotFoundBody)
-				return
-			}
-			h.logger.Error("services: failed to update service environment", zap.Error(err))
-			writeInternalError(w)
-			return
-		}
 	}
 
 	ctx := r.Context()

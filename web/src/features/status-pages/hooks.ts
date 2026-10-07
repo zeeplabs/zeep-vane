@@ -210,7 +210,12 @@ export interface DeleteGroupInput {
 
 // useDeleteGroup removes a service group while leaving its member
 // services in place, ungrouped (SGD-04) via DELETE
-// /api/status-pages/{id}/groups/{groupId}.
+// /api/status-pages/{id}/groups/{groupId}. Also invalidates the
+// service-placement query (not just the groups list) - the backend
+// ungroups the deleted group's members server-side, so ServiceGroupPanel's
+// working tree needs the refreshed group_id=null placements too, or it
+// would keep rendering those services under a group id that no longer
+// exists (M3 fix).
 export function useDeleteGroup() {
   const queryClient = useQueryClient();
   return useMutation({
@@ -218,6 +223,7 @@ export function useDeleteGroup() {
       apiFetch<void>(`/api/status-pages/${statusPageId}/groups/${groupId}`, { method: "DELETE" }),
     onSuccess: (_data, variables) => {
       queryClient.invalidateQueries({ queryKey: ["status-pages", variables.statusPageId, "groups"] });
+      queryClient.invalidateQueries({ queryKey: ["status-pages", variables.statusPageId, "service-placements"] });
     },
   });
 }

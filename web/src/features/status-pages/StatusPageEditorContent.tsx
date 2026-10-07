@@ -14,12 +14,13 @@ import type { Service, StatusPage, StatusPageEnvironment, StatusPageState } from
 import {
   useDNSTarget,
   useSetStatusPageServices,
+  useStatusPageServicePlacements,
   useUpdateStatusPageEnvironment,
   useVerifyDomain,
   type VerifyDomainResult,
 } from "./hooks";
 import { AttachDomainDrawer } from "./AttachDomainDrawer";
-import { ServiceGroupPanel } from "./ServiceGroupPanel";
+import { ServiceGroupPanel, buildInitialPlacements, reconcilePlacements, toServicePlacements } from "./ServiceGroupPanel";
 
 // statusPageEnvironmentOptions drives the edit form's environment
 // <select> (status-page-environment-banner SPEB-03), same order as
@@ -122,6 +123,18 @@ export function StatusPageEditorContent({ page, showPreviewLink = true }: Status
   const { hasRole } = useAuth();
   const canManage = hasRole(["owner", "operator"]);
   const setServices = useSetStatusPageServices();
+  // M1 fix: "Save services" used to send a bare {service_id, position} list
+  // with no group_id/parent_service_id, which - since SetServices is a
+  // full-replace write - silently wiped every group/dependency already
+  // configured via ServiceGroupPanel the moment this separate button was
+  // used afterward. Reading the same server-side placement detail
+  // ServiceGroupPanel reads (react-query caches by key, so this is not an
+  // extra request in practice) and reconciling it against the current
+  // Available/Linked selection (reconcilePlacements - also what fixes
+  // ServiceGroupPanel's own M2 desync) means this path now preserves every
+  // still-linked service's persisted group/parent/position instead of
+  // discarding it.
+  const { data: placements } = useStatusPageServicePlacements(page.id);
   const updateEnvironment = useUpdateStatusPageEnvironment();
   const [attachOpen, setAttachOpen] = useState(false);
   const [selectedServiceIds, setSelectedServiceIds] = useState<string[]>([]);
@@ -161,12 +174,19 @@ export function StatusPageEditorContent({ page, showPreviewLink = true }: Status
   async function handleSaveServices() {
     setError(null);
     try {
-      // Minimal compiling adaptation to the new placement-shaped input -
-      // this screen has no group/dependency UI yet (that's T13), so every
-      // service is sent ungrouped/unparented, ordered by current selection.
+      // M1 fix: build the payload from the current server placement detail
+      // (group_id/parent_service_id/position), reconciled against this
+      // screen's own add/remove selection - not a bare service_id list -
+      // so this full-replace write never silently discards group/
+      // dependency structure already configured via ServiceGroupPanel. See
+      // the comment on the placements query above.
+      const nodes = reconcilePlacements(
+        buildInitialPlacements(page.service_ids, placements),
+        selectedServiceIds
+      );
       await setServices.mutateAsync({
         id: pageId,
-        services: selectedServiceIds.map((service_id, position) => ({ service_id, position })),
+        services: toServicePlacements(nodes),
       });
     } catch (err) {
       if (err instanceof ApiError) setError(err.message);

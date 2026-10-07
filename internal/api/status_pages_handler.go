@@ -43,8 +43,8 @@ type statusPageCreatorLister interface {
 	Delete(ctx context.Context, id string) error
 	PublicHostnameByID(ctx context.Context, id string) (string, error)
 	CreateGroup(ctx context.Context, statusPageID, name string) (*db.StatusPageServiceGroup, error)
-	UpdateGroup(ctx context.Context, id, name string, position int) (*db.StatusPageServiceGroup, error)
-	DeleteGroup(ctx context.Context, id string) error
+	UpdateGroup(ctx context.Context, tenantID, statusPageID, id, name string, position int) (*db.StatusPageServiceGroup, error)
+	DeleteGroup(ctx context.Context, tenantID, statusPageID, id string) error
 	ListGroups(ctx context.Context, statusPageID string) ([]db.StatusPageServiceGroup, error)
 	ListServicePlacements(ctx context.Context, statusPageID string) ([]db.ServicePlacement, error)
 }
@@ -497,8 +497,14 @@ func (h *StatusPagesHandler) CreateGroup(w http.ResponseWriter, r *http.Request)
 // UpdateGroup handles PATCH /api/status-pages/{id}/groups/{groupId},
 // renaming and/or repositioning an existing service group (SGD-05). The
 // repository's UpdateGroup already returns db.ErrNotFound when groupId
-// doesn't match any row, so no separate existence check is needed here.
+// doesn't match any row scoped to statusPageID, so no separate existence
+// check is needed here - the {id} path param is passed straight through as
+// the scoping filter, so a groupId that exists but belongs to a different
+// status page (even one in the caller's own tenant) 404s exactly like an
+// unknown groupId would (security review finding - see UpdateGroup's own
+// doc comment in status_page_repository.go).
 func (h *StatusPagesHandler) UpdateGroup(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
 	groupID := chi.URLParam(r, "groupId")
 
 	var req updateGroupRequest
@@ -509,7 +515,8 @@ func (h *StatusPagesHandler) UpdateGroup(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	group, err := h.statusPages.UpdateGroup(r.Context(), groupID, req.Name, req.Position)
+	tenantID, _ := ActiveTenantIDFromContext(r.Context())
+	group, err := h.statusPages.UpdateGroup(r.Context(), tenantID, id, groupID, req.Name, req.Position)
 	if err != nil {
 		if errors.Is(err, db.ErrNotFound) {
 			http.NotFound(w, r)
@@ -537,7 +544,11 @@ func (h *StatusPagesHandler) UpdateGroup(w http.ResponseWriter, r *http.Request)
 // 0046) does the ungrouping, not Go code here. The group's name is captured
 // before the delete for the audit entry, mirroring Delete's own
 // before-the-fact name capture (once the row is gone there's nothing left
-// to read it back from).
+// to read it back from). The repository's DeleteGroup is scoped to id (the
+// status page), so a groupId belonging to a different status page 404s
+// instead of silently deleting nothing or, worse, something that was never
+// this caller's to delete (security review finding - see UpdateGroup's doc
+// comment in status_page_repository.go).
 func (h *StatusPagesHandler) DeleteGroup(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	groupID := chi.URLParam(r, "groupId")
@@ -552,7 +563,8 @@ func (h *StatusPagesHandler) DeleteGroup(w http.ResponseWriter, r *http.Request)
 		}
 	}
 
-	if err := h.statusPages.DeleteGroup(r.Context(), groupID); err != nil {
+	tenantID, _ := ActiveTenantIDFromContext(r.Context())
+	if err := h.statusPages.DeleteGroup(r.Context(), tenantID, id, groupID); err != nil {
 		if errors.Is(err, db.ErrNotFound) {
 			http.NotFound(w, r)
 			return
@@ -572,9 +584,25 @@ func (h *StatusPagesHandler) DeleteGroup(w http.ResponseWriter, r *http.Request)
 }
 
 // ListGroups handles GET /api/status-pages/{id}/groups, returning every
-// service group on this status page, position-ordered (SGD-01).
+// service group on this status page, position-ordered (SGD-01). It checks
+// the status page exists (and, via RLS, belongs to the caller's tenant)
+// first via GetByID, same as CreateGroup - without this, a request for a
+// status_page_id in another tenant would RLS-filter to a silent empty
+// array (200) instead of a 404, making it impossible for a caller to tell
+// "this page has no groups" apart from "this page isn't yours" (security
+// review finding).
 func (h *StatusPagesHandler) ListGroups(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
+
+	if _, err := h.statusPages.GetByID(r.Context(), id); err != nil {
+		if errors.Is(err, db.ErrNotFound) {
+			http.NotFound(w, r)
+			return
+		}
+		h.logger.Error("status-pages: failed to look up status page before listing groups", zap.Error(err))
+		writeInternalError(w)
+		return
+	}
 
 	groups, err := h.statusPages.ListGroups(r.Context(), id)
 	if err != nil {

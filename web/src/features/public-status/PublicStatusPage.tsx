@@ -156,6 +156,14 @@ function MoonIcon() {
 // presence) - "ok" is a discreet, neutral-colored icon, "attention" gets
 // warning-colored emphasis. Never renders the underlying expiration date,
 // registrar, or NS values - only the derived status label.
+//
+// tabIndex={0} makes the <span> focusable (a bare title attribute on a
+// non-interactive element is mouse-hover-only - unreachable by keyboard
+// Tab and never announced on touch, where there is no hover at all) -
+// same title+tabIndex pattern ServiceCard's status_analysis tooltip
+// (further down this file) already uses on its Tag, rather than
+// introducing a second tooltip mechanism. aria-label (already present)
+// covers screen readers regardless of focus/hover state.
 function DomainHealthIndicator({ domainHealth, t }: { domainHealth: PublicDomainHealth; t: Translator }) {
   const label = t(`publicStatus.domainHealth.${domainHealth.status}`);
   if (domainHealth.status === "attention") {
@@ -165,6 +173,7 @@ function DomainHealthIndicator({ domainHealth, t }: { domainHealth: PublicDomain
         style={{ color: "var(--color-warning)" }}
         title={label}
         aria-label={label}
+        tabIndex={0}
         data-testid="domain-health-indicator"
         data-domain-health-status="attention"
       >
@@ -177,6 +186,7 @@ function DomainHealthIndicator({ domainHealth, t }: { domainHealth: PublicDomain
       className="flex items-center text-neutral-400"
       title={label}
       aria-label={label}
+      tabIndex={0}
       data-testid="domain-health-indicator"
       data-domain-health-status="ok"
     >
@@ -191,8 +201,12 @@ function DomainHealthIndicator({ domainHealth, t }: { domainHealth: PublicDomain
 // localStorage/session state, deliberately: the point is to always warn a
 // visitor this page doesn't reflect production, so letting it be hidden
 // would defeat that purpose (spec.md Decisões). The environment value
-// interpolated into the text is itself translated (statusPages.environment
-// keys, shared with the admin select), never the raw enum string.
+// interpolated into the text comes from its own lowercase
+// publicStatus.environmentLabel keys, never statusPages.environment (the
+// admin select's labels, capitalized for a form field - interpolating
+// those here produced a mid-sentence capital, e.g. "página de
+// Desenvolvimento" in pt-BR, which doesn't read naturally inside a
+// sentence) and never the raw enum string.
 function EnvironmentBanner({ environment, t }: { environment: "staging" | "development"; t: Translator }) {
   return (
     <div
@@ -200,7 +214,7 @@ function EnvironmentBanner({ environment, t }: { environment: "staging" | "devel
       className="w-full bg-[--color-warning] px-4 py-2 text-center text-[13px] font-semibold text-white"
       style={{ backgroundColor: "var(--color-warning)" }}
     >
-      {t("publicStatus.environmentBanner", { environment: t(`statusPages.environment.${environment}`) })}
+      {t("publicStatus.environmentBanner", { environment: t(`publicStatus.environmentLabel.${environment}`) })}
     </div>
   );
 }
@@ -298,11 +312,23 @@ function ServiceCard({
   range,
   t,
   locale,
+  showDependsOn = false,
 }: {
   service: PublicServiceEntry;
   range: RangeKey;
   t: Translator;
   locale: string;
+  // showDependsOn renders a small "Depends on: {parent}" line when this
+  // card has a parent_service_name but isn't itself nested under that
+  // parent's card in the current view - e.g. the parent is in a different
+  // group's section, or was filtered out entirely as not_configured. Without
+  // this, the dependency relationship the backend already sends
+  // (parent_service_name) was silently dropped whenever nesting couldn't
+  // show it visually. A card that *is* nested under its parent (see
+  // nestServices/groupServicesForDisplay) never sets this - the indentation
+  // already conveys the relationship, a redundant text line would just be
+  // noise.
+  showDependsOn?: boolean;
 }) {
   return (
     <Card className="flex flex-col gap-2.5 rounded-md border border-divider p-[16px_20px]">
@@ -315,6 +341,15 @@ function ServiceCard({
           <span className="truncate text-sm font-bold text-text">{service.name}</span>
           {!service.last_updated_at ? (
             <span className="text-xs text-neutral-500">{t("publicStatus.noDataLabel")}</span>
+          ) : null}
+          {showDependsOn && service.parent_service_name ? (
+            <Tag
+              variant="neutral"
+              style={{ fontSize: "10.5px", fontWeight: 600, padding: "2px 8px" }}
+              data-testid={`depends-on-${service.name}`}
+            >
+              {t("publicStatus.dependsOn", { parentName: service.parent_service_name })}
+            </Tag>
           ) : null}
         </div>
         <div className="flex flex-shrink-0 items-center gap-2.5">
@@ -452,11 +487,17 @@ interface ServiceGroupSection {
 
 // groupServicesForDisplay buckets data.services by group_id into
 // data.groups' own position order, appending the synthetic ungrouped
-// bucket last. An empty group (zero services placed in it) still produces
-// a section with an empty `nodes` array, so its header still renders
-// (SGD-09). `groups` defaults defensively to [] when the backend/fixture
+// bucket last. `groups` defaults defensively to [] when the backend/fixture
 // predates this field - every service then falls into the ungrouped
 // bucket, matching the old flat rendering exactly.
+//
+// A group with zero visible services - either genuinely empty, or every
+// member filtered out server-side as "not_configured" (public_status_handler.go's
+// shownServices) - is dropped entirely rather than producing a section with
+// a header and no body: a heading over empty space reads as a bug to a
+// visitor, and nothing in spec.md requires an empty group's header to stay
+// visible (SGD-02 only covers a *grouped service* rendering under its
+// section; it says nothing about a group with none).
 function groupServicesForDisplay(
   services: PublicServiceEntry[],
   groups: PublicStatusGroup[] | undefined,
@@ -478,7 +519,8 @@ function groupServicesForDisplay(
 
   const sections: ServiceGroupSection[] = [...knownGroups]
     .sort((a, b) => a.position - b.position)
-    .map((group) => ({ group, nodes: nestServices(byGroupId.get(group.id) ?? []) }));
+    .map((group) => ({ group, nodes: nestServices(byGroupId.get(group.id) ?? []) }))
+    .filter((section) => section.nodes.length > 0);
 
   if (ungrouped.length > 0) {
     sections.push({ group: null, nodes: nestServices(ungrouped) });
@@ -650,12 +692,12 @@ export function PublicStatusPage() {
         </div>
         <div className="flex flex-col gap-4">
           {/* Grouped rendering (service-groups-and-dependencies SGD-02/
-              SGD-03/SGD-05/SGD-09): one section per group in position
-              order, a trailing synthetic ungrouped section (no visible
-              header - deliberately no "ungrouped" label, see
-              groupServicesForDisplay), and SGD-06 parent/child nesting
-              within each section. ServiceCard's internals are unchanged
-              from the old flat map. */}
+              SGD-03/SGD-05): one section per non-empty group in position
+              order (groupServicesForDisplay drops groups with zero visible
+              services), a trailing synthetic ungrouped section (no visible
+              header - deliberately no "ungrouped" label), and SGD-07
+              parent/child nesting within each section. ServiceCard's
+              internals are unchanged from the old flat map. */}
           {groupServicesForDisplay(data.services, data.groups).map((section) => (
             <div key={section.group?.id ?? "__ungrouped__"} className="flex flex-col gap-2.5">
               {section.group ? (
@@ -664,7 +706,7 @@ export function PublicStatusPage() {
               <div className="flex flex-col gap-2.5">
                 {section.nodes.map(({ service, children }) => (
                   <div key={service.id} className="flex flex-col gap-2.5">
-                    <ServiceCard service={service} range={range} t={t} locale={locale} />
+                    <ServiceCard service={service} range={range} t={t} locale={locale} showDependsOn />
                     {children.length > 0 ? (
                       <div className="ml-6 flex flex-col gap-2.5 border-l-2 border-divider pl-4">
                         {children.map((child) => (

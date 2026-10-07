@@ -313,7 +313,21 @@
         "createGroupButton": "Create group",
         "createError": "Couldn't create the group.",
         "saveButton": "Save placement",
-        "saveError": "Couldn't save the service placement."
+        "saveError": "Couldn't save the service placement.",
+        "renameAction": "Rename {{name}}",
+        "renameSave": "Save name",
+        "renameCancel": "Cancel rename",
+        "nameRequired": "Group name is required.",
+        "renameError": "Couldn't rename the group.",
+        "deleteAction": "Delete {{name}}",
+        "deleteConfirmTitle": "Delete group?",
+        "deleteConfirmDescription": "Services in \"{{name}}\" will become ungrouped, not removed from the page.",
+        "deleteConfirmButton": "Delete group",
+        "deleteCancel": "Cancel",
+        "deleteError": "Couldn't delete the group.",
+        "moveUp": "Move {{name}} up",
+        "moveDown": "Move {{name}} down",
+        "reorderError": "Couldn't reorder the groups."
       }
     }
   },
@@ -397,6 +411,10 @@
   "publicStatus": {
     "loading": "Loading…",
     "environmentBanner": "This is a {{environment}} page — it does not reflect production.",
+    "environmentLabel": {
+      "staging": "staging",
+      "development": "development"
+    },
     "domainHealth": {
       "ok": "Domain health: OK",
       "attention": "Domain health: needs attention"
@@ -443,6 +461,7 @@
     "servicesHeading": "Services",
     "selectRangeLabel": "Select period",
     "noDataLabel": "(no data)",
+    "dependsOn": "Depends on: {{parentName}}",
     "historyHeading": "History (last 90 days)",
     "noHistoryIncidents": "No incidents in the last 90 days.",
     "loadMore": "Load more",

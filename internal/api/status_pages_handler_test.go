@@ -1488,6 +1488,52 @@ func TestUpdateGroup_NonexistentGroupID_404(t *testing.T) {
 	}
 }
 
+// TestUpdateGroup_CrossTenantGroupID_404NoStateChange is the security
+// review's reproduction case: status_page_service_groups (migration 0046)
+// shipped with no tenant_id/RLS, and UpdateGroup filtered only by
+// "WHERE id = $1" - so an authenticated operator of tenant B, knowing or
+// guessing tenant A's group id (group ids are exposed in A's public status
+// page response), could PATCH it even via tenant B's own status page URL.
+// Fixed by migration 0049 (RLS) plus the repository's added
+// status_page_id filter (defense in depth: RLS alone stops cross-tenant,
+// not cross-page-within-one-tenant). This must 404, not silently no-op or
+// succeed, and must leave the group's name untouched.
+func TestUpdateGroup_CrossTenantGroupID_404NoStateChange(t *testing.T) {
+	r, pool, admins := newStatusPagesRouter(t)
+	ownerToken := issueTestSessionToken(t, admins)
+	pageID := createDomainlessStatusPageViaAPI(t, r, pool, ownerToken, "Cross Tenant Update Group Page")
+	groupID := createTestGroup(t, r, ownerToken, pageID, "Tenant A Group")
+
+	_, otherToken := seedOtherTenantOwnerToken(t, pool, admins)
+	otherPageID := createDomainlessStatusPageViaAPI(t, r, pool, otherToken, "Cross Tenant Update Group Other Page")
+
+	// Attempt 1: tenant B hits its own status page URL but tenant A's
+	// group id - the exact exploit path from the review (a PATCH whose
+	// {id} is the attacker's own status page, only {groupId} is stolen).
+	rec := patchUpdateGroup(t, r, otherToken, otherPageID, groupID, updateGroupRequest{Name: "Hijacked", Position: 9})
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("status (own page, stolen groupId) = %d, want %d, body = %s", rec.Code, http.StatusNotFound, rec.Body.String())
+	}
+
+	// Attempt 2: tenant B hits tenant A's status page id directly too.
+	rec = patchUpdateGroup(t, r, otherToken, pageID, groupID, updateGroupRequest{Name: "Hijacked Again", Position: 9})
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("status (A's own pageId, stolen groupId) = %d, want %d, body = %s", rec.Code, http.StatusNotFound, rec.Body.String())
+	}
+
+	rec = getGroups(t, r, ownerToken, pageID)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("getGroups() status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	var groups []statusPageServiceGroupResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &groups); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+	if len(groups) != 1 || groups[0].Name != "Tenant A Group" {
+		t.Fatalf("tenant A's group after cross-tenant UpdateGroup attempts = %+v, want unchanged \"Tenant A Group\"", groups)
+	}
+}
+
 func TestUpdateGroup_ViewerRole_403(t *testing.T) {
 	r, pool, admins := newStatusPagesRouter(t)
 	ownerToken := issueTestSessionToken(t, admins)
@@ -1573,6 +1619,59 @@ func TestDeleteGroup_NotFound_404(t *testing.T) {
 		t.Errorf("status = %d, want %d, body = %s", rec.Code, http.StatusNotFound, rec.Body.String())
 	}
 }
+
+// TestDeleteGroup_CrossTenantGroupID_404NoStateChange mirrors
+// TestUpdateGroup_CrossTenantGroupID_404NoStateChange for DELETE - a
+// tenant B operator must not be able to delete tenant A's group by
+// guessing/reading its id, via either B's own status page id or A's.
+func TestDeleteGroup_CrossTenantGroupID_404NoStateChange(t *testing.T) {
+	r, pool, admins := newStatusPagesRouter(t)
+	ownerToken := issueTestSessionToken(t, admins)
+	pageID := createDomainlessStatusPageViaAPI(t, r, pool, ownerToken, "Cross Tenant Delete Group Page")
+	groupID := createTestGroup(t, r, ownerToken, pageID, "Tenant A Group To Keep")
+
+	_, otherToken := seedOtherTenantOwnerToken(t, pool, admins)
+	otherPageID := createDomainlessStatusPageViaAPI(t, r, pool, otherToken, "Cross Tenant Delete Group Other Page")
+
+	rec := deleteGroup(t, r, otherToken, otherPageID, groupID)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("status (own page, stolen groupId) = %d, want %d, body = %s", rec.Code, http.StatusNotFound, rec.Body.String())
+	}
+	rec = deleteGroup(t, r, otherToken, pageID, groupID)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("status (A's own pageId, stolen groupId) = %d, want %d, body = %s", rec.Code, http.StatusNotFound, rec.Body.String())
+	}
+
+	rec = getGroups(t, r, ownerToken, pageID)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("getGroups() status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	var groups []statusPageServiceGroupResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &groups); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+	if len(groups) != 1 || groups[0].ID != groupID {
+		t.Fatalf("tenant A's group after cross-tenant DeleteGroup attempts = %+v, want it still present", groups)
+	}
+}
+
+// NOTE: ListGroups' GetByID ownership check (added alongside this bug fix,
+// matching CreateGroup's existing pattern) is intentionally not covered by
+// a cross-tenant HTTP test here: StatusPageRepository.GetByID has no
+// explicit "AND tenant_id = $N" filter of its own (unlike this file's
+// UpdateGroup/DeleteGroup fix) and relies solely on status_pages' RLS
+// policy - exactly like every other existing status_pages handler
+// (AttachDomain, UpdateEnvironment, SetServices, Delete, ...), none of
+// which has a cross-tenant test in this suite either. This package's
+// integration tests connect as the disposable Postgres container's
+// bootstrap role, which is a superuser and therefore bypasses FORCE ROW
+// LEVEL SECURITY entirely (see rls_test.go's rlsTestRole comment) - so a
+// test asserting this specific 404 would pass or fail based on the test
+// role, not the fix, and isn't something this bug's scope (status_page_
+// service_groups' own missing tenant_id/RLS) should take on fixing across
+// every status_pages consumer. RLS itself - the actual enforcement - is
+// covered for this table by TestMultiTenancyMigration_EveryTenantScopedTableIsRLSProtected
+// in internal/db, which does use a non-superuser role.
 
 func TestDeleteGroup_ViewerRole_403(t *testing.T) {
 	r, pool, admins := newStatusPagesRouter(t)

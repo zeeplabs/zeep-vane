@@ -732,6 +732,103 @@ func TestServiceRepository_UpdateSLOMetadata_SetsThenClears_RoundTrips(t *testin
 	}
 }
 
+// TestServiceRepository_UpdateWithMetadata_AppliesNameSLOAndEnvironmentTogether
+// covers the item-5 fix: a single UpdateWithMetadata() call applies the
+// rename, SLO metadata, and environment tag together (previously 3
+// separate non-transactional handler-level calls - Update, then
+// UpdateSLOMetadata, then UpdateEnvironment).
+func TestServiceRepository_UpdateWithMetadata_AppliesNameSLOAndEnvironmentTogether(t *testing.T) {
+	repo, pool := newServiceRepoTestPool(t)
+	tenantID := seedPlainTenant(t, pool)
+	name := fmt.Sprintf("update-with-metadata-%d", time.Now().UnixNano())
+	service := &Service{Name: name, SLOID: "slo-wm-1"}
+	withTenantTx(t, pool, tenantID, func(ctx context.Context) {
+		if err := repo.Create(ctx, service); err != nil {
+			t.Fatalf("setup Create() returned unexpected error: %v", err)
+		}
+	})
+	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), "DELETE FROM services WHERE id = $1", service.ID) })
+
+	newName := name + "-renamed"
+	sloType := "metric"
+	datadogServiceTag := "service:checkout-svc"
+	environment := "staging"
+	if err := repo.UpdateWithMetadata(context.Background(), service.ID, newName, &sloType, &datadogServiceTag, &environment); err != nil {
+		t.Fatalf("UpdateWithMetadata() returned unexpected error: %v", err)
+	}
+
+	got, _, err := repo.Get(context.Background(), service.ID)
+	if err != nil {
+		t.Fatalf("Get() returned unexpected error: %v", err)
+	}
+	if got.Name != newName {
+		t.Errorf("Name = %q, want %q", got.Name, newName)
+	}
+	if got.SLOType != sloType || got.DatadogServiceTag != datadogServiceTag {
+		t.Errorf("SLO metadata = {%q %q}, want {%q %q}", got.SLOType, got.DatadogServiceTag, sloType, datadogServiceTag)
+	}
+	if got.Environment != environment {
+		t.Errorf("Environment = %q, want %q", got.Environment, environment)
+	}
+}
+
+// TestServiceRepository_UpdateWithMetadata_NilSLOAndEnvironment_LeavesThemUnchanged
+// asserts a plain rename (sloType/datadogServiceTag/environment all nil)
+// never clobbers previously set SLO metadata or environment tag - the same
+// guarantee the old 3-separate-calls handler code relied on, now enforced
+// inside UpdateWithMetadata itself.
+func TestServiceRepository_UpdateWithMetadata_NilSLOAndEnvironment_LeavesThemUnchanged(t *testing.T) {
+	repo, pool := newServiceRepoTestPool(t)
+	tenantID := seedPlainTenant(t, pool)
+	name := fmt.Sprintf("update-with-metadata-nil-%d", time.Now().UnixNano())
+	service := &Service{Name: name, SLOID: "slo-wm-2"}
+	withTenantTx(t, pool, tenantID, func(ctx context.Context) {
+		if err := repo.Create(ctx, service); err != nil {
+			t.Fatalf("setup Create() returned unexpected error: %v", err)
+		}
+	})
+	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), "DELETE FROM services WHERE id = $1", service.ID) })
+
+	if err := repo.UpdateSLOMetadata(context.Background(), service.ID, "metric", "service:checkout-svc"); err != nil {
+		t.Fatalf("setup UpdateSLOMetadata() returned unexpected error: %v", err)
+	}
+	if err := repo.UpdateEnvironment(context.Background(), service.ID, "production"); err != nil {
+		t.Fatalf("setup UpdateEnvironment() returned unexpected error: %v", err)
+	}
+
+	newName := name + "-renamed-only"
+	if err := repo.UpdateWithMetadata(context.Background(), service.ID, newName, nil, nil, nil); err != nil {
+		t.Fatalf("UpdateWithMetadata() returned unexpected error: %v", err)
+	}
+
+	got, _, err := repo.Get(context.Background(), service.ID)
+	if err != nil {
+		t.Fatalf("Get() returned unexpected error: %v", err)
+	}
+	if got.Name != newName {
+		t.Errorf("Name = %q, want %q", got.Name, newName)
+	}
+	if got.SLOType != "metric" || got.DatadogServiceTag != "service:checkout-svc" {
+		t.Errorf("SLO metadata changed by a plain rename = {%q %q}, want unchanged {metric service:checkout-svc}", got.SLOType, got.DatadogServiceTag)
+	}
+	if got.Environment != "production" {
+		t.Errorf("Environment changed by a plain rename = %q, want unchanged %q", got.Environment, "production")
+	}
+}
+
+// TestServiceRepository_UpdateWithMetadata_UnknownID_ReturnsErrNotFound
+// mirrors Update's not-found convention.
+func TestServiceRepository_UpdateWithMetadata_UnknownID_ReturnsErrNotFound(t *testing.T) {
+	repo, _ := newServiceRepoTestPool(t)
+
+	sloType := "metric"
+	datadogServiceTag := "service:x"
+	err := repo.UpdateWithMetadata(context.Background(), "00000000-0000-0000-0000-000000000000", "name", &sloType, &datadogServiceTag, nil)
+	if !errors.Is(err, ErrNotFound) {
+		t.Fatalf("UpdateWithMetadata() error = %v, want ErrNotFound", err)
+	}
+}
+
 // TestServiceRepository_UpdateSLOMetadata_UnknownID_ReturnsErrNotFound
 // mirrors Update's not-found convention.
 func TestServiceRepository_UpdateSLOMetadata_UnknownID_ReturnsErrNotFound(t *testing.T) {

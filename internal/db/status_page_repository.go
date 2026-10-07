@@ -148,11 +148,12 @@ func (r *StatusPageRepository) insert(ctx context.Context, statusPage *StatusPag
 //
 // Before touching the DB, it loads this page's valid group ids (a
 // lighter, tx-scoped id-only query rather than ListGroups - T4 only needs
-// the id set for validateServicePlacements, not the full
+// the id set for validateAndSanitizeServicePlacements, not the full
 // StatusPageServiceGroup rows, and running it on the same tx as the
 // existence check/delete/insert keeps the whole read-then-write under one
 // connection instead of borrowing a second one from the pool) and calls
-// validateServicePlacements (SGD-08, SGD-10, SGD-11, SGD-12). On a
+// validateAndSanitizeServicePlacements (SGD-08, SGD-10, SGD-11, SGD-12,
+// SGD-13). On a
 // validation error, the transaction is rolled back untouched (deferred
 // Rollback) and that sentinel error is returned directly - no partial
 // writes.
@@ -176,14 +177,21 @@ func (r *StatusPageRepository) SetServices(ctx context.Context, statusPageID str
 	if err != nil {
 		return err
 	}
-	if err := validateServicePlacements(placements, validGroupIDs); err != nil {
+
+	existingServiceIDs, err := r.existingServiceIDsTx(ctx, tx, statusPageID)
+	if err != nil {
+		return err
+	}
+
+	sanitizedPlacements, err := validateAndSanitizeServicePlacements(placements, validGroupIDs, existingServiceIDs)
+	if err != nil {
 		return err
 	}
 
 	if _, err := tx.Exec(ctx, "DELETE FROM status_page_services WHERE status_page_id = $1", statusPageID); err != nil {
 		return fmt.Errorf("db: failed to clear existing service links: %w", err)
 	}
-	for _, placement := range placements {
+	for _, placement := range sanitizedPlacements {
 		if _, err := tx.Exec(ctx,
 			"INSERT INTO status_page_services (status_page_id, service_id, group_id, parent_service_id, position) "+
 				"VALUES ($1, $2, $3, $4, $5)",
@@ -202,7 +210,8 @@ func (r *StatusPageRepository) SetServices(ctx context.Context, statusPageID str
 
 // validGroupIDsTx loads the set of status_page_service_groups ids
 // belonging to statusPageID, scoped to tx, as a map suitable for
-// validateServicePlacements. It exists instead of reusing ListGroups
+// validateAndSanitizeServicePlacements. It exists instead of reusing
+// ListGroups
 // because SetServices only needs the id set, not the full
 // StatusPageServiceGroup rows (name/position/created_at), and running it
 // on tx - rather than ListGroups' r.pool - keeps the read on the same
@@ -230,17 +239,47 @@ func (r *StatusPageRepository) validGroupIDsTx(ctx context.Context, tx pgx.Tx, s
 	return validGroupIDs, nil
 }
 
-// ErrGroupCrossPage is returned by validateServicePlacements when a
+// existingServiceIDsTx loads the set of service ids currently linked to
+// statusPageID via status_page_services, scoped to tx, as it stands *before*
+// SetServices' delete+insert runs. validateAndSanitizeServicePlacements uses
+// this to tell apart two structurally identical cases for a dangling
+// ParentServiceID (SGD-13 vs SGD-11): a parent this very call is removing
+// from the page (it was linked before, isn't in the new placements) is not
+// an error, while a parent that was never linked to this page at all still
+// is.
+func (r *StatusPageRepository) existingServiceIDsTx(ctx context.Context, tx pgx.Tx, statusPageID string) (map[string]bool, error) {
+	rows, err := tx.Query(ctx, "SELECT service_id FROM status_page_services WHERE status_page_id = $1", statusPageID)
+	if err != nil {
+		return nil, fmt.Errorf("db: failed to load existing service ids: %w", err)
+	}
+	defer rows.Close()
+
+	existingServiceIDs := make(map[string]bool)
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, fmt.Errorf("db: failed to scan existing service id: %w", err)
+		}
+		existingServiceIDs[id] = true
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("db: failed to iterate existing service ids: %w", err)
+	}
+
+	return existingServiceIDs, nil
+}
+
+// ErrGroupCrossPage is returned by validateAndSanitizeServicePlacements when a
 // placement's GroupID references a group that does not belong to the
 // status page being written to (SGD-11).
 var ErrGroupCrossPage = errors.New("db: group does not belong to this status page")
 
-// ErrParentNotInSet is returned by validateServicePlacements when a
+// ErrParentNotInSet is returned by validateAndSanitizeServicePlacements when a
 // placement's ParentServiceID does not match any ServiceID present in the
 // same placements slice.
 var ErrParentNotInSet = errors.New("db: parent service is not part of this status page's service set")
 
-// ErrSelfReference is returned by validateServicePlacements when a
+// ErrSelfReference is returned by validateAndSanitizeServicePlacements when a
 // placement's ParentServiceID equals its own ServiceID (SGD-12). Checked
 // ahead of the "parent not in set" rule: a self-reference technically also
 // fails "ParentServiceID must match some OTHER placement's ServiceID", but
@@ -249,7 +288,7 @@ var ErrParentNotInSet = errors.New("db: parent service is not part of this statu
 // check instead of falling through to ErrParentNotInSet.
 var ErrSelfReference = errors.New("db: service cannot be its own parent")
 
-// ErrMaxDepthExceeded is returned by validateServicePlacements when a
+// ErrMaxDepthExceeded is returned by validateAndSanitizeServicePlacements when a
 // placement that is itself used as another placement's parent also has a
 // non-nil ParentServiceID of its own - i.e. it would be both a parent and
 // a child at once. Nesting is capped at depth 2 (parent -> child, never
@@ -260,7 +299,7 @@ var ErrMaxDepthExceeded = errors.New("db: nesting depth is capped at parent and 
 // ServicePlacement describes where a single service sits within a status
 // page's service list: which group (if any) it belongs to, which service
 // (if any) is its parent, and its display position. It is the input to
-// validateServicePlacements and (T4) SetServices.
+// validateAndSanitizeServicePlacements and (T4) SetServices.
 type ServicePlacement struct {
 	ServiceID       string
 	GroupID         *string
@@ -268,14 +307,31 @@ type ServicePlacement struct {
 	Position        int
 }
 
-// validateServicePlacements enforces the placement rules for a status
-// page's full set of service placements (SGD-08, SGD-10, SGD-11, SGD-12):
+// validateAndSanitizeServicePlacements enforces the placement rules for a
+// status page's full set of service placements (SGD-08, SGD-10, SGD-11,
+// SGD-12, SGD-13):
 //
+//  0. (SGD-13) first, any non-nil ParentServiceID that is absent from this
+//     same placements slice but present in existingServiceIDs (i.e. it was
+//     linked to this status page before this call, and this very call is
+//     removing it) is cleared to nil instead of being treated as an error -
+//     the parent is being removed from the page, so its children become
+//     parentless, not dangling or blocking the save. Migration 0046's
+//     parent_service_id ON DELETE SET NULL FK applies this same
+//     never-block-on-a-vanished-parent intent when the service row itself
+//     is deleted outright; this is that same intent for "removed from this
+//     page" rather than "service deleted". A self-reference (ParentServiceID
+//     == that placement's own ServiceID) is left untouched here - rule 3
+//     below still rejects it, it must never silently become parentless.
+//     This step operates on, and returns, a copy - placements itself is
+//     never mutated.
 //  1. every non-nil GroupID must reference a group that belongs to this
 //     status page (validGroupIDs), else ErrGroupCrossPage;
-//  2. every non-nil ParentServiceID must equal some OTHER placement's
-//     ServiceID in the same slice, else ErrParentNotInSet - except a
-//     self-reference (rule 3) is checked first and wins over this one;
+//  2. every remaining non-nil ParentServiceID must equal some OTHER
+//     placement's ServiceID in the same slice, else ErrParentNotInSet
+//     (SGD-11: a reference that was never valid for this page at all, not
+//     just-removed by this call) - except a self-reference (rule 3) is
+//     checked first and wins over this one;
 //  3. ParentServiceID must never equal that same placement's own
 //     ServiceID, else ErrSelfReference;
 //  4. no placement that is itself used as another placement's
@@ -286,43 +342,51 @@ type ServicePlacement struct {
 // Rules are checked in that order per placement, so the error returned for
 // a placement that violates more than one rule is deterministic. This is a
 // pure function with no DB access - callers (T4's SetServices) are
-// responsible for loading validGroupIDs first.
-func validateServicePlacements(placements []ServicePlacement, validGroupIDs map[string]bool) error {
-	parentOf := make(map[string]bool, len(placements)) // ServiceID -> is some other placement's parent
+// responsible for loading validGroupIDs and existingServiceIDs first.
+func validateAndSanitizeServicePlacements(placements []ServicePlacement, validGroupIDs, existingServiceIDs map[string]bool) ([]ServicePlacement, error) {
+	submitted := make(map[string]bool, len(placements)) // ServiceID -> present in this call's own placements
 	for _, p := range placements {
+		submitted[p.ServiceID] = true
+	}
+
+	sanitized := make([]ServicePlacement, len(placements))
+	copy(sanitized, placements)
+	for i, p := range sanitized {
+		if p.ParentServiceID == nil || *p.ParentServiceID == p.ServiceID {
+			continue // nil, or a self-reference left for rule 3 below
+		}
+		if !submitted[*p.ParentServiceID] && existingServiceIDs[*p.ParentServiceID] {
+			sanitized[i].ParentServiceID = nil // SGD-13: parent removed by this call
+		}
+	}
+
+	parentOf := make(map[string]bool, len(sanitized)) // ServiceID -> is some other (sanitized) placement's parent
+	for _, p := range sanitized {
 		if p.ParentServiceID != nil {
 			parentOf[*p.ParentServiceID] = true
 		}
 	}
 
-	for _, p := range placements {
+	for _, p := range sanitized {
 		if p.GroupID != nil && !validGroupIDs[*p.GroupID] {
-			return ErrGroupCrossPage
+			return nil, ErrGroupCrossPage
 		}
 
 		if p.ParentServiceID != nil {
 			if *p.ParentServiceID == p.ServiceID {
-				return ErrSelfReference
+				return nil, ErrSelfReference
 			}
-
-			found := false
-			for _, other := range placements {
-				if other.ServiceID == *p.ParentServiceID {
-					found = true
-					break
-				}
-			}
-			if !found {
-				return ErrParentNotInSet
+			if !submitted[*p.ParentServiceID] {
+				return nil, ErrParentNotInSet
 			}
 		}
 
 		if parentOf[p.ServiceID] && p.ParentServiceID != nil {
-			return ErrMaxDepthExceeded
+			return nil, ErrMaxDepthExceeded
 		}
 	}
 
-	return nil
+	return sanitized, nil
 }
 
 // StatusPageServiceGroup is a named, ordered grouping of services shown
@@ -337,23 +401,29 @@ type StatusPageServiceGroup struct {
 }
 
 // CreateGroup inserts a new StatusPageServiceGroup for statusPageID, named
-// name, with Position set to the current count of groups already on that
-// page - so a freshly created group always appends after the existing
-// ones rather than colliding at position 0 (SGD-01).
+// name, with Position set to one past the highest position already used on
+// that page (COALESCE(MAX(position), -1) + 1 - the standard fix for this
+// class of bug), so a freshly created group always appends after the
+// existing ones (SGD-01). This previously used COUNT(*), which produces a
+// duplicate position - and therefore an ambiguous display order between
+// two groups - as soon as a group in the middle of the sequence is ever
+// deleted: create G0/G1/G2 (positions 0/1/2), delete G0, create G3 ->
+// COUNT(*) is 2, the same position G2 already has. MAX(position)+1 doesn't
+// have this problem since it never reuses a position a surviving row still
+// holds. The MAX and the INSERT run as one statement (a correlated
+// subquery, not two round trips) to narrow, though not fully eliminate
+// without a serializable transaction, the race between two concurrent
+// CreateGroup calls on the same status page both computing the same next
+// position before either commits.
 func (r *StatusPageRepository) CreateGroup(ctx context.Context, statusPageID, name string) (*StatusPageServiceGroup, error) {
-	var position int
-	countRow := r.pool.QueryRow(ctx,
-		"SELECT COUNT(*) FROM status_page_service_groups WHERE status_page_id = $1", statusPageID)
-	if err := countRow.Scan(&position); err != nil {
-		return nil, fmt.Errorf("db: failed to count existing status page service groups: %w", err)
-	}
-
-	group := &StatusPageServiceGroup{StatusPageID: statusPageID, Name: name, Position: position}
+	group := &StatusPageServiceGroup{StatusPageID: statusPageID, Name: name}
 	row := r.pool.QueryRow(ctx,
-		"INSERT INTO status_page_service_groups (status_page_id, name, position) VALUES ($1, $2, $3) RETURNING id, created_at",
-		statusPageID, name, position,
+		"INSERT INTO status_page_service_groups (status_page_id, name, position) "+
+			"VALUES ($1, $2, (SELECT COALESCE(MAX(position), -1) + 1 FROM status_page_service_groups WHERE status_page_id = $1)) "+
+			"RETURNING id, position, created_at",
+		statusPageID, name,
 	)
-	if err := row.Scan(&group.ID, &group.CreatedAt); err != nil {
+	if err := row.Scan(&group.ID, &group.Position, &group.CreatedAt); err != nil {
 		return nil, fmt.Errorf("db: failed to create status page service group: %w", err)
 	}
 
@@ -361,12 +431,38 @@ func (r *StatusPageRepository) CreateGroup(ctx context.Context, statusPageID, na
 }
 
 // UpdateGroup renames and/or repositions the status page service group
-// identified by id. It returns ErrNotFound if no group matches id.
-func (r *StatusPageRepository) UpdateGroup(ctx context.Context, id, name string, position int) (*StatusPageServiceGroup, error) {
+// identified by id, scoped to both tenantID and statusPageID. It returns
+// ErrNotFound if no group matches id, if id matches a group that belongs
+// to a different status page, or if id matches a group that belongs to a
+// different tenant - the caller must not be able to tell any of these
+// apart, since doing so would leak cross-tenant/cross-page existence
+// information (security review finding: UpdateGroup previously filtered
+// by "WHERE id = $1" alone, letting an authenticated operator of one
+// tenant mutate another tenant's group by guessing/reading its id off
+// that tenant's public status page).
+//
+// The explicit "AND tenant_id = $N" filter is deliberate, not merely
+// redundant with RLS (migration 0049): it mirrors every other
+// tenant-scoped repository method in this codebase (e.g.
+// TenantInviteRepository.Refresh) in filtering by tenant_id explicitly
+// rather than relying solely on the session-level RLS policy to narrow an
+// otherwise-unscoped query. RLS is the hard, fail-closed backstop for a
+// query that forgets this filter; this filter is what makes the isolation
+// guarantee independent of which role the connection happens to run as -
+// notably, a Postgres superuser bypasses FORCE ROW LEVEL SECURITY
+// entirely, which is exactly the role this codebase's own disposable
+// integration-test container connects as (see rls_test.go's rlsTestRole
+// comment), so a query relying on RLS alone would silently pass bypassed
+// in both environments without ever being exercised. The status_page_id
+// filter is still separately required too: two status pages in the same
+// tenant must not be able to cross-mutate each other's groups, which
+// tenant_id scoping alone does not prevent.
+func (r *StatusPageRepository) UpdateGroup(ctx context.Context, tenantID, statusPageID, id, name string, position int) (*StatusPageServiceGroup, error) {
 	row := r.pool.QueryRow(ctx,
-		"UPDATE status_page_service_groups SET name = $2, position = $3 WHERE id = $1 "+
+		"UPDATE status_page_service_groups SET name = $4, position = $5 "+
+			"WHERE id = $1 AND status_page_id = $2 AND tenant_id = $3 "+
 			"RETURNING id, status_page_id, name, position, created_at",
-		id, name, position,
+		id, statusPageID, tenantID, name, position,
 	)
 
 	var group StatusPageServiceGroup
@@ -380,13 +476,17 @@ func (r *StatusPageRepository) UpdateGroup(ctx context.Context, id, name string,
 	return &group, nil
 }
 
-// DeleteGroup removes the status page service group identified by id. Any
+// DeleteGroup removes the status page service group identified by id,
+// scoped to both tenantID and statusPageID (see UpdateGroup's doc comment
+// on why both filters are required in addition to RLS). Any
 // status_page_services row whose group_id referenced it is left in place
 // with group_id set to NULL by the column's ON DELETE SET NULL foreign key
-// (migration 0046), not by Go code here. It returns ErrNotFound if no group
-// matches id.
-func (r *StatusPageRepository) DeleteGroup(ctx context.Context, id string) error {
-	tag, err := r.pool.Exec(ctx, "DELETE FROM status_page_service_groups WHERE id = $1", id)
+// (migration 0046), not by Go code here. It returns ErrNotFound if no
+// group matches id within tenantID and statusPageID.
+func (r *StatusPageRepository) DeleteGroup(ctx context.Context, tenantID, statusPageID, id string) error {
+	tag, err := r.pool.Exec(ctx,
+		"DELETE FROM status_page_service_groups WHERE id = $1 AND status_page_id = $2 AND tenant_id = $3",
+		id, statusPageID, tenantID)
 	if err != nil {
 		return fmt.Errorf("db: failed to delete status page service group: %w", err)
 	}
@@ -398,11 +498,17 @@ func (r *StatusPageRepository) DeleteGroup(ctx context.Context, id string) error
 }
 
 // ListGroups returns every StatusPageServiceGroup belonging to
-// statusPageID, ordered by position.
+// statusPageID, ordered by position, with id as a deterministic tie-break
+// (CreateGroup's COALESCE(MAX(position), -1)+1 formula makes a duplicate
+// position far rarer than the old COUNT(*) one, but two groups can still
+// legitimately share a position after a concurrent CreateGroup race or a
+// manual UpdateGroup - without the tie-break, Postgres is free to return
+// them in either order on different calls, which would make the group
+// list visibly reorder itself between page loads for no reason a user did).
 func (r *StatusPageRepository) ListGroups(ctx context.Context, statusPageID string) ([]StatusPageServiceGroup, error) {
 	rows, err := r.pool.Query(ctx,
 		"SELECT id, status_page_id, name, position, created_at FROM status_page_service_groups "+
-			"WHERE status_page_id = $1 ORDER BY position",
+			"WHERE status_page_id = $1 ORDER BY position, id",
 		statusPageID,
 	)
 	if err != nil {

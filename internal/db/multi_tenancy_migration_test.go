@@ -30,6 +30,14 @@ var tenantScopedTables = []string{
 	// tenant) - not part of 0024's original AC1 list since it predates
 	// this table's own tenant-isolation fix.
 	"integrations",
+	// status_page_service_groups added by 0049_status_page_service_groups_tenant_rls:
+	// migration 0046 (service-groups-and-dependencies) created this table
+	// without tenant_id or RLS, missed by both 0024's original AC1 sweep
+	// (it didn't exist yet) and every migration since, until a security
+	// review caught UpdateGroup/DeleteGroup filtering only by "WHERE id =
+	// $1" - letting one tenant's operator mutate another tenant's group by
+	// guessing/reading its id off that tenant's public status page.
+	"status_page_service_groups",
 }
 
 // extraPolicies records, per table, the policies deliberately added on top

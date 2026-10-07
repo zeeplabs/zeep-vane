@@ -5,19 +5,28 @@ import (
 	"testing"
 )
 
-// TestValidateServicePlacements covers T3's done-when for SGD-08, SGD-10,
-// SGD-11, SGD-12: all 4 rejection sentinels, plus the happy paths (group
-// alone, parent alone, group+parent combined on the same placement, and
-// neither set), plus the empty-input edge cases.
-func TestValidateServicePlacements(t *testing.T) {
+// TestValidateAndSanitizeServicePlacements covers T3's done-when for
+// SGD-08, SGD-10, SGD-11, SGD-12, plus SGD-13's dangling-parent-reference
+// sanitization: all rejection sentinels, the happy paths (group alone,
+// parent alone, group+parent combined on the same placement, and neither
+// set), the empty-input edge cases, and the SGD-13 cases (a parent absent
+// from the submitted slice is cleared when it was previously on the page,
+// rejected when it never was).
+func TestValidateAndSanitizeServicePlacements(t *testing.T) {
 	groupID := "group-1"
 	otherGroupID := "group-2"
 
 	tests := []struct {
-		name          string
-		placements    []ServicePlacement
-		validGroupIDs map[string]bool
-		wantErr       error
+		name               string
+		placements         []ServicePlacement
+		validGroupIDs      map[string]bool
+		existingServiceIDs map[string]bool
+		wantErr            error
+		// wantParentless, when non-empty, asserts that exactly these
+		// ServiceIDs end up with a nil ParentServiceID in the sanitized
+		// result (SGD-13 cases only - nil for every other case, meaning
+		// "don't check").
+		wantParentless []string
 	}{
 		{
 			name:          "empty placements slice is valid",
@@ -68,12 +77,13 @@ func TestValidateServicePlacements(t *testing.T) {
 			wantErr:       ErrGroupCrossPage,
 		},
 		{
-			name: "parent id not matching any ServiceID in the set is rejected with ErrParentNotInSet",
+			name: "parent id not matching any ServiceID in the set, and never on the page before, is rejected with ErrParentNotInSet",
 			placements: []ServicePlacement{
 				{ServiceID: "svc-1", ParentServiceID: placementStrPtr("svc-does-not-exist"), Position: 0},
 			},
-			validGroupIDs: map[string]bool{},
-			wantErr:       ErrParentNotInSet,
+			validGroupIDs:      map[string]bool{},
+			existingServiceIDs: map[string]bool{},
+			wantErr:            ErrParentNotInSet,
 		},
 		{
 			name: "parent id equal to its own ServiceID is rejected with ErrSelfReference, not ErrParentNotInSet",
@@ -93,19 +103,60 @@ func TestValidateServicePlacements(t *testing.T) {
 			validGroupIDs: map[string]bool{},
 			wantErr:       ErrMaxDepthExceeded,
 		},
+		{
+			// SGD-13: the page previously had svc-parent linked (it's in
+			// existingServiceIDs) and this call's own placements omit it -
+			// i.e. this call is removing it from the page. svc-child still
+			// references it, but that must not reject the whole save; the
+			// reference is cleared instead.
+			name: "parent absent from this call but previously on the page is cleared, not rejected (SGD-13)",
+			placements: []ServicePlacement{
+				{ServiceID: "svc-child", ParentServiceID: placementStrPtr("svc-parent"), Position: 0},
+			},
+			validGroupIDs:      map[string]bool{},
+			existingServiceIDs: map[string]bool{"svc-parent": true},
+			wantErr:            nil,
+			wantParentless:     []string{"svc-child"},
+		},
+		{
+			// Same shape as the ErrParentNotInSet case above, but spelled
+			// out alongside the SGD-13 case for contrast: a parent that was
+			// never on the page at all (not in existingServiceIDs either)
+			// is still rejected - SGD-13 only relaxes the "just removed"
+			// case, not an invalid/cross-page reference.
+			name: "parent absent from this call and never on the page is still rejected (SGD-11)",
+			placements: []ServicePlacement{
+				{ServiceID: "svc-child", ParentServiceID: placementStrPtr("svc-cross-page-parent"), Position: 0},
+			},
+			validGroupIDs:      map[string]bool{},
+			existingServiceIDs: map[string]bool{"svc-unrelated": true},
+			wantErr:            ErrParentNotInSet,
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := validateServicePlacements(tt.placements, tt.validGroupIDs)
+			sanitized, err := validateAndSanitizeServicePlacements(tt.placements, tt.validGroupIDs, tt.existingServiceIDs)
 			if tt.wantErr == nil {
 				if err != nil {
-					t.Fatalf("validateServicePlacements() = %v, want nil", err)
+					t.Fatalf("validateAndSanitizeServicePlacements() error = %v, want nil", err)
+				}
+				if tt.wantParentless != nil {
+					wantSet := make(map[string]bool, len(tt.wantParentless))
+					for _, id := range tt.wantParentless {
+						wantSet[id] = true
+					}
+					for _, p := range sanitized {
+						gotParentless := p.ParentServiceID == nil
+						if wantSet[p.ServiceID] && !gotParentless {
+							t.Errorf("placement %s: ParentServiceID = %v, want nil", p.ServiceID, *p.ParentServiceID)
+						}
+					}
 				}
 				return
 			}
 			if !errors.Is(err, tt.wantErr) {
-				t.Fatalf("validateServicePlacements() = %v, want %v", err, tt.wantErr)
+				t.Fatalf("validateAndSanitizeServicePlacements() error = %v, want %v", err, tt.wantErr)
 			}
 		})
 	}
