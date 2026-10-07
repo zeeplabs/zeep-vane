@@ -15,10 +15,10 @@ import (
 
 // newDomainRepoTestPool boots a migrated pool and a fresh *DomainRepository
 // backed by it.
-func newDomainRepoTestPool(t *testing.T) (*DomainRepository, *Pool) {
+func newDomainRepoTestPool(t *testing.T) (*DomainRepository, *Pool, string) {
 	t.Helper()
-	pool, _ := newTenantScopedPool(t)
-	return NewDomainRepository(pool), pool
+	pool, tenantID := newTenantScopedPool(t)
+	return NewDomainRepository(pool), pool, tenantID
 }
 
 // seedDomainFixtures creates n domains named prefix-0.example.com..
@@ -40,11 +40,11 @@ func seedDomainFixtures(t *testing.T, repo *DomainRepository, pool *Pool, prefix
 }
 
 func TestDomainRepository_ListPaginated_Page1_ReturnsExactlyPageSizeAndCorrectTotal(t *testing.T) {
-	repo, pool := newDomainRepoTestPool(t)
+	repo, pool, tenantID := newDomainRepoTestPool(t)
 	prefix := fmt.Sprintf("list-paginated-p1-%d", time.Now().UnixNano())
 	seedDomainFixtures(t, repo, pool, prefix, 22)
 
-	items, total, err := repo.ListPaginated(context.Background(), 1, 20)
+	items, total, err := repo.ListPaginated(context.Background(), tenantID, 1, 20)
 	if err != nil {
 		t.Fatalf("ListPaginated() returned unexpected error: %v", err)
 	}
@@ -58,15 +58,15 @@ func TestDomainRepository_ListPaginated_Page1_ReturnsExactlyPageSizeAndCorrectTo
 }
 
 func TestDomainRepository_ListPaginated_Page2_ReturnsRemainder(t *testing.T) {
-	repo, pool := newDomainRepoTestPool(t)
+	repo, pool, tenantID := newDomainRepoTestPool(t)
 	prefix := fmt.Sprintf("list-paginated-p2-%d", time.Now().UnixNano())
 	seedDomainFixtures(t, repo, pool, prefix, 22)
 
-	page1, total1, err := repo.ListPaginated(context.Background(), 1, 20)
+	page1, total1, err := repo.ListPaginated(context.Background(), tenantID, 1, 20)
 	if err != nil {
 		t.Fatalf("ListPaginated(page=1) returned unexpected error: %v", err)
 	}
-	page2, total2, err := repo.ListPaginated(context.Background(), 2, 20)
+	page2, total2, err := repo.ListPaginated(context.Background(), tenantID, 2, 20)
 	if err != nil {
 		t.Fatalf("ListPaginated(page=2) returned unexpected error: %v", err)
 	}
@@ -95,16 +95,16 @@ func TestDomainRepository_ListPaginated_Page2_ReturnsRemainder(t *testing.T) {
 }
 
 func TestDomainRepository_ListPaginated_PageBeyondLast_EmptyItemsCorrectTotal(t *testing.T) {
-	repo, pool := newDomainRepoTestPool(t)
+	repo, pool, tenantID := newDomainRepoTestPool(t)
 	prefix := fmt.Sprintf("list-paginated-beyond-%d", time.Now().UnixNano())
 	seedDomainFixtures(t, repo, pool, prefix, 3)
 
-	_, totalFirst, err := repo.ListPaginated(context.Background(), 1, 20)
+	_, totalFirst, err := repo.ListPaginated(context.Background(), tenantID, 1, 20)
 	if err != nil {
 		t.Fatalf("ListPaginated(page=1) returned unexpected error: %v", err)
 	}
 
-	items, total, err := repo.ListPaginated(context.Background(), 999, 20)
+	items, total, err := repo.ListPaginated(context.Background(), tenantID, 999, 20)
 	if err != nil {
 		t.Fatalf("ListPaginated(page=999) returned unexpected error: %v", err)
 	}
@@ -118,14 +118,14 @@ func TestDomainRepository_ListPaginated_PageBeyondLast_EmptyItemsCorrectTotal(t 
 }
 
 func TestDomainRepository_ListPaginated_OrderByHostnameUnchanged(t *testing.T) {
-	repo, pool := newDomainRepoTestPool(t)
+	repo, pool, tenantID := newDomainRepoTestPool(t)
 	// A prefix guarantees these fixtures sort together and in a known
 	// relative order (hostname ASC), regardless of other domains already
 	// present in this shared-DB suite.
 	prefix := fmt.Sprintf("aaa-order-%d", time.Now().UnixNano())
 	seeded := seedDomainFixtures(t, repo, pool, prefix, 5)
 
-	items, _, err := repo.ListPaginated(context.Background(), 1, 20)
+	items, _, err := repo.ListPaginated(context.Background(), tenantID, 1, 20)
 	if err != nil {
 		t.Fatalf("ListPaginated() returned unexpected error: %v", err)
 	}
@@ -152,7 +152,7 @@ func TestDomainRepository_ListPaginated_OrderByHostnameUnchanged(t *testing.T) {
 // newly created domain starts as domain_type=custom, status=pending,
 // verified_at=NULL.
 func TestDomainRepository_Create_DefaultsToPendingCustom(t *testing.T) {
-	repo, pool := newDomainRepoTestPool(t)
+	repo, pool, _ := newDomainRepoTestPool(t)
 	domain := &Domain{Hostname: fmt.Sprintf("create-defaults-%d.example.com", time.Now().UnixNano())}
 
 	if err := repo.Create(context.Background(), domain); err != nil {
@@ -177,7 +177,7 @@ func TestDomainRepository_Create_DefaultsToPendingCustom(t *testing.T) {
 // TestDomainRepository_Create_PersistsNonEmptyVerificationToken covers
 // DATV-01: Create generates and persists a non-empty verification token.
 func TestDomainRepository_Create_PersistsNonEmptyVerificationToken(t *testing.T) {
-	repo, pool := newDomainRepoTestPool(t)
+	repo, pool, _ := newDomainRepoTestPool(t)
 	domain := &Domain{Hostname: fmt.Sprintf("verify-token-%d.example.com", time.Now().UnixNano())}
 
 	if err := repo.Create(context.Background(), domain); err != nil {
@@ -197,7 +197,7 @@ func TestDomainRepository_Create_PersistsNonEmptyVerificationToken(t *testing.T)
 // the spec's "unique verification token" requirement: two domains never
 // share a token.
 func TestDomainRepository_Create_TwoDomains_DistinctVerificationTokens(t *testing.T) {
-	repo, pool := newDomainRepoTestPool(t)
+	repo, pool, _ := newDomainRepoTestPool(t)
 	ctx := context.Background()
 	a := &Domain{Hostname: fmt.Sprintf("verify-token-a-%d.example.com", time.Now().UnixNano())}
 	b := &Domain{Hostname: fmt.Sprintf("verify-token-b-%d.example.com", time.Now().UnixNano())}
@@ -218,7 +218,7 @@ func TestDomainRepository_Create_TwoDomains_DistinctVerificationTokens(t *testin
 // TestDomainRepository_GetByID_ReturnsPersistedVerificationToken covers T2's
 // Done-when: GetByID's scan includes verification_token.
 func TestDomainRepository_GetByID_ReturnsPersistedVerificationToken(t *testing.T) {
-	repo, pool := newDomainRepoTestPool(t)
+	repo, pool, _ := newDomainRepoTestPool(t)
 	domain := &Domain{Hostname: fmt.Sprintf("verify-token-getbyid-%d.example.com", time.Now().UnixNano())}
 	if err := repo.Create(context.Background(), domain); err != nil {
 		t.Fatalf("setup Create() returned unexpected error: %v", err)
@@ -240,14 +240,14 @@ func TestDomainRepository_GetByID_ReturnsPersistedVerificationToken(t *testing.T
 // TestDomainRepository_ListPaginated_IncludesVerificationToken covers T2's
 // Done-when: ListPaginated's scan includes verification_token.
 func TestDomainRepository_ListPaginated_IncludesVerificationToken(t *testing.T) {
-	repo, pool := newDomainRepoTestPool(t)
+	repo, pool, tenantID := newDomainRepoTestPool(t)
 	domain := &Domain{Hostname: fmt.Sprintf("verify-token-list-%d.example.com", time.Now().UnixNano())}
 	if err := repo.Create(context.Background(), domain); err != nil {
 		t.Fatalf("setup Create() returned unexpected error: %v", err)
 	}
 	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), "DELETE FROM domains WHERE id = $1", domain.ID) })
 
-	items, _, err := repo.ListPaginated(context.Background(), 1, 1000)
+	items, _, err := repo.ListPaginated(context.Background(), tenantID, 1, 1000)
 	if err != nil {
 		t.Fatalf("ListPaginated() returned unexpected error: %v", err)
 	}
@@ -268,7 +268,7 @@ func TestDomainRepository_ListPaginated_IncludesVerificationToken(t *testing.T) 
 
 // TestDomainRepository_GetByID_Existing_ReturnsDomain covers a basic lookup.
 func TestDomainRepository_GetByID_Existing_ReturnsDomain(t *testing.T) {
-	repo, pool := newDomainRepoTestPool(t)
+	repo, pool, _ := newDomainRepoTestPool(t)
 	domain := &Domain{Hostname: fmt.Sprintf("get-by-id-%d.example.com", time.Now().UnixNano())}
 	if err := repo.Create(context.Background(), domain); err != nil {
 		t.Fatalf("setup Create() returned unexpected error: %v", err)
@@ -287,7 +287,7 @@ func TestDomainRepository_GetByID_Existing_ReturnsDomain(t *testing.T) {
 // TestDomainRepository_GetByID_Unknown_ErrNotFound covers the not-found
 // path.
 func TestDomainRepository_GetByID_Unknown_ErrNotFound(t *testing.T) {
-	repo, _ := newDomainRepoTestPool(t)
+	repo, _, _ := newDomainRepoTestPool(t)
 
 	_, err := repo.GetByID(context.Background(), "00000000-0000-0000-0000-000000000000")
 	if !errors.Is(err, ErrNotFound) {
@@ -298,7 +298,7 @@ func TestDomainRepository_GetByID_Unknown_ErrNotFound(t *testing.T) {
 // TestDomainRepository_SetVerificationResult_Success_UpdatesAllFields
 // covers DOMVER-04/07: a successful check's result is persisted in full.
 func TestDomainRepository_SetVerificationResult_Success_UpdatesAllFields(t *testing.T) {
-	repo, pool := newDomainRepoTestPool(t)
+	repo, pool, _ := newDomainRepoTestPool(t)
 	domain := &Domain{Hostname: fmt.Sprintf("verify-success-%d.example.com", time.Now().UnixNano())}
 	if err := repo.Create(context.Background(), domain); err != nil {
 		t.Fatalf("setup Create() returned unexpected error: %v", err)
@@ -324,7 +324,7 @@ func TestDomainRepository_SetVerificationResult_Success_UpdatesAllFields(t *test
 // TestDomainRepository_SetVerificationResult_Failure_PersistsLastError
 // covers DOMVER-08: a failed check's error message is persisted.
 func TestDomainRepository_SetVerificationResult_Failure_PersistsLastError(t *testing.T) {
-	repo, pool := newDomainRepoTestPool(t)
+	repo, pool, _ := newDomainRepoTestPool(t)
 	domain := &Domain{Hostname: fmt.Sprintf("verify-failure-%d.example.com", time.Now().UnixNano())}
 	if err := repo.Create(context.Background(), domain); err != nil {
 		t.Fatalf("setup Create() returned unexpected error: %v", err)
@@ -347,7 +347,7 @@ func TestDomainRepository_SetVerificationResult_Failure_PersistsLastError(t *tes
 // TestDomainRepository_SetVerificationResult_Unknown_ErrNotFound covers the
 // not-found path.
 func TestDomainRepository_SetVerificationResult_Unknown_ErrNotFound(t *testing.T) {
-	repo, _ := newDomainRepoTestPool(t)
+	repo, _, _ := newDomainRepoTestPool(t)
 
 	_, err := repo.SetVerificationResult(context.Background(), "00000000-0000-0000-0000-000000000000", "verified", nil, time.Now())
 	if !errors.Is(err, ErrNotFound) {
@@ -358,7 +358,7 @@ func TestDomainRepository_SetVerificationResult_Unknown_ErrNotFound(t *testing.T
 // newDomainRepoScratchPool returns a DomainRepository backed by a pool on a
 // fresh scratch database, so an unfiltered COUNT is deterministic instead of
 // racing other suites that share TEST_DATABASE_URL.
-func newDomainRepoScratchPool(t *testing.T) (*DomainRepository, *Pool) {
+func newDomainRepoScratchPool(t *testing.T) (*DomainRepository, *Pool, string) {
 	t.Helper()
 	dsn := newScratchDatabase(t)
 	if err := MigrateUp(dsn, "migrations"); err != nil {
@@ -384,11 +384,11 @@ func newDomainRepoScratchPool(t *testing.T) (*DomainRepository, *Pool) {
 	}
 	t.Cleanup(pool.Close)
 
-	return NewDomainRepository(pool), pool
+	return NewDomainRepository(pool), pool, tenantID
 }
 
 func TestDomainRepository_CountVerified_MixedStatuses_CountsOnlyVerified(t *testing.T) {
-	repo, _ := newDomainRepoScratchPool(t)
+	repo, _, _ := newDomainRepoScratchPool(t)
 	ctx := context.Background()
 
 	baseline, err := repo.CountVerified(ctx)
@@ -428,7 +428,7 @@ func TestDomainRepository_CountVerified_MixedStatuses_CountsOnlyVerified(t *test
 }
 
 func TestDomainRepository_CountVerified_NoDomains_ReturnsZero(t *testing.T) {
-	repo, _ := newDomainRepoScratchPool(t)
+	repo, _, _ := newDomainRepoScratchPool(t)
 
 	got, err := repo.CountVerified(context.Background())
 	if err != nil {
@@ -443,10 +443,10 @@ func TestDomainRepository_CountVerified_NoDomains_ReturnsZero(t *testing.T) {
 // OVW-20 (Overview's "verified/total domains" denominator): unlike
 // CountVerified, CountAll must not filter by verification status.
 func TestDomainRepository_CountAll_MixedStatuses_CountsRegardlessOfStatus(t *testing.T) {
-	repo, _ := newDomainRepoScratchPool(t)
+	repo, _, tenantID := newDomainRepoScratchPool(t)
 	ctx := context.Background()
 
-	baseline, err := repo.CountAll(ctx)
+	baseline, err := repo.CountAll(ctx, tenantID)
 	if err != nil {
 		t.Fatalf("CountAll() (baseline) returned unexpected error: %v", err)
 	}
@@ -466,7 +466,7 @@ func TestDomainRepository_CountAll_MixedStatuses_CountsRegardlessOfStatus(t *tes
 		t.Fatalf("SetVerificationResult(verifiedA) returned unexpected error: %v", err)
 	}
 
-	got, err := repo.CountAll(ctx)
+	got, err := repo.CountAll(ctx, tenantID)
 	if err != nil {
 		t.Fatalf("CountAll() returned unexpected error: %v", err)
 	}
@@ -476,9 +476,9 @@ func TestDomainRepository_CountAll_MixedStatuses_CountsRegardlessOfStatus(t *tes
 }
 
 func TestDomainRepository_CountAll_NoDomains_ReturnsZero(t *testing.T) {
-	repo, _ := newDomainRepoScratchPool(t)
+	repo, _, tenantID := newDomainRepoScratchPool(t)
 
-	got, err := repo.CountAll(context.Background())
+	got, err := repo.CountAll(context.Background(), tenantID)
 	if err != nil {
 		t.Fatalf("CountAll() returned unexpected error: %v", err)
 	}
@@ -491,7 +491,7 @@ func TestDomainRepository_CountAll_NoDomains_ReturnsZero(t *testing.T) {
 // covers DHM-01/DHM-05: one health-check cycle's result is persisted in
 // full, and the NS baseline is learned from the first successful check.
 func TestDomainRepository_SetHealthCheckResult_AllFields_WritesSevenColumns(t *testing.T) {
-	repo, pool := newDomainRepoTestPool(t)
+	repo, pool, _ := newDomainRepoTestPool(t)
 	domain := &Domain{Hostname: fmt.Sprintf("health-all-%d.example.com", time.Now().UnixNano())}
 	if err := repo.Create(context.Background(), domain); err != nil {
 		t.Fatalf("setup Create() returned unexpected error: %v", err)
@@ -537,7 +537,7 @@ func TestDomainRepository_SetHealthCheckResult_AllFields_WritesSevenColumns(t *t
 // covers DHM-07: an NS lookup failure (nil currentNS) never overwrites or
 // clears the learned ExpectedNS/CurrentNS.
 func TestDomainRepository_SetHealthCheckResult_NSFailure_PreservesBaseline(t *testing.T) {
-	repo, pool := newDomainRepoTestPool(t)
+	repo, pool, _ := newDomainRepoTestPool(t)
 	domain := &Domain{Hostname: fmt.Sprintf("health-nsfail-%d.example.com", time.Now().UnixNano())}
 	if err := repo.Create(context.Background(), domain); err != nil {
 		t.Fatalf("setup Create() returned unexpected error: %v", err)
@@ -574,7 +574,7 @@ func TestDomainRepository_SetHealthCheckResult_NSFailure_PreservesBaseline(t *te
 // next cycle that could resolve the NS lookup again. ns_drift_detected must
 // be preserved exactly like current_ns/expected_ns are.
 func TestDomainRepository_SetHealthCheckResult_NSFailure_PreservesDriftFlag(t *testing.T) {
-	repo, pool := newDomainRepoTestPool(t)
+	repo, pool, _ := newDomainRepoTestPool(t)
 	domain := &Domain{Hostname: fmt.Sprintf("health-driftpreserve-%d.example.com", time.Now().UnixNano())}
 	if err := repo.Create(context.Background(), domain); err != nil {
 		t.Fatalf("setup Create() returned unexpected error: %v", err)
@@ -610,7 +610,7 @@ func TestDomainRepository_SetHealthCheckResult_NSFailure_PreservesDriftFlag(t *t
 // not-found path (T3 done-when: a clear not-found-shaped error, not a silent
 // no-op).
 func TestDomainRepository_SetHealthCheckResult_Unknown_ErrNotFound(t *testing.T) {
-	repo, _ := newDomainRepoTestPool(t)
+	repo, _, _ := newDomainRepoTestPool(t)
 
 	err := repo.SetHealthCheckResult(context.Background(), "00000000-0000-0000-0000-000000000000", nil, nil, nil, false, nil)
 	if !errors.Is(err, ErrNotFound) {

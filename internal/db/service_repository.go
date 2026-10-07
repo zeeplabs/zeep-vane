@@ -45,6 +45,13 @@ type Service struct {
 	// a row saved before this feature existed.
 	SLOType           string
 	DatadogServiceTag string
+	// Environment is a visual-only admin tag (service-environment-tag
+	// SET-01): "" (default, same ""-means-absent convention as SLOName/
+	// SLOType/DatadogServiceTag above) means no tag, otherwise one of
+	// "development"/"staging"/"production" - enforced by the
+	// 0047_service_environment CHECK constraint, not by this type. Purely
+	// cosmetic (an admin-only badge): no business logic reads it.
+	Environment string
 	// MonitorMode is "slo" (default, unchanged existing behavior) or
 	// "polling" (manual-polling-monitoring MP-01/MP-02).
 	MonitorMode string
@@ -64,6 +71,24 @@ type Service struct {
 	// it at its zero value since neither caller (poller, admin services
 	// list) reads it.
 	StatusAnalysis *string
+	// GroupID, GroupName, ParentServiceID, and Position describe this
+	// service's placement on one specific status page (status_page_services'
+	// group_id/parent_service_id/position columns and
+	// status_page_service_groups' name, migration 0046 - service-groups-
+	// and-dependencies SGD-02/SGD-03/SGD-06). They are populated only by
+	// ListForStatusPage; every other read path (Get, List, ListPaginated,
+	// ListPollingManual, Create) has no status-page context to place a
+	// service within and leaves them at their zero value (nil/nil/nil/0).
+	// Added directly to the shared struct rather than a separate wrapper
+	// type: no other caller serializes Service to JSON or otherwise reads
+	// every field blindly (internal/api builds its own response DTOs), so
+	// the always-empty fields in non-status-page contexts are inert, and
+	// ListForStatusPage's return type ([]Service) must stay exactly what
+	// api.ServiceLister's interface already declares.
+	GroupID         *string
+	GroupName       *string
+	ParentServiceID *string
+	Position        int
 }
 
 // ErrServiceInUse is returned by SoftDelete when the service is still
@@ -97,16 +122,16 @@ func (r *ServiceRepository) Create(ctx context.Context, service *Service) error 
 	var row pgx.Row
 	if service.MonitorMode == "polling" {
 		row = r.pool.QueryRow(ctx,
-			`INSERT INTO services (name, monitor_mode, poll_type, poll_target, poll_interval_seconds)
-			 VALUES ($1, 'polling', $2, $3, $4) RETURNING id, current_status, last_status_change_at`,
-			service.Name, service.PollType, service.PollTarget, service.PollIntervalSeconds,
+			`INSERT INTO services (name, monitor_mode, poll_type, poll_target, poll_interval_seconds, environment)
+			 VALUES ($1, 'polling', $2, $3, $4, $5) RETURNING id, current_status, last_status_change_at`,
+			service.Name, service.PollType, service.PollTarget, service.PollIntervalSeconds, service.Environment,
 		)
 	} else {
 		row = r.pool.QueryRow(ctx,
-			`INSERT INTO services (name, slo_id, slo_name, slo_type, datadog_service_tag)
-			 VALUES ($1, $2, $3, NULLIF($4, ''), NULLIF($5, ''))
+			`INSERT INTO services (name, slo_id, slo_name, slo_type, datadog_service_tag, environment)
+			 VALUES ($1, $2, $3, NULLIF($4, ''), NULLIF($5, ''), $6)
 			 RETURNING id, current_status, last_status_change_at`,
-			service.Name, service.SLOID, service.SLOName, service.SLOType, service.DatadogServiceTag,
+			service.Name, service.SLOID, service.SLOName, service.SLOType, service.DatadogServiceTag, service.Environment,
 		)
 	}
 
@@ -130,11 +155,11 @@ func (r *ServiceRepository) Get(ctx context.Context, id string) (*Service, bool,
 	var service Service
 	row := r.pool.QueryRow(ctx,
 		`SELECT id, name, COALESCE(slo_id, ''), slo_name, COALESCE(slo_type, ''), COALESCE(datadog_service_tag, ''),
-		        current_status, last_status_change_at, status_analysis
+		        environment, current_status, last_status_change_at, status_analysis
 		 FROM services WHERE id = $1 AND deleted_at IS NULL`,
 		id,
 	)
-	if err := row.Scan(&service.ID, &service.Name, &service.SLOID, &service.SLOName, &service.SLOType, &service.DatadogServiceTag, &service.CurrentStatus, &service.LastStatusChangeAt, &service.StatusAnalysis); err != nil {
+	if err := row.Scan(&service.ID, &service.Name, &service.SLOID, &service.SLOName, &service.SLOType, &service.DatadogServiceTag, &service.Environment, &service.CurrentStatus, &service.LastStatusChangeAt, &service.StatusAnalysis); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, false, nil
 		}
@@ -153,7 +178,7 @@ func (r *ServiceRepository) ListPaginated(ctx context.Context, page, pageSize in
 
 	rows, err := r.pool.Query(ctx,
 		`SELECT id, name, COALESCE(slo_id, ''), slo_name, COALESCE(slo_type, ''), COALESCE(datadog_service_tag, ''),
-		        current_status, last_status_change_at, COUNT(*) OVER() AS total
+		        environment, current_status, last_status_change_at, COUNT(*) OVER() AS total
 		 FROM services
 		 WHERE deleted_at IS NULL
 		 ORDER BY name
@@ -169,7 +194,7 @@ func (r *ServiceRepository) ListPaginated(ctx context.Context, page, pageSize in
 	total := 0
 	for rows.Next() {
 		var service Service
-		if err := rows.Scan(&service.ID, &service.Name, &service.SLOID, &service.SLOName, &service.SLOType, &service.DatadogServiceTag, &service.CurrentStatus, &service.LastStatusChangeAt, &total); err != nil {
+		if err := rows.Scan(&service.ID, &service.Name, &service.SLOID, &service.SLOName, &service.SLOType, &service.DatadogServiceTag, &service.Environment, &service.CurrentStatus, &service.LastStatusChangeAt, &total); err != nil {
 			return nil, 0, fmt.Errorf("db: failed to scan service: %w", err)
 		}
 		services = append(services, service)
@@ -262,17 +287,34 @@ func (r *ServiceRepository) ListPollingManual(ctx context.Context) ([]Service, e
 }
 
 // ListForStatusPage returns every service linked to statusPageID via the
-// status_page_services junction table, ordered by name, with its current
-// status. This is the scoped counterpart to List (SP-15): a status page's
-// public page must show only its own linked services, never every service
-// in the installation.
+// status_page_services junction table, with its current status and its
+// placement on this page (group_id/parent_service_id/position, plus the
+// group's name via a LEFT JOIN - service-groups-and-dependencies SGD-02/
+// SGD-03/SGD-06). This is the scoped counterpart to List (SP-15): a status
+// page's public page must show only its own linked services, never every
+// service in the installation.
+//
+// Ordering is ORDER BY g.position NULLS LAST, g.id, sps.position: grouped
+// services sort by their group's own position first (so every service in
+// an earlier group precedes every service in a later one), with the
+// group's own id as a tie-break so two groups sharing a position (a
+// concurrent CreateGroup race, or a manual UpdateGroup - see ListGroups'
+// doc comment) don't interleave their services against each other, then by
+// each service's own position within that group/ungrouped bucket;
+// ungrouped services (g.position NULL, since the LEFT JOIN has no matching
+// group row) sort after every grouped service, not interleaved by name as
+// before this task. NULLS LAST is standard SQL and valid as written for
+// pgx/Postgres (no query-builder translation needed - this file always
+// writes raw SQL).
 func (r *ServiceRepository) ListForStatusPage(ctx context.Context, statusPageID string) ([]Service, error) {
 	rows, err := r.pool.Query(ctx,
-		`SELECT s.id, s.name, COALESCE(s.slo_id, ''), s.current_status, s.last_status_change_at, s.status_analysis
+		`SELECT s.id, s.name, COALESCE(s.slo_id, ''), s.current_status, s.last_status_change_at, s.status_analysis,
+		        sps.group_id, g.name, sps.parent_service_id, sps.position
 		 FROM services s
 		 JOIN status_page_services sps ON sps.service_id = s.id
+		 LEFT JOIN status_page_service_groups g ON g.id = sps.group_id
 		 WHERE sps.status_page_id = $1 AND s.deleted_at IS NULL
-		 ORDER BY s.name`,
+		 ORDER BY g.position NULLS LAST, g.id, sps.position`,
 		statusPageID,
 	)
 	if err != nil {
@@ -283,7 +325,8 @@ func (r *ServiceRepository) ListForStatusPage(ctx context.Context, statusPageID 
 	var services []Service
 	for rows.Next() {
 		var service Service
-		if err := rows.Scan(&service.ID, &service.Name, &service.SLOID, &service.CurrentStatus, &service.LastStatusChangeAt, &service.StatusAnalysis); err != nil {
+		if err := rows.Scan(&service.ID, &service.Name, &service.SLOID, &service.CurrentStatus, &service.LastStatusChangeAt, &service.StatusAnalysis,
+			&service.GroupID, &service.GroupName, &service.ParentServiceID, &service.Position); err != nil {
 			return nil, fmt.Errorf("db: failed to scan service: %w", err)
 		}
 		services = append(services, service)
@@ -312,6 +355,72 @@ func (r *ServiceRepository) Update(ctx context.Context, id, name string) error {
 	return nil
 }
 
+// UpdateWithMetadata is Update, plus - inside the same transaction - the
+// SLO metadata and/or environment tag updates ServicesHandler.Update
+// (service-edit SVCEDIT-01..05) previously ran as 2-3 separate
+// pool-level calls (Update, then UpdateSLOMetadata, then UpdateEnvironment).
+// That left a window where a failure between calls (e.g. the process
+// crashing, or a transient DB error on the second/third statement) could
+// rename a service without applying its SLO metadata or environment tag,
+// or apply one but not the other - a partial update with no way to tell
+// from outside that it happened. All writes now commit or roll back
+// together.
+//
+// sloType/datadogServiceTag are both-or-neither, same convention
+// UpdateSLOMetadata uses: the handler only passes them non-nil when the
+// request explicitly included both fields, and either nil leaves SLO
+// metadata untouched (not cleared). environment nil leaves the
+// environment tag untouched; non-nil (including a pointer to "") sets or
+// clears it, same convention UpdateEnvironment uses. Returns ErrNotFound
+// if id doesn't exist or is already soft-deleted.
+func (r *ServiceRepository) UpdateWithMetadata(ctx context.Context, id, name string, sloType, datadogServiceTag, environment *string) error {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("db: failed to begin update transaction: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	tag, err := tx.Exec(ctx, "UPDATE services SET name = $2 WHERE id = $1 AND deleted_at IS NULL", id, name)
+	if err != nil {
+		return fmt.Errorf("db: failed to update service: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+
+	if sloType != nil && datadogServiceTag != nil {
+		sloTag, err := tx.Exec(ctx,
+			"UPDATE services SET slo_type = NULLIF($2, ''), datadog_service_tag = NULLIF($3, '') WHERE id = $1 AND deleted_at IS NULL",
+			id, *sloType, *datadogServiceTag,
+		)
+		if err != nil {
+			return fmt.Errorf("db: failed to update service SLO metadata: %w", err)
+		}
+		if sloTag.RowsAffected() == 0 {
+			return ErrNotFound
+		}
+	}
+
+	if environment != nil {
+		envTag, err := tx.Exec(ctx,
+			"UPDATE services SET environment = $2 WHERE id = $1 AND deleted_at IS NULL",
+			id, *environment,
+		)
+		if err != nil {
+			return fmt.Errorf("db: failed to update service environment: %w", err)
+		}
+		if envTag.RowsAffected() == 0 {
+			return ErrNotFound
+		}
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("db: failed to commit update transaction: %w", err)
+	}
+
+	return nil
+}
+
 // UpdateSLOMetadata sets serviceID's slo_type/datadog_service_tag columns -
 // metadata about an already-linked SLO (design.md's Data Models: no CHECK
 // constraint tying these to monitor_mode, unlike slo_id/monitor_mode/poll_*
@@ -326,6 +435,30 @@ func (r *ServiceRepository) UpdateSLOMetadata(ctx context.Context, serviceID, sl
 	)
 	if err != nil {
 		return fmt.Errorf("db: failed to update service SLO metadata: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+// UpdateEnvironment sets serviceID's environment column (service-environment-
+// tag SET-03) - visual-only, no other side effect. Passing "" clears the tag
+// back to "no tag", the same ""-means-absent convention UpdateSLOMetadata
+// uses for slo_type/datadog_service_tag; unlike that method, no NULLIF is
+// needed since environment is NOT NULL DEFAULT ” (0047_service_environment),
+// not a nullable column. The handler is responsible for rejecting a value
+// outside the enum before calling this (422, AGENTS.md §4) - the
+// 0047_service_environment CHECK constraint is the last-resort backstop, not
+// the primary validation path. Returns ErrNotFound if no service matches
+// serviceID, the same convention Update/UpdateSLOMetadata use.
+func (r *ServiceRepository) UpdateEnvironment(ctx context.Context, serviceID, environment string) error {
+	tag, err := r.pool.Exec(ctx,
+		"UPDATE services SET environment = $2 WHERE id = $1 AND deleted_at IS NULL",
+		serviceID, environment,
+	)
+	if err != nil {
+		return fmt.Errorf("db: failed to update service environment: %w", err)
 	}
 	if tag.RowsAffected() == 0 {
 		return ErrNotFound

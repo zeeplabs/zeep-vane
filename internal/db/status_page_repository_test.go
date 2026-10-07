@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"testing"
 	"time"
+
+	"github.com/jackc/pgx/v5"
 )
 
 // createStatusPageFixture inserts a domain and a status page pointed at
@@ -173,6 +175,101 @@ func TestStatusPageRepository_Create_WithDomain_Unchanged(t *testing.T) {
 	}
 	if statusPage.Subdomain == nil || *statusPage.Subdomain != subdomain {
 		t.Errorf("Subdomain = %v, want %q", statusPage.Subdomain, subdomain)
+	}
+}
+
+// TestStatusPageRepository_Create_PersistsEnvironment covers
+// status-page-environment-banner SPEB-01: a non-empty Environment given to
+// Create persists and reads back via GetByID.
+func TestStatusPageRepository_Create_PersistsEnvironment(t *testing.T) {
+	pool, _ := newTenantScopedPool(t)
+
+	repo := NewStatusPageRepository(pool)
+	statusPage := &StatusPage{Name: fmt.Sprintf("env-page-%d", time.Now().UnixNano()), Environment: "staging"}
+	if err := repo.Create(context.Background(), statusPage, nil); err != nil {
+		t.Fatalf("Create() returned unexpected error: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = pool.Exec(context.Background(), "DELETE FROM status_pages WHERE id = $1", statusPage.ID)
+	})
+
+	got, err := repo.GetByID(context.Background(), statusPage.ID)
+	if err != nil {
+		t.Fatalf("GetByID() returned unexpected error: %v", err)
+	}
+	if got.Environment != "staging" {
+		t.Errorf("got.Environment = %q, want %q", got.Environment, "staging")
+	}
+}
+
+// TestStatusPageRepository_Create_EmptyEnvironment_DefaultsToEmpty covers
+// the ""-means-absent convention (SPEB-01): a StatusPage with no
+// Environment set persists and reads back "" (no banner).
+func TestStatusPageRepository_Create_EmptyEnvironment_DefaultsToEmpty(t *testing.T) {
+	pool, _ := newTenantScopedPool(t)
+
+	repo := NewStatusPageRepository(pool)
+	statusPage := &StatusPage{Name: fmt.Sprintf("env-page-empty-%d", time.Now().UnixNano())}
+	if err := repo.Create(context.Background(), statusPage, nil); err != nil {
+		t.Fatalf("Create() returned unexpected error: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = pool.Exec(context.Background(), "DELETE FROM status_pages WHERE id = $1", statusPage.ID)
+	})
+
+	got, err := repo.GetByID(context.Background(), statusPage.ID)
+	if err != nil {
+		t.Fatalf("GetByID() returned unexpected error: %v", err)
+	}
+	if got.Environment != "" {
+		t.Errorf("got.Environment = %q, want empty", got.Environment)
+	}
+}
+
+// TestStatusPageRepository_UpdateEnvironment_SetsThenClears_RoundTrips
+// covers SPEB-02's admin-facing round trip: set the environment, read it
+// back via GetByID, then clear it via "" and confirm it reads back empty
+// again (not left stale) - mirrors ServiceRepository's UpdateEnvironment
+// round-trip test.
+func TestStatusPageRepository_UpdateEnvironment_SetsThenClears_RoundTrips(t *testing.T) {
+	repo, pool := newAttachDomainTestRepo(t)
+	pageID := createDomainlessStatusPage(t, repo, pool, "update-env-page")
+
+	updated, err := repo.UpdateEnvironment(context.Background(), pageID, "development")
+	if err != nil {
+		t.Fatalf("UpdateEnvironment() set returned unexpected error: %v", err)
+	}
+	if updated.Environment != "development" {
+		t.Fatalf("after set: updated.Environment = %q, want %q", updated.Environment, "development")
+	}
+	got, err := repo.GetByID(context.Background(), pageID)
+	if err != nil {
+		t.Fatalf("GetByID() after set returned unexpected error: %v", err)
+	}
+	if got.Environment != "development" {
+		t.Fatalf("after set: got.Environment = %q, want %q", got.Environment, "development")
+	}
+
+	if _, err := repo.UpdateEnvironment(context.Background(), pageID, ""); err != nil {
+		t.Fatalf("UpdateEnvironment() clear returned unexpected error: %v", err)
+	}
+	got, err = repo.GetByID(context.Background(), pageID)
+	if err != nil {
+		t.Fatalf("GetByID() after clear returned unexpected error: %v", err)
+	}
+	if got.Environment != "" {
+		t.Errorf("after clear: got.Environment = %q, want empty", got.Environment)
+	}
+}
+
+// TestStatusPageRepository_UpdateEnvironment_UnknownID_ReturnsErrNotFound
+// mirrors ServiceRepository's UpdateEnvironment not-found convention.
+func TestStatusPageRepository_UpdateEnvironment_UnknownID_ReturnsErrNotFound(t *testing.T) {
+	repo, _ := newAttachDomainTestRepo(t)
+
+	_, err := repo.UpdateEnvironment(context.Background(), "00000000-0000-0000-0000-000000000000", "development")
+	if !errors.Is(err, ErrNotFound) {
+		t.Errorf("UpdateEnvironment() error = %v, want ErrNotFound", err)
 	}
 }
 
@@ -355,6 +452,21 @@ func newAttachDomainTestRepo(t *testing.T) (*StatusPageRepository, *Pool) {
 	t.Helper()
 	pool, _ := newTenantScopedPool(t)
 	return NewStatusPageRepository(pool), pool
+}
+
+// testTenantID reads back the app.tenant_id GUC newTenantScopedPool pinned
+// on every connection in pool (via dbtest.TenantScopedDSN's "-c
+// app.tenant_id=..." connection option) - used by UpdateGroup/DeleteGroup
+// call sites that now require an explicit tenantID argument, without
+// threading a third return value through newAttachDomainTestRepo's ~40
+// existing call sites.
+func testTenantID(t *testing.T, pool *Pool) string {
+	t.Helper()
+	var tenantID string
+	if err := pool.QueryRow(context.Background(), "SELECT current_setting('app.tenant_id', true)").Scan(&tenantID); err != nil {
+		t.Fatalf("reading app.tenant_id returned unexpected error: %v", err)
+	}
+	return tenantID
 }
 
 // TestAttachDomain_DomainlessPage_SucceedsAndMovesToPendingTLS asserts
@@ -639,7 +751,7 @@ func TestStatusPageRepository_SetServices_ReplacesFullSet(t *testing.T) {
 	serviceA := createSetServicesTestService(t, pool, "set-services-svc-a")
 	serviceB := createSetServicesTestService(t, pool, "set-services-svc-b")
 
-	if err := repo.SetServices(context.Background(), pageID, []string{serviceA}); err != nil {
+	if err := repo.SetServices(context.Background(), pageID, []ServicePlacement{{ServiceID: serviceA}}); err != nil {
 		t.Fatalf("SetServices() first call returned unexpected error: %v", err)
 	}
 	page, err := repo.GetByID(context.Background(), pageID)
@@ -650,7 +762,7 @@ func TestStatusPageRepository_SetServices_ReplacesFullSet(t *testing.T) {
 		t.Fatalf("ServiceIDs after first SetServices() = %v, want [%q]", page.ServiceIDs, serviceA)
 	}
 
-	if err := repo.SetServices(context.Background(), pageID, []string{serviceB}); err != nil {
+	if err := repo.SetServices(context.Background(), pageID, []ServicePlacement{{ServiceID: serviceB}}); err != nil {
 		t.Fatalf("SetServices() second call returned unexpected error: %v", err)
 	}
 	page, err = repo.GetByID(context.Background(), pageID)
@@ -669,10 +781,10 @@ func TestStatusPageRepository_SetServices_EmptySlice_UnlinksAll(t *testing.T) {
 	pageID := createDomainlessStatusPage(t, repo, pool, "set-services-unlink-page")
 	serviceA := createSetServicesTestService(t, pool, "set-services-unlink-svc")
 
-	if err := repo.SetServices(context.Background(), pageID, []string{serviceA}); err != nil {
+	if err := repo.SetServices(context.Background(), pageID, []ServicePlacement{{ServiceID: serviceA}}); err != nil {
 		t.Fatalf("SetServices() (link) returned unexpected error: %v", err)
 	}
-	if err := repo.SetServices(context.Background(), pageID, []string{}); err != nil {
+	if err := repo.SetServices(context.Background(), pageID, []ServicePlacement{}); err != nil {
 		t.Fatalf("SetServices() (unlink) returned unexpected error: %v", err)
 	}
 
@@ -692,9 +804,342 @@ func TestStatusPageRepository_SetServices_NonexistentPage_ErrNotFound(t *testing
 	repo, pool := newAttachDomainTestRepo(t)
 	serviceA := createSetServicesTestService(t, pool, "set-services-missing-page-svc")
 
-	err := repo.SetServices(context.Background(), "00000000-0000-0000-0000-000000000000", []string{serviceA})
+	err := repo.SetServices(context.Background(), "00000000-0000-0000-0000-000000000000", []ServicePlacement{{ServiceID: serviceA}})
 	if !errors.Is(err, ErrNotFound) {
 		t.Fatalf("SetServices() error = %v, want ErrNotFound", err)
+	}
+}
+
+// readServiceLink reads back a single status_page_services row's
+// group_id, parent_service_id and position directly, bypassing GetByID
+// (which only surfaces ServiceIDs) - used to assert T4's new columns and
+// to prove a rejected SetServices() call left the DB untouched.
+func readServiceLink(t *testing.T, pool *Pool, statusPageID, serviceID string) (groupID, parentServiceID *string, position int, found bool) {
+	t.Helper()
+	row := pool.QueryRow(context.Background(),
+		"SELECT group_id, parent_service_id, position FROM status_page_services WHERE status_page_id = $1 AND service_id = $2",
+		statusPageID, serviceID,
+	)
+	if err := row.Scan(&groupID, &parentServiceID, &position); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, nil, 0, false
+		}
+		t.Fatalf("reading back service link returned unexpected error: %v", err)
+	}
+	return groupID, parentServiceID, position, true
+}
+
+// countServiceLinks returns the number of status_page_services rows for
+// statusPageID - used to assert a rejected SetServices() call performed no
+// DELETE either.
+func countServiceLinks(t *testing.T, pool *Pool, statusPageID string) int {
+	t.Helper()
+	var count int
+	row := pool.QueryRow(context.Background(),
+		"SELECT COUNT(*) FROM status_page_services WHERE status_page_id = $1", statusPageID)
+	if err := row.Scan(&count); err != nil {
+		t.Fatalf("counting service links returned unexpected error: %v", err)
+	}
+	return count
+}
+
+// TestStatusPageRepository_SetServices_PersistsGroupParentPosition asserts
+// a full-replace SetServices() call persists all 3 new placement columns
+// (group_id, parent_service_id, position) - not just service_id (T4).
+func TestStatusPageRepository_SetServices_PersistsGroupParentPosition(t *testing.T) {
+	repo, pool := newAttachDomainTestRepo(t)
+	pageID := createDomainlessStatusPage(t, repo, pool, "set-services-placement-page")
+	parent := createSetServicesTestService(t, pool, "set-services-placement-parent")
+	child := createSetServicesTestService(t, pool, "set-services-placement-child")
+
+	group, err := repo.CreateGroup(context.Background(), pageID, "Placement Group")
+	if err != nil {
+		t.Fatalf("setup CreateGroup() returned unexpected error: %v", err)
+	}
+
+	placements := []ServicePlacement{
+		{ServiceID: parent, GroupID: &group.ID, Position: 0},
+		{ServiceID: child, GroupID: &group.ID, ParentServiceID: &parent, Position: 1},
+	}
+	if err := repo.SetServices(context.Background(), pageID, placements); err != nil {
+		t.Fatalf("SetServices() returned unexpected error: %v", err)
+	}
+
+	gotGroupID, gotParentID, gotPosition, found := readServiceLink(t, pool, pageID, parent)
+	if !found {
+		t.Fatalf("service link for parent not found after SetServices()")
+	}
+	if gotGroupID == nil || *gotGroupID != group.ID {
+		t.Errorf("parent link group_id = %v, want %q", gotGroupID, group.ID)
+	}
+	if gotParentID != nil {
+		t.Errorf("parent link parent_service_id = %v, want nil", *gotParentID)
+	}
+	if gotPosition != 0 {
+		t.Errorf("parent link position = %d, want 0", gotPosition)
+	}
+
+	gotGroupID, gotParentID, gotPosition, found = readServiceLink(t, pool, pageID, child)
+	if !found {
+		t.Fatalf("service link for child not found after SetServices()")
+	}
+	if gotGroupID == nil || *gotGroupID != group.ID {
+		t.Errorf("child link group_id = %v, want %q", gotGroupID, group.ID)
+	}
+	if gotParentID == nil || *gotParentID != parent {
+		t.Errorf("child link parent_service_id = %v, want %q", gotParentID, parent)
+	}
+	if gotPosition != 1 {
+		t.Errorf("child link position = %d, want 1", gotPosition)
+	}
+}
+
+// TestStatusPageRepository_SetServices_OmittingPlacementClearsIt asserts
+// replace-all semantics for the new columns specifically: a second
+// SetServices() call that omits a previously-set group_id/parent_service_id
+// for a service clears it rather than preserving it (no merge - this is
+// the easy place for a subtle bug per T4's brief).
+func TestStatusPageRepository_SetServices_OmittingPlacementClearsIt(t *testing.T) {
+	repo, pool := newAttachDomainTestRepo(t)
+	pageID := createDomainlessStatusPage(t, repo, pool, "set-services-clear-page")
+	parent := createSetServicesTestService(t, pool, "set-services-clear-parent")
+	child := createSetServicesTestService(t, pool, "set-services-clear-child")
+
+	group, err := repo.CreateGroup(context.Background(), pageID, "Clear Group")
+	if err != nil {
+		t.Fatalf("setup CreateGroup() returned unexpected error: %v", err)
+	}
+
+	first := []ServicePlacement{
+		{ServiceID: parent, GroupID: &group.ID, Position: 0},
+		{ServiceID: child, GroupID: &group.ID, ParentServiceID: &parent, Position: 1},
+	}
+	if err := repo.SetServices(context.Background(), pageID, first); err != nil {
+		t.Fatalf("SetServices() (first) returned unexpected error: %v", err)
+	}
+
+	// Second call re-submits both services but drops the group/parent
+	// assignment entirely - replace-all must clear it, not merge with the
+	// first call's values.
+	second := []ServicePlacement{
+		{ServiceID: parent, Position: 0},
+		{ServiceID: child, Position: 1},
+	}
+	if err := repo.SetServices(context.Background(), pageID, second); err != nil {
+		t.Fatalf("SetServices() (second) returned unexpected error: %v", err)
+	}
+
+	gotGroupID, gotParentID, _, found := readServiceLink(t, pool, pageID, child)
+	if !found {
+		t.Fatalf("service link for child not found after second SetServices()")
+	}
+	if gotGroupID != nil {
+		t.Errorf("child link group_id after clearing call = %v, want nil (replace-all, not merge)", *gotGroupID)
+	}
+	if gotParentID != nil {
+		t.Errorf("child link parent_service_id after clearing call = %v, want nil (replace-all, not merge)", *gotParentID)
+	}
+}
+
+// TestStatusPageRepository_SetServices_ValidationErrors_DBUntouched asserts
+// each of validateServicePlacements' 4 sentinel errors is surfaced by
+// SetServices() without any DB mutation - the pre-call state (including
+// zero rows, for the "no existing links" case) is read back unchanged
+// after the rejected call.
+func TestStatusPageRepository_SetServices_ValidationErrors_DBUntouched(t *testing.T) {
+	repo, pool := newAttachDomainTestRepo(t)
+
+	otherPageID := createDomainlessStatusPage(t, repo, pool, "set-services-other-page")
+	otherGroup, err := repo.CreateGroup(context.Background(), otherPageID, "Other Page Group")
+	if err != nil {
+		t.Fatalf("setup CreateGroup() (other page) returned unexpected error: %v", err)
+	}
+
+	svcA := createSetServicesTestService(t, pool, "set-services-err-a")
+	svcB := createSetServicesTestService(t, pool, "set-services-err-b")
+	svcC := createSetServicesTestService(t, pool, "set-services-err-c")
+
+	tests := []struct {
+		name       string
+		placements []ServicePlacement
+		wantErr    error
+	}{
+		{
+			name:       "group cross page",
+			placements: []ServicePlacement{{ServiceID: svcA, GroupID: &otherGroup.ID}},
+			wantErr:    ErrGroupCrossPage,
+		},
+		{
+			name:       "self reference",
+			placements: []ServicePlacement{{ServiceID: svcA, ParentServiceID: &svcA}},
+			wantErr:    ErrSelfReference,
+		},
+		{
+			name:       "parent not in set",
+			placements: []ServicePlacement{{ServiceID: svcA, ParentServiceID: &svcB}},
+			wantErr:    ErrParentNotInSet,
+		},
+		{
+			name: "max depth exceeded",
+			placements: []ServicePlacement{
+				{ServiceID: svcA},
+				{ServiceID: svcB, ParentServiceID: &svcA},
+				{ServiceID: svcC, ParentServiceID: &svcB},
+			},
+			wantErr: ErrMaxDepthExceeded,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			pageID := createDomainlessStatusPage(t, repo, pool, "set-services-validation-page")
+			preCount := countServiceLinks(t, pool, pageID)
+
+			err := repo.SetServices(context.Background(), pageID, tt.placements)
+			if !errors.Is(err, tt.wantErr) {
+				t.Fatalf("SetServices() error = %v, want %v", err, tt.wantErr)
+			}
+
+			postCount := countServiceLinks(t, pool, pageID)
+			if postCount != preCount {
+				t.Errorf("service link count after rejected SetServices() = %d, want unchanged %d", postCount, preCount)
+			}
+		})
+	}
+}
+
+// TestStatusPageRepository_SetServices_RemovingParentFromPage_ChildBecomesParentless
+// covers SGD-13 (P2-AC7, spec.md's own Independent Test: "Remove A from the
+// page, verify B renders parentless"): a parent linked to the page by one
+// SetServices() call, then omitted from a second SetServices() call on the
+// same page whose placements still include its former child, must not
+// reject the second call with ErrParentNotInSet - the child's
+// parent_service_id is instead cleared (SGD-13), same as if the parent
+// service row had been deleted outright (migration 0046's ON DELETE SET
+// NULL, exercised by the sibling DeleteParentService test above).
+func TestStatusPageRepository_SetServices_RemovingParentFromPage_ChildBecomesParentless(t *testing.T) {
+	repo, pool := newAttachDomainTestRepo(t)
+	pageID := createDomainlessStatusPage(t, repo, pool, "set-services-sgd13-page")
+	parent := createSetServicesTestService(t, pool, "set-services-sgd13-parent")
+	child := createSetServicesTestService(t, pool, "set-services-sgd13-child")
+
+	if err := repo.SetServices(context.Background(), pageID, []ServicePlacement{
+		{ServiceID: parent},
+		{ServiceID: child, ParentServiceID: &parent},
+	}); err != nil {
+		t.Fatalf("setup SetServices() returned unexpected error: %v", err)
+	}
+
+	// Second call removes the parent from the page's placement set
+	// entirely, while the child - still referencing it - stays.
+	if err := repo.SetServices(context.Background(), pageID, []ServicePlacement{
+		{ServiceID: child, ParentServiceID: &parent},
+	}); err != nil {
+		t.Fatalf("SetServices() removing the parent returned unexpected error: %v, want nil (SGD-13, child should become parentless)", err)
+	}
+
+	_, gotParentID, _, found := readServiceLink(t, pool, pageID, child)
+	if !found {
+		t.Fatalf("child service link not found after removing its parent from the page")
+	}
+	if gotParentID != nil {
+		t.Errorf("child link parent_service_id after removing parent from page = %v, want nil (SGD-13)", *gotParentID)
+	}
+}
+
+// TestStatusPageRepository_SetServices_ParentNeverOnPage_StillRejected
+// guards the SGD-13 fix above against over-relaxing SGD-11: a
+// ParentServiceID that was never linked to this status page at all (not
+// just-removed by this call) must still be rejected with
+// ErrParentNotInSet, same as before the SGD-13 fix.
+func TestStatusPageRepository_SetServices_ParentNeverOnPage_StillRejected(t *testing.T) {
+	repo, pool := newAttachDomainTestRepo(t)
+	pageID := createDomainlessStatusPage(t, repo, pool, "set-services-sgd11-page")
+	neverOnPage := createSetServicesTestService(t, pool, "set-services-sgd11-never-on-page")
+	child := createSetServicesTestService(t, pool, "set-services-sgd11-child")
+
+	err := repo.SetServices(context.Background(), pageID, []ServicePlacement{
+		{ServiceID: child, ParentServiceID: &neverOnPage},
+	})
+	if !errors.Is(err, ErrParentNotInSet) {
+		t.Fatalf("SetServices() error = %v, want ErrParentNotInSet (parent never linked to this page)", err)
+	}
+}
+
+// TestStatusPageRepository_SetServices_DeleteGroup_SetsGroupIDNull asserts
+// the group_id FK's ON DELETE SET NULL (migration 0046) is exercised by a
+// real DeleteGroup() after SetServices() has linked a service to that
+// group - the row survives, with group_id now NULL.
+func TestStatusPageRepository_SetServices_DeleteGroup_SetsGroupIDNull(t *testing.T) {
+	repo, pool := newAttachDomainTestRepo(t)
+	pageID := createDomainlessStatusPage(t, repo, pool, "set-services-fk-group-page")
+	svc := createSetServicesTestService(t, pool, "set-services-fk-group-svc")
+
+	group, err := repo.CreateGroup(context.Background(), pageID, "FK Group")
+	if err != nil {
+		t.Fatalf("setup CreateGroup() returned unexpected error: %v", err)
+	}
+	if err := repo.SetServices(context.Background(), pageID, []ServicePlacement{{ServiceID: svc, GroupID: &group.ID}}); err != nil {
+		t.Fatalf("SetServices() returned unexpected error: %v", err)
+	}
+
+	if err := repo.DeleteGroup(context.Background(), testTenantID(t, pool), pageID, group.ID); err != nil {
+		t.Fatalf("DeleteGroup() returned unexpected error: %v", err)
+	}
+
+	gotGroupID, _, _, found := readServiceLink(t, pool, pageID, svc)
+	if !found {
+		t.Fatalf("service link not found after DeleteGroup() - row should survive, not cascade-delete")
+	}
+	if gotGroupID != nil {
+		t.Errorf("service link group_id after DeleteGroup() = %v, want nil (ON DELETE SET NULL)", *gotGroupID)
+	}
+}
+
+// TestStatusPageRepository_SetServices_DeleteParentService_SetsParentIDNull
+// asserts the parent_service_id FK's ON DELETE SET NULL (migration 0046)
+// is exercised by a real delete of the parent service's services row after
+// SetServices() has linked a child to it as parent - the child's link
+// survives, with parent_service_id now NULL.
+//
+// validateAndSanitizeServicePlacements requires the parent to appear as its
+// own placement in the same SetServices() call, or to have at least been
+// linked to the page before this call (SGD-13, ErrParentNotInSet
+// otherwise), which links it to the page via status_page_services.service_id
+// too - a separate FK (status_page_services_service_id_fkey) with no ON
+// DELETE SET NULL of its own, unrelated to T4's new columns. That row is
+// removed directly first so the real DELETE FROM services below exercises
+// only the parent_service_id FK this test targets, not that other one.
+func TestStatusPageRepository_SetServices_DeleteParentService_SetsParentIDNull(t *testing.T) {
+	repo, pool := newAttachDomainTestRepo(t)
+	pageID := createDomainlessStatusPage(t, repo, pool, "set-services-fk-parent-page")
+	parent := createSetServicesTestService(t, pool, "set-services-fk-parent-parent")
+	child := createSetServicesTestService(t, pool, "set-services-fk-parent-child")
+
+	placements := []ServicePlacement{
+		{ServiceID: parent},
+		{ServiceID: child, ParentServiceID: &parent},
+	}
+	if err := repo.SetServices(context.Background(), pageID, placements); err != nil {
+		t.Fatalf("SetServices() returned unexpected error: %v", err)
+	}
+
+	if _, err := pool.Exec(context.Background(),
+		"DELETE FROM status_page_services WHERE status_page_id = $1 AND service_id = $2", pageID, parent,
+	); err != nil {
+		t.Fatalf("removing parent's own membership row returned unexpected error: %v", err)
+	}
+	if _, err := pool.Exec(context.Background(), "DELETE FROM services WHERE id = $1", parent); err != nil {
+		t.Fatalf("deleting parent service returned unexpected error: %v", err)
+	}
+
+	gotGroupID, gotParentID, _, found := readServiceLink(t, pool, pageID, child)
+	_ = gotGroupID
+	if !found {
+		t.Fatalf("child service link not found after parent service delete - row should survive, not cascade-delete")
+	}
+	if gotParentID != nil {
+		t.Errorf("child link parent_service_id after parent service delete = %v, want nil (ON DELETE SET NULL)", *gotParentID)
 	}
 }
 
@@ -949,5 +1394,303 @@ func TestStatusPageRepository_ListPaginated_PopulatesServiceIDs(t *testing.T) {
 	}
 	if !found {
 		t.Fatalf("status page %s not found across any page of ListPaginated()", statusPage.ID)
+	}
+}
+
+// TestStatusPageRepository_CreateGroup_AppendsAtEndPosition asserts
+// CreateGroup sets Position to one past the highest position already used
+// on the page, so repeated calls append in order rather than colliding at 0.
+func TestStatusPageRepository_CreateGroup_AppendsAtEndPosition(t *testing.T) {
+	repo, pool := newAttachDomainTestRepo(t)
+	pageID := createDomainlessStatusPage(t, repo, pool, "create-group-page")
+
+	first, err := repo.CreateGroup(context.Background(), pageID, "First Group")
+	if err != nil {
+		t.Fatalf("CreateGroup() first call returned unexpected error: %v", err)
+	}
+	if first.Position != 0 {
+		t.Errorf("first group Position = %d, want 0", first.Position)
+	}
+	if first.StatusPageID != pageID {
+		t.Errorf("first group StatusPageID = %q, want %q", first.StatusPageID, pageID)
+	}
+	if first.Name != "First Group" {
+		t.Errorf("first group Name = %q, want %q", first.Name, "First Group")
+	}
+	if first.ID == "" {
+		t.Error("first group ID is empty, want generated id")
+	}
+
+	second, err := repo.CreateGroup(context.Background(), pageID, "Second Group")
+	if err != nil {
+		t.Fatalf("CreateGroup() second call returned unexpected error: %v", err)
+	}
+	if second.Position != 1 {
+		t.Errorf("second group Position = %d, want 1 (appended after first)", second.Position)
+	}
+}
+
+// TestStatusPageRepository_CreateGroup_AfterDeletingMiddleGroup_NoDuplicatePosition
+// is the regression test for the COUNT(*) bug this fix replaces: create
+// G0/G1/G2 (positions 0/1/2), delete G0 (positions 1/2 remain), then create
+// G3 - COUNT(*) would return 2 (only 2 rows exist), colliding with G2's own
+// position 2 and leaving their display order ambiguous. The
+// COALESCE(MAX(position), -1)+1 fix must give G3 position 3 instead,
+// regardless of how many rows currently exist.
+func TestStatusPageRepository_CreateGroup_AfterDeletingMiddleGroup_NoDuplicatePosition(t *testing.T) {
+	repo, pool := newAttachDomainTestRepo(t)
+	pageID := createDomainlessStatusPage(t, repo, pool, "create-group-after-delete-page")
+	tenantID := testTenantID(t, pool)
+
+	g0, err := repo.CreateGroup(context.Background(), pageID, "G0")
+	if err != nil {
+		t.Fatalf("CreateGroup() G0 returned unexpected error: %v", err)
+	}
+	g1, err := repo.CreateGroup(context.Background(), pageID, "G1")
+	if err != nil {
+		t.Fatalf("CreateGroup() G1 returned unexpected error: %v", err)
+	}
+	g2, err := repo.CreateGroup(context.Background(), pageID, "G2")
+	if err != nil {
+		t.Fatalf("CreateGroup() G2 returned unexpected error: %v", err)
+	}
+	if g1.Position != 1 || g2.Position != 2 {
+		t.Fatalf("setup positions = G1:%d G2:%d, want G1:1 G2:2", g1.Position, g2.Position)
+	}
+
+	if err := repo.DeleteGroup(context.Background(), tenantID, pageID, g0.ID); err != nil {
+		t.Fatalf("DeleteGroup() G0 returned unexpected error: %v", err)
+	}
+
+	g3, err := repo.CreateGroup(context.Background(), pageID, "G3")
+	if err != nil {
+		t.Fatalf("CreateGroup() G3 returned unexpected error: %v", err)
+	}
+	if g3.Position != 3 {
+		t.Errorf("G3 Position = %d, want 3 (one past G2's position, not COUNT(*)'s 2 which would collide with G2)", g3.Position)
+	}
+	if g3.Position == g2.Position {
+		t.Errorf("G3 Position = %d collides with G2 Position = %d", g3.Position, g2.Position)
+	}
+}
+
+// TestStatusPageRepository_UpdateGroup_RenamesAndRepositions asserts
+// UpdateGroup can change both Name and Position on an existing group.
+func TestStatusPageRepository_UpdateGroup_RenamesAndRepositions(t *testing.T) {
+	repo, pool := newAttachDomainTestRepo(t)
+	pageID := createDomainlessStatusPage(t, repo, pool, "update-group-page")
+
+	group, err := repo.CreateGroup(context.Background(), pageID, "Original Name")
+	if err != nil {
+		t.Fatalf("setup CreateGroup() returned unexpected error: %v", err)
+	}
+
+	updated, err := repo.UpdateGroup(context.Background(), testTenantID(t, pool), pageID, group.ID, "Renamed", 5)
+	if err != nil {
+		t.Fatalf("UpdateGroup() returned unexpected error: %v", err)
+	}
+	if updated.Name != "Renamed" {
+		t.Errorf("updated group Name = %q, want %q", updated.Name, "Renamed")
+	}
+	if updated.Position != 5 {
+		t.Errorf("updated group Position = %d, want 5", updated.Position)
+	}
+	if updated.ID != group.ID {
+		t.Errorf("updated group ID = %q, want %q (unchanged)", updated.ID, group.ID)
+	}
+}
+
+// TestStatusPageRepository_UpdateGroup_NonexistentID_ErrNotFound asserts
+// UpdateGroup distinguishes "group doesn't exist" rather than silently
+// succeeding on a no-op UPDATE.
+func TestStatusPageRepository_UpdateGroup_NonexistentID_ErrNotFound(t *testing.T) {
+	repo, pool := newAttachDomainTestRepo(t)
+	pageID := createDomainlessStatusPage(t, repo, pool, "update-group-missing-page")
+
+	_, err := repo.UpdateGroup(context.Background(), testTenantID(t, pool), pageID, "00000000-0000-0000-0000-000000000000", "Name", 0)
+	if !errors.Is(err, ErrNotFound) {
+		t.Fatalf("UpdateGroup() error = %v, want ErrNotFound", err)
+	}
+}
+
+// TestStatusPageRepository_UpdateGroup_GroupBelongsToDifferentStatusPage_ErrNotFound
+// asserts UpdateGroup's status_page_id filter rejects a group id that
+// exists but belongs to a different status page, even one in the same
+// tenant - RLS (migration 0049) only stops cross-tenant access, so this
+// filter is the only thing stopping cross-page mutation within one tenant
+// (security review finding).
+func TestStatusPageRepository_UpdateGroup_GroupBelongsToDifferentStatusPage_ErrNotFound(t *testing.T) {
+	repo, pool := newAttachDomainTestRepo(t)
+	ownPageID := createDomainlessStatusPage(t, repo, pool, "update-group-cross-page-own")
+	otherPageID := createDomainlessStatusPage(t, repo, pool, "update-group-cross-page-other")
+
+	group, err := repo.CreateGroup(context.Background(), otherPageID, "Belongs To Other Page")
+	if err != nil {
+		t.Fatalf("setup CreateGroup() returned unexpected error: %v", err)
+	}
+
+	_, err = repo.UpdateGroup(context.Background(), testTenantID(t, pool), ownPageID, group.ID, "Hijacked", 0)
+	if !errors.Is(err, ErrNotFound) {
+		t.Fatalf("UpdateGroup() error = %v, want ErrNotFound when groupId belongs to a different status page", err)
+	}
+
+	unchanged, err := repo.ListGroups(context.Background(), otherPageID)
+	if err != nil {
+		t.Fatalf("ListGroups() returned unexpected error: %v", err)
+	}
+	if len(unchanged) != 1 || unchanged[0].Name != "Belongs To Other Page" {
+		t.Fatalf("group on otherPageID changed after cross-page UpdateGroup attempt: %+v", unchanged)
+	}
+}
+
+// TestStatusPageRepository_DeleteGroup_RemovesGroupAndLeavesServiceGroupIDNull
+// asserts DeleteGroup removes the group row itself, and that a previously
+// assigned service's group_id becomes NULL (via the FK's ON DELETE SET
+// NULL from migration 0046) rather than the service row being deleted too.
+func TestStatusPageRepository_DeleteGroup_RemovesGroupAndLeavesServiceGroupIDNull(t *testing.T) {
+	repo, pool := newAttachDomainTestRepo(t)
+	pageID := createDomainlessStatusPage(t, repo, pool, "delete-group-page")
+	serviceID := createSetServicesTestService(t, pool, "delete-group-svc")
+
+	group, err := repo.CreateGroup(context.Background(), pageID, "To Delete")
+	if err != nil {
+		t.Fatalf("setup CreateGroup() returned unexpected error: %v", err)
+	}
+	if _, err := pool.Exec(context.Background(),
+		"INSERT INTO status_page_services (status_page_id, service_id, group_id) VALUES ($1, $2, $3)",
+		pageID, serviceID, group.ID,
+	); err != nil {
+		t.Fatalf("setup linking service to group returned unexpected error: %v", err)
+	}
+
+	if err := repo.DeleteGroup(context.Background(), testTenantID(t, pool), pageID, group.ID); err != nil {
+		t.Fatalf("DeleteGroup() returned unexpected error: %v", err)
+	}
+
+	groups, err := repo.ListGroups(context.Background(), pageID)
+	if err != nil {
+		t.Fatalf("ListGroups() after delete returned unexpected error: %v", err)
+	}
+	for _, g := range groups {
+		if g.ID == group.ID {
+			t.Fatalf("group %s still present after DeleteGroup()", group.ID)
+		}
+	}
+
+	var groupID *string
+	row := pool.QueryRow(context.Background(),
+		"SELECT group_id FROM status_page_services WHERE status_page_id = $1 AND service_id = $2", pageID, serviceID,
+	)
+	if err := row.Scan(&groupID); err != nil {
+		t.Fatalf("reading back service link's group_id returned unexpected error: %v", err)
+	}
+	if groupID != nil {
+		t.Errorf("service link group_id after DeleteGroup() = %v, want nil (SET NULL via FK)", *groupID)
+	}
+}
+
+// TestStatusPageRepository_DeleteGroup_NonexistentID_ErrNotFound asserts
+// DeleteGroup distinguishes "group doesn't exist" rather than silently
+// succeeding on a no-op DELETE.
+func TestStatusPageRepository_DeleteGroup_NonexistentID_ErrNotFound(t *testing.T) {
+	repo, pool := newAttachDomainTestRepo(t)
+	pageID := createDomainlessStatusPage(t, repo, pool, "delete-group-missing-page")
+
+	err := repo.DeleteGroup(context.Background(), testTenantID(t, pool), pageID, "00000000-0000-0000-0000-000000000000")
+	if !errors.Is(err, ErrNotFound) {
+		t.Fatalf("DeleteGroup() error = %v, want ErrNotFound", err)
+	}
+}
+
+// TestStatusPageRepository_DeleteGroup_GroupBelongsToDifferentStatusPage_ErrNotFound
+// asserts DeleteGroup's status_page_id filter rejects a group id that
+// exists but belongs to a different status page, even one in the same
+// tenant - mirrors UpdateGroup's equivalent test (security review finding).
+func TestStatusPageRepository_DeleteGroup_GroupBelongsToDifferentStatusPage_ErrNotFound(t *testing.T) {
+	repo, pool := newAttachDomainTestRepo(t)
+	ownPageID := createDomainlessStatusPage(t, repo, pool, "delete-group-cross-page-own")
+	otherPageID := createDomainlessStatusPage(t, repo, pool, "delete-group-cross-page-other")
+
+	group, err := repo.CreateGroup(context.Background(), otherPageID, "Belongs To Other Page")
+	if err != nil {
+		t.Fatalf("setup CreateGroup() returned unexpected error: %v", err)
+	}
+
+	err = repo.DeleteGroup(context.Background(), testTenantID(t, pool), ownPageID, group.ID)
+	if !errors.Is(err, ErrNotFound) {
+		t.Fatalf("DeleteGroup() error = %v, want ErrNotFound when groupId belongs to a different status page", err)
+	}
+
+	stillThere, err := repo.ListGroups(context.Background(), otherPageID)
+	if err != nil {
+		t.Fatalf("ListGroups() returned unexpected error: %v", err)
+	}
+	if len(stillThere) != 1 || stillThere[0].ID != group.ID {
+		t.Fatalf("group on otherPageID was deleted by cross-page DeleteGroup attempt: %+v", stillThere)
+	}
+}
+
+// TestStatusPageRepository_ListGroups_OrderedByPosition asserts ListGroups
+// returns a page's groups sorted by position, not insertion/created_at
+// order.
+func TestStatusPageRepository_ListGroups_OrderedByPosition(t *testing.T) {
+	repo, pool := newAttachDomainTestRepo(t)
+	pageID := createDomainlessStatusPage(t, repo, pool, "list-groups-page")
+
+	groupA, err := repo.CreateGroup(context.Background(), pageID, "Group A")
+	if err != nil {
+		t.Fatalf("setup CreateGroup() (A) returned unexpected error: %v", err)
+	}
+	groupB, err := repo.CreateGroup(context.Background(), pageID, "Group B")
+	if err != nil {
+		t.Fatalf("setup CreateGroup() (B) returned unexpected error: %v", err)
+	}
+	// Reposition so B now sorts before A, proving ListGroups orders by the
+	// position column rather than created_at/insertion order.
+	tenantID := testTenantID(t, pool)
+	if _, err := repo.UpdateGroup(context.Background(), tenantID, pageID, groupA.ID, groupA.Name, 1); err != nil {
+		t.Fatalf("setup UpdateGroup() (A) returned unexpected error: %v", err)
+	}
+	if _, err := repo.UpdateGroup(context.Background(), tenantID, pageID, groupB.ID, groupB.Name, 0); err != nil {
+		t.Fatalf("setup UpdateGroup() (B) returned unexpected error: %v", err)
+	}
+
+	groups, err := repo.ListGroups(context.Background(), pageID)
+	if err != nil {
+		t.Fatalf("ListGroups() returned unexpected error: %v", err)
+	}
+	if len(groups) != 2 {
+		t.Fatalf("len(groups) = %d, want 2", len(groups))
+	}
+	if groups[0].ID != groupB.ID || groups[1].ID != groupA.ID {
+		t.Fatalf("groups order = [%s, %s], want [%s, %s] (position-ordered)",
+			groups[0].ID, groups[1].ID, groupB.ID, groupA.ID)
+	}
+}
+
+// TestStatusPageRepository_Delete_AlsoRemovesServiceGroups asserts Delete's
+// manual-cleanup transaction also clears status_page_service_groups for the
+// deleted page, since that table has no cascade from status_pages either
+// (same reasoning as the existing status_page_services cleanup).
+func TestStatusPageRepository_Delete_AlsoRemovesServiceGroups(t *testing.T) {
+	repo, pool := newAttachDomainTestRepo(t)
+	pageID := createDomainlessStatusPage(t, repo, pool, "delete-page-groups")
+
+	group, err := repo.CreateGroup(context.Background(), pageID, "Orphaned Group")
+	if err != nil {
+		t.Fatalf("setup CreateGroup() returned unexpected error: %v", err)
+	}
+
+	if err := repo.Delete(context.Background(), pageID); err != nil {
+		t.Fatalf("Delete() returned unexpected error: %v", err)
+	}
+
+	var count int
+	row := pool.QueryRow(context.Background(), "SELECT COUNT(*) FROM status_page_service_groups WHERE id = $1", group.ID)
+	if err := row.Scan(&count); err != nil {
+		t.Fatalf("counting leftover group rows returned unexpected error: %v", err)
+	}
+	if count != 0 {
+		t.Errorf("status_page_service_groups rows remaining after Delete() = %d, want 0", count)
 	}
 }

@@ -43,6 +43,13 @@ func newStatusPagesRouter(t *testing.T, opts ...func(*StatusPagesHandler)) (http
 		opt(handler)
 	}
 
+	// writeRoles/anyRole mirror internal/cli/routes.go's gating convention
+	// for the group endpoints - the rest of this router's routes are left
+	// ungated (pre-existing, not this task's concern) to avoid changing
+	// the role requirements asserted by tests that predate T5.
+	writeRoles := RequireRole(db.RoleOwner, db.RoleOperator)
+	anyRole := RequireRole(db.RoleOwner, db.RoleOperator, db.RoleViewer)
+
 	r := chi.NewRouter()
 	r.Group(func(protected chi.Router) {
 		protected.Use(RequireAuth(middlewareTestSecret, admins, db.NewSessionRepository(pool), zap.NewNop()))
@@ -53,9 +60,15 @@ func newStatusPagesRouter(t *testing.T, opts ...func(*StatusPagesHandler)) (http
 		protected.Post("/api/status-pages", handler.Create)
 		protected.Get("/api/status-pages", handler.List)
 		protected.Patch("/api/status-pages/{id}/domain", handler.AttachDomain)
+		protected.Patch("/api/status-pages/{id}/environment", handler.UpdateEnvironment)
 		protected.Patch("/api/status-pages/{id}/services", handler.SetServices)
 		protected.Post("/api/status-pages/{id}/verify-domain", handler.VerifyDomain)
 		protected.Delete("/api/status-pages/{id}", handler.Delete)
+		protected.With(writeRoles).Post("/api/status-pages/{id}/groups", handler.CreateGroup)
+		protected.With(writeRoles).Patch("/api/status-pages/{id}/groups/{groupId}", handler.UpdateGroup)
+		protected.With(writeRoles).Delete("/api/status-pages/{id}/groups/{groupId}", handler.DeleteGroup)
+		protected.With(anyRole).Get("/api/status-pages/{id}/groups", handler.ListGroups)
+		protected.With(anyRole).Get("/api/status-pages/{id}/services", handler.ListServicePlacements)
 	})
 
 	return r, pool, admins
@@ -415,6 +428,63 @@ func TestCreateStatusPage_EmptyName_422(t *testing.T) {
 	}
 }
 
+// TestCreateStatusPage_WithEnvironment_201PersistsValue asserts SPEB-01/02:
+// a valid non-empty environment given on create is accepted and reflected
+// in the response.
+func TestCreateStatusPage_WithEnvironment_201PersistsValue(t *testing.T) {
+	r, pool, admins := newStatusPagesRouter(t)
+	token := issueTestSessionToken(t, admins)
+
+	rec := postCreateStatusPage(t, r, token, createStatusPageRequest{Name: "Staging Page", Environment: "staging"})
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusCreated, rec.Body.String())
+	}
+
+	var created statusPageResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &created); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+	cleanupStatusPage(t, pool, created.ID)
+	if created.Environment != "staging" {
+		t.Errorf("Environment = %q, want %q", created.Environment, "staging")
+	}
+}
+
+// TestCreateStatusPage_OmittedEnvironment_201DefaultsToEmpty asserts the
+// ""-means-absent convention (SPEB-01): omitting environment on create
+// still succeeds and defaults to "" (no banner).
+func TestCreateStatusPage_OmittedEnvironment_201DefaultsToEmpty(t *testing.T) {
+	r, pool, admins := newStatusPagesRouter(t)
+	token := issueTestSessionToken(t, admins)
+
+	rec := postCreateStatusPage(t, r, token, createStatusPageRequest{Name: "No Env Page"})
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusCreated, rec.Body.String())
+	}
+
+	var created statusPageResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &created); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+	cleanupStatusPage(t, pool, created.ID)
+	if created.Environment != "" {
+		t.Errorf("Environment = %q, want empty", created.Environment)
+	}
+}
+
+// TestCreateStatusPage_InvalidEnvironment_422 asserts SPEB-02: a value
+// outside the fixed enum ("", "staging", "development") is rejected, same
+// 422 convention as the service-environment-tag feature's validation.
+func TestCreateStatusPage_InvalidEnvironment_422(t *testing.T) {
+	r, _, admins := newStatusPagesRouter(t)
+	token := issueTestSessionToken(t, admins)
+
+	rec := postCreateStatusPage(t, r, token, createStatusPageRequest{Name: "Bad Env Page", Environment: "production"})
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Errorf("status = %d, want %d, body = %s", rec.Code, http.StatusUnprocessableEntity, rec.Body.String())
+	}
+}
+
 // createDomainlessStatusPageViaAPI creates a domain-less status page
 // through the handler under test and registers its cleanup, returning
 // its ID.
@@ -555,6 +625,69 @@ func TestAttachDomain_NonexistentStatusPageID_404(t *testing.T) {
 	rec := patchAttachDomain(t, r, token, "00000000-0000-0000-0000-000000000000", attachDomainRequest{
 		DomainID: domainID, Subdomain: "status",
 	})
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("status = %d, want %d, body = %s", rec.Code, http.StatusNotFound, rec.Body.String())
+	}
+}
+
+func patchUpdateEnvironment(t *testing.T, r http.Handler, token, statusPageID string, req updateStatusPageEnvironmentRequest) *httptest.ResponseRecorder {
+	t.Helper()
+	body, err := json.Marshal(req)
+	if err != nil {
+		t.Fatalf("json.Marshal() returned unexpected error: %v", err)
+	}
+
+	httpReq := httptest.NewRequest(http.MethodPatch, "/api/status-pages/"+statusPageID+"/environment", bytes.NewReader(body))
+	httpReq.Header.Set("Content-Type", "application/json")
+	if token != "" {
+		httpReq.Header.Set("Authorization", "Bearer "+token)
+	}
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, httpReq)
+	return rec
+}
+
+// TestUpdateEnvironment_ValidRequest_200ReflectsNewValue asserts SPEB-02:
+// a valid PATCH sets the environment and the response reflects it.
+func TestUpdateEnvironment_ValidRequest_200ReflectsNewValue(t *testing.T) {
+	r, pool, admins := newStatusPagesRouter(t)
+	token := issueTestSessionToken(t, admins)
+	pageID := createDomainlessStatusPageViaAPI(t, r, pool, token, "Update Env Page")
+
+	rec := patchUpdateEnvironment(t, r, token, pageID, updateStatusPageEnvironmentRequest{Environment: "development"})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	var updated statusPageResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &updated); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+	if updated.Environment != "development" {
+		t.Errorf("Environment = %q, want %q", updated.Environment, "development")
+	}
+}
+
+// TestUpdateEnvironment_InvalidValue_422 asserts SPEB-02's enum
+// validation on the update path, same as create.
+func TestUpdateEnvironment_InvalidValue_422(t *testing.T) {
+	r, pool, admins := newStatusPagesRouter(t)
+	token := issueTestSessionToken(t, admins)
+	pageID := createDomainlessStatusPageViaAPI(t, r, pool, token, "Bad Update Env Page")
+
+	rec := patchUpdateEnvironment(t, r, token, pageID, updateStatusPageEnvironmentRequest{Environment: "production"})
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Errorf("status = %d, want %d, body = %s", rec.Code, http.StatusUnprocessableEntity, rec.Body.String())
+	}
+}
+
+// TestUpdateEnvironment_NonexistentStatusPageID_404 mirrors AttachDomain's
+// not-found convention.
+func TestUpdateEnvironment_NonexistentStatusPageID_404(t *testing.T) {
+	r, _, admins := newStatusPagesRouter(t)
+	token := issueTestSessionToken(t, admins)
+
+	rec := patchUpdateEnvironment(t, r, token, "00000000-0000-0000-0000-000000000000", updateStatusPageEnvironmentRequest{Environment: "staging"})
 	if rec.Code != http.StatusNotFound {
 		t.Errorf("status = %d, want %d, body = %s", rec.Code, http.StatusNotFound, rec.Body.String())
 	}
@@ -723,6 +856,18 @@ func TestCheckVerifyCooldown_AfterWindowElapsed_Allows(t *testing.T) {
 
 func strPtr(s string) *string { return &s }
 
+// placementsOf builds a setServicesRequest.Services slice for the given
+// serviceIDs with no group/parent (0-based position, in order) - a
+// convenience for tests that only care about which services are linked,
+// not their group/parent placement.
+func placementsOf(serviceIDs ...string) []servicePlacementRequest {
+	placements := make([]servicePlacementRequest, len(serviceIDs))
+	for i, id := range serviceIDs {
+		placements[i] = servicePlacementRequest{ServiceID: id, Position: i}
+	}
+	return placements
+}
+
 func patchSetServices(t *testing.T, r http.Handler, token, statusPageID string, req setServicesRequest) *httptest.ResponseRecorder {
 	t.Helper()
 	body, err := json.Marshal(req)
@@ -752,7 +897,7 @@ func TestSetServices_ReplacesLinkedSet(t *testing.T) {
 	pageID := createDomainlessStatusPageViaAPI(t, r, pool, token, "Set Services Page")
 	cleanupStatusPage(t, pool, pageID)
 
-	rec := patchSetServices(t, r, token, pageID, setServicesRequest{ServiceIDs: []string{serviceA}})
+	rec := patchSetServices(t, r, token, pageID, setServicesRequest{Services: placementsOf(serviceA)})
 	if rec.Code != http.StatusOK {
 		t.Fatalf("first PATCH status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
 	}
@@ -764,7 +909,7 @@ func TestSetServices_ReplacesLinkedSet(t *testing.T) {
 		t.Fatalf("ServiceIDs after first PATCH = %v, want [%q]", first.ServiceIDs, serviceA)
 	}
 
-	rec = patchSetServices(t, r, token, pageID, setServicesRequest{ServiceIDs: []string{serviceB}})
+	rec = patchSetServices(t, r, token, pageID, setServicesRequest{Services: placementsOf(serviceB)})
 	if rec.Code != http.StatusOK {
 		t.Fatalf("second PATCH status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
 	}
@@ -787,11 +932,11 @@ func TestSetServices_EmptyServiceIDs_200UnlinksAll(t *testing.T) {
 	pageID := createDomainlessStatusPageViaAPI(t, r, pool, token, "Set Services Unlink Page")
 	cleanupStatusPage(t, pool, pageID)
 
-	if rec := patchSetServices(t, r, token, pageID, setServicesRequest{ServiceIDs: []string{serviceA}}); rec.Code != http.StatusOK {
+	if rec := patchSetServices(t, r, token, pageID, setServicesRequest{Services: placementsOf(serviceA)}); rec.Code != http.StatusOK {
 		t.Fatalf("setup PATCH status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
 	}
 
-	rec := patchSetServices(t, r, token, pageID, setServicesRequest{ServiceIDs: []string{}})
+	rec := patchSetServices(t, r, token, pageID, setServicesRequest{Services: []servicePlacementRequest{}})
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
 	}
@@ -804,10 +949,10 @@ func TestSetServices_EmptyServiceIDs_200UnlinksAll(t *testing.T) {
 	}
 }
 
-// TestSetServices_MissingServiceIDs_422 asserts a request body with no
-// service_ids field at all is rejected, distinguishing it from the valid
+// TestSetServices_MissingServices_422 asserts a request body with no
+// services field at all is rejected, distinguishing it from the valid
 // "empty array" unlink-everything case above.
-func TestSetServices_MissingServiceIDs_422(t *testing.T) {
+func TestSetServices_MissingServices_422(t *testing.T) {
 	r, pool, admins := newStatusPagesRouter(t)
 	token := issueTestSessionToken(t, admins)
 	pageID := createDomainlessStatusPageViaAPI(t, r, pool, token, "Set Services Missing Field Page")
@@ -824,13 +969,147 @@ func TestSetServices_MissingServiceIDs_422(t *testing.T) {
 	}
 }
 
+// TestSetServices_GroupAndParentPlacement_200PersistsBoth asserts T6's new
+// request shape wires group_id and parent_service_id through to the
+// repository together on a single placement (SGD-02, SGD-03, SGD-06,
+// SGD-07): a child service can belong to a group AND have a parent in the
+// very same PATCH.
+func TestSetServices_GroupAndParentPlacement_200PersistsBoth(t *testing.T) {
+	r, pool, admins := newStatusPagesRouter(t)
+	token := issueTestSessionToken(t, admins)
+	parent := createTestService(t, pool)
+	child := createTestService(t, pool)
+	pageID := createDomainlessStatusPageViaAPI(t, r, pool, token, "Set Services Group Parent Page")
+	cleanupStatusPage(t, pool, pageID)
+	groupID := createTestGroup(t, r, token, pageID, "Core")
+
+	rec := patchSetServices(t, r, token, pageID, setServicesRequest{Services: []servicePlacementRequest{
+		{ServiceID: parent, Position: 0},
+		{ServiceID: child, GroupID: &groupID, ParentServiceID: &parent, Position: 1},
+	}})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	var gotGroupID, gotParentID *string
+	var gotPosition int
+	row := pool.QueryRow(context.Background(),
+		"SELECT group_id, parent_service_id, position FROM status_page_services WHERE status_page_id = $1 AND service_id = $2",
+		pageID, child)
+	if err := row.Scan(&gotGroupID, &gotParentID, &gotPosition); err != nil {
+		t.Fatalf("Scan() returned unexpected error: %v", err)
+	}
+	if gotGroupID == nil || *gotGroupID != groupID {
+		t.Errorf("group_id = %v, want %q", gotGroupID, groupID)
+	}
+	if gotParentID == nil || *gotParentID != parent {
+		t.Errorf("parent_service_id = %v, want %q", gotParentID, parent)
+	}
+	if gotPosition != 1 {
+		t.Errorf("position = %d, want 1", gotPosition)
+	}
+}
+
+// TestSetServices_GroupCrossPage_422 asserts a group_id that doesn't belong
+// to this status page surfaces as its own distinct 422 message (SGD-11),
+// not a generic error.
+func TestSetServices_GroupCrossPage_422(t *testing.T) {
+	r, pool, admins := newStatusPagesRouter(t)
+	token := issueTestSessionToken(t, admins)
+	serviceID := createTestService(t, pool)
+	pageID := createDomainlessStatusPageViaAPI(t, r, pool, token, "Group Cross Page A")
+	cleanupStatusPage(t, pool, pageID)
+	otherPageID := createDomainlessStatusPageViaAPI(t, r, pool, token, "Group Cross Page B")
+	cleanupStatusPage(t, pool, otherPageID)
+	foreignGroupID := createTestGroup(t, r, token, otherPageID, "Foreign Group")
+
+	rec := patchSetServices(t, r, token, pageID, setServicesRequest{Services: []servicePlacementRequest{
+		{ServiceID: serviceID, GroupID: &foreignGroupID, Position: 0},
+	}})
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusUnprocessableEntity, rec.Body.String())
+	}
+	if rec.Body.String() != groupCrossPageRequestBody {
+		t.Errorf("body = %s, want %s", rec.Body.String(), groupCrossPageRequestBody)
+	}
+}
+
+// TestSetServices_SelfReference_422 asserts a placement whose
+// parent_service_id equals its own service_id surfaces as its own distinct
+// 422 message (SGD-12), not the generic "parent not in set" one.
+func TestSetServices_SelfReference_422(t *testing.T) {
+	r, pool, admins := newStatusPagesRouter(t)
+	token := issueTestSessionToken(t, admins)
+	serviceID := createTestService(t, pool)
+	pageID := createDomainlessStatusPageViaAPI(t, r, pool, token, "Self Reference Page")
+	cleanupStatusPage(t, pool, pageID)
+
+	rec := patchSetServices(t, r, token, pageID, setServicesRequest{Services: []servicePlacementRequest{
+		{ServiceID: serviceID, ParentServiceID: &serviceID, Position: 0},
+	}})
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusUnprocessableEntity, rec.Body.String())
+	}
+	if rec.Body.String() != selfReferenceRequestBody {
+		t.Errorf("body = %s, want %s", rec.Body.String(), selfReferenceRequestBody)
+	}
+}
+
+// TestSetServices_ParentNotInSet_422 asserts a parent_service_id that
+// doesn't match any service_id in the same request surfaces as its own
+// distinct 422 message.
+func TestSetServices_ParentNotInSet_422(t *testing.T) {
+	r, pool, admins := newStatusPagesRouter(t)
+	token := issueTestSessionToken(t, admins)
+	serviceID := createTestService(t, pool)
+	missingParent := "00000000-0000-0000-0000-000000000000"
+	pageID := createDomainlessStatusPageViaAPI(t, r, pool, token, "Parent Not In Set Page")
+	cleanupStatusPage(t, pool, pageID)
+
+	rec := patchSetServices(t, r, token, pageID, setServicesRequest{Services: []servicePlacementRequest{
+		{ServiceID: serviceID, ParentServiceID: &missingParent, Position: 0},
+	}})
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusUnprocessableEntity, rec.Body.String())
+	}
+	if rec.Body.String() != parentNotInSetRequestBody {
+		t.Errorf("body = %s, want %s", rec.Body.String(), parentNotInSetRequestBody)
+	}
+}
+
+// TestSetServices_MaxDepthExceeded_422 asserts a placement that is itself
+// used as another placement's parent but also carries its own
+// parent_service_id (a 3-level chain) surfaces as its own distinct 422
+// message - nesting is capped at depth 2.
+func TestSetServices_MaxDepthExceeded_422(t *testing.T) {
+	r, pool, admins := newStatusPagesRouter(t)
+	token := issueTestSessionToken(t, admins)
+	grandparent := createTestService(t, pool)
+	parent := createTestService(t, pool)
+	child := createTestService(t, pool)
+	pageID := createDomainlessStatusPageViaAPI(t, r, pool, token, "Max Depth Page")
+	cleanupStatusPage(t, pool, pageID)
+
+	rec := patchSetServices(t, r, token, pageID, setServicesRequest{Services: []servicePlacementRequest{
+		{ServiceID: grandparent, Position: 0},
+		{ServiceID: parent, ParentServiceID: &grandparent, Position: 1},
+		{ServiceID: child, ParentServiceID: &parent, Position: 2},
+	}})
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusUnprocessableEntity, rec.Body.String())
+	}
+	if rec.Body.String() != maxDepthExceededRequestBody {
+		t.Errorf("body = %s, want %s", rec.Body.String(), maxDepthExceededRequestBody)
+	}
+}
+
 // TestSetServices_NonexistentStatusPageID_404 mirrors
 // TestAttachDomain_NonexistentStatusPageID_404 for the services endpoint.
 func TestSetServices_NonexistentStatusPageID_404(t *testing.T) {
 	r, _, admins := newStatusPagesRouter(t)
 	token := issueTestSessionToken(t, admins)
 
-	rec := patchSetServices(t, r, token, "00000000-0000-0000-0000-000000000000", setServicesRequest{ServiceIDs: []string{}})
+	rec := patchSetServices(t, r, token, "00000000-0000-0000-0000-000000000000", setServicesRequest{Services: []servicePlacementRequest{}})
 	if rec.Code != http.StatusNotFound {
 		t.Errorf("status = %d, want %d, body = %s", rec.Code, http.StatusNotFound, rec.Body.String())
 	}
@@ -994,7 +1273,7 @@ func TestSetServices_ReplacesLinkedSet_RecordsStatusPageServicesUpdatedAudit(t *
 	pageID := createDomainlessStatusPageViaAPI(t, r, pool, token, "Audit SetServices Page")
 	cleanupStatusPage(t, pool, pageID)
 
-	rec := patchSetServices(t, r, token, pageID, setServicesRequest{ServiceIDs: []string{serviceA}})
+	rec := patchSetServices(t, r, token, pageID, setServicesRequest{Services: placementsOf(serviceA)})
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
 	}
@@ -1007,5 +1286,627 @@ func TestSetServices_ReplacesLinkedSet_RecordsStatusPageServicesUpdatedAudit(t *
 	}
 	if gotTargetLabel != "Audit SetServices Page" {
 		t.Errorf("admin_audit_log target_label = %q, want %q", gotTargetLabel, "Audit SetServices Page")
+	}
+}
+
+// --- T5: service group endpoints ---
+
+func postCreateGroup(t *testing.T, r http.Handler, token, statusPageID string, req createGroupRequest) *httptest.ResponseRecorder {
+	t.Helper()
+	body, err := json.Marshal(req)
+	if err != nil {
+		t.Fatalf("json.Marshal() returned unexpected error: %v", err)
+	}
+	httpReq := httptest.NewRequest(http.MethodPost, "/api/status-pages/"+statusPageID+"/groups", bytes.NewReader(body))
+	httpReq.Header.Set("Content-Type", "application/json")
+	if token != "" {
+		httpReq.Header.Set("Authorization", "Bearer "+token)
+	}
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, httpReq)
+	return rec
+}
+
+func patchUpdateGroup(t *testing.T, r http.Handler, token, statusPageID, groupID string, req updateGroupRequest) *httptest.ResponseRecorder {
+	t.Helper()
+	body, err := json.Marshal(req)
+	if err != nil {
+		t.Fatalf("json.Marshal() returned unexpected error: %v", err)
+	}
+	httpReq := httptest.NewRequest(http.MethodPatch, "/api/status-pages/"+statusPageID+"/groups/"+groupID, bytes.NewReader(body))
+	httpReq.Header.Set("Content-Type", "application/json")
+	if token != "" {
+		httpReq.Header.Set("Authorization", "Bearer "+token)
+	}
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, httpReq)
+	return rec
+}
+
+func deleteGroup(t *testing.T, r http.Handler, token, statusPageID, groupID string) *httptest.ResponseRecorder {
+	t.Helper()
+	httpReq := httptest.NewRequest(http.MethodDelete, "/api/status-pages/"+statusPageID+"/groups/"+groupID, nil)
+	if token != "" {
+		httpReq.Header.Set("Authorization", "Bearer "+token)
+	}
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, httpReq)
+	return rec
+}
+
+func getGroups(t *testing.T, r http.Handler, token, statusPageID string) *httptest.ResponseRecorder {
+	t.Helper()
+	httpReq := httptest.NewRequest(http.MethodGet, "/api/status-pages/"+statusPageID+"/groups", nil)
+	if token != "" {
+		httpReq.Header.Set("Authorization", "Bearer "+token)
+	}
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, httpReq)
+	return rec
+}
+
+// createTestGroup creates a group via the API and returns its id.
+func createTestGroup(t *testing.T, r http.Handler, token, statusPageID, name string) string {
+	t.Helper()
+	rec := postCreateGroup(t, r, token, statusPageID, createGroupRequest{Name: name})
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("setup create group status = %d, want %d, body = %s", rec.Code, http.StatusCreated, rec.Body.String())
+	}
+	var created statusPageServiceGroupResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &created); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+	return created.ID
+}
+
+func TestCreateGroup_ValidRequest_201CreatedAtEndPosition(t *testing.T) {
+	r, pool, admins := newStatusPagesRouter(t)
+	token := issueTestSessionToken(t, admins)
+	pageID := createDomainlessStatusPageViaAPI(t, r, pool, token, "Create Group Page")
+
+	first := createTestGroup(t, r, token, pageID, "First Group")
+
+	rec := postCreateGroup(t, r, token, pageID, createGroupRequest{Name: "Second Group"})
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusCreated, rec.Body.String())
+	}
+	var created statusPageServiceGroupResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &created); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+	if created.StatusPageID != pageID {
+		t.Errorf("StatusPageID = %q, want %q", created.StatusPageID, pageID)
+	}
+	if created.Name != "Second Group" {
+		t.Errorf("Name = %q, want %q", created.Name, "Second Group")
+	}
+	if created.Position != 1 {
+		t.Errorf("Position = %d, want 1 (should append after %q)", created.Position, first)
+	}
+}
+
+func TestCreateGroup_EmptyName_422(t *testing.T) {
+	r, pool, admins := newStatusPagesRouter(t)
+	token := issueTestSessionToken(t, admins)
+	pageID := createDomainlessStatusPageViaAPI(t, r, pool, token, "Create Group Empty Name Page")
+
+	rec := postCreateGroup(t, r, token, pageID, createGroupRequest{Name: ""})
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Errorf("status = %d, want %d, body = %s", rec.Code, http.StatusUnprocessableEntity, rec.Body.String())
+	}
+}
+
+func TestCreateGroup_NonexistentStatusPageID_404(t *testing.T) {
+	r, _, admins := newStatusPagesRouter(t)
+	token := issueTestSessionToken(t, admins)
+
+	rec := postCreateGroup(t, r, token, "00000000-0000-0000-0000-000000000000", createGroupRequest{Name: "Orphan Group"})
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("status = %d, want %d, body = %s", rec.Code, http.StatusNotFound, rec.Body.String())
+	}
+}
+
+func TestCreateGroup_ViewerRole_403(t *testing.T) {
+	r, pool, admins := newStatusPagesRouter(t)
+	ownerToken := issueTestSessionToken(t, admins)
+	pageID := createDomainlessStatusPageViaAPI(t, r, pool, ownerToken, "Create Group Viewer Page")
+	viewerToken := issueTestSessionTokenWithRole(t, admins, db.RoleViewer)
+
+	rec := postCreateGroup(t, r, viewerToken, pageID, createGroupRequest{Name: "Viewer Group"})
+	if rec.Code != http.StatusForbidden {
+		t.Errorf("status = %d, want %d, body = %s", rec.Code, http.StatusForbidden, rec.Body.String())
+	}
+}
+
+func TestCreateGroup_ValidRequest_RecordsStatusPageGroupCreatedAudit(t *testing.T) {
+	r, pool, admins := newStatusPagesRouter(t)
+	token := issueTestSessionToken(t, admins)
+	pageID := createDomainlessStatusPageViaAPI(t, r, pool, token, "Audit Create Group Page")
+
+	rec := postCreateGroup(t, r, token, pageID, createGroupRequest{Name: "Audited Group"})
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusCreated, rec.Body.String())
+	}
+	var created statusPageServiceGroupResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &created); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+
+	var gotTargetLabel string
+	row := pool.QueryRow(context.Background(),
+		"SELECT target_label FROM admin_audit_log WHERE target_id = $1 AND action = 'status_page_group_created'", created.ID)
+	if err := row.Scan(&gotTargetLabel); err != nil {
+		t.Fatalf("Scan() returned unexpected error: %v", err)
+	}
+	if gotTargetLabel != "Audited Group" {
+		t.Errorf("admin_audit_log target_label = %q, want %q", gotTargetLabel, "Audited Group")
+	}
+}
+
+func TestUpdateGroup_ValidRequest_200RenamesAndRepositions(t *testing.T) {
+	r, pool, admins := newStatusPagesRouter(t)
+	token := issueTestSessionToken(t, admins)
+	pageID := createDomainlessStatusPageViaAPI(t, r, pool, token, "Update Group Page")
+	groupID := createTestGroup(t, r, token, pageID, "Original Name")
+
+	rec := patchUpdateGroup(t, r, token, pageID, groupID, updateGroupRequest{Name: "Renamed", Position: 3})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	var updated statusPageServiceGroupResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &updated); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+	if updated.Name != "Renamed" {
+		t.Errorf("Name = %q, want %q", updated.Name, "Renamed")
+	}
+	if updated.Position != 3 {
+		t.Errorf("Position = %d, want 3", updated.Position)
+	}
+}
+
+func TestUpdateGroup_EmptyName_422(t *testing.T) {
+	r, pool, admins := newStatusPagesRouter(t)
+	token := issueTestSessionToken(t, admins)
+	pageID := createDomainlessStatusPageViaAPI(t, r, pool, token, "Update Group Empty Name Page")
+	groupID := createTestGroup(t, r, token, pageID, "Has A Name")
+
+	rec := patchUpdateGroup(t, r, token, pageID, groupID, updateGroupRequest{Name: "", Position: 0})
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Errorf("status = %d, want %d, body = %s", rec.Code, http.StatusUnprocessableEntity, rec.Body.String())
+	}
+}
+
+func TestUpdateGroup_NonexistentGroupID_404(t *testing.T) {
+	r, pool, admins := newStatusPagesRouter(t)
+	token := issueTestSessionToken(t, admins)
+	pageID := createDomainlessStatusPageViaAPI(t, r, pool, token, "Update Group Missing Page")
+
+	rec := patchUpdateGroup(t, r, token, pageID, "00000000-0000-0000-0000-000000000000", updateGroupRequest{Name: "Ghost", Position: 0})
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("status = %d, want %d, body = %s", rec.Code, http.StatusNotFound, rec.Body.String())
+	}
+}
+
+// TestUpdateGroup_CrossTenantGroupID_404NoStateChange is the security
+// review's reproduction case: status_page_service_groups (migration 0046)
+// shipped with no tenant_id/RLS, and UpdateGroup filtered only by
+// "WHERE id = $1" - so an authenticated operator of tenant B, knowing or
+// guessing tenant A's group id (group ids are exposed in A's public status
+// page response), could PATCH it even via tenant B's own status page URL.
+// Fixed by migration 0049 (RLS) plus the repository's added
+// status_page_id filter (defense in depth: RLS alone stops cross-tenant,
+// not cross-page-within-one-tenant). This must 404, not silently no-op or
+// succeed, and must leave the group's name untouched.
+func TestUpdateGroup_CrossTenantGroupID_404NoStateChange(t *testing.T) {
+	r, pool, admins := newStatusPagesRouter(t)
+	ownerToken := issueTestSessionToken(t, admins)
+	pageID := createDomainlessStatusPageViaAPI(t, r, pool, ownerToken, "Cross Tenant Update Group Page")
+	groupID := createTestGroup(t, r, ownerToken, pageID, "Tenant A Group")
+
+	_, otherToken := seedOtherTenantOwnerToken(t, pool, admins)
+	otherPageID := createDomainlessStatusPageViaAPI(t, r, pool, otherToken, "Cross Tenant Update Group Other Page")
+
+	// Attempt 1: tenant B hits its own status page URL but tenant A's
+	// group id - the exact exploit path from the review (a PATCH whose
+	// {id} is the attacker's own status page, only {groupId} is stolen).
+	rec := patchUpdateGroup(t, r, otherToken, otherPageID, groupID, updateGroupRequest{Name: "Hijacked", Position: 9})
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("status (own page, stolen groupId) = %d, want %d, body = %s", rec.Code, http.StatusNotFound, rec.Body.String())
+	}
+
+	// Attempt 2: tenant B hits tenant A's status page id directly too.
+	rec = patchUpdateGroup(t, r, otherToken, pageID, groupID, updateGroupRequest{Name: "Hijacked Again", Position: 9})
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("status (A's own pageId, stolen groupId) = %d, want %d, body = %s", rec.Code, http.StatusNotFound, rec.Body.String())
+	}
+
+	rec = getGroups(t, r, ownerToken, pageID)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("getGroups() status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	var groups []statusPageServiceGroupResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &groups); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+	if len(groups) != 1 || groups[0].Name != "Tenant A Group" {
+		t.Fatalf("tenant A's group after cross-tenant UpdateGroup attempts = %+v, want unchanged \"Tenant A Group\"", groups)
+	}
+}
+
+func TestUpdateGroup_ViewerRole_403(t *testing.T) {
+	r, pool, admins := newStatusPagesRouter(t)
+	ownerToken := issueTestSessionToken(t, admins)
+	pageID := createDomainlessStatusPageViaAPI(t, r, pool, ownerToken, "Update Group Viewer Page")
+	groupID := createTestGroup(t, r, ownerToken, pageID, "Pre-existing Group")
+	viewerToken := issueTestSessionTokenWithRole(t, admins, db.RoleViewer)
+
+	rec := patchUpdateGroup(t, r, viewerToken, pageID, groupID, updateGroupRequest{Name: "Should Not Apply", Position: 0})
+	if rec.Code != http.StatusForbidden {
+		t.Errorf("status = %d, want %d, body = %s", rec.Code, http.StatusForbidden, rec.Body.String())
+	}
+}
+
+func TestUpdateGroup_ValidRequest_RecordsStatusPageGroupUpdatedAudit(t *testing.T) {
+	r, pool, admins := newStatusPagesRouter(t)
+	token := issueTestSessionToken(t, admins)
+	pageID := createDomainlessStatusPageViaAPI(t, r, pool, token, "Audit Update Group Page")
+	groupID := createTestGroup(t, r, token, pageID, "Pre-update Name")
+
+	rec := patchUpdateGroup(t, r, token, pageID, groupID, updateGroupRequest{Name: "Audited Update", Position: 0})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	var gotTargetLabel string
+	row := pool.QueryRow(context.Background(),
+		"SELECT target_label FROM admin_audit_log WHERE target_id = $1 AND action = 'status_page_group_updated'", groupID)
+	if err := row.Scan(&gotTargetLabel); err != nil {
+		t.Fatalf("Scan() returned unexpected error: %v", err)
+	}
+	if gotTargetLabel != "Audited Update" {
+		t.Errorf("admin_audit_log target_label = %q, want %q", gotTargetLabel, "Audited Update")
+	}
+}
+
+func TestDeleteGroup_Existing_204UngroupsMembersWithoutDeletingThem(t *testing.T) {
+	r, pool, admins := newStatusPagesRouter(t)
+	token := issueTestSessionToken(t, admins)
+	serviceID := createTestService(t, pool)
+	pageID := createDomainlessStatusPageViaAPI(t, r, pool, token, "Delete Group Page")
+	cleanupStatusPage(t, pool, pageID)
+	groupID := createTestGroup(t, r, token, pageID, "To Be Deleted")
+
+	if _, err := pool.Exec(context.Background(),
+		"INSERT INTO status_page_services (status_page_id, service_id, group_id, position) VALUES ($1, $2, $3, 0)",
+		pageID, serviceID, groupID); err != nil {
+		t.Fatalf("setup insert placement returned unexpected error: %v", err)
+	}
+
+	rec := deleteGroup(t, r, token, pageID, groupID)
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusNoContent, rec.Body.String())
+	}
+
+	var stillExists bool
+	row := pool.QueryRow(context.Background(),
+		"SELECT EXISTS(SELECT 1 FROM status_page_services WHERE status_page_id = $1 AND service_id = $2)", pageID, serviceID)
+	if err := row.Scan(&stillExists); err != nil {
+		t.Fatalf("Scan() returned unexpected error: %v", err)
+	}
+	if !stillExists {
+		t.Fatal("status_page_services row was deleted along with its group, want it left in place")
+	}
+
+	var groupIDAfter *string
+	row = pool.QueryRow(context.Background(),
+		"SELECT group_id FROM status_page_services WHERE status_page_id = $1 AND service_id = $2", pageID, serviceID)
+	if err := row.Scan(&groupIDAfter); err != nil {
+		t.Fatalf("Scan() returned unexpected error: %v", err)
+	}
+	if groupIDAfter != nil {
+		t.Errorf("group_id = %v, want nil (ON DELETE SET NULL)", *groupIDAfter)
+	}
+}
+
+func TestDeleteGroup_NotFound_404(t *testing.T) {
+	r, pool, admins := newStatusPagesRouter(t)
+	token := issueTestSessionToken(t, admins)
+	pageID := createDomainlessStatusPageViaAPI(t, r, pool, token, "Delete Group Missing Page")
+
+	rec := deleteGroup(t, r, token, pageID, "00000000-0000-0000-0000-000000000000")
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("status = %d, want %d, body = %s", rec.Code, http.StatusNotFound, rec.Body.String())
+	}
+}
+
+// TestDeleteGroup_CrossTenantGroupID_404NoStateChange mirrors
+// TestUpdateGroup_CrossTenantGroupID_404NoStateChange for DELETE - a
+// tenant B operator must not be able to delete tenant A's group by
+// guessing/reading its id, via either B's own status page id or A's.
+func TestDeleteGroup_CrossTenantGroupID_404NoStateChange(t *testing.T) {
+	r, pool, admins := newStatusPagesRouter(t)
+	ownerToken := issueTestSessionToken(t, admins)
+	pageID := createDomainlessStatusPageViaAPI(t, r, pool, ownerToken, "Cross Tenant Delete Group Page")
+	groupID := createTestGroup(t, r, ownerToken, pageID, "Tenant A Group To Keep")
+
+	_, otherToken := seedOtherTenantOwnerToken(t, pool, admins)
+	otherPageID := createDomainlessStatusPageViaAPI(t, r, pool, otherToken, "Cross Tenant Delete Group Other Page")
+
+	rec := deleteGroup(t, r, otherToken, otherPageID, groupID)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("status (own page, stolen groupId) = %d, want %d, body = %s", rec.Code, http.StatusNotFound, rec.Body.String())
+	}
+	rec = deleteGroup(t, r, otherToken, pageID, groupID)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("status (A's own pageId, stolen groupId) = %d, want %d, body = %s", rec.Code, http.StatusNotFound, rec.Body.String())
+	}
+
+	rec = getGroups(t, r, ownerToken, pageID)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("getGroups() status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	var groups []statusPageServiceGroupResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &groups); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+	if len(groups) != 1 || groups[0].ID != groupID {
+		t.Fatalf("tenant A's group after cross-tenant DeleteGroup attempts = %+v, want it still present", groups)
+	}
+}
+
+// NOTE: ListGroups' GetByID ownership check (added alongside this bug fix,
+// matching CreateGroup's existing pattern) is intentionally not covered by
+// a cross-tenant HTTP test here: StatusPageRepository.GetByID has no
+// explicit "AND tenant_id = $N" filter of its own (unlike this file's
+// UpdateGroup/DeleteGroup fix) and relies solely on status_pages' RLS
+// policy - exactly like every other existing status_pages handler
+// (AttachDomain, UpdateEnvironment, SetServices, Delete, ...), none of
+// which has a cross-tenant test in this suite either. This package's
+// integration tests connect as the disposable Postgres container's
+// bootstrap role, which is a superuser and therefore bypasses FORCE ROW
+// LEVEL SECURITY entirely (see rls_test.go's rlsTestRole comment) - so a
+// test asserting this specific 404 would pass or fail based on the test
+// role, not the fix, and isn't something this bug's scope (status_page_
+// service_groups' own missing tenant_id/RLS) should take on fixing across
+// every status_pages consumer. RLS itself - the actual enforcement - is
+// covered for this table by TestMultiTenancyMigration_EveryTenantScopedTableIsRLSProtected
+// in internal/db, which does use a non-superuser role.
+
+func TestDeleteGroup_ViewerRole_403(t *testing.T) {
+	r, pool, admins := newStatusPagesRouter(t)
+	ownerToken := issueTestSessionToken(t, admins)
+	pageID := createDomainlessStatusPageViaAPI(t, r, pool, ownerToken, "Delete Group Viewer Page")
+	groupID := createTestGroup(t, r, ownerToken, pageID, "Protected Group")
+	viewerToken := issueTestSessionTokenWithRole(t, admins, db.RoleViewer)
+
+	rec := deleteGroup(t, r, viewerToken, pageID, groupID)
+	if rec.Code != http.StatusForbidden {
+		t.Errorf("status = %d, want %d, body = %s", rec.Code, http.StatusForbidden, rec.Body.String())
+	}
+}
+
+func TestDeleteGroup_Existing_RecordsStatusPageGroupDeletedAudit(t *testing.T) {
+	r, pool, admins := newStatusPagesRouter(t)
+	token := issueTestSessionToken(t, admins)
+	pageID := createDomainlessStatusPageViaAPI(t, r, pool, token, "Audit Delete Group Page")
+	groupID := createTestGroup(t, r, token, pageID, "Audited Delete Group")
+
+	rec := deleteGroup(t, r, token, pageID, groupID)
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusNoContent, rec.Body.String())
+	}
+
+	var gotTargetLabel string
+	row := pool.QueryRow(context.Background(),
+		"SELECT target_label FROM admin_audit_log WHERE target_id = $1 AND action = 'status_page_group_deleted'", groupID)
+	if err := row.Scan(&gotTargetLabel); err != nil {
+		t.Fatalf("Scan() returned unexpected error: %v", err)
+	}
+	if gotTargetLabel != "Audited Delete Group" {
+		t.Errorf("admin_audit_log target_label = %q, want %q", gotTargetLabel, "Audited Delete Group")
+	}
+}
+
+func TestListGroups_AnyRole_200ReturnsPositionOrdered(t *testing.T) {
+	r, pool, admins := newStatusPagesRouter(t)
+	ownerToken := issueTestSessionToken(t, admins)
+	pageID := createDomainlessStatusPageViaAPI(t, r, pool, ownerToken, "List Groups Page")
+	first := createTestGroup(t, r, ownerToken, pageID, "First")
+	second := createTestGroup(t, r, ownerToken, pageID, "Second")
+
+	viewerToken := issueTestSessionTokenWithRole(t, admins, db.RoleViewer)
+	rec := getGroups(t, r, viewerToken, pageID)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	var groups []statusPageServiceGroupResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &groups); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+	if len(groups) != 2 || groups[0].ID != first || groups[1].ID != second {
+		t.Fatalf("groups = %+v, want [%q, %q] in that order", groups, first, second)
+	}
+}
+
+func TestListGroups_NoGroups_200EmptyArrayNotNull(t *testing.T) {
+	r, pool, admins := newStatusPagesRouter(t)
+	token := issueTestSessionToken(t, admins)
+	pageID := createDomainlessStatusPageViaAPI(t, r, pool, token, "List Groups Empty Page")
+
+	rec := getGroups(t, r, token, pageID)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	if rec.Body.String() == "null\n" || rec.Body.String() == "null" {
+		t.Fatalf("body = %q, want an empty JSON array, not null", rec.Body.String())
+	}
+	var groups []statusPageServiceGroupResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &groups); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+	if len(groups) != 0 {
+		t.Errorf("groups = %+v, want empty", groups)
+	}
+}
+
+func getServicePlacements(t *testing.T, r http.Handler, token, statusPageID string) *httptest.ResponseRecorder {
+	t.Helper()
+	httpReq := httptest.NewRequest(http.MethodGet, "/api/status-pages/"+statusPageID+"/services", nil)
+	if token != "" {
+		httpReq.Header.Set("Authorization", "Bearer "+token)
+	}
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, httpReq)
+	return rec
+}
+
+// TestListServicePlacements_MixedPlacements_200ReturnsFullDetail asserts
+// T7's endpoint returns every placement's group_id/parent_service_id/
+// position detail - set up via a real SetServices call (T6) first, then
+// read back through the new read endpoint - covering a grouped+parented
+// child, an ungrouped parentless service, and a grouped parentless service
+// in the same page (SGD-02, SGD-03, SGD-06, SGD-07).
+func TestListServicePlacements_MixedPlacements_200ReturnsFullDetail(t *testing.T) {
+	r, pool, admins := newStatusPagesRouter(t)
+	token := issueTestSessionToken(t, admins)
+	parent := createTestService(t, pool)
+	child := createTestService(t, pool)
+	ungrouped := createTestService(t, pool)
+	pageID := createDomainlessStatusPageViaAPI(t, r, pool, token, "List Service Placements Page")
+	groupID := createTestGroup(t, r, token, pageID, "Core")
+
+	setRec := patchSetServices(t, r, token, pageID, setServicesRequest{Services: []servicePlacementRequest{
+		{ServiceID: parent, GroupID: &groupID, Position: 0},
+		{ServiceID: child, GroupID: &groupID, ParentServiceID: &parent, Position: 1},
+		{ServiceID: ungrouped, Position: 2},
+	}})
+	if setRec.Code != http.StatusOK {
+		t.Fatalf("setup SetServices status = %d, want %d, body = %s", setRec.Code, http.StatusOK, setRec.Body.String())
+	}
+
+	rec := getServicePlacements(t, r, token, pageID)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	var placements []servicePlacementResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &placements); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+	if len(placements) != 3 {
+		t.Fatalf("placements = %+v, want 3 entries", placements)
+	}
+
+	byID := make(map[string]servicePlacementResponse, len(placements))
+	for _, p := range placements {
+		byID[p.ServiceID] = p
+	}
+
+	gotParent, ok := byID[parent]
+	if !ok {
+		t.Fatalf("placements missing parent service %q: %+v", parent, placements)
+	}
+	if gotParent.GroupID == nil || *gotParent.GroupID != groupID {
+		t.Errorf("parent.GroupID = %v, want %q", gotParent.GroupID, groupID)
+	}
+	if gotParent.ParentServiceID != nil {
+		t.Errorf("parent.ParentServiceID = %v, want nil", gotParent.ParentServiceID)
+	}
+	if gotParent.Position != 0 {
+		t.Errorf("parent.Position = %d, want 0", gotParent.Position)
+	}
+
+	gotChild, ok := byID[child]
+	if !ok {
+		t.Fatalf("placements missing child service %q: %+v", child, placements)
+	}
+	if gotChild.GroupID == nil || *gotChild.GroupID != groupID {
+		t.Errorf("child.GroupID = %v, want %q", gotChild.GroupID, groupID)
+	}
+	if gotChild.ParentServiceID == nil || *gotChild.ParentServiceID != parent {
+		t.Errorf("child.ParentServiceID = %v, want %q", gotChild.ParentServiceID, parent)
+	}
+	if gotChild.Position != 1 {
+		t.Errorf("child.Position = %d, want 1", gotChild.Position)
+	}
+
+	gotUngrouped, ok := byID[ungrouped]
+	if !ok {
+		t.Fatalf("placements missing ungrouped service %q: %+v", ungrouped, placements)
+	}
+	if gotUngrouped.GroupID != nil {
+		t.Errorf("ungrouped.GroupID = %v, want nil", gotUngrouped.GroupID)
+	}
+	if gotUngrouped.ParentServiceID != nil {
+		t.Errorf("ungrouped.ParentServiceID = %v, want nil", gotUngrouped.ParentServiceID)
+	}
+	if gotUngrouped.Position != 2 {
+		t.Errorf("ungrouped.Position = %d, want 2", gotUngrouped.Position)
+	}
+}
+
+// TestListServicePlacements_NoServices_200EmptyArrayNotNull mirrors
+// TestListGroups_NoGroups_200EmptyArrayNotNull: a status page with no
+// linked services returns an empty JSON array, never null.
+func TestListServicePlacements_NoServices_200EmptyArrayNotNull(t *testing.T) {
+	r, pool, admins := newStatusPagesRouter(t)
+	token := issueTestSessionToken(t, admins)
+	pageID := createDomainlessStatusPageViaAPI(t, r, pool, token, "List Service Placements Empty Page")
+
+	rec := getServicePlacements(t, r, token, pageID)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	if rec.Body.String() == "null\n" || rec.Body.String() == "null" {
+		t.Fatalf("body = %q, want an empty JSON array, not null", rec.Body.String())
+	}
+	var placements []servicePlacementResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &placements); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+	if len(placements) != 0 {
+		t.Errorf("placements = %+v, want empty", placements)
+	}
+}
+
+// TestListServicePlacements_NonexistentStatusPageID_404 mirrors
+// TestSetServices_NonexistentStatusPageID_404 for the new read endpoint.
+func TestListServicePlacements_NonexistentStatusPageID_404(t *testing.T) {
+	r, _, admins := newStatusPagesRouter(t)
+	token := issueTestSessionToken(t, admins)
+
+	rec := getServicePlacements(t, r, token, "00000000-0000-0000-0000-000000000000")
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("status = %d, want %d, body = %s", rec.Code, http.StatusNotFound, rec.Body.String())
+	}
+}
+
+// TestListServicePlacements_ViewerRole_200 asserts this is a read endpoint
+// gated anyRole (unlike SetServices/CreateGroup's writeRoles) - a viewer can
+// read placement detail, mirroring TestListGroups_AnyRole_200ReturnsPositionOrdered's
+// use of a viewer token.
+func TestListServicePlacements_ViewerRole_200(t *testing.T) {
+	r, pool, admins := newStatusPagesRouter(t)
+	ownerToken := issueTestSessionToken(t, admins)
+	serviceID := createTestService(t, pool)
+	pageID := createDomainlessStatusPageViaAPI(t, r, pool, ownerToken, "List Service Placements Viewer Page")
+
+	setRec := patchSetServices(t, r, ownerToken, pageID, setServicesRequest{Services: placementsOf(serviceID)})
+	if setRec.Code != http.StatusOK {
+		t.Fatalf("setup SetServices status = %d, want %d, body = %s", setRec.Code, http.StatusOK, setRec.Body.String())
+	}
+
+	viewerToken := issueTestSessionTokenWithRole(t, admins, db.RoleViewer)
+	rec := getServicePlacements(t, r, viewerToken, pageID)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	var placements []servicePlacementResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &placements); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+	if len(placements) != 1 || placements[0].ServiceID != serviceID {
+		t.Fatalf("placements = %+v, want [%q]", placements, serviceID)
 	}
 }

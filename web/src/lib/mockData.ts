@@ -130,6 +130,7 @@ export const services: Service[] = [
     poll_type: null,
     poll_target: null,
     poll_interval_seconds: null,
+    environment: "production",
     current_status: "operational",
     last_status_change_at: new Date(Date.now() - 1000 * 60 * 60 * 6).toISOString(),
     uptime_30d: null,
@@ -144,6 +145,7 @@ export const services: Service[] = [
     poll_type: null,
     poll_target: null,
     poll_interval_seconds: null,
+    environment: "staging",
     current_status: "degraded",
     last_status_change_at: new Date(Date.now() - 1000 * 60 * 30).toISOString(),
     uptime_30d: null,
@@ -162,6 +164,7 @@ export const services: Service[] = [
     poll_type: null,
     poll_target: null,
     poll_interval_seconds: null,
+    environment: "",
     current_status: "not_configured",
     last_status_change_at: new Date(Date.now() - 1000 * 60 * 60 * 24).toISOString(),
     uptime_30d: null,
@@ -176,6 +179,7 @@ export const services: Service[] = [
     poll_type: null,
     poll_target: null,
     poll_interval_seconds: null,
+    environment: "development",
     current_status: "operational",
     last_status_change_at: new Date(Date.now() - 1000 * 60 * 60 * 12).toISOString(),
     uptime_30d: null,
@@ -193,6 +197,7 @@ export const services: Service[] = [
     poll_type: "tcp",
     poll_target: "cache.acme.health:6379",
     poll_interval_seconds: 60,
+    environment: "",
     current_status: "operational",
     last_status_change_at: new Date(Date.now() - 1000 * 60 * 45).toISOString(),
     uptime_30d: null,
@@ -259,6 +264,11 @@ export const statusPages: StatusPage[] = [
     tls_last_error: null,
     created_at: new Date(Date.now() - 1000 * 60 * 60 * 24 * 9).toISOString(),
     service_ids: ["svc-1", "svc-2"],
+    // status-page-environment-banner SPEB-01/03 fixture: exercises the
+    // public banner/admin select in tests against a non-"" value (this
+    // page is "published", the only state the public-preview endpoint
+    // serves - unlike sp-3 below, which is "tls_failed").
+    environment: "staging",
   },
   {
     id: "sp-2",
@@ -269,6 +279,7 @@ export const statusPages: StatusPage[] = [
     tls_last_error: null,
     created_at: new Date(Date.now() - 1000 * 60 * 5).toISOString(),
     service_ids: ["svc-3"],
+    environment: "",
   },
   {
     id: "sp-3",
@@ -279,6 +290,7 @@ export const statusPages: StatusPage[] = [
     tls_last_error: "Falha ao validar propriedade do domínio via DNS-01.",
     created_at: new Date(Date.now() - 1000 * 60 * 60 * 24).toISOString(),
     service_ids: [],
+    environment: "",
   },
   {
     id: "sp-4",
@@ -289,6 +301,7 @@ export const statusPages: StatusPage[] = [
     tls_last_error: null,
     created_at: new Date(Date.now() - 1000 * 60 * 60 * 24 * 20).toISOString(),
     service_ids: ["svc-4"],
+    environment: "",
   },
 ];
 

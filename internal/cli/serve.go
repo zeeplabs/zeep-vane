@@ -289,7 +289,9 @@ func newPublicStatusMux(pool *db.Pool, logger *zap.Logger) *http.ServeMux {
 	intervals := db.NewStatusIntervalRepository(pool)
 	incidents := db.NewIncidentRepository(pool)
 	tenants := db.NewTenantRepository(pool)
-	publicHandler := api.NewPublicStatusHandler(services, intervals, incidents, tenants, logger)
+	statusPages := db.NewStatusPageRepository(pool)
+	domains := db.NewDomainRepository(pool)
+	publicHandler := api.NewPublicStatusHandler(services, intervals, incidents, tenants, statusPages, domains, logger)
 	logoFileHandler := api.NewLogoFileHandler(tenants)
 
 	publicMux := http.NewServeMux()

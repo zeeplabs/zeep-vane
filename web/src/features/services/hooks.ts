@@ -1,6 +1,14 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiFetch } from "../../lib/apiClient";
-import type { MonitorMode, Page, PollType, Service, ServiceDetail, ServiceStatus } from "../../types/api";
+import type {
+  MonitorMode,
+  Page,
+  PollType,
+  Service,
+  ServiceDetail,
+  ServiceEnvironment,
+  ServiceStatus,
+} from "../../types/api";
 
 // The real backend's serviceResponse (internal/api/services_handler.go) now
 // returns slo_name/uptime_30d/last_seen_at directly - toService is a plain,
@@ -17,6 +25,9 @@ interface ServiceResponse {
   poll_type: PollType | null;
   poll_target: string | null;
   poll_interval_seconds: number | null;
+  // environment (service-environment-tag SET-04) - always present on the
+  // real backend's serviceResponse, same convention as monitor_mode above.
+  environment: ServiceEnvironment;
   current_status: ServiceStatus;
   last_status_change_at: string;
   uptime_30d: number | null;
@@ -33,6 +44,7 @@ function toService(raw: ServiceResponse): Service {
     poll_type: raw.poll_type,
     poll_target: raw.poll_target,
     poll_interval_seconds: raw.poll_interval_seconds,
+    environment: raw.environment,
     current_status: raw.current_status,
     last_status_change_at: raw.last_status_change_at,
     uptime_30d: raw.uptime_30d,
@@ -70,6 +82,10 @@ export interface CreateServiceInput {
   poll_type?: PollType;
   poll_target?: string;
   poll_interval_seconds?: 30 | 60 | 300;
+  // environment (service-environment-tag SET-01/SET-03): omitted entirely
+  // defaults to "" server-side (no tag), same convention as the omitted
+  // monitor_mode above.
+  environment?: ServiceEnvironment;
 }
 
 export function useCreateService() {
@@ -103,17 +119,29 @@ function toServiceDetail(raw: ServiceDetailResponse): ServiceDetail {
   };
 }
 
-// useUpdateService renames a service via PATCH /api/services/{id}
-// (service-edit SVCEDIT-01..05). Invalidates both the list and the detail
-// query for id so the drawer and the list row pick up the new name without
-// a full page reload (SVCEDIT-06).
+// useUpdateService renames a service, and optionally sets its environment
+// tag, via PATCH /api/services/{id} (service-edit SVCEDIT-01..05 +
+// service-environment-tag SET-03). environment is optional: omitted means
+// "leave unchanged" (the request body never includes the key at all), same
+// convention the real backend's *string field relies on - only an explicit
+// value (including "" to clear the tag) is sent. Invalidates both the list
+// and the detail query for id so the drawer and the list row pick up the
+// new name/environment without a full page reload (SVCEDIT-06).
 export function useUpdateService() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async ({ id, name }: { id: string; name: string }): Promise<Service> => {
+    mutationFn: async ({
+      id,
+      name,
+      environment,
+    }: {
+      id: string;
+      name: string;
+      environment?: ServiceEnvironment;
+    }): Promise<Service> => {
       const raw = await apiFetch<ServiceResponse>(`/api/services/${id}`, {
         method: "PATCH",
-        body: JSON.stringify({ name }),
+        body: JSON.stringify(environment === undefined ? { name } : { name, environment }),
       });
       return toService(raw);
     },

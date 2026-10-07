@@ -2,8 +2,10 @@ import { useCallback, useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { apiFetch } from "../../lib/apiClient";
 import type {
+  PublicDomainHealth,
   PublicHistoryBucket,
   PublicIncidentEntry,
+  PublicStatusGroup,
   PublicStatusPageData,
   PublicServiceStatus,
   RangeKey,
@@ -30,12 +32,17 @@ interface PreviewIncident {
 }
 
 interface PreviewService {
+  id: string;
   name: string;
   status: PublicServiceStatus;
   last_updated_at: string;
   history: PublicHistoryBucket[];
   uptime_percent: number | null;
   status_analysis?: string;
+  group_id?: string;
+  group_name?: string;
+  parent_service_id?: string;
+  parent_service_name?: string;
 }
 
 interface PreviewResolvedPage {
@@ -49,6 +56,9 @@ interface PreviewResponse {
   company: PreviewCompany;
   services: PreviewService[];
   incidents: { active: PreviewIncident[]; resolved: PreviewResolvedPage };
+  groups: PublicStatusGroup[];
+  domain_health?: PublicDomainHealth;
+  environment?: "staging" | "development";
 }
 
 // SPEC_DEVIATION (AD-007, I13): the real backend's public response has no
@@ -101,18 +111,26 @@ async function fetchPublicStatusPage(
     updated_at: latestChange ?? new Date().toISOString(),
     stale: false,
     services: data.services.map((service) => ({
+      id: service.id,
       name: service.name,
       status: service.status,
       last_updated_at: service.last_updated_at,
       history: service.history,
       uptime_percent: service.uptime_percent,
       status_analysis: service.status_analysis,
+      group_id: service.group_id,
+      group_name: service.group_name,
+      parent_service_id: service.parent_service_id,
+      parent_service_name: service.parent_service_name,
     })),
     incidents: {
       active: data.incidents.active.map(toPublicIncidentEntry),
       resolved: data.incidents.resolved.items.map(toPublicIncidentEntry),
     },
     resolvedTotal: data.incidents.resolved.total,
+    groups: data.groups,
+    domain_health: data.domain_health,
+    environment: data.environment,
   };
 }
 

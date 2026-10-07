@@ -24,6 +24,7 @@ interface DetailFixture {
   slo_name: string | null;
   monitor_mode?: "slo" | "polling";
   poll_target?: string | null;
+  environment?: "" | "development" | "staging" | "production";
   current_status: ServiceStatus;
   last_status_change_at: string;
   uptime_30d: number | null;
@@ -39,6 +40,7 @@ function mockDetail(overrides: Partial<DetailFixture> = {}) {
     name: "Checkout",
     slo_id: "slo-1",
     slo_name: "Checkout latência p95",
+    environment: "",
     current_status: "operational",
     last_status_change_at: new Date().toISOString(),
     uptime_30d: 99.5,
@@ -251,6 +253,61 @@ describe("ServiceDetailDrawer", () => {
 
     await screen.findByText("Checkout");
     expect(screen.queryByRole("button", { name: "Renomear serviço" })).not.toBeInTheDocument();
+  });
+
+  // service-environment-tag SET-05: the badge next to the name shows the
+  // right label/color for a tagged service, and renders nothing for "".
+  it("shows the environment badge next to the name when the service has a tag (SET-05)", async () => {
+    mockDetail({ environment: "production" });
+    await loginAsOwner();
+    renderDrawer();
+
+    expect(await screen.findByText("Checkout")).toBeInTheDocument();
+    expect(screen.getByTestId("environment-badge")).toHaveTextContent("Produção");
+  });
+
+  it("shows no environment badge for a service with no tag (SET-05)", async () => {
+    mockDetail({ environment: "" });
+    await loginAsOwner();
+    renderDrawer();
+
+    await screen.findByText("Checkout");
+    expect(screen.queryByTestId("environment-badge")).not.toBeInTheDocument();
+  });
+
+  // service-environment-tag SET-03/SET-05: owner can change the environment
+  // via the select, which PATCHes and reflects in the badge without a full
+  // page reload - viewer never sees the select at all.
+  it("owner can change the environment tag from the drawer (SET-03/SET-05)", async () => {
+    mockDetail({ environment: "" });
+    await loginAsOwner();
+    server.use(
+      http.patch("/api/services/:id", async ({ request }) => {
+        const body = (await request.json()) as { name: string; environment?: string };
+        return HttpResponse.json(mockDetail({ name: body.name, environment: body.environment as "staging" }));
+      })
+    );
+    renderDrawer();
+
+    await screen.findByText("Checkout");
+    const select = screen.getByLabelText("Ambiente");
+    await userEvent.selectOptions(select, "staging");
+
+    await waitFor(() => expect(screen.getByTestId("environment-badge")).toHaveTextContent("Staging"));
+  });
+
+  it("viewer does not see the environment select", async () => {
+    mockDetail({ environment: "development" });
+    await apiFetch("/api/auth/login", {
+      method: "POST",
+      body: JSON.stringify({ email: "viewer@vane.app", password: "demo1234" }),
+    });
+    renderDrawer();
+
+    await screen.findByText("Checkout");
+    expect(screen.queryByLabelText("Ambiente")).not.toBeInTheDocument();
+    // The badge itself is still visible read-only to a viewer.
+    expect(screen.getByTestId("environment-badge")).toHaveTextContent("Desenvolvimento");
   });
 
   // service-delete SVCDEL-09: owner sees the delete action, confirms, and

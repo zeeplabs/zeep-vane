@@ -6,6 +6,7 @@ import { MemoryRouter, Routes, Route } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import "../../lib/i18n";
 import { server } from "../../test/msw/server";
+import { setPublicStatusDomainHealth } from "../../test/msw/handlers";
 import { apiFetch } from "../../lib/apiClient";
 import { PublicStatusPage } from "./PublicStatusPage";
 import publicStatusI18n from "./i18n";
@@ -109,6 +110,44 @@ function mockPublicPreviewMultiService(
         incidents: { active: [], resolved: { items: [], total: 0, page: 1, page_size: 10 } },
       });
     }),
+  );
+}
+
+// mockPublicPreviewGrouped overrides the public-preview MSW handler with
+// caller-supplied services/groups, exercising the real
+// PreviewResponse/PublicStatusPageData shape's groups + group_id/
+// parent_service_id fields (service-groups-and-dependencies T14) instead of
+// the flat single-service fixtures above, which predate those fields.
+function mockPublicPreviewGrouped(
+  services: Array<{
+    id: string;
+    name: string;
+    status?: "operational" | "degraded" | "outage";
+    group_id?: string;
+    parent_service_id?: string;
+    parent_service_name?: string;
+  }>,
+  groups: Array<{ id: string; name: string; position: number }>,
+) {
+  server.use(
+    http.get("/api/status-pages/:id/public-preview", () =>
+      HttpResponse.json({
+        company: { name: "Acme Status", logo_url: null },
+        services: services.map((s) => ({
+          id: s.id,
+          name: s.name,
+          status: s.status ?? "operational",
+          last_updated_at: new Date().toISOString(),
+          history: [],
+          uptime_percent: 99.9,
+          group_id: s.group_id,
+          parent_service_id: s.parent_service_id,
+          parent_service_name: s.parent_service_name,
+        })),
+        incidents: { active: [], resolved: { items: [], total: 0, page: 1, page_size: 10 } },
+        groups,
+      }),
+    ),
   );
 }
 
@@ -640,5 +679,237 @@ describe("PublicStatusPage - visitor language (isolated from the admin's vane:la
 
     expect(await screen.findByText("All systems operational")).toBeInTheDocument();
     expect(screen.getByText("Services")).toBeInTheDocument();
+  });
+});
+
+// service-groups-and-dependencies (T14): grouped rendering of
+// data.services/data.groups on the public status page. SGD-02/03 (group
+// sections, ordered by position), SGD-05 (group names), SGD-07 (parent/
+// child nesting, independent status badges, no aggregation, and
+// service.id as React key, fixing the latent duplicate-name key bug).
+// A group with zero visible services is dropped entirely (not spec'd by
+// any single SGD-NN - see groupServicesForDisplay's doc comment).
+describe("PublicStatusPage - service groups and dependencies (SGD-02/03/05/07)", () => {
+  it("renders services under their group's labeled section, in group position order", async () => {
+    mockPublicPreviewGrouped(
+      [
+        { id: "svc-1", name: "API", group_id: "grp-infra" },
+        { id: "svc-2", name: "Banco de Dados", group_id: "grp-infra" },
+        { id: "svc-3", name: "Checkout", group_id: "grp-apps" },
+      ],
+      [
+        { id: "grp-apps", name: "Aplicações", position: 1 },
+        { id: "grp-infra", name: "Infraestrutura", position: 0 },
+      ],
+    );
+
+    await renderAt("/status/grouped-basic");
+
+    const infraHeading = await screen.findByText("Infraestrutura");
+    const appsHeading = await screen.findByText("Aplicações");
+    expect(infraHeading).toBeInTheDocument();
+    expect(appsHeading).toBeInTheDocument();
+    // Infraestrutura (position 0) renders before Aplicações (position 1) -
+    // DOM order mirrors documentPosition, not array order in the fixture.
+    expect(infraHeading.compareDocumentPosition(appsHeading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(screen.getByText("API")).toBeInTheDocument();
+    expect(screen.getByText("Banco de Dados")).toBeInTheDocument();
+    expect(screen.getByText("Checkout")).toBeInTheDocument();
+  });
+
+  it("renders ungrouped services in a trailing section with no visible 'ungrouped' label", async () => {
+    mockPublicPreviewGrouped(
+      [
+        { id: "svc-1", name: "Checkout", group_id: "grp-apps" },
+        { id: "svc-2", name: "Serviço Solto" },
+      ],
+      [{ id: "grp-apps", name: "Aplicações", position: 0 }],
+    );
+
+    await renderAt("/status/grouped-ungrouped");
+
+    const groupHeading = await screen.findByText("Aplicações");
+    const looseService = await screen.findByText("Serviço Solto");
+    expect(looseService).toBeInTheDocument();
+    // No synthetic "ungrouped"/"sem grupo" label rendered anywhere.
+    expect(screen.queryByText(/ungrouped/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/sem grupo/i)).not.toBeInTheDocument();
+    // The ungrouped service's section comes after the named group's.
+    expect(groupHeading.compareDocumentPosition(looseService) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it("does not render a group's header when it has zero visible services placed in it", async () => {
+    mockPublicPreviewGrouped(
+      [{ id: "svc-1", name: "Checkout", group_id: "grp-apps" }],
+      [
+        { id: "grp-apps", name: "Aplicações", position: 0 },
+        { id: "grp-empty", name: "Grupo Vazio", position: 1 },
+      ],
+    );
+
+    await renderAt("/status/grouped-empty-group");
+
+    expect(await screen.findByText("Aplicações")).toBeInTheDocument();
+    expect(screen.queryByText("Grupo Vazio")).not.toBeInTheDocument();
+  });
+
+  it("nests a child service's card under its parent, each with its own independent status badge", async () => {
+    mockPublicPreviewGrouped(
+      [
+        { id: "svc-parent", name: "API Principal", status: "operational", group_id: "grp-apps" },
+        {
+          id: "svc-child",
+          name: "Fila de Jobs",
+          status: "degraded",
+          group_id: "grp-apps",
+          parent_service_id: "svc-parent",
+        },
+      ],
+      [{ id: "grp-apps", name: "Aplicações", position: 0 }],
+    );
+
+    await renderAt("/status/grouped-nested");
+
+    const parentCard = (await screen.findByText("API Principal")).closest("section,div");
+    expect(parentCard).toBeTruthy();
+    expect(screen.getByText("Fila de Jobs")).toBeInTheDocument();
+    // Independent status badges - no aggregation: the parent stays
+    // "Operacional" even though its child is "Degradado".
+    expect(screen.getByText("Operacional")).toBeInTheDocument();
+    expect(screen.getByText("Degradado")).toBeInTheDocument();
+  });
+
+  // PublicStatusPage.tsx item 4 fix: parent_service_name is sent by the
+  // backend for every child, but was never rendered when the parent wasn't
+  // visually nested under it in the current view (different group, or
+  // filtered out) - the dependency silently vanished. Now a top-level card
+  // with a parent_service_name shows a "Depends on: X" line instead.
+  it("shows a 'depends on' line when the parent is in a different group's section", async () => {
+    mockPublicPreviewGrouped(
+      [
+        { id: "svc-parent", name: "Banco de Dados", group_id: "grp-infra" },
+        {
+          id: "svc-child",
+          name: "API",
+          group_id: "grp-apps",
+          parent_service_id: "svc-parent",
+          parent_service_name: "Banco de Dados",
+        },
+      ],
+      [
+        { id: "grp-infra", name: "Infraestrutura", position: 0 },
+        { id: "grp-apps", name: "Aplicações", position: 1 },
+      ],
+    );
+
+    await renderAt("/status/grouped-cross-section-dependency");
+
+    await screen.findByText("API");
+    expect(screen.getByText("Depende de: Banco de Dados")).toBeInTheDocument();
+  });
+
+  it("does not show a 'depends on' line when the child is nested under its visible parent", async () => {
+    mockPublicPreviewGrouped(
+      [
+        { id: "svc-parent", name: "API Principal", group_id: "grp-apps" },
+        {
+          id: "svc-child",
+          name: "Fila de Jobs",
+          group_id: "grp-apps",
+          parent_service_id: "svc-parent",
+          parent_service_name: "API Principal",
+        },
+      ],
+      [{ id: "grp-apps", name: "Aplicações", position: 0 }],
+    );
+
+    await renderAt("/status/grouped-nested-no-depends-on");
+
+    await screen.findByText("Fila de Jobs");
+    expect(screen.queryByText(/Depende de:/)).not.toBeInTheDocument();
+  });
+
+  it("uses service.id as the React key, rendering two services that share the same name", async () => {
+    mockPublicPreviewGrouped(
+      [
+        { id: "svc-1", name: "Status API", group_id: "grp-a" },
+        { id: "svc-2", name: "Status API", group_id: "grp-b" },
+      ],
+      [
+        { id: "grp-a", name: "Grupo A", position: 0 },
+        { id: "grp-b", name: "Grupo B", position: 1 },
+      ],
+    );
+
+    await renderAt("/status/grouped-duplicate-names");
+
+    expect(await screen.findAllByText("Status API")).toHaveLength(2);
+  });
+});
+
+// public-status-domain-health (PSDH-05): the small header indicator is
+// present only when the response carries domain_health, mirroring the
+// backend's own additive/omitted field (PSDH-01..04) - never a date,
+// registrar, or NS value, only the derived ok/attention status.
+describe("PublicStatusPage domain health indicator", () => {
+  it("shows no domain health indicator when the response omits domain_health", async () => {
+    await renderAt("/status/sp-4");
+
+    await screen.findByText("Sua Empresa Ltda.");
+    expect(screen.queryByTestId("domain-health-indicator")).not.toBeInTheDocument();
+  });
+
+  it("shows a discreet ok indicator when domain_health.status is ok", async () => {
+    setPublicStatusDomainHealth({ status: "ok" });
+
+    await renderAt("/status/sp-4");
+
+    const indicator = await screen.findByTestId("domain-health-indicator");
+    expect(indicator).toHaveAttribute("data-domain-health-status", "ok");
+    expect(indicator).toHaveAttribute("title", "Saúde do domínio: OK");
+  });
+
+  it("shows an emphasized attention indicator when domain_health.status is attention", async () => {
+    setPublicStatusDomainHealth({ status: "attention" });
+
+    await renderAt("/status/sp-4");
+
+    const indicator = await screen.findByTestId("domain-health-indicator");
+    expect(indicator).toHaveAttribute("data-domain-health-status", "attention");
+    expect(indicator).toHaveAttribute("title", "Saúde do domínio: requer atenção");
+  });
+
+  // Minor-findings fix: the indicator previously only had a `title`
+  // attribute, unreachable by keyboard (Tab never lands on a
+  // non-interactive element) and never shown on touch (no hover at all).
+  it("is keyboard-focusable", async () => {
+    setPublicStatusDomainHealth({ status: "ok" });
+
+    await renderAt("/status/sp-4");
+
+    const indicator = await screen.findByTestId("domain-health-indicator");
+    expect(indicator).toHaveAttribute("tabIndex", "0");
+    expect(indicator).toHaveAttribute("aria-label", "Saúde do domínio: OK");
+  });
+});
+
+// status-page-environment-banner (SPEB-04/05): the fixed banner is present
+// only when the response carries a non-"" environment, mirroring the
+// backend's additive/omitted field (SPEB-04) - no close button, never a
+// raw enum string (only the translated label).
+describe("PublicStatusPage environment banner", () => {
+  it("shows no environment banner when the response omits environment", async () => {
+    await renderAt("/status/sp-4");
+
+    await screen.findByText("Sua Empresa Ltda.");
+    expect(screen.queryByTestId("environment-banner")).not.toBeInTheDocument();
+  });
+
+  it("shows a fixed banner mentioning staging when environment is staging", async () => {
+    await renderAt("/status/sp-1");
+
+    const banner = await screen.findByTestId("environment-banner");
+    expect(banner).toHaveTextContent("Esta é uma página de staging — não reflete produção.");
+    expect(screen.queryByRole("button", { name: /fechar/i })).not.toBeInTheDocument();
   });
 });

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
-import { MdOutlineSchedule, MdOutlineWbSunny, MdOutlineNightlight } from "react-icons/md";
+import { MdOutlineSchedule, MdOutlineWbSunny, MdOutlineNightlight, MdOutlineVerified, MdOutlineWarningAmber } from "react-icons/md";
 import { Card } from "../../components/ui/Card";
 import { Button } from "../../components/ui/Button";
 import { Skeleton } from "../../components/ui/Skeleton";
@@ -12,10 +12,13 @@ import type { SegOption } from "../../components/ui/Seg";
 import { Popover } from "../../components/ui/Popover";
 import type {
   PublicDegradedEpisode,
+  PublicDomainHealth,
   PublicHistoryBucket,
   PublicHourlyStatus,
   PublicIncidentEntry,
+  PublicServiceEntry,
   PublicServiceStatus,
+  PublicStatusGroup,
   RangeKey,
 } from "../../lib/publicStatus";
 import { resolveAssetUrl } from "../../lib/apiClient";
@@ -147,6 +150,75 @@ function MoonIcon() {
   return <MdOutlineNightlight size={16} aria-hidden="true" data-testid="theme-icon-moon" />;
 }
 
+// DomainHealthIndicator renders a small icon + t()-routed tooltip for
+// domain_health (public-status-domain-health PSDH-05), only ever called
+// when the backend included the field (PSDH-01/03/04 already gate its
+// presence) - "ok" is a discreet, neutral-colored icon, "attention" gets
+// warning-colored emphasis. Never renders the underlying expiration date,
+// registrar, or NS values - only the derived status label.
+//
+// tabIndex={0} makes the <span> focusable (a bare title attribute on a
+// non-interactive element is mouse-hover-only - unreachable by keyboard
+// Tab and never announced on touch, where there is no hover at all) -
+// same title+tabIndex pattern ServiceCard's status_analysis tooltip
+// (further down this file) already uses on its Tag, rather than
+// introducing a second tooltip mechanism. aria-label (already present)
+// covers screen readers regardless of focus/hover state.
+function DomainHealthIndicator({ domainHealth, t }: { domainHealth: PublicDomainHealth; t: Translator }) {
+  const label = t(`publicStatus.domainHealth.${domainHealth.status}`);
+  if (domainHealth.status === "attention") {
+    return (
+      <span
+        className="flex items-center text-[--color-warning]"
+        style={{ color: "var(--color-warning)" }}
+        title={label}
+        aria-label={label}
+        tabIndex={0}
+        data-testid="domain-health-indicator"
+        data-domain-health-status="attention"
+      >
+        <MdOutlineWarningAmber size={16} aria-hidden="true" />
+      </span>
+    );
+  }
+  return (
+    <span
+      className="flex items-center text-neutral-400"
+      title={label}
+      aria-label={label}
+      tabIndex={0}
+      data-testid="domain-health-indicator"
+      data-domain-health-status="ok"
+    >
+      <MdOutlineVerified size={16} aria-hidden="true" />
+    </span>
+  );
+}
+
+// EnvironmentBanner is a fixed, non-dismissible banner shown at the very
+// top of the public page when the status page has a non-"" environment
+// tag (status-page-environment-banner SPEB-04/05) - no close button, no
+// localStorage/session state, deliberately: the point is to always warn a
+// visitor this page doesn't reflect production, so letting it be hidden
+// would defeat that purpose (spec.md Decisões). The environment value
+// interpolated into the text comes from its own lowercase
+// publicStatus.environmentLabel keys, never statusPages.environment (the
+// admin select's labels, capitalized for a form field - interpolating
+// those here produced a mid-sentence capital, e.g. "página de
+// Desenvolvimento" in pt-BR, which doesn't read naturally inside a
+// sentence) and never the raw enum string.
+function EnvironmentBanner({ environment, t }: { environment: "staging" | "development"; t: Translator }) {
+  return (
+    <div
+      data-testid="environment-banner"
+      className="w-full bg-[--color-warning] px-4 py-2 text-center text-[13px] font-semibold text-white"
+      style={{ backgroundColor: "var(--color-warning)" }}
+    >
+      {t("publicStatus.environmentBanner", { environment: t(`publicStatus.environmentLabel.${environment}`) })}
+    </div>
+  );
+}
+
 function IncidentCard({
   incident,
   tone,
@@ -228,6 +300,233 @@ function IncidentCard({
       </button>
     </Card>
   );
+}
+
+// ServiceCard renders a single service's row (status dot, name, uptime,
+// status badge, hourly history bar) - extracted unchanged from the old flat
+// `data.services.map(...)` (service-groups-and-dependencies T14) so a
+// parent and its nested children (SGD-06) can both use it, and so the
+// grouped layout below can wrap it without touching any of its internals.
+function ServiceCard({
+  service,
+  range,
+  t,
+  locale,
+  showDependsOn = false,
+}: {
+  service: PublicServiceEntry;
+  range: RangeKey;
+  t: Translator;
+  locale: string;
+  // showDependsOn renders a small "Depends on: {parent}" line when this
+  // card has a parent_service_name but isn't itself nested under that
+  // parent's card in the current view - e.g. the parent is in a different
+  // group's section, or was filtered out entirely as not_configured. Without
+  // this, the dependency relationship the backend already sends
+  // (parent_service_name) was silently dropped whenever nesting couldn't
+  // show it visually. A card that *is* nested under its parent (see
+  // nestServices/groupServicesForDisplay) never sets this - the indentation
+  // already conveys the relationship, a redundant text line would just be
+  // noise.
+  showDependsOn?: boolean;
+}) {
+  return (
+    <Card className="flex flex-col gap-2.5 rounded-md border border-divider p-[16px_20px]">
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex min-w-0 items-center gap-2.5">
+          <span
+            className="h-[7px] w-[7px] flex-none rounded-full"
+            style={{ background: `var(${overallColorVar[service.status]})` }}
+          />
+          <span className="truncate text-sm font-bold text-text">{service.name}</span>
+          {!service.last_updated_at ? (
+            <span className="text-xs text-neutral-500">{t("publicStatus.noDataLabel")}</span>
+          ) : null}
+          {showDependsOn && service.parent_service_name ? (
+            <Tag
+              variant="neutral"
+              style={{ fontSize: "10.5px", fontWeight: 600, padding: "2px 8px" }}
+              data-testid={`depends-on-${service.name}`}
+            >
+              {t("publicStatus.dependsOn", { parentName: service.parent_service_name })}
+            </Tag>
+          ) : null}
+        </div>
+        <div className="flex flex-shrink-0 items-center gap-2.5">
+          <span className="text-xs text-neutral-400" data-testid={`uptime-${service.name}`}>
+            {formatUptimePercent(service.uptime_percent)}
+          </span>
+          {/* status_analysis (AI-16) renders as a native tooltip on
+              the badge only for a degraded service that already has
+              a finished analysis - same title/tabIndex accessibility
+              pattern as hourlyTooltip above, never a fabricated
+              tooltip while the analysis is still pending or for any
+              non-degraded status. */}
+          <Tag
+            variant={serviceTagVariant[service.status]}
+            style={{ fontSize: "11.5px", fontWeight: 700, padding: "3px 10px" }}
+            {...(service.status === "degraded" && service.status_analysis
+              ? { title: service.status_analysis, tabIndex: 0 }
+              : {})}
+          >
+            {t(`publicStatus.serviceStatus.${service.status}`)}
+          </Tag>
+        </div>
+      </div>
+      <div className="flex flex-col gap-1.5">
+        <div className="flex gap-[2px]">
+          {service.history.map((bucket, i) => {
+            const barStyle = {
+              background:
+                bucket.status === "no_data"
+                  ? `color-mix(in oklch, var(${hourlyColorVar.no_data}) 40%, var(--color-surface))`
+                  : `var(${hourlyColorVar[bucket.status]})`,
+            };
+            // Degraded-interval-analysis (DEGINT-13/14/15/16): only
+            // a bucket carrying at least one episode becomes a real
+            // click target (Popover); every other bucket keeps its
+            // existing hover-title-only behavior unchanged.
+            if (bucket.episodes && bucket.episodes.length > 0) {
+              const episodes = bucket.episodes;
+              return (
+                <Popover
+                  key={i}
+                  trigger={
+                    <button
+                      type="button"
+                      title={hourlyTooltip(bucket, t, locale)}
+                      className="h-[24px] flex-1 rounded-[2px] cursor-pointer border-0 p-0"
+                      style={barStyle}
+                      data-testid={`hourly-bar-${service.name}-${i}`}
+                    />
+                  }
+                >
+                  <p className="m-0 mb-2 text-xs font-bold text-text">
+                    {t("publicStatus.episodePopover.heading")}
+                  </p>
+                  <div className="flex flex-col gap-2">
+                    {episodes.map((episode, j) => (
+                      <div key={j}>
+                        <p className="m-0 text-[11px] text-neutral-400">
+                          {episodeTimeRange(episode, t, locale)}
+                        </p>
+                        <p className="m-0 text-xs text-text">
+                          {episode.analysis ?? t("publicStatus.episodePopover.noReasonRecorded")}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                </Popover>
+              );
+            }
+            return (
+              <div
+                key={i}
+                title={hourlyTooltip(bucket, t, locale)}
+                tabIndex={0}
+                className="h-[24px] flex-1 rounded-[2px]"
+                style={barStyle}
+                data-testid={`hourly-bar-${service.name}-${i}`}
+              />
+            );
+          })}
+        </div>
+        <div className="flex justify-between text-[10.5px] text-neutral-500">
+          <span>{t(`publicStatus.rangeAgo.${range}`)}</span>
+          <span>{t("publicStatus.now")}</span>
+        </div>
+      </div>
+    </Card>
+  );
+}
+
+// ServiceGroupNode is one top-level service within a group's section, plus
+// any other services nested directly under it as dependencies (SGD-06:
+// parent_service_id) - at most one level deep (the backend's
+// validateServicePlacements already rejects a parent that is itself
+// nested).
+interface ServiceGroupNode {
+  service: PublicServiceEntry;
+  children: PublicServiceEntry[];
+}
+
+// nestServices splits a flat (already-filtered-to-one-section) service list
+// into top-level nodes with their nested children. A service's
+// parent_service_id only nests it when that parent is present in this same
+// list (same section) - a parent_service_id pointing outside it (a
+// different group's service, or one absent from the response entirely)
+// falls back to rendering that service at its own top level instead of
+// silently dropping it.
+function nestServices(services: PublicServiceEntry[]): ServiceGroupNode[] {
+  const byId = new Map(services.map((service) => [service.id, service]));
+  const childrenByParentId = new Map<string, PublicServiceEntry[]>();
+  const nestedIds = new Set<string>();
+
+  for (const service of services) {
+    if (service.parent_service_id && byId.has(service.parent_service_id)) {
+      nestedIds.add(service.id);
+      const siblings = childrenByParentId.get(service.parent_service_id) ?? [];
+      siblings.push(service);
+      childrenByParentId.set(service.parent_service_id, siblings);
+    }
+  }
+
+  return services
+    .filter((service) => !nestedIds.has(service.id))
+    .map((service) => ({ service, children: childrenByParentId.get(service.id) ?? [] }));
+}
+
+// ServiceGroupSection is one rendered section: either a real group (SGD-02/
+// SGD-03/SGD-05, in that group's position order) or the trailing synthetic
+// "ungrouped" bucket (group: null, SGD-02) for services with no group_id or
+// whose group_id doesn't match any group in data.groups.
+interface ServiceGroupSection {
+  group: PublicStatusGroup | null;
+  nodes: ServiceGroupNode[];
+}
+
+// groupServicesForDisplay buckets data.services by group_id into
+// data.groups' own position order, appending the synthetic ungrouped
+// bucket last. `groups` defaults defensively to [] when the backend/fixture
+// predates this field - every service then falls into the ungrouped
+// bucket, matching the old flat rendering exactly.
+//
+// A group with zero visible services - either genuinely empty, or every
+// member filtered out server-side as "not_configured" (public_status_handler.go's
+// shownServices) - is dropped entirely rather than producing a section with
+// a header and no body: a heading over empty space reads as a bug to a
+// visitor, and nothing in spec.md requires an empty group's header to stay
+// visible (SGD-02 only covers a *grouped service* rendering under its
+// section; it says nothing about a group with none).
+function groupServicesForDisplay(
+  services: PublicServiceEntry[],
+  groups: PublicStatusGroup[] | undefined,
+): ServiceGroupSection[] {
+  const knownGroups = groups ?? [];
+  const knownGroupIds = new Set(knownGroups.map((group) => group.id));
+  const byGroupId = new Map<string, PublicServiceEntry[]>();
+  const ungrouped: PublicServiceEntry[] = [];
+
+  for (const service of services) {
+    if (service.group_id && knownGroupIds.has(service.group_id)) {
+      const list = byGroupId.get(service.group_id) ?? [];
+      list.push(service);
+      byGroupId.set(service.group_id, list);
+    } else {
+      ungrouped.push(service);
+    }
+  }
+
+  const sections: ServiceGroupSection[] = [...knownGroups]
+    .sort((a, b) => a.position - b.position)
+    .map((group) => ({ group, nodes: nestServices(byGroupId.get(group.id) ?? []) }))
+    .filter((section) => section.nodes.length > 0);
+
+  if (ungrouped.length > 0) {
+    sections.push({ group: null, nodes: nestServices(ungrouped) });
+  }
+
+  return sections;
 }
 
 function LoadingSkeleton({ loadingLabel }: { loadingLabel: string }) {
@@ -329,6 +628,7 @@ export function PublicStatusPage() {
 
   return (
     <div data-theme={themeAttr} data-testid="public-status-theme-root" className="min-h-screen bg-bg">
+    {data.environment ? <EnvironmentBanner environment={data.environment} t={t} /> : null}
     <div className="mx-auto flex w-full max-w-[720px] flex-col gap-7 px-[24px] pt-[56px] pb-[80px]">
       <header className="flex flex-wrap items-center justify-between gap-3">
         {data.logo_url ? (
@@ -337,6 +637,7 @@ export function PublicStatusPage() {
           <span className="text-[17px] font-semibold tracking-tight text-text">{data.company_name}</span>
         )}
         <div className="flex items-center gap-3">
+          {data.domain_health ? <DomainHealthIndicator domainHealth={data.domain_health} t={t} /> : null}
           <button
             type="button"
             onClick={toggleTheme}
@@ -389,108 +690,34 @@ export function PublicStatusPage() {
             aria-label={t("publicStatus.selectRangeLabel")}
           />
         </div>
-        <div className="flex flex-col gap-2.5">
-          {data.services.map((service) => (
-            <Card
-              key={service.name}
-              className="flex flex-col gap-2.5 rounded-md border border-divider p-[16px_20px]"
-            >
-              <div className="flex items-center justify-between gap-3">
-                <div className="flex min-w-0 items-center gap-2.5">
-                  <span
-                    className="h-[7px] w-[7px] flex-none rounded-full"
-                    style={{ background: `var(${overallColorVar[service.status]})` }}
-                  />
-                  <span className="truncate text-sm font-bold text-text">{service.name}</span>
-                  {!service.last_updated_at ? (
-                    <span className="text-xs text-neutral-500">{t("publicStatus.noDataLabel")}</span>
-                  ) : null}
-                </div>
-                <div className="flex flex-shrink-0 items-center gap-2.5">
-                  <span className="text-xs text-neutral-400" data-testid={`uptime-${service.name}`}>
-                    {formatUptimePercent(service.uptime_percent)}
-                  </span>
-                  {/* status_analysis (AI-16) renders as a native tooltip on
-                      the badge only for a degraded service that already has
-                      a finished analysis - same title/tabIndex accessibility
-                      pattern as hourlyTooltip above, never a fabricated
-                      tooltip while the analysis is still pending or for any
-                      non-degraded status. */}
-                  <Tag
-                    variant={serviceTagVariant[service.status]}
-                    style={{ fontSize: "11.5px", fontWeight: 700, padding: "3px 10px" }}
-                    {...(service.status === "degraded" && service.status_analysis
-                      ? { title: service.status_analysis, tabIndex: 0 }
-                      : {})}
-                  >
-                    {t(`publicStatus.serviceStatus.${service.status}`)}
-                  </Tag>
-                </div>
+        <div className="flex flex-col gap-4">
+          {/* Grouped rendering (service-groups-and-dependencies SGD-02/
+              SGD-03/SGD-05): one section per non-empty group in position
+              order (groupServicesForDisplay drops groups with zero visible
+              services), a trailing synthetic ungrouped section (no visible
+              header - deliberately no "ungrouped" label), and SGD-07
+              parent/child nesting within each section. ServiceCard's
+              internals are unchanged from the old flat map. */}
+          {groupServicesForDisplay(data.services, data.groups).map((section) => (
+            <div key={section.group?.id ?? "__ungrouped__"} className="flex flex-col gap-2.5">
+              {section.group ? (
+                <h3 className="text-xs font-semibold text-neutral-300">{section.group.name}</h3>
+              ) : null}
+              <div className="flex flex-col gap-2.5">
+                {section.nodes.map(({ service, children }) => (
+                  <div key={service.id} className="flex flex-col gap-2.5">
+                    <ServiceCard service={service} range={range} t={t} locale={locale} showDependsOn />
+                    {children.length > 0 ? (
+                      <div className="ml-6 flex flex-col gap-2.5 border-l-2 border-divider pl-4">
+                        {children.map((child) => (
+                          <ServiceCard key={child.id} service={child} range={range} t={t} locale={locale} />
+                        ))}
+                      </div>
+                    ) : null}
+                  </div>
+                ))}
               </div>
-              <div className="flex flex-col gap-1.5">
-                <div className="flex gap-[2px]">
-                  {service.history.map((bucket, i) => {
-                    const barStyle = {
-                      background:
-                        bucket.status === "no_data"
-                          ? `color-mix(in oklch, var(${hourlyColorVar.no_data}) 40%, var(--color-surface))`
-                          : `var(${hourlyColorVar[bucket.status]})`,
-                    };
-                    // Degraded-interval-analysis (DEGINT-13/14/15/16): only
-                    // a bucket carrying at least one episode becomes a real
-                    // click target (Popover); every other bucket keeps its
-                    // existing hover-title-only behavior unchanged.
-                    if (bucket.episodes && bucket.episodes.length > 0) {
-                      const episodes = bucket.episodes;
-                      return (
-                        <Popover
-                          key={i}
-                          trigger={
-                            <button
-                              type="button"
-                              title={hourlyTooltip(bucket, t, locale)}
-                              className="h-[24px] flex-1 rounded-[2px] cursor-pointer border-0 p-0"
-                              style={barStyle}
-                              data-testid={`hourly-bar-${service.name}-${i}`}
-                            />
-                          }
-                        >
-                          <p className="m-0 mb-2 text-xs font-bold text-text">
-                            {t("publicStatus.episodePopover.heading")}
-                          </p>
-                          <div className="flex flex-col gap-2">
-                            {episodes.map((episode, j) => (
-                              <div key={j}>
-                                <p className="m-0 text-[11px] text-neutral-400">
-                                  {episodeTimeRange(episode, t, locale)}
-                                </p>
-                                <p className="m-0 text-xs text-text">
-                                  {episode.analysis ?? t("publicStatus.episodePopover.noReasonRecorded")}
-                                </p>
-                              </div>
-                            ))}
-                          </div>
-                        </Popover>
-                      );
-                    }
-                    return (
-                      <div
-                        key={i}
-                        title={hourlyTooltip(bucket, t, locale)}
-                        tabIndex={0}
-                        className="h-[24px] flex-1 rounded-[2px]"
-                        style={barStyle}
-                        data-testid={`hourly-bar-${service.name}-${i}`}
-                      />
-                    );
-                  })}
-                </div>
-                <div className="flex justify-between text-[10.5px] text-neutral-500">
-                  <span>{t(`publicStatus.rangeAgo.${range}`)}</span>
-                  <span>{t("publicStatus.now")}</span>
-                </div>
-              </div>
-            </Card>
+            </div>
           ))}
         </div>
       </section>

@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.0] — 2026-10-07
+
+### Added
+
+- **Service groups and dependencies**: status pages can now organize services into named, ordered groups (folder-like sections) and express that one service depends on another, both in the admin drag-and-drop editor and on the public status page. The public API gains additive per-service fields (`group_id`, `group_name`, `parent_service_id`, `parent_service_name`) plus a top-level `groups: []` array; the existing flat `services: []` array is unchanged for backward compatibility.
+- **Service environment tag**: services can carry an optional `development`/`staging`/`production` tag, shown as a badge in the admin service list/detail/create screens. Visual only — admin-only, never exposed on the public status page, no effect on alerting or permissions.
+- **Domain health on the public status page**: when a status page has a verified domain, visitors now see a coarse `ok`/`attention` health indicator, derived from the existing domain RDAP/NS monitoring (no new checks — reuses what the domain health scheduler already tracks).
+- **Status page environment banner**: a status page can be marked `staging`/`development`; when set, the **public** page shows a fixed, non-dismissible banner so a non-production status page is never mistaken for the real one.
+
+### Fixed
+
+- **Cross-tenant access to status page service groups** (SaaS mode only): `status_page_service_groups` was missing `tenant_id`/row-level security, unlike every other tenant-scoped table. An authenticated operator of one tenant could read a group ID off another tenant's public status page and use it to update or delete that group. Closed with `tenant_id` + enforced RLS + an explicit tenant filter on every query.
+- **"Save services" could silently wipe configured groups and dependencies** in the admin service-groups editor, and a just-unlinked service could reappear after save. The editor's save path now reconciles against the full placement state instead of sending a partial payload.
+- Added inline group rename/reorder/delete and child un-nesting to the service-groups editor (previously API-only, no UI).
+- Moving a parent service in the editor now moves its children's group assignment along with it.
+- An optional-data lookup failure (domain health) on the public status page no longer returns a 500 for the whole page — the field is simply omitted, per this project's existing fail-soft convention for the public endpoint.
+- Several smaller fixes found in a pre-release review: empty service groups no longer render an empty header on the public page; removing a service's parent no longer incorrectly rejects the request; a visible "Depends on" tag now appears when a service's parent isn't shown adjacent to it; service updates (name/SLO/environment) are now atomic; a missing database index was added; group position assignment no longer risks collisions after a delete; pt-BR environment banner copy capitalization fixed; the domain-health indicator is now keyboard/touch-focusable.
+
 ## [0.9.2] — 2026-10-06
 
 ### Changed

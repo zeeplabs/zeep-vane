@@ -6,8 +6,9 @@ import { Button } from "../../components/ui/Button";
 import { Field } from "../../components/ui/Field";
 import { ApiError } from "../../lib/apiClient";
 import { useIntegrationStatus, useSLOSearch } from "../integrations/hooks";
+import { environmentLabel, environmentOptions } from "./environmentMeta";
 import { useCreateService } from "./hooks";
-import type { MonitorMode, PollType, SLOSummary } from "../../types/api";
+import type { MonitorMode, PollType, ServiceEnvironment, SLOSummary } from "../../types/api";
 
 export interface AddServiceDrawerProps {
   open: boolean;
@@ -40,6 +41,7 @@ const pollIntervalOptions: Array<30 | 60 | 300> = [30, 60, 300];
 export function AddServiceDrawer({ open, onOpenChange }: AddServiceDrawerProps) {
   const { t } = useTranslation();
   const [name, setName] = useState("");
+  const [environment, setEnvironment] = useState<ServiceEnvironment>("");
   const [query, setQuery] = useState("");
   const [selectedSlo, setSelectedSlo] = useState<SLOSummary | null>(null);
   const [monitorMode, setMonitorMode] = useState<MonitorMode>("slo");
@@ -65,6 +67,7 @@ export function AddServiceDrawer({ open, onOpenChange }: AddServiceDrawerProps) 
 
   function resetForm() {
     setName("");
+    setEnvironment("");
     setQuery("");
     setSelectedSlo(null);
     setMonitorMode(sloModeDisabled ? "polling" : "slo");
@@ -99,6 +102,7 @@ export function AddServiceDrawer({ open, onOpenChange }: AddServiceDrawerProps) 
           slo_name: selectedSlo.name,
           slo_type: selectedSlo.slo_type,
           datadog_service_tag: selectedSlo.datadog_service_tag,
+          ...(environment ? { environment } : {}),
         });
         resetForm();
         onOpenChange(false);
@@ -122,6 +126,7 @@ export function AddServiceDrawer({ open, onOpenChange }: AddServiceDrawerProps) 
         poll_type: pollType,
         poll_target: pollTarget,
         poll_interval_seconds: pollIntervalSeconds,
+        ...(environment ? { environment } : {}),
       });
       resetForm();
       onOpenChange(false);
@@ -178,6 +183,24 @@ export function AddServiceDrawer({ open, onOpenChange }: AddServiceDrawerProps) 
           placeholder={t("services.addDrawer.namePlaceholder")}
           required
         />
+
+        <div className="flex flex-col gap-1">
+          <label htmlFor="add-service-environment" className="text-sm font-medium text-text">
+            {t("services.environment.label")}
+          </label>
+          <select
+            id="add-service-environment"
+            value={environment}
+            onChange={(e) => setEnvironment(e.target.value as ServiceEnvironment)}
+            className="min-h-9 rounded-md border border-transparent bg-card-header-bg px-3 text-sm text-text outline-none transition-colors focus:border-accent focus:bg-surface"
+          >
+            {environmentOptions.map((value) => (
+              <option key={value} value={value}>
+                {environmentLabel(t, value)}
+              </option>
+            ))}
+          </select>
+        </div>
 
         <div className="flex flex-col gap-[6px]">
           <span className="text-sm font-medium text-text">{t("services.addDrawer.monitorModeLabel")}</span>

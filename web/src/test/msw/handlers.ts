@@ -22,6 +22,7 @@ import type {
   Role,
   Domain,
   StatusPage,
+  StatusPageServiceGroup,
   Service,
   Incident,
   IncidentUpdate,
@@ -32,6 +33,7 @@ import type {
   AuditLogEntry,
 } from "../../types/api";
 import type { LLMProviderName } from "../../lib/llmProviders";
+import type { ServicePlacement } from "../../features/status-pages/hooks";
 
 // Simulates the vane_session cookie server-side: real cookie semantics
 // (Set-Cookie/credentials) are covered by the Go integration tests
@@ -152,13 +154,77 @@ let statusPagesState: StatusPage[] = [];
 let domainIdCounter = 0;
 let statusPageIdCounter = 0;
 
+// In-memory service-group + service-placement state for the
+// service-groups-and-dependencies feature (T12), scoped by status page id
+// the same way statusPagesState is - reset alongside it below since both
+// are status-page-owned child state with no independent lifecycle.
+let statusPageGroupsState: StatusPageServiceGroup[] = [];
+let statusPagePlacementsState: Record<string, ServicePlacement[]> = {};
+let statusPageGroupIdCounter = 0;
+
+// publicStatusDomainHealthState drives the optional domain_health field on
+// both the production public-status and preview public-status MSW
+// responses (public-status-domain-health PSDH-06), mirroring the real
+// backend's 3 rules: null (default) omits the field entirely - matching a
+// status page with no domain attached (PSDH-04) or a domain never
+// successfully RDAP-checked (PSDH-03); a test calling
+// setPublicStatusDomainHealth({status:"ok"|"attention"}) simulates a
+// domain that has (PSDH-01/02).
+let publicStatusDomainHealthState: { status: "ok" | "attention" } | null = null;
+
+export function setPublicStatusDomainHealth(value: { status: "ok" | "attention" } | null): void {
+  publicStatusDomainHealthState = value;
+}
+
 export function resetDomainsAndStatusPages(): void {
   domainsState = seedDomains.map((d) => ({ ...d }));
   statusPagesState = seedStatusPages.map((p) => ({ ...p }));
   domainIdCounter = 0;
   statusPageIdCounter = 0;
+  statusPageGroupsState = [];
+  statusPagePlacementsState = {};
+  statusPageGroupIdCounter = 0;
+  publicStatusDomainHealthState = null;
 }
 resetDomainsAndStatusPages();
+
+// validateServicePlacements mirrors internal/db/status_page_repository.go's
+// function of the same name (T6, SGD-08/SGD-10/SGD-11/SGD-12) rule-for-rule
+// and in the same order, so the mock's 422 behavior for PATCH
+// /api/status-pages/:id/services matches the real backend exactly: returns
+// the matching error message for the first violated rule, or null when
+// placements are valid.
+function validateServicePlacements(
+  placements: ServicePlacement[],
+  validGroupIds: Set<string>,
+): string | null {
+  const parentOf = new Set<string>(); // ServiceID -> is some other placement's parent
+  for (const p of placements) {
+    if (p.parent_service_id) parentOf.add(p.parent_service_id);
+  }
+
+  for (const p of placements) {
+    if (p.group_id && !validGroupIds.has(p.group_id)) {
+      return "group_id does not belong to this status page";
+    }
+
+    if (p.parent_service_id) {
+      if (p.parent_service_id === p.service_id) {
+        return "a service cannot be its own parent";
+      }
+      const found = placements.some((other) => other.service_id === p.parent_service_id);
+      if (!found) {
+        return "parent_service_id must reference another service in this same request";
+      }
+    }
+
+    if (parentOf.has(p.service_id) && p.parent_service_id) {
+      return "nesting is limited to one level: a service that is already a parent cannot also have a parent";
+    }
+  }
+
+  return null;
+}
 
 // GET /api/instance/dns-target's configured value (SPD-10) - mirrors
 // config.PublicDNSTarget. Defaults to a configured value; tests that need
@@ -440,7 +506,7 @@ function serviceUptimeAndLastSeen(service: Service): { uptime_30d: number | null
 
 // toServiceResponse mirrors the real serviceResponse
 // (internal/api/services_handler.go): id, name, slo_id, slo_name,
-// monitor_mode, poll_type, poll_target, poll_interval_seconds,
+// monitor_mode, poll_type, poll_target, poll_interval_seconds, environment,
 // current_status, last_status_change_at, uptime_30d, last_seen_at.
 function toServiceResponse(service: Service) {
   const { uptime_30d, last_seen_at } = serviceUptimeAndLastSeen(service);
@@ -453,12 +519,17 @@ function toServiceResponse(service: Service) {
     poll_type: service.poll_type,
     poll_target: service.poll_target,
     poll_interval_seconds: service.poll_interval_seconds,
+    environment: service.environment,
     current_status: service.current_status,
     last_status_change_at: service.last_status_change_at,
     uptime_30d,
     last_seen_at,
   };
 }
+
+// validServiceEnvironments mirrors the real backend's validEnvironments
+// (internal/api/services_handler.go, service-environment-tag SET-03).
+const validServiceEnvironments = new Set(["", "development", "staging", "production"]);
 
 // serviceDegradedNotes/serviceIncidentCounts back the detail endpoint's
 // status_analysis/incidents_30d fixtures (SVC-14..17) - keyed by id rather
@@ -511,6 +582,7 @@ function toStatusPageResponse(statusPage: StatusPage) {
     tls_last_error: statusPage.tls_last_error,
     created_at: statusPage.created_at,
     service_ids: statusPage.service_ids,
+    environment: statusPage.environment,
   };
 }
 
@@ -1159,6 +1231,7 @@ export const handlers = [
       subdomain?: string;
       domain_id?: string;
       service_ids?: string[];
+      environment?: string;
     };
     if (!body.name) {
       return HttpResponse.json({ error: "name is required" }, { status: 422 });
@@ -1166,6 +1239,16 @@ export const handlers = [
     if (Boolean(body.subdomain) !== Boolean(body.domain_id)) {
       return HttpResponse.json(
         { error: "subdomain and domain_id must be set together, or not at all" },
+        { status: 422 },
+      );
+    }
+    // Mirrors StatusPagesHandler.Create's validStatusPageEnvironments gate
+    // (status-page-environment-banner SPEB-01/02): "" (omitted/absent
+    // defaults here too), "staging", "development" only.
+    const environment = body.environment ?? "";
+    if (!["", "staging", "development"].includes(environment)) {
+      return HttpResponse.json(
+        { error: 'environment must be "", "staging", or "development"' },
         { status: 422 },
       );
     }
@@ -1179,6 +1262,7 @@ export const handlers = [
       tls_last_error: null,
       created_at: new Date().toISOString(),
       service_ids: body.service_ids ?? [],
+      environment: environment as StatusPage["environment"],
     };
     statusPagesState.push(created);
     return HttpResponse.json(toStatusPageResponse(created), { status: 201 });
@@ -1222,6 +1306,28 @@ export const handlers = [
     return HttpResponse.json(toStatusPageResponse(page));
   }),
 
+  // PATCH /api/status-pages/:id/environment (status-page-environment-
+  // banner SPEB-02) - mirrors StatusPagesHandler.UpdateEnvironment: 404
+  // unknown page, 422 outside the fixed enum, else 200 with the updated
+  // page.
+  http.patch("/api/status-pages/:id/environment", async ({ request, params }) => {
+    if (!sessionAdminId) return HttpResponse.json({ error: "unauthorized" }, { status: 401 });
+    const page = statusPagesState.find((p) => p.id === params.id);
+    if (!page) {
+      return HttpResponse.json({ error: "status page not found" }, { status: 404 });
+    }
+    const body = (await request.json()) as { environment?: string };
+    const environment = body.environment ?? "";
+    if (!["", "staging", "development"].includes(environment)) {
+      return HttpResponse.json(
+        { error: 'environment must be "", "staging", or "development"' },
+        { status: 422 },
+      );
+    }
+    page.environment = environment as StatusPage["environment"];
+    return HttpResponse.json(toStatusPageResponse(page));
+  }),
+
   // POST /api/status-pages/:id/verify-domain - mirrors
   // StatusPagesHandler.VerifyDomain: 404 unknown page, 422 no domain
   // attached, else a canned "everything looks good" result. Real DNS/TLS
@@ -1253,21 +1359,130 @@ export const handlers = [
     });
   }),
 
-  // PATCH /api/status-pages/:id/services (SPD-15) - mirrors
-  // StatusPagesHandler.SetServices: 404 unknown page, 422 missing
-  // service_ids field (an empty array is valid - unlinks everything),
-  // else 200 with the page's full linked set replaced.
+  // GET /api/status-pages/:id/groups (SGD-01) - mirrors
+  // StatusPagesHandler.ListGroups: every service group on this status
+  // page, position-ordered.
+  http.get("/api/status-pages/:id/groups", ({ params }) => {
+    if (!sessionAdminId) return HttpResponse.json({ error: "unauthorized" }, { status: 401 });
+    const groups = statusPageGroupsState
+      .filter((g) => g.status_page_id === params.id)
+      .sort((a, b) => a.position - b.position);
+    return HttpResponse.json(groups);
+  }),
+
+  // POST /api/status-pages/:id/groups (SGD-01) - mirrors
+  // StatusPagesHandler.CreateGroup: 422 empty name (checked before the
+  // page lookup, same order as the real handler), 404 unknown page, else
+  // 201 with the new group appended at the current group count's
+  // position.
+  http.post("/api/status-pages/:id/groups", async ({ request, params }) => {
+    if (!sessionAdminId) return HttpResponse.json({ error: "unauthorized" }, { status: 401 });
+    const body = (await request.json()) as { name?: string };
+    if (!body.name) {
+      return HttpResponse.json({ error: "name is required" }, { status: 422 });
+    }
+    const page = statusPagesState.find((p) => p.id === params.id);
+    if (!page) {
+      return HttpResponse.json({ error: "status page not found" }, { status: 404 });
+    }
+    statusPageGroupIdCounter += 1;
+    const position = statusPageGroupsState.filter((g) => g.status_page_id === page.id).length;
+    const created: StatusPageServiceGroup = {
+      id: `sgroup-msw-${statusPageGroupIdCounter}`,
+      status_page_id: page.id,
+      name: body.name,
+      position,
+      created_at: new Date().toISOString(),
+    };
+    statusPageGroupsState.push(created);
+    return HttpResponse.json(created, { status: 201 });
+  }),
+
+  // PATCH /api/status-pages/:id/groups/:groupId (SGD-05) - mirrors
+  // StatusPagesHandler.UpdateGroup: 422 empty name, 404 unknown group id,
+  // else 200 with the renamed/repositioned group. Not scoped by the URL's
+  // status page id, same as the real handler - the group is looked up by
+  // groupId alone.
+  http.patch("/api/status-pages/:id/groups/:groupId", async ({ request, params }) => {
+    if (!sessionAdminId) return HttpResponse.json({ error: "unauthorized" }, { status: 401 });
+    const body = (await request.json()) as { name?: string; position?: number };
+    if (!body.name) {
+      return HttpResponse.json({ error: "name is required" }, { status: 422 });
+    }
+    const group = statusPageGroupsState.find((g) => g.id === params.groupId);
+    if (!group) {
+      return HttpResponse.json({ error: "not found" }, { status: 404 });
+    }
+    group.name = body.name;
+    group.position = body.position ?? group.position;
+    return HttpResponse.json(group);
+  }),
+
+  // DELETE /api/status-pages/:id/groups/:groupId (SGD-04) - mirrors
+  // StatusPagesHandler.DeleteGroup: 404 unknown group id, else 204. Member
+  // services keep their placement but are ungrouped (group_id cleared),
+  // mirroring the ON DELETE SET NULL foreign key (migration 0046).
+  http.delete("/api/status-pages/:id/groups/:groupId", ({ params }) => {
+    if (!sessionAdminId) return HttpResponse.json({ error: "unauthorized" }, { status: 401 });
+    const group = statusPageGroupsState.find((g) => g.id === params.groupId);
+    if (!group) {
+      return HttpResponse.json({ error: "not found" }, { status: 404 });
+    }
+    statusPageGroupsState = statusPageGroupsState.filter((g) => g.id !== group.id);
+    const placements = statusPagePlacementsState[group.status_page_id];
+    if (placements) {
+      for (const p of placements) {
+        if (p.group_id === group.id) {
+          p.group_id = undefined;
+        }
+      }
+    }
+    return new HttpResponse(null, { status: 204 });
+  }),
+
+  // GET /api/status-pages/:id/services (SGD-02, SGD-03, SGD-06, SGD-07) -
+  // mirrors StatusPagesHandler.ListServicePlacements: 404 unknown page,
+  // else the full per-service placement detail, position-ordered.
+  http.get("/api/status-pages/:id/services", ({ params }) => {
+    if (!sessionAdminId) return HttpResponse.json({ error: "unauthorized" }, { status: 401 });
+    const page = statusPagesState.find((p) => p.id === params.id);
+    if (!page) {
+      return HttpResponse.json({ error: "status page not found" }, { status: 404 });
+    }
+    const placements = [...(statusPagePlacementsState[page.id] ?? [])].sort(
+      (a, b) => a.position - b.position,
+    );
+    return HttpResponse.json(placements);
+  }),
+
+  // PATCH /api/status-pages/:id/services (SPD-15, SGD-02, SGD-03, SGD-06,
+  // SGD-07) - mirrors the rewritten StatusPagesHandler.SetServices +
+  // mapSetServicesValidationError: 404 unknown page, 422 missing services
+  // field (an empty array is valid - unlinks everything), 422 with one of
+  // 4 distinct messages on a placement rule violation (cross-page group,
+  // self-reference, parent not in set, max depth exceeded - mirroring
+  // validateServicePlacements' check order exactly), else 200 with the
+  // page's full linked set replaced: both the flat service_ids on the page
+  // response and the richer placement detail backing GET .../services.
   http.patch("/api/status-pages/:id/services", async ({ request, params }) => {
     if (!sessionAdminId) return HttpResponse.json({ error: "unauthorized" }, { status: 401 });
     const page = statusPagesState.find((p) => p.id === params.id);
     if (!page) {
       return HttpResponse.json({ error: "status page not found" }, { status: 404 });
     }
-    const body = (await request.json()) as { service_ids?: string[] };
-    if (!body.service_ids) {
-      return HttpResponse.json({ error: "service_ids is required" }, { status: 422 });
+    const body = (await request.json()) as { services?: ServicePlacement[] };
+    if (!body.services) {
+      return HttpResponse.json({ error: "services is required" }, { status: 422 });
     }
-    page.service_ids = body.service_ids;
+    const validGroupIds = new Set(
+      statusPageGroupsState.filter((g) => g.status_page_id === page.id).map((g) => g.id),
+    );
+    const validationError = validateServicePlacements(body.services, validGroupIds);
+    if (validationError) {
+      return HttpResponse.json({ error: validationError }, { status: 422 });
+    }
+    statusPagePlacementsState[page.id] = body.services;
+    page.service_ids = body.services.map((p) => p.service_id);
     return HttpResponse.json(toStatusPageResponse(page));
   }),
 
@@ -1575,9 +1790,18 @@ export const handlers = [
       poll_type?: string;
       poll_target?: string;
       poll_interval_seconds?: number;
+      environment?: string;
     };
     if (!body.name) {
       return HttpResponse.json({ error: "name and slo_id are required" }, { status: 422 });
+    }
+
+    const environment = body.environment ?? "";
+    if (!validServiceEnvironments.has(environment)) {
+      return HttpResponse.json(
+        { error: 'environment must be "", "development", "staging", or "production"' },
+        { status: 422 }
+      );
     }
 
     const monitorMode = body.monitor_mode ?? "slo";
@@ -1602,6 +1826,7 @@ export const handlers = [
         poll_type: null,
         poll_target: null,
         poll_interval_seconds: null,
+        environment: environment as Service["environment"],
         current_status: "not_configured",
         last_status_change_at: new Date().toISOString(),
         uptime_30d: null,
@@ -1644,6 +1869,7 @@ export const handlers = [
         poll_type: body.poll_type as Service["poll_type"],
         poll_target: body.poll_target,
         poll_interval_seconds: body.poll_interval_seconds,
+        environment: environment as Service["environment"],
         current_status: "not_configured",
         last_status_change_at: new Date().toISOString(),
         uptime_30d: null,
@@ -1674,20 +1900,33 @@ export const handlers = [
     });
   }),
 
-  // PATCH /api/services/:id (service-edit SVCEDIT-01..05) - mirrors
-  // ServicesHandler.Update: 422 on an empty name, 404 fixed body on an
-  // unknown id, else renames in place and returns the full serviceResponse.
+  // PATCH /api/services/:id (service-edit SVCEDIT-01..05 +
+  // service-environment-tag SET-03) - mirrors ServicesHandler.Update: 422 on
+  // an empty name or an environment outside the fixed enum, 404 fixed body
+  // on an unknown id, else renames in place (and sets environment only when
+  // the request explicitly includes it - absent means "leave unchanged",
+  // same convention as the real backend's *string field) and returns the
+  // full serviceResponse.
   http.patch("/api/services/:id", async ({ request, params }) => {
     if (!sessionAdminId) return HttpResponse.json({ error: "unauthorized" }, { status: 401 });
     const service = servicesState.find((s) => s.id === params.id);
     if (!service) {
       return HttpResponse.json({ error: "service not found" }, { status: 404 });
     }
-    const body = (await request.json()) as { name?: string };
+    const body = (await request.json()) as { name?: string; environment?: string };
     if (!body.name || !body.name.trim()) {
       return HttpResponse.json({ error: "name and slo_id are required" }, { status: 422 });
     }
+    if (body.environment !== undefined && !validServiceEnvironments.has(body.environment)) {
+      return HttpResponse.json(
+        { error: 'environment must be "", "development", "staging", or "production"' },
+        { status: 422 }
+      );
+    }
     service.name = body.name;
+    if (body.environment !== undefined) {
+      service.environment = body.environment as Service["environment"];
+    }
     return HttpResponse.json(toServiceResponse(service));
   }),
 
@@ -2060,20 +2299,57 @@ export const handlers = [
       .map(toPreviewIncident);
 
     const bucketCount = resolveFixtureBucketCount(request.url);
+    // placements/groups (service-groups-and-dependencies T14): derived from
+    // the same statusPagePlacementsState/statusPageGroupsState the admin
+    // group endpoints above read/write, so a test that places services via
+    // those endpoints sees the placement reflected here too. Both default
+    // to empty (resetDomainsAndStatusPages), so an untouched status page's
+    // public-preview response has every service ungrouped/parentless and
+    // groups: [] - matching the pre-T14 flat shape exactly for every
+    // existing test that never sets up placements.
+    const placements = statusPagePlacementsState[page.id] ?? [];
+    const placementByServiceId = new Map(placements.map((p) => [p.service_id, p]));
+    const nameByServiceId = new Map(seedServices.map((s) => [s.id, s.name]));
+    const pageGroups = statusPageGroupsState
+      .filter((g) => g.status_page_id === page.id)
+      .map((g) => ({ id: g.id, name: g.name, position: g.position }));
+
     return HttpResponse.json({
       company: { name: companySettingsState.name, logo_url: companySettingsState.logo_url },
-      services: pageServices.map((s) => ({
-        name: s.name,
-        status: s.current_status,
-        last_updated_at: s.last_status_change_at,
-        history: buildFixtureHistory(s.current_status, bucketCount),
-        // uptime_percent mirrors the real backend's nullable field (TRS-04)
-        // - not_configured services never reach here (filtered out above),
-        // so a plausible non-null fixture value is fine for every other
-        // status.
-        uptime_percent: s.current_status === "outage" ? 92.5 : 99.9,
-      })),
+      services: pageServices.map((s) => {
+        const placement = placementByServiceId.get(s.id);
+        return {
+          id: s.id,
+          name: s.name,
+          status: s.current_status,
+          last_updated_at: s.last_status_change_at,
+          history: buildFixtureHistory(s.current_status, bucketCount),
+          // uptime_percent mirrors the real backend's nullable field (TRS-04)
+          // - not_configured services never reach here (filtered out above),
+          // so a plausible non-null fixture value is fine for every other
+          // status.
+          uptime_percent: s.current_status === "outage" ? 92.5 : 99.9,
+          group_id: placement?.group_id,
+          group_name: placement?.group_id
+            ? pageGroups.find((g) => g.id === placement.group_id)?.name
+            : undefined,
+          parent_service_id: placement?.parent_service_id,
+          parent_service_name: placement?.parent_service_id
+            ? nameByServiceId.get(placement.parent_service_id)
+            : undefined,
+        };
+      }),
       incidents: { active, resolved: paginatedPage(request.url, resolved, 10) },
+      groups: pageGroups,
+      // domain_health (PSDH-06): omitted entirely unless a test opts in via
+      // setPublicStatusDomainHealth, same as the real backend omits the
+      // field rather than emitting null (PSDH-03/04).
+      ...(publicStatusDomainHealthState ? { domain_health: publicStatusDomainHealthState } : {}),
+      // environment (status-page-environment-banner SPEB-04/06): omitted
+      // entirely when the page has no tag set ("" - the mockData default
+      // for every seed page except sp-3), same as the real backend's
+      // `omitempty`.
+      ...(page.environment ? { environment: page.environment } : {}),
     });
   }),
 

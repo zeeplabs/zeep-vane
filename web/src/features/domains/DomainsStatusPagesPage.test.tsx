@@ -64,6 +64,7 @@ function basePage(overrides: Partial<StatusPage>): StatusPage {
     tls_last_error: null,
     created_at: new Date().toISOString(),
     service_ids: [],
+    environment: "",
     ...overrides,
   };
 }

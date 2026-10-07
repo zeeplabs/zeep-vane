@@ -207,6 +207,12 @@
     "serviceCount_one": "{{count}} service",
     "serviceCount_other": "{{count}} services",
     "createTitle": "Create status page",
+    "environment": {
+      "label": "Environment",
+      "none": "None (production)",
+      "staging": "Staging",
+      "development": "Development"
+    },
     "section": {
       "title": "Status pages",
       "createButton": "Create status page",
@@ -243,7 +249,9 @@
         "title": "Private",
         "description": "Signed-in tenant members only"
       },
-      "servicesLabel": "Services shown"
+      "servicesLabel": "Services shown",
+      "environmentLabel": "Environment",
+      "environmentHelp": "Shown as a fixed banner on the public page. Leave as \"None\" for a production page."
     },
     "attach": {
       "title": "Attach domain",
@@ -272,6 +280,9 @@
       "description": "Manage the domain, verification, and services shown on this page."
     },
     "editor": {
+      "environmentLabel": "Environment",
+      "saveEnvironmentButton": "Save environment",
+      "saveEnvironmentError": "Couldn't save the environment.",
       "noDomainAttached": "No domain attached yet.",
       "linkedServicesLabel": "Linked services ({{selected}}/{{total}})",
       "noServices": "No services registered.",
@@ -292,7 +303,32 @@
       "tlsValid": "TLS certificate issued and valid",
       "tlsRespondedInvalid": "HTTPS connection responded, but the certificate isn't valid for {{hostname}}{{errorSuffix}}",
       "tlsUnreachable": "HTTPS connection still fails{{errorSuffix}}",
-      "lastCheckedLabel": "Last checked: {{date}}"
+      "lastCheckedLabel": "Last checked: {{date}}",
+      "groups": {
+        "ungroupedLabel": "Ungrouped",
+        "emptyGroup": "Drag a service here.",
+        "dragHandle": "Reorder {{name}}",
+        "newGroupLabel": "New group",
+        "newGroupPlaceholder": "Group name",
+        "createGroupButton": "Create group",
+        "createError": "Couldn't create the group.",
+        "saveButton": "Save placement",
+        "saveError": "Couldn't save the service placement.",
+        "renameAction": "Rename {{name}}",
+        "renameSave": "Save name",
+        "renameCancel": "Cancel rename",
+        "nameRequired": "Group name is required.",
+        "renameError": "Couldn't rename the group.",
+        "deleteAction": "Delete {{name}}",
+        "deleteConfirmTitle": "Delete group?",
+        "deleteConfirmDescription": "Services in \"{{name}}\" will become ungrouped, not removed from the page.",
+        "deleteConfirmButton": "Delete group",
+        "deleteCancel": "Cancel",
+        "deleteError": "Couldn't delete the group.",
+        "moveUp": "Move {{name}} up",
+        "moveDown": "Move {{name}} down",
+        "reorderError": "Couldn't reorder the groups."
+      }
     }
   },
   "incidents": {
@@ -374,6 +410,15 @@
   },
   "publicStatus": {
     "loading": "Loading…",
+    "environmentBanner": "This is a {{environment}} page — it does not reflect production.",
+    "environmentLabel": {
+      "staging": "staging",
+      "development": "development"
+    },
+    "domainHealth": {
+      "ok": "Domain health: OK",
+      "attention": "Domain health: needs attention"
+    },
     "episodePopover": {
       "heading": "Degradation recorded",
       "noReasonRecorded": "No reason available for this period."
@@ -416,6 +461,7 @@
     "servicesHeading": "Services",
     "selectRangeLabel": "Select period",
     "noDataLabel": "(no data)",
+    "dependsOn": "Depends on: {{parentName}}",
     "historyHeading": "History (last 90 days)",
     "noHistoryIncidents": "No incidents in the last 90 days.",
     "loadMore": "Load more",
@@ -1119,6 +1165,13 @@
       "outage": "Down",
       "not_configured": "Not configured"
     },
+    "environment": {
+      "label": "Environment",
+      "none": "No tag",
+      "development": "Development",
+      "staging": "Staging",
+      "production": "Production"
+    },
     "section": {
       "linkButton": "Link service",
       "empty": "No services registered.",
@@ -1146,7 +1199,8 @@
       "deleteAction": "Delete service",
       "deleteConfirmTitle": "Delete service",
       "deleteConfirmDescription": "Delete the service \"{{name}}\"? Its check history and incidents are kept, but it stops being monitored. This action cannot be undone.",
-      "deleteError": "Could not delete the service."
+      "deleteError": "Could not delete the service.",
+      "environmentError": "Could not update the environment tag."
     },
     "addDrawer": {
       "drawerTitle": "Add service",

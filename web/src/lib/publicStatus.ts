@@ -36,7 +36,18 @@ export interface PublicHistoryBucket {
 // (internal/api/time_range.go).
 export type RangeKey = "24h" | "7d" | "30d" | "90d";
 
+// PublicStatusGroup mirrors the backend's publicGroupResponse
+// (internal/api/public_status_handler.go) - one status_page_service_groups
+// row, including a group with zero services placed in it (service-groups-
+// and-dependencies SGD-09's operator-visible empty state).
+export interface PublicStatusGroup {
+  id: string;
+  name: string;
+  position: number;
+}
+
 export interface PublicServiceEntry {
+  id: string;
   name: string;
   status: PublicServiceStatus;
   last_updated_at: string | null;
@@ -53,6 +64,26 @@ export interface PublicServiceEntry {
   // `omitempty`) otherwise, including while a degraded service's analysis
   // is still pending.
   status_analysis?: string;
+  // group_id/group_name and parent_service_id/parent_service_name describe
+  // this service's placement on this status page (service-groups-and-
+  // dependencies SGD-02/SGD-03/SGD-06/SGD-09) - mirrors the backend's
+  // publicServiceResponse (internal/api/public_status_handler.go), all four
+  // `omitempty` *string, absent (not null) for an ungrouped, parentless
+  // service. parent_service_name is resolved from the backend's unfiltered
+  // service list, so it can be present even when the parent service itself
+  // doesn't appear in this response's services array.
+  group_id?: string;
+  group_name?: string;
+  parent_service_id?: string;
+  parent_service_name?: string;
+}
+
+// PublicDomainHealth mirrors the backend's publicDomainHealthResponse
+// (internal/api/public_status_handler.go, public-status-domain-health
+// PSDH-01) - the derived ok/attention verdict only, never the raw
+// expiration date, registrar, or NS values AD-039 persists (PSDH-05).
+export interface PublicDomainHealth {
+  status: "ok" | "attention";
 }
 
 export interface PublicIncidentUpdateEntry {
@@ -91,4 +122,19 @@ export interface PublicStatusPageData {
   // loadMoreResolvedIncidents). Compare its length against this to know
   // whether "Carregar mais" (T20) should still show.
   resolvedTotal: number;
+  // groups lists every service group on this status page, including ones
+  // with zero services placed in them (service-groups-and-dependencies
+  // SGD-09) - mirrors the backend's publicStatusResponse.Groups, ListGroups'
+  // raw, unfiltered output.
+  groups: PublicStatusGroup[];
+  // domain_health is present only when this status page has a domain
+  // attached and that domain has had at least one successful RDAP check
+  // (public-status-domain-health PSDH-01/03/04) - absent (not null)
+  // otherwise, mirroring the backend's `omitempty`.
+  domain_health?: PublicDomainHealth;
+  // environment is present only when the status page has a non-""
+  // environment tag (status-page-environment-banner SPEB-04) - absent
+  // (not "") otherwise, mirroring the backend's `omitempty`. Drives
+  // PublicStatusPage.tsx's fixed banner (SPEB-05).
+  environment?: "staging" | "development";
 }

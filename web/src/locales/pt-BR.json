@@ -207,6 +207,12 @@
     "serviceCount_one": "{{count}} serviço",
     "serviceCount_other": "{{count}} serviços",
     "createTitle": "Criar status page",
+    "environment": {
+      "label": "Ambiente",
+      "none": "Nenhum (produção)",
+      "staging": "Staging",
+      "development": "Desenvolvimento"
+    },
     "section": {
       "title": "Status pages",
       "createButton": "Criar status page",
@@ -243,7 +249,9 @@
         "title": "Privado",
         "description": "Somente membros do tenant logados"
       },
-      "servicesLabel": "Serviços exibidos"
+      "servicesLabel": "Serviços exibidos",
+      "environmentLabel": "Ambiente",
+      "environmentHelp": "Exibido como uma faixa fixa na página pública. Deixe em \"Nenhum\" para uma página de produção."
     },
     "attach": {
       "title": "Anexar domínio",
@@ -272,6 +280,9 @@
       "description": "Gerencie domínio, verificação e serviços exibidos nesta página."
     },
     "editor": {
+      "environmentLabel": "Ambiente",
+      "saveEnvironmentButton": "Salvar ambiente",
+      "saveEnvironmentError": "Não foi possível salvar o ambiente.",
       "noDomainAttached": "Nenhum domínio anexado ainda.",
       "linkedServicesLabel": "Serviços vinculados ({{selected}}/{{total}})",
       "noServices": "Nenhum serviço cadastrado.",
@@ -292,7 +303,32 @@
       "tlsValid": "Certificado TLS emitido e válido",
       "tlsRespondedInvalid": "Conexão HTTPS respondeu, mas o certificado não é válido para {{hostname}}{{errorSuffix}}",
       "tlsUnreachable": "Conexão HTTPS ainda falha{{errorSuffix}}",
-      "lastCheckedLabel": "Última verificação: {{date}}"
+      "lastCheckedLabel": "Última verificação: {{date}}",
+      "groups": {
+        "ungroupedLabel": "Sem grupo",
+        "emptyGroup": "Arraste um serviço para cá.",
+        "dragHandle": "Reordenar {{name}}",
+        "newGroupLabel": "Novo grupo",
+        "newGroupPlaceholder": "Nome do grupo",
+        "createGroupButton": "Criar grupo",
+        "createError": "Não foi possível criar o grupo.",
+        "saveButton": "Salvar posicionamento",
+        "saveError": "Não foi possível salvar o posicionamento dos serviços.",
+        "renameAction": "Renomear {{name}}",
+        "renameSave": "Salvar nome",
+        "renameCancel": "Cancelar renomeação",
+        "nameRequired": "O nome do grupo é obrigatório.",
+        "renameError": "Não foi possível renomear o grupo.",
+        "deleteAction": "Excluir {{name}}",
+        "deleteConfirmTitle": "Excluir grupo?",
+        "deleteConfirmDescription": "Os serviços em \"{{name}}\" ficarão sem grupo, sem serem removidos da página.",
+        "deleteConfirmButton": "Excluir grupo",
+        "deleteCancel": "Cancelar",
+        "deleteError": "Não foi possível excluir o grupo.",
+        "moveUp": "Mover {{name}} para cima",
+        "moveDown": "Mover {{name}} para baixo",
+        "reorderError": "Não foi possível reordenar os grupos."
+      }
     }
   },
   "incidents": {
@@ -374,6 +410,15 @@
   },
   "publicStatus": {
     "loading": "Carregando…",
+    "environmentBanner": "Esta é uma página de {{environment}} — não reflete produção.",
+    "environmentLabel": {
+      "staging": "staging",
+      "development": "desenvolvimento"
+    },
+    "domainHealth": {
+      "ok": "Saúde do domínio: OK",
+      "attention": "Saúde do domínio: requer atenção"
+    },
     "episodePopover": {
       "heading": "Degradação registrada",
       "noReasonRecorded": "Motivo não disponível para este período."
@@ -416,6 +461,7 @@
     "servicesHeading": "Serviços",
     "selectRangeLabel": "Selecionar período",
     "noDataLabel": "(sem dados)",
+    "dependsOn": "Depende de: {{parentName}}",
     "historyHeading": "Histórico (últimos 90 dias)",
     "noHistoryIncidents": "Nenhum incidente nos últimos 90 dias.",
     "loadMore": "Carregar mais",
@@ -1119,6 +1165,13 @@
       "outage": "Inativo",
       "not_configured": "Não configurado"
     },
+    "environment": {
+      "label": "Ambiente",
+      "none": "Sem tag",
+      "development": "Desenvolvimento",
+      "staging": "Staging",
+      "production": "Produção"
+    },
     "section": {
       "linkButton": "Vincular serviço",
       "empty": "Nenhum serviço cadastrado.",
@@ -1146,7 +1199,8 @@
       "deleteAction": "Excluir serviço",
       "deleteConfirmTitle": "Excluir serviço",
       "deleteConfirmDescription": "Excluir o serviço \"{{name}}\"? O histórico de verificações e incidentes é mantido, mas ele para de ser monitorado. Esta ação não pode ser desfeita.",
-      "deleteError": "Não foi possível excluir o serviço."
+      "deleteError": "Não foi possível excluir o serviço.",
+      "environmentError": "Não foi possível atualizar a tag de ambiente."
     },
     "addDrawer": {
       "drawerTitle": "Adicionar serviço",

@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
-import { MdOutlineOpenInNew, MdCheck, MdContentCopy } from "react-icons/md";
+import { MdOutlineOpenInNew, MdContentCopy } from "react-icons/md";
 import { Tag, type TagVariant } from "../../components/ui/Tag";
 import { Button, buttonBaseClasses, buttonVariantClasses } from "../../components/ui/Button";
 import { Field } from "../../components/ui/Field";
@@ -10,9 +10,22 @@ import { ApiError } from "../../lib/apiClient";
 import { formatDateTime } from "../../lib/formatDate";
 import { useDomains } from "../domains/hooks";
 import { useServices } from "../services/hooks";
-import type { Service, StatusPage, StatusPageState } from "../../types/api";
-import { useDNSTarget, useSetStatusPageServices, useVerifyDomain, type VerifyDomainResult } from "./hooks";
+import type { Service, StatusPage, StatusPageEnvironment, StatusPageState } from "../../types/api";
+import {
+  useDNSTarget,
+  useSetStatusPageServices,
+  useStatusPageServicePlacements,
+  useUpdateStatusPageEnvironment,
+  useVerifyDomain,
+  type VerifyDomainResult,
+} from "./hooks";
 import { AttachDomainDrawer } from "./AttachDomainDrawer";
+import { ServiceGroupPanel, buildInitialPlacements, reconcilePlacements, toServicePlacements } from "./ServiceGroupPanel";
+
+// statusPageEnvironmentOptions drives the edit form's environment
+// <select> (status-page-environment-banner SPEB-03), same order as
+// AddStatusPageDrawer's.
+const statusPageEnvironmentOptions: StatusPageEnvironment[] = ["", "staging", "development"];
 
 // publicUrl only composes a URL once both domain_id/subdomain are set
 // (SPD-01) - null-safe, same guard as StatusPagesSection.tsx's publicUrl.
@@ -110,9 +123,24 @@ export function StatusPageEditorContent({ page, showPreviewLink = true }: Status
   const { hasRole } = useAuth();
   const canManage = hasRole(["owner", "operator"]);
   const setServices = useSetStatusPageServices();
+  // M1 fix: "Save services" used to send a bare {service_id, position} list
+  // with no group_id/parent_service_id, which - since SetServices is a
+  // full-replace write - silently wiped every group/dependency already
+  // configured via ServiceGroupPanel the moment this separate button was
+  // used afterward. Reading the same server-side placement detail
+  // ServiceGroupPanel reads (react-query caches by key, so this is not an
+  // extra request in practice) and reconciling it against the current
+  // Available/Linked selection (reconcilePlacements - also what fixes
+  // ServiceGroupPanel's own M2 desync) means this path now preserves every
+  // still-linked service's persisted group/parent/position instead of
+  // discarding it.
+  const { data: placements } = useStatusPageServicePlacements(page.id);
+  const updateEnvironment = useUpdateStatusPageEnvironment();
   const [attachOpen, setAttachOpen] = useState(false);
   const [selectedServiceIds, setSelectedServiceIds] = useState<string[]>([]);
+  const [environment, setEnvironment] = useState<StatusPageEnvironment>(page.environment);
   const [error, setError] = useState<string | null>(null);
+  const [environmentError, setEnvironmentError] = useState<string | null>(null);
   const [serviceQuery, setServiceQuery] = useState("");
 
   // Resyncs local selection whenever the server's linked set changes -
@@ -120,6 +148,7 @@ export function StatusPageEditorContent({ page, showPreviewLink = true }: Status
   // the query, which lands here as a new page.service_ids reference).
   useEffect(() => {
     setSelectedServiceIds(page.service_ids);
+    setEnvironment(page.environment);
   }, [page]);
 
   const hostname = domains?.find((d) => d.id === page.domain_id)?.hostname;
@@ -145,10 +174,35 @@ export function StatusPageEditorContent({ page, showPreviewLink = true }: Status
   async function handleSaveServices() {
     setError(null);
     try {
-      await setServices.mutateAsync({ id: pageId, service_ids: selectedServiceIds });
+      // M1 fix: build the payload from the current server placement detail
+      // (group_id/parent_service_id/position), reconciled against this
+      // screen's own add/remove selection - not a bare service_id list -
+      // so this full-replace write never silently discards group/
+      // dependency structure already configured via ServiceGroupPanel. See
+      // the comment on the placements query above.
+      const nodes = reconcilePlacements(
+        buildInitialPlacements(page.service_ids, placements),
+        selectedServiceIds
+      );
+      await setServices.mutateAsync({
+        id: pageId,
+        services: toServicePlacements(nodes),
+      });
     } catch (err) {
       if (err instanceof ApiError) setError(err.message);
       else setError(t("statusPages.editor.saveServicesError"));
+    }
+  }
+
+  const isEnvironmentDirty = environment !== page.environment;
+
+  async function handleSaveEnvironment() {
+    setEnvironmentError(null);
+    try {
+      await updateEnvironment.mutateAsync({ id: pageId, environment });
+    } catch (err) {
+      if (err instanceof ApiError) setEnvironmentError(err.message);
+      else setEnvironmentError(t("statusPages.editor.saveEnvironmentError"));
     }
   }
 
@@ -157,6 +211,41 @@ export function StatusPageEditorContent({ page, showPreviewLink = true }: Status
       <div className="flex flex-wrap items-center gap-2">
         <StatusPagePill page={page} />
       </div>
+
+      {canManage ? (
+        <div className="flex flex-col gap-2 border-t border-divider pt-4">
+          <label htmlFor="edit-status-page-environment" className="text-[10.5px] font-bold uppercase tracking-wide text-text-muted">
+            {t("statusPages.editor.environmentLabel")}
+          </label>
+          <div className="flex items-center gap-3">
+            <select
+              id="edit-status-page-environment"
+              value={environment}
+              onChange={(e) => setEnvironment(e.target.value as StatusPageEnvironment)}
+              className="min-h-9 rounded-md border border-transparent bg-card-header-bg px-3 text-sm text-text outline-none transition-colors focus:border-accent focus:bg-surface"
+            >
+              {statusPageEnvironmentOptions.map((value) => (
+                <option key={value} value={value}>
+                  {value === "" ? t("statusPages.environment.none") : t(`statusPages.environment.${value}`)}
+                </option>
+              ))}
+            </select>
+            <Button
+              type="button"
+              variant="solid"
+              disabled={!isEnvironmentDirty || updateEnvironment.isPending}
+              onClick={handleSaveEnvironment}
+            >
+              {t("statusPages.editor.saveEnvironmentButton")}
+            </Button>
+          </div>
+          {environmentError ? (
+            <p role="alert" className="text-xs text-critical">
+              {environmentError}
+            </p>
+          ) : null}
+        </div>
+      ) : null}
 
       {page.domain_id === null ? (
         <div className="flex items-center justify-between gap-3">
@@ -216,13 +305,17 @@ export function StatusPageEditorContent({ page, showPreviewLink = true }: Status
         ) : (
           <>
             {linkedServices.length > 0 ? (
-              <ServiceGroup
-                label={t("statusPages.editor.linkedGroupLabel", { count: linkedServices.length })}
-                services={linkedServices}
-                selectedServiceIds={selectedServiceIds}
-                canManage={canManage}
-                onToggle={toggleService}
-              />
+              <div className="flex flex-col gap-1">
+                <span className="text-[10.5px] font-bold uppercase tracking-wide text-text-muted">
+                  {t("statusPages.editor.linkedGroupLabel", { count: linkedServices.length })}
+                </span>
+                <ServiceGroupPanel
+                  statusPageId={pageId}
+                  services={linkedServices}
+                  canManage={canManage}
+                  onToggle={toggleService}
+                />
+              </div>
             ) : null}
 
             <div className="flex flex-col gap-2">
@@ -234,13 +327,11 @@ export function StatusPageEditorContent({ page, showPreviewLink = true }: Status
                 value={serviceQuery}
                 onChange={(e) => setServiceQuery(e.target.value)}
               />
-              <ServiceGroup
+              <AvailableServiceList
                 services={availableServices}
-                selectedServiceIds={selectedServiceIds}
                 canManage={canManage}
                 onToggle={toggleService}
                 emptyLabel={t("statusPages.editor.noServicesFound")}
-                scrollable
               />
             </div>
           </>
@@ -405,68 +496,50 @@ function VerificationRow({ ok, label }: VerificationRowProps) {
   );
 }
 
-interface ServiceGroupProps {
-  label?: string;
+interface AvailableServiceListProps {
   services: Service[];
-  selectedServiceIds: string[];
   canManage: boolean;
   onToggle: (serviceId: string) => void;
-  emptyLabel?: string;
-  scrollable?: boolean;
+  emptyLabel: string;
 }
 
-// ServiceGroup renders one labeled block of service checklist rows
-// ("Linked" / "Available") - same checkbox-row composition
-// AddStatusPageDrawer's service checklist already established (16px
-// rounded-square checkbox + MdCheck), not the old native round
-// <input type="checkbox">.
-function ServiceGroup({ label, services, selectedServiceIds, canManage, onToggle, emptyLabel, scrollable }: ServiceGroupProps) {
+// AvailableServiceList renders the scrollable "Available" checklist - the
+// unselected-services side of the "Linked"/"Available" split
+// (StatusPageEditorContent's search/add flow), explicitly untouched by
+// T13's draggable tree (ServiceGroupPanel.tsx), which replaces only the
+// "Linked" side. Same checkbox-row composition the removed ServiceGroup/
+// ServiceRow pair used (16px rounded-square checkbox + MdCheck, aria-
+// pressed instead of a native <input type="checkbox">) - every service
+// rendered here is always unchecked, since checking one here means "add to
+// Linked" rather than toggling a persisted state.
+function AvailableServiceList({ services, canManage, onToggle, emptyLabel }: AvailableServiceListProps) {
   return (
-    <div className="flex flex-col gap-1">
-      {label ? <span className="text-[10.5px] font-bold uppercase tracking-wide text-text-muted">{label}</span> : null}
-      <div className={`flex flex-col rounded-md border border-divider ${scrollable ? "max-h-64 overflow-y-auto" : ""}`}>
-        {services.length === 0 ? (
-          <p className="px-3 py-2 text-[13px] text-text-muted">{emptyLabel}</p>
-        ) : (
-          services.map((s) => (
-            <ServiceRow
-              key={s.id}
-              name={s.name}
-              checked={selectedServiceIds.includes(s.id)}
-              disabled={!canManage}
-              onToggle={() => onToggle(s.id)}
-            />
-          ))
-        )}
-      </div>
+    <div className="flex max-h-64 flex-col overflow-y-auto rounded-md border border-divider">
+      {services.length === 0 ? (
+        <p className="px-3 py-2 text-[13px] text-text-muted">{emptyLabel}</p>
+      ) : (
+        services.map((s) => <AvailableServiceRow key={s.id} name={s.name} disabled={!canManage} onToggle={() => onToggle(s.id)} />)
+      )}
     </div>
   );
 }
 
-interface ServiceRowProps {
+interface AvailableServiceRowProps {
   name: string;
-  checked: boolean;
   disabled: boolean;
   onToggle: () => void;
 }
 
-function ServiceRow({ name, checked, disabled, onToggle }: ServiceRowProps) {
+function AvailableServiceRow({ name, disabled, onToggle }: AvailableServiceRowProps) {
   return (
     <button
       type="button"
       onClick={disabled ? undefined : onToggle}
-      aria-pressed={checked}
+      aria-pressed={false}
       disabled={disabled}
       className="flex cursor-pointer items-center gap-2.5 rounded-md px-2.5 py-[9px] text-left hover:bg-card-header-bg disabled:cursor-not-allowed disabled:hover:bg-transparent"
     >
-      <span
-        className={
-          "flex h-[16px] w-[16px] flex-none items-center justify-center rounded-[5px] border-[1.5px] " +
-          (checked ? "border-accent bg-accent" : "border-divider bg-surface")
-        }
-      >
-        {checked ? <MdCheck size={11} className="text-white" aria-hidden="true" /> : null}
-      </span>
+      <span className="flex h-[16px] w-[16px] flex-none items-center justify-center rounded-[5px] border-[1.5px] border-divider bg-surface" />
       <span className={`text-[13px] font-semibold ${disabled ? "text-text-muted" : "text-text"}`}>{name}</span>
     </button>
   );

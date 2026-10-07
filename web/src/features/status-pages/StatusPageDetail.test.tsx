@@ -239,6 +239,7 @@ describe("StatusPageDetail", () => {
       tls_last_error: null,
       created_at: new Date().toISOString(),
       service_ids: [],
+      environment: "",
     };
     server.use(
       http.get("/api/status-pages", () =>
@@ -306,6 +307,49 @@ describe("StatusPageDetail", () => {
     await vi.waitFor(async () => {
       const reloaded = await apiClient.apiFetch<Page<StatusPage>>("/api/status-pages?page=1");
       expect(reloaded.items.find((p) => p.id === "sp-1")?.service_ids).toEqual([]);
+    });
+  });
+
+  // M1 regression: handleSaveServices used to send a bare
+  // {service_id, position} list with no group_id/parent_service_id -
+  // since SetServices is a full-replace write, this silently wiped every
+  // group/dependency already configured via ServiceGroupPanel the moment
+  // "Salvar serviços" was used afterward, even though the operator never
+  // touched the group/dependency UI at all.
+  it("'Salvar serviços' preserves an already-configured group instead of wiping it (M1)", async () => {
+    await loginAsOwner();
+    const group = await apiClient.apiFetch<{ id: string }>("/api/status-pages/sp-1/groups", {
+      method: "POST",
+      body: JSON.stringify({ name: "Core" }),
+    });
+    // Simulates state already configured via ServiceGroupPanel: svc-1 in
+    // the "Core" group, svc-2 ungrouped - set directly through the
+    // placements endpoint, same shape SetServices/ServiceGroupPanel send.
+    await apiClient.apiFetch("/api/status-pages/sp-1/services", {
+      method: "PATCH",
+      body: JSON.stringify({
+        services: [
+          { service_id: "svc-1", group_id: group.id, position: 0 },
+          { service_id: "svc-2", position: 1 },
+        ],
+      }),
+    });
+
+    renderDetail("sp-1");
+    await screen.findByText(/^Serviços vinculados/);
+
+    // Only touches the add/remove checklist - never opens/drags anything
+    // inside ServiceGroupPanel.
+    await userEvent.click(screen.getByRole("button", { name: "Notificações" }));
+    await userEvent.click(screen.getByRole("button", { name: "Salvar serviços" }));
+
+    await vi.waitFor(async () => {
+      const placements = await apiClient.apiFetch<Array<{ service_id: string; group_id?: string }>>(
+        "/api/status-pages/sp-1/services"
+      );
+      const svc1 = placements.find((p) => p.service_id === "svc-1");
+      expect(svc1?.group_id).toBe(group.id);
+      expect(placements.map((p) => p.service_id).sort()).toEqual(["svc-1", "svc-2", "svc-3"]);
     });
   });
 
