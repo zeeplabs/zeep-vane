@@ -62,11 +62,17 @@ func (l *countingIntervalLister) ListOverlapping(context.Context, []string, time
 type countingIncidentCounter struct {
 	opened, resolved int
 	calls            int
+	listCalls        int
 }
 
 func (c *countingIncidentCounter) CountOpenedResolvedBetween(context.Context, time.Time, time.Time) (int, int, error) {
 	c.calls++
 	return c.opened, c.resolved, nil
+}
+
+func (c *countingIncidentCounter) ListActiveBetween(context.Context, time.Time, time.Time) ([]db.DigestIncident, error) {
+	c.listCalls++
+	return nil, nil
 }
 
 type fakeDigestNotifier struct {
@@ -183,8 +189,15 @@ func TestDigestScheduler_WithRecipients_SendsAssembledDigest(t *testing.T) {
 	if notifier.lastData.TenantName != "cli-test-tenant" {
 		t.Errorf("digest TenantName = %q, want %q", notifier.lastData.TenantName, "cli-test-tenant")
 	}
-	if notifier.lastData.PeriodEnd != "2026-09-08" || notifier.lastData.PeriodStart != "2026-09-01" {
-		t.Errorf("digest period = %q..%q, want 2026-09-01..2026-09-08", notifier.lastData.PeriodStart, notifier.lastData.PeriodEnd)
+	wantStart := time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)
+	if !notifier.lastData.PeriodEnd.Equal(now) || !notifier.lastData.PeriodStart.Equal(wantStart) {
+		t.Errorf("digest period = %s..%s, want %s..%s", notifier.lastData.PeriodStart, notifier.lastData.PeriodEnd, wantStart, now)
+	}
+	if got := notifier.lastData.PeriodLabel(); got != "Sep 1–7, 2026" {
+		t.Errorf("digest PeriodLabel() = %q, want %q", got, "Sep 1–7, 2026")
+	}
+	if incidents.listCalls != 1 {
+		t.Errorf("ListActiveBetween calls = %d, want 1 (the incidents list is built once per tenant, not per recipient)", incidents.listCalls)
 	}
 }
 

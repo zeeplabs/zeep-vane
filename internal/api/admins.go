@@ -74,7 +74,7 @@ func NewAdminsHandler(pool *db.Pool, users *db.UserRepository, memberships *db.T
 // succeeded. It never returns an error to the caller - a lookup or send
 // failure is logged and treated as email_sent:false, matching the
 // non-blocking convention (spec.md: invite/resend must never fail on email).
-func (h *AdminsHandler) sendAdminInviteEmail(r *http.Request, inviteID, to, role, rawToken string) bool {
+func (h *AdminsHandler) sendAdminInviteEmail(r *http.Request, inviter *db.User, inviteID, to, role, rawToken string) bool {
 	tenant, err := h.tenants.Active(r.Context())
 	if err != nil {
 		h.logger.Error("admins: failed to load tenant for invite email", zap.String("invite_id", inviteID), zap.Error(err))
@@ -85,6 +85,11 @@ func (h *AdminsHandler) sendAdminInviteEmail(r *http.Request, inviteID, to, role
 		CompanyName: tenant.Name,
 		Role:        role,
 		AcceptURL:   fmt.Sprintf("%s/accept-invite/%s", adminBaseURL(h.adminBaseURL), rawToken),
+		ExpiresIn:   email.FormatTTL(adminInviteTTL),
+	}
+	if inviter != nil {
+		data.InviterName = inviter.Name
+		data.InviterEmail = inviter.Email
 	}
 
 	if err := h.emailSvc.SendAdminInvite(r.Context(), to, data); err != nil {
@@ -217,7 +222,7 @@ func (h *AdminsHandler) Invite(w http.ResponseWriter, r *http.Request) {
 			zap.String("email", req.Email), zap.String("role", req.Role))
 	}
 
-	emailSent := h.sendAdminInviteEmail(r, invite.ID, req.Email, req.Role, rawToken)
+	emailSent := h.sendAdminInviteEmail(r, actor, invite.ID, req.Email, req.Role, rawToken)
 
 	if err := h.audit.Record(r.Context(), actor.ID, invite.ID, req.Email, "invited"); err != nil {
 		h.logger.Error("admins: failed to record invite audit entry", zap.Error(err))
@@ -479,7 +484,7 @@ func (h *AdminsHandler) ResendInvite(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	emailSent := h.sendAdminInviteEmail(r, invite.ID, invite.Email, invite.Role, rawToken)
+	emailSent := h.sendAdminInviteEmail(r, actor, invite.ID, invite.Email, invite.Role, rawToken)
 
 	if err := h.audit.Record(r.Context(), actor.ID, invite.ID, invite.Email, "resent"); err != nil {
 		h.logger.Error("admins: failed to record resend audit entry", zap.Error(err))

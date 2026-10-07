@@ -278,6 +278,90 @@ func (r *IncidentRepository) CountOpenedResolvedBetween(ctx context.Context, fro
 	return opened, resolved, nil
 }
 
+// DigestIncident is one incident as the weekly digest lists it: the
+// incident's own lifecycle fields plus the names of every service it is
+// linked to.
+type DigestIncident struct {
+	ID           string
+	Title        string
+	Status       string
+	CreatedAt    time.Time
+	ResolvedAt   *time.Time
+	ServiceNames []string
+}
+
+// ListActiveBetween returns every incident that was open at some point in
+// [from, to) - opened before to and not resolved before from - most recently
+// created first, each with its linked service names (sorted). It is the
+// weekly digest's "Incidentes da semana" list (notification-preferences
+// NOTIFPREF-10); its opened/resolved counts are a strict subset of what
+// CountOpenedResolvedBetween counts over the same window. Read-only. Requires
+// app.tenant_id set, so RLS scopes both incidents and services to one
+// tenant.
+func (r *IncidentRepository) ListActiveBetween(ctx context.Context, from, to time.Time) ([]DigestIncident, error) {
+	rows, err := r.pool.Query(ctx,
+		`SELECT i.id, i.title, i.status, i.created_at, i.resolved_at,
+		        COALESCE(array_agg(s.name ORDER BY s.name) FILTER (WHERE s.name IS NOT NULL), '{}')
+		 FROM incidents i
+		 LEFT JOIN incident_services isv ON isv.incident_id = i.id
+		 LEFT JOIN services s ON s.id = isv.service_id
+		 WHERE i.created_at < $2 AND (i.resolved_at IS NULL OR i.resolved_at >= $1)
+		 GROUP BY i.id, i.title, i.status, i.created_at, i.resolved_at
+		 ORDER BY i.created_at DESC`,
+		from, to,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("db: failed to list incidents active between %s and %s: %w", from, to, err)
+	}
+	defer rows.Close()
+
+	incidents := []DigestIncident{}
+	for rows.Next() {
+		var inc DigestIncident
+		if err := rows.Scan(&inc.ID, &inc.Title, &inc.Status, &inc.CreatedAt, &inc.ResolvedAt, &inc.ServiceNames); err != nil {
+			return nil, fmt.Errorf("db: failed to scan digest incident: %w", err)
+		}
+		incidents = append(incidents, inc)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("db: failed to iterate digest incidents: %w", err)
+	}
+	return incidents, nil
+}
+
+// ListServiceNames returns the names of every service linked to incidentID
+// via incident_services, sorted - what the incident-opened/resolved emails
+// show in their "Service" row. An unknown incident simply returns an empty
+// slice (the caller only uses this to enrich an email best-effort). Requires
+// app.tenant_id set.
+func (r *IncidentRepository) ListServiceNames(ctx context.Context, incidentID string) ([]string, error) {
+	rows, err := r.pool.Query(ctx,
+		`SELECT s.name
+		 FROM incident_services isv
+		 JOIN services s ON s.id = isv.service_id
+		 WHERE isv.incident_id = $1
+		 ORDER BY s.name`,
+		incidentID,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("db: failed to list incident service names: %w", err)
+	}
+	defer rows.Close()
+
+	names := []string{}
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			return nil, fmt.Errorf("db: failed to scan incident service name: %w", err)
+		}
+		names = append(names, name)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("db: failed to iterate incident service names: %w", err)
+	}
+	return names, nil
+}
+
 // CountByServiceSince returns how many incidents (any status) linked to
 // serviceID via incident_services were created at or after since - the
 // monitored-services-page detail drawer's "Incidentes (30d)" stat

@@ -1,3 +1,10 @@
-{{if .TenantName}}Welcome to {{.TenantName}}!{{else}}Welcome!{{end}}
+EMAIL CONFIRMATION
 
-Verify your email to finish setting up your account: {{.VerifyURL}}
+Confirm your email address
+
+You're almost ready to start monitoring your services. Confirm your email to activate your account and set up {{if .TenantName}}the {{.TenantName}} organization{{else}}your organization{{end}} on Vane.
+
+Confirm email: {{.VerifyURL}}
+
+{{if .ExpiresIn}}This link is valid for {{.ExpiresIn}}. {{end}}If you didn't create a Vane account, you can ignore this email.
+{{template "text_footer" .}}

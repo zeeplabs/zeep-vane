@@ -1,9 +1,44 @@
-<!doctype html>
-<html>
-  <body style="font-family: sans-serif; color: #1a1a1a;">
-    <p>You've been invited to join <strong>{{.CompanyName}}</strong> as a <strong>{{.Role}}</strong>.</p>
-    <p><a href="{{.AcceptURL}}">Accept the invitation</a></p>
-    <p>If the link above doesn't work, copy and paste this URL into your browser:</p>
-    <p>{{.AcceptURL}}</p>
-  </body>
-</html>
+<!DOCTYPE html>
+<html lang="en" xmlns="http://www.w3.org/1999/xhtml">
+<head>
+{{template "head_meta" .}}
+<title>Your invitation to Vane</title>
+{{template "head_style" .}}
+</head>
+<body style="margin:0; padding:0; background:#F1EFF7;">
+<div style="display:none; font-size:1px; color:#F1EFF7; line-height:1px; max-height:0; max-width:0; opacity:0; overflow:hidden; mso-hide:all;">{{.InviterDisplay}} invited you to join {{.CompanyName}} on Vane.{{template "preheader_pad"}}</div>
+{{template "card_open" .}}
+<tr><td style="height:4px; line-height:4px; font-size:0; background:#5A46C7;">&nbsp;</td></tr>
+
+{{template "brand_header" .}}
+
+<tr><td style="padding:20px 40px 0 40px;" class="pad">
+  <div style="font-family:Arial, Helvetica, 'Segoe UI', sans-serif; font-size:11px; font-weight:bold; letter-spacing:0.09em; text-transform:uppercase; color:#5A46C7; margin:0 0 14px 0;">TEAM INVITATION</div>
+  <h1 style="margin:0 0 14px 0; font-family:Arial, Helvetica, 'Segoe UI', sans-serif; font-size:24px; font-weight:bold; letter-spacing:-0.01em; color:#1C1526;">You've been invited to Vane</h1>
+  <p style="margin:0 0 24px 0; font-family:Arial, Helvetica, 'Segoe UI', sans-serif; font-size:14.5px; line-height:1.65; color:#6E6779;"><strong style="color:#1C1526;">{{.InviterDisplay}}</strong> invited you to join the organization <strong style="color:#1C1526;">{{.CompanyName}}</strong> on Vane with the role <strong style="color:#1C1526;">{{.RoleLabel}}</strong> — the platform for monitoring services, domains and status pages.</p>
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#F2F0FA; border-radius:12px; margin-bottom:26px;"><tr><td style="padding:20px 22px;">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border-top:1px solid #ECE9F2; margin-top:2px;"><tr><td style="padding:11px 0 0 0;"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+    <tr>
+      <td style="padding:0 0 11px 0;  font-family:Arial, Helvetica, 'Segoe UI', sans-serif; font-size:13px; color:#6E6779;">Organization</td>
+      <td align="right" style="padding:0 0 11px 0;  font-family:Arial, Helvetica, 'Segoe UI', sans-serif; font-size:13px; font-weight:bold; color:#1C1526;">{{.CompanyName}}</td>
+    </tr>
+    <tr>
+      <td style="padding:11px 0; border-top:1px solid #ECE9F2; font-family:Arial, Helvetica, 'Segoe UI', sans-serif; font-size:13px; color:#6E6779;">Invited by</td>
+      <td align="right" style="padding:11px 0; border-top:1px solid #ECE9F2; font-family:Arial, Helvetica, 'Segoe UI', sans-serif; font-size:13px; font-weight:bold; color:#1C1526;">{{if .InviterEmail}}{{.InviterEmail}}{{else}}{{.InviterDisplay}}{{end}}</td>
+    </tr>
+    <tr>
+      <td style="padding:11px 0; border-top:1px solid #ECE9F2; font-family:Arial, Helvetica, 'Segoe UI', sans-serif; font-size:13px; color:#6E6779;">Role</td>
+      <td align="right" style="padding:11px 0; border-top:1px solid #ECE9F2; font-family:Arial, Helvetica, 'Segoe UI', sans-serif; font-size:13px; font-weight:bold; color:#1C1526;">{{.RoleLabel}}</td>
+    </tr></table></td></tr></table>
+  </td></tr></table>
+
+<table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr>
+  <td bgcolor="#5A46C7" style="border-radius:9px;">
+    <a href="{{.AcceptURL}}" target="_blank" style="display:block; padding:13px 28px; font-family:Arial, Helvetica, 'Segoe UI', sans-serif; font-size:14px; font-weight:bold; color:#FFFFFF; text-decoration:none; border-radius:9px;">Accept invitation</a>
+  </td>
+</tr></table>
+  <p style="margin:22px 0 0 0; font-family:Arial, Helvetica, 'Segoe UI', sans-serif; font-size:12.5px; line-height:1.6; color:#9A93A8;">{{if .ExpiresIn}}This invitation expires in {{.ExpiresIn}}. {{end}}If you weren't expecting this email, you can safely ignore it.</p>
+  <p style="margin:16px 0 8px 0; font-family:Arial, Helvetica, 'Segoe UI', sans-serif; font-size:12px; line-height:1.6; color:#9A93A8;">Or copy and paste this link into your browser:<br><a href="{{.AcceptURL}}" style="color:#5A46C7; word-break:break-all;">{{.AcceptURL}}</a></p>
+</td></tr>
+{{template "footer_open" .}}
+{{template "footer_close" .}}

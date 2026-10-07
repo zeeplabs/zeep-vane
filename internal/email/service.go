@@ -72,7 +72,13 @@ type Service struct {
 	masterKey string
 	logger    *zap.Logger
 	templates *templates
+	layout    Layout
 }
+
+// SetLayout sets the deployment-wide email chrome (logo URL, footer links,
+// address) stamped onto every redesigned email this Service renders. Call
+// once at boot, before the Service is shared across goroutines.
+func (s *Service) SetLayout(layout Layout) { s.layout = layout }
 
 // NewService builds a Service. It returns an error only if the embedded
 // admin-invite templates fail to parse - a fail-fast-at-boot check rather
@@ -222,6 +228,7 @@ func (s *Service) SendAdminInvite(ctx context.Context, to string, data AdminInvi
 		return fmt.Errorf("email: failed to build active provider client: %w", err)
 	}
 
+	data.Layout = s.layout
 	htmlBody, textBody, err := s.templates.renderAdminInvite(data)
 	if err != nil {
 		return err
@@ -231,7 +238,7 @@ func (s *Service) SendAdminInvite(ctx context.Context, to string, data AdminInvi
 		To:        to,
 		FromEmail: ep.FromEmail,
 		FromName:  ep.FromName,
-		Subject:   fmt.Sprintf("You've been invited to join %s", data.CompanyName),
+		Subject:   data.Subject(),
 		HTMLBody:  htmlBody,
 		TextBody:  textBody,
 	}
@@ -272,21 +279,17 @@ func (s *Service) SendSignupVerification(ctx context.Context, to string, data Si
 		return fmt.Errorf("email: failed to build active provider client: %w", err)
 	}
 
+	data.Layout = s.layout
 	htmlBody, textBody, err := s.templates.renderSignupVerification(data)
 	if err != nil {
 		return err
-	}
-
-	subject := "Verify your email"
-	if data.TenantName != "" {
-		subject = fmt.Sprintf("Verify your email for %s", data.TenantName)
 	}
 
 	msg := Message{
 		To:        to,
 		FromEmail: ep.FromEmail,
 		FromName:  ep.FromName,
-		Subject:   subject,
+		Subject:   data.Subject(),
 		HTMLBody:  htmlBody,
 		TextBody:  textBody,
 	}
@@ -327,6 +330,7 @@ func (s *Service) SendPasswordReset(ctx context.Context, to string, data Passwor
 		return fmt.Errorf("email: failed to build active provider client: %w", err)
 	}
 
+	data.Layout = s.layout
 	htmlBody, textBody, err := s.templates.renderPasswordReset(data)
 	if err != nil {
 		return err
@@ -336,7 +340,7 @@ func (s *Service) SendPasswordReset(ctx context.Context, to string, data Passwor
 		To:        to,
 		FromEmail: ep.FromEmail,
 		FromName:  ep.FromName,
-		Subject:   fmt.Sprintf("Reset your %s password", data.CompanyName),
+		Subject:   data.Subject(),
 		HTMLBody:  htmlBody,
 		TextBody:  textBody,
 	}
@@ -376,6 +380,7 @@ func (s *Service) SendIncidentOpened(ctx context.Context, to string, data Incide
 		return fmt.Errorf("email: failed to build active provider client: %w", err)
 	}
 
+	data.Layout = s.layout
 	htmlBody, textBody, err := s.templates.renderIncidentOpened(data)
 	if err != nil {
 		return err
@@ -385,7 +390,7 @@ func (s *Service) SendIncidentOpened(ctx context.Context, to string, data Incide
 		To:        to,
 		FromEmail: ep.FromEmail,
 		FromName:  ep.FromName,
-		Subject:   fmt.Sprintf("Incident opened: %s", data.IncidentTitle),
+		Subject:   data.Subject(),
 		HTMLBody:  htmlBody,
 		TextBody:  textBody,
 	}
@@ -423,6 +428,7 @@ func (s *Service) SendIncidentResolved(ctx context.Context, to string, data Inci
 		return fmt.Errorf("email: failed to build active provider client: %w", err)
 	}
 
+	data.Layout = s.layout
 	htmlBody, textBody, err := s.templates.renderIncidentResolved(data)
 	if err != nil {
 		return err
@@ -432,7 +438,7 @@ func (s *Service) SendIncidentResolved(ctx context.Context, to string, data Inci
 		To:        to,
 		FromEmail: ep.FromEmail,
 		FromName:  ep.FromName,
-		Subject:   fmt.Sprintf("Incident resolved: %s", data.IncidentTitle),
+		Subject:   data.Subject(),
 		HTMLBody:  htmlBody,
 		TextBody:  textBody,
 	}
@@ -472,21 +478,17 @@ func (s *Service) SendWeeklyDigest(ctx context.Context, to string, data WeeklyDi
 		return fmt.Errorf("email: failed to build active provider client: %w", err)
 	}
 
+	data.Layout = s.layout
 	htmlBody, textBody, err := s.templates.renderWeeklyDigest(data)
 	if err != nil {
 		return err
-	}
-
-	subject := "Weekly digest"
-	if data.TenantName != "" {
-		subject = fmt.Sprintf("Weekly digest for %s", data.TenantName)
 	}
 
 	msg := Message{
 		To:        to,
 		FromEmail: ep.FromEmail,
 		FromName:  ep.FromName,
-		Subject:   subject,
+		Subject:   data.Subject(),
 		HTMLBody:  htmlBody,
 		TextBody:  textBody,
 	}

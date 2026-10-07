@@ -69,10 +69,18 @@ func (h *IncidentsHandler) notifyIncident(ctx context.Context, incident *db.Inci
 	if !ok || h.notify == nil {
 		return
 	}
+	// Service names, tenant name/timezone, and the resolution note are
+	// filled by notify.Service's incident-detail lookups (best-effort).
 	summary := notify.IncidentSummary{
 		IncidentID: incident.ID,
 		Title:      incident.Title,
 		Severity:   incident.Severity,
+		Status:     incident.Status,
+		OpenedAt:   incident.CreatedAt,
+		ResolvedAt: incident.ResolvedAt,
+	}
+	if incident.Description != nil {
+		summary.Description = *incident.Description
 	}
 	var err error
 	if resolved {

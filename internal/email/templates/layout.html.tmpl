@@ -1,0 +1,54 @@
+{{/*
+  Shared partials for the six redesigned transactional emails (email
+  handoff, emails-handoff/README.md "Shared structure"). Table layout and
+  inline styles are kept exactly as in the handoff HTML - do not modernize
+  (no flexbox/grid/div layout/CSS variables; Outlook and Gmail break).
+  Every partial is executed with the email's own data struct, which embeds
+  email.Layout (LogoURL, NotificationPrefsURL).
+*/}}
+{{define "head_meta"}}<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta http-equiv="X-UA-Compatible" content="IE=edge">
+<meta name="color-scheme" content="light">
+<meta name="supported-color-schemes" content="light">{{end}}
+{{define "head_style"}}{{msoOfficeSettings}}
+<style>
+  body, table, td { -webkit-text-size-adjust:100%; -ms-text-size-adjust:100%; }
+  table, td { mso-table-lspace:0pt; mso-table-rspace:0pt; }
+  img { border:0; line-height:100%; outline:none; text-decoration:none; -ms-interpolation-mode:bicubic; }
+  body { margin:0; padding:0; width:100% !important; background:#F1EFF7; }
+  a { color:#5A46C7; }
+  a:hover { color:#4C3AAE; }
+  @media screen and (max-width:600px) {
+    .container { width:100% !important; }
+    .pad { padding-left:24px !important; padding-right:24px !important; }
+  }
+</style>{{end}}
+{{define "preheader_pad"}}&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;{{end}}
+{{define "card_open"}}<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#F1EFF7;">
+<tr><td align="center" style="padding:32px 16px;">
+<table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" class="container" style="width:600px; max-width:600px; background:#FFFFFF; border-radius:16px; overflow:hidden; box-shadow:0 1px 3px rgba(28,21,38,0.06);">{{end}}
+{{define "brand_header"}}<tr><td style="padding:36px 40px 8px 40px;" class="pad">
+  <table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr>
+    {{if .LogoURL}}<td valign="middle" style="padding-right:9px;"><img src="{{.LogoURL}}" width="30" height="24" alt="Vane" style="display:block;"></td>
+    {{end}}<td valign="middle" style="font-family:Arial, Helvetica, 'Segoe UI', sans-serif; font-size:19px; font-weight:bold; color:#1C1526; letter-spacing:-0.01em;">Vane</td>
+  </tr></table>
+</td></tr>{{end}}
+{{define "footer_open"}}<tr><td style="height:12px; line-height:12px; font-size:0;">&nbsp;</td></tr>
+
+
+<tr><td style="padding:0 40px;" class="pad"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr><td style="border-top:1px solid #ECE9F2; padding:28px 0 0 0;"></td></tr></table></td></tr>
+<tr><td style="padding:0 40px 36px 40px;" class="pad">
+  <p style="margin:0; font-family:Arial, Helvetica, 'Segoe UI', sans-serif; font-size:12px; line-height:1.6; color:#9A93A8;">
+    You received this email because your account is associated with Vane.
+  </p>{{end}}
+{{define "footer_close"}}
+</td></tr>
+</table>
+<table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" class="container" style="width:600px; max-width:600px;">
+<tr><td style="padding:20px 16px; text-align:center; font-family:Arial, Helvetica, 'Segoe UI', sans-serif; font-size:11.5px; color:#9A93A8;">Sent by Vane · Real-time infrastructure monitoring</td></tr>
+</table>
+</td></tr>
+</table>
+</body>
+</html>{{end}}

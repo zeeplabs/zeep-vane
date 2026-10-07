@@ -19,7 +19,12 @@ type NotificationServiceSender struct {
 	tenantKey string
 	logger    *zap.Logger
 	templates *templates
+	layout    Layout
 }
+
+// SetLayout sets the deployment-wide email chrome, same as
+// (*Service).SetLayout.
+func (s *NotificationServiceSender) SetLayout(layout Layout) { s.layout = layout }
 
 // NewNotificationServiceSender builds a NotificationServiceSender. It
 // returns an error only if the embedded templates fail to parse - the same
@@ -61,63 +66,57 @@ func (s *NotificationServiceSender) send(ctx context.Context, to, subject, categ
 }
 
 func (s *NotificationServiceSender) SendAdminInvite(ctx context.Context, to string, data AdminInviteEmailData) error {
+	data.Layout = s.layout
 	htmlBody, textBody, err := s.templates.renderAdminInvite(data)
 	if err != nil {
 		return err
 	}
-	subject := fmt.Sprintf("You've been invited to join %s", data.CompanyName)
-	return s.send(ctx, to, subject, "transactional", "normal", "ADMIN_INVITE", htmlBody, textBody)
+	return s.send(ctx, to, data.Subject(), "transactional", "normal", "ADMIN_INVITE", htmlBody, textBody)
 }
 
 func (s *NotificationServiceSender) SendPasswordReset(ctx context.Context, to string, data PasswordResetEmailData) error {
+	data.Layout = s.layout
 	htmlBody, textBody, err := s.templates.renderPasswordReset(data)
 	if err != nil {
 		return err
 	}
-	subject := fmt.Sprintf("Reset your %s password", data.CompanyName)
-	return s.send(ctx, to, subject, "transactional", "critical", "PASSWORD_RESET", htmlBody, textBody)
+	return s.send(ctx, to, data.Subject(), "transactional", "critical", "PASSWORD_RESET", htmlBody, textBody)
 }
 
 func (s *NotificationServiceSender) SendSignupVerification(ctx context.Context, to string, data SignupVerificationEmailData) error {
+	data.Layout = s.layout
 	htmlBody, textBody, err := s.templates.renderSignupVerification(data)
 	if err != nil {
 		return err
 	}
-	subject := "Verify your email"
-	if data.TenantName != "" {
-		subject = fmt.Sprintf("Verify your email for %s", data.TenantName)
-	}
-	return s.send(ctx, to, subject, "transactional", "critical", "SIGNUP_VERIFICATION", htmlBody, textBody)
+	return s.send(ctx, to, data.Subject(), "transactional", "critical", "SIGNUP_VERIFICATION", htmlBody, textBody)
 }
 
 func (s *NotificationServiceSender) SendIncidentOpened(ctx context.Context, to string, data IncidentOpenedEmailData) error {
+	data.Layout = s.layout
 	htmlBody, textBody, err := s.templates.renderIncidentOpened(data)
 	if err != nil {
 		return err
 	}
-	subject := fmt.Sprintf("Incident opened: %s", data.IncidentTitle)
-	return s.send(ctx, to, subject, "transactional", "normal", "INCIDENT_OPENED", htmlBody, textBody)
+	return s.send(ctx, to, data.Subject(), "transactional", "normal", "INCIDENT_OPENED", htmlBody, textBody)
 }
 
 func (s *NotificationServiceSender) SendIncidentResolved(ctx context.Context, to string, data IncidentResolvedEmailData) error {
+	data.Layout = s.layout
 	htmlBody, textBody, err := s.templates.renderIncidentResolved(data)
 	if err != nil {
 		return err
 	}
-	subject := fmt.Sprintf("Incident resolved: %s", data.IncidentTitle)
-	return s.send(ctx, to, subject, "transactional", "normal", "INCIDENT_RESOLVED", htmlBody, textBody)
+	return s.send(ctx, to, data.Subject(), "transactional", "normal", "INCIDENT_RESOLVED", htmlBody, textBody)
 }
 
 func (s *NotificationServiceSender) SendWeeklyDigest(ctx context.Context, to string, data WeeklyDigestEmailData) error {
+	data.Layout = s.layout
 	htmlBody, textBody, err := s.templates.renderWeeklyDigest(data)
 	if err != nil {
 		return err
 	}
-	subject := "Weekly digest"
-	if data.TenantName != "" {
-		subject = fmt.Sprintf("Weekly digest for %s", data.TenantName)
-	}
-	return s.send(ctx, to, subject, "marketing", "low", "WEEKLY_DIGEST", htmlBody, textBody)
+	return s.send(ctx, to, data.Subject(), "marketing", "low", "WEEKLY_DIGEST", htmlBody, textBody)
 }
 
 func (s *NotificationServiceSender) SendDomainExpiring(ctx context.Context, to string, data DomainExpiringEmailData) error {

@@ -1,3 +1,14 @@
-You've been invited to join {{.CompanyName}} as a {{.Role}}.
+TEAM INVITATION
 
-Accept the invitation: {{.AcceptURL}}
+You've been invited to Vane
+
+{{.InviterDisplay}} invited you to join the organization {{.CompanyName}} on Vane with the role {{.RoleLabel}}.
+
+Organization: {{.CompanyName}}
+Invited by: {{if .InviterEmail}}{{.InviterEmail}}{{else}}{{.InviterDisplay}}{{end}}
+Role: {{.RoleLabel}}
+
+Accept invitation: {{.AcceptURL}}
+
+{{if .ExpiresIn}}This invitation expires in {{.ExpiresIn}}. {{end}}If you weren't expecting this email, you can safely ignore it.
+{{template "text_footer" .}}

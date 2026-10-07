@@ -437,6 +437,9 @@ func (a *SLOAnalyzer) handleOutageTransition(ctx context.Context, svc db.Service
 			Title:       incident.Title,
 			Severity:    incident.Severity,
 			ServiceName: svc.Name,
+			Status:      incident.Status,
+			OpenedAt:    incident.CreatedAt,
+			Description: description,
 		}); err != nil {
 			a.logger.Error("slo-analyzer: failed to notify incident opened",
 				zap.String("incident_id", incident.ID), zap.Error(err))

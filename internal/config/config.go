@@ -38,7 +38,17 @@ type Config struct {
 
 	NotificationServiceBaseURL string
 	NotificationServiceAPIKey  string
+
+	// EmailAssetsBaseURL is the absolute base URL transactional emails load
+	// their logo (vane-icon.png) from. Defaults to AdminBaseURL + "/email",
+	// where the embedded SPA already serves web/public/email/; empty when
+	// neither is set (the logo image is then omitted).
+	EmailAssetsBaseURL string
 }
+
+// defaultEmailAssetsPath is where the SPA build serves the email logo,
+// relative to AdminBaseURL (web/public/email/ copied into web/dist/email/).
+const defaultEmailAssetsPath = "/email"
 
 // DeploymentModeSelfHosted is the default distribution model: one
 // installation, one tenant, provisioned via /bootstrap. DeploymentModeSaaS
@@ -214,6 +224,23 @@ func Load() (Config, error) {
 		}
 	}
 
+	// Email chrome (logo host). The logo must be an absolute URL an email
+	// client can fetch - Gmail and several ESPs strip data-URI images - so
+	// it defaults to the admin host, which already serves the SPA's
+	// public/ files. An operator whose admin host isn't reachable from the
+	// internet (Gmail fetches images through its own proxy) points
+	// VANE_EMAIL_ASSETS_BASE_URL at a public host/CDN carrying the same
+	// vane-icon.png instead. Same URL shape validation as
+	// VANE_ADMIN_BASE_URL: this value is trusted config, but a typo would
+	// silently ship a broken image in every email.
+	emailAssetsBaseURL, err := optionalBaseURL("VANE_EMAIL_ASSETS_BASE_URL")
+	if err != nil {
+		return Config{}, err
+	}
+	if emailAssetsBaseURL == "" && adminBaseURL != "" {
+		emailAssetsBaseURL = adminBaseURL + defaultEmailAssetsPath
+	}
+
 	return Config{
 		DatabaseURL:                  databaseURL,
 		MasterKey:                    masterKey,
@@ -232,7 +259,27 @@ func Load() (Config, error) {
 
 		NotificationServiceBaseURL: notificationServiceBaseURL,
 		NotificationServiceAPIKey:  notificationServiceAPIKey,
+
+		EmailAssetsBaseURL: emailAssetsBaseURL,
 	}, nil
+}
+
+// optionalBaseURL reads an optional absolute http(s) URL env var, trimming a
+// trailing slash. Unset/empty returns "". A set value with no http/https
+// scheme, no host, or carrying a query/fragment/userinfo fails the boot, for
+// the same reason VANE_ADMIN_BASE_URL does.
+func optionalBaseURL(name string) (string, error) {
+	raw := os.Getenv(name)
+	if raw == "" {
+		return "", nil
+	}
+	trimmed := strings.TrimSuffix(raw, "/")
+	parsed, err := url.Parse(trimmed)
+	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" ||
+		parsed.RawQuery != "" || parsed.Fragment != "" || parsed.User != nil {
+		return "", fmt.Errorf("config: environment variable %s must be a valid http:// or https:// URL with a host and no query/fragment/userinfo, got %q", name, raw)
+	}
+	return trimmed, nil
 }
 
 func requireString(name string) (string, error) {
