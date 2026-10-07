@@ -376,8 +376,13 @@ func TestInviteAdmin_Owner_201_CreatesInviteAndAuditEntry(t *testing.T) {
 	if provider.lastMessage.To != email {
 		t.Errorf("sent email To = %q, want %q", provider.lastMessage.To, email)
 	}
-	if !strings.Contains(provider.lastMessage.TextBody, db.RoleOperator) {
-		t.Errorf("sent email TextBody = %q, want it to mention invited role %q", provider.lastMessage.TextBody, db.RoleOperator)
+	// The redesigned email names the role by its UI label (operator
+	// renders as "Member", same as the Users screen).
+	if !strings.Contains(provider.lastMessage.TextBody, "Role: Member") {
+		t.Errorf("sent email TextBody = %q, want it to mention invited role %q as its UI label", provider.lastMessage.TextBody, db.RoleOperator)
+	}
+	if !strings.Contains(provider.lastMessage.TextBody, "expires in 1 hour") {
+		t.Errorf("sent email TextBody = %q, want the real invite TTL (adminInviteTTL)", provider.lastMessage.TextBody)
 	}
 	rawToken := extractAcceptToken(t, provider.lastMessage.TextBody)
 	acceptRec := postAcceptInvite(t, r, rawToken, "correct-horse-battery-staple")

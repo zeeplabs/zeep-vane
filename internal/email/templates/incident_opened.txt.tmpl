@@ -1,5 +1,16 @@
-An incident was opened{{if .ServiceName}} for {{.ServiceName}}{{end}}{{if .TenantName}} in {{.TenantName}}{{end}}.
+NEW INCIDENT · {{.SeverityBadge}}
 
-{{.IncidentTitle}}{{if .Severity}} (severity: {{.Severity}}){{end}}
-
-View the incident: {{.DashboardURL}}
+{{.IncidentTitle}}
+{{if .OpenedAtText}}Opened {{.OpenedAtText}}{{else}}Incident opened{{end}}{{if .TenantName}} · Organization {{.TenantName}}{{end}}
+{{if .FirstUpdateMessage}}
+{{if .FirstUpdateTimeText}}{{.FirstUpdateTimeText}} — {{end}}{{.FirstUpdateMessage}}
+{{end}}
+{{if .ServiceName}}Service: {{.ServiceName}}
+{{end}}Severity: {{.SeverityLabel}}
+{{if .Status}}Status: {{.StatusLabel}}
+{{end}}{{if .Duration}}Duration: {{.Duration}}
+{{end}}{{if .DashboardURL}}
+View incident and timeline: {{.DashboardURL}}
+{{end}}
+You're receiving this alert because you're an admin{{if .TenantName}} of {{.TenantName}}{{end}} subscribed to incident alerts.
+{{template "text_footer" .}}

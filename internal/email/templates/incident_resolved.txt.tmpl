@@ -1,5 +1,16 @@
-An incident{{if .ServiceName}} for {{.ServiceName}}{{end}}{{if .TenantName}} in {{.TenantName}}{{end}} has been resolved.
+INCIDENT RESOLVED
 
-{{.IncidentTitle}}{{if .Severity}} (severity: {{.Severity}}){{end}}
-
-View the incident: {{.DashboardURL}}
+{{.IncidentTitle}}
+{{if .ResolvedAtText}}Resolved {{.ResolvedAtText}}{{else}}Incident resolved{{end}}{{if .TenantName}} · Organization {{.TenantName}}{{end}}
+{{if .ResolutionSummary}}
+{{.ResolutionSummary}}
+{{end}}
+Service: {{if .ServiceName}}{{.ServiceName}}{{else}}—{{end}}
+Total duration: {{if .TotalDuration}}{{.TotalDuration}}{{else}}—{{end}}
+Opened: {{if .OpenedAtRow}}{{.OpenedAtRow}}{{else}}—{{end}}
+Resolved: {{if .ResolvedAtRow}}{{.ResolvedAtRow}}{{else}}—{{end}}
+{{if .DashboardURL}}
+View incident report: {{.DashboardURL}}
+{{end}}
+You're receiving this alert because you're an admin{{if .TenantName}} of {{.TenantName}}{{end}} subscribed to incident alerts.
+{{template "text_footer" .}}

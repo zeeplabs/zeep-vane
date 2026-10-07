@@ -5,13 +5,16 @@ import (
 	"embed"
 	"fmt"
 	htmltemplate "html/template"
+	"path"
 	texttemplate "text/template"
 )
 
-//go:embed templates/admin_invite.html.tmpl templates/admin_invite.txt.tmpl templates/password_reset.html.tmpl templates/password_reset.txt.tmpl templates/signup_verification.html.tmpl templates/signup_verification.txt.tmpl templates/incident_opened.html.tmpl templates/incident_opened.txt.tmpl templates/incident_resolved.html.tmpl templates/incident_resolved.txt.tmpl templates/weekly_digest.html.tmpl templates/weekly_digest.txt.tmpl templates/domain_expiring.html.tmpl templates/domain_expiring.txt.tmpl templates/domain_ns_drift.html.tmpl templates/domain_ns_drift.txt.tmpl
+//go:embed templates/layout.html.tmpl templates/layout.txt.tmpl templates/admin_invite.html.tmpl templates/admin_invite.txt.tmpl templates/password_reset.html.tmpl templates/password_reset.txt.tmpl templates/signup_verification.html.tmpl templates/signup_verification.txt.tmpl templates/incident_opened.html.tmpl templates/incident_opened.txt.tmpl templates/incident_resolved.html.tmpl templates/incident_resolved.txt.tmpl templates/weekly_digest.html.tmpl templates/weekly_digest.txt.tmpl templates/domain_expiring.html.tmpl templates/domain_expiring.txt.tmpl templates/domain_ns_drift.html.tmpl templates/domain_ns_drift.txt.tmpl
 var templateFS embed.FS
 
 const (
+	layoutHTMLTemplatePath             = "templates/layout.html.tmpl"
+	layoutTextTemplatePath             = "templates/layout.txt.tmpl"
 	adminInviteHTMLTemplatePath        = "templates/admin_invite.html.tmpl"
 	adminInviteTextTemplatePath        = "templates/admin_invite.txt.tmpl"
 	passwordResetHTMLTemplatePath      = "templates/password_reset.html.tmpl"
@@ -53,65 +56,91 @@ type templates struct {
 	domainNSDriftText      *texttemplate.Template
 }
 
+// msoOfficeSettings is the Outlook (MSO) conditional-comment block from the
+// email handoff's <head>. html/template strips HTML comments from template
+// text, so it is emitted through this func instead. It is a fixed literal
+// carrying no user data, so returning template.HTML here does not bypass
+// escaping of any user-provided value.
+const msoOfficeSettings = `<!--[if mso]>
+<noscript><xml><o:OfficeDocumentSettings><o:PixelsPerInch>96</o:PixelsPerInch></o:OfficeDocumentSettings></xml></noscript>
+<![endif]-->`
+
+var htmlLayoutFuncs = htmltemplate.FuncMap{
+	"msoOfficeSettings": func() htmltemplate.HTML { return htmltemplate.HTML(msoOfficeSettings) },
+}
+
+// parseLayoutHTML parses one of the six redesigned email HTML templates
+// together with the shared layout partials (head, brand header, footer).
+// The returned template is named after mainPath's base name, so Execute
+// runs the email itself rather than one of the partials.
+func parseLayoutHTML(mainPath string) (*htmltemplate.Template, error) {
+	return htmltemplate.New(path.Base(mainPath)).Funcs(htmlLayoutFuncs).ParseFS(templateFS, mainPath, layoutHTMLTemplatePath)
+}
+
+// parseLayoutText is parseLayoutHTML's plain-text counterpart.
+func parseLayoutText(mainPath string) (*texttemplate.Template, error) {
+	return texttemplate.New(path.Base(mainPath)).ParseFS(templateFS, mainPath, layoutTextTemplatePath)
+}
+
 // parseTemplates parses every embedded email template, returning an error
 // (never panicking) if any fails to parse.
 func parseTemplates() (*templates, error) {
-	adminInviteHTML, err := htmltemplate.ParseFS(templateFS, adminInviteHTMLTemplatePath)
+	adminInviteHTML, err := parseLayoutHTML(adminInviteHTMLTemplatePath)
 	if err != nil {
 		return nil, fmt.Errorf("email: failed to parse admin invite html template: %w", err)
 	}
 
-	adminInviteText, err := texttemplate.ParseFS(templateFS, adminInviteTextTemplatePath)
+	adminInviteText, err := parseLayoutText(adminInviteTextTemplatePath)
 	if err != nil {
 		return nil, fmt.Errorf("email: failed to parse admin invite text template: %w", err)
 	}
 
-	passwordResetHTML, err := htmltemplate.ParseFS(templateFS, passwordResetHTMLTemplatePath)
+	passwordResetHTML, err := parseLayoutHTML(passwordResetHTMLTemplatePath)
 	if err != nil {
 		return nil, fmt.Errorf("email: failed to parse password reset html template: %w", err)
 	}
 
-	passwordResetText, err := texttemplate.ParseFS(templateFS, passwordResetTextTemplatePath)
+	passwordResetText, err := parseLayoutText(passwordResetTextTemplatePath)
 	if err != nil {
 		return nil, fmt.Errorf("email: failed to parse password reset text template: %w", err)
 	}
 
-	signupVerificationHTML, err := htmltemplate.ParseFS(templateFS, signupVerificationHTMLTemplatePath)
+	signupVerificationHTML, err := parseLayoutHTML(signupVerificationHTMLTemplatePath)
 	if err != nil {
 		return nil, fmt.Errorf("email: failed to parse signup verification html template: %w", err)
 	}
 
-	signupVerificationText, err := texttemplate.ParseFS(templateFS, signupVerificationTextTemplatePath)
+	signupVerificationText, err := parseLayoutText(signupVerificationTextTemplatePath)
 	if err != nil {
 		return nil, fmt.Errorf("email: failed to parse signup verification text template: %w", err)
 	}
 
-	incidentOpenedHTML, err := htmltemplate.ParseFS(templateFS, incidentOpenedHTMLTemplatePath)
+	incidentOpenedHTML, err := parseLayoutHTML(incidentOpenedHTMLTemplatePath)
 	if err != nil {
 		return nil, fmt.Errorf("email: failed to parse incident opened html template: %w", err)
 	}
 
-	incidentOpenedText, err := texttemplate.ParseFS(templateFS, incidentOpenedTextTemplatePath)
+	incidentOpenedText, err := parseLayoutText(incidentOpenedTextTemplatePath)
 	if err != nil {
 		return nil, fmt.Errorf("email: failed to parse incident opened text template: %w", err)
 	}
 
-	incidentResolvedHTML, err := htmltemplate.ParseFS(templateFS, incidentResolvedHTMLTemplatePath)
+	incidentResolvedHTML, err := parseLayoutHTML(incidentResolvedHTMLTemplatePath)
 	if err != nil {
 		return nil, fmt.Errorf("email: failed to parse incident resolved html template: %w", err)
 	}
 
-	incidentResolvedText, err := texttemplate.ParseFS(templateFS, incidentResolvedTextTemplatePath)
+	incidentResolvedText, err := parseLayoutText(incidentResolvedTextTemplatePath)
 	if err != nil {
 		return nil, fmt.Errorf("email: failed to parse incident resolved text template: %w", err)
 	}
 
-	weeklyDigestHTML, err := htmltemplate.ParseFS(templateFS, weeklyDigestHTMLTemplatePath)
+	weeklyDigestHTML, err := parseLayoutHTML(weeklyDigestHTMLTemplatePath)
 	if err != nil {
 		return nil, fmt.Errorf("email: failed to parse weekly digest html template: %w", err)
 	}
 
-	weeklyDigestText, err := texttemplate.ParseFS(templateFS, weeklyDigestTextTemplatePath)
+	weeklyDigestText, err := parseLayoutText(weeklyDigestTextTemplatePath)
 	if err != nil {
 		return nil, fmt.Errorf("email: failed to parse weekly digest text template: %w", err)
 	}

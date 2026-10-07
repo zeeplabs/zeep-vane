@@ -174,6 +174,10 @@ func (h *PasswordResetHandler) sendPasswordResetEmail(ctx context.Context, userI
 	data := email.PasswordResetEmailData{
 		CompanyName: settings.Name,
 		ResetURL:    fmt.Sprintf("%s/reset-password/%s", adminBaseURL(h.adminBaseURL), rawToken),
+		// to is the address the reset was requested for and is only ever
+		// emailed to itself, so naming it reveals nothing new.
+		UserEmail: to,
+		ExpiresIn: email.FormatTTL(resetTokenTTL),
 	}
 
 	if err := h.emailSvc.SendPasswordReset(ctx, to, data); err != nil {

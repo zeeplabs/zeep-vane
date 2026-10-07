@@ -440,7 +440,8 @@ func newNotifyService(pool *db.Pool, cfg config.Config, logger *zap.Logger) (*no
 	if err != nil {
 		return nil, fmt.Errorf("serve: failed to build email sender for notifications: %w", err)
 	}
-	return notify.NewService(db.NewTenantMembershipRepository(pool), db.NewNotificationPreferenceRepository(pool), emailSender, cfg.AdminBaseURL, logger), nil
+	return notify.NewService(db.NewTenantMembershipRepository(pool), db.NewNotificationPreferenceRepository(pool), emailSender, cfg.AdminBaseURL, logger).
+		WithIncidentDetails(db.NewTenantRepository(pool), db.NewIncidentRepository(pool)), nil
 }
 
 // newDigestScheduler builds the weekly digest scheduler with its production

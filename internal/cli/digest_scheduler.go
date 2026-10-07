@@ -36,6 +36,7 @@ type digestIntervalLister interface {
 
 type digestIncidentCounter interface {
 	CountOpenedResolvedBetween(ctx context.Context, from, to time.Time) (opened, resolved int, err error)
+	ListActiveBetween(ctx context.Context, from, to time.Time) ([]db.DigestIncident, error)
 }
 
 type digestNotifier interface {
@@ -194,7 +195,7 @@ func (s *DigestScheduler) buildDigest(ctx context.Context, tenant db.Tenant, fro
 		serviceIDs = append(serviceIDs, svc.ID)
 	}
 
-	var uptimes []float64
+	var uptimes []notify.DigestServiceUptime
 	if len(serviceIDs) > 0 {
 		intervals, err := s.intervals.ListOverlapping(ctx, serviceIDs, from, to)
 		if err != nil {
@@ -206,7 +207,7 @@ func (s *DigestScheduler) buildDigest(ctx context.Context, tenant db.Tenant, fro
 		}
 		for _, svc := range services {
 			if percent, ok := history.UptimePercent(byService[svc.ID], from, to); ok {
-				uptimes = append(uptimes, percent)
+				uptimes = append(uptimes, notify.DigestServiceUptime{Name: svc.Name, UptimePercent: percent})
 			}
 		}
 	}
@@ -216,5 +217,18 @@ func (s *DigestScheduler) buildDigest(ctx context.Context, tenant db.Tenant, fro
 		return email.WeeklyDigestEmailData{}, fmt.Errorf("digest: failed to count incidents: %w", err)
 	}
 
-	return notify.BuildWeeklyDigestData(tenant.Name, uptimes, opened, resolved, from, to), nil
+	incidents, err := s.incidents.ListActiveBetween(ctx, from, to)
+	if err != nil {
+		return email.WeeklyDigestEmailData{}, fmt.Errorf("digest: failed to list incidents: %w", err)
+	}
+
+	return notify.BuildWeeklyDigestData(notify.WeeklyDigestInput{
+		Tenant:            tenant,
+		Services:          uptimes,
+		Incidents:         incidents,
+		IncidentsOpened:   opened,
+		IncidentsResolved: resolved,
+		PeriodStart:       from,
+		PeriodEnd:         to,
+	}), nil
 }

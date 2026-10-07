@@ -77,6 +77,7 @@ func buildAdminRouter(pool *db.Pool, cfg config.Config, logger *zap.Logger, poll
 		// (matches this package's existing boot-assembly style).
 		logger.Fatal("cli: failed to build email service", zap.Error(err))
 	}
+	emailProvidersService.SetLayout(emailLayoutFromConfig(cfg))
 	emailProvidersHandler := api.NewEmailProvidersHandler(emailProvidersService, emailProviderRepo, auditLog, logger)
 
 	// emailSender is the deployment-mode-aware email.Sender (AD-034) every
@@ -111,7 +112,8 @@ func buildAdminRouter(pool *db.Pool, cfg config.Config, logger *zap.Logger, poll
 	integrationsHandler := api.NewIntegrationsHandler(db.NewIntegrationRepository(pool), validateDatadogCredentials, searchDatadogSLOs, pollerManager, auditLog, cfg.MasterKey, logger)
 	incidentsHandler := api.NewIncidentsHandler(
 		db.NewIncidentRepository(pool),
-		notify.NewService(db.NewTenantMembershipRepository(pool), db.NewNotificationPreferenceRepository(pool), emailSender, cfg.AdminBaseURL, logger),
+		notify.NewService(db.NewTenantMembershipRepository(pool), db.NewNotificationPreferenceRepository(pool), emailSender, cfg.AdminBaseURL, logger).
+			WithIncidentDetails(tenantsRepo, db.NewIncidentRepository(pool)),
 		logger,
 	)
 	statusPagesHandler := api.NewStatusPagesHandler(db.NewStatusPageRepository(pool), auditLog, cfg.PublicDNSTarget, logger)
