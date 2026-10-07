@@ -46,7 +46,7 @@ type overviewIncidentReader interface {
 // handler depends on (OVW-06).
 type overviewDomainCounter interface {
 	CountVerified(ctx context.Context) (int, error)
-	CountAll(ctx context.Context) (int, error)
+	CountAll(ctx context.Context, tenantID string) (int, error)
 }
 
 // OverviewResponse is the GET /api/overview JSON contract (design.md). It is
@@ -184,7 +184,8 @@ func (h *OverviewHandler) Get(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	totalDomains, err := h.domains.CountAll(ctx)
+	tenantID, _ := ActiveTenantIDFromContext(ctx)
+	totalDomains, err := h.domains.CountAll(ctx, tenantID)
 	if err != nil {
 		h.logger.Error("overview: failed to count all domains", zap.Error(err))
 		writeInternalError(w)

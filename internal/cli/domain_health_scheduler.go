@@ -38,7 +38,7 @@ type domainHealthTenantLister interface {
 }
 
 type domainHealthRepository interface {
-	ListPaginated(ctx context.Context, page, pageSize int) ([]db.Domain, int, error)
+	ListPaginated(ctx context.Context, tenantID string, page, pageSize int) ([]db.Domain, int, error)
 	SetHealthCheckResult(ctx context.Context, id string, expiresAt *time.Time, registrar *string, currentNS []string, driftDetected bool, rdapErr *string) error
 }
 
@@ -196,7 +196,7 @@ func (s *DomainHealthScheduler) listDomains(ctx context.Context, tenantID string
 
 	var all []db.Domain
 	for page := 1; ; page++ {
-		items, total, err := s.domains.ListPaginated(tenantCtx, page, domainHealthPageSize)
+		items, total, err := s.domains.ListPaginated(tenantCtx, tenantID, page, domainHealthPageSize)
 		if err != nil {
 			return nil, fmt.Errorf("domain-health: failed to list domains: %w", err)
 		}

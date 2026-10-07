@@ -24,7 +24,7 @@ const domainsPageSize = 20
 // handler depends on.
 type domainCreatorLister interface {
 	Create(ctx context.Context, domain *db.Domain) error
-	ListPaginated(ctx context.Context, page, pageSize int) ([]db.Domain, int, error)
+	ListPaginated(ctx context.Context, tenantID string, page, pageSize int) ([]db.Domain, int, error)
 	Delete(ctx context.Context, id string) error
 	GetByID(ctx context.Context, id string) (*db.Domain, error)
 	SetVerificationResult(ctx context.Context, id, status string, lastError *string, verifiedAt time.Time) (*db.Domain, error)
@@ -199,8 +199,9 @@ type domainsPageResponse struct {
 // frontend can show "not configured" rather than a misleading empty string.
 func (h *DomainsHandler) List(w http.ResponseWriter, r *http.Request) {
 	page := parsePage(r)
+	tenantID, _ := ActiveTenantIDFromContext(r.Context())
 
-	domains, total, err := h.domains.ListPaginated(r.Context(), page, domainsPageSize)
+	domains, total, err := h.domains.ListPaginated(r.Context(), tenantID, page, domainsPageSize)
 	if err != nil {
 		h.logger.Error("domains: failed to list domains", zap.Error(err))
 		writeInternalError(w)

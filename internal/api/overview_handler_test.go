@@ -62,7 +62,7 @@ func newOverviewScratchDatabase(t *testing.T) string {
 
 // newOverviewTestEnv returns an OverviewHandler backed by a fresh scratch
 // database with one throwaway tenant, plus that tenant's pool.
-func newOverviewTestEnv(t *testing.T) (*OverviewHandler, *db.Pool) {
+func newOverviewTestEnv(t *testing.T) (*OverviewHandler, *db.Pool, string) {
 	t.Helper()
 	dsn := newOverviewScratchDatabase(t)
 
@@ -96,12 +96,13 @@ func newOverviewTestEnv(t *testing.T) (*OverviewHandler, *db.Pool) {
 		db.NewDomainRepository(pool),
 		zap.NewNop(),
 	)
-	return handler, pool
+	return handler, pool, tenantID
 }
 
-func callOverview(t *testing.T, h *OverviewHandler) *httptest.ResponseRecorder {
+func callOverview(t *testing.T, h *OverviewHandler, tenantID string) *httptest.ResponseRecorder {
 	t.Helper()
 	req := httptest.NewRequest(http.MethodGet, "/api/overview", nil)
+	req = req.WithContext(context.WithValue(req.Context(), activeTenantIDContextKey, tenantID))
 	rec := httptest.NewRecorder()
 	h.Get(rec, req)
 	return rec
@@ -128,7 +129,7 @@ func createOverviewService(t *testing.T, pool *db.Pool, name string) *db.Service
 }
 
 func TestOverviewHandler_Get_RealData_ReturnsAllAggregates(t *testing.T) {
-	h, pool := newOverviewTestEnv(t)
+	h, pool, tenantID := newOverviewTestEnv(t)
 	ctx := context.Background()
 	services := db.NewServiceRepository(pool)
 	intervals := db.NewStatusIntervalRepository(pool)
@@ -213,7 +214,7 @@ func TestOverviewHandler_Get_RealData_ReturnsAllAggregates(t *testing.T) {
 		time.Sleep(2 * time.Millisecond)
 	}
 
-	rec := callOverview(t, h)
+	rec := callOverview(t, h, tenantID)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
 	}
@@ -264,9 +265,9 @@ func TestOverviewHandler_Get_RealData_ReturnsAllAggregates(t *testing.T) {
 }
 
 func TestOverviewHandler_Get_ZeroTenant_ReturnsDocumentedEmptyState(t *testing.T) {
-	h, _ := newOverviewTestEnv(t)
+	h, _, tenantID := newOverviewTestEnv(t)
 
-	rec := callOverview(t, h)
+	rec := callOverview(t, h, tenantID)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
 	}
@@ -316,10 +317,10 @@ func TestOverviewHandler_Get_ZeroTenant_ReturnsDocumentedEmptyState(t *testing.T
 }
 
 func TestOverviewHandler_Get_ServiceWithoutIntervals_UptimeIsDash(t *testing.T) {
-	h, pool := newOverviewTestEnv(t)
+	h, pool, tenantID := newOverviewTestEnv(t)
 	createOverviewService(t, pool, "overview-no-data")
 
-	rec := callOverview(t, h)
+	rec := callOverview(t, h, tenantID)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
 	}
@@ -336,7 +337,7 @@ func TestOverviewHandler_Get_ServiceWithoutIntervals_UptimeIsDash(t *testing.T) 
 // and the two must be independently computable (a service can look
 // different in the two windows).
 func TestOverviewHandler_Get_UptimePrior_AveragesSixtyToThirtyDaysAgo(t *testing.T) {
-	h, pool := newOverviewTestEnv(t)
+	h, pool, tenantID := newOverviewTestEnv(t)
 	ctx := context.Background()
 	services := db.NewServiceRepository(pool)
 	intervals := db.NewStatusIntervalRepository(pool)
@@ -358,7 +359,7 @@ func TestOverviewHandler_Get_UptimePrior_AveragesSixtyToThirtyDaysAgo(t *testing
 		t.Fatalf("OpenOrExtend() (close) returned unexpected error: %v", err)
 	}
 
-	rec := callOverview(t, h)
+	rec := callOverview(t, h, tenantID)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
 	}
@@ -376,7 +377,7 @@ func TestOverviewHandler_Get_UptimePrior_AveragesSixtyToThirtyDaysAgo(t *testing
 }
 
 func TestOverviewHandler_Get_UptimeSeries_IsFourteenConsecutiveLocalDays(t *testing.T) {
-	h, pool := newOverviewTestEnv(t)
+	h, pool, tenantID := newOverviewTestEnv(t)
 	ctx := context.Background()
 	intervals := db.NewStatusIntervalRepository(pool)
 	svc := createOverviewService(t, pool, "overview-series")
@@ -387,7 +388,7 @@ func TestOverviewHandler_Get_UptimeSeries_IsFourteenConsecutiveLocalDays(t *test
 		t.Fatalf("OpenOrExtend() returned unexpected error: %v", err)
 	}
 
-	rec := callOverview(t, h)
+	rec := callOverview(t, h, tenantID)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
 	}
@@ -415,7 +416,7 @@ func TestOverviewHandler_Get_UptimeSeries_IsFourteenConsecutiveLocalDays(t *test
 }
 
 func TestOverviewHandler_Get_RecentIncidents_IncludesResolvedAndCapsAtThree(t *testing.T) {
-	h, pool := newOverviewTestEnv(t)
+	h, pool, tenantID := newOverviewTestEnv(t)
 	ctx := context.Background()
 	incidents := db.NewIncidentRepository(pool)
 
@@ -449,7 +450,7 @@ func TestOverviewHandler_Get_RecentIncidents_IncludesResolvedAndCapsAtThree(t *t
 		t.Fatalf("Create() returned unexpected error: %v", err)
 	}
 
-	rec := callOverview(t, h)
+	rec := callOverview(t, h, tenantID)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
 	}
@@ -470,10 +471,10 @@ func TestOverviewHandler_Get_RecentIncidents_IncludesResolvedAndCapsAtThree(t *t
 }
 
 func TestOverviewHandler_Get_RepositoryError_ReturnsGeneric500(t *testing.T) {
-	h, pool := newOverviewTestEnv(t)
+	h, pool, tenantID := newOverviewTestEnv(t)
 	pool.Close()
 
-	rec := callOverview(t, h)
+	rec := callOverview(t, h, tenantID)
 
 	if rec.Code != http.StatusInternalServerError {
 		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusInternalServerError, rec.Body.String())

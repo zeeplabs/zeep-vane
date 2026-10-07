@@ -131,7 +131,7 @@ func (r *DomainRepository) Create(ctx context.Context, domain *Domain) error {
 // returns zero rows and can't carry a window-function total, so a fallback
 // plain COUNT(*) runs only in that case (same pattern as
 // IncidentRepository.ListPaginated).
-func (r *DomainRepository) ListPaginated(ctx context.Context, page, pageSize int) ([]Domain, int, error) {
+func (r *DomainRepository) ListPaginated(ctx context.Context, tenantID string, page, pageSize int) ([]Domain, int, error) {
 	offset := (page - 1) * pageSize
 
 	rows, err := r.pool.Query(ctx,
@@ -139,9 +139,10 @@ func (r *DomainRepository) ListPaginated(ctx context.Context, page, pageSize int
 		        expires_at, registrar, expected_ns, current_ns, ns_drift_detected, last_rdap_check_at, last_rdap_success_at, rdap_last_error,
 		        COUNT(*) OVER() AS total
 		 FROM domains
+		 WHERE tenant_id = $3
 		 ORDER BY hostname
 		 LIMIT $1 OFFSET $2`,
-		pageSize, offset,
+		pageSize, offset, tenantID,
 	)
 	if err != nil {
 		return nil, 0, fmt.Errorf("db: failed to list domains: %w", err)
@@ -165,7 +166,7 @@ func (r *DomainRepository) ListPaginated(ctx context.Context, page, pageSize int
 	}
 
 	if len(domains) == 0 {
-		total, err = r.countDomains(ctx)
+		total, err = r.countDomains(ctx, tenantID)
 		if err != nil {
 			return nil, 0, err
 		}
@@ -326,14 +327,14 @@ func (r *DomainRepository) CountVerified(ctx context.Context) (int, error) {
 // CountAll returns the total number of domains for the active tenant,
 // verified or not - the denominator for the Overview page's "verified
 // domains" card (e.g. "3/4").
-func (r *DomainRepository) CountAll(ctx context.Context) (int, error) {
-	return r.countDomains(ctx)
+func (r *DomainRepository) CountAll(ctx context.Context, tenantID string) (int, error) {
+	return r.countDomains(ctx, tenantID)
 }
 
 // countDomains is the zero-row fallback for ListPaginated's total (PAG-08).
-func (r *DomainRepository) countDomains(ctx context.Context) (int, error) {
+func (r *DomainRepository) countDomains(ctx context.Context, tenantID string) (int, error) {
 	var total int
-	row := r.pool.QueryRow(ctx, "SELECT COUNT(*) FROM domains")
+	row := r.pool.QueryRow(ctx, "SELECT COUNT(*) FROM domains WHERE tenant_id = $1", tenantID)
 	if err := row.Scan(&total); err != nil {
 		return 0, fmt.Errorf("db: failed to count domains: %w", err)
 	}
