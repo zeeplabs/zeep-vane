@@ -169,7 +169,7 @@ func TestDomainHealthScheduler_FirstCheck_LearnsBaselineNoAlert(t *testing.T) {
 		t.Fatalf("runOnce() returned unexpected error: %v", err)
 	}
 
-	got, err := repo.GetByID(ctx, mustDomainID(t, repo, hostname))
+	got, err := repo.GetByID(ctx, mustDomainID(t, repo, tenantID, hostname))
 	if err != nil {
 		t.Fatalf("GetByID() returned unexpected error: %v", err)
 	}
@@ -224,7 +224,7 @@ func TestDomainHealthScheduler_NSChanged_MarksDriftAndNotifiesOnce(t *testing.T)
 		t.Fatalf("runOnce() returned unexpected error: %v", err)
 	}
 
-	got, err := repo.GetByID(ctx, mustDomainID(t, repo, hostname))
+	got, err := repo.GetByID(ctx, mustDomainID(t, repo, tenantID, hostname))
 	if err != nil {
 		t.Fatalf("GetByID() returned unexpected error: %v", err)
 	}
@@ -280,7 +280,7 @@ func TestDomainHealthScheduler_Failures_DoNotAbortCycle(t *testing.T) {
 		t.Fatalf("runOnce() returned unexpected error: %v", err)
 	}
 
-	failing, err := repo.GetByID(ctx, mustDomainID(t, repo, failingHost))
+	failing, err := repo.GetByID(ctx, mustDomainID(t, repo, tenantID, failingHost))
 	if err != nil {
 		t.Fatalf("GetByID(failing) returned unexpected error: %v", err)
 	}
@@ -294,7 +294,7 @@ func TestDomainHealthScheduler_Failures_DoNotAbortCycle(t *testing.T) {
 		t.Errorf("failing domain CurrentNS = %v, want the prior set %v preserved", failing.CurrentNS, baseline)
 	}
 
-	healthy, err := repo.GetByID(ctx, mustDomainID(t, repo, healthyHost))
+	healthy, err := repo.GetByID(ctx, mustDomainID(t, repo, tenantID, healthyHost))
 	if err != nil {
 		t.Fatalf("GetByID(healthy) returned unexpected error: %v", err)
 	}
@@ -346,7 +346,7 @@ func TestDomainHealthScheduler_RDAPFailureWithStoredExpiry_NoSpuriousAlert(t *te
 		t.Errorf("expiration notifications = %d, want 0: an RDAP failure must never re-alert off the preserved expiry", len(notifier.expiring))
 	}
 
-	got, err := repo.GetByID(ctx, mustDomainID(t, repo, hostname))
+	got, err := repo.GetByID(ctx, mustDomainID(t, repo, tenantID, hostname))
 	if err != nil {
 		t.Fatalf("GetByID() returned unexpected error: %v", err)
 	}
@@ -485,7 +485,7 @@ func TestDomainHealthScheduler_RDAPSuccessNoExpirationEvent_PreservesLastKnown(t
 		t.Fatalf("runOnce() returned unexpected error: %v", err)
 	}
 
-	got, err := repo.GetByID(ctx, mustDomainID(t, repo, hostname))
+	got, err := repo.GetByID(ctx, mustDomainID(t, repo, tenantID, hostname))
 	if err != nil {
 		t.Fatalf("GetByID() returned unexpected error: %v", err)
 	}
@@ -591,10 +591,10 @@ func TestNewDomainHealthScheduler_BootWiring_RunStopsOnContextCancel(t *testing.
 }
 
 // mustDomainID looks up a domain's id by hostname for the pool's tenant.
-func mustDomainID(t *testing.T, repo *db.DomainRepository, hostname string) string {
+func mustDomainID(t *testing.T, repo *db.DomainRepository, tenantID, hostname string) string {
 	t.Helper()
 	ctx := context.Background()
-	items, _, err := repo.ListPaginated(ctx, 1, 100)
+	items, _, err := repo.ListPaginated(ctx, tenantID, 1, 100)
 	if err != nil {
 		t.Fatalf("ListPaginated() returned unexpected error: %v", err)
 	}
