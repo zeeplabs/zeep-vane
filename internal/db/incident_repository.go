@@ -516,7 +516,18 @@ func (r *IncidentRepository) countIncidentUpdates(ctx context.Context, incidentI
 // resolution timestamp around. It records the transition on the incident's
 // timeline in the same transaction and returns ErrNotFound if incidentID
 // doesn't exist.
-func (r *IncidentRepository) Transition(ctx context.Context, incidentID, status string) (*Incident, error) {
+//
+// When note is non-empty it is appended as a second, human-authored timeline
+// entry (author_id = authorID, is_ai_summary = false) in the same
+// transaction, right after the system "Status changed to ..." entry. This is
+// how a manual resolve carries its own closing note, so the
+// incident-resolved email's resolution summary (notify.latestAuthoredNote)
+// reflects what was written at resolution time instead of whatever older
+// human note happens to be the most recent one. The note row uses
+// clock_timestamp() rather than the column default now() (the transaction
+// start time, identical for both rows) so it sorts strictly after the system
+// entry in the newest-first timeline. An empty note behaves exactly as before.
+func (r *IncidentRepository) Transition(ctx context.Context, incidentID, status, note string, authorID *string) (*Incident, error) {
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("db: failed to begin incident transition transaction: %w", err)
@@ -544,6 +555,15 @@ func (r *IncidentRepository) Transition(ctx context.Context, incidentID, status 
 		incidentID, "Status changed to "+status,
 	); err != nil {
 		return nil, fmt.Errorf("db: failed to record incident transition on timeline: %w", err)
+	}
+
+	if note != "" {
+		if _, err := tx.Exec(ctx,
+			"INSERT INTO incident_updates (incident_id, body, author_id, is_ai_summary, created_at) VALUES ($1, $2, $3, false, clock_timestamp())",
+			incidentID, note, authorID,
+		); err != nil {
+			return nil, fmt.Errorf("db: failed to record incident transition note on timeline: %w", err)
+		}
 	}
 
 	if err := tx.Commit(ctx); err != nil {

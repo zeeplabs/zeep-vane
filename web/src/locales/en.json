@@ -744,6 +744,9 @@
     "resolveWithAiButton": "Resolve with AI summary",
     "resolvedAt": "Incident resolved at {{date}}.",
     "reopenButton": "Reopen incident",
+    "closingNoteToggle": "Add a closing note (optional)",
+    "closingNoteLabel": "Closing note",
+    "closingNotePlaceholder": "What resolved the incident? Sent with the resolution email when you mark it as resolved.",
     "author": {
       "aiSummary": "AI-generated summary",
       "team": "Team",

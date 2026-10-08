@@ -744,6 +744,9 @@
     "resolveWithAiButton": "Resolver com resumo de IA",
     "resolvedAt": "Incidente resolvido em {{date}}.",
     "reopenButton": "Reabrir incidente",
+    "closingNoteToggle": "Adicionar nota de encerramento (opcional)",
+    "closingNoteLabel": "Nota de encerramento",
+    "closingNotePlaceholder": "O que resolveu o incidente? Enviada no e-mail de resolução ao marcar como resolvido.",
     "author": {
       "aiSummary": "Resumo gerado por IA",
       "team": "Equipe",
