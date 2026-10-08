@@ -459,6 +459,7 @@ func newDigestScheduler(pool *db.Pool, cfg config.Config, logger *zap.Logger) (*
 		db.NewStatusIntervalRepository(pool),
 		db.NewIncidentRepository(pool),
 		notifier,
+		db.NewTenantRepository(pool),
 		logger,
 	), nil
 }

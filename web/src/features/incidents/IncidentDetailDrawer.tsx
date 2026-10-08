@@ -16,6 +16,7 @@ import {
   useTransitionIncident,
 } from "./hooks";
 
+import { ClosingNoteField } from "./ClosingNoteField";
 import { formatDuration, severityColor, severityLabel } from "./incidentStatusMeta";
 import { IncidentStatusTag } from "./IncidentStatusTag";
 import { TimelineEntry } from "./TimelineEntry";
@@ -67,6 +68,18 @@ export function IncidentDetailDrawer({ incident, canManage, serviceName, onClose
   const discardCloseProposal = useDiscardCloseProposal(incident?.id ?? "");
   const [body, setBody] = useState("");
   const [proposalError, setProposalError] = useState<string | null>(null);
+  const [closingNote, setClosingNote] = useState("");
+
+  function handleTransition(status: IncidentStatus) {
+    transition.mutate(
+      { status, note: status === "resolved" ? closingNote : undefined },
+      {
+        onSuccess: () => {
+          if (status === "resolved") setClosingNote("");
+        },
+      },
+    );
+  }
 
   async function handlePublish(e: FormEvent) {
     e.preventDefault();
@@ -219,17 +232,20 @@ export function IncidentDetailDrawer({ incident, canManage, serviceName, onClose
                   ) : null}
 
                   {canManage ? (
-                    <div className="flex flex-wrap gap-2">
-                      {transitionValues.map((value) => (
-                        <Button
-                          key={value}
-                          variant="secondary"
-                          disabled={transition.isPending || incident.status === value}
-                          onClick={() => transition.mutate(value)}
-                        >
-                          {transitionLabel(t, value)}
-                        </Button>
-                      ))}
+                    <div className="flex flex-col gap-2">
+                      <div className="flex flex-wrap gap-2">
+                        {transitionValues.map((value) => (
+                          <Button
+                            key={value}
+                            variant="secondary"
+                            disabled={transition.isPending || incident.status === value}
+                            onClick={() => handleTransition(value)}
+                          >
+                            {transitionLabel(t, value)}
+                          </Button>
+                        ))}
+                      </div>
+                      <ClosingNoteField value={closingNote} onChange={setClosingNote} />
                     </div>
                   ) : null}
                 </>
@@ -248,7 +264,7 @@ export function IncidentDetailDrawer({ incident, canManage, serviceName, onClose
                     })}
                   </div>
                   {canManage ? (
-                    <Button variant="ghost" onClick={() => transition.mutate("investigating")} disabled={transition.isPending}>
+                    <Button variant="ghost" onClick={() => transition.mutate({ status: "investigating" })} disabled={transition.isPending}>
                       <MdOutlineRefresh size={14} aria-hidden="true" />
                       {t("incidentDetail.reopenButton")}
                     </Button>

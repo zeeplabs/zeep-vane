@@ -120,6 +120,30 @@ func TestNotifyIncidentResolved_UsesLatestAuthoredNote_SkippingSystemEntries(t *
 	}
 }
 
+// TestNotifyIncidentResolved_PrefersClosingNoteOverOlderNote mirrors the
+// timeline IncidentRepository.Transition writes for a manual resolve with a
+// closing note (newest first: the authored note, then the system status
+// entry, then older human notes): the email must quote the closing note, not
+// the stale "still investigating" note written before the resolution.
+func TestNotifyIncidentResolved_PrefersClosingNoteOverOlderNote(t *testing.T) {
+	members, prefs := oneOwner()
+	sender := &recordingSender{}
+	author := "user-1"
+	details := &fakeIncidentDetails{updates: []db.IncidentUpdate{
+		{Body: "Rolled back the bad deploy; error rate back to baseline.", AuthorID: &author},
+		{Body: "Status changed to resolved"},
+		{Body: "Still investigating, no root cause yet.", AuthorID: &author},
+	}}
+	svc := newTestService(members, prefs, sender, "").WithIncidentDetails(nil, details)
+
+	if err := svc.NotifyIncidentResolved(context.Background(), "tenant-1", IncidentSummary{IncidentID: "inc-1", Title: "DNS"}); err != nil {
+		t.Fatalf("NotifyIncidentResolved() returned unexpected error: %v", err)
+	}
+	if got := sender.lastResolved.ResolutionSummary; got != "Rolled back the bad deploy; error rate back to baseline." {
+		t.Errorf("ResolutionSummary = %q, want the closing note recorded with the resolve", got)
+	}
+}
+
 func TestNotifyIncidentResolved_AISummaryCounts_AndLookupFailuresAreNonFatal(t *testing.T) {
 	members, prefs := oneOwner()
 	sender := &recordingSender{}

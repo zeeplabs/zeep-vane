@@ -78,6 +78,36 @@ describe("IncidentDetail", () => {
     expect(screen.getByText(/Identificamos aumento de latência/)).toBeInTheDocument();
   });
 
+  it("resolving with an optional closing note publishes it on the timeline", async () => {
+    await loginAs("owner@vane.app");
+    renderDetail("inc-1");
+    await screen.findByText(/Identificamos aumento de latência/);
+
+    await userEvent.click(screen.getByRole("button", { name: "Adicionar nota de encerramento (opcional)" }));
+    await userEvent.type(screen.getByLabelText("Nota de encerramento"), "Rollback concluído, latência normal");
+    await userEvent.click(screen.getByRole("button", { name: "Marcar como resolvido" }));
+
+    await waitFor(() => expect(screen.getByText("Resolvido")).toBeInTheDocument());
+    expect(await screen.findByText("Rollback concluído, latência normal")).toBeInTheDocument();
+  });
+
+  it("resolving without opening the closing note sends only the status", async () => {
+    let sentBody: unknown = null;
+    server.use(
+      http.patch("/api/incidents/:id", async ({ request }) => {
+        sentBody = await request.json();
+        return HttpResponse.json({ error: "stop here" }, { status: 422 });
+      })
+    );
+    await loginAs("owner@vane.app");
+    renderDetail("inc-1");
+    await screen.findByText(/Identificamos aumento de latência/);
+
+    await userEvent.click(screen.getByRole("button", { name: "Marcar como resolvido" }));
+
+    await waitFor(() => expect(sentBody).toEqual({ status: "resolved" }));
+  });
+
   it("viewer doesn't see the update form or transition buttons", async () => {
     await loginAs("viewer@vane.app");
     renderDetail("inc-1");

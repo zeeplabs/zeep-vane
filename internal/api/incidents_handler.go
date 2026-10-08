@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -26,7 +27,7 @@ type incidentCreator interface {
 	ListPaginated(ctx context.Context, page, pageSize int) ([]db.Incident, int, error)
 	AddUpdate(ctx context.Context, incidentID, body string, authorID *string, isAISummary bool) (*db.IncidentUpdate, error)
 	ListUpdatesPaginated(ctx context.Context, incidentID string, page, pageSize int) ([]db.IncidentUpdate, int, error)
-	Transition(ctx context.Context, incidentID, status string) (*db.Incident, error)
+	Transition(ctx context.Context, incidentID, status, note string, authorID *string) (*db.Incident, error)
 	ConfirmPendingClose(ctx context.Context, incidentID, expectedComment string) (*db.Incident, error)
 	DiscardCloseProposal(ctx context.Context, incidentID string) error
 	SetSeverity(ctx context.Context, incidentID, severity string) (*db.Incident, error)
@@ -288,6 +289,14 @@ func (h *IncidentsHandler) ListUpdates(w http.ResponseWriter, r *http.Request) {
 
 type transitionIncidentRequest struct {
 	Status string `json:"status"`
+	// Note is an optional closing note, only honored when Status is
+	// "resolved": it is recorded as an update authored by the actor in the
+	// same transaction as the resolve, so the incident-resolved email's
+	// resolution summary is the note written at resolution time rather than
+	// an older timeline entry. Empty (or whitespace-only) means no note -
+	// resolving stays a one-field request, exactly as before. Ignored for any
+	// other status.
+	Note string `json:"note,omitempty"`
 }
 
 const invalidIncidentStatusBody = `{"error":"status must be one of investigating, identified, monitoring, resolved"}`
@@ -314,7 +323,21 @@ func (h *IncidentsHandler) Transition(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	incident, err := h.incidents.Transition(r.Context(), incidentID, req.Status)
+	var note string
+	var authorID *string
+	if req.Status == "resolved" {
+		note = strings.TrimSpace(req.Note)
+	}
+	if note != "" {
+		actor, ok := UserFromContext(r.Context())
+		if !ok {
+			writeForbidden(w)
+			return
+		}
+		authorID = &actor.ID
+	}
+
+	incident, err := h.incidents.Transition(r.Context(), incidentID, req.Status, note, authorID)
 	if err != nil {
 		if errors.Is(err, db.ErrNotFound) {
 			writeIncidentNotFound(w)

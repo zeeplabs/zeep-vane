@@ -31,6 +31,11 @@ type Tenant struct {
 	Timezone        *string
 	DeletedAt       *time.Time
 	CreatedAt       time.Time
+	// LastDigestSentAt is when the weekly digest scheduler last completed
+	// this tenant's digest pass (migration 0051), nil if never. It is the
+	// persisted per-tenant "already sent this week" marker the hourly
+	// scheduler checks, so a restart or a second replica never re-sends.
+	LastDigestSentAt *time.Time
 }
 
 // logoServedPath is the fixed URL a tenant's stored logo is served at.
@@ -133,7 +138,7 @@ func (r *TenantRepository) Get(ctx context.Context, tenantID string) (*Tenant, e
 	row := r.pool.QueryRow(ctx,
 		`SELECT id, name, slug, plan, status, contact_email, logo_content_type,
 		        legal_name, tax_id, tax_id_type, billing_address, locale,
-		        primary_color, secondary_color, website, timezone, deleted_at, created_at
+		        primary_color, secondary_color, website, timezone, deleted_at, created_at, last_digest_sent_at
 		 FROM tenants WHERE id = $1`,
 		tenantID,
 	)
@@ -143,7 +148,7 @@ func (r *TenantRepository) Get(ctx context.Context, tenantID string) (*Tenant, e
 		&tenant.ID, &tenant.Name, &tenant.Slug, &tenant.Plan, &tenant.Status, &tenant.ContactEmail,
 		&tenant.LogoContentType, &tenant.LegalName, &tenant.TaxID, &tenant.TaxIDType, &tenant.BillingAddress,
 		&tenant.Locale, &tenant.PrimaryColor, &tenant.SecondaryColor,
-		&tenant.Website, &tenant.Timezone, &tenant.DeletedAt, &tenant.CreatedAt,
+		&tenant.Website, &tenant.Timezone, &tenant.DeletedAt, &tenant.CreatedAt, &tenant.LastDigestSentAt,
 	); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, ErrNotFound
@@ -239,7 +244,7 @@ func (r *TenantRepository) Update(ctx context.Context, tenantID string, u Tenant
 		 WHERE id = $1
 		 RETURNING id, name, slug, plan, status, contact_email, logo_content_type,
 		           legal_name, tax_id, tax_id_type, billing_address, locale,
-		           primary_color, secondary_color, website, timezone, deleted_at, created_at`,
+		           primary_color, secondary_color, website, timezone, deleted_at, created_at, last_digest_sent_at`,
 		tenantID, u.Name, u.ContactEmail, u.LegalName, u.TaxID, u.TaxIDType,
 		u.Website, u.Timezone, billingAddress,
 	)
@@ -249,7 +254,7 @@ func (r *TenantRepository) Update(ctx context.Context, tenantID string, u Tenant
 		&tenant.ID, &tenant.Name, &tenant.Slug, &tenant.Plan, &tenant.Status, &tenant.ContactEmail,
 		&tenant.LogoContentType, &tenant.LegalName, &tenant.TaxID, &tenant.TaxIDType, &tenant.BillingAddress,
 		&tenant.Locale, &tenant.PrimaryColor, &tenant.SecondaryColor,
-		&tenant.Website, &tenant.Timezone, &tenant.DeletedAt, &tenant.CreatedAt,
+		&tenant.Website, &tenant.Timezone, &tenant.DeletedAt, &tenant.CreatedAt, &tenant.LastDigestSentAt,
 	); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, ErrNotFound
@@ -271,7 +276,7 @@ func (r *TenantRepository) UpdateLogo(ctx context.Context, tenantID, contentType
 		 WHERE id = $1
 		 RETURNING id, name, slug, plan, status, contact_email, logo_content_type,
 		           legal_name, tax_id, tax_id_type, billing_address, locale,
-		           primary_color, secondary_color, website, timezone, deleted_at, created_at`,
+		           primary_color, secondary_color, website, timezone, deleted_at, created_at, last_digest_sent_at`,
 		tenantID, data, contentType,
 	)
 
@@ -280,7 +285,7 @@ func (r *TenantRepository) UpdateLogo(ctx context.Context, tenantID, contentType
 		&tenant.ID, &tenant.Name, &tenant.Slug, &tenant.Plan, &tenant.Status, &tenant.ContactEmail,
 		&tenant.LogoContentType, &tenant.LegalName, &tenant.TaxID, &tenant.TaxIDType, &tenant.BillingAddress,
 		&tenant.Locale, &tenant.PrimaryColor, &tenant.SecondaryColor,
-		&tenant.Website, &tenant.Timezone, &tenant.DeletedAt, &tenant.CreatedAt,
+		&tenant.Website, &tenant.Timezone, &tenant.DeletedAt, &tenant.CreatedAt, &tenant.LastDigestSentAt,
 	); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, ErrNotFound
@@ -305,6 +310,25 @@ func (r *TenantRepository) SoftDelete(ctx context.Context, tenantID string) erro
 	)
 	if err != nil {
 		return fmt.Errorf("db: failed to soft-delete tenant: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+// MarkDigestSent records at as tenantID's last_digest_sent_at - the weekly
+// digest scheduler's per-tenant "this week is done" marker. Called inside
+// the scheduler's tenant transaction (Pool.BeginTenantTx), so RLS scopes it
+// to that tenant like any other tenant-scoped write. Returns ErrNotFound if
+// tenantID doesn't resolve to a row this session can see.
+func (r *TenantRepository) MarkDigestSent(ctx context.Context, tenantID string, at time.Time) error {
+	tag, err := r.pool.Exec(ctx,
+		`UPDATE tenants SET last_digest_sent_at = $2 WHERE id = $1`,
+		tenantID, at,
+	)
+	if err != nil {
+		return fmt.Errorf("db: failed to mark tenant digest sent: %w", err)
 	}
 	if tag.RowsAffected() == 0 {
 		return ErrNotFound
@@ -345,7 +369,7 @@ func (r *TenantRepository) Active(ctx context.Context) (*Tenant, error) {
 	row := r.pool.QueryRow(ctx,
 		`SELECT id, name, slug, plan, status, contact_email, logo_content_type,
 		        legal_name, tax_id, tax_id_type, billing_address, locale,
-		        primary_color, secondary_color, website, timezone, deleted_at, created_at
+		        primary_color, secondary_color, website, timezone, deleted_at, created_at, last_digest_sent_at
 		 FROM tenants`+activeTenantPredicate)
 
 	var tenant Tenant
@@ -353,7 +377,7 @@ func (r *TenantRepository) Active(ctx context.Context) (*Tenant, error) {
 		&tenant.ID, &tenant.Name, &tenant.Slug, &tenant.Plan, &tenant.Status, &tenant.ContactEmail,
 		&tenant.LogoContentType, &tenant.LegalName, &tenant.TaxID, &tenant.TaxIDType, &tenant.BillingAddress,
 		&tenant.Locale, &tenant.PrimaryColor, &tenant.SecondaryColor,
-		&tenant.Website, &tenant.Timezone, &tenant.DeletedAt, &tenant.CreatedAt,
+		&tenant.Website, &tenant.Timezone, &tenant.DeletedAt, &tenant.CreatedAt, &tenant.LastDigestSentAt,
 	); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, ErrNotFound
@@ -390,7 +414,7 @@ func (r *TenantRepository) List(ctx context.Context) ([]Tenant, error) {
 	rows, err := r.pool.Query(ctx,
 		`SELECT id, name, slug, plan, status, contact_email, logo_content_type,
 		        legal_name, tax_id, tax_id_type, billing_address, locale,
-		        primary_color, secondary_color, website, timezone, deleted_at, created_at
+		        primary_color, secondary_color, website, timezone, deleted_at, created_at, last_digest_sent_at
 		 FROM tenants WHERE status = 'active' AND id != $1 ORDER BY created_at ASC`,
 		legacyPlaceholderTenantID)
 	if err != nil {
@@ -405,7 +429,7 @@ func (r *TenantRepository) List(ctx context.Context) ([]Tenant, error) {
 			&tenant.ID, &tenant.Name, &tenant.Slug, &tenant.Plan, &tenant.Status, &tenant.ContactEmail,
 			&tenant.LogoContentType, &tenant.LegalName, &tenant.TaxID, &tenant.TaxIDType, &tenant.BillingAddress,
 			&tenant.Locale, &tenant.PrimaryColor, &tenant.SecondaryColor,
-			&tenant.Website, &tenant.Timezone, &tenant.DeletedAt, &tenant.CreatedAt,
+			&tenant.Website, &tenant.Timezone, &tenant.DeletedAt, &tenant.CreatedAt, &tenant.LastDigestSentAt,
 		); err != nil {
 			return nil, fmt.Errorf("db: failed to scan tenant: %w", err)
 		}

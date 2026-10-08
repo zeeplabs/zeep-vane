@@ -405,7 +405,12 @@ func TestAddIncidentUpdate_IncidentNotFound_404(t *testing.T) {
 
 func patchIncidentStatus(t *testing.T, r http.Handler, token, incidentID, status string) *httptest.ResponseRecorder {
 	t.Helper()
-	body, err := json.Marshal(transitionIncidentRequest{Status: status})
+	return patchIncidentTransition(t, r, token, incidentID, transitionIncidentRequest{Status: status})
+}
+
+func patchIncidentTransition(t *testing.T, r http.Handler, token, incidentID string, payload transitionIncidentRequest) *httptest.ResponseRecorder {
+	t.Helper()
+	body, err := json.Marshal(payload)
 	if err != nil {
 		t.Fatalf("json.Marshal() returned unexpected error: %v", err)
 	}
@@ -468,6 +473,90 @@ func TestTransitionIncident_ToResolved_SetsResolvedAt(t *testing.T) {
 	}
 	if updated.ResolvedAt == nil {
 		t.Error("ResolvedAt = nil, want a timestamp set on resolution")
+	}
+}
+
+// listTimeline fetches page 1 of incidentID's timeline (newest first).
+func listTimeline(t *testing.T, r http.Handler, token, incidentID string) []incidentUpdateResponse {
+	t.Helper()
+	rec := getIncidentUpdates(t, r, token, incidentID)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("get updates status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	var page Page[incidentUpdateResponse]
+	if err := json.Unmarshal(rec.Body.Bytes(), &page); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+	return page.Items
+}
+
+// TestTransitionIncident_ResolveWithNote_RecordsAuthoredNoteAfterStatusEntry
+// covers the manual-resolve closing note: the note is recorded as an update
+// attributed to the actor (not an AI summary), newest on the timeline, right
+// after the system "Status changed to resolved" entry.
+func TestTransitionIncident_ResolveWithNote_RecordsAuthoredNoteAfterStatusEntry(t *testing.T) {
+	r, pool, admins := newIncidentsRouter(t)
+	token, adminID := issueTestSessionTokenWithID(t, admins)
+	incident := createTestIncident(t, r, pool, token, "resolve with note test incident")
+
+	rec := patchIncidentTransition(t, r, token, incident.ID, transitionIncidentRequest{Status: "resolved", Note: "  rolled back the bad deploy  "})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	timeline := listTimeline(t, r, token, incident.ID)
+	if len(timeline) != 2 {
+		t.Fatalf("len(timeline) = %d, want 2 (status entry + note)", len(timeline))
+	}
+	note, status := timeline[0], timeline[1]
+	if note.Body != "rolled back the bad deploy" {
+		t.Errorf("newest entry Body = %q, want the trimmed note", note.Body)
+	}
+	if note.AuthorID == nil || *note.AuthorID != adminID {
+		t.Errorf("note AuthorID = %v, want %q", note.AuthorID, adminID)
+	}
+	if note.IsAISummary {
+		t.Error("note IsAISummary = true, want false")
+	}
+	if status.Body != "Status changed to resolved" || status.AuthorID != nil {
+		t.Errorf("second entry = %+v, want the system status entry with no author", status)
+	}
+}
+
+// TestTransitionIncident_ResolveWithoutNote_OnlySystemEntry is the regression
+// guard: resolving without a note (or with a whitespace-only one) records
+// exactly the system status entry, as before the closing-note field existed.
+func TestTransitionIncident_ResolveWithoutNote_OnlySystemEntry(t *testing.T) {
+	r, pool, admins := newIncidentsRouter(t)
+	token := issueTestSessionToken(t, admins)
+
+	for _, note := range []string{"", "   "} {
+		incident := createTestIncident(t, r, pool, token, "resolve without note test incident")
+		rec := patchIncidentTransition(t, r, token, incident.ID, transitionIncidentRequest{Status: "resolved", Note: note})
+		if rec.Code != http.StatusOK {
+			t.Fatalf("note %q: status = %d, want %d, body = %s", note, rec.Code, http.StatusOK, rec.Body.String())
+		}
+		timeline := listTimeline(t, r, token, incident.ID)
+		if len(timeline) != 1 || timeline[0].Body != "Status changed to resolved" || timeline[0].AuthorID != nil {
+			t.Errorf("note %q: timeline = %+v, want only the system status entry", note, timeline)
+		}
+	}
+}
+
+// TestTransitionIncident_NoteIgnoredForNonResolvedStatus: the closing note is
+// only meaningful when resolving; any other transition drops it silently.
+func TestTransitionIncident_NoteIgnoredForNonResolvedStatus(t *testing.T) {
+	r, pool, admins := newIncidentsRouter(t)
+	token := issueTestSessionToken(t, admins)
+	incident := createTestIncident(t, r, pool, token, "note ignored for non-resolved test incident")
+
+	rec := patchIncidentTransition(t, r, token, incident.ID, transitionIncidentRequest{Status: "monitoring", Note: "should be ignored"})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	timeline := listTimeline(t, r, token, incident.ID)
+	if len(timeline) != 1 || timeline[0].Body != "Status changed to monitoring" {
+		t.Errorf("timeline = %+v, want only the system status entry", timeline)
 	}
 }
 

@@ -2034,7 +2034,7 @@ export const handlers = [
     if (!incident) {
       return HttpResponse.json({ error: "incident not found" }, { status: 404 });
     }
-    const body = (await request.json()) as { status?: IncidentStatus };
+    const body = (await request.json()) as { status?: IncidentStatus; note?: string };
     const validStatuses: IncidentStatus[] = ["investigating", "identified", "monitoring", "resolved"];
     if (!body.status || !validStatuses.includes(body.status)) {
       return HttpResponse.json(
@@ -2053,6 +2053,20 @@ export const handlers = [
       author_id: null,
       is_ai_summary: false,
     });
+    // Optional closing note, only honored when resolving: recorded as a
+    // separate update authored by the actor, after the system entry.
+    const note = body.status === "resolved" ? body.note?.trim() : undefined;
+    if (note) {
+      incidentUpdateIdCounter += 1;
+      incidentUpdatesState.push({
+        id: `upd-msw-${incidentUpdateIdCounter}`,
+        incident_id: incidentId,
+        body: note,
+        created_at: new Date().toISOString(),
+        author_id: sessionAdminId,
+        is_ai_summary: false,
+      });
+    }
     return HttpResponse.json(incident);
   }),
 

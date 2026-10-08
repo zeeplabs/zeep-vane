@@ -183,7 +183,7 @@ func TestIncidentRepository_HasOpenIncidentForService_OnlyResolvedIncident_Retur
 	svc := createServiceFixtureForIncidentAI(t, pool)
 	incident := createIncidentFixtureForService(t, repo, pool, "resolved incident", svc.ID, true)
 
-	if _, err := repo.Transition(context.Background(), incident.ID, "resolved"); err != nil {
+	if _, err := repo.Transition(context.Background(), incident.ID, "resolved", "", nil); err != nil {
 		t.Fatalf("setup Transition() returned unexpected error: %v", err)
 	}
 
