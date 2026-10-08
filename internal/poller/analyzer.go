@@ -127,7 +127,7 @@ const enrichmentCooldown = 2 * time.Minute
 // it via SetDescription on success, but visitors must never see an empty
 // description while that call is in flight or if it fails.
 func genericOutageDescription(serviceName string) string {
-	return fmt.Sprintf("An outage was automatically detected for %s.", serviceName)
+	return fmt.Sprintf("Uma indisponibilidade foi detectada automaticamente para %s.", serviceName)
 }
 
 // buildAnalysisInput builds an llm.AnalysisInput directly from svc and
@@ -416,7 +416,7 @@ func (a *SLOAnalyzer) handleOutageTransition(ctx context.Context, svc db.Service
 
 	description := genericOutageDescription(svc.Name)
 	incident := &db.Incident{
-		Title:       fmt.Sprintf("Outage detected: %s", svc.Name),
+		Title:       fmt.Sprintf("Indisponibilidade detectada: %s", svc.Name),
 		Description: &description,
 		AutoCreated: true,
 	}
