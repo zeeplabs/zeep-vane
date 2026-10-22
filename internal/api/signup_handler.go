@@ -260,6 +260,7 @@ func (h *SignupHandler) issueAndSendVerification(r *http.Request, userID, to, te
 	data := email.SignupVerificationEmailData{
 		TenantName: tenantName,
 		VerifyURL:  fmt.Sprintf("%s/verify-email/%s", adminBaseURL(h.adminBaseURL), rawToken),
+		ExpiresIn:  email.FormatTTL(signupVerificationTTL),
 	}
 	if err := h.emailSvc.SendSignupVerification(r.Context(), to, data); err != nil {
 		h.logger.Error("signup: failed to send verification email", zap.String("user_id", userID), zap.Error(err))

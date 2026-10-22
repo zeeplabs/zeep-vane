@@ -13,8 +13,11 @@ import (
 	"net/http"
 	"net/url"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
+
+	"go.uber.org/zap"
 )
 
 const (
@@ -30,6 +33,12 @@ const (
 	// regardless of what a future error message looks like (design.md's
 	// Tech Decisions).
 	maxCauseMessageLength = 500
+	// historyBucket is the bucket width Datadog returns for a 1h /history
+	// window (confirmed live: 60s buckets). FetchSLOWindows asks for one
+	// extra bucket before the long window so the partial first bucket can
+	// be discarded, and falls back to a second call for the short window
+	// whenever the returned interval is coarser than this.
+	historyBucket = 60 * time.Second
 )
 
 // SLOStatus is vane's normalized view of a Datadog SLO's status over the
@@ -63,10 +72,47 @@ type SLOStatus struct {
 	RequestCount int64
 }
 
+// WindowCounts is the request/error volume of a metric-based SLO over one
+// time window. Errors is always within [0, Requests].
+type WindowCounts struct {
+	Requests int64
+	Errors   int64
+}
+
+// SLOWindows is vane's view of a Datadog SLO for burn-rate classification:
+// request/error counts over a short and a long window ending at the same
+// instant, plus the SLO's configured target and Datadog's own state.
+// Target/Timeframe/State mean exactly what they mean on SLOStatus.
+type SLOWindows struct {
+	// Target is the SLO's configured threshold (0-100), 0 when the SLO
+	// has no thresholds.
+	Target float64
+	// Timeframe is the SLO's configured timeframe the target applies to
+	// (e.g. "30d") - not the requested windows.
+	Timeframe string
+	// State is Datadog's own "ok"/"warning"/"breached"/"no_data" for the
+	// requested range - the fallback signal when HasSeries is false.
+	State string
+	// SLI is Datadog's own overall SLI (0-100) for the requested range
+	// (the long window plus one leading bucket). It is context for the
+	// analyzer when the counts can't supply one (monitor-based SLO, or no
+	// traffic in the short window), never a classification input.
+	SLI float64
+	// Short and Long are the counts over [end-short, end) and
+	// [end-long, end).
+	Short WindowCounts
+	Long  WindowCounts
+	// HasSeries is false when Datadog returned no request counts at all
+	// (monitor-based SLO): Short/Long are then zero and meaningless, and
+	// callers must classify from State instead.
+	HasSeries bool
+}
+
 // SLOProvider is the contract any APM connector (Datadog today, others
 // later) implements to expose SLO status for a given time window.
 type SLOProvider interface {
 	FetchSLOStatus(ctx context.Context, sloID string, from, to time.Time) (SLOStatus, error)
+	FetchSLOWindows(ctx context.Context, sloID string, end time.Time, short, long time.Duration) (SLOWindows, error)
 }
 
 // SLOSummary is a minimal SLO identity, used to let an admin pick an SLO by
@@ -115,6 +161,9 @@ type Client struct {
 	appKey     string
 	baseURL    string
 	httpClient *http.Client
+	// logger is optional (nil means no logging, see log) - only
+	// FetchSLOWindows' rate-limit visibility uses it today.
+	logger *zap.Logger
 }
 
 // NewClient builds a Client authenticated with apiKey/appKey, talking to the
@@ -126,6 +175,22 @@ func NewClient(apiKey, appKey string) *Client {
 		baseURL:    defaultBaseURL,
 		httpClient: &http.Client{Timeout: defaultTimeout},
 	}
+}
+
+// WithLogger sets the logger used for rate-limit visibility and returns c,
+// so it chains off NewClient. A nil logger disables logging.
+func (c *Client) WithLogger(logger *zap.Logger) *Client {
+	c.logger = logger
+	return c
+}
+
+// log returns c's logger, or a no-op one when none was set (every Client
+// built as a struct literal, e.g. in tests, has a nil logger).
+func (c *Client) log() *zap.Logger {
+	if c.logger == nil {
+		return zap.NewNop()
+	}
+	return c.logger
 }
 
 // sloSearchResponse mirrors the subset of the confirmed
@@ -172,24 +237,81 @@ type sloHistoryResponse struct {
 			State    string  `json:"state"`
 		} `json:"overall"`
 		Series struct {
-			Denominator struct {
-				// Sum is a whole request count, but Datadog serializes it as
-				// a JSON float (e.g. 45.0, not 45) - decoding straight into
-				// int64 fails with "cannot unmarshal number 45.0 into ...
-				// of type int64" on every real response. Confirmed live in
-				// production (2026-09-08): every poll against a real
-				// Datadog account failed this way, none of it caught by any
-				// test, because every test's fixture response JSON was
-				// hand-written with integer literals instead of the float
-				// shape Datadog's API actually returns.
-				Sum float64 `json:"sum"`
-			} `json:"denominator"`
+			// Interval is the bucket width in seconds (60 for a 1h window
+			// in the live check). Decoded as float64 for the same reason
+			// as Sum below - never trust Datadog to serialize a whole
+			// number as a JSON integer.
+			Interval float64 `json:"interval"`
+			// Times holds each bucket's start timestamp, milliseconds since
+			// the epoch (see bucketStart for the seconds fallback).
+			Times []float64 `json:"times"`
+			// Numerator is the per-bucket "good" event count of a
+			// metric-based SLO; Denominator is the per-bucket total.
+			Numerator   sloHistoryMetric `json:"numerator"`
+			Denominator sloHistoryMetric `json:"denominator"`
 		} `json:"series"`
 		Thresholds map[string]struct {
 			Target    float64 `json:"target"`
 			Timeframe string  `json:"timeframe"`
 		} `json:"thresholds"`
 	} `json:"data"`
+}
+
+// sloHistoryMetric is one side (numerator or denominator) of a metric-based
+// SLO's history series.
+type sloHistoryMetric struct {
+	// Sum is a whole request count, but Datadog serializes it as a JSON
+	// float (e.g. 45.0, not 45) - decoding straight into int64 fails with
+	// "cannot unmarshal number 45.0 into ... of type int64" on every real
+	// response. Confirmed live in production (2026-09-08): every poll
+	// against a real Datadog account failed this way, none of it caught by
+	// any test, because every test's fixture response JSON was hand-written
+	// with integer literals instead of the float shape Datadog's API
+	// actually returns. A pointer so FetchSLOWindows can tell "no counts
+	// at all" (monitor-based SLO) apart from "zero traffic".
+	Sum *float64 `json:"sum"`
+	// Values is the per-bucket count, aligned index-for-index with
+	// Series.Times - floats for the same reason as Sum. A JSON null entry
+	// decodes as 0.
+	Values []float64 `json:"values"`
+}
+
+// total returns the metric's Sum when Datadog sent one, else the sum of its
+// per-bucket Values, and whether either was present at all.
+func (m sloHistoryMetric) total() (float64, bool) {
+	if m.Sum != nil {
+		return *m.Sum, true
+	}
+	if len(m.Values) == 0 {
+		return 0, false
+	}
+	var total float64
+	for _, v := range m.Values {
+		total += v
+	}
+	return total, true
+}
+
+// pickThreshold returns the target/timeframe FetchSLOStatus and
+// FetchSLOWindows both report. parsed.Data.Thresholds is keyed by timeframe
+// (e.g. "7d", "30d") - iterating a Go map directly picked a random key on
+// every call for any SLO configured with more than one threshold, making
+// Target/Timeframe (and therefore ErrorBudgetRemaining) non-deterministic
+// per poll. Sorting keys first makes the pick stable; which specific
+// timeframe wins is otherwise arbitrary (single-threshold SLOs, the common
+// case observed in this org, are unaffected either way). Returns zero
+// values when the SLO has no thresholds.
+func (r sloHistoryResponse) pickThreshold() (target float64, timeframe string) {
+	if len(r.Data.Thresholds) == 0 {
+		return 0, ""
+	}
+	timeframes := make([]string, 0, len(r.Data.Thresholds))
+	for tf := range r.Data.Thresholds {
+		timeframes = append(timeframes, tf)
+	}
+	sort.Strings(timeframes)
+	chosen := r.Data.Thresholds[timeframes[0]]
+	return chosen.Target, chosen.Timeframe
 }
 
 // FetchSLOStatus fetches sloID's status for the [from, to) window, via
@@ -214,6 +336,10 @@ func (c *Client) FetchSLOStatus(ctx context.Context, sloID string, from, to time
 		return SLOStatus{}, fmt.Errorf("datadog: failed to decode response: %w", err)
 	}
 
+	var requests float64
+	if sum := parsed.Data.Series.Denominator.Sum; sum != nil {
+		requests = *sum
+	}
 	status := SLOStatus{
 		State: parsed.Data.Overall.State,
 		SLI:   parsed.Data.Overall.SLIValue,
@@ -222,25 +348,9 @@ func (c *Client) FetchSLOStatus(ctx context.Context, sloID string, from, to time
 		// guards against any float-precision noise (e.g. 44.99999999999999)
 		// still landing on the right integer instead of silently
 		// undercounting by 1.
-		RequestCount: int64(math.Round(parsed.Data.Series.Denominator.Sum)),
+		RequestCount: int64(math.Round(requests)),
 	}
-	// parsed.Data.Thresholds is keyed by timeframe (e.g. "7d", "30d") -
-	// iterating a Go map directly picked a random key on every call for any
-	// SLO configured with more than one threshold, making Target/Timeframe
-	// (and therefore ErrorBudgetRemaining) non-deterministic per poll.
-	// Sorting keys first makes the pick stable; which specific timeframe
-	// wins is otherwise arbitrary (single-threshold SLOs, the common case
-	// observed in this org, are unaffected either way).
-	if len(parsed.Data.Thresholds) > 0 {
-		timeframes := make([]string, 0, len(parsed.Data.Thresholds))
-		for timeframe := range parsed.Data.Thresholds {
-			timeframes = append(timeframes, timeframe)
-		}
-		sort.Strings(timeframes)
-		chosen := parsed.Data.Thresholds[timeframes[0]]
-		status.Target = chosen.Target
-		status.Timeframe = chosen.Timeframe
-	}
+	status.Target, status.Timeframe = parsed.pickThreshold()
 	// Datadog's own error_budget_remaining is positive when healthy (0-100
 	// scale); Target - SLI (this approximation, chosen because the history
 	// endpoint doesn't return the exact figure without an explicit target
@@ -251,6 +361,178 @@ func (c *Client) FetchSLOStatus(ctx context.Context, sloID string, from, to time
 	status.ErrorBudgetRemaining = status.SLI - status.Target
 
 	return status, nil
+}
+
+// FetchSLOWindows fetches sloID's request/error counts over the short and
+// long windows ending at end, for burn-rate classification
+// (poller-burn-rate-classification, BURN-17), plus the SLO's target and
+// Datadog's own state.
+//
+// One /history call covers [end-long-historyBucket, end]: the extra
+// leading bucket is requested so the partial first bucket Datadog returns
+// (seen zero-valued in the live replay) can be discarded. Per bucket,
+// errors = denominator - numerator clamped to [0, denominator]; Long sums
+// the buckets starting at or after end-long, Short those starting at or
+// after end-short.
+//
+// When Datadog returns buckets coarser than historyBucket, or only
+// aggregate sums with no per-bucket values, the short window can't be cut
+// out of the first response, so a second /history call over
+// [end-short, end] supplies Short from its sums; Long then comes from the
+// first call's sums. When Datadog returns no counts at all (monitor-based
+// SLO), HasSeries is false and no second call is made - Target/State are
+// still returned so the caller can classify from State.
+//
+// Errors follow FetchSLOStatus: ErrUnauthorized, ErrNotFound, ErrTimeout,
+// ErrServer, or a wrapped decode error, from either call.
+func (c *Client) FetchSLOWindows(ctx context.Context, sloID string, end time.Time, short, long time.Duration) (SLOWindows, error) {
+	longStart := end.Add(-long)
+	shortStart := end.Add(-short)
+
+	parsed, err := c.fetchHistory(ctx, sloID, longStart.Add(-historyBucket), end)
+	if err != nil {
+		return SLOWindows{}, err
+	}
+
+	windows := SLOWindows{State: parsed.Data.Overall.State, SLI: parsed.Data.Overall.SLIValue}
+	windows.Target, windows.Timeframe = parsed.pickThreshold()
+
+	series := parsed.Data.Series
+	if buckets := len(series.Times); buckets > 0 && len(series.Denominator.Values) > 0 && seriesInterval(series.Interval, series.Times) <= historyBucket {
+		windows.HasSeries = true
+		// Defensive: Datadog aligns values with times index-for-index, but
+		// never index past the shortest of the three.
+		buckets = min(buckets, len(series.Denominator.Values))
+		for i := 0; i < buckets; i++ {
+			start := bucketStart(series.Times[i])
+			if start.Before(longStart) {
+				continue
+			}
+			var good float64
+			if i < len(series.Numerator.Values) {
+				good = series.Numerator.Values[i]
+			}
+			bucket := countsFrom(series.Denominator.Values[i], good)
+			windows.Long.add(bucket)
+			if !start.Before(shortStart) {
+				windows.Short.add(bucket)
+			}
+		}
+		return windows, nil
+	}
+
+	total, ok := series.Denominator.total()
+	if !ok {
+		// Monitor-based SLO: no request counts at all.
+		return windows, nil
+	}
+	good, _ := series.Numerator.total()
+	windows.HasSeries = true
+	windows.Long = countsFrom(total, good)
+
+	shortParsed, err := c.fetchHistory(ctx, sloID, shortStart, end)
+	if err != nil {
+		return SLOWindows{}, err
+	}
+	shortTotal, _ := shortParsed.Data.Series.Denominator.total()
+	shortGood, _ := shortParsed.Data.Series.Numerator.total()
+	windows.Short = countsFrom(shortTotal, shortGood)
+
+	return windows, nil
+}
+
+// fetchHistory performs one /history call for sloID over [from, to],
+// logging Datadog's rate-limit headers, and decodes the response.
+func (c *Client) fetchHistory(ctx context.Context, sloID string, from, to time.Time) (sloHistoryResponse, error) {
+	path := fmt.Sprintf(sloHistoryPath, url.PathEscape(sloID))
+	endpoint := fmt.Sprintf("%s%s?from_ts=%d&to_ts=%d", c.baseURL, path, from.Unix(), to.Unix())
+
+	resp, err := c.get(ctx, endpoint)
+	if err != nil {
+		return sloHistoryResponse{}, err
+	}
+	defer resp.Body.Close()
+
+	c.logRateLimit(resp.Header, sloID)
+
+	var parsed sloHistoryResponse
+	if err := json.NewDecoder(resp.Body).Decode(&parsed); err != nil {
+		return sloHistoryResponse{}, fmt.Errorf("datadog: failed to decode response: %w", err)
+	}
+	return parsed, nil
+}
+
+// logRateLimit logs Datadog's X-RateLimit-* headers at debug, and warns
+// when fewer than 10% of the window's requests remain - the /history rate
+// limit is undocumented, so this is visibility only, never throttling.
+// Headers absent or unparsable: nothing is logged.
+func (c *Client) logRateLimit(header http.Header, sloID string) {
+	remaining, err := strconv.ParseInt(header.Get("X-RateLimit-Remaining"), 10, 64)
+	if err != nil {
+		return
+	}
+	fields := []zap.Field{
+		zap.String("slo_id", sloID),
+		zap.Int64("rate_limit_remaining", remaining),
+	}
+	limit, limitErr := strconv.ParseInt(header.Get("X-RateLimit-Limit"), 10, 64)
+	if limitErr == nil {
+		fields = append(fields, zap.Int64("rate_limit_limit", limit))
+	}
+	if period := header.Get("X-RateLimit-Period"); period != "" {
+		fields = append(fields, zap.String("rate_limit_period", period))
+	}
+	if reset := header.Get("X-RateLimit-Reset"); reset != "" {
+		fields = append(fields, zap.String("rate_limit_reset", reset))
+	}
+
+	if limitErr == nil && limit > 0 && remaining*10 < limit {
+		c.log().Warn("datadog: slo history rate limit nearly exhausted", fields...)
+		return
+	}
+	c.log().Debug("datadog: slo history rate limit", fields...)
+}
+
+// add accumulates other into w.
+func (w *WindowCounts) add(other WindowCounts) {
+	w.Requests += other.Requests
+	w.Errors += other.Errors
+}
+
+// countsFrom turns a float total/good pair from Datadog into whole counts:
+// both rounded (Datadog serializes whole counts as floats, see
+// sloHistoryMetric.Sum), errors = total - good clamped to [0, total] so a
+// numerator briefly ahead of its denominator (or a negative/garbage value)
+// never yields negative errors or more errors than requests (BURN-17).
+func countsFrom(total, good float64) WindowCounts {
+	requests := max(int64(math.Round(total)), 0)
+	errs := requests - int64(math.Round(good))
+	errs = min(max(errs, 0), requests)
+	return WindowCounts{Requests: requests, Errors: errs}
+}
+
+// seriesInterval returns the series' bucket width: Datadog's interval
+// field (seconds) when present, else the gap between the first two
+// timestamps, else 0 (a single bucket - treated as fine-grained).
+func seriesInterval(interval float64, times []float64) time.Duration {
+	if interval > 0 {
+		return time.Duration(interval * float64(time.Second))
+	}
+	if len(times) >= 2 {
+		return bucketStart(times[1]).Sub(bucketStart(times[0]))
+	}
+	return 0
+}
+
+// bucketStart converts a series timestamp to a time. Datadog's history
+// series uses milliseconds since the epoch; a value too small to be
+// milliseconds for any date after 1973 is treated as seconds instead, so a
+// unit change on Datadog's side can't silently drop every bucket.
+func bucketStart(ts float64) time.Time {
+	if ts < 1e11 {
+		return time.Unix(int64(math.Round(ts)), 0)
+	}
+	return time.UnixMilli(int64(math.Round(ts)))
 }
 
 // SearchSLOs searches for SLOs by free-text name (I14), reusing the same

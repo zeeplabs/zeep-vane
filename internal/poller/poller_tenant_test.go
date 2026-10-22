@@ -8,7 +8,6 @@ import (
 
 	"go.uber.org/zap"
 
-	"github.com/zeeplabs/zeep-vane/internal/connectors/datadog"
 	"github.com/zeeplabs/zeep-vane/internal/db"
 )
 
@@ -92,7 +91,7 @@ func (f *fakeIntegrationUpdater) MarkDatadogChecked(ctx context.Context) error {
 	return nil
 }
 
-func newTenantIterationPoller(t *testing.T, tenants tenantLister, tenantTx TenantTxFunc, services serviceLister, statuses serviceStatusUpdater, intervals statusIntervalWriter, integrations integrationStatusUpdater) *Poller {
+func newTenantIterationPoller(t *testing.T, tenants tenantLister, tenantTx TenantTxFunc, services serviceLister, statuses serviceStatusReadingWriter, intervals statusIntervalWriter, integrations integrationStatusUpdater) *Poller {
 	t.Helper()
 	analyzer := NewSLOAnalyzer(&fakeIncidentStore{openIncidents: map[string]string{}}, &fakeStatusAnalysisWriter{}, &fakeIntervalAnalysisWriter{}, &fakeLLMGenerator{}, time.Second, zap.NewNop())
 	p := &Poller{
@@ -100,11 +99,10 @@ func newTenantIterationPoller(t *testing.T, tenants tenantLister, tenantTx Tenan
 		statuses:        statuses,
 		statusIntervals: intervals,
 		integrations:    integrations,
-		provider:        &fakeProvider{errs: []error{nil}, status: datadog.SLOStatus{State: "ok", RequestCount: 10}},
+		provider:        &fakeProvider{errs: []error{nil}, windows: healthyWindows()},
 		interval:        time.Hour,
 		analyzer:        analyzer,
 		logger:          zap.NewNop(),
-		breachStreak:    make(map[string]int),
 	}
 	p.EnableTenantIteration(tenants, tenantTx)
 	return p
@@ -260,8 +258,8 @@ func TestPollCycle_ResolvesDatadogClientPerTenant(t *testing.T) {
 	intervals := &fakeIntervalWriter{}
 	integrations := &fakeIntegrationUpdater{}
 
-	providerA := &fakeProvider{errs: []error{nil}, status: datadog.SLOStatus{State: "ok", RequestCount: 10}}
-	providerB := &fakeProvider{errs: []error{nil}, status: datadog.SLOStatus{State: "ok", RequestCount: 10}}
+	providerA := &fakeProvider{errs: []error{nil}, windows: healthyWindows()}
+	providerB := &fakeProvider{errs: []error{nil}, windows: healthyWindows()}
 	resolver := &fakeDatadogResolverByTenant{providerByTenant: map[string]*fakeProvider{
 		"tenant-a": providerA,
 		"tenant-b": providerB,
@@ -301,7 +299,7 @@ func TestPollCycle_TenantWithNoDatadogConnected_SkippedWithoutError(t *testing.T
 	intervals := &fakeIntervalWriter{}
 	integrations := &fakeIntegrationUpdater{}
 
-	providerConnected := &fakeProvider{errs: []error{nil}, status: datadog.SLOStatus{State: "ok", RequestCount: 10}}
+	providerConnected := &fakeProvider{errs: []error{nil}, windows: healthyWindows()}
 	resolver := &fakeDatadogResolverByTenant{providerByTenant: map[string]*fakeProvider{
 		"tenant-connected": providerConnected,
 	}}
@@ -336,7 +334,7 @@ func TestPollCycle_TenantIterationDisabled_FallsBackToAmbientPollOnce(t *testing
 	analyzer := NewSLOAnalyzer(&fakeIncidentStore{openIncidents: map[string]string{}}, &fakeStatusAnalysisWriter{}, &fakeIntervalAnalysisWriter{}, &fakeLLMGenerator{}, time.Second, zap.NewNop())
 
 	p := NewPoller(services, statuses, intervals, integrations,
-		&fakeProvider{errs: []error{nil}, status: datadog.SLOStatus{State: "ok", RequestCount: 10}},
+		&fakeProvider{errs: []error{nil}, windows: healthyWindows()},
 		time.Hour, analyzer, zap.NewNop())
 
 	p.pollCycle(context.Background())

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"net/http"
 	"strings"
 	"time"
@@ -374,11 +375,70 @@ type hourlyBucketResponse struct {
 // serviceDetailResponse is the GET /api/services/{id} contract
 // (design.md's ServiceDetail) - a flat DTO extending serviceResponse, not
 // Page[T]: a single-resource read, same precedent as OverviewResponse.
+//
+// LatestReading lives only here, never on serviceResponse, so the paginated
+// list (and anything else reusing serviceResponse) stays lean - the reading
+// is a detail-drawer concern (poller-burn-rate-classification BURN-14).
 type serviceDetailResponse struct {
 	serviceResponse
 	StatusAnalysis *string                `json:"status_analysis"`
 	Incidents30d   int                    `json:"incidents_30d"`
 	HourlyBuckets  []hourlyBucketResponse `json:"hourly_buckets"`
+	LatestReading  *latestReadingResponse `json:"latest_reading"`
+}
+
+// latestReadingResponse is the detail drawer's "latest reading" block
+// (poller-burn-rate-classification BURN-13/BURN-14): the burn rates and
+// short-window counts the poller persisted on its last cycle. last_error_at
+// is deliberately not exposed - it is internal grace-timer state, not part
+// of the contract.
+//
+// BurnRateShort/BurnRateLong are pointers so a non-finite burn rate can be
+// sent as JSON null: the poller's burnRate yields +Inf when the SLO target
+// is 100% and errors > 0, and encoding/json refuses to encode Inf/NaN (the
+// whole response would fail). null here means "unbounded" - callers can
+// tell it apart from "no reading" because latest_reading itself is non-null
+// and window_errors/window_requests are still present.
+type latestReadingResponse struct {
+	BurnRateShort  *float64  `json:"burn_rate_short"`
+	BurnRateLong   *float64  `json:"burn_rate_long"`
+	WindowErrors   int64     `json:"window_errors"`
+	WindowRequests int64     `json:"window_requests"`
+	ReadAt         time.Time `json:"read_at"`
+}
+
+// toLatestReadingResponse maps db.Service's persisted reading into the
+// detail response. The rule is all-or-nothing: the poller writes the five
+// reading columns together (UpdateStatusAndReading), so the reading is
+// returned only when all of them are non-nil - any nil (no reading yet, or
+// a partially-written row that should never exist) yields nil, rendered by
+// the frontend as the empty state. Non-finite burn rates map to a nil
+// field, see latestReadingResponse.
+func toLatestReadingResponse(service *db.Service) *latestReadingResponse {
+	if service.LastReadingAt == nil ||
+		service.LastBurnRateShort == nil ||
+		service.LastBurnRateLong == nil ||
+		service.LastWindowErrors == nil ||
+		service.LastWindowRequests == nil {
+		return nil
+	}
+
+	return &latestReadingResponse{
+		BurnRateShort:  finiteOrNil(*service.LastBurnRateShort),
+		BurnRateLong:   finiteOrNil(*service.LastBurnRateLong),
+		WindowErrors:   *service.LastWindowErrors,
+		WindowRequests: *service.LastWindowRequests,
+		ReadAt:         *service.LastReadingAt,
+	}
+}
+
+// finiteOrNil returns a pointer to v, or nil when v is ±Inf or NaN -
+// values encoding/json cannot encode.
+func finiteOrNil(v float64) *float64 {
+	if math.IsInf(v, 0) || math.IsNaN(v) {
+		return nil
+	}
+	return &v
 }
 
 // Get handles GET /api/services/{id} (SVC-14..19), the monitored-services
@@ -388,8 +448,10 @@ type serviceDetailResponse struct {
 // built via history.BuildBuckets the same way public-status-hourly-history
 // does. status_analysis passes through Service.StatusAnalysis unchanged:
 // non-nil only while current_status is "degraded" and an analysis has been
-// stored (db.Service's own invariant), nil otherwise. Returns a fixed
-// generic 404 if id doesn't exist (AGENTS.md §4).
+// stored (db.Service's own invariant), nil otherwise. latest_reading is the
+// poller's last persisted burn-rate reading (BURN-14), null until the first
+// one (toLatestReadingResponse). Returns a fixed generic 404 if id doesn't
+// exist (AGENTS.md §4).
 func (h *ServicesHandler) Get(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	ctx := r.Context()
@@ -436,6 +498,7 @@ func (h *ServicesHandler) Get(w http.ResponseWriter, r *http.Request) {
 		StatusAnalysis:  service.StatusAnalysis,
 		Incidents30d:    incidents30d,
 		HourlyBuckets:   toHourlyBucketResponses(buckets),
+		LatestReading:   toLatestReadingResponse(service),
 	}
 
 	w.Header().Set("Content-Type", "application/json")

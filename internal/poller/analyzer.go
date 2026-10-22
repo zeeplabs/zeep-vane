@@ -127,15 +127,21 @@ const enrichmentCooldown = 2 * time.Minute
 // it via SetDescription on success, but visitors must never see an empty
 // description while that call is in flight or if it fails.
 func genericOutageDescription(serviceName string) string {
-	return fmt.Sprintf("An outage was automatically detected for %s.", serviceName)
+	return fmt.Sprintf("Uma indisponibilidade foi detectada automaticamente para %s.", serviceName)
 }
 
-// buildAnalysisInput builds an llm.AnalysisInput directly from svc and
-// sloStatus - the same datadog.SLOStatus pollService already fetched this
-// cycle, so no second Datadog call is ever made to gather analysis
-// context.
-func buildAnalysisInput(svc db.Service, sloStatus datadog.SLOStatus) llm.AnalysisInput {
-	return llm.AnalysisInput{
+// buildAnalysisInput builds an llm.AnalysisInput directly from svc,
+// sloStatus and reading - the same datadog.SLOStatus and burn-rate reading
+// pollService already produced this cycle, so no second Datadog call is
+// ever made to gather analysis context. reading is nil when the cycle was
+// classified by the state-based fallback (no counts): the burn fields stay
+// zero and the prompts add no burn sentence (BURN-15). A reading with an
+// empty short window marks NoRecentTraffic: sloStatus's State/SLI then
+// cover the last hour, not the state classifyBurn just decided on (e.g.
+// "breached" on a recovery after the zero-traffic grace), so the prompts
+// leave them out.
+func buildAnalysisInput(svc db.Service, sloStatus datadog.SLOStatus, reading *db.ServiceReading) llm.AnalysisInput {
+	in := llm.AnalysisInput{
 		ServiceName:          svc.Name,
 		SLOState:             sloStatus.State,
 		SLI:                  sloStatus.SLI,
@@ -143,6 +149,14 @@ func buildAnalysisInput(svc db.Service, sloStatus datadog.SLOStatus) llm.Analysi
 		Timeframe:            sloStatus.Timeframe,
 		ErrorBudgetRemaining: sloStatus.ErrorBudgetRemaining,
 	}
+	if reading != nil {
+		in.BurnRateShort = reading.BurnShort
+		in.BurnRateLong = reading.BurnLong
+		in.WindowErrors = reading.ShortErrors
+		in.WindowRequests = reading.ShortRequests
+		in.NoRecentTraffic = reading.ShortRequests <= 0
+	}
+	return in
 }
 
 // SLOAnalyzer bridges poller state transitions to internal/llm: it is
@@ -348,8 +362,10 @@ func (a *SLOAnalyzer) release() {
 }
 
 // HandleTransition reacts to svc's status changing from previousStatus to
-// newStatus this poll cycle, using sloStatus (the same datadog.SLOStatus
-// pollService already fetched this cycle - no second Datadog call). It is
+// newStatus this poll cycle, using sloStatus and reading (the same
+// datadog.SLOStatus and burn-rate reading pollService produced this cycle -
+// no second Datadog call; reading is nil when the cycle was classified by
+// the state-based fallback). It is
 // a no-op when previousStatus == newStatus. It never returns an error to
 // the caller - a failure here must never fail pollService's per-service
 // loop (AI-08): every failure is logged and swallowed.
@@ -366,7 +382,7 @@ func (a *SLOAnalyzer) release() {
 // nil disables root-cause enrichment for this call only (resolveCauseHint
 // falls back to the static default installed by SetErrorCauseEnrichment,
 // which production leaves nil; see newPollerFromStoredIntegration).
-func (a *SLOAnalyzer) HandleTransition(ctx context.Context, svc db.Service, previousStatus, newStatus string, sloStatus datadog.SLOStatus, intervalID string, causeProvider errorCauseProvider) {
+func (a *SLOAnalyzer) HandleTransition(ctx context.Context, svc db.Service, previousStatus, newStatus string, sloStatus datadog.SLOStatus, reading *db.ServiceReading, intervalID string, causeProvider errorCauseProvider) {
 	if previousStatus == newStatus {
 		return
 	}
@@ -386,15 +402,15 @@ func (a *SLOAnalyzer) HandleTransition(ctx context.Context, svc db.Service, prev
 		}
 	}
 	if enteringDegraded {
-		a.dispatchDegradedEnrichment(ctx, svc, sloStatus, intervalID, causeProvider)
+		a.dispatchDegradedEnrichment(ctx, svc, sloStatus, reading, intervalID, causeProvider)
 	}
 
 	if newStatus == "outage" {
-		a.handleOutageTransition(ctx, svc, sloStatus, causeProvider)
+		a.handleOutageTransition(ctx, svc, sloStatus, reading, causeProvider)
 	}
 
 	if newStatus == "operational" {
-		a.handleRecoveryTransition(ctx, svc, sloStatus)
+		a.handleRecoveryTransition(ctx, svc, sloStatus, reading)
 	}
 }
 
@@ -403,7 +419,7 @@ func (a *SLOAnalyzer) HandleTransition(ctx context.Context, svc db.Service, prev
 // this service - a single outage must not spawn a duplicate incident every
 // cycle it stays breached. On successful creation it dispatches the async
 // GenerateOutageDescription enrichment to refine that description.
-func (a *SLOAnalyzer) handleOutageTransition(ctx context.Context, svc db.Service, sloStatus datadog.SLOStatus, causeProvider errorCauseProvider) {
+func (a *SLOAnalyzer) handleOutageTransition(ctx context.Context, svc db.Service, sloStatus datadog.SLOStatus, reading *db.ServiceReading, causeProvider errorCauseProvider) {
 	_, found, err := a.incidents.HasOpenIncidentForService(ctx, svc.ID)
 	if err != nil {
 		a.logger.Error("slo-analyzer: failed to check open incident for outage service",
@@ -416,7 +432,7 @@ func (a *SLOAnalyzer) handleOutageTransition(ctx context.Context, svc db.Service
 
 	description := genericOutageDescription(svc.Name)
 	incident := &db.Incident{
-		Title:       fmt.Sprintf("Outage detected: %s", svc.Name),
+		Title:       fmt.Sprintf("Indisponibilidade detectada: %s", svc.Name),
 		Description: &description,
 		AutoCreated: true,
 	}
@@ -437,13 +453,16 @@ func (a *SLOAnalyzer) handleOutageTransition(ctx context.Context, svc db.Service
 			Title:       incident.Title,
 			Severity:    incident.Severity,
 			ServiceName: svc.Name,
+			Status:      incident.Status,
+			OpenedAt:    incident.CreatedAt,
+			Description: description,
 		}); err != nil {
 			a.logger.Error("slo-analyzer: failed to notify incident opened",
 				zap.String("incident_id", incident.ID), zap.Error(err))
 		}
 	}
 
-	a.dispatchOutageEnrichment(ctx, svc, sloStatus, incident.ID, causeProvider)
+	a.dispatchOutageEnrichment(ctx, svc, sloStatus, reading, incident.ID, causeProvider)
 }
 
 // handleRecoveryTransition dispatches a closing-comment proposal for svc's
@@ -455,7 +474,7 @@ func (a *SLOAnalyzer) handleOutageTransition(ctx context.Context, svc db.Service
 // outage. There is nothing to write synchronously here, since the
 // proposed text only exists once the LLM call in the dispatched goroutine
 // completes.
-func (a *SLOAnalyzer) handleRecoveryTransition(ctx context.Context, svc db.Service, sloStatus datadog.SLOStatus) {
+func (a *SLOAnalyzer) handleRecoveryTransition(ctx context.Context, svc db.Service, sloStatus datadog.SLOStatus, reading *db.ServiceReading) {
 	incidentID, found, err := a.incidents.HasOpenIncidentForService(ctx, svc.ID)
 	if err != nil {
 		a.logger.Error("slo-analyzer: failed to check open incident for recovered service",
@@ -476,7 +495,7 @@ func (a *SLOAnalyzer) handleRecoveryTransition(ctx context.Context, svc db.Servi
 		return
 	}
 
-	a.dispatchClosingCommentEnrichment(ctx, svc, sloStatus, incidentID)
+	a.dispatchClosingCommentEnrichment(ctx, svc, sloStatus, reading, incidentID)
 }
 
 // dispatchDegradedEnrichment kicks off the detached, timeout-bounded
@@ -494,7 +513,7 @@ func (a *SLOAnalyzer) handleRecoveryTransition(ctx context.Context, svc db.Servi
 // error string. Gated by tryAcquire (maxConcurrentEnrichments/
 // enrichmentCooldown) - a refused dispatch simply leaves both NULL
 // fallbacks in place.
-func (a *SLOAnalyzer) dispatchDegradedEnrichment(ctx context.Context, svc db.Service, sloStatus datadog.SLOStatus, intervalID string, causeProvider errorCauseProvider) {
+func (a *SLOAnalyzer) dispatchDegradedEnrichment(ctx context.Context, svc db.Service, sloStatus datadog.SLOStatus, reading *db.ServiceReading, intervalID string, causeProvider errorCauseProvider) {
 	key := "degraded:" + svc.ID
 	if !a.tryAcquire(key) {
 		a.logger.Warn("slo-analyzer: skipping degraded enrichment (cooldown or concurrency limit)",
@@ -535,7 +554,7 @@ func (a *SLOAnalyzer) dispatchDegradedEnrichment(ctx context.Context, svc db.Ser
 		// time, on the caller's goroutine - never read lazily from a shared
 		// field here, which would race against pollCycle moving on to the
 		// next tenant (integrations-tenant-scope, TENANT-05).
-		in := buildAnalysisInput(svc, sloStatus)
+		in := buildAnalysisInput(svc, sloStatus, reading)
 		in.CauseType, in.CauseMessage = a.resolveCauseHint(writeCtx, svc, causeProvider)
 
 		analysis, err := a.llmSvc.GenerateDegradedAnalysis(writeCtx, in)
@@ -573,7 +592,7 @@ func (a *SLOAnalyzer) dispatchDegradedEnrichment(ctx context.Context, svc db.Ser
 // or timeout it logs and leaves the generic description in place - it is
 // never overwritten with an error string (AI-13 fallback behavior). Gated
 // by tryAcquire, same as dispatchDegradedEnrichment.
-func (a *SLOAnalyzer) dispatchOutageEnrichment(ctx context.Context, svc db.Service, sloStatus datadog.SLOStatus, incidentID string, causeProvider errorCauseProvider) {
+func (a *SLOAnalyzer) dispatchOutageEnrichment(ctx context.Context, svc db.Service, sloStatus datadog.SLOStatus, reading *db.ServiceReading, incidentID string, causeProvider errorCauseProvider) {
 	key := "outage:" + incidentID
 	if !a.tryAcquire(key) {
 		a.logger.Warn("slo-analyzer: skipping outage description enrichment (cooldown or concurrency limit)",
@@ -605,7 +624,7 @@ func (a *SLOAnalyzer) dispatchOutageEnrichment(ctx context.Context, svc db.Servi
 		// context (RCA-05), and causeProvider was captured by this closure
 		// at dispatch time, not read lazily from a shared field
 		// (integrations-tenant-scope).
-		in := buildAnalysisInput(svc, sloStatus)
+		in := buildAnalysisInput(svc, sloStatus, reading)
 		in.CauseType, in.CauseMessage = a.resolveCauseHint(writeCtx, svc, causeProvider)
 
 		description, err := a.llmSvc.GenerateOutageDescription(writeCtx, in)
@@ -645,7 +664,7 @@ func (a *SLOAnalyzer) dispatchOutageEnrichment(ctx context.Context, svc db.Servi
 // leaves pending_close_comment NULL, so the incident stays open with no
 // proposal and the admin falls back to the existing manual close flow
 // (AI-23). Gated by tryAcquire, same as dispatchDegradedEnrichment.
-func (a *SLOAnalyzer) dispatchClosingCommentEnrichment(ctx context.Context, svc db.Service, sloStatus datadog.SLOStatus, incidentID string) {
+func (a *SLOAnalyzer) dispatchClosingCommentEnrichment(ctx context.Context, svc db.Service, sloStatus datadog.SLOStatus, reading *db.ServiceReading, incidentID string) {
 	key := "close:" + incidentID
 	if !a.tryAcquire(key) {
 		a.logger.Warn("slo-analyzer: skipping closing comment enrichment (cooldown or concurrency limit)",
@@ -653,7 +672,7 @@ func (a *SLOAnalyzer) dispatchClosingCommentEnrichment(ctx context.Context, svc 
 		return
 	}
 
-	in := buildAnalysisInput(svc, sloStatus)
+	in := buildAnalysisInput(svc, sloStatus, reading)
 	tenantID := tenantIDFromContext(ctx)
 
 	go func() {

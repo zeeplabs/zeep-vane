@@ -75,24 +75,31 @@ type abortTestProvider struct {
 	unblock      chan struct{}
 }
 
-func (p *abortTestProvider) FetchSLOStatus(ctx context.Context, sloID string, from, to time.Time) (datadog.SLOStatus, error) {
+func (p *abortTestProvider) FetchSLOWindows(ctx context.Context, sloID string, end time.Time, short, long time.Duration) (datadog.SLOWindows, error) {
 	if sloID != p.blockedSLOID {
-		return datadog.SLOStatus{State: "ok", ErrorBudgetRemaining: 100, RequestCount: 10}, nil
+		return healthyWindows(), nil
 	}
 
 	close(p.reached)
 	select {
 	case <-ctx.Done():
-		return datadog.SLOStatus{}, ctx.Err()
+		return datadog.SLOWindows{}, ctx.Err()
 	case <-p.unblock:
 	}
 	// By the time we're unblocked, the test has already canceled ctx (that
 	// is what triggers the unblock) - report whatever ctx says now, exactly
 	// as a real HTTP client using ctx for its request would.
 	if err := ctx.Err(); err != nil {
-		return datadog.SLOStatus{}, err
+		return datadog.SLOWindows{}, err
 	}
-	return datadog.SLOStatus{State: "ok", ErrorBudgetRemaining: 100, RequestCount: 10}, nil
+	return healthyWindows(), nil
+}
+
+// FetchSLOStatus satisfies datadog.SLOProvider. Only the state-based
+// fallback calls it, and every fixture here is a metric SLO with a target
+// (burn-rate path), so a call is a test bug and fails loudly.
+func (p *abortTestProvider) FetchSLOStatus(ctx context.Context, sloID string, from, to time.Time) (datadog.SLOStatus, error) {
+	return datadog.SLOStatus{}, fmt.Errorf("abortTestProvider: FetchSLOStatus is not used by the poller")
 }
 
 // TestPoller_PollOnce_AbortsMidCycle_NoWritesForServicesAfterLeadershipLoss
@@ -115,8 +122,8 @@ func (p *abortTestProvider) FetchSLOStatus(ctx context.Context, sloID string, fr
 // (internal/poller/poller.go's `for _, svc := range services` block) has no
 // explicit ctx.Done() check between iterations - this test's finding is
 // that the abort still lands correctly today because every write path
-// underneath it (FetchWithRetry's provider call, and both
-// statusIntervalWriter/serviceStatusUpdater's Postgres calls) is
+// underneath it (FetchWindowsWithRetry's provider call, and both
+// statusIntervalWriter/serviceStatusReadingWriter's Postgres calls) is
 // ctx-threaded: once ctx is canceled, the in-flight fetch/write fails
 // immediately, and every subsequent service's calls fail the same way
 // before ever reaching a write, since pgx and a real HTTP client both

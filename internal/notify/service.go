@@ -8,6 +8,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"go.uber.org/zap"
 
@@ -24,7 +25,40 @@ type IncidentSummary struct {
 	Severity    string
 	ServiceName string
 	TenantName  string
+	// Status is the incident's status at send time (investigating/...).
+	Status string
+	// OpenedAt is the incident's created_at; ResolvedAt is set for a
+	// resolved incident.
+	OpenedAt   time.Time
+	ResolvedAt *time.Time
+	// Description is the incident's initial description (manual incidents)
+	// or the generic outage description (auto-created ones). The
+	// incident-opened email shows it as the first timeline entry: at open
+	// time no incident_updates row exists yet.
+	Description string
+	// ResolutionSummary is the closing note for an incident-resolved email.
+	// When empty and incident details are wired (WithIncidentDetails), the
+	// latest human- or AI-authored timeline entry is used.
+	ResolutionSummary string
 }
+
+// tenantGetter is the subset of *db.TenantRepository Service uses to
+// resolve the tenant's display name and timezone for incident emails.
+type tenantGetter interface {
+	Get(ctx context.Context, tenantID string) (*db.Tenant, error)
+}
+
+// incidentDetailReader is the subset of *db.IncidentRepository Service uses
+// to fill incident-email fields a caller didn't supply.
+type incidentDetailReader interface {
+	ListServiceNames(ctx context.Context, incidentID string) ([]string, error)
+	ListUpdatesPaginated(ctx context.Context, incidentID string, page, pageSize int) ([]db.IncidentUpdate, int, error)
+}
+
+// resolutionLookback is how many of the most recent timeline entries are
+// scanned for the closing note - enough to skip past the system-authored
+// "Status changed to ..." entries Transition appends.
+const resolutionLookback = 10
 
 // DomainExpiringSummary is the data a domain-expiring email renders
 // (domain-health-monitoring DHM-02).
@@ -52,6 +86,9 @@ type notificationPayload struct {
 	incident       IncidentSummary
 	domainExpiring DomainExpiringSummary
 	domainNSDrift  DomainNSDriftSummary
+	// location is the tenant timezone incident dates render in; nil falls
+	// back to email.DefaultLocation.
+	location *time.Location
 }
 
 // memberLister is the subset of *db.TenantMembershipRepository Service depends
@@ -82,12 +119,28 @@ type Service struct {
 	sender       emailSender
 	adminBaseURL string
 	logger       *zap.Logger
+
+	// tenants and incidents are optional (WithIncidentDetails): when set,
+	// incident emails are enriched with the tenant's name/timezone, the
+	// linked service names, and the closing note. Every lookup is
+	// best-effort - a failure is logged and the field is simply omitted.
+	tenants   tenantGetter
+	incidents incidentDetailReader
 }
 
 // NewService builds a Service. adminBaseURL is the dashboard base used to build
 // the incident link; an empty value simply omits the link.
 func NewService(members memberLister, preferences preferenceResolver, sender emailSender, adminBaseURL string, logger *zap.Logger) *Service {
 	return &Service{members: members, preferences: preferences, sender: sender, adminBaseURL: adminBaseURL, logger: logger}
+}
+
+// WithIncidentDetails wires the read-only lookups incident emails use to
+// fill what the caller didn't supply (tenant name and timezone, service
+// names, resolution note). Returns s for chaining at construction time.
+func (s *Service) WithIncidentDetails(tenants tenantGetter, incidents incidentDetailReader) *Service {
+	s.tenants = tenants
+	s.incidents = incidents
+	return s
 }
 
 // NotifyIncidentOpened emails every owner/operator member of tenantID whose
@@ -117,8 +170,64 @@ func (s *Service) NotifyDomainNSDrift(ctx context.Context, tenantID string, summ
 }
 
 func (s *Service) notifyIncident(ctx context.Context, tenantID, notificationType string, summary IncidentSummary) error {
-	return s.notify(ctx, tenantID, notificationType,
-		notificationPayload{incident: summary}, s.dashboardURL(summary.IncidentID))
+	payload := s.enrichIncident(ctx, tenantID, notificationType, summary)
+	return s.notify(ctx, tenantID, notificationType, payload, s.dashboardURL(summary.IncidentID))
+}
+
+// enrichIncident fills the incident-email fields the caller left empty from
+// the optional lookups. Runs once per notification, before recipients are
+// resolved, so N recipients cost one set of lookups - not N.
+func (s *Service) enrichIncident(ctx context.Context, tenantID, notificationType string, summary IncidentSummary) notificationPayload {
+	payload := notificationPayload{incident: summary}
+
+	if s.tenants != nil {
+		tenant, err := s.tenants.Get(ctx, tenantID)
+		if err != nil {
+			s.logger.Warn("notify: failed to load tenant for incident email", zap.String("tenant_id", tenantID), zap.Error(err))
+		} else {
+			if payload.incident.TenantName == "" {
+				payload.incident.TenantName = tenant.Name
+			}
+			payload.location = email.TenantLocation(tenant.Timezone)
+		}
+	}
+
+	if s.incidents == nil || summary.IncidentID == "" {
+		return payload
+	}
+
+	if payload.incident.ServiceName == "" {
+		names, err := s.incidents.ListServiceNames(ctx, summary.IncidentID)
+		if err != nil {
+			s.logger.Warn("notify: failed to load incident service names", zap.String("incident_id", summary.IncidentID), zap.Error(err))
+		} else {
+			payload.incident.ServiceName = strings.Join(names, ", ")
+		}
+	}
+
+	if notificationType == db.NotificationTypeIncidentResolved && payload.incident.ResolutionSummary == "" {
+		updates, _, err := s.incidents.ListUpdatesPaginated(ctx, summary.IncidentID, 1, resolutionLookback)
+		if err != nil {
+			s.logger.Warn("notify: failed to load incident timeline", zap.String("incident_id", summary.IncidentID), zap.Error(err))
+		} else {
+			payload.incident.ResolutionSummary = latestAuthoredNote(updates)
+		}
+	}
+
+	return payload
+}
+
+// latestAuthoredNote returns the most recent timeline entry written by a
+// human or recorded as the AI closing summary (updates are newest first),
+// skipping the system-authored "Status changed to ..." entries Transition
+// appends - those carry no resolution context worth emailing.
+func latestAuthoredNote(updates []db.IncidentUpdate) string {
+	for _, u := range updates {
+		if u.AuthorID != nil || u.IsAISummary {
+			return u.Body
+		}
+	}
+	return ""
 }
 
 // notify resolves the tenant's enabled owner/operator recipients for
@@ -199,29 +308,54 @@ func (s *Service) WeeklyDigestRecipients(ctx context.Context, tenantID string) (
 	return recipients, nil
 }
 
-// SendWeeklyDigest sends the assembled digest to one recipient.
+// SendWeeklyDigest sends the assembled digest to one recipient, filling the
+// dashboard and incidents-list links from adminBaseURL when the caller
+// didn't set them.
 func (s *Service) SendWeeklyDigest(ctx context.Context, to string, data email.WeeklyDigestEmailData) error {
+	if data.DashboardURL == "" && s.adminBaseURL != "" {
+		data.DashboardURL = strings.TrimRight(s.adminBaseURL, "/") + "/overview"
+	}
+	if data.IncidentsURL == "" && s.adminBaseURL != "" {
+		data.IncidentsURL = strings.TrimRight(s.adminBaseURL, "/") + "/incidents"
+	}
 	return s.sender.SendWeeklyDigest(ctx, to, data)
 }
 
 func (s *Service) send(ctx context.Context, to, notificationType string, payload notificationPayload, dashboardURL string) error {
 	switch notificationType {
 	case db.NotificationTypeIncidentOpened:
-		return s.sender.SendIncidentOpened(ctx, to, email.IncidentOpenedEmailData{
-			TenantName:    payload.incident.TenantName,
-			ServiceName:   payload.incident.ServiceName,
-			IncidentTitle: payload.incident.Title,
-			Severity:      payload.incident.Severity,
+		inc := payload.incident
+		data := email.IncidentOpenedEmailData{
+			TenantName:    inc.TenantName,
+			ServiceName:   inc.ServiceName,
+			IncidentTitle: inc.Title,
+			Severity:      inc.Severity,
+			Status:        inc.Status,
+			OpenedAt:      inc.OpenedAt,
+			Location:      payload.location,
 			DashboardURL:  dashboardURL,
-		})
+		}
+		if inc.Description != "" {
+			data.FirstUpdateAt = inc.OpenedAt
+			data.FirstUpdateMessage = inc.Description
+		}
+		return s.sender.SendIncidentOpened(ctx, to, data)
 	case db.NotificationTypeIncidentResolved:
-		return s.sender.SendIncidentResolved(ctx, to, email.IncidentResolvedEmailData{
-			TenantName:    payload.incident.TenantName,
-			ServiceName:   payload.incident.ServiceName,
-			IncidentTitle: payload.incident.Title,
-			Severity:      payload.incident.Severity,
-			DashboardURL:  dashboardURL,
-		})
+		inc := payload.incident
+		data := email.IncidentResolvedEmailData{
+			TenantName:        inc.TenantName,
+			ServiceName:       inc.ServiceName,
+			IncidentTitle:     inc.Title,
+			Severity:          inc.Severity,
+			OpenedAt:          inc.OpenedAt,
+			Location:          payload.location,
+			ResolutionSummary: inc.ResolutionSummary,
+			DashboardURL:      dashboardURL,
+		}
+		if inc.ResolvedAt != nil {
+			data.ResolvedAt = *inc.ResolvedAt
+		}
+		return s.sender.SendIncidentResolved(ctx, to, data)
 	case db.NotificationTypeDomainExpiring:
 		return s.sender.SendDomainExpiring(ctx, to, email.DomainExpiringEmailData{
 			TenantName:    payload.domainExpiring.TenantName,

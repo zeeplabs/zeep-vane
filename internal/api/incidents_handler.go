@@ -5,7 +5,9 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/go-chi/chi/v5"
 	"go.uber.org/zap"
@@ -26,7 +28,7 @@ type incidentCreator interface {
 	ListPaginated(ctx context.Context, page, pageSize int) ([]db.Incident, int, error)
 	AddUpdate(ctx context.Context, incidentID, body string, authorID *string, isAISummary bool) (*db.IncidentUpdate, error)
 	ListUpdatesPaginated(ctx context.Context, incidentID string, page, pageSize int) ([]db.IncidentUpdate, int, error)
-	Transition(ctx context.Context, incidentID, status string) (*db.Incident, error)
+	Transition(ctx context.Context, incidentID, status, note string, authorID *string) (*db.Incident, bool, error)
 	ConfirmPendingClose(ctx context.Context, incidentID, expectedComment string) (*db.Incident, error)
 	DiscardCloseProposal(ctx context.Context, incidentID string) error
 	SetSeverity(ctx context.Context, incidentID, severity string) (*db.Incident, error)
@@ -69,10 +71,18 @@ func (h *IncidentsHandler) notifyIncident(ctx context.Context, incident *db.Inci
 	if !ok || h.notify == nil {
 		return
 	}
+	// Service names, tenant name/timezone, and the resolution note are
+	// filled by notify.Service's incident-detail lookups (best-effort).
 	summary := notify.IncidentSummary{
 		IncidentID: incident.ID,
 		Title:      incident.Title,
 		Severity:   incident.Severity,
+		Status:     incident.Status,
+		OpenedAt:   incident.CreatedAt,
+		ResolvedAt: incident.ResolvedAt,
+	}
+	if incident.Description != nil {
+		summary.Description = *incident.Description
 	}
 	var err error
 	if resolved {
@@ -280,9 +290,30 @@ func (h *IncidentsHandler) ListUpdates(w http.ResponseWriter, r *http.Request) {
 
 type transitionIncidentRequest struct {
 	Status string `json:"status"`
+	// Note is an optional closing note, only honored when Status is
+	// "resolved": it is recorded as an update authored by the actor in the
+	// same transaction as the resolve, so the incident-resolved email's
+	// resolution summary is the note written at resolution time rather than
+	// an older timeline entry. Empty (or whitespace-only) means no note -
+	// resolving stays a one-field request, exactly as before. Ignored for any
+	// other status.
+	Note string `json:"note,omitempty"`
 }
 
 const invalidIncidentStatusBody = `{"error":"status must be one of investigating, identified, monitoring, resolved"}`
+const closingNoteTooLongBody = `{"error":"note must be at most 2000 characters"}`
+const transitionBodyTooLargeBody = `{"error":"request body is too large"}`
+
+// maxClosingNoteRunes bounds the optional closing note, counted in
+// characters (runes) after trimming - it is stored as a timeline entry and
+// rendered verbatim in the incident-resolved email.
+const maxClosingNoteRunes = 2000
+
+// maxTransitionBodyBytes bounds PATCH /api/incidents/{id}'s body before
+// decoding. Generous next to maxClosingNoteRunes: a 2000-rune note can take
+// up to 12 bytes per rune once JSON-escaped (a \uXXXX surrogate pair), so
+// the byte cap never rejects a note the rune limit would accept.
+const maxTransitionBodyBytes = 64 << 10
 
 var validIncidentStatuses = map[string]bool{
 	"investigating": true,
@@ -295,18 +326,50 @@ var validIncidentStatuses = map[string]bool{
 // status (SP-19). Reopening a resolved incident (e.g. back to
 // "investigating") is a legitimate transition, not rejected (SP-20), and is
 // recorded on the timeline by IncidentRepository.Transition.
+//
+// Requesting the status the incident already has is idempotent: 200 with
+// the incident as it is, and nothing else happens - no timeline rows, no
+// new resolved_at, no notification (a double-clicked "Resolve" must not
+// mail everyone twice). A closing note sent with such a no-op is dropped
+// along with it.
 func (h *IncidentsHandler) Transition(w http.ResponseWriter, r *http.Request) {
 	incidentID := chi.URLParam(r, "id")
 
+	r.Body = http.MaxBytesReader(w, r.Body, maxTransitionBodyBytes)
 	var req transitionIncidentRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || !validIncidentStatuses[req.Status] {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusUnprocessableEntity)
-		_, _ = w.Write([]byte(invalidIncidentStatusBody))
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		var tooLarge *http.MaxBytesError
+		if errors.As(err, &tooLarge) {
+			writeUnprocessable(w, transitionBodyTooLargeBody)
+			return
+		}
+		writeUnprocessable(w, invalidIncidentStatusBody)
+		return
+	}
+	if !validIncidentStatuses[req.Status] {
+		writeUnprocessable(w, invalidIncidentStatusBody)
 		return
 	}
 
-	incident, err := h.incidents.Transition(r.Context(), incidentID, req.Status)
+	var note string
+	var authorID *string
+	if req.Status == "resolved" {
+		note = strings.TrimSpace(req.Note)
+		if utf8.RuneCountInString(note) > maxClosingNoteRunes {
+			writeUnprocessable(w, closingNoteTooLongBody)
+			return
+		}
+	}
+	if note != "" {
+		actor, ok := UserFromContext(r.Context())
+		if !ok {
+			writeForbidden(w)
+			return
+		}
+		authorID = &actor.ID
+	}
+
+	incident, changed, err := h.incidents.Transition(r.Context(), incidentID, req.Status, note, authorID)
 	if err != nil {
 		if errors.Is(err, db.ErrNotFound) {
 			writeIncidentNotFound(w)
@@ -317,7 +380,7 @@ func (h *IncidentsHandler) Transition(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if req.Status == "resolved" {
+	if changed && req.Status == "resolved" {
 		h.notifyIncidentResolved(r.Context(), incident)
 	}
 
@@ -444,6 +507,12 @@ func (h *IncidentsHandler) DiscardCloseProposal(w http.ResponseWriter, r *http.R
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write([]byte(`{"status":"discarded"}`))
+}
+
+func writeUnprocessable(w http.ResponseWriter, body string) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusUnprocessableEntity)
+	_, _ = w.Write([]byte(body))
 }
 
 func writeIncidentNotFound(w http.ResponseWriter) {

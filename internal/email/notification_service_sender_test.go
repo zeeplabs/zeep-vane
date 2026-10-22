@@ -101,7 +101,7 @@ func TestSendWeeklyDigest_MapsCategoryPriorityType(t *testing.T) {
 	fake := &fakeNotificationServiceClient{}
 	s := newTestSender(t, fake)
 
-	err := s.SendWeeklyDigest(t.Context(), "to@example.com", WeeklyDigestEmailData{TenantName: "Acme", UptimePercent: 99.9, IncidentsOpened: 1, IncidentsResolved: 1, PeriodStart: "2026-09-01", PeriodEnd: "2026-09-07"})
+	err := s.SendWeeklyDigest(t.Context(), "to@example.com", WeeklyDigestEmailData{TenantName: "Acme", UptimePercent: 99.9, IncidentsOpened: 1, IncidentsResolved: 1, PeriodStart: testDigestStart, PeriodEnd: testDigestEnd})
 	if err != nil {
 		t.Fatalf("SendWeeklyDigest() returned unexpected error: %v", err)
 	}
@@ -141,8 +141,8 @@ func TestSendSignupVerification_SubjectAndBodyReachClient(t *testing.T) {
 	if err := s.SendSignupVerification(t.Context(), "to@example.com", SignupVerificationEmailData{TenantName: "Acme", VerifyURL: "https://example.com/verify"}); err != nil {
 		t.Fatalf("SendSignupVerification() returned unexpected error: %v", err)
 	}
-	if fake.lastReq.Subject != "Verify your email for Acme" {
-		t.Errorf("Subject = %q, want %q", fake.lastReq.Subject, "Verify your email for Acme")
+	if fake.lastReq.Subject != "Confirm your Vane email" {
+		t.Errorf("Subject = %q, want %q", fake.lastReq.Subject, "Confirm your Vane email")
 	}
 	if fake.lastReq.RecipientEmail != "to@example.com" {
 		t.Errorf("RecipientEmail = %q, want %q", fake.lastReq.RecipientEmail, "to@example.com")

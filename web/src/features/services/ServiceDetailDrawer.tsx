@@ -8,7 +8,8 @@ import { formatDateTime } from "../../lib/formatDate";
 import { Input } from "../../components/ui/Input";
 import { Button } from "../../components/ui/Button";
 import { Dialog } from "../../components/ui/Dialog";
-import type { HourlyBucket, ServiceEnvironment } from "../../types/api";
+import type { HourlyBucket, ServiceEnvironment, ServiceLatestReading } from "../../types/api";
+import { formatLastAccess } from "../admins/adminMeta";
 import { EnvironmentTag } from "./EnvironmentTag";
 import { environmentLabel, environmentOptions } from "./environmentMeta";
 import { useDeleteService, useServiceDetail, useUpdateService } from "./hooks";
@@ -31,17 +32,149 @@ function formatUptime(uptime: number | null): string {
   return uptime === null ? "—" : `${uptime.toFixed(2)}%`;
 }
 
+// formatBurnRate renders a burn rate as "12.3x" (en) / "12,3x" (pt-BR):
+// one decimal, locale-aware via Intl.NumberFormat so the separator matches
+// the counts next to it. The API sends null only for a non-finite burn (SLO
+// target 100% with errors in the window), shown as "∞"; `unbounded` lets
+// the caller fall back to "—" when the window has no errors and so cannot
+// be unbounded.
+function formatBurnRate(value: number | null, unbounded: boolean, language: string): string {
+  if (value === null) return unbounded ? "∞" : "—";
+  return `${new Intl.NumberFormat(language, { minimumFractionDigits: 1, maximumFractionDigits: 1 }).format(value)}x`;
+}
+
+// formatErrorRate renders errors/requests as a locale-aware percentage with
+// two decimals ("0,74%" in pt-BR). A non-zero error count whose rate rounds
+// to 0.00% renders as "<0,01%" instead, so a window with real errors never
+// reads as error-free. requests must be > 0 (the caller handles no traffic).
+function formatErrorRate(errors: number, requests: number, language: string): string {
+  const percent = new Intl.NumberFormat(language, {
+    style: "percent",
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+  const ratio = errors / requests;
+  // 0.00005 is half of the smallest displayable step (0.01%): anything
+  // below it rounds to "0,00%".
+  if (errors > 0 && ratio < 0.00005) return `<${percent.format(0.0001)}`;
+  return percent.format(ratio);
+}
+
+// staleReadingMs is how old a reading may get before the drawer flags it.
+// The poller runs every few minutes, so a reading older than this means it
+// has stopped refreshing (Datadog failing, SLO switched to the state-based
+// fallback, poller behind) and the numbers no longer describe the present.
+const staleReadingMs = 15 * 60 * 1000;
+
 interface StatProps {
   label: string;
   value: string;
+  hint?: string;
 }
 
-function Stat({ label, value }: StatProps) {
+function Stat({ label, value, hint }: StatProps) {
   return (
     <div>
       <div className="mb-1 text-[10.5px] font-bold uppercase tracking-wide text-neutral-400">{label}</div>
       <div className="text-lg font-bold text-text">{value}</div>
+      {hint ? <div className="text-[11.5px] text-neutral-400">{hint}</div> : null}
     </div>
+  );
+}
+
+interface LatestReadingProps {
+  reading: ServiceLatestReading | null;
+  // monitorBased is true for a monitor-based SLO (slo_type "monitor"): it
+  // has no request counts, so the poller classifies it by Datadog's state
+  // and never writes a burn-rate reading - "no reading yet" would wait
+  // forever, so the block says the reading is unavailable instead.
+  monitorBased: boolean;
+}
+
+/** "Última leitura" block (poller-burn-rate-classification BURN-14): the
+ * error rate and burn rates the poller computed on its last cycle, so an
+ * admin can see why the service has its current status. window_errors/
+ * window_requests are the short (5 min) window's counts. */
+function LatestReading({ reading, monitorBased }: LatestReadingProps) {
+  const { t, i18n } = useTranslation();
+  const language = i18n.language;
+  // A monitor-based SLO's stored reading (if any, e.g. from before its SLO
+  // type changed) is never refreshed, so it is not shown.
+  const shown = monitorBased ? null : reading;
+  const stale = shown ? Date.now() - new Date(shown.read_at).getTime() > staleReadingMs : false;
+
+  const header = (
+    <div className="mb-2 flex items-baseline justify-between gap-2">
+      <div className="text-[10.5px] font-bold uppercase tracking-wide text-neutral-400">
+        {t("services.detail.latestReading.title")}
+      </div>
+      {shown ? (
+        <div className="flex items-baseline gap-1.5 text-[11.5px]">
+          {stale ? (
+            <span data-testid="stale-reading" className="inline-flex items-center gap-0.5 text-warning">
+              <MdOutlineWarningAmber size={12} className="self-center" aria-hidden="true" />
+              {t("services.detail.latestReading.stale")}
+            </span>
+          ) : null}
+          <time dateTime={shown.read_at} className="text-neutral-400">
+            {formatLastAccess(shown.read_at, t)}
+          </time>
+        </div>
+      ) : null}
+    </div>
+  );
+
+  if (!shown) {
+    return (
+      <section>
+        {header}
+        <p className="text-[12.5px] text-neutral-400">
+          {t(monitorBased ? "services.detail.latestReading.monitorBased" : "services.detail.latestReading.empty")}
+        </p>
+      </section>
+    );
+  }
+
+  const { window_errors: errors, window_requests: requests } = shown;
+  const noTraffic = requests === 0;
+  const errorRate = noTraffic
+    ? t("services.detail.latestReading.noTraffic")
+    : formatErrorRate(errors, requests, language);
+  const errorsInRequests = noTraffic
+    ? undefined
+    : t("services.detail.latestReading.errorsInRequests", {
+        errors: t("services.detail.latestReading.errorCount", {
+          count: errors,
+          value: errors.toLocaleString(language),
+        }),
+        requests: t("services.detail.latestReading.requestCount", {
+          count: requests,
+          value: requests.toLocaleString(language),
+        }),
+      });
+
+  return (
+    <section>
+      {header}
+      <div className="grid grid-cols-3 gap-4">
+        <Stat label={t("services.detail.latestReading.errorRate")} value={errorRate} hint={errorsInRequests} />
+        {/* With no requests in the 5 min window there is nothing to burn:
+         * the backend still sends 0 (or the last short burn), which would
+         * read as a measured "0,0x", so it renders as "—" instead. */}
+        <Stat
+          label={t("services.detail.latestReading.burnShort")}
+          value={noTraffic ? "—" : formatBurnRate(shown.burn_rate_short, errors > 0, language)}
+        />
+        {/* The long (1 h) window's error count isn't exposed, but a null
+         * burn_rate_long can only mean +Inf (the backend never sends NaN),
+         * so it always renders as "∞". */}
+        <Stat
+          label={t("services.detail.latestReading.burnLong")}
+          value={formatBurnRate(shown.burn_rate_long, true, language)}
+        />
+      </div>
+      <p className="mt-2 text-[11.5px] text-neutral-400">{t("services.detail.latestReading.burnHelp")}</p>
+    </section>
   );
 }
 
@@ -261,6 +394,17 @@ export function ServiceDetailDrawer({ serviceId, onClose }: ServiceDetailDrawerP
                   />
                   <p className="text-[12.5px] leading-relaxed text-neutral-300">{detail.status_analysis}</p>
                 </div>
+              ) : null}
+
+              {/* Polling-manual services never go through the Datadog
+               * burn-rate path, so they have no reading to show. Gated on
+               * "not polling" rather than "=== slo": slo is the default
+               * mode (the backend normalizes anything else to it), and an
+               * empty/missing monitor_mode - exactly what GET
+               * /api/services/{id} returned before the repository read it -
+               * must not silently hide the block for an SLO service. */}
+              {detail.monitor_mode !== "polling" ? (
+                <LatestReading reading={detail.latest_reading} monitorBased={detail.slo_type === "monitor"} />
               ) : null}
 
               <div>

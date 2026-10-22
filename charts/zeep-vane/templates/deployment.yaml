@@ -92,6 +92,10 @@ spec:
             - name: VANE_ADMIN_BASE_URL
               value: {{ .Values.config.adminBaseUrl | quote }}
             {{- end }}
+            {{- if .Values.config.emailAssetsBaseUrl }}
+            - name: VANE_EMAIL_ASSETS_BASE_URL
+              value: {{ .Values.config.emailAssetsBaseUrl | quote }}
+            {{- end }}
             - name: VANE_HTTPS_ENABLED
               value: {{ .Values.publicService.enabled | ternary .Values.config.httpsEnabled false | quote }}
             - name: HTTPS_PORT

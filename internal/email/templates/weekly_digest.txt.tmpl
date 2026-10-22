@@ -1,6 +1,34 @@
-{{if .TenantName}}Weekly digest for {{.TenantName}}{{else}}Your weekly digest{{end}}
+WEEKLY SUMMARY
 
-Period: {{.PeriodStart}} to {{.PeriodEnd}}
-Uptime: {{printf "%.2f" .UptimePercent}}%
-Incidents opened: {{.IncidentsOpened}}
-Incidents resolved: {{.IncidentsResolved}}
+Your week in review
+{{.PeriodLabel}}{{if .TenantName}} · {{.TenantName}}{{end}}
+
+Average uptime: {{.AvgUptimeText}}
+Incidents: {{.IncidentCount}}
+Mean time to resolution: {{.MTTRText}}
+
+Monitored services
+{{- range .Services}}
+- {{.Name}}: {{.UptimeText}} ({{.StatusLabel}})
+{{- else}}
+No services with monitoring data this week.
+{{- end}}
+{{- if .HiddenServices}}
+{{.HiddenServices}} more {{if eq .HiddenServices 1}}service{{else}}services{{end}} — view all on the dashboard.
+{{- end}}
+
+This week's incidents
+{{- range .Incidents}}
+- {{.Title}} [{{.StatusPill}}] — {{if .ServiceName}}{{.ServiceName}} · {{end}}{{.DurationText}}
+{{- else}}
+No incidents this week.
+{{- end}}
+{{- if .HiddenIncidents}}
++{{.HiddenIncidents}} more — view all incidents{{if .IncidentsURL}}: {{.IncidentsURL}}{{end}}
+{{- end}}
+{{if .DashboardURL}}
+View full dashboard: {{.DashboardURL}}
+{{end}}{{if .NotificationPrefsURL}}
+Change how often you get these emails: {{.FrequencySettingsURL}}
+Unsubscribe: {{.UnsubscribeURL}}
+{{end}}{{template "text_footer" .}}

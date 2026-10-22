@@ -392,7 +392,7 @@ func newPollerFromStoredIntegration(ctx context.Context, pool *db.Pool, cfg conf
 			return nil, fmt.Errorf("serve: failed to decrypt datadog app key: %w", err)
 		}
 
-		return datadog.NewClient(string(apiKey), string(appKey)), nil
+		return datadog.NewClient(string(apiKey), string(appKey)).WithLogger(logger), nil
 	})
 
 	return p, true, nil
@@ -440,7 +440,8 @@ func newNotifyService(pool *db.Pool, cfg config.Config, logger *zap.Logger) (*no
 	if err != nil {
 		return nil, fmt.Errorf("serve: failed to build email sender for notifications: %w", err)
 	}
-	return notify.NewService(db.NewTenantMembershipRepository(pool), db.NewNotificationPreferenceRepository(pool), emailSender, cfg.AdminBaseURL, logger), nil
+	return notify.NewService(db.NewTenantMembershipRepository(pool), db.NewNotificationPreferenceRepository(pool), emailSender, cfg.AdminBaseURL, logger).
+		WithIncidentDetails(db.NewTenantRepository(pool), db.NewIncidentRepository(pool)), nil
 }
 
 // newDigestScheduler builds the weekly digest scheduler with its production
@@ -458,6 +459,7 @@ func newDigestScheduler(pool *db.Pool, cfg config.Config, logger *zap.Logger) (*
 		db.NewStatusIntervalRepository(pool),
 		db.NewIncidentRepository(pool),
 		notifier,
+		db.NewTenantRepository(pool),
 		logger,
 	), nil
 }

@@ -74,6 +74,15 @@ export interface Service {
   name: string;
   slo_id: string | null;
   slo_name: string | null;
+  // slo_type/datadog_service_tag mirror serviceResponse's SLOType/
+  // DatadogServiceTag (slo-root-cause-enrichment RCA-01): the linked SLO's
+  // Datadog type ("metric", "monitor", ...) and its single service tag,
+  // both "" when absent (polling-mode services, rows saved before the
+  // feature). slo_type "monitor" matters to the detail drawer: a
+  // monitor-based SLO has no request counts, so the poller never writes a
+  // burn-rate reading for it.
+  slo_type: string;
+  datadog_service_tag: string;
   // monitor_mode defaults to "slo" server-side when omitted from a create
   // request, but every service the API returns always carries an explicit
   // value (never optional on read).
@@ -135,6 +144,22 @@ export interface ServiceDetail extends Service {
   status_analysis: string | null;
   incidents_30d: number;
   hourly_buckets: HourlyBucket[];
+  // latest_reading is present on the detail endpoint only (never on the
+  // list), always as a key: null means the poller has no reading for this
+  // service yet (poller-burn-rate-classification BURN-13/BURN-14).
+  latest_reading: ServiceLatestReading | null;
+}
+
+// ServiceLatestReading mirrors internal/api's latestReadingResponse - the
+// burn rates and short-window (5 min) counts from the poller's last cycle.
+// burn_rate_short (5 min) / burn_rate_long (1 h) are null only when the
+// value is non-finite (SLO target 100% with errors -> unbounded burn).
+export interface ServiceLatestReading {
+  burn_rate_short: number | null;
+  burn_rate_long: number | null;
+  window_errors: number;
+  window_requests: number;
+  read_at: string;
 }
 
 // DomainType/DomainStatus mirror the backend's domain-verification-state

@@ -1,9 +1,34 @@
-<!doctype html>
-<html>
-  <body style="font-family: sans-serif; color: #1a1a1a;">
-    <p>{{if .TenantName}}Welcome to <strong>{{.TenantName}}</strong>!{{else}}Welcome!{{end}}</p>
-    <p><a href="{{.VerifyURL}}">Verify your email</a> to finish setting up your account.</p>
-    <p>If the link above doesn't work, copy and paste this URL into your browser:</p>
-    <p>{{.VerifyURL}}</p>
-  </body>
-</html>
+<!DOCTYPE html>
+<html lang="en" xmlns="http://www.w3.org/1999/xhtml">
+<head>
+{{template "head_meta" .}}
+<title>Confirm your email · Vane</title>
+{{template "head_style" .}}
+</head>
+<body style="margin:0; padding:0; background:#F1EFF7;">
+<div style="display:none; font-size:1px; color:#F1EFF7; line-height:1px; max-height:0; max-width:0; opacity:0; overflow:hidden; mso-hide:all;">Confirm your email to activate your Vane account.{{template "preheader_pad"}}</div>
+{{template "card_open" .}}
+<tr><td style="height:4px; line-height:4px; font-size:0; background:#5A46C7;">&nbsp;</td></tr>
+
+{{template "brand_header" .}}
+
+{{/* Link-only variant (handoff README: "If the backend supports only link
+     or only code, remove the other block (including the 'ou' divider)").
+     Signup verification here is a single-use link token with no numeric
+     code, so the code block and divider are omitted and the plain-text
+     link fallback used by the other account emails is shown instead. */}}
+<tr><td style="padding:20px 40px 0 40px;" class="pad">
+  <div style="font-family:Arial, Helvetica, 'Segoe UI', sans-serif; font-size:11px; font-weight:bold; letter-spacing:0.09em; text-transform:uppercase; color:#5A46C7; margin:0 0 14px 0;">EMAIL CONFIRMATION</div>
+  <h1 style="margin:0 0 14px 0; font-family:Arial, Helvetica, 'Segoe UI', sans-serif; font-size:24px; font-weight:bold; letter-spacing:-0.01em; color:#1C1526;">Confirm your email address</h1>
+  <p style="margin:0 0 26px 0; font-family:Arial, Helvetica, 'Segoe UI', sans-serif; font-size:14.5px; line-height:1.65; color:#6E6779;">You're almost ready to start monitoring your services. Confirm your email to activate your account and set up {{if .TenantName}}the <strong style="color:#1C1526;">{{.TenantName}}</strong> organization{{else}}your organization{{end}} on Vane.</p>
+
+<table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr>
+  <td bgcolor="#5A46C7" style="border-radius:9px;">
+    <a href="{{.VerifyURL}}" target="_blank" style="display:block; padding:13px 28px; font-family:Arial, Helvetica, 'Segoe UI', sans-serif; font-size:14px; font-weight:bold; color:#FFFFFF; text-decoration:none; border-radius:9px;">Confirm email</a>
+  </td>
+</tr></table>
+  <p style="margin:22px 0 0 0; font-family:Arial, Helvetica, 'Segoe UI', sans-serif; font-size:12.5px; line-height:1.6; color:#9A93A8;">{{if .ExpiresIn}}This link is valid for {{.ExpiresIn}}. {{end}}If you didn't create a Vane account, you can ignore this email.</p>
+  <p style="margin:16px 0 8px 0; font-family:Arial, Helvetica, 'Segoe UI', sans-serif; font-size:12px; line-height:1.6; color:#9A93A8;">Or copy and paste this link into your browser:<br><a href="{{.VerifyURL}}" style="color:#5A46C7; word-break:break-all;">{{.VerifyURL}}</a></p>
+</td></tr>
+{{template "footer_open" .}}
+{{template "footer_close" .}}

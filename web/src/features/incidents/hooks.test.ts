@@ -38,7 +38,7 @@ describe("incidents hooks", () => {
       wrapper: TestQueryProvider,
     });
 
-    const reopened = await result.current.mutateAsync("investigating");
+    const reopened = await result.current.mutateAsync({ status: "investigating" });
     expect(reopened.status).toBe("investigating");
     expect(reopened.resolved_at).toBeNull();
   });

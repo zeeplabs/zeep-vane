@@ -62,11 +62,17 @@ func (l *countingIntervalLister) ListOverlapping(context.Context, []string, time
 type countingIncidentCounter struct {
 	opened, resolved int
 	calls            int
+	listCalls        int
 }
 
 func (c *countingIncidentCounter) CountOpenedResolvedBetween(context.Context, time.Time, time.Time) (int, int, error) {
 	c.calls++
 	return c.opened, c.resolved, nil
+}
+
+func (c *countingIncidentCounter) ListActiveBetween(context.Context, time.Time, time.Time) ([]db.DigestIncident, error) {
+	c.listCalls++
+	return nil, nil
 }
 
 type fakeDigestNotifier struct {
@@ -87,8 +93,38 @@ func (n *fakeDigestNotifier) SendWeeklyDigest(_ context.Context, to string, data
 
 func newDigestSchedulerForTest(t *testing.T, pool *db.Pool, tenants digestTenantLister, services digestServiceLister, intervals digestIntervalLister, incidents digestIncidentCounter, notifier digestNotifier) *DigestScheduler {
 	t.Helper()
-	return NewDigestScheduler(testDatabaseURL(t), pool, tenants, services, intervals, incidents, notifier, zap.NewNop())
+	return NewDigestScheduler(testDatabaseURL(t), pool, tenants, services, intervals, incidents, notifier, db.NewTenantRepository(pool), zap.NewNop())
 }
+
+// rereadTenantLister returns just the fixture tenant, re-read from the
+// database on every call - so a second runOnce sees the last_digest_sent_at
+// the first one persisted, like SystemTenantLister would in production.
+type rereadTenantLister struct {
+	pool     *db.Pool
+	tenantID string
+}
+
+func (l *rereadTenantLister) List(ctx context.Context) ([]db.Tenant, error) {
+	tenant, err := db.NewTenantRepository(l.pool).Get(ctx, l.tenantID)
+	if err != nil {
+		return nil, err
+	}
+	return []db.Tenant{*tenant}, nil
+}
+
+func lastDigestSentAt(t *testing.T, pool *db.Pool, tenantID string) *time.Time {
+	t.Helper()
+	var at *time.Time
+	if err := pool.QueryRow(context.Background(), "SELECT last_digest_sent_at FROM tenants WHERE id = $1", tenantID).Scan(&at); err != nil {
+		t.Fatalf("reading last_digest_sent_at returned unexpected error: %v", err)
+	}
+	return at
+}
+
+// digestTestNow is a Monday 09:01 in America/Sao_Paulo (12:01 UTC) - inside
+// the fixture tenant's digest window (nil timezone resolves to the default
+// Sao Paulo zone, created_at is the zero value in static fixtures).
+var digestTestNow = time.Date(2026, 9, 7, 12, 1, 0, 0, time.UTC)
 
 // TestDigestScheduler_LeaderElection_ExactlyOneReplicaRuns proves NOTIFPREF-11:
 // with two schedulers firing the same cycle against the same database, the
@@ -143,7 +179,7 @@ func TestDigestScheduler_ZeroRecipients_NoContentNoSend(t *testing.T) {
 		&staticTenantLister{tenants: []db.Tenant{{ID: tenantID, Name: "cli-test-tenant"}}},
 		services, intervals, incidents, notifier)
 
-	if err := s.runOnce(context.Background(), time.Now()); err != nil {
+	if err := s.runOnce(context.Background(), digestTestNow); err != nil {
 		t.Fatalf("runOnce() returned unexpected error: %v", err)
 	}
 	if services.calls != 0 || intervals.calls != 0 || incidents.calls != 0 {
@@ -151,6 +187,10 @@ func TestDigestScheduler_ZeroRecipients_NoContentNoSend(t *testing.T) {
 	}
 	if len(notifier.sentTo) != 0 {
 		t.Errorf("sentTo = %v, want no sends", notifier.sentTo)
+	}
+	// Nobody opted in still settles the week, so later ticks don't re-check.
+	if at := lastDigestSentAt(t, pool, tenantID); at == nil || !at.Equal(digestTestNow) {
+		t.Errorf("last_digest_sent_at = %v, want %s", at, digestTestNow)
 	}
 }
 
@@ -169,8 +209,7 @@ func TestDigestScheduler_WithRecipients_SendsAssembledDigest(t *testing.T) {
 		&staticTenantLister{tenants: []db.Tenant{{ID: tenantID, Name: "cli-test-tenant"}}},
 		&countingServiceLister{}, &countingIntervalLister{}, incidents, notifier)
 
-	now := time.Date(2026, 9, 8, 0, 0, 0, 0, time.UTC)
-	if err := s.runOnce(context.Background(), now); err != nil {
+	if err := s.runOnce(context.Background(), digestTestNow); err != nil {
 		t.Fatalf("runOnce() returned unexpected error: %v", err)
 	}
 
@@ -183,8 +222,18 @@ func TestDigestScheduler_WithRecipients_SendsAssembledDigest(t *testing.T) {
 	if notifier.lastData.TenantName != "cli-test-tenant" {
 		t.Errorf("digest TenantName = %q, want %q", notifier.lastData.TenantName, "cli-test-tenant")
 	}
-	if notifier.lastData.PeriodEnd != "2026-09-08" || notifier.lastData.PeriodStart != "2026-09-01" {
-		t.Errorf("digest period = %q..%q, want 2026-09-01..2026-09-08", notifier.lastData.PeriodStart, notifier.lastData.PeriodEnd)
+	// The previous Sao Paulo calendar week, Mon Aug 31 00:00 - Mon Sep 7
+	// 00:00 local (03:00 UTC), not "7 days back from the tick".
+	wantStart := time.Date(2026, 8, 31, 3, 0, 0, 0, time.UTC)
+	wantEnd := time.Date(2026, 9, 7, 3, 0, 0, 0, time.UTC)
+	if !notifier.lastData.PeriodEnd.Equal(wantEnd) || !notifier.lastData.PeriodStart.Equal(wantStart) {
+		t.Errorf("digest period = %s..%s, want %s..%s", notifier.lastData.PeriodStart, notifier.lastData.PeriodEnd, wantStart, wantEnd)
+	}
+	if got := notifier.lastData.PeriodLabel(); got != "Aug 31 – Sep 6, 2026" {
+		t.Errorf("digest PeriodLabel() = %q, want %q", got, "Aug 31 – Sep 6, 2026")
+	}
+	if incidents.listCalls != 1 {
+		t.Errorf("ListActiveBetween calls = %d, want 1 (the incidents list is built once per tenant, not per recipient)", incidents.listCalls)
 	}
 }
 
@@ -210,23 +259,68 @@ func TestDigestScheduler_SystemTenantLister_ReturnsRealTenants(t *testing.T) {
 	}
 }
 
-// TestNextDigestFire covers the Monday 00:00 UTC computation.
-func TestNextDigestFire(t *testing.T) {
-	cases := []struct {
-		name string
-		now  time.Time
-		want time.Time
-	}{
-		{"sunday", time.Date(2026, 9, 6, 23, 0, 0, 0, time.UTC), time.Date(2026, 9, 7, 0, 0, 0, 0, time.UTC)},
-		{"monday after midnight", time.Date(2026, 9, 7, 0, 30, 0, 0, time.UTC), time.Date(2026, 9, 14, 0, 0, 0, 0, time.UTC)},
-		{"tuesday", time.Date(2026, 9, 8, 12, 0, 0, 0, time.UTC), time.Date(2026, 9, 14, 0, 0, 0, 0, time.UTC)},
+// TestDigestScheduler_SecondTickSameWeek_NoDoubleSend proves the persisted
+// marker: the first due tick sends and records last_digest_sent_at, a later
+// tick the same week (re-reading the tenant from the database, as
+// SystemTenantLister does) sends nothing, and the next week's tick sends
+// again.
+func TestDigestScheduler_SecondTickSameWeek_NoDoubleSend(t *testing.T) {
+	pool, tenantID := newServeTestPoolWithTenant(t)
+	if _, err := pool.Exec(context.Background(), "UPDATE tenants SET timezone = $2, created_at = $3 WHERE id = $1",
+		tenantID, "America/Sao_Paulo", digestTestNow.AddDate(0, -1, 0)); err != nil {
+		t.Fatalf("setup tenant timezone returned unexpected error: %v", err)
 	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			if got := nextDigestFire(tc.now); !got.Equal(tc.want) {
-				t.Errorf("nextDigestFire(%s) = %s, want %s", tc.now, got, tc.want)
-			}
-		})
+
+	notifier := &fakeDigestNotifier{recipients: []db.TenantMember{{UserID: "u1", Email: "owner@example.com", Role: "owner"}}}
+	s := newDigestSchedulerForTest(t, pool, &rereadTenantLister{pool: pool, tenantID: tenantID},
+		&countingServiceLister{}, &countingIntervalLister{}, &countingIncidentCounter{}, notifier)
+
+	ctx := context.Background()
+	if err := s.runOnce(ctx, digestTestNow); err != nil {
+		t.Fatalf("first runOnce() returned unexpected error: %v", err)
+	}
+	if len(notifier.sentTo) != 1 {
+		t.Fatalf("after first tick sentTo = %v, want exactly 1 send", notifier.sentTo)
+	}
+	if at := lastDigestSentAt(t, pool, tenantID); at == nil || !at.Equal(digestTestNow) {
+		t.Errorf("last_digest_sent_at = %v, want %s", at, digestTestNow)
+	}
+
+	if err := s.runOnce(ctx, digestTestNow.Add(time.Hour)); err != nil {
+		t.Fatalf("second runOnce() returned unexpected error: %v", err)
+	}
+	if len(notifier.sentTo) != 1 {
+		t.Errorf("after second tick the same week sentTo = %v, want still 1 (no double send)", notifier.sentTo)
+	}
+
+	if err := s.runOnce(ctx, digestTestNow.AddDate(0, 0, 7)); err != nil {
+		t.Fatalf("next-week runOnce() returned unexpected error: %v", err)
+	}
+	if len(notifier.sentTo) != 2 {
+		t.Errorf("after next week's tick sentTo = %v, want 2", notifier.sentTo)
+	}
+}
+
+// TestDigestScheduler_NotDue_NoWorkNoMarker: a tick outside the tenant's
+// Monday window builds and sends nothing and leaves the marker untouched.
+func TestDigestScheduler_NotDue_NoWorkNoMarker(t *testing.T) {
+	pool, tenantID := newServeTestPoolWithTenant(t)
+
+	notifier := &fakeDigestNotifier{recipients: []db.TenantMember{{UserID: "u1", Email: "owner@example.com", Role: "owner"}}}
+	incidents := &countingIncidentCounter{}
+	s := newDigestSchedulerForTest(t, pool,
+		&staticTenantLister{tenants: []db.Tenant{{ID: tenantID, Name: "cli-test-tenant"}}},
+		&countingServiceLister{}, &countingIntervalLister{}, incidents, notifier)
+
+	wednesday := time.Date(2026, 9, 9, 12, 1, 0, 0, time.UTC)
+	if err := s.runOnce(context.Background(), wednesday); err != nil {
+		t.Fatalf("runOnce() returned unexpected error: %v", err)
+	}
+	if len(notifier.sentTo) != 0 || incidents.calls != 0 {
+		t.Errorf("sentTo = %v, incident counts = %d, want no work outside the window", notifier.sentTo, incidents.calls)
+	}
+	if at := lastDigestSentAt(t, pool, tenantID); at != nil {
+		t.Errorf("last_digest_sent_at = %s, want NULL", at)
 	}
 }
 

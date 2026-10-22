@@ -17,6 +17,7 @@ import {
   useIncidentUpdates,
   useTransitionIncident,
 } from "./hooks";
+import { ClosingNoteField } from "./ClosingNoteField";
 
 const transitionValues: IncidentStatus[] = ["identified", "monitoring", "resolved"];
 
@@ -52,8 +53,39 @@ export function IncidentDetail() {
 
   const [body, setBody] = useState("");
   const [proposalError, setProposalError] = useState<string | null>(null);
+  const [closingNote, setClosingNote] = useState("");
+  const [transitionError, setTransitionError] = useState<string | null>(null);
+
+  // React Router keeps this component mounted when only `:id` changes
+  // (e.g. navigating from one incident straight to another), so the
+  // per-incident drafts are reset on id change - a closing note typed on
+  // one incident must never be sent when resolving another. Reset during
+  // render, same pattern as IncidentDetailDrawer.
+  const [draftsIncidentId, setDraftsIncidentId] = useState(id);
+  if (id !== draftsIncidentId) {
+    setDraftsIncidentId(id);
+    setBody("");
+    setClosingNote("");
+    setProposalError(null);
+    setTransitionError(null);
+  }
 
   const incident = incidents?.find((i) => i.id === id);
+
+  function handleTransition(status: IncidentStatus) {
+    setTransitionError(null);
+    transition.mutate(
+      { status, note: status === "resolved" ? closingNote : undefined },
+      {
+        onSuccess: () => {
+          if (status === "resolved") setClosingNote("");
+        },
+        onError: (err) => {
+          setTransitionError(err instanceof ApiError ? err.message : t("incidentDetail.genericTransitionError"));
+        },
+      },
+    );
+  }
 
   async function handlePublish(e: FormEvent) {
     e.preventDefault();
@@ -134,17 +166,27 @@ export function IncidentDetail() {
       ) : null}
 
       {canManage ? (
-        <div className="flex flex-wrap gap-2">
-          {transitionValues.map((value) => (
-            <Button
-              key={value}
-              variant="secondary"
-              disabled={transition.isPending || incident.status === value}
-              onClick={() => transition.mutate(value)}
-            >
-              {transitionLabel(t, value)}
-            </Button>
-          ))}
+        <div className="flex flex-col gap-2">
+          <div className="flex flex-wrap gap-2">
+            {transitionValues.map((value) => (
+              <Button
+                key={value}
+                variant="secondary"
+                disabled={transition.isPending || incident.status === value}
+                onClick={() => handleTransition(value)}
+              >
+                {transitionLabel(t, value)}
+              </Button>
+            ))}
+          </div>
+          {incident.status !== "resolved" ? (
+            <ClosingNoteField key={id} value={closingNote} onChange={setClosingNote} />
+          ) : null}
+          {transitionError ? (
+            <p role="alert" className="text-xs text-critical">
+              {transitionError}
+            </p>
+          ) : null}
         </div>
       ) : null}
 

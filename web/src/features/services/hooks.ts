@@ -21,6 +21,10 @@ interface ServiceResponse {
   name: string;
   slo_id: string;
   slo_name: string;
+  // slo_type/datadog_service_tag - "" when absent, same convention as the
+  // real backend's serviceResponse (slo-root-cause-enrichment RCA-01).
+  slo_type: string;
+  datadog_service_tag: string;
   monitor_mode: MonitorMode;
   poll_type: PollType | null;
   poll_target: string | null;
@@ -40,6 +44,8 @@ function toService(raw: ServiceResponse): Service {
     name: raw.name,
     slo_id: raw.slo_id,
     slo_name: raw.slo_name,
+    slo_type: raw.slo_type,
+    datadog_service_tag: raw.datadog_service_tag,
     monitor_mode: raw.monitor_mode,
     poll_type: raw.poll_type,
     poll_target: raw.poll_target,
@@ -108,6 +114,7 @@ interface ServiceDetailResponse extends ServiceResponse {
   status_analysis: string | null;
   incidents_30d: number;
   hourly_buckets: ServiceDetail["hourly_buckets"];
+  latest_reading: ServiceDetail["latest_reading"];
 }
 
 function toServiceDetail(raw: ServiceDetailResponse): ServiceDetail {
@@ -116,6 +123,7 @@ function toServiceDetail(raw: ServiceDetailResponse): ServiceDetail {
     status_analysis: raw.status_analysis,
     incidents_30d: raw.incidents_30d,
     hourly_buckets: raw.hourly_buckets,
+    latest_reading: raw.latest_reading,
   };
 }
 

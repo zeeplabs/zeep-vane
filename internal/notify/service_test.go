@@ -479,3 +479,21 @@ func TestSend_UnknownNotificationType_ReturnsError(t *testing.T) {
 		t.Errorf("error = %q, want the unchanged unknown-type message", err)
 	}
 }
+
+// TestSendWeeklyDigest_FillsDashboardAndIncidentsURLs: the digest's links
+// come from the admin base URL - the overview CTA and the incidents list
+// behind a capped incidents section's "+N more" line.
+func TestSendWeeklyDigest_FillsDashboardAndIncidentsURLs(t *testing.T) {
+	sender := &recordingSender{}
+	svc := newTestService(&fakeMembers{}, &fakePreferences{}, sender, "https://admin.example.com/")
+
+	if err := svc.SendWeeklyDigest(context.Background(), "owner@example.com", email.WeeklyDigestEmailData{}); err != nil {
+		t.Fatalf("SendWeeklyDigest() returned unexpected error: %v", err)
+	}
+	if got := sender.lastDigest.DashboardURL; got != "https://admin.example.com/overview" {
+		t.Errorf("DashboardURL = %q, want the admin overview", got)
+	}
+	if got := sender.lastDigest.IncidentsURL; got != "https://admin.example.com/incidents" {
+		t.Errorf("IncidentsURL = %q, want the admin incidents list", got)
+	}
+}

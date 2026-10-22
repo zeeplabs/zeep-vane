@@ -360,7 +360,7 @@ func TestIncidentRepository_SetSeverity_UpdatesAndReturnsIncident(t *testing.T) 
 	repo, pool := newIncidentRepoTestPool(t)
 	incident := createIncidentFixture(t, repo, pool, "severity update incident")
 
-	if _, err := repo.Transition(context.Background(), incident.ID, "resolved"); err != nil {
+	if _, _, err := repo.Transition(context.Background(), incident.ID, "resolved", "", nil); err != nil {
 		t.Fatalf("setup Transition() returned unexpected error: %v", err)
 	}
 
@@ -373,6 +373,58 @@ func TestIncidentRepository_SetSeverity_UpdatesAndReturnsIncident(t *testing.T) 
 	}
 	if updated.Status != "resolved" {
 		t.Errorf("Status = %q, want unchanged %q", updated.Status, "resolved")
+	}
+}
+
+// TestIncidentRepository_Transition_WithNote_PersistsAuthoredUpdate covers the
+// manual-resolve closing note: Transition records the system status entry
+// plus the note as a separate update attributed to authorID (not an AI
+// summary), and the note sorts newest so latestAuthoredNote picks it.
+func TestIncidentRepository_Transition_WithNote_PersistsAuthoredUpdate(t *testing.T) {
+	repo, pool := newIncidentRepoTestPool(t)
+	incident := createIncidentFixture(t, repo, pool, "transition with note incident")
+	authorID := notificationFixtureUser(t, pool)
+
+	resolved, _, err := repo.Transition(context.Background(), incident.ID, "resolved", "root cause fixed", &authorID)
+	if err != nil {
+		t.Fatalf("Transition() returned unexpected error: %v", err)
+	}
+	if resolved.Status != "resolved" || resolved.ResolvedAt == nil {
+		t.Errorf("Transition() = status %q resolved_at %v, want resolved with a timestamp", resolved.Status, resolved.ResolvedAt)
+	}
+
+	updates, err := repo.ListUpdates(context.Background(), incident.ID)
+	if err != nil {
+		t.Fatalf("ListUpdates() returned unexpected error: %v", err)
+	}
+	if len(updates) != 2 {
+		t.Fatalf("len(updates) = %d, want 2", len(updates))
+	}
+	if updates[0].Body != "root cause fixed" || updates[0].AuthorID == nil || *updates[0].AuthorID != authorID || updates[0].IsAISummary {
+		t.Errorf("newest update = %+v, want the note authored by %q, not an AI summary", updates[0], authorID)
+	}
+	if updates[1].Body != "Status changed to resolved" || updates[1].AuthorID != nil || updates[1].IsAISummary {
+		t.Errorf("older update = %+v, want the system status entry", updates[1])
+	}
+}
+
+// TestIncidentRepository_Transition_EmptyNote_OnlySystemEntry is the
+// regression guard: an empty note records exactly the system status entry,
+// identical to Transition's behavior before the note parameter existed.
+func TestIncidentRepository_Transition_EmptyNote_OnlySystemEntry(t *testing.T) {
+	repo, pool := newIncidentRepoTestPool(t)
+	incident := createIncidentFixture(t, repo, pool, "transition empty note incident")
+
+	if _, _, err := repo.Transition(context.Background(), incident.ID, "resolved", "", nil); err != nil {
+		t.Fatalf("Transition() returned unexpected error: %v", err)
+	}
+
+	updates, err := repo.ListUpdates(context.Background(), incident.ID)
+	if err != nil {
+		t.Fatalf("ListUpdates() returned unexpected error: %v", err)
+	}
+	if len(updates) != 1 || updates[0].Body != "Status changed to resolved" || updates[0].AuthorID != nil {
+		t.Errorf("updates = %+v, want only the system status entry", updates)
 	}
 }
 
@@ -468,7 +520,7 @@ func TestIncidentRepository_CountOpenedResolvedBetween(t *testing.T) {
 		t.Fatalf("reading fixture created_at returned unexpected error: %v", err)
 	}
 
-	if _, err := repo.Transition(ctx, first.ID, "resolved"); err != nil {
+	if _, _, err := repo.Transition(ctx, first.ID, "resolved", "", nil); err != nil {
 		t.Fatalf("setup Transition() returned unexpected error: %v", err)
 	}
 
@@ -490,6 +542,94 @@ func TestIncidentRepository_CountOpenedResolvedBetween(t *testing.T) {
 	}
 	if pastOpened != 0 || pastResolved != 0 {
 		t.Errorf("past-window counts = %d/%d, want 0/0", pastOpened, pastResolved)
+	}
+}
+
+// TestIncidentRepository_ListActiveBetween covers the weekly digest's
+// incidents list: an incident opened in the window, one resolved in it, and
+// one still open are all listed with their linked service names; a window
+// entirely before every fixture lists none of them.
+func TestIncidentRepository_ListActiveBetween(t *testing.T) {
+	repo, pool := newIncidentRepoTestPool(t)
+	ctx := context.Background()
+
+	svc := createServiceFixtureForIncidentAI(t, pool)
+	resolvedInc := createIncidentFixtureForService(t, repo, pool, "digest-list-resolved", svc.ID, false)
+	openInc := createIncidentFixture(t, repo, pool, "digest-list-open")
+
+	var anchor time.Time
+	if err := pool.QueryRow(ctx, "SELECT created_at FROM incidents WHERE id = $1", resolvedInc.ID).Scan(&anchor); err != nil {
+		t.Fatalf("reading fixture created_at returned unexpected error: %v", err)
+	}
+	if _, _, err := repo.Transition(ctx, resolvedInc.ID, "resolved", "", nil); err != nil {
+		t.Fatalf("setup Transition() returned unexpected error: %v", err)
+	}
+
+	got, err := repo.ListActiveBetween(ctx, anchor, time.Now().Add(time.Minute))
+	if err != nil {
+		t.Fatalf("ListActiveBetween() returned unexpected error: %v", err)
+	}
+	byID := map[string]DigestIncident{}
+	for _, inc := range got {
+		byID[inc.ID] = inc
+	}
+
+	resolved, ok := byID[resolvedInc.ID]
+	if !ok {
+		t.Fatalf("ListActiveBetween() = %+v, want the resolved fixture listed", got)
+	}
+	if resolved.Status != "resolved" || resolved.ResolvedAt == nil || resolved.Title != "digest-list-resolved" {
+		t.Errorf("resolved fixture = %+v, want status resolved with resolved_at set", resolved)
+	}
+	if len(resolved.ServiceNames) != 1 || resolved.ServiceNames[0] != svc.Name {
+		t.Errorf("resolved fixture ServiceNames = %v, want [%s]", resolved.ServiceNames, svc.Name)
+	}
+	open, ok := byID[openInc.ID]
+	if !ok {
+		t.Fatalf("ListActiveBetween() = %+v, want the still-open fixture listed", got)
+	}
+	if open.ResolvedAt != nil || len(open.ServiceNames) != 0 {
+		t.Errorf("open fixture = %+v, want no resolved_at and an empty (non-nil-safe) service list", open)
+	}
+
+	past, err := repo.ListActiveBetween(ctx, time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC), time.Date(2000, 1, 2, 0, 0, 0, 0, time.UTC))
+	if err != nil {
+		t.Fatalf("ListActiveBetween() (past window) returned unexpected error: %v", err)
+	}
+	for _, inc := range past {
+		if inc.ID == resolvedInc.ID || inc.ID == openInc.ID {
+			t.Errorf("past window listed fixture %s, want it excluded (opened after the window)", inc.ID)
+		}
+	}
+}
+
+// TestIncidentRepository_ListServiceNames covers the incident emails'
+// "Service" row lookup: linked names come back; an incident with no links
+// (or an unknown id) returns an empty slice, not an error.
+func TestIncidentRepository_ListServiceNames(t *testing.T) {
+	repo, pool := newIncidentRepoTestPool(t)
+	ctx := context.Background()
+
+	svc := createServiceFixtureForIncidentAI(t, pool)
+	linked := createIncidentFixtureForService(t, repo, pool, "service-names-linked", svc.ID, false)
+	unlinked := createIncidentFixture(t, repo, pool, "service-names-unlinked")
+
+	names, err := repo.ListServiceNames(ctx, linked.ID)
+	if err != nil {
+		t.Fatalf("ListServiceNames() returned unexpected error: %v", err)
+	}
+	if len(names) != 1 || names[0] != svc.Name {
+		t.Errorf("ListServiceNames(linked) = %v, want [%s]", names, svc.Name)
+	}
+
+	for _, id := range []string{unlinked.ID, "00000000-0000-0000-0000-000000000000"} {
+		names, err := repo.ListServiceNames(ctx, id)
+		if err != nil {
+			t.Fatalf("ListServiceNames(%s) returned unexpected error: %v", id, err)
+		}
+		if len(names) != 0 {
+			t.Errorf("ListServiceNames(%s) = %v, want empty", id, names)
+		}
 	}
 }
 
@@ -551,7 +691,7 @@ func TestIncidentRepository_CountOpen_MixedOpenAndResolved_CountsOnlyOpen(t *tes
 	if err := repo.Create(ctx, resolvedC, nil); err != nil {
 		t.Fatalf("Create(resolvedC) returned unexpected error: %v", err)
 	}
-	if _, err := repo.Transition(ctx, resolvedC.ID, "resolved"); err != nil {
+	if _, _, err := repo.Transition(ctx, resolvedC.ID, "resolved", "", nil); err != nil {
 		t.Fatalf("Transition(resolvedC, resolved) returned unexpected error: %v", err)
 	}
 
@@ -592,7 +732,7 @@ func TestIncidentRepository_CountOpenBreakdown_MixedSeverityAndStatus_CountsInde
 	if err := repo.Create(ctx, monitoring, nil); err != nil {
 		t.Fatalf("Create(monitoring) returned unexpected error: %v", err)
 	}
-	if _, err := repo.Transition(ctx, monitoring.ID, "monitoring"); err != nil {
+	if _, _, err := repo.Transition(ctx, monitoring.ID, "monitoring", "", nil); err != nil {
 		t.Fatalf("Transition(monitoring) returned unexpected error: %v", err)
 	}
 
@@ -603,7 +743,7 @@ func TestIncidentRepository_CountOpenBreakdown_MixedSeverityAndStatus_CountsInde
 	if _, err := repo.SetSeverity(ctx, resolvedCritical.ID, "critical"); err != nil {
 		t.Fatalf("SetSeverity(resolvedCritical) returned unexpected error: %v", err)
 	}
-	if _, err := repo.Transition(ctx, resolvedCritical.ID, "resolved"); err != nil {
+	if _, _, err := repo.Transition(ctx, resolvedCritical.ID, "resolved", "", nil); err != nil {
 		t.Fatalf("Transition(resolvedCritical, resolved) returned unexpected error: %v", err)
 	}
 

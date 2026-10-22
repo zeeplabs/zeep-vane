@@ -1,12 +1,81 @@
-<!doctype html>
-<html>
-  <body style="font-family: sans-serif; color: #1a1a1a;">
-    <p>{{if .TenantName}}Weekly digest for <strong>{{.TenantName}}</strong>{{else}}Your weekly digest{{end}}</p>
-    <p>Period: {{.PeriodStart}} to {{.PeriodEnd}}</p>
-    <ul>
-      <li>Uptime: {{printf "%.2f" .UptimePercent}}%</li>
-      <li>Incidents opened: {{.IncidentsOpened}}</li>
-      <li>Incidents resolved: {{.IncidentsResolved}}</li>
-    </ul>
-  </body>
-</html>
+<!DOCTYPE html>
+<html lang="en" xmlns="http://www.w3.org/1999/xhtml">
+<head>
+{{template "head_meta" .}}
+<title>Your weekly summary · Vane</title>
+{{template "head_style" .}}
+</head>
+<body style="margin:0; padding:0; background:#F1EFF7;">
+<div style="display:none; font-size:1px; color:#F1EFF7; line-height:1px; max-height:0; max-width:0; opacity:0; overflow:hidden; mso-hide:all;">Weekly summary: {{.AvgUptimeText}} average uptime, {{.IncidentCount}} {{if eq .IncidentCount 1}}incident{{else}}incidents{{end}}, {{.MTTRText}} MTTR.{{template "preheader_pad"}}</div>
+{{template "card_open" .}}
+<tr><td style="height:4px; line-height:4px; font-size:0; background:#5A46C7;">&nbsp;</td></tr>
+
+{{template "brand_header" .}}
+
+<tr><td style="padding:20px 40px 0 40px;" class="pad">
+  <div style="font-family:Arial, Helvetica, 'Segoe UI', sans-serif; font-size:11px; font-weight:bold; letter-spacing:0.09em; text-transform:uppercase; color:#5A46C7; margin:0 0 14px 0;">WEEKLY SUMMARY</div>
+  <h1 style="margin:0 0 4px 0; font-family:Arial, Helvetica, 'Segoe UI', sans-serif; font-size:24px; font-weight:bold; letter-spacing:-0.01em; color:#1C1526;">Your week in review</h1>
+  <p style="margin:0 0 26px 0; font-family:Arial, Helvetica, 'Segoe UI', sans-serif; font-size:13.5px; color:#9A93A8;">{{.PeriodLabel}}{{if .TenantName}} · {{.TenantName}}{{end}}</p>
+
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr>
+    <td width="33%" valign="top" style="padding:16px 14px; background:#F2F0FA; border-radius:10px;">
+    <div style="font-family:Arial, Helvetica, 'Segoe UI', sans-serif; font-size:20px; font-weight:bold; color:#146C4A;">{{.AvgUptimeText}}</div>
+    <div style="font-family:Arial, Helvetica, 'Segoe UI', sans-serif; font-size:11.5px; color:#6E6779; margin-top:4px;">Average uptime</div>
+  </td>
+    <td width="10">&nbsp;</td>
+    <td width="33%" valign="top" style="padding:16px 14px; background:#F2F0FA; border-radius:10px;">
+    <div style="font-family:Arial, Helvetica, 'Segoe UI', sans-serif; font-size:20px; font-weight:bold; color:#1C1526;">{{.IncidentCount}}</div>
+    <div style="font-family:Arial, Helvetica, 'Segoe UI', sans-serif; font-size:11.5px; color:#6E6779; margin-top:4px;">Incidents</div>
+  </td>
+    <td width="10">&nbsp;</td>
+    <td width="33%" valign="top" style="padding:16px 14px; background:#F2F0FA; border-radius:10px;">
+    <div style="font-family:Arial, Helvetica, 'Segoe UI', sans-serif; font-size:20px; font-weight:bold; color:#1C1526;">{{.MTTRText}}</div>
+    <div style="font-family:Arial, Helvetica, 'Segoe UI', sans-serif; font-size:11.5px; color:#6E6779; margin-top:4px;">Mean time to resolution</div>
+  </td>
+  </tr></table>
+
+  <div style="height:30px; line-height:30px; font-size:0;">&nbsp;</div>
+  <h2 style="margin:0 0 14px 0; font-family:Arial, Helvetica, 'Segoe UI', sans-serif; font-size:15px; font-weight:bold; color:#1C1526;">Monitored services</h2>
+  {{if .Services}}<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+    {{range $i, $s := .Services}}<tr>
+    <td style="padding:13px 0; {{if not ($.IsLastService $i)}}border-bottom:1px solid #ECE9F2;{{end}}">
+      <div style="font-family:Arial, Helvetica, 'Segoe UI', sans-serif; font-size:13.5px; font-weight:bold; color:#1C1526;">{{$s.Name}}</div>
+      <div style="margin-top:6px;"><table role="presentation" width="100" cellpadding="0" cellspacing="0" border="0" style="width:100px;"><tr>
+    <td width="{{$s.BarFilled}}" style="height:6px; line-height:6px; font-size:0; background:{{$s.BarColor}}; border-radius:3px 0 0 3px;">&nbsp;</td>
+    <td width="{{$s.BarEmpty}}" style="height:6px; line-height:6px; font-size:0; background:#ECE9F2; border-radius:0 3px 3px 0;">&nbsp;</td>
+  </tr></table></div>
+    </td>
+    <td align="right" style="padding:13px 0; {{if not ($.IsLastService $i)}}border-bottom:1px solid #ECE9F2;{{end}}">
+      <div style="font-family:Arial, Helvetica, 'Segoe UI', sans-serif; font-size:13.5px; font-weight:bold; color:#1C1526;">{{$s.UptimeText}}</div>
+      <div style="margin-top:6px; font-family:Arial, Helvetica, 'Segoe UI', sans-serif; font-size:11.5px; color:{{$s.StatusColor}};">{{$s.StatusLabel}}</div>
+    </td>
+  </tr>
+    {{end}}</table>
+  {{if .HiddenServices}}<p style="margin:12px 0 0 0; font-family:Arial, Helvetica, 'Segoe UI', sans-serif; font-size:12px; line-height:1.6; color:#9A93A8;">{{.HiddenServices}} more {{if eq .HiddenServices 1}}service{{else}}services{{end}} — view all on the dashboard.</p>{{end}}
+  {{else}}<p style="margin:0; font-family:Arial, Helvetica, 'Segoe UI', sans-serif; font-size:13px; line-height:1.6; color:#6E6779;">No services with monitoring data this week.</p>{{end}}
+
+  <div style="height:30px; line-height:30px; font-size:0;">&nbsp;</div>
+  <h2 style="margin:0 0 14px 0; font-family:Arial, Helvetica, 'Segoe UI', sans-serif; font-size:15px; font-weight:bold; color:#1C1526;">This week's incidents</h2>
+  {{if .Incidents}}<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+    {{range $i, $inc := .Incidents}}<tr>
+    <td style="padding:13px 0; {{if not ($.IsLastIncident $i)}}border-bottom:1px solid #ECE9F2;{{end}}">
+      <div style="font-family:Arial, Helvetica, 'Segoe UI', sans-serif; font-size:13.5px; font-weight:bold; color:#1C1526;">{{$inc.Title}}</div>
+      <div style="margin-top:3px; font-family:Arial, Helvetica, 'Segoe UI', sans-serif; font-size:12px; color:#9A93A8;">{{if $inc.ServiceName}}{{$inc.ServiceName}} · {{end}}{{$inc.DurationText}}</div>
+    </td>
+    <td align="right" style="padding:13px 0; {{if not ($.IsLastIncident $i)}}border-bottom:1px solid #ECE9F2;{{end}}"><span style="display:inline-block; padding:4px 10px; border-radius:999px; background:{{$inc.PillBg}}; color:{{$inc.PillColor}}; font-family:Arial, Helvetica, 'Segoe UI', sans-serif; font-size:11px; font-weight:bold;">{{$inc.StatusPill}}</span></td>
+  </tr>
+    {{end}}</table>
+  {{if .HiddenIncidents}}<p style="margin:12px 0 0 0; font-family:Arial, Helvetica, 'Segoe UI', sans-serif; font-size:12px; line-height:1.6; color:#9A93A8;">+{{.HiddenIncidents}} more — {{if .IncidentsURL}}<a href="{{.IncidentsURL}}" target="_blank" style="color:#5A46C7; text-decoration:underline;">view all incidents</a>{{else}}view all incidents{{end}}</p>{{end}}
+  {{else}}<p style="margin:0; font-family:Arial, Helvetica, 'Segoe UI', sans-serif; font-size:13px; line-height:1.6; color:#6E6779;">No incidents this week.</p>{{end}}
+
+  {{if .DashboardURL}}<div style="height:32px; line-height:32px; font-size:0;">&nbsp;</div>
+
+<table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr>
+  <td bgcolor="#5A46C7" style="border-radius:9px;">
+    <a href="{{.DashboardURL}}" target="_blank" style="display:block; padding:13px 28px; font-family:Arial, Helvetica, 'Segoe UI', sans-serif; font-size:14px; font-weight:bold; color:#FFFFFF; text-decoration:none; border-radius:9px;">View full dashboard</a>
+  </td>
+</tr></table>{{end}}
+</td></tr>
+{{template "footer_open" .}}
+  {{if .NotificationPrefsURL}}<p style="margin:10px 0 0 0; font-family:Arial, Helvetica, 'Segoe UI', sans-serif; font-size:12px; line-height:1.6; color:#9A93A8;"><a href="{{.FrequencySettingsURL}}" style="color:#9A93A8; text-decoration:underline;">Change how often you get these emails</a> · <a href="{{.UnsubscribeURL}}" style="color:#9A93A8; text-decoration:underline;">Unsubscribe</a></p>{{end}}
+{{template "footer_close" .}}

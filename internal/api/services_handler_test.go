@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -1049,6 +1050,127 @@ func TestGetService_Incidents30d_ReflectsCount(t *testing.T) {
 	}
 }
 
+// TestGetService_WithReading_ReturnsLatestReading covers BURN-13/BURN-14:
+// a reading persisted by the poller comes back on the detail endpoint in
+// the latest_reading shape, last_error_at is never exposed, and a +Inf
+// burn rate (target 100, errors > 0) stored as Postgres 'Infinity'
+// round-trips to JSON null instead of breaking the encoder.
+func TestGetService_WithReading_ReturnsLatestReading(t *testing.T) {
+	r, pool, admins := newServicesRouter(t)
+	token := issueTestSessionTokenWithTenant(t, admins, pool)
+	name := uniqueServiceName(t)
+	created := createServiceForDetail(t, r, pool, token, name, "slo-detail-reading", "")
+
+	readAt := time.Date(2026, 10, 22, 12, 0, 0, 0, time.UTC)
+	if _, err := pool.Exec(context.Background(),
+		`UPDATE services
+		 SET last_burn_rate_short = 12.3, last_burn_rate_long = 'Infinity'::float8,
+		     last_window_errors = 5, last_window_requests = 120,
+		     last_reading_at = $1, last_error_at = $1
+		 WHERE id = $2`, readAt, created.ID); err != nil {
+		t.Fatalf("setup UPDATE returned unexpected error: %v", err)
+	}
+
+	rec := getServiceDetail(t, r, token, created.ID)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	if strings.Contains(rec.Body.String(), "last_error_at") {
+		t.Errorf("body leaks last_error_at: %s", rec.Body.String())
+	}
+
+	var detail serviceDetailResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &detail); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+	reading := detail.LatestReading
+	if reading == nil {
+		t.Fatalf("detail.LatestReading = nil, want a reading, body = %s", rec.Body.String())
+	}
+	if reading.BurnRateShort == nil || *reading.BurnRateShort != 12.3 {
+		t.Errorf("BurnRateShort = %v, want 12.3", reading.BurnRateShort)
+	}
+	if reading.BurnRateLong != nil {
+		t.Errorf("BurnRateLong = %v, want nil (stored +Inf)", *reading.BurnRateLong)
+	}
+	if reading.WindowErrors != 5 {
+		t.Errorf("WindowErrors = %d, want 5", reading.WindowErrors)
+	}
+	if reading.WindowRequests != 120 {
+		t.Errorf("WindowRequests = %d, want 120", reading.WindowRequests)
+	}
+	if !reading.ReadAt.Equal(readAt) {
+		t.Errorf("ReadAt = %v, want %v", reading.ReadAt, readAt)
+	}
+}
+
+// TestGetService_NoReading_LatestReadingNull covers BURN-14's empty state:
+// a service the poller has never read serializes latest_reading as an
+// explicit null (the key is present, not omitted).
+func TestGetService_NoReading_LatestReadingNull(t *testing.T) {
+	r, pool, admins := newServicesRouter(t)
+	token := issueTestSessionTokenWithTenant(t, admins, pool)
+	name := uniqueServiceName(t)
+	created := createServiceForDetail(t, r, pool, token, name, "slo-detail-no-reading", "")
+
+	rec := getServiceDetail(t, r, token, created.ID)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), `"latest_reading":null`) {
+		t.Errorf("body = %s, want latest_reading:null", rec.Body.String())
+	}
+}
+
+// TestListServices_WithReading_OmitsLatestReading guards the lean list
+// payload: even with a persisted reading, GET /api/services never carries
+// latest_reading or any reading field - it is detail-only (BURN-14).
+func TestListServices_WithReading_OmitsLatestReading(t *testing.T) {
+	r, pool, admins := newServicesRouter(t)
+	token := issueTestSessionTokenWithTenant(t, admins, pool)
+	name := uniqueServiceName(t)
+	created := createServiceForDetail(t, r, pool, token, name, "slo-list-reading", "")
+
+	if _, err := pool.Exec(context.Background(),
+		`UPDATE services
+		 SET last_burn_rate_short = 1.5, last_burn_rate_long = 0.5,
+		     last_window_errors = 1, last_window_requests = 100, last_reading_at = now()
+		 WHERE id = $1`, created.ID); err != nil {
+		t.Fatalf("setup UPDATE returned unexpected error: %v", err)
+	}
+
+	// The services table is shared across this package's tests, so the
+	// seeded row can land on any page - walk them all (same termination as
+	// findServiceAcrossPages) and check every raw page body.
+	seen := false
+	for page := 1; ; page++ {
+		rec := getServicesPage(t, r, token, page)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("page=%d status = %d, want %d, body = %s", page, rec.Code, http.StatusOK, rec.Body.String())
+		}
+		body := rec.Body.String()
+		if strings.Contains(body, created.ID) {
+			seen = true
+		}
+		for _, key := range []string{"latest_reading", "burn_rate", "window_errors", "window_requests"} {
+			if strings.Contains(body, key) {
+				t.Errorf("page=%d list body contains %q, want detail-only: %s", page, key, body)
+			}
+		}
+
+		var got Page[serviceResponse]
+		if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+			t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+		}
+		if len(got.Items) == 0 || page*got.PageSize >= got.Total {
+			break
+		}
+	}
+	if !seen {
+		t.Fatalf("seeded service %s not present across any page of GET /api/services", created.ID)
+	}
+}
+
 // TestUpdateService_ValidRequest_200RenamesAndReturnsFullBody covers
 // SVCEDIT-01/02: name changes, monitor_mode/slo_id/slo_name/current_status
 // stay unchanged, and the response is a full serviceResponse.
@@ -1570,4 +1692,107 @@ func TestDeleteService_Unattached_RecordsServiceDeletedAuditLabelSurvivingDelete
 	if gotTargetLabel != name {
 		t.Errorf("admin_audit_log target_label = %q, want %q (must survive the delete above)", gotTargetLabel, name)
 	}
+}
+
+// decodeDetailRaw fetches GET /api/services/{id} and decodes it into a raw
+// JSON map, so assertions pin the wire contract the frontend reads rather
+// than the Go DTO.
+func decodeDetailRaw(t *testing.T, r http.Handler, token, id string) map[string]any {
+	t.Helper()
+	rec := getServiceDetail(t, r, token, id)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	var body map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+	return body
+}
+
+// TestGetService_SLOMode_DetailJSONHasMonitorModeSLO guards the detail
+// drawer's latest-reading gate: monitor_mode used to be "" on GET
+// /api/services/{id} because ServiceRepository.Get never selected it, so
+// the drawer (which renders the block only for slo-mode services) never
+// showed it in production.
+func TestGetService_SLOMode_DetailJSONHasMonitorModeSLO(t *testing.T) {
+	r, pool, admins := newServicesRouter(t)
+	token := issueTestSessionTokenWithTenant(t, admins, pool)
+	created := createServiceForDetail(t, r, pool, token, uniqueServiceName(t), "slo-detail-mode", "Detail Mode SLO")
+
+	body := decodeDetailRaw(t, r, token, created.ID)
+	if body["monitor_mode"] != "slo" {
+		t.Errorf("monitor_mode = %v, want %q", body["monitor_mode"], "slo")
+	}
+	for _, key := range []string{"poll_type", "poll_target", "poll_interval_seconds"} {
+		value, present := body[key]
+		if !present || value != nil {
+			t.Errorf("%s = %v (present %v), want explicit null for an slo-mode service", key, value, present)
+		}
+	}
+}
+
+// TestGetService_PollingMode_DetailJSONHasPollFields is the polling-mode
+// counterpart: monitor_mode "polling" plus the persisted poll_* values.
+func TestGetService_PollingMode_DetailJSONHasPollFields(t *testing.T) {
+	r, pool, admins := newServicesRouter(t)
+	token := issueTestSessionTokenWithTenant(t, admins, pool)
+	name := uniqueServiceName(t) + "-detail-polling"
+	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), "DELETE FROM services WHERE name = $1", name) })
+
+	rec := postCreateServicePolling(t, r, token, name, "tcp", "polling-detail-test.invalid:5432", 60)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("setup create status = %d, want %d, body = %s", rec.Code, http.StatusCreated, rec.Body.String())
+	}
+	var created serviceResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &created); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+
+	body := decodeDetailRaw(t, r, token, created.ID)
+	if body["monitor_mode"] != "polling" {
+		t.Errorf("monitor_mode = %v, want %q", body["monitor_mode"], "polling")
+	}
+	if body["poll_type"] != "tcp" {
+		t.Errorf("poll_type = %v, want %q", body["poll_type"], "tcp")
+	}
+	if body["poll_target"] != "polling-detail-test.invalid:5432" {
+		t.Errorf("poll_target = %v, want %q", body["poll_target"], "polling-detail-test.invalid:5432")
+	}
+	if body["poll_interval_seconds"] != float64(60) {
+		t.Errorf("poll_interval_seconds = %v, want 60", body["poll_interval_seconds"])
+	}
+}
+
+// TestListServices_ItemsCarryMonitorMode asserts the paginated list items
+// carry monitor_mode too (ListPaginated had the same missing column).
+func TestListServices_ItemsCarryMonitorMode(t *testing.T) {
+	r, pool, admins := newServicesRouter(t)
+	token := issueTestSessionTokenWithTenant(t, admins, pool)
+	created := createServiceForDetail(t, r, pool, token, uniqueServiceName(t), "slo-list-mode", "")
+
+	// Walk every page: other tests' services can share the tenant and push
+	// this one past page 1 (the list is ordered by name).
+	for pageNum := 1; ; pageNum++ {
+		rec := getServicesPage(t, r, token, pageNum)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+		}
+		var page Page[serviceResponse]
+		if err := json.Unmarshal(rec.Body.Bytes(), &page); err != nil {
+			t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+		}
+		for _, item := range page.Items {
+			if item.ID == created.ID {
+				if item.MonitorMode != "slo" {
+					t.Errorf("list item MonitorMode = %q, want %q", item.MonitorMode, "slo")
+				}
+				return
+			}
+		}
+		if len(page.Items) == 0 || pageNum*page.PageSize >= page.Total {
+			break
+		}
+	}
+	t.Fatalf("no list page contained the created service %s", created.ID)
 }

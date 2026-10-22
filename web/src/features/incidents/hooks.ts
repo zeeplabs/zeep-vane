@@ -49,14 +49,25 @@ export function useAddIncidentUpdate(incidentId: string) {
   });
 }
 
+export interface TransitionIncidentInput {
+  status: IncidentStatus;
+  // Optional closing note, only honored by the backend when status is
+  // "resolved": recorded as an authored timeline entry in the same
+  // transaction, and used as the resolution email's summary. Omitted when
+  // blank so a plain resolve stays a `{status}`-only request.
+  note?: string;
+}
+
 export function useTransitionIncident(incidentId: string) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (status: IncidentStatus) =>
-      apiFetch<Incident>(`/api/incidents/${incidentId}`, {
+    mutationFn: ({ status, note }: TransitionIncidentInput) => {
+      const trimmed = status === "resolved" ? note?.trim() : undefined;
+      return apiFetch<Incident>(`/api/incidents/${incidentId}`, {
         method: "PATCH",
-        body: JSON.stringify({ status }),
-      }),
+        body: JSON.stringify(trimmed ? { status, note: trimmed } : { status }),
+      });
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["incidents"] });
     },

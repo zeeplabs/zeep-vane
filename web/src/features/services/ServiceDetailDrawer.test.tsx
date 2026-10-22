@@ -8,7 +8,8 @@ import { TestQueryProvider } from "../../test/queryClient";
 import { apiFetch } from "../../lib/apiClient";
 import { AuthProvider } from "../../auth/AuthProvider";
 import { ServiceDetailDrawer } from "./ServiceDetailDrawer";
-import type { ServiceStatus } from "../../types/api";
+import i18n from "../../lib/i18n";
+import type { ServiceLatestReading, ServiceStatus } from "../../types/api";
 
 function buildBuckets(count: number, status: "operational" | "degraded" | "outage" | "no_data" = "operational") {
   return Array.from({ length: count }, (_, i) => ({
@@ -17,14 +18,21 @@ function buildBuckets(count: number, status: "operational" | "degraded" | "outag
   }));
 }
 
+// DetailFixture mirrors the real GET /api/services/{id} body key for key
+// (internal/api's serviceDetailResponse). monitor_mode is typed as a plain
+// string so a test can reproduce a malformed/empty value.
 interface DetailFixture {
   id: string;
   name: string;
-  slo_id: string | null;
-  slo_name: string | null;
-  monitor_mode?: "slo" | "polling";
-  poll_target?: string | null;
-  environment?: "" | "development" | "staging" | "production";
+  slo_id: string;
+  slo_name: string;
+  slo_type: string;
+  datadog_service_tag: string;
+  monitor_mode: string;
+  poll_type: "http" | "tcp" | "ping" | null;
+  poll_target: string | null;
+  poll_interval_seconds: number | null;
+  environment: "" | "development" | "staging" | "production";
   current_status: ServiceStatus;
   last_status_change_at: string;
   uptime_30d: number | null;
@@ -32,6 +40,7 @@ interface DetailFixture {
   status_analysis: string | null;
   incidents_30d: number;
   hourly_buckets: ReturnType<typeof buildBuckets>;
+  latest_reading: ServiceLatestReading | null;
 }
 
 function mockDetail(overrides: Partial<DetailFixture> = {}) {
@@ -40,6 +49,12 @@ function mockDetail(overrides: Partial<DetailFixture> = {}) {
     name: "Checkout",
     slo_id: "slo-1",
     slo_name: "Checkout latência p95",
+    slo_type: "metric",
+    datadog_service_tag: "checkout-svc",
+    monitor_mode: "slo",
+    poll_type: null,
+    poll_target: null,
+    poll_interval_seconds: null,
     environment: "",
     current_status: "operational",
     last_status_change_at: new Date().toISOString(),
@@ -48,6 +63,7 @@ function mockDetail(overrides: Partial<DetailFixture> = {}) {
     status_analysis: null,
     incidents_30d: 2,
     hourly_buckets: buildBuckets(24),
+    latest_reading: null,
     ...overrides,
   };
   server.use(http.get("/api/services/:id", () => HttpResponse.json(base)));
@@ -154,10 +170,14 @@ describe("ServiceDetailDrawer", () => {
   // blank/undefined.
   it("shows poll_target as the subtitle for a monitor_mode=polling service (T9)", async () => {
     mockDetail({
-      slo_id: null,
-      slo_name: null,
+      slo_id: "",
+      slo_name: "",
+      slo_type: "",
+      datadog_service_tag: "",
       monitor_mode: "polling",
+      poll_type: "tcp",
       poll_target: "cache.acme.health:6379",
+      poll_interval_seconds: 60,
     });
     await loginAsOwner();
     renderDrawer();
@@ -363,5 +383,210 @@ describe("ServiceDetailDrawer", () => {
 
     await screen.findByText("Checkout");
     expect(screen.queryByRole("button", { name: "Excluir serviço" })).not.toBeInTheDocument();
+  });
+
+  // poller-burn-rate-classification BURN-14: the "Última leitura" block.
+  describe("latest reading", () => {
+    function reading(overrides: Partial<ServiceLatestReading> = {}): ServiceLatestReading {
+      return {
+        burn_rate_short: 12.34,
+        burn_rate_long: 3.06,
+        window_errors: 37,
+        window_requests: 5000,
+        read_at: new Date(Date.now() - 2 * 60 * 1000).toISOString(),
+        ...overrides,
+      };
+    }
+
+    it("renders error rate, error/request counts, burn rates and relative read time", async () => {
+      mockDetail({ latest_reading: reading() });
+      await loginAsOwner();
+      renderDrawer();
+
+      expect(await screen.findByText("Última leitura")).toBeInTheDocument();
+      expect(screen.getByText("0,74%")).toBeInTheDocument();
+      expect(screen.getByText("37 erros em 5.000 requisições")).toBeInTheDocument();
+      expect(screen.getByText("12,3x")).toBeInTheDocument();
+      expect(screen.getByText("3,1x")).toBeInTheDocument();
+      expect(screen.queryByTestId("stale-reading")).not.toBeInTheDocument();
+      expect(screen.getByText("há 2 min")).toBeInTheDocument();
+      expect(screen.getByText("1x = consumo exato do orçamento de erro do SLO.")).toBeInTheDocument();
+    });
+
+    it("renders the empty state when latest_reading is null", async () => {
+      mockDetail({ latest_reading: null });
+      await loginAsOwner();
+      renderDrawer();
+
+      expect(await screen.findByText("Última leitura")).toBeInTheDocument();
+      expect(screen.getByText("Ainda sem leitura do Datadog.")).toBeInTheDocument();
+      expect(screen.queryByText("Taxa de erro (5 min)")).not.toBeInTheDocument();
+    });
+
+    it("renders ∞ for a null (unbounded) burn rate when the window has errors", async () => {
+      mockDetail({
+        latest_reading: reading({ burn_rate_short: null, burn_rate_long: null, window_errors: 1, window_requests: 1 }),
+      });
+      await loginAsOwner();
+      renderDrawer();
+
+      await screen.findByText("Última leitura");
+      expect(screen.getAllByText("∞")).toHaveLength(2);
+      expect(screen.getByText("1 erro em 1 requisição")).toBeInTheDocument();
+    });
+
+    it("renders — for a null short burn rate when the window has no errors", async () => {
+      mockDetail({ latest_reading: reading({ burn_rate_short: null, burn_rate_long: 0.5, window_errors: 0 }) });
+      await loginAsOwner();
+      renderDrawer();
+
+      await screen.findByText("Última leitura");
+      expect(screen.queryByText("∞")).not.toBeInTheDocument();
+      expect(screen.getByText("—")).toBeInTheDocument();
+      expect(screen.getByText("0,5x")).toBeInTheDocument();
+    });
+
+    it("shows 'Sem tráfego' and — for the 5 min burn when the window had no requests", async () => {
+      mockDetail({
+        latest_reading: reading({ burn_rate_short: 0, burn_rate_long: 0.2, window_errors: 0, window_requests: 0 }),
+      });
+      await loginAsOwner();
+      renderDrawer();
+
+      expect(await screen.findByText("Sem tráfego")).toBeInTheDocument();
+      expect(screen.queryByText(/requisiç/)).not.toBeInTheDocument();
+      // No traffic in the short window: no "0,0x" pretending to be a
+      // measurement. The 1 h burn keeps its own value.
+      expect(screen.queryByText("0,0x")).not.toBeInTheDocument();
+      expect(screen.getByText("—")).toBeInTheDocument();
+      expect(screen.getByText("0,2x")).toBeInTheDocument();
+    });
+
+    it("shows <0,01% when there are errors but the rate rounds to zero", async () => {
+      mockDetail({ latest_reading: reading({ window_errors: 1, window_requests: 1_000_000 }) });
+      await loginAsOwner();
+      renderDrawer();
+
+      await screen.findByText("Última leitura");
+      expect(screen.getByText("<0,01%")).toBeInTheDocument();
+      expect(screen.queryByText("0,00%")).not.toBeInTheDocument();
+    });
+
+    it("shows 0,00% (not <0,01%) when the window has requests and no errors", async () => {
+      mockDetail({ latest_reading: reading({ burn_rate_short: 0, window_errors: 0, window_requests: 1200 }) });
+      await loginAsOwner();
+      renderDrawer();
+
+      await screen.findByText("Última leitura");
+      expect(screen.getByText("0,00%")).toBeInTheDocument();
+    });
+
+    it("flags a reading older than 15 minutes as stale", async () => {
+      mockDetail({ latest_reading: reading({ read_at: new Date(Date.now() - 20 * 60 * 1000).toISOString() }) });
+      await loginAsOwner();
+      renderDrawer();
+
+      await screen.findByText("Última leitura");
+      expect(screen.getByTestId("stale-reading")).toHaveTextContent("Leitura desatualizada");
+      expect(screen.getByText("há 20 min")).toBeInTheDocument();
+    });
+
+    it("does not flag a reading 14 minutes old as stale", async () => {
+      mockDetail({ latest_reading: reading({ read_at: new Date(Date.now() - 14 * 60 * 1000).toISOString() }) });
+      await loginAsOwner();
+      renderDrawer();
+
+      await screen.findByText("Última leitura");
+      expect(screen.queryByTestId("stale-reading")).not.toBeInTheDocument();
+    });
+
+    it("shows the monitor-based text instead of the empty state for a monitor-based SLO", async () => {
+      mockDetail({ slo_type: "monitor", latest_reading: null });
+      await loginAsOwner();
+      renderDrawer();
+
+      expect(await screen.findByText("Última leitura")).toBeInTheDocument();
+      expect(
+        screen.getByText("Leitura de burn rate indisponível para SLOs baseados em monitor.")
+      ).toBeInTheDocument();
+      expect(screen.queryByText("Ainda sem leitura do Datadog.")).not.toBeInTheDocument();
+    });
+
+    it("never shows a leftover reading for a monitor-based SLO (the poller no longer refreshes it)", async () => {
+      mockDetail({ slo_type: "monitor", latest_reading: reading() });
+      await loginAsOwner();
+      renderDrawer();
+
+      await screen.findByText("Última leitura");
+      expect(
+        screen.getByText("Leitura de burn rate indisponível para SLOs baseados em monitor.")
+      ).toBeInTheDocument();
+      expect(screen.queryByText("12,3x")).not.toBeInTheDocument();
+    });
+
+    // Regression: GET /api/services/{id} used to send monitor_mode "" for
+    // every service (ServiceRepository.Get never selected the column), and
+    // the old `=== "slo"` gate hid the block in production.
+    it("still renders the block when monitor_mode is empty", async () => {
+      mockDetail({ monitor_mode: "", latest_reading: reading() });
+      await loginAsOwner();
+      renderDrawer();
+
+      expect(await screen.findByText("Última leitura")).toBeInTheDocument();
+      expect(screen.getByText("12,3x")).toBeInTheDocument();
+    });
+
+    it("does not render the block for a monitor_mode=polling service", async () => {
+      mockDetail({
+        monitor_mode: "polling",
+        slo_id: "",
+        slo_name: "",
+        slo_type: "",
+        datadog_service_tag: "",
+        poll_type: "tcp",
+        poll_target: "cache.acme.health:6379",
+        poll_interval_seconds: 60,
+      });
+      await loginAsOwner();
+      renderDrawer();
+
+      await screen.findByText("Checkout");
+      expect(screen.queryByText("Última leitura")).not.toBeInTheDocument();
+      expect(screen.queryByText("Ainda sem leitura do Datadog.")).not.toBeInTheDocument();
+    });
+
+    it("renders the English copy when the UI language is en", async () => {
+      await i18n.changeLanguage("en");
+      try {
+        mockDetail({ latest_reading: reading() });
+        await loginAsOwner();
+        renderDrawer();
+
+        expect(await screen.findByText("Latest reading")).toBeInTheDocument();
+        expect(screen.getByText("37 errors in 5,000 requests")).toBeInTheDocument();
+        expect(screen.getByText("2 min ago")).toBeInTheDocument();
+        expect(screen.getByText("0.74%")).toBeInTheDocument();
+        expect(screen.getByText("12.3x")).toBeInTheDocument();
+      } finally {
+        await i18n.changeLanguage("pt-BR");
+      }
+    });
+
+    it("renders the English stale and monitor-based copy when the UI language is en", async () => {
+      await i18n.changeLanguage("en");
+      try {
+        mockDetail({ latest_reading: reading({ read_at: new Date(Date.now() - 30 * 60 * 1000).toISOString() }) });
+        await loginAsOwner();
+        const { unmount } = renderDrawer();
+        expect(await screen.findByTestId("stale-reading")).toHaveTextContent("Stale reading");
+        unmount();
+
+        mockDetail({ slo_type: "monitor" });
+        renderDrawer();
+        expect(await screen.findByText("Burn-rate reading unavailable for monitor-based SLOs.")).toBeInTheDocument();
+      } finally {
+        await i18n.changeLanguage("pt-BR");
+      }
+    });
   });
 });

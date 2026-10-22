@@ -199,7 +199,7 @@ func TestOverviewHandler_Get_RealData_ReturnsAllAggregates(t *testing.T) {
 		created = append(created, inc)
 		switch i {
 		case 0, 1:
-			if _, err := incidents.Transition(ctx, inc.ID, "resolved"); err != nil {
+			if _, _, err := incidents.Transition(ctx, inc.ID, "resolved", "", nil); err != nil {
 				t.Fatalf("Transition() returned unexpected error: %v", err)
 			}
 		case 2:
@@ -207,7 +207,7 @@ func TestOverviewHandler_Get_RealData_ReturnsAllAggregates(t *testing.T) {
 				t.Fatalf("SetSeverity(inc-2) returned unexpected error: %v", err)
 			}
 		case 3:
-			if _, err := incidents.Transition(ctx, inc.ID, "monitoring"); err != nil {
+			if _, _, err := incidents.Transition(ctx, inc.ID, "monitoring", "", nil); err != nil {
 				t.Fatalf("Transition(inc-3, monitoring) returned unexpected error: %v", err)
 			}
 		}
@@ -425,7 +425,7 @@ func TestOverviewHandler_Get_RecentIncidents_IncludesResolvedAndCapsAtThree(t *t
 	if err := incidents.Create(ctx, resolvedOld, nil); err != nil {
 		t.Fatalf("Create() returned unexpected error: %v", err)
 	}
-	if _, err := incidents.Transition(ctx, resolvedOld.ID, "resolved"); err != nil {
+	if _, _, err := incidents.Transition(ctx, resolvedOld.ID, "resolved", "", nil); err != nil {
 		t.Fatalf("Transition() returned unexpected error: %v", err)
 	}
 	time.Sleep(2 * time.Millisecond)
@@ -434,7 +434,7 @@ func TestOverviewHandler_Get_RecentIncidents_IncludesResolvedAndCapsAtThree(t *t
 	if err := incidents.Create(ctx, resolvedNewer, nil); err != nil {
 		t.Fatalf("Create() returned unexpected error: %v", err)
 	}
-	if _, err := incidents.Transition(ctx, resolvedNewer.ID, "resolved"); err != nil {
+	if _, _, err := incidents.Transition(ctx, resolvedNewer.ID, "resolved", "", nil); err != nil {
 		t.Fatalf("Transition() returned unexpected error: %v", err)
 	}
 	time.Sleep(2 * time.Millisecond)

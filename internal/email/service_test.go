@@ -5,6 +5,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	"go.uber.org/zap"
 
@@ -432,11 +433,14 @@ func TestSendAdminInvite_ActiveProvider_RendersTemplateAndSendsWithDecryptedKeyA
 	if msg.FromEmail != "invites@acme.example.com" || msg.FromName != "Acme Invites" {
 		t.Errorf("Message.FromEmail/FromName = %q/%q, want stored %q/%q (EMAIL-07)", msg.FromEmail, msg.FromName, "invites@acme.example.com", "Acme Invites")
 	}
-	if !strings.Contains(msg.HTMLBody, data.AcceptURL) || !strings.Contains(msg.HTMLBody, data.Role) || !strings.Contains(msg.HTMLBody, data.CompanyName) {
-		t.Errorf("HTMLBody = %q, want it to contain AcceptURL=%q, Role=%q, CompanyName=%q (EMAIL-09)", msg.HTMLBody, data.AcceptURL, data.Role, data.CompanyName)
+	if !strings.Contains(msg.HTMLBody, data.AcceptURL) || !strings.Contains(msg.HTMLBody, data.RoleLabel()) || !strings.Contains(msg.HTMLBody, data.CompanyName) {
+		t.Errorf("HTMLBody = %q, want it to contain AcceptURL=%q, RoleLabel=%q, CompanyName=%q (EMAIL-09)", msg.HTMLBody, data.AcceptURL, data.RoleLabel(), data.CompanyName)
 	}
-	if !strings.Contains(msg.TextBody, data.AcceptURL) || !strings.Contains(msg.TextBody, data.Role) || !strings.Contains(msg.TextBody, data.CompanyName) {
-		t.Errorf("TextBody = %q, want it to contain AcceptURL=%q, Role=%q, CompanyName=%q (EMAIL-09)", msg.TextBody, data.AcceptURL, data.Role, data.CompanyName)
+	if !strings.Contains(msg.TextBody, data.AcceptURL) || !strings.Contains(msg.TextBody, data.RoleLabel()) || !strings.Contains(msg.TextBody, data.CompanyName) {
+		t.Errorf("TextBody = %q, want it to contain AcceptURL=%q, RoleLabel=%q, CompanyName=%q (EMAIL-09)", msg.TextBody, data.AcceptURL, data.RoleLabel(), data.CompanyName)
+	}
+	if msg.Subject != "An admin invited you to join Vane" {
+		t.Errorf("Message.Subject = %q, want the inviter-less fallback subject", msg.Subject)
 	}
 }
 
@@ -530,11 +534,16 @@ func TestSendPasswordReset_ActiveProvider_RendersTemplateAndSendsWithDecryptedKe
 	if msg.FromEmail != "noreply@acme.example.com" || msg.FromName != "Acme" {
 		t.Errorf("Message.FromEmail/FromName = %q/%q, want stored %q/%q", msg.FromEmail, msg.FromName, "noreply@acme.example.com", "Acme")
 	}
-	if !strings.Contains(msg.HTMLBody, data.ResetURL) || !strings.Contains(msg.HTMLBody, data.CompanyName) {
-		t.Errorf("HTMLBody = %q, want it to contain ResetURL=%q, CompanyName=%q", msg.HTMLBody, data.ResetURL, data.CompanyName)
+	// The redesigned reset email (email handoff) names the account, not the
+	// company, so CompanyName is intentionally not asserted on the body.
+	if !strings.Contains(msg.HTMLBody, data.ResetURL) {
+		t.Errorf("HTMLBody = %q, want it to contain ResetURL=%q", msg.HTMLBody, data.ResetURL)
 	}
-	if !strings.Contains(msg.TextBody, data.ResetURL) || !strings.Contains(msg.TextBody, data.CompanyName) {
-		t.Errorf("TextBody = %q, want it to contain ResetURL=%q, CompanyName=%q", msg.TextBody, data.ResetURL, data.CompanyName)
+	if !strings.Contains(msg.TextBody, data.ResetURL) {
+		t.Errorf("TextBody = %q, want it to contain ResetURL=%q", msg.TextBody, data.ResetURL)
+	}
+	if msg.Subject != "Reset your Vane password" {
+		t.Errorf("Message.Subject = %q, want %q", msg.Subject, "Reset your Vane password")
 	}
 }
 
@@ -630,12 +639,12 @@ func TestSendIncidentOpened_ActiveProvider_RendersTemplateAndSendsWithDecryptedK
 	if msg.FromEmail != "alerts@acme.example.com" || msg.FromName != "Acme Alerts" {
 		t.Errorf("Message.FromEmail/FromName = %q/%q, want stored %q/%q", msg.FromEmail, msg.FromName, "alerts@acme.example.com", "Acme Alerts")
 	}
-	if msg.Subject != "Incident opened: Elevated error rate" {
-		t.Errorf("Message.Subject = %q, want %q", msg.Subject, "Incident opened: Elevated error rate")
+	if msg.Subject != "[Critical] New incident: Elevated error rate" {
+		t.Errorf("Message.Subject = %q, want %q", msg.Subject, "[Critical] New incident: Elevated error rate")
 	}
 	for field, body := range map[string]string{"HTMLBody": msg.HTMLBody, "TextBody": msg.TextBody} {
-		if !strings.Contains(body, data.ServiceName) || !strings.Contains(body, data.IncidentTitle) || !strings.Contains(body, data.Severity) || !strings.Contains(body, data.DashboardURL) {
-			t.Errorf("%s = %q, want it to contain ServiceName=%q, IncidentTitle=%q, Severity=%q, DashboardURL=%q", field, body, data.ServiceName, data.IncidentTitle, data.Severity, data.DashboardURL)
+		if !strings.Contains(body, data.ServiceName) || !strings.Contains(body, data.IncidentTitle) || !strings.Contains(body, data.SeverityLabel()) || !strings.Contains(body, data.DashboardURL) {
+			t.Errorf("%s = %q, want it to contain ServiceName=%q, IncidentTitle=%q, SeverityLabel=%q, DashboardURL=%q", field, body, data.ServiceName, data.IncidentTitle, data.SeverityLabel(), data.DashboardURL)
 		}
 	}
 }
@@ -707,15 +716,15 @@ func TestSendIncidentResolved_ActiveProvider_RendersTemplateAndSendsWithDecrypte
 	if sentProvider.sendCalls != 1 {
 		t.Fatalf("Provider.Send call count = %d, want 1", sentProvider.sendCalls)
 	}
-	if sentProvider.lastMessage.Subject != "Incident resolved: Elevated error rate" {
-		t.Errorf("Message.Subject = %q, want %q", sentProvider.lastMessage.Subject, "Incident resolved: Elevated error rate")
+	if sentProvider.lastMessage.Subject != "Resolved: Elevated error rate" {
+		t.Errorf("Message.Subject = %q, want %q", sentProvider.lastMessage.Subject, "Resolved: Elevated error rate")
 	}
 	if sentProvider.lastMessage.To != "owner@example.com" {
 		t.Errorf("Message.To = %q, want %q", sentProvider.lastMessage.To, "owner@example.com")
 	}
 	for field, body := range map[string]string{"HTMLBody": sentProvider.lastMessage.HTMLBody, "TextBody": sentProvider.lastMessage.TextBody} {
-		if !strings.Contains(body, data.ServiceName) || !strings.Contains(body, data.IncidentTitle) || !strings.Contains(body, data.Severity) || !strings.Contains(body, data.DashboardURL) {
-			t.Errorf("%s = %q, want it to contain ServiceName=%q, IncidentTitle=%q, Severity=%q, DashboardURL=%q", field, body, data.ServiceName, data.IncidentTitle, data.Severity, data.DashboardURL)
+		if !strings.Contains(body, data.ServiceName) || !strings.Contains(body, data.IncidentTitle) || !strings.Contains(body, data.DashboardURL) {
+			t.Errorf("%s = %q, want it to contain ServiceName=%q, IncidentTitle=%q, DashboardURL=%q", field, body, data.ServiceName, data.IncidentTitle, data.DashboardURL)
 		}
 	}
 }
@@ -756,7 +765,7 @@ func TestSendWeeklyDigest_NoActiveProvider_ReturnsErrNoActiveProvider_NeverCalls
 
 	err := svc.SendWeeklyDigest(t.Context(), "owner@example.com", WeeklyDigestEmailData{
 		TenantName: "Acme", UptimePercent: 99.9, IncidentsOpened: 2, IncidentsResolved: 1,
-		PeriodStart: "2026-09-01", PeriodEnd: "2026-09-08",
+		PeriodStart: testDigestStart, PeriodEnd: testDigestEnd,
 	})
 	if !errors.Is(err, ErrNoActiveProvider) {
 		t.Fatalf("SendWeeklyDigest() error = %v, want ErrNoActiveProvider", err)
@@ -786,7 +795,13 @@ func TestSendWeeklyDigest_ActiveProvider_RendersTemplateAndSendsWithDecryptedKey
 
 	data := WeeklyDigestEmailData{
 		TenantName: "Acme Inc.", UptimePercent: 99.95, IncidentsOpened: 3, IncidentsResolved: 2,
-		PeriodStart: "2026-09-01", PeriodEnd: "2026-09-08",
+		PeriodStart: testDigestStart, PeriodEnd: testDigestEnd,
+		Incidents: []DigestIncidentRow{
+			{Title: "API down", ServiceName: "api", Status: "resolved", Duration: 38 * time.Minute},
+			{Title: "Slow billing", ServiceName: "billing", Status: "monitoring", Duration: 130 * time.Minute},
+			{Title: "Webhook errors", ServiceName: "hooks", Status: "investigating", Duration: 5 * time.Minute},
+		},
+		Services: []DigestServiceRow{{Name: "api", UptimePercent: 99.99}, {Name: "billing", UptimePercent: 99.42}},
 	}
 	if err := svc.SendWeeklyDigest(t.Context(), "owner@example.com", data); err != nil {
 		t.Fatalf("SendWeeklyDigest() returned unexpected error: %v", err)
@@ -809,15 +824,14 @@ func TestSendWeeklyDigest_ActiveProvider_RendersTemplateAndSendsWithDecryptedKey
 	if msg.FromEmail != "digest@acme.example.com" || msg.FromName != "Acme Digest" {
 		t.Errorf("Message.FromEmail/FromName = %q/%q, want stored %q/%q", msg.FromEmail, msg.FromName, "digest@acme.example.com", "Acme Digest")
 	}
-	if msg.Subject != "Weekly digest for Acme Inc." {
-		t.Errorf("Message.Subject = %q, want %q", msg.Subject, "Weekly digest for Acme Inc.")
+	if msg.Subject != "Your weekly summary · Sep 8–14, 2026" {
+		t.Errorf("Message.Subject = %q, want %q", msg.Subject, "Your weekly summary · Sep 8–14, 2026")
 	}
 	for field, body := range map[string]string{"HTMLBody": msg.HTMLBody, "TextBody": msg.TextBody} {
-		if !strings.Contains(body, "99.95%") || !strings.Contains(body, "Incidents opened: 3") || !strings.Contains(body, "Incidents resolved: 2") {
-			t.Errorf("%s = %q, want uptime 99.95%% and incident counts 3/2", field, body)
-		}
-		if !strings.Contains(body, data.PeriodStart) || !strings.Contains(body, data.PeriodEnd) {
-			t.Errorf("%s = %q, want the period %q..%q", field, body, data.PeriodStart, data.PeriodEnd)
+		for _, want := range []string{"99.95%", "Sep 8–14, 2026", "Acme Inc.", "99.99%", "Operational", "99.42%", "Degraded this week", "API down", "RESOLVED", "MONITORING", "INVESTIGATING", "2h 10min"} {
+			if !strings.Contains(body, want) {
+				t.Errorf("%s missing %q:\n%s", field, want, body)
+			}
 		}
 	}
 }
@@ -857,20 +871,33 @@ func TestSendWeeklyDigest_ZeroIncidents_RendersZeroCounts(t *testing.T) {
 
 	if err := svc.SendWeeklyDigest(t.Context(), "owner@example.com", WeeklyDigestEmailData{
 		TenantName: "Acme", UptimePercent: 100, IncidentsOpened: 0, IncidentsResolved: 0,
-		PeriodStart: "2026-09-01", PeriodEnd: "2026-09-08",
+		PeriodStart: testDigestStart, PeriodEnd: testDigestEnd,
 	}); err != nil {
 		t.Fatalf("SendWeeklyDigest() returned unexpected error: %v", err)
 	}
 
-	if !strings.Contains(sentProvider.lastMessage.TextBody, "Incidents opened: 0") {
+	if !strings.Contains(sentProvider.lastMessage.TextBody, "Incidents: 0") {
 		t.Errorf("TextBody = %q, want a zero-incident digest to still render count 0", sentProvider.lastMessage.TextBody)
+	}
+	for field, body := range map[string]string{"HTMLBody": sentProvider.lastMessage.HTMLBody, "TextBody": sentProvider.lastMessage.TextBody} {
+		if !strings.Contains(body, "No incidents this week.") {
+			t.Errorf("%s = %q, want the empty-incidents line instead of the list", field, body)
+		}
 	}
 	if !strings.Contains(sentProvider.lastMessage.TextBody, "100.00%") {
 		t.Errorf("TextBody = %q, want 100.00%% uptime", sentProvider.lastMessage.TextBody)
 	}
 }
 
-func TestSendWeeklyDigest_EmptyTenantName_SubjectIsGeneric(t *testing.T) {
+// testDigestStart/testDigestEnd are a real digest window: Monday 00:00 UTC
+// to the next Monday 00:00 UTC, labeled "Sep 8–14, 2026" in
+// America/Sao_Paulo.
+var (
+	testDigestEnd   = time.Date(2026, 9, 15, 0, 0, 0, 0, time.UTC)
+	testDigestStart = testDigestEnd.Add(-7 * 24 * time.Hour)
+)
+
+func TestSendWeeklyDigest_NoPeriod_SubjectIsGeneric(t *testing.T) {
 	store := newFakeStore()
 	sentProvider := &fakeProvider{}
 	svc := newTestService(t, store, func(provider, apiKey string) (Provider, error) { return sentProvider, nil })
@@ -884,8 +911,8 @@ func TestSendWeeklyDigest_EmptyTenantName_SubjectIsGeneric(t *testing.T) {
 	if err := svc.SendWeeklyDigest(t.Context(), "owner@example.com", WeeklyDigestEmailData{UptimePercent: 100}); err != nil {
 		t.Fatalf("SendWeeklyDigest() returned unexpected error: %v", err)
 	}
-	if sentProvider.lastMessage.Subject != "Weekly digest" {
-		t.Errorf("Message.Subject = %q, want %q for an empty tenant name", sentProvider.lastMessage.Subject, "Weekly digest")
+	if sentProvider.lastMessage.Subject != "Your weekly summary" {
+		t.Errorf("Message.Subject = %q, want %q with no period set", sentProvider.lastMessage.Subject, "Your weekly summary")
 	}
 }
 

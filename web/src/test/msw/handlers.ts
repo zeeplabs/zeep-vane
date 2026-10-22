@@ -505,16 +505,22 @@ function serviceUptimeAndLastSeen(service: Service): { uptime_30d: number | null
 }
 
 // toServiceResponse mirrors the real serviceResponse
-// (internal/api/services_handler.go): id, name, slo_id, slo_name,
-// monitor_mode, poll_type, poll_target, poll_interval_seconds, environment,
-// current_status, last_status_change_at, uptime_30d, last_seen_at.
+// (internal/api/services_handler.go): id, name, slo_id, slo_name, slo_type,
+// datadog_service_tag, monitor_mode, poll_type, poll_target,
+// poll_interval_seconds, environment, current_status,
+// last_status_change_at, uptime_30d, last_seen_at. slo_id/slo_name are
+// plain strings on the wire - "" (never null) for a polling-mode service,
+// since the repository reads them via COALESCE(slo_id, '') and the NOT
+// NULL slo_name column.
 function toServiceResponse(service: Service) {
   const { uptime_30d, last_seen_at } = serviceUptimeAndLastSeen(service);
   return {
     id: service.id,
     name: service.name,
-    slo_id: service.slo_id,
-    slo_name: service.slo_name,
+    slo_id: service.slo_id ?? "",
+    slo_name: service.slo_name ?? "",
+    slo_type: service.slo_type,
+    datadog_service_tag: service.datadog_service_tag,
     monitor_mode: service.monitor_mode,
     poll_type: service.poll_type,
     poll_target: service.poll_target,
@@ -542,6 +548,29 @@ const serviceDegradedNotes: Record<string, string> = {
 const serviceIncidentCounts: Record<string, number> = {
   "svc-2": 2,
 };
+
+// serviceLatestReadings backs the detail endpoint's latest_reading fixture
+// (poller-burn-rate-classification BURN-14), mirroring internal/api's
+// latestReadingResponse. Detail-only, like the maps above - the list
+// endpoint never carries latest_reading. Services missing here (svc-3
+// not_configured, svc-5 polling) get null, the backend's "no reading yet".
+// readAgoMs is resolved to an absolute read_at per request so the relative
+// time stays stable regardless of when the test run started.
+const serviceLatestReadings: Record<
+  string,
+  { burn_rate_short: number | null; burn_rate_long: number | null; window_errors: number; window_requests: number; readAgoMs: number }
+> = {
+  "svc-1": { burn_rate_short: 0.4, burn_rate_long: 0.2, window_errors: 2, window_requests: 4800, readAgoMs: 60_000 },
+  "svc-2": { burn_rate_short: 9.6, burn_rate_long: 3.1, window_errors: 48, window_requests: 5000, readAgoMs: 60_000 },
+  "svc-4": { burn_rate_short: 0, burn_rate_long: 0, window_errors: 0, window_requests: 1200, readAgoMs: 120_000 },
+};
+
+function toLatestReadingResponse(serviceId: string) {
+  const reading = serviceLatestReadings[serviceId];
+  if (!reading) return null;
+  const { readAgoMs, ...rest } = reading;
+  return { ...rest, read_at: new Date(Date.now() - readAgoMs).toISOString() };
+}
 
 // toDomainResponse mirrors DomainsHandler's real domainResponse shape
 // (internal/api/domains_handler.go) - every field the backend actually
@@ -1787,6 +1816,8 @@ export const handlers = [
       monitor_mode?: string;
       slo_id?: string;
       slo_name?: string;
+      slo_type?: string;
+      datadog_service_tag?: string;
       poll_type?: string;
       poll_target?: string;
       poll_interval_seconds?: number;
@@ -1822,6 +1853,8 @@ export const handlers = [
         name: body.name,
         slo_id: body.slo_id,
         slo_name: body.slo_name ?? sloCatalog.find((slo) => slo.id === body.slo_id)?.name ?? null,
+        slo_type: body.slo_type ?? "",
+        datadog_service_tag: body.datadog_service_tag ?? "",
         monitor_mode: "slo",
         poll_type: null,
         poll_target: null,
@@ -1865,6 +1898,8 @@ export const handlers = [
         name: body.name,
         slo_id: null,
         slo_name: null,
+        slo_type: "",
+        datadog_service_tag: "",
         monitor_mode: "polling",
         poll_type: body.poll_type as Service["poll_type"],
         poll_target: body.poll_target,
@@ -1885,7 +1920,8 @@ export const handlers = [
   // GET /api/services/:id (monitored-services-page SVC-14..19) - mirrors
   // ServicesHandler.Get: 404 fixed body for an unknown id, else the detail
   // DTO (same uptime_30d/last_seen_at as List, plus status_analysis,
-  // incidents_30d, and exactly 24 hourly_buckets).
+  // incidents_30d, exactly 24 hourly_buckets, and latest_reading - always
+  // present as a key, null when there is no reading yet).
   http.get("/api/services/:id", ({ params }) => {
     if (!sessionAdminId) return HttpResponse.json({ error: "unauthorized" }, { status: 401 });
     const service = servicesState.find((s) => s.id === params.id);
@@ -1897,6 +1933,7 @@ export const handlers = [
       status_analysis: service.current_status === "degraded" ? (serviceDegradedNotes[service.id] ?? null) : null,
       incidents_30d: serviceIncidentCounts[service.id] ?? 0,
       hourly_buckets: buildFixtureHistory(service.current_status, 24),
+      latest_reading: toLatestReadingResponse(service.id),
     });
   }),
 
@@ -2034,13 +2071,20 @@ export const handlers = [
     if (!incident) {
       return HttpResponse.json({ error: "incident not found" }, { status: 404 });
     }
-    const body = (await request.json()) as { status?: IncidentStatus };
+    const body = (await request.json()) as { status?: IncidentStatus; note?: string };
     const validStatuses: IncidentStatus[] = ["investigating", "identified", "monitoring", "resolved"];
     if (!body.status || !validStatuses.includes(body.status)) {
       return HttpResponse.json(
         { error: "status must be one of investigating, identified, monitoring, resolved" },
         { status: 422 },
       );
+    }
+    // Mirrors IncidentsHandler.Transition's maxClosingNoteRunes: the
+    // trimmed note (only read when resolving) is capped at 2000 characters
+    // (runes - Array.from counts code points, not UTF-16 units), checked
+    // before any state change.
+    if (body.status === "resolved" && Array.from(body.note?.trim() ?? "").length > 2000) {
+      return HttpResponse.json({ error: "note must be at most 2000 characters" }, { status: 422 });
     }
     incident.status = body.status;
     incident.resolved_at = body.status === "resolved" ? new Date().toISOString() : null;
@@ -2053,6 +2097,20 @@ export const handlers = [
       author_id: null,
       is_ai_summary: false,
     });
+    // Optional closing note, only honored when resolving: recorded as a
+    // separate update authored by the actor, after the system entry.
+    const note = body.status === "resolved" ? body.note?.trim() : undefined;
+    if (note) {
+      incidentUpdateIdCounter += 1;
+      incidentUpdatesState.push({
+        id: `upd-msw-${incidentUpdateIdCounter}`,
+        incident_id: incidentId,
+        body: note,
+        created_at: new Date().toISOString(),
+        author_id: sessionAdminId,
+        is_ai_summary: false,
+      });
+    }
     return HttpResponse.json(incident);
   }),
 
