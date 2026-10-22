@@ -11,52 +11,17 @@ import (
 	"github.com/zeeplabs/zeep-vane/internal/db"
 )
 
-// maxFetchAttempts is the total number of attempts FetchWithRetry makes per
-// service per cycle (SP-05).
+// maxFetchAttempts is the total number of attempts FetchWindowsWithRetry
+// makes per service per cycle (SP-05).
 const maxFetchAttempts = 3
 
-// minRecentWindowRequests is the minimum request volume a poll window must
-// carry before its computed state is trusted. Below this, the window is too
-// sparse to distinguish a real problem from noise, so pollService carries
-// the previous status forward instead of recomputing (AD-019). Conservative
-// floor, not derived from real traffic data - flagged in spec.md's
-// Assumptions as unconfirmed and easy to tune later.
-const minRecentWindowRequests = 10
-
-// recentWindowWidth is how much SLO history pollService asks Datadog for on
-// each fetch, independent of p.interval (AD-019 addendum). A window sized to
-// the poll interval alone (originally 60s) was proven too narrow against
-// live Datadog data: at ~51 req/min steady traffic, the freshest 60s
-// reported as few as 8 requests because trace metrics for the last 1-2
-// minutes aren't fully aggregated yet, tripping minRecentWindowRequests and
-// carrying a stale status forward - the exact bug AD-019 was written to fix.
-// 5 minutes of width absorbs that per-minute variance.
-const recentWindowWidth = 5 * time.Minute
-
-// recentWindowLag offsets the window's end away from time.Now() so it never
-// includes the most recent minute of not-yet-aggregated Datadog data.
+// recentWindowLag offsets the windows' end away from time.Now() so they
+// never include the most recent minute of not-yet-aggregated Datadog data.
 // Live-measured: the freshest 60s under-reported request volume by ~6x
-// versus the steady rate, while data 60-120s old already matched it.
+// versus the steady rate, while data 60-120s old already matched it. Both
+// burn-rate windows (shortWindow, longWindow) end at now - recentWindowLag
+// (BURN-01).
 const recentWindowLag = 60 * time.Second
-
-// breachHysteresisCycles is how many consecutive polling cycles a service
-// must report Datadog's "breached" state before pollService actually flips
-// its status to "outage" (AD-019 addendum: hysteresis). Without this, a
-// single 5-minute window reporting "breached" instantly paints the service
-// as down: Datadog computes state against the SLO's configured target
-// (typically 99.5% over 30 days) applied unscaled to a 5-minute bucket, so
-// on a high-traffic service a single unlucky burst of errors - well within
-// normal noise for a 30-day budget - is enough to trip "breached" on its
-// own. Live-measured against a real 30-day-healthy SLO: 2 of 6 consecutive
-// 5-minute windows reported "breached" despite thousands of requests each,
-// which without hysteresis would have flapped the public page (and, via
-// internal/history's worst-status-wins hourly bucketing, painted the entire
-// hour red) purely from normal variance. Requiring 2 consecutive breaches
-// before committing to "outage" absorbs single-window noise while still
-// reacting within 2 poll cycles (up to ~2*POLL_INTERVAL_SECONDS) to a real
-// outage. See .specs/STATE.md AD-019 addendum for the full analysis and the
-// longer-term fix this is a stopgap for.
-const breachHysteresisCycles = 2
 
 // serviceLister is the subset of *db.ServiceRepository the poller depends on
 // to discover which services to poll.
@@ -113,6 +78,17 @@ type serviceStatusUpdater interface {
 	UpdateStatus(ctx context.Context, serviceID, status string) error
 }
 
+// serviceStatusReadingWriter is the subset of *db.ServiceRepository the
+// Datadog Poller depends on: UpdateStatus for the state-based fallback
+// (no counts, so no reading), UpdateStatusAndReading for a burn-rate
+// classification, which persists the status and that cycle's reading in
+// one UPDATE (BURN-13, BURN-17). ManualScheduler keeps depending on
+// serviceStatusUpdater alone - it never produces a reading.
+type serviceStatusReadingWriter interface {
+	serviceStatusUpdater
+	UpdateStatusAndReading(ctx context.Context, serviceID, status string, rd db.ServiceReading) error
+}
+
 // statusIntervalWriter is the subset of *db.StatusIntervalRepository the
 // poller depends on to persist an observed status as an open/extended
 // interval.
@@ -136,7 +112,7 @@ type integrationStatusUpdater interface {
 // page must only ever read the cache, never call Datadog on demand).
 type Poller struct {
 	services        serviceLister
-	statuses        serviceStatusUpdater
+	statuses        serviceStatusReadingWriter
 	statusIntervals statusIntervalWriter
 	integrations    integrationStatusUpdater
 	provider        datadog.SLOProvider
@@ -159,13 +135,6 @@ type Poller struct {
 	// original single ambient provider for every existing test/caller that
 	// doesn't opt in.
 	resolveDatadogClient DatadogClientResolver
-
-	// breachStreak tracks, per service ID, how many consecutive cycles in a
-	// row Datadog has reported "breached" for that service's most recent
-	// window (breachHysteresisCycles). Only ever read/written from
-	// pollOnce's sequential loop over services (Run drives one poll cycle
-	// at a time on a single goroutine), so it needs no locking of its own.
-	breachStreak map[string]int
 }
 
 // NewPoller builds a Poller that fetches SLO status via provider every
@@ -173,7 +142,7 @@ type Poller struct {
 // recording connection failures through integrations. analyzer is notified
 // of every status transition (pollService, AI-08 through AI-24 - the
 // integration point for the whole SLO-analysis feature).
-func NewPoller(services serviceLister, statuses serviceStatusUpdater, statusIntervals statusIntervalWriter, integrations integrationStatusUpdater, provider datadog.SLOProvider, interval time.Duration, analyzer *SLOAnalyzer, logger *zap.Logger) *Poller {
+func NewPoller(services serviceLister, statuses serviceStatusReadingWriter, statusIntervals statusIntervalWriter, integrations integrationStatusUpdater, provider datadog.SLOProvider, interval time.Duration, analyzer *SLOAnalyzer, logger *zap.Logger) *Poller {
 	return &Poller{
 		services:        services,
 		statuses:        statuses,
@@ -183,7 +152,6 @@ func NewPoller(services serviceLister, statuses serviceStatusUpdater, statusInte
 		interval:        interval,
 		analyzer:        analyzer,
 		logger:          logger,
-		breachStreak:    make(map[string]int),
 	}
 }
 
@@ -357,93 +325,70 @@ func (p *Poller) pollOnce(ctx context.Context) {
 	}
 }
 
-// pollService fetches svc's SLO status (with retry), opens or extends its
-// status interval, and updates the service's cached current_status. On a
-// failed fetch it returns early without touching current_status, so the
-// last known valid status stays visible on the public page (SP-08) - it
-// never writes a status derived from a failure. It does not itself record
-// the failure on the Datadog integration - pollOnce aggregates every
-// service's outcome for the cycle first (H5/H6), since a single service's
-// failure must not by itself mark the whole integration invalid.
+// pollService fetches svc's short/long SLO windows (with retry),
+// classifies its status, opens or extends its status interval, and updates
+// the service's cached current_status. On a failed fetch it returns early
+// without touching current_status, so the last known valid status stays
+// visible on the public page (SP-08, BURN-11) - it never writes a status
+// derived from a failure. It does not itself record the failure on the
+// Datadog integration - pollOnce aggregates every service's outcome for the
+// cycle first (H5/H6), since a single service's failure must not by itself
+// mark the whole integration invalid.
+//
+// Classification (AD-049, superseding AD-019's window-SLI heuristics): a
+// metric-based SLO with a usable target is classified by multi-window burn
+// rate (classifyBurn) and its reading persisted with the status; an SLO with
+// no target (Target <= 0, BURN-09) or no request counts at all
+// (monitor-based, !HasSeries, NB-7) falls back to Datadog's own state over
+// the short window (classifyByState), persisted without a reading.
 func (p *Poller) pollService(ctx context.Context, svc db.Service) error {
-	to := time.Now().Add(-recentWindowLag)
-	from := to.Add(-recentWindowWidth)
+	now := time.Now()
+	end := now.Add(-recentWindowLag)
 
-	status, err := FetchWithRetry(ctx, p.provider, svc.SLOID, from, to, maxFetchAttempts)
+	windows, err := FetchWindowsWithRetry(ctx, p.provider, svc.SLOID, end, shortWindow, longWindow, maxFetchAttempts)
 	if err != nil {
 		p.logger.Error("poller: failed to fetch slo status",
 			zap.String("service_id", svc.ID), zap.String("slo_id", svc.SLOID), zap.Error(err))
 		return err
 	}
 
+	short := windowCounts{Requests: windows.Short.Requests, Errors: windows.Short.Errors}
+	long := windowCounts{Requests: windows.Long.Requests, Errors: windows.Long.Errors}
+
+	// reading stays nil on the state-based fallback: without counts (or
+	// without a target to budget against) there is no burn rate to record,
+	// and the previous reading/last_error_at are left as they are.
 	var current string
-	switch {
-	case svc.CurrentStatus == "not_configured" && status.RequestCount < minRecentWindowRequests:
-		// A service's first-ever classification (still "not_configured")
-		// must escape the placeholder on any real reading (SLOTRAF-01) -
-		// but a window with fewer than minRecentWindowRequests requests
-		// (0 included) is too sparse for its own SLI to be statistically
-		// meaningful: with n=1-9, a single failed request swings the
-		// window's SLI/breachBound comparison below by itself, latching
-		// this branch straight to "degraded" (or, at RequestCount<=0,
-		// SLI=0 always "below" any bound, straight to "outage" after
-		// breachHysteresisCycles) from noise that Datadog's own
-		// timeframe-aggregated state would never flag. Classify by that
-		// state instead (same fallback the Target<=0 branch already uses)
-		// and never touch breachStreak - the low-volume floor below still
-		// governs every subsequent cycle once this service has left
-		// "not_configured" (SLOTRAF-02).
-		current = normalizeStatus(status.State)
-	case status.RequestCount <= 0 && (svc.CurrentStatus == "outage" || svc.CurrentStatus == "degraded"):
-		// A window with zero requests carries no signal at all - not even a
-		// failed request counts toward RequestCount (a failing request
-		// still hits the denominator), so a real outage always has
-		// RequestCount > 0. breachBound already documents this precondition
-		// ("callers still apply their own low-volume guards before relying
-		// on the result") but 086d678 (SLOTRAF-01) skipped exactly that
-		// guard for a service's first-ever classification, letting a
-		// zero-request window feed the SLI<breachBound comparison below
-		// with SLI=0 - always "below" any bound, latching to "outage" after
-		// breachHysteresisCycles purely from absent data. Classify by
-		// Datadog's own state instead (same as the Target<=0 fallback), and
-		// never touch breachStreak - this also self-corrects any service
-		// already stuck in "outage"/"degraded" from this same gap, on its
-		// first poll after this fix ships, without manual intervention.
-		current = normalizeStatus(status.State)
-	case status.RequestCount < minRecentWindowRequests:
-		// Too little traffic in this window to trust a recompute - carry the
-		// previous status forward rather than let a handful of requests
-		// flip the public page (AD-019). A service still "not_configured"
-		// never reaches this case (handled above); every other status
-		// already left "not_configured" via a real reading, so this floor
-		// applies normally to every subsequent low-volume cycle
-		// (SLOTRAF-02).
-		current = svc.CurrentStatus
-	case status.Target <= 0:
-		// The response carried no usable threshold, so no honest
-		// window-rescaled bound can be computed - fall back to the
-		// pre-AD-019-addendum-4 state-based classification, unchanged.
-		current = p.classifyByState(status, svc)
-	case status.SLI < breachBound(status.Target, status.RequestCount, breachThresholdSigmas):
-		// Breach decided by the window's own SLI against a bound rescaled
-		// to its width, never by Datadog's fixed-timeframe overall.state
-		// (AD-019 addendum 4). Hysteresis (breachHysteresisCycles) still
-		// absorbs single-window noise: carry the previous status forward
-		// until the streak clears the threshold, then latch to "outage".
-		p.breachStreak[svc.ID]++
-		if p.breachStreak[svc.ID] >= breachHysteresisCycles {
-			current = "outage"
-		} else {
-			current = svc.CurrentStatus
+	var reading *db.ServiceReading
+	var status datadog.SLOStatus
+	if windows.HasSeries && windows.Target > 0 {
+		current = classifyBurn(burnInput{
+			Short:        short,
+			Long:         long,
+			Target:       windows.Target,
+			Previous:     svc.CurrentStatus,
+			LastErrorAt:  svc.LastErrorAt,
+			LastChangeAt: svc.LastStatusChangeAt,
+			Now:          now,
+		})
+		reading = newServiceReading(short, long, windows.Target, svc.LastErrorAt, now)
+		status = sloStatusFromWindows(windows)
+	} else {
+		// The windows call's State covers its whole ~1h range, which would
+		// hold a recovered service in degraded/outage for up to an hour.
+		// The fallback instead asks Datadog for its state over the short
+		// window only, the same 5-minute range it classified from before
+		// AD-049. This second /history call is made only for fallback
+		// services (monitor-based SLOs and SLOs without a target); the burn
+		// path stays one call per service per cycle. Its failure follows
+		// the same contract as the first call's: log, return, no writes.
+		status, err = FetchStatusWithRetry(ctx, p.provider, svc.SLOID, end.Add(-shortWindow), end, maxFetchAttempts)
+		if err != nil {
+			p.logger.Error("poller: failed to fetch slo status",
+				zap.String("service_id", svc.ID), zap.String("slo_id", svc.SLOID), zap.Error(err))
+			return err
 		}
-	case status.State == "warning" || status.State == "breached" || status.SLI < status.Target:
-		// Below the SLO's own target but inside the sampling band: a real
-		// signal of degradation, not enough evidence for "outage".
-		p.breachStreak[svc.ID] = 0
-		current = "degraded"
-	default:
-		p.breachStreak[svc.ID] = 0
-		current = normalizeStatus(status.State)
+		current = classifyByState(status.State)
 	}
 
 	transitioned := current != svc.CurrentStatus
@@ -452,32 +397,46 @@ func (p *Poller) pollService(ctx context.Context, svc db.Service) error {
 	// what classification inputs pollService actually saw. Without this, a
 	// disputed status (public page shows degraded/outage, Datadog's own
 	// monitors/SLO never fired) is unfalsifiable after the fact - the public
-	// status interval records the outcome, never the SLI/Target/RequestCount
-	// that produced it, and pod logs don't survive a redeploy. Logged before
-	// the writes below so it's captured even if OpenOrExtend/UpdateStatus
-	// fails.
+	// status interval records the outcome, never the counts/burn rates that
+	// produced it, and pod logs don't survive a redeploy. Logged before the
+	// writes below so it's captured even if OpenOrExtend/the status write
+	// fails. burn_short/burn_long are 0 on the state-based fallback, and may
+	// be +Inf for a 100% target (zap's JSON encoder writes it as "+Inf").
+	var burnShort, burnLong float64
+	if reading != nil {
+		burnShort, burnLong = reading.BurnShort, reading.BurnLong
+	}
 	p.logger.Debug("poller: classified service",
 		zap.String("service_id", svc.ID),
 		zap.String("slo_id", svc.SLOID),
 		zap.String("previous_status", svc.CurrentStatus),
 		zap.String("new_status", current),
 		zap.Bool("transitioned", transitioned),
-		zap.Float64("sli", status.SLI),
+		zap.Bool("burn_rate_classified", reading != nil),
+		zap.Bool("has_series", windows.HasSeries),
 		zap.Float64("target", status.Target),
 		zap.String("datadog_state", status.State),
-		zap.Int64("request_count", status.RequestCount),
-		zap.Float64("breach_bound", breachBound(status.Target, status.RequestCount, breachThresholdSigmas)),
-		zap.Int("breach_streak", p.breachStreak[svc.ID]),
+		zap.Int64("short_requests", short.Requests),
+		zap.Int64("short_errors", short.Errors),
+		zap.Int64("long_requests", long.Requests),
+		zap.Int64("long_errors", long.Errors),
+		zap.Float64("burn_short", burnShort),
+		zap.Float64("burn_long", burnLong),
 	)
 
-	intervalID, err := p.statusIntervals.OpenOrExtend(ctx, svc.ID, current, status.ErrorBudgetRemaining, time.Now())
+	intervalID, err := p.statusIntervals.OpenOrExtend(ctx, svc.ID, current, status.ErrorBudgetRemaining, now)
 	if err != nil {
 		p.logger.Error("poller: failed to open or extend status interval",
 			zap.String("service_id", svc.ID), zap.Error(err))
 		return err
 	}
 
-	if err := p.statuses.UpdateStatus(ctx, svc.ID, current); err != nil {
+	if reading != nil {
+		err = p.statuses.UpdateStatusAndReading(ctx, svc.ID, current, *reading)
+	} else {
+		err = p.statuses.UpdateStatus(ctx, svc.ID, current)
+	}
+	if err != nil {
 		p.logger.Error("poller: failed to update service status",
 			zap.String("service_id", svc.ID), zap.Error(err))
 		return err
@@ -489,11 +448,14 @@ func (p *Poller) pollService(ctx context.Context, svc db.Service) error {
 	// HandleTransition's own no-op guard to absorb a redundant call every
 	// cycle a service stays in the same state. Dispatched only after
 	// current_status has actually been persisted above: if OpenOrExtend or
-	// UpdateStatus had failed, svc.CurrentStatus in storage would still be
-	// the old value and next cycle's comparison would see the same
+	// the status write had failed, svc.CurrentStatus in storage would still
+	// be the old value and next cycle's comparison would see the same
 	// transition again, re-dispatching an LLM call for every subsequent
 	// cycle until the write finally succeeds - persisting first makes the
-	// transition idempotent from HandleTransition's point of view.
+	// transition idempotent from HandleTransition's point of view. reading
+	// (nil on the state-based fallback) carries this cycle's burn numbers
+	// into the analyzer's prompts (BURN-15) - including the closing comment
+	// on a recovery, which gets the reading of the cycle that recovered.
 	if transitioned {
 		// causeProvider is derived from p.provider (already the current
 		// tenant's own client when EnableTenantDatadogClients is wired,
@@ -507,41 +469,81 @@ func (p *Poller) pollService(ctx context.Context, svc db.Service) error {
 		if cp, ok := p.provider.(errorCauseProvider); ok {
 			causeProvider = cp
 		}
-		p.analyzer.HandleTransition(ctx, svc, svc.CurrentStatus, current, status, intervalID, causeProvider)
+		p.analyzer.HandleTransition(ctx, svc, svc.CurrentStatus, current, status, reading, intervalID, causeProvider)
 	}
 
 	return nil
 }
 
-// classifyByState is the pre-AD-019-addendum-4 classification, used only
-// when the SLO response carries no usable target (Target <= 0) and a
-// window-rescaled bound therefore cannot be computed. It preserves the old
-// behavior exactly: a single breached window carries the previous status
-// forward, breachHysteresisCycles consecutive breaches flip to "outage",
-// and anything else maps through normalizeStatus. Factored out so the
-// fallback is demonstrably the old logic rather than a near-copy.
-func (p *Poller) classifyByState(status datadog.SLOStatus, svc db.Service) string {
-	if status.State != "breached" {
-		p.breachStreak[svc.ID] = 0
-		return normalizeStatus(status.State)
+// newServiceReading builds the reading persisted with a burn-rate
+// classification (BURN-13). The burn rates match what classifyBurn decided
+// on: an empty long window takes the short burn (BURN-17). lastErrorAt is
+// the cycle time when the short window had any failed request - the
+// moment the poller observed it, the same clock basis as
+// last_status_change_at, which the zero-traffic grace falls back to
+// (BURN-06) - and otherwise the previously persisted value, carried forward
+// because UpdateStatusAndReading writes NULL for a nil LastErrorAt.
+func newServiceReading(short, long windowCounts, target float64, previousErrorAt *time.Time, now time.Time) *db.ServiceReading {
+	burnShort := burnRate(short.Errors, short.Requests, target)
+	burnLong := burnShort
+	if long.Requests > 0 {
+		burnLong = burnRate(long.Errors, long.Requests, target)
 	}
 
-	p.breachStreak[svc.ID]++
-	if p.breachStreak[svc.ID] >= breachHysteresisCycles {
-		return "outage"
+	lastErrorAt := previousErrorAt
+	if short.Errors > 0 {
+		observed := now
+		lastErrorAt = &observed
 	}
-	return svc.CurrentStatus
+
+	return &db.ServiceReading{
+		BurnShort:     burnShort,
+		BurnLong:      burnLong,
+		ShortErrors:   short.Errors,
+		ShortRequests: short.Requests,
+		ReadAt:        now,
+		LastErrorAt:   lastErrorAt,
+	}
+}
+
+// sloStatusFromWindows adapts this cycle's windows to the datadog.SLOStatus
+// shape status_intervals.error_budget_remaining and
+// SLOAnalyzer.HandleTransition still consume. SLI is the short window's own
+// success ratio when it has traffic (the window classification is driven
+// by), otherwise Datadog's overall SLI for the fetched range;
+// ErrorBudgetRemaining keeps its SLI - Target approximation (AD-019
+// addendum 2) and RequestCount is the short window's.
+func sloStatusFromWindows(w datadog.SLOWindows) datadog.SLOStatus {
+	status := datadog.SLOStatus{
+		State:        w.State,
+		SLI:          w.SLI,
+		Target:       w.Target,
+		Timeframe:    w.Timeframe,
+		RequestCount: w.Short.Requests,
+	}
+	if w.HasSeries && w.Short.Requests > 0 {
+		errs := min(max(w.Short.Errors, 0), w.Short.Requests)
+		status.SLI = 100 * float64(w.Short.Requests-errs) / float64(w.Short.Requests)
+	}
+	status.ErrorBudgetRemaining = status.SLI - status.Target
+	return status
+}
+
+// classifyByState is the state-based fallback for an SLO burn rate can't be
+// computed for: no usable target (Target <= 0, BURN-09) or no request
+// counts at all (monitor-based SLO, NB-7). It maps Datadog's own state
+// through normalizeStatus. The consecutive-breach hysteresis it used to
+// apply was removed with the rest of AD-019's in-memory classification
+// state (AD-049): it lived only in memory, so it was lost on restart/HA
+// handover.
+func classifyByState(state string) string {
+	return normalizeStatus(state)
 }
 
 // normalizeStatus maps a Datadog SLO state to vane's Service.CurrentStatus
-// values (SP-06/SP-07). Documents the full mapping for every state Datadog
-// can report, but pollService itself never reaches the "breached" case
-// below: it intercepts breached windows earlier (via breachBound, or via
-// classifyByState when the response carries no target) to apply
-// breachHysteresisCycles, so this function only ever actually sees "ok"/
-// "warning"/anything else in production. Kept here (not deleted) so the
-// mapping stays complete and self-documenting, and so a future caller that
-// doesn't need hysteresis can still use it correctly.
+// values (SP-06/SP-07). Only the state-based fallback (classifyByState)
+// reaches it; burn-rate classification never maps Datadog's state, so a
+// metric SLO's no_data is never read as "degraded" (BURN-08).
 func normalizeStatus(state string) string {
 	switch state {
 	case "ok":

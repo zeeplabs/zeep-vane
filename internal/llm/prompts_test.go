@@ -1,6 +1,7 @@
 package llm
 
 import (
+	"math"
 	"strings"
 	"testing"
 )
@@ -150,6 +151,120 @@ func TestBuildClosingCommentPrompt_IgnoresCauseFields(t *testing.T) {
 
 	if strings.Contains(userPrompt, in.CauseType) || strings.Contains(userPrompt, in.CauseMessage) {
 		t.Errorf("userPrompt = %q, want it to never include cause data (closing-comment builder is out of RCA-06's scope)", userPrompt)
+	}
+}
+
+// preBurnSystemPrompt is analysisSystemPrompt exactly as it was before
+// BURN-15, pinned so adding the burn numbers provably leaves the system
+// prompt (tone and vocabulary rules) byte-identical.
+const preBurnSystemPrompt = "Você está escrevendo uma atualização curta para uma página pública de status, " +
+	"em português do Brasil, para um leitor sem conhecimento técnico (ex: RH, gestor). " +
+	"Responda em 1-2 frases, em tom calmo e factual, não alarmista. Pode usar um termo técnico simples quando " +
+	"ajudar a explicar o que está acontecendo (ex: \"tempo de resposta\", \"taxa de erro\", \"lentidão intermitente\"), " +
+	"mas sempre explique o efeito prático logo em seguida - nunca use as siglas internas \"SLO\", \"SLI\" ou " +
+	"\"error budget\", nem nomes internos de serviço. Não especule sobre causas que você não pode confirmar a " +
+	"partir dos dados fornecidos, e não use pontos de exclamação ou linguagem dramática."
+
+func burnTestInput() AnalysisInput {
+	in := testAnalysisInput()
+	in.BurnRateShort = 40
+	in.BurnRateLong = 18.5
+	in.WindowErrors = 20
+	in.WindowRequests = 100
+	return in
+}
+
+var promptBuilders = map[string]func(AnalysisInput) (string, string){
+	"degraded tooltip":   buildDegradedTooltipPrompt,
+	"outage description": buildOutageDescriptionPrompt,
+	"closing comment":    buildClosingCommentPrompt,
+}
+
+// TestPromptBuilders_WithBurnNumbers_IncludeBurnSentence covers BURN-15:
+// each of the three user prompts carries the cycle's error rate and burn
+// multipliers in plain words.
+func TestPromptBuilders_WithBurnNumbers_IncludeBurnSentence(t *testing.T) {
+	for name, build := range promptBuilders {
+		t.Run(name, func(t *testing.T) {
+			_, userPrompt := build(burnTestInput())
+			want := " Nos últimos 5 minutos, 20 de 100 requisições falharam (taxa de erro de 20.0%). " +
+				"Nesse ritmo, as falhas consomem a margem de falhas permitida 40.0 vezes mais rápido " +
+				"que o aceitável nos últimos 5 minutos, e 18.5 vezes na última hora."
+			if !strings.Contains(userPrompt, want) {
+				t.Errorf("userPrompt = %q, want it to contain %q", userPrompt, want)
+			}
+		})
+	}
+}
+
+// TestPromptBuilders_WithoutWindowRequests_IdenticalToBaseline covers the
+// "only when WindowRequests > 0" half: no requests means no sentence, even
+// when the burn fields carry values, and the prompt is byte-identical to a
+// zero-value input's.
+func TestPromptBuilders_WithoutWindowRequests_IdenticalToBaseline(t *testing.T) {
+	for name, build := range promptBuilders {
+		t.Run(name, func(t *testing.T) {
+			_, baseline := build(testAnalysisInput())
+			in := burnTestInput()
+			in.WindowRequests = 0
+			_, userPrompt := build(in)
+
+			if userPrompt != baseline {
+				t.Errorf("userPrompt = %q, want unchanged %q", userPrompt, baseline)
+			}
+			if strings.Contains(userPrompt, "Nos últimos 5 minutos") {
+				t.Errorf("userPrompt = %q, want no burn sentence without requests", userPrompt)
+			}
+		})
+	}
+}
+
+// TestPromptBuilders_InfiniteBurn_NeverPrintsInf covers a 100% target: the
+// burn rate is +Inf, which must never reach the text.
+func TestPromptBuilders_InfiniteBurn_NeverPrintsInf(t *testing.T) {
+	for name, build := range promptBuilders {
+		t.Run(name, func(t *testing.T) {
+			in := burnTestInput()
+			in.BurnRateShort = math.Inf(1)
+			in.BurnRateLong = math.Inf(1)
+			_, userPrompt := build(in)
+
+			if strings.Contains(userPrompt, "Inf") {
+				t.Errorf("userPrompt = %q, want no \"Inf\" text", userPrompt)
+			}
+			if !containsAll(userPrompt, "20 de 100 requisições falharam", "não tolera nenhuma falha") {
+				t.Errorf("userPrompt = %q, want the error count and the no-tolerance sentence", userPrompt)
+			}
+			if strings.Contains(userPrompt, "vezes mais rápido") {
+				t.Errorf("userPrompt = %q, want the multiplier omitted", userPrompt)
+			}
+		})
+	}
+}
+
+func TestBurnSentence_NoErrorsInWindow(t *testing.T) {
+	in := burnTestInput()
+	in.WindowErrors = 0
+	in.BurnRateShort = 0
+
+	got := burnSentence(in)
+	if want := " Nos últimos 5 minutos, nenhuma das 100 requisições falhou."; got != want {
+		t.Errorf("burnSentence() = %q, want %q", got, want)
+	}
+}
+
+// TestPromptBuilders_SystemPromptUnchangedByBurnNumbers pins every
+// builder's system prompt to its pre-BURN-15 text, with and without burn
+// numbers.
+func TestPromptBuilders_SystemPromptUnchangedByBurnNumbers(t *testing.T) {
+	for name, build := range promptBuilders {
+		t.Run(name, func(t *testing.T) {
+			for _, in := range []AnalysisInput{testAnalysisInput(), burnTestInput()} {
+				if systemPrompt, _ := build(in); systemPrompt != preBurnSystemPrompt {
+					t.Errorf("systemPrompt = %q, want byte-identical to the pre-BURN-15 prompt %q", systemPrompt, preBurnSystemPrompt)
+				}
+			}
+		})
 	}
 }
 

@@ -108,6 +108,7 @@ interface ServiceDetailResponse extends ServiceResponse {
   status_analysis: string | null;
   incidents_30d: number;
   hourly_buckets: ServiceDetail["hourly_buckets"];
+  latest_reading: ServiceDetail["latest_reading"];
 }
 
 function toServiceDetail(raw: ServiceDetailResponse): ServiceDetail {
@@ -116,6 +117,7 @@ function toServiceDetail(raw: ServiceDetailResponse): ServiceDetail {
     status_analysis: raw.status_analysis,
     incidents_30d: raw.incidents_30d,
     hourly_buckets: raw.hourly_buckets,
+    latest_reading: raw.latest_reading,
   };
 }
 

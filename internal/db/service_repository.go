@@ -71,6 +71,21 @@ type Service struct {
 	// it at its zero value since neither caller (poller, admin services
 	// list) reads it.
 	StatusAnalysis *string
+	// LastBurnRateShort/LastBurnRateLong/LastWindowErrors/LastWindowRequests/
+	// LastReadingAt are the latest burn-rate reading the poller persisted
+	// via UpdateStatusAndReading (migration 0052, poller-burn-rate-
+	// classification BURN-13); all nil until the first reading. LastErrorAt
+	// is when the poller last saw errors in the short window (BURN-17,
+	// restart-safe grace timer), nil if never. Populated by Get, List and
+	// ListPaginated; ListPollingManual (polling-mode services have no
+	// reading) and ListForStatusPage (the public page never exposes the
+	// reading, BURN-16) leave them nil.
+	LastBurnRateShort  *float64
+	LastBurnRateLong   *float64
+	LastWindowErrors   *int64
+	LastWindowRequests *int64
+	LastReadingAt      *time.Time
+	LastErrorAt        *time.Time
 	// GroupID, GroupName, ParentServiceID, and Position describe this
 	// service's placement on one specific status page (status_page_services'
 	// group_id/parent_service_id/position columns and
@@ -89,6 +104,33 @@ type Service struct {
 	GroupName       *string
 	ParentServiceID *string
 	Position        int
+}
+
+// serviceReadingColumns is the select list for Service's latest-reading
+// fields (migration 0052), in the order readingScanArgs scans them. Shared
+// so every read path that loads them keeps the column list and the scan
+// targets in sync.
+const serviceReadingColumns = `last_burn_rate_short, last_burn_rate_long, last_window_errors, last_window_requests, last_reading_at, last_error_at`
+
+// readingScanArgs returns the scan targets for serviceReadingColumns.
+func (s *Service) readingScanArgs() []any {
+	return []any{&s.LastBurnRateShort, &s.LastBurnRateLong, &s.LastWindowErrors, &s.LastWindowRequests, &s.LastReadingAt, &s.LastErrorAt}
+}
+
+// ServiceReading is one poll's burn-rate reading for a service, persisted
+// by UpdateStatusAndReading (poller-burn-rate-classification BURN-13/
+// BURN-17). BurnShort/BurnLong are the 5m/1h burn rates, ShortErrors/
+// ShortRequests the short window's counts, ReadAt when the reading was
+// taken. LastErrorAt is the time errors were last seen in the short window,
+// nil if never - the poller carries the previous value forward when this
+// reading has no errors, so a nil here clears the stored value.
+type ServiceReading struct {
+	BurnShort     float64
+	BurnLong      float64
+	ShortErrors   int64
+	ShortRequests int64
+	ReadAt        time.Time
+	LastErrorAt   *time.Time
 }
 
 // ErrServiceInUse is returned by SoftDelete when the service is still
@@ -147,19 +189,20 @@ func (r *ServiceRepository) Create(ctx context.Context, service *Service) error 
 }
 
 // Get returns the service identified by id, including SLOName,
-// CurrentStatus, and StatusAnalysis - the full row the monitored-services
-// detail drawer needs (SVC-14). Returns found=false (no error) if no
+// CurrentStatus, StatusAnalysis, and the latest burn-rate reading - the
+// full row the monitored-services detail drawer needs (SVC-14, BURN-13). Returns found=false (no error) if no
 // service matches id, the same not-found convention
 // IncidentRepository.HasOpenIncidentForService uses.
 func (r *ServiceRepository) Get(ctx context.Context, id string) (*Service, bool, error) {
 	var service Service
 	row := r.pool.QueryRow(ctx,
 		`SELECT id, name, COALESCE(slo_id, ''), slo_name, COALESCE(slo_type, ''), COALESCE(datadog_service_tag, ''),
-		        environment, current_status, last_status_change_at, status_analysis
+		        environment, current_status, last_status_change_at, status_analysis, `+serviceReadingColumns+`
 		 FROM services WHERE id = $1 AND deleted_at IS NULL`,
 		id,
 	)
-	if err := row.Scan(&service.ID, &service.Name, &service.SLOID, &service.SLOName, &service.SLOType, &service.DatadogServiceTag, &service.Environment, &service.CurrentStatus, &service.LastStatusChangeAt, &service.StatusAnalysis); err != nil {
+	scanArgs := append([]any{&service.ID, &service.Name, &service.SLOID, &service.SLOName, &service.SLOType, &service.DatadogServiceTag, &service.Environment, &service.CurrentStatus, &service.LastStatusChangeAt, &service.StatusAnalysis}, service.readingScanArgs()...)
+	if err := row.Scan(scanArgs...); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, false, nil
 		}
@@ -178,7 +221,7 @@ func (r *ServiceRepository) ListPaginated(ctx context.Context, page, pageSize in
 
 	rows, err := r.pool.Query(ctx,
 		`SELECT id, name, COALESCE(slo_id, ''), slo_name, COALESCE(slo_type, ''), COALESCE(datadog_service_tag, ''),
-		        environment, current_status, last_status_change_at, COUNT(*) OVER() AS total
+		        environment, current_status, last_status_change_at, `+serviceReadingColumns+`, COUNT(*) OVER() AS total
 		 FROM services
 		 WHERE deleted_at IS NULL
 		 ORDER BY name
@@ -194,7 +237,8 @@ func (r *ServiceRepository) ListPaginated(ctx context.Context, page, pageSize in
 	total := 0
 	for rows.Next() {
 		var service Service
-		if err := rows.Scan(&service.ID, &service.Name, &service.SLOID, &service.SLOName, &service.SLOType, &service.DatadogServiceTag, &service.Environment, &service.CurrentStatus, &service.LastStatusChangeAt, &total); err != nil {
+		scanArgs := append([]any{&service.ID, &service.Name, &service.SLOID, &service.SLOName, &service.SLOType, &service.DatadogServiceTag, &service.Environment, &service.CurrentStatus, &service.LastStatusChangeAt}, service.readingScanArgs()...)
+		if err := rows.Scan(append(scanArgs, &total)...); err != nil {
 			return nil, 0, fmt.Errorf("db: failed to scan service: %w", err)
 		}
 		services = append(services, service)
@@ -231,7 +275,7 @@ func (r *ServiceRepository) countServices(ctx context.Context) (int, error) {
 func (r *ServiceRepository) List(ctx context.Context) ([]Service, error) {
 	rows, err := r.pool.Query(ctx,
 		`SELECT id, name, COALESCE(slo_id, ''), monitor_mode, COALESCE(slo_type, ''), COALESCE(datadog_service_tag, ''),
-		        current_status, last_status_change_at
+		        current_status, last_status_change_at, `+serviceReadingColumns+`
 		 FROM services WHERE deleted_at IS NULL ORDER BY name`)
 	if err != nil {
 		return nil, fmt.Errorf("db: failed to list services: %w", err)
@@ -241,7 +285,8 @@ func (r *ServiceRepository) List(ctx context.Context) ([]Service, error) {
 	var services []Service
 	for rows.Next() {
 		var service Service
-		if err := rows.Scan(&service.ID, &service.Name, &service.SLOID, &service.MonitorMode, &service.SLOType, &service.DatadogServiceTag, &service.CurrentStatus, &service.LastStatusChangeAt); err != nil {
+		scanArgs := append([]any{&service.ID, &service.Name, &service.SLOID, &service.MonitorMode, &service.SLOType, &service.DatadogServiceTag, &service.CurrentStatus, &service.LastStatusChangeAt}, service.readingScanArgs()...)
+		if err := rows.Scan(scanArgs...); err != nil {
 			return nil, fmt.Errorf("db: failed to scan service: %w", err)
 		}
 		services = append(services, service)
@@ -537,6 +582,37 @@ func (r *ServiceRepository) UpdateStatus(ctx context.Context, serviceID, status 
 	)
 	if err != nil {
 		return fmt.Errorf("db: failed to update service status: %w", err)
+	}
+
+	return nil
+}
+
+// UpdateStatusAndReading is UpdateStatus plus the latest burn-rate reading
+// (poller-burn-rate-classification BURN-13/BURN-17), written in one UPDATE
+// so status and reading can never disagree after a crash or a leader
+// handover. current_status/last_status_change_at follow UpdateStatus's
+// semantics exactly (change time only moves when status actually differs);
+// the six reading columns are always overwritten with rd. Same shape as
+// UpdateStatus otherwise: tenant isolation comes from RLS on the ctx's
+// tenant transaction, and an unknown (or other tenant's) serviceID matches
+// zero rows without an error. UpdateStatus stays for callers with no
+// reading (manual polling).
+func (r *ServiceRepository) UpdateStatusAndReading(ctx context.Context, serviceID, status string, rd ServiceReading) error {
+	_, err := r.pool.Exec(ctx,
+		`UPDATE services
+		 SET current_status = $2,
+		     last_status_change_at = CASE WHEN current_status <> $2 THEN now() ELSE last_status_change_at END,
+		     last_burn_rate_short = $3,
+		     last_burn_rate_long = $4,
+		     last_window_errors = $5,
+		     last_window_requests = $6,
+		     last_reading_at = $7,
+		     last_error_at = $8
+		 WHERE id = $1`,
+		serviceID, status, rd.BurnShort, rd.BurnLong, rd.ShortErrors, rd.ShortRequests, rd.ReadAt, rd.LastErrorAt,
+	)
+	if err != nil {
+		return fmt.Errorf("db: failed to update service status and reading: %w", err)
 	}
 
 	return nil

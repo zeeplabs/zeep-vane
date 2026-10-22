@@ -392,7 +392,7 @@ func newPollerFromStoredIntegration(ctx context.Context, pool *db.Pool, cfg conf
 			return nil, fmt.Errorf("serve: failed to decrypt datadog app key: %w", err)
 		}
 
-		return datadog.NewClient(string(apiKey), string(appKey)), nil
+		return datadog.NewClient(string(apiKey), string(appKey)).WithLogger(logger), nil
 	})
 
 	return p, true, nil

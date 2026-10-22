@@ -25,8 +25,9 @@ const manualCheckTimeout = 10 * time.Second
 
 // manualFailureThreshold is how many consecutive failed checks a polling-
 // manual service must accumulate before its status flips to "outage"
-// (MP-06/MP-11 - mirrors the Datadog poller's own breachHysteresisCycles,
-// AD-019).
+// (MP-06/MP-11 - originally mirroring the Datadog poller's consecutive-
+// breach hysteresis from AD-019, which AD-049's burn-rate classification
+// has since removed from that poller; this check-based count is unaffected).
 const manualFailureThreshold = 2
 
 // pollingServiceLister is the subset of *db.ServiceRepository
@@ -194,11 +195,11 @@ func (s *ManualScheduler) reconcile(ctx context.Context, tracked map[string]trac
 // runServiceLoop runs svc's own check loop: an immediate first check, then
 // every svc.PollIntervalSeconds, until ctx is canceled. failureStreak and
 // currentStatus are local to this one goroutine - no shared map/lock is
-// needed (an improvement over the Datadog poller's necessarily-shared
-// breachStreak map, design.md Approach Exploration), and both reset to
-// zero/not_configured's-successor-status on every new goroutine, matching
-// the spec's Edge Cases: a leadership change starts every service's
-// consecutive-failure count at 0.
+// needed (an improvement over the shared per-service breach-streak map the
+// Datadog poller kept before AD-049, design.md Approach Exploration), and
+// both reset to zero/not_configured's-successor-status on every new
+// goroutine, matching the spec's Edge Cases: a leadership change starts
+// every service's consecutive-failure count at 0.
 func (s *ManualScheduler) runServiceLoop(ctx context.Context, tenantID string, svc db.Service) {
 	failureStreak := 0
 	currentStatus := svc.CurrentStatus

@@ -1203,7 +1203,22 @@
       "deleteConfirmTitle": "Excluir serviço",
       "deleteConfirmDescription": "Excluir o serviço \"{{name}}\"? O histórico de verificações e incidentes é mantido, mas ele para de ser monitorado. Esta ação não pode ser desfeita.",
       "deleteError": "Não foi possível excluir o serviço.",
-      "environmentError": "Não foi possível atualizar a tag de ambiente."
+      "environmentError": "Não foi possível atualizar a tag de ambiente.",
+      "latestReading": {
+        "title": "Última leitura",
+        "empty": "Ainda sem leitura do Datadog.",
+        "errorRate": "Taxa de erro (5 min)",
+        "burnShort": "Burn rate (5 min)",
+        "burnLong": "Burn rate (1 h)",
+        "noTraffic": "Sem tráfego",
+        "errorCount_zero": "{{value}} erros",
+        "errorCount_one": "{{value}} erro",
+        "errorCount_other": "{{value}} erros",
+        "requestCount_one": "{{value}} requisição",
+        "requestCount_other": "{{value}} requisições",
+        "errorsInRequests": "{{errors}} em {{requests}}",
+        "burnHelp": "1x = consumo exato do orçamento de erro do SLO."
+      }
     },
     "addDrawer": {
       "drawerTitle": "Adicionar serviço",

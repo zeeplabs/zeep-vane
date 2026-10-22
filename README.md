@@ -74,7 +74,7 @@ docker compose up -d
 
 | Feature | Description |
 | --- | --- |
-| **Background SLO poller** | Polls Datadog's SLO API on `POLL_INTERVAL_SECONDS`, writes open/closed `status_intervals` — never called live on a visitor request |
+| **Background SLO poller** | Polls Datadog's SLO API on `POLL_INTERVAL_SECONDS` and classifies each service by multi-window burn rate (5 min + 1 h, 14.4x outage / 7.2x degraded, the same signal as Datadog's SLO alert monitors), writes open/closed `status_intervals` — never called live on a visitor request |
 | **Silent cache-fallback** | If the poller falls behind, the public page still serves the last known interval — visitors never see a technical error |
 | **Encrypted credentials** | Datadog API key + application key stored encrypted at rest (`internal/crypto`) |
 | **Per-service SLO mapping** | Each exposed service maps to one Datadog SLO |
@@ -375,7 +375,7 @@ Loaded by `internal/config.Load()` (`internal/config/config.go`). A `.env` file 
 | `VANE_MASTER_KEY` | Yes | — | Symmetric key used to encrypt stored secrets at rest: Datadog credentials, email-provider and LLM provider credentials, TOTP secrets, and the TLS/ACME private keys CertMagic persists in `certmagic_storage` (AD-030). Stretched into the actual AES-256 key via PBKDF2-HMAC-SHA256 (210,000 iterations, `internal/crypto`) rather than a single unsalted hash, so a weak-but-long key still costs real compute per guess. Losing or changing it makes every encrypted secret, including the TLS private keys, unreadable |
 | `VANE_SESSION_SECRET` | Yes | — | Signing secret for session JWTs |
 | `PORT` | Yes | — | Port the admin HTTP API (and SPA) listens on |
-| `POLL_INTERVAL_SECONDS` | Yes | — | How often the poller queries Datadog for SLO status. Controls poll cadence only — each fetch always requests a fixed 5-minute window of recent SLO history, lagged 60s behind "now" to avoid Datadog's not-yet-aggregated freshest minute (AD-019) |
+| `POLL_INTERVAL_SECONDS` | Yes | — | How often the poller queries Datadog for SLO status. Controls poll cadence only — each fetch always requests the last hour of SLO history (split into 5-minute and 1-hour burn-rate windows), lagged 60s behind "now" to avoid Datadog's not-yet-aggregated freshest minute (AD-019, AD-049) |
 | `LOG_LEVEL` | No | `info` | zap log level |
 | `CORS_ALLOWED_ORIGIN` | No | `http://localhost:5173` | Single allowed CORS origin — defaults to the Vite dev server |
 | `PUBLIC_DNS_TARGET` | No | *(empty)* | The DNS target (e.g. an IP or CNAME) this instance's admins should point their custom domain at. Left empty, the "attach domain" screen shows "not configured" instead of blocking — Vane cannot reliably discover its own public hostname |

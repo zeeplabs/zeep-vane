@@ -3,11 +3,16 @@ package datadog
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
+
+	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
+	"go.uber.org/zap/zaptest/observer"
 )
 
 func newTestClient(t *testing.T, server *httptest.Server) *Client {
@@ -663,5 +668,361 @@ func TestSearchErrorTrackingIssues_LongErrorMessage_TruncatedTo500Chars(t *testi
 	}
 	if len(hint.ErrorMessage) != 500 {
 		t.Errorf("len(ErrorMessage) = %d, want 500", len(hint.ErrorMessage))
+	}
+}
+
+// windowsTestEnd is the end instant every FetchSLOWindows test asks for:
+// minute-aligned, so 60s buckets line up with end-long/end-short exactly.
+var windowsTestEnd = time.Unix(1_760_000_040, 0)
+
+// historyBucketsBody renders a real-shaped /history response (float counts,
+// ms timestamps, 60s interval unless overridden) whose buckets start at
+// firstStart and advance by interval seconds. numerators/denominators are
+// per-bucket good/total counts.
+func historyBucketsBody(t *testing.T, firstStart time.Time, interval int, numerators, denominators []float64) string {
+	t.Helper()
+	times := make([]float64, len(denominators))
+	var numSum, denSum float64
+	for i := range denominators {
+		times[i] = float64(firstStart.Add(time.Duration(i*interval) * time.Second).UnixMilli())
+		numSum += numerators[i]
+		denSum += denominators[i]
+	}
+	body := map[string]any{
+		"data": map[string]any{
+			"overall": map[string]any{"sli_value": 99.1, "state": "ok"},
+			"series": map[string]any{
+				"interval":    float64(interval),
+				"times":       times,
+				"numerator":   map[string]any{"sum": numSum, "values": numerators},
+				"denominator": map[string]any{"sum": denSum, "values": denominators},
+			},
+			"thresholds": map[string]any{
+				"30d": map[string]any{"target": 99.5, "timeframe": "30d"},
+			},
+		},
+	}
+	raw, err := json.Marshal(body)
+	if err != nil {
+		t.Fatalf("marshal fixture: %v", err)
+	}
+	// json.Marshal writes whole floats as integers (45, not 45.0), unlike
+	// Datadog. Rewrite the interval as a float literal; fixtures that need
+	// float counts use fractional values, which Marshal keeps as floats.
+	return strings.Replace(string(raw), fmt.Sprintf(`"interval":%d`, interval), fmt.Sprintf(`"interval":%d.0`, interval), 1)
+}
+
+func TestFetchSLOWindows_60sSeriesWithPartialFirstBucket_SumsShortAndLong(t *testing.T) {
+	const buckets = 61 // 1 extra leading bucket + 60 one-minute buckets
+	numerators := make([]float64, buckets)
+	denominators := make([]float64, buckets)
+	// Bucket 0 starts before end-1h: Datadog's partial first bucket, here
+	// zero-valued like the live replay - but give it traffic anyway to
+	// prove it's dropped by timestamp, not by being zero.
+	numerators[0], denominators[0] = 7.0, 9.0
+	for i := 1; i < buckets; i++ {
+		numerators[i], denominators[i] = 10.0, 10.0
+	}
+	// Two errors 30 min ago (long window only) and 1 + 2 errors in the
+	// last 5 buckets (short window).
+	numerators[30] = 8.0
+	numerators[57] = 9.0
+	numerators[60] = 7.999999999999999 // float noise, rounds to 8
+	end := windowsTestEnd
+	firstStart := end.Add(-time.Hour - time.Minute)
+
+	var gotFromTs, gotToTs string
+	calls := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		gotFromTs = r.URL.Query().Get("from_ts")
+		gotToTs = r.URL.Query().Get("to_ts")
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(historyBucketsBody(t, firstStart, 60, numerators, denominators)))
+	}))
+	defer server.Close()
+
+	got, err := newTestClient(t, server).FetchSLOWindows(t.Context(), "slo-1", end, 5*time.Minute, time.Hour)
+	if err != nil {
+		t.Fatalf("FetchSLOWindows() returned unexpected error: %v", err)
+	}
+
+	if calls != 1 {
+		t.Errorf("history calls = %d, want 1 (no fallback for a 60s series)", calls)
+	}
+	if want := fmt.Sprint(end.Add(-time.Hour - time.Minute).Unix()); gotFromTs != want {
+		t.Errorf("from_ts = %q, want %q (end - long - one bucket)", gotFromTs, want)
+	}
+	if want := fmt.Sprint(end.Unix()); gotToTs != want {
+		t.Errorf("to_ts = %q, want %q", gotToTs, want)
+	}
+	if !got.HasSeries {
+		t.Error("HasSeries = false, want true")
+	}
+	if want := (WindowCounts{Requests: 600, Errors: 5}); got.Long != want {
+		t.Errorf("Long = %+v, want %+v", got.Long, want)
+	}
+	if want := (WindowCounts{Requests: 50, Errors: 3}); got.Short != want {
+		t.Errorf("Short = %+v, want %+v", got.Short, want)
+	}
+	if got.Target != 99.5 || got.Timeframe != "30d" || got.State != "ok" {
+		t.Errorf("Target/Timeframe/State = %v/%q/%q, want 99.5/30d/ok", got.Target, got.Timeframe, got.State)
+	}
+}
+
+func TestFetchSLOWindows_ErrorsExceedRequests_Clamped(t *testing.T) {
+	end := windowsTestEnd
+	firstStart := end.Add(-3 * time.Minute)
+	// Bucket 0: numerator > denominator (negative errors) -> clamped to 0.
+	// Bucket 1: negative numerator (errors > requests) -> clamped to 5.
+	// Bucket 2: normal, 1 error.
+	numerators := []float64{12.0, -3.0, 3.5}
+	denominators := []float64{10.0, 5.0, 4.5}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(historyBucketsBody(t, firstStart, 60, numerators, denominators)))
+	}))
+	defer server.Close()
+
+	got, err := newTestClient(t, server).FetchSLOWindows(t.Context(), "slo-1", end, 5*time.Minute, time.Hour)
+	if err != nil {
+		t.Fatalf("FetchSLOWindows() returned unexpected error: %v", err)
+	}
+
+	// 10 + 5 + round(4.5)=5 requests; 0 + 5 + (5 - round(3.5)=4)=1 errors.
+	want := WindowCounts{Requests: 20, Errors: 6}
+	if got.Long != want {
+		t.Errorf("Long = %+v, want %+v", got.Long, want)
+	}
+	if got.Short != want {
+		t.Errorf("Short = %+v, want %+v", got.Short, want)
+	}
+}
+
+func TestFetchSLOWindows_CoarseInterval_FallsBackToSecondCallForShort(t *testing.T) {
+	end := windowsTestEnd
+	firstStart := end.Add(-time.Hour - time.Minute)
+	// 13 five-minute buckets: Long must come from the sums, not buckets.
+	numerators := make([]float64, 13)
+	denominators := make([]float64, 13)
+	for i := range denominators {
+		numerators[i], denominators[i] = 98.0, 100.0
+	}
+	shortBody := `{
+  "data": {
+    "overall": {"sli_value": 90.0, "state": "breached"},
+    "series": {
+      "interval": 300.0,
+      "numerator": {"sum": 45.0},
+      "denominator": {"sum": 50.0}
+    },
+    "thresholds": {"30d": {"target": 99.5, "timeframe": "30d"}}
+  }
+}`
+
+	var froms, tos []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		froms = append(froms, r.URL.Query().Get("from_ts"))
+		tos = append(tos, r.URL.Query().Get("to_ts"))
+		if len(froms) == 1 {
+			_, _ = w.Write([]byte(historyBucketsBody(t, firstStart, 300, numerators, denominators)))
+			return
+		}
+		_, _ = w.Write([]byte(shortBody))
+	}))
+	defer server.Close()
+
+	got, err := newTestClient(t, server).FetchSLOWindows(t.Context(), "slo-1", end, 5*time.Minute, time.Hour)
+	if err != nil {
+		t.Fatalf("FetchSLOWindows() returned unexpected error: %v", err)
+	}
+
+	if len(froms) != 2 {
+		t.Fatalf("history calls = %d, want 2 (coarse interval triggers fallback)", len(froms))
+	}
+	if want := fmt.Sprint(end.Add(-5 * time.Minute).Unix()); froms[1] != want {
+		t.Errorf("second call from_ts = %q, want %q (end - short)", froms[1], want)
+	}
+	if want := fmt.Sprint(end.Unix()); tos[1] != want {
+		t.Errorf("second call to_ts = %q, want %q (end)", tos[1], want)
+	}
+	if !got.HasSeries {
+		t.Error("HasSeries = false, want true")
+	}
+	if want := (WindowCounts{Requests: 1300, Errors: 26}); got.Long != want {
+		t.Errorf("Long = %+v, want %+v (first call's sums)", got.Long, want)
+	}
+	if want := (WindowCounts{Requests: 50, Errors: 5}); got.Short != want {
+		t.Errorf("Short = %+v, want %+v (second call's sums)", got.Short, want)
+	}
+	// State/target come from the first (long) call.
+	if got.State != "ok" || got.Target != 99.5 {
+		t.Errorf("State/Target = %q/%v, want ok/99.5", got.State, got.Target)
+	}
+}
+
+func TestFetchSLOWindows_SumsWithoutBuckets_FallsBackToSecondCall(t *testing.T) {
+	end := windowsTestEnd
+	longBody := `{"data":{"overall":{"sli_value":99.0,"state":"ok"},"series":{"numerator":{"sum":990.0},"denominator":{"sum":1000.0}},"thresholds":{"30d":{"target":99.5,"timeframe":"30d"}}}}`
+	shortBody := `{"data":{"overall":{"sli_value":95.0,"state":"ok"},"series":{"numerator":{"sum":76.0},"denominator":{"sum":80.0}}}}`
+
+	calls := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		if calls == 1 {
+			_, _ = w.Write([]byte(longBody))
+			return
+		}
+		_, _ = w.Write([]byte(shortBody))
+	}))
+	defer server.Close()
+
+	got, err := newTestClient(t, server).FetchSLOWindows(t.Context(), "slo-1", end, 5*time.Minute, time.Hour)
+	if err != nil {
+		t.Fatalf("FetchSLOWindows() returned unexpected error: %v", err)
+	}
+	if calls != 2 {
+		t.Fatalf("history calls = %d, want 2", calls)
+	}
+	if !got.HasSeries {
+		t.Error("HasSeries = false, want true")
+	}
+	if want := (WindowCounts{Requests: 1000, Errors: 10}); got.Long != want {
+		t.Errorf("Long = %+v, want %+v", got.Long, want)
+	}
+	if want := (WindowCounts{Requests: 80, Errors: 4}); got.Short != want {
+		t.Errorf("Short = %+v, want %+v", got.Short, want)
+	}
+}
+
+func TestFetchSLOWindows_MissingSeries_HasSeriesFalseWithStateAndTarget(t *testing.T) {
+	// Monitor-based SLO: overall + thresholds, no series at all.
+	body := `{
+  "data": {
+    "overall": {"sli_value": 98.2, "state": "breached"},
+    "thresholds": {"7d": {"target": 99.0, "timeframe": "7d"}}
+  }
+}`
+	calls := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		_, _ = w.Write([]byte(body))
+	}))
+	defer server.Close()
+
+	got, err := newTestClient(t, server).FetchSLOWindows(t.Context(), "slo-1", windowsTestEnd, 5*time.Minute, time.Hour)
+	if err != nil {
+		t.Fatalf("FetchSLOWindows() returned unexpected error: %v", err)
+	}
+	if calls != 1 {
+		t.Errorf("history calls = %d, want 1 (no fallback without counts)", calls)
+	}
+	if got.HasSeries {
+		t.Error("HasSeries = true, want false")
+	}
+	if got.State != "breached" || got.Target != 99.0 || got.Timeframe != "7d" {
+		t.Errorf("State/Target/Timeframe = %q/%v/%q, want breached/99/7d", got.State, got.Target, got.Timeframe)
+	}
+	if got.Short != (WindowCounts{}) || got.Long != (WindowCounts{}) {
+		t.Errorf("Short/Long = %+v/%+v, want zero", got.Short, got.Long)
+	}
+}
+
+func TestFetchSLOWindows_ServerError_ReturnsErrServer(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusBadGateway)
+	}))
+	defer server.Close()
+
+	_, err := newTestClient(t, server).FetchSLOWindows(t.Context(), "slo-1", windowsTestEnd, 5*time.Minute, time.Hour)
+	if !errors.Is(err, ErrServer) {
+		t.Errorf("error = %v, want ErrServer", err)
+	}
+}
+
+func TestFetchSLOWindows_FallbackCallServerError_ReturnsErrServer(t *testing.T) {
+	longBody := `{"data":{"overall":{"state":"ok"},"series":{"interval":300.0,"numerator":{"sum":10.0},"denominator":{"sum":10.0}}}}`
+	calls := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		if calls == 1 {
+			_, _ = w.Write([]byte(longBody))
+			return
+		}
+		w.WriteHeader(http.StatusServiceUnavailable)
+	}))
+	defer server.Close()
+
+	_, err := newTestClient(t, server).FetchSLOWindows(t.Context(), "slo-1", windowsTestEnd, 5*time.Minute, time.Hour)
+	if !errors.Is(err, ErrServer) {
+		t.Errorf("error = %v, want ErrServer", err)
+	}
+}
+
+func TestFetchSLOWindows_MalformedBody_ReturnsDecodeError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"data":{"series":{"times":"not-an-array"}}}`))
+	}))
+	defer server.Close()
+
+	_, err := newTestClient(t, server).FetchSLOWindows(t.Context(), "slo-1", windowsTestEnd, 5*time.Minute, time.Hour)
+	if err == nil || !strings.Contains(err.Error(), "failed to decode response") {
+		t.Errorf("error = %v, want a wrapped decode error", err)
+	}
+}
+
+// rateLimitTestBody is a monitor-based (no series) response, so
+// FetchSLOWindows makes exactly one call and logs rate limits exactly once.
+const rateLimitTestBody = `{"data":{"overall":{"sli_value":99.9,"state":"ok"}}}`
+
+func TestFetchSLOWindows_RateLimitLow_LogsWarning(t *testing.T) {
+	core, logs := observer.New(zapcore.DebugLevel)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("X-RateLimit-Limit", "100")
+		w.Header().Set("X-RateLimit-Remaining", "9")
+		_, _ = w.Write([]byte(rateLimitTestBody))
+	}))
+	defer server.Close()
+
+	client := newTestClient(t, server).WithLogger(zap.New(core))
+	if _, err := client.FetchSLOWindows(t.Context(), "slo-1", windowsTestEnd, 5*time.Minute, time.Hour); err != nil {
+		t.Fatalf("FetchSLOWindows() returned unexpected error: %v", err)
+	}
+
+	warnings := logs.FilterLevelExact(zapcore.WarnLevel).All()
+	if len(warnings) != 1 {
+		t.Fatalf("warn logs = %d, want 1", len(warnings))
+	}
+	if got := warnings[0].ContextMap()["rate_limit_remaining"]; got != int64(9) {
+		t.Errorf("rate_limit_remaining = %v, want 9", got)
+	}
+	for _, entry := range logs.All() {
+		for _, field := range entry.Context {
+			if strings.Contains(field.String, "test-api-key") || strings.Contains(field.String, "test-app-key") {
+				t.Errorf("log field %q leaks a credential", field.Key)
+			}
+		}
+	}
+}
+
+func TestFetchSLOWindows_RateLimitHealthy_LogsDebugOnly(t *testing.T) {
+	core, logs := observer.New(zapcore.DebugLevel)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("X-RateLimit-Limit", "100")
+		w.Header().Set("X-RateLimit-Remaining", "50")
+		_, _ = w.Write([]byte(rateLimitTestBody))
+	}))
+	defer server.Close()
+
+	client := newTestClient(t, server).WithLogger(zap.New(core))
+	if _, err := client.FetchSLOWindows(t.Context(), "slo-1", windowsTestEnd, 5*time.Minute, time.Hour); err != nil {
+		t.Fatalf("FetchSLOWindows() returned unexpected error: %v", err)
+	}
+
+	if n := logs.FilterLevelExact(zapcore.WarnLevel).Len(); n != 0 {
+		t.Errorf("warn logs = %d, want 0", n)
+	}
+	if n := logs.FilterLevelExact(zapcore.DebugLevel).Len(); n != 1 {
+		t.Errorf("debug logs = %d, want 1", n)
 	}
 }

@@ -8,7 +8,8 @@ import { formatDateTime } from "../../lib/formatDate";
 import { Input } from "../../components/ui/Input";
 import { Button } from "../../components/ui/Button";
 import { Dialog } from "../../components/ui/Dialog";
-import type { HourlyBucket, ServiceEnvironment } from "../../types/api";
+import type { HourlyBucket, ServiceEnvironment, ServiceLatestReading } from "../../types/api";
+import { formatLastAccess } from "../admins/adminMeta";
 import { EnvironmentTag } from "./EnvironmentTag";
 import { environmentLabel, environmentOptions } from "./environmentMeta";
 import { useDeleteService, useServiceDetail, useUpdateService } from "./hooks";
@@ -31,17 +32,99 @@ function formatUptime(uptime: number | null): string {
   return uptime === null ? "—" : `${uptime.toFixed(2)}%`;
 }
 
+// formatBurnRate renders a burn rate as "12.3x" (one decimal, same
+// toFixed convention as formatUptime). The API sends null only for a
+// non-finite burn (SLO target 100% with errors in the window), shown as
+// "∞"; `unbounded` lets the caller fall back to "—" when the window has no
+// errors and so cannot be unbounded.
+function formatBurnRate(value: number | null, unbounded: boolean): string {
+  if (value === null) return unbounded ? "∞" : "—";
+  return `${value.toFixed(1)}x`;
+}
+
 interface StatProps {
   label: string;
   value: string;
+  hint?: string;
 }
 
-function Stat({ label, value }: StatProps) {
+function Stat({ label, value, hint }: StatProps) {
   return (
     <div>
       <div className="mb-1 text-[10.5px] font-bold uppercase tracking-wide text-neutral-400">{label}</div>
       <div className="text-lg font-bold text-text">{value}</div>
+      {hint ? <div className="text-[11.5px] text-neutral-400">{hint}</div> : null}
     </div>
+  );
+}
+
+interface LatestReadingProps {
+  reading: ServiceLatestReading | null;
+}
+
+/** "Última leitura" block (poller-burn-rate-classification BURN-14): the
+ * error rate and burn rates the poller computed on its last cycle, so an
+ * admin can see why the service has its current status. window_errors/
+ * window_requests are the short (5 min) window's counts. */
+function LatestReading({ reading }: LatestReadingProps) {
+  const { t, i18n } = useTranslation();
+
+  const header = (
+    <div className="mb-2 flex items-baseline justify-between gap-2">
+      <div className="text-[10.5px] font-bold uppercase tracking-wide text-neutral-400">
+        {t("services.detail.latestReading.title")}
+      </div>
+      {reading ? (
+        <time dateTime={reading.read_at} className="text-[11.5px] text-neutral-400">
+          {formatLastAccess(reading.read_at, t)}
+        </time>
+      ) : null}
+    </div>
+  );
+
+  if (!reading) {
+    return (
+      <section>
+        {header}
+        <p className="text-[12.5px] text-neutral-400">{t("services.detail.latestReading.empty")}</p>
+      </section>
+    );
+  }
+
+  const { window_errors: errors, window_requests: requests } = reading;
+  const noTraffic = requests === 0;
+  const errorRate = noTraffic
+    ? t("services.detail.latestReading.noTraffic")
+    : `${((errors / requests) * 100).toFixed(2)}%`;
+  const errorsInRequests = noTraffic
+    ? undefined
+    : t("services.detail.latestReading.errorsInRequests", {
+        errors: t("services.detail.latestReading.errorCount", {
+          count: errors,
+          value: errors.toLocaleString(i18n.language),
+        }),
+        requests: t("services.detail.latestReading.requestCount", {
+          count: requests,
+          value: requests.toLocaleString(i18n.language),
+        }),
+      });
+
+  return (
+    <section>
+      {header}
+      <div className="grid grid-cols-3 gap-4">
+        <Stat label={t("services.detail.latestReading.errorRate")} value={errorRate} hint={errorsInRequests} />
+        <Stat
+          label={t("services.detail.latestReading.burnShort")}
+          value={formatBurnRate(reading.burn_rate_short, errors > 0)}
+        />
+        {/* The long (1 h) window's error count isn't exposed, but a null
+         * burn_rate_long can only mean +Inf (the backend never sends NaN),
+         * so it always renders as "∞". */}
+        <Stat label={t("services.detail.latestReading.burnLong")} value={formatBurnRate(reading.burn_rate_long, true)} />
+      </div>
+      <p className="mt-2 text-[11.5px] text-neutral-400">{t("services.detail.latestReading.burnHelp")}</p>
+    </section>
   );
 }
 
@@ -262,6 +345,10 @@ export function ServiceDetailDrawer({ serviceId, onClose }: ServiceDetailDrawerP
                   <p className="text-[12.5px] leading-relaxed text-neutral-300">{detail.status_analysis}</p>
                 </div>
               ) : null}
+
+              {/* Polling-manual services never go through the Datadog
+               * burn-rate path, so they have no reading to show. */}
+              {detail.monitor_mode === "slo" ? <LatestReading reading={detail.latest_reading} /> : null}
 
               <div>
                 <div className="mb-2 text-[10.5px] font-bold uppercase tracking-wide text-neutral-400">

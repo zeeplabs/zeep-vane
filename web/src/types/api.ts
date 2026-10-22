@@ -135,6 +135,22 @@ export interface ServiceDetail extends Service {
   status_analysis: string | null;
   incidents_30d: number;
   hourly_buckets: HourlyBucket[];
+  // latest_reading is present on the detail endpoint only (never on the
+  // list), always as a key: null means the poller has no reading for this
+  // service yet (poller-burn-rate-classification BURN-13/BURN-14).
+  latest_reading: ServiceLatestReading | null;
+}
+
+// ServiceLatestReading mirrors internal/api's latestReadingResponse - the
+// burn rates and short-window (5 min) counts from the poller's last cycle.
+// burn_rate_short (5 min) / burn_rate_long (1 h) are null only when the
+// value is non-finite (SLO target 100% with errors -> unbounded burn).
+export interface ServiceLatestReading {
+  burn_rate_short: number | null;
+  burn_rate_long: number | null;
+  window_errors: number;
+  window_requests: number;
+  read_at: string;
 }
 
 // DomainType/DomainStatus mirror the backend's domain-verification-state

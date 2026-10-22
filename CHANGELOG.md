@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **SLO services are classified by multi-window burn rate** (AD-049): the poller now reads 5-minute and 1-hour windows from one Datadog `/history` call and marks a service `outage` when both windows burn the error budget at ≥ 14.4x (`degraded` at ≥ 7.2x), with at least 3 failed requests in the last 5 minutes — the same signal as Datadog's `slo alert` monitors. Services now recover as soon as the last 5 minutes are clean, instead of staying degraded/outage for hours after Datadog already shows them healthy. Isolated errors (1-2 in 5 minutes) no longer change status; a service with no traffic keeps its status for 15 minutes after its last error, then returns to operational. Monitor-based SLOs and SLOs without a target keep the previous state-based classification.
+- LLM-written incident descriptions, degraded tooltips and closing comments now mention the error rate of the last 5 minutes and how fast the error budget is burning.
+
+### Added
+
+- **Latest reading on the service detail drawer** (admin only): error rate of the last 5 minutes, burn rate over 5 minutes and 1 hour, and when it was read. Never exposed on the public status page.
+
+### Migration notes
+
+- Adds six nullable columns to `services` (migration `0052`): `last_burn_rate_short`, `last_burn_rate_long`, `last_window_errors`, `last_window_requests`, `last_reading_at`, `last_error_at`. No backfill; the first poll cycle after deploy fills them.
+
 ## [0.10.0] — 2026-10-07
 
 ### Added

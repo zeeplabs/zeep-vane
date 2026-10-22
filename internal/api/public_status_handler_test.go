@@ -1415,6 +1415,42 @@ func TestPublicStatusGet_NeverExposesPendingCloseComment(t *testing.T) {
 	}
 }
 
+// TestPublicStatusGet_NeverExposesLatestReading covers BURN-16: even with a
+// burn-rate reading persisted on the service, the public payload carries no
+// latest_reading or any reading field - burn rates and request/error counts
+// are admin-only.
+func TestPublicStatusGet_NeverExposesLatestReading(t *testing.T) {
+	r, pool := newPublicStatusRouter(t)
+	serviceID, cleanup := createPublicStatusServiceFixture(t, pool, "degraded", time.Now())
+	t.Cleanup(cleanup)
+	statusPageID := createPublicStatusPageFixture(t, pool, serviceID)
+
+	if _, err := pool.Exec(context.Background(),
+		`UPDATE services
+		 SET last_burn_rate_short = 12.3, last_burn_rate_long = 8.1,
+		     last_window_errors = 5, last_window_requests = 120,
+		     last_reading_at = now(), last_error_at = now()
+		 WHERE id = $1`, serviceID); err != nil {
+		t.Fatalf("setup UPDATE returned unexpected error: %v", err)
+	}
+
+	req := withStatusPageContext(httptest.NewRequest(http.MethodGet, "/", nil), statusPageID)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), serviceID) {
+		t.Fatalf("public body does not contain the seeded service %s: %s", serviceID, rec.Body.String())
+	}
+	for _, key := range []string{"latest_reading", "burn_rate", "window_errors", "window_requests", "last_error_at", "last_reading_at"} {
+		if strings.Contains(rec.Body.String(), key) {
+			t.Errorf("public body contains %q, want reading never exposed publicly: %s", key, rec.Body.String())
+		}
+	}
+}
+
 // TestPublicStatusGet_Range90d_PartialCoverageLeadingBucketsNoData covers
 // TRS-06 at the handler level for a wide range: a service whose real data
 // only covers the most recent slice of a 90d window must still render

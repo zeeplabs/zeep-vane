@@ -1,6 +1,9 @@
 package llm
 
-import "fmt"
+import (
+	"fmt"
+	"math"
+)
 
 // AnalysisInput is the SLO/incident context handed to each prompt builder,
 // built by the caller (SLOAnalyzer) from db.Service + datadog.SLOStatus.
@@ -24,6 +27,17 @@ type AnalysisInput struct {
 	// (RCA-01..04); buildClosingCommentPrompt ignores both fields.
 	CauseType    string
 	CauseMessage string
+	// BurnRateShort/BurnRateLong are the cycle's 5-minute/1-hour burn
+	// rates (how many times faster than the SLO's error budget allows the
+	// service is failing), and WindowErrors/WindowRequests the 5-minute
+	// window's counts (poller-burn-rate-classification BURN-15). All zero
+	// when the transition came from the state-based fallback (no counts);
+	// burnSentence then adds nothing. A burn rate is +Inf when the target
+	// is 100% and the window had errors.
+	BurnRateShort  float64
+	BurnRateLong   float64
+	WindowErrors   int64
+	WindowRequests int64
 }
 
 // causeSentence returns the extra user-prompt sentence surfacing in's cause
@@ -38,6 +52,34 @@ func causeSentence(in AnalysisInput) string {
 		return ""
 	}
 	return fmt.Sprintf(" Causa técnica identificada: %s - %s.", in.CauseType, in.CauseMessage)
+}
+
+// burnSentence returns the extra user-prompt sentence surfacing in's
+// burn-rate numbers (BURN-15), or "" when the 5-minute window had no
+// requests (no reading, or no traffic to describe). Same "optional extra
+// sentence" pattern as causeSentence: the numbers go into the user prompt
+// in plain words - "margem de falhas permitida", never "burn rate"/"error
+// budget" - so the model can cite them under analysisSystemPrompt's
+// unchanged vocabulary rules. A burn rate of +Inf (100% target) never
+// reaches the text: the multiplier is replaced by saying the target
+// tolerates no failures.
+func burnSentence(in AnalysisInput) string {
+	if in.WindowRequests <= 0 {
+		return ""
+	}
+	errs := min(max(in.WindowErrors, 0), in.WindowRequests)
+	if errs == 0 {
+		return fmt.Sprintf(" Nos últimos 5 minutos, nenhuma das %d requisições falhou.", in.WindowRequests)
+	}
+
+	sentence := fmt.Sprintf(" Nos últimos 5 minutos, %d de %d requisições falharam (taxa de erro de %.1f%%).",
+		errs, in.WindowRequests, 100*float64(errs)/float64(in.WindowRequests))
+	if math.IsInf(in.BurnRateShort, 0) || math.IsInf(in.BurnRateLong, 0) ||
+		math.IsNaN(in.BurnRateShort) || math.IsNaN(in.BurnRateLong) {
+		return sentence + " A meta deste serviço não tolera nenhuma falha."
+	}
+	return sentence + fmt.Sprintf(" Nesse ritmo, as falhas consomem a margem de falhas permitida %.1f vezes mais rápido "+
+		"que o aceitável nos últimos 5 minutos, e %.1f vezes na última hora.", in.BurnRateShort, in.BurnRateLong)
 }
 
 // analysisSystemPrompt is shared by all three builders (2026-10-07
@@ -64,9 +106,9 @@ const analysisSystemPrompt = "Você está escrevendo uma atualização curta par
 func buildDegradedTooltipPrompt(in AnalysisInput) (systemPrompt, userPrompt string) {
 	userPrompt = fmt.Sprintf(
 		"O serviço %q está atualmente em estado degradado. Estado do SLO: %s. "+
-			"SLI atual: %.4f. Meta: %.4f. Período: %s. Error budget restante: %.2f%%.%s "+
+			"SLI atual: %.4f. Meta: %.4f. Período: %s. Error budget restante: %.2f%%.%s%s "+
 			"Escreva um tooltip curto explicando o estado degradado para quem visita a página de status.",
-		in.ServiceName, in.SLOState, in.SLI, in.Target, in.Timeframe, in.ErrorBudgetRemaining, causeSentence(in),
+		in.ServiceName, in.SLOState, in.SLI, in.Target, in.Timeframe, in.ErrorBudgetRemaining, causeSentence(in), burnSentence(in),
 	)
 	return analysisSystemPrompt, userPrompt
 }
@@ -76,9 +118,9 @@ func buildDegradedTooltipPrompt(in AnalysisInput) (systemPrompt, userPrompt stri
 func buildOutageDescriptionPrompt(in AnalysisInput) (systemPrompt, userPrompt string) {
 	userPrompt = fmt.Sprintf(
 		"O serviço %q acabou de entrar em indisponibilidade. Estado do SLO: %s. "+
-			"SLI atual: %.4f. Meta: %.4f. Período: %s. Error budget restante: %.2f%%.%s "+
+			"SLI atual: %.4f. Meta: %.4f. Período: %s. Error budget restante: %.2f%%.%s%s "+
 			"Escreva uma descrição curta do incidente explicando o que está acontecendo para quem visita a página de status.",
-		in.ServiceName, in.SLOState, in.SLI, in.Target, in.Timeframe, in.ErrorBudgetRemaining, causeSentence(in),
+		in.ServiceName, in.SLOState, in.SLI, in.Target, in.Timeframe, in.ErrorBudgetRemaining, causeSentence(in), burnSentence(in),
 	)
 	return analysisSystemPrompt, userPrompt
 }
@@ -89,9 +131,9 @@ func buildOutageDescriptionPrompt(in AnalysisInput) (systemPrompt, userPrompt st
 func buildClosingCommentPrompt(in AnalysisInput) (systemPrompt, userPrompt string) {
 	userPrompt = fmt.Sprintf(
 		"O serviço %q se recuperou e voltou ao estado operacional. Estado do SLO: %s. "+
-			"SLI atual: %.4f. Meta: %.4f. Período: %s. Error budget restante: %.2f%%. "+
+			"SLI atual: %.4f. Meta: %.4f. Período: %s. Error budget restante: %.2f%%.%s "+
 			"Escreva um comentário curto de encerramento do incidente, confirmando a recuperação para quem visita a página de status.",
-		in.ServiceName, in.SLOState, in.SLI, in.Target, in.Timeframe, in.ErrorBudgetRemaining,
+		in.ServiceName, in.SLOState, in.SLI, in.Target, in.Timeframe, in.ErrorBudgetRemaining, burnSentence(in),
 	)
 	return analysisSystemPrompt, userPrompt
 }

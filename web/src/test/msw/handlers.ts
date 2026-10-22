@@ -543,6 +543,29 @@ const serviceIncidentCounts: Record<string, number> = {
   "svc-2": 2,
 };
 
+// serviceLatestReadings backs the detail endpoint's latest_reading fixture
+// (poller-burn-rate-classification BURN-14), mirroring internal/api's
+// latestReadingResponse. Detail-only, like the maps above - the list
+// endpoint never carries latest_reading. Services missing here (svc-3
+// not_configured, svc-5 polling) get null, the backend's "no reading yet".
+// readAgoMs is resolved to an absolute read_at per request so the relative
+// time stays stable regardless of when the test run started.
+const serviceLatestReadings: Record<
+  string,
+  { burn_rate_short: number | null; burn_rate_long: number | null; window_errors: number; window_requests: number; readAgoMs: number }
+> = {
+  "svc-1": { burn_rate_short: 0.4, burn_rate_long: 0.2, window_errors: 2, window_requests: 4800, readAgoMs: 60_000 },
+  "svc-2": { burn_rate_short: 9.6, burn_rate_long: 3.1, window_errors: 48, window_requests: 5000, readAgoMs: 60_000 },
+  "svc-4": { burn_rate_short: 0, burn_rate_long: 0, window_errors: 0, window_requests: 1200, readAgoMs: 120_000 },
+};
+
+function toLatestReadingResponse(serviceId: string) {
+  const reading = serviceLatestReadings[serviceId];
+  if (!reading) return null;
+  const { readAgoMs, ...rest } = reading;
+  return { ...rest, read_at: new Date(Date.now() - readAgoMs).toISOString() };
+}
+
 // toDomainResponse mirrors DomainsHandler's real domainResponse shape
 // (internal/api/domains_handler.go) - every field the backend actually
 // returns, including the domains-status-pages-page T2 attached-page join.
@@ -1885,7 +1908,8 @@ export const handlers = [
   // GET /api/services/:id (monitored-services-page SVC-14..19) - mirrors
   // ServicesHandler.Get: 404 fixed body for an unknown id, else the detail
   // DTO (same uptime_30d/last_seen_at as List, plus status_analysis,
-  // incidents_30d, and exactly 24 hourly_buckets).
+  // incidents_30d, exactly 24 hourly_buckets, and latest_reading - always
+  // present as a key, null when there is no reading yet).
   http.get("/api/services/:id", ({ params }) => {
     if (!sessionAdminId) return HttpResponse.json({ error: "unauthorized" }, { status: 401 });
     const service = servicesState.find((s) => s.id === params.id);
@@ -1897,6 +1921,7 @@ export const handlers = [
       status_analysis: service.current_status === "degraded" ? (serviceDegradedNotes[service.id] ?? null) : null,
       incidents_30d: serviceIncidentCounts[service.id] ?? 0,
       hourly_buckets: buildFixtureHistory(service.current_status, 24),
+      latest_reading: toLatestReadingResponse(service.id),
     });
   }),
 

@@ -181,7 +181,7 @@
 - **Trade-off**: A short window (`= p.interval`, no new config) means low-traffic services can have too few requests to trust a recompute - the `minRecentWindowRequests = 10` guard trades responsiveness for stability on those services (a real change in a low-traffic service's health may take longer than one poll cycle to surface, since a sparse window keeps carrying the old status forward). The threshold is a conservative floor, not derived from real traffic data - flagged in `spec.md`'s Assumptions as unconfirmed and easy to tune later (single constant, no migration). `ErrorBudgetRemaining` losing Datadog's exact precision is inert today: confirmed via `grep` that the column is DB-only, never read by any handler or frontend code.
 - **Scope**: `internal/connectors/datadog/client.go` (`FetchSLOStatus`, `SLOStatus`, `sloHistoryResponse`, `SLOProvider`), `internal/poller/retry.go` (`FetchWithRetry`), `internal/poller/poller.go` (`pollService`, `minRecentWindowRequests`), their test files, and a new `internal/poller/poller_recent_window_test.go`. `service-status-intervals`/`public-status-hourly-history` untouched - `OpenOrExtend`/`UpdateStatus`/interval bucketing reused unchanged. Full spec: `.specs/features/poller-recent-slo-window/`.
 - **Date**: 2026-09-08
-- **Status**: active
+- **Status**: active for the `/history` source and `FetchSLOStatus` signature; the `minRecentWindowRequests` carry-forward classification is superseded by AD-049 (2026-10-22).
 
 ### AD-019 addendum: fixed-width lagged window replaces window = p.interval
 
@@ -190,7 +190,7 @@
 - **Trade-off**: a wider window (5m vs the original ~1m) means a real recovery takes up to ~5-6 minutes to surface on the public page instead of ~1-2 - accepted as still far better than the 30-day staleness AD-019 replaced. The 60s/5m constants are, like `minRecentWindowRequests`, live-measured against one SLO's traffic pattern, not derived from a broader sample - same "unconfirmed floor, easy to tune later" caveat applies.
 - **Scope**: `internal/poller/poller.go` (`recentWindowWidth`, `recentWindowLag`, `pollService`), `internal/poller/poller_recent_window_test.go` (window-bounds test rewritten to assert against the new constants instead of `p.interval`), `.env.example`, `docker-compose.yml`, `charts/zeep-vane/values.yaml`, `README.md` (config table + dev-setup example), `CHANGELOG.md` `[Unreleased]`. No new tests added beyond the rewritten one - the low-volume/carry-forward/first-poll tests were already width/lag-agnostic (they assert on `RequestCount`, not window bounds).
 - **Date**: 2026-09-08
-- **Status**: active
+- **Status**: partially superseded by AD-049 (2026-10-22) - the 60s `recentWindowLag` is kept; the fixed `recentWindowWidth` window is replaced by the 5 min / 1 h burn-rate windows.
 
 ### AD-019 addendum 2: ErrorBudgetRemaining sign corrected, still not read anywhere
 
@@ -214,7 +214,7 @@
   5. Any of this needs a fresh `tlc-spec-driven` Specify pass (EARS acceptance criteria, explicit assumptions section) before implementation - this is exactly the kind of "ambiguity, new domain, needs a decision only the user can make with real data" situation the skill's Complex-scope row is for, not a same-session "corrige tudo" fix.
 - **Scope**: `internal/poller/poller.go` (`breachHysteresisCycles`, `Poller.breachStreak`, `pollService`), `internal/poller/poller_recent_window_test.go` (3 new tests: single breach carries forward, 2 consecutive flips to outage, an intermediate ok resets the streak), `internal/poller/retry_test.go` (`fakeProvider` gained an optional `statuses []datadog.SLOStatus` field to return a different status per call). Discrimination sensor run: reverting the hysteresis branch back to `current = normalizeStatus(status.State)` made 2 of the 3 new tests fail as expected (the third, 2-consecutive-breaches, correctly passes either way since it doesn't exercise the single-breach carry-forward path - not a gap, it just isn't the discriminating test for this mutation). Commit `c5c5c85`.
 - **Date**: 2026-09-08
-- **Status**: superseded by AD-019 addendum 4 (2026-09-12) - the stopgap's state-based threshold gate is replaced by the window-rescaled bound; the hysteresis it introduced is retained.
+- **Status**: superseded by AD-019 addendum 4 (2026-09-12) for the threshold gate, and by AD-049 (2026-10-22) for the hysteresis itself (`breachHysteresisCycles`/`breachStreak` removed).
 
 ### AD-019 addendum 4: breach threshold rescaled to the window's own sampling variance
 
@@ -223,7 +223,7 @@
 - **Trade-off**: errors are modeled as independent Bernoulli trials; real errors are often bursty (correlated), which inflates variance and can make the band optimistic. `breachThresholdSigmas = 3` is **not calibrated against real Datadog traffic** - this session had no Datadog credential - so it ships as an unconfirmed constant, the same posture as `minRecentWindowRequests`/`recentWindowWidth`/`recentWindowLag`; a future session with real data owns the calibration. An SLO with no usable target (`Target <= 0`) still uses the old state-based gate, deliberately preserving that behavior rather than inventing a bound. Hysteresis is kept as complementary insurance (addendum 3 item 4): the threshold reduces false breaches at the source, hysteresis absorbs residual short blips.
 - **Scope**: `internal/poller/breach_threshold.go` (`breachBound`, `breachThresholdSigmas`, new), `internal/poller/breach_threshold_test.go` (new), `internal/poller/poller.go` (`pollService`, `classifyByState`, `normalizeStatus` doc comment), `internal/poller/poller_recent_window_test.go`. No connector, window-constant, persistence, schema, or `//go:build integration` change.
 - **Date**: 2026-09-12
-- **Status**: active - root fix replacing the addendum-3 stopgap; `breachThresholdSigmas` pending a real-traffic calibration pass.
+- **Status**: superseded by AD-049 (2026-10-22) - `breachBound`/`breachThresholdSigmas` removed; the calibration pass it awaited was the AD-049 replay.
 
 ### AD-019 addendum 5: low-volume first classification (nonzero) also trusts Datadog's state, not the narrow window's SLI
 
@@ -232,7 +232,7 @@
 - **Trade-off**: none new - this is the same trade-off SLOTRAF-01/ZEROREQ already accepted (a first classification trusts Datadog's own state rather than a locally recomputed bound when there isn't enough traffic to trust the local bound), just applied consistently across the whole `RequestCount < minRecentWindowRequests` range instead of only its `== 0` edge. `breachStreak` is never touched by this branch, same as before. Once a service leaves `not_configured` via any classification (this branch included), every subsequent low-volume cycle carries the status forward unchanged (SLOTRAF-02, untouched).
 - **Scope**: `internal/poller/poller.go` (`pollService` - merged the SLOTRAF-01/ZEROREQ cases into one `not_configured`-scoped low-volume case, ZEROREQ's `outage`/`degraded` self-heal kept separate), `internal/poller/poller_recent_window_test.go` (new `TestPollService_FirstPollLowVolumeNonZero_TrustsDatadogStateNotNoisySLI`). No migration, no config, no connector change.
 - **Date**: 2026-09-21
-- **Status**: active
+- **Status**: superseded by AD-049 (2026-10-22) - first classification of `not_configured` services now uses the long burn-rate window.
 
 ### AD-020
 
@@ -509,6 +509,28 @@ The `release-v0.10.0` branch's CircleCI `go-integration` job failed `TestDomainH
 - **Scope**: `internal/db/incident_repository.go` (`Transition` signature), `internal/api/incidents_handler.go` (`transitionIncidentRequest.Note`), `internal/db/migrations/0051_tenant_last_digest_sent_at.{up,down}.sql`, `internal/db/tenant_repository.go` (`Tenant.LastDigestSentAt`, `MarkDigestSent`), `internal/cli/{digest_scheduler.go,serve.go}`, `web/src/features/incidents/{hooks.ts,ClosingNoteField.tsx,IncidentDetail.tsx,IncidentDetailDrawer.tsx}`, `web/src/locales/{en,pt-BR}.json`, `web/src/test/msw/handlers.ts`.
 - **Date**: 2026-10-07
 - **Status**: Implemented on a worktree off `develop`, uncommitted.
+
+### AD-049
+
+- **Decision**: The poller classifies metric-based SLO services by **multi-window burn rate**, the same signal Datadog's `slo alert` monitors use, replacing the AD-019 heuristics (addenda 1, 3, 4, 5). Feature: `.specs/features/poller-burn-rate-classification/`.
+  - **Fetch**: one `GET /api/v1/slo/{id}/history` call per service per cycle over the long window (`datadog.Client.FetchSLOWindows`, `end = now - recentWindowLag`, `from = end - 1h - 60s` so the partial first bucket is dropped). The per-bucket 60s series is split into a short (5 min) and a long (1 h) window of request/error counts (`errors = denominator - numerator`, clamped to `[0, requests]`). A coarser series (`interval > 60s`) triggers a second call for the short window only.
+  - **Classify** (`internal/poller/burn_rate.go`, pure `classifyBurn`): `burn = (errors/requests)/(1 - target/100)`. `outage` when the short window holds ≥ 3 errors and both windows burn ≥ 14.4x; `degraded` at ≥ 7.2x on both; else `operational`. Recovery is driven by the short window (no hold, no hysteresis). Zero traffic in the short window: `operational` stays `operational`; `degraded`/`outage` hold until 15 min after the last error (`services.last_error_at`, falling back to `last_status_change_at`), then `operational`. `not_configured` with an empty short window classifies from the long window alone, or stays `not_configured` if both are empty. Empty long window uses the short burn. `no_data` is no longer read on this path.
+  - **Fallback**: SLOs with `Target <= 0` or no series at all (monitor-based) keep `classifyByState` on Datadog's state for a short-window `FetchSLOStatus` call (one extra call only for those services), persisted with `UpdateStatus` and no reading.
+  - **Persistence**: migration `0052` adds nullable `services.last_burn_rate_short`, `last_burn_rate_long`, `last_window_errors`, `last_window_requests`, `last_reading_at`, `last_error_at`; `ServiceRepository.UpdateStatusAndReading` writes status and reading in one `UPDATE`.
+  - **Surfaces**: admin `GET /api/services/{id}` returns `latest_reading` (`null` without a reading; a non-finite burn rate — target 100% with errors — is `null` per field because `encoding/json` cannot encode `+Inf`); the drawer shows a "Latest reading" block for SLO services (∞ for an unbounded burn). The incident/degraded/closing LLM prompts get one sentence with the 5-min error rate and burn rates. The public status payload is unchanged (tested).
+- **Reason**: Operators saw Datadog green while Vane stayed degraded/outage for hours. Root causes were in the poller, not the SLOs: a 5-min SLI compared against the raw 30-day target (1 error in ~150 requests = degraded at 99.5%), `no_data` mapped to `degraded`, a 10-request carry-forward that froze status on low traffic, and in-memory hysteresis. A 7-day replay of 8 production SLOs (60s buckets, 120s cycles; aggregates only — raw tables identify a customer and stay out of the repo) gave: current classifier 102 false episodes, a high-traffic gateway non-operational 714 min/week with normal burn and stuck up to 16 h after errors stopped, a chronic-error service never detected; burn-rate classifier 0 false episodes, recovery in the same cycle as a Datadog monitor proxy, every real incident caught on the first cycle. Vane computes the burn rate itself instead of reading monitor state because self-hosted tenants have no Vane-managed monitors, and the SLO API exposes no burn rate.
+- **Trade-off**:
+  - Thresholds 14.4x/7.2x mirror Datadog's defaults (and Starbem's production monitors); `minShortWindowErrors = 3` came from a sweep (2 lets noise through on mid-traffic services, 5 misses small real incidents), so 1-2 isolated errors never change status.
+  - The 15-min zero-traffic grace was **not validated** by production data (production services always exit an incident through a window with traffic); it only acts on low-traffic environments. It is persisted (`last_error_at`), so it survives restart/HA handover.
+  - No recovery hold: a service hovering near 7.2x flaps (76 transitions/week on the replay's gateway — identical to the monitor proxy). Incidents open only on `outage` with no open incident, and degraded tooltips are rate-limited by `enrichmentCooldown`, so flapping costs status intervals, not duplicate incidents.
+  - The fallback path also lost the 2-cycle hysteresis (it lived in `breachStreak`, removed): a single `breached` state on a monitor-based or `Target <= 0` SLO now flips to `outage` directly. `no_data` on that path still maps to `degraded` via `normalizeStatus` (unchanged behavior for those SLOs).
+  - `/history`'s rate limit is undocumented; `X-RateLimit-*` headers are logged at debug and warned below 10% remaining. Bucket timestamps are assumed to mark the bucket start; if Datadog stamps the end, the short window shifts by one bucket (60s).
+  - `ErrorBudgetRemaining` (AD-019 addendum 2) is still `SLI - Target`, but the SLI now comes from the short window when it has traffic, otherwise Datadog's overall SLI for the fetched range.
+  - `FetchWithRetry` was replaced by a generic `retryFetch` used by `FetchWindowsWithRetry` and `FetchStatusWithRetry` (same backoff/abort semantics). Fallback services cost two `/history` calls per cycle (windows + short-window state); burn-path services cost one.
+  - `datadog.SLOWindows` carries Datadog's overall `SLI` for the fetched range, used for the analyzer when the short window has no traffic.
+- **Scope**: `internal/connectors/datadog/client.go` (`WindowCounts`, `SLOWindows`, `FetchSLOWindows`, `WithLogger`), `internal/cli/serve.go`, `internal/poller/{burn_rate.go,poller.go,retry.go,analyzer.go,manual_scheduler.go}` (deleted `breach_threshold.go`), `internal/db/migrations/0052_service_latest_reading.{up,down}.sql`, `internal/db/service_repository.go`, `internal/llm/prompts.go`, `internal/api/services_handler.go`, `web/src/features/services/{ServiceDetailDrawer.tsx,hooks.ts}`, `web/src/types/api.ts`, `web/src/locales/{en,pt-BR}.json`, `web/src/test/msw/handlers.ts`.
+- **Date**: 2026-10-22
+- **Status**: Implemented on `develop`, uncommitted. Supersedes the classification rules of AD-019 (carry-forward), addendum 1 (window width; the 60s lag is kept), addenda 3, 4 and 5.
 
 ## Handoff
 

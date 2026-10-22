@@ -140,8 +140,8 @@ func createTestIntegration(t *testing.T, pool *db.Pool, dsn string, integrations
 
 // TestPoller_PollOnce_UpdatesStatusAndPersistsSnapshot exercises one full
 // iteration against real repositories with Datadog mocked: the cycle
-// updates current_status per the fetched error budget/state and opens a
-// status interval for the service.
+// updates current_status per the fetched windows, persists the reading, and
+// opens a status interval for the service.
 func TestPoller_PollOnce_UpdatesStatusAndPersistsSnapshot(t *testing.T) {
 	pool, dsn := newTestPool(t)
 	ctx := context.Background()
@@ -152,10 +152,9 @@ func TestPoller_PollOnce_UpdatesStatusAndPersistsSnapshot(t *testing.T) {
 	svc := createTestService(t, pool, services)
 	createTestIntegration(t, pool, dsn, integrations)
 
-	provider := &fakeProvider{
-		errs:   []error{nil},
-		status: datadog.SLOStatus{State: "ok", ErrorBudgetRemaining: 91.2, RequestCount: 10},
-	}
+	// healthyWindows' short window has no errors: SLI 100 against a 99.5
+	// target, so error_budget_remaining = SLI - Target = 0.5.
+	provider := &fakeProvider{errs: []error{nil}, windows: healthyWindows()}
 
 	p := NewPoller(services, services, statusIntervals, integrations, provider, time.Hour, newTestSLOAnalyzer(pool, services), zap.NewNop())
 	p.pollOnce(ctx)
@@ -178,11 +177,14 @@ func TestPoller_PollOnce_UpdatesStatusAndPersistsSnapshot(t *testing.T) {
 	if found.CurrentStatus != "operational" {
 		t.Errorf("CurrentStatus = %q, want %q", found.CurrentStatus, "operational")
 	}
+	if found.LastWindowRequests == nil || *found.LastWindowRequests != 500 || found.LastReadingAt == nil {
+		t.Errorf("reading requests/read_at = %v/%v, want 500 and a timestamp (persisted via UpdateStatusAndReading)", found.LastWindowRequests, found.LastReadingAt)
+	}
 
 	var intervalCount int
 	row := pool.QueryRow(ctx,
 		"SELECT count(*) FROM status_intervals WHERE service_id = $1 AND status = $2 AND error_budget_remaining = $3 AND ends_at IS NULL",
-		svc.ID, "operational", 91.2,
+		svc.ID, "operational", 0.5,
 	)
 	if err := row.Scan(&intervalCount); err != nil {
 		t.Fatalf("Scan() returned unexpected error: %v", err)
@@ -209,7 +211,7 @@ func TestPoller_PollOnce_ConnectionFailure_MarksIntegrationInvalidAndKeepsLastSt
 
 	// Seed a known-good status via one successful poll, so the failure that
 	// follows has a last-known-valid status to preserve.
-	okProvider := &fakeProvider{errs: []error{nil}, status: datadog.SLOStatus{State: "ok", ErrorBudgetRemaining: 99, RequestCount: 10}}
+	okProvider := &fakeProvider{errs: []error{nil}, windows: healthyWindows()}
 	seedingPoller := NewPoller(services, services, statusIntervals, integrations, okProvider, time.Hour, newTestSLOAnalyzer(pool, services), zap.NewNop())
 	seedingPoller.pollOnce(ctx)
 
@@ -248,20 +250,27 @@ func TestPoller_PollOnce_ConnectionFailure_MarksIntegrationInvalidAndKeepsLastSt
 	}
 }
 
-// sloKeyedFakeProvider returns a fixed result or error per SLO ID,
+// sloKeyedFakeProvider returns fixed windows or an error per SLO ID,
 // independent across services - unlike fakeProvider, whose single
 // call-indexed sequence can't represent one service succeeding while
 // another fails within the same pollOnce cycle.
 type sloKeyedFakeProvider struct {
-	statuses map[string]datadog.SLOStatus
-	errs     map[string]error
+	windows map[string]datadog.SLOWindows
+	errs    map[string]error
 }
 
-func (f *sloKeyedFakeProvider) FetchSLOStatus(ctx context.Context, sloID string, from, to time.Time) (datadog.SLOStatus, error) {
+func (f *sloKeyedFakeProvider) FetchSLOWindows(ctx context.Context, sloID string, end time.Time, short, long time.Duration) (datadog.SLOWindows, error) {
 	if err, ok := f.errs[sloID]; ok {
-		return datadog.SLOStatus{}, err
+		return datadog.SLOWindows{}, err
 	}
-	return f.statuses[sloID], nil
+	return f.windows[sloID], nil
+}
+
+// FetchSLOStatus satisfies datadog.SLOProvider. Only the state-based
+// fallback calls it, and every fixture here is a metric SLO with a target
+// (burn-rate path), so a call is a test bug and fails loudly.
+func (f *sloKeyedFakeProvider) FetchSLOStatus(ctx context.Context, sloID string, from, to time.Time) (datadog.SLOStatus, error) {
+	return datadog.SLOStatus{}, fmt.Errorf("sloKeyedFakeProvider: FetchSLOStatus is not used by the poller")
 }
 
 func createTestServiceWithSLO(t *testing.T, pool *db.Pool, services *db.ServiceRepository, sloID string) db.Service {
@@ -303,7 +312,7 @@ func TestPoller_PollOnce_Success_MarksIntegrationChecked(t *testing.T) {
 	createTestService(t, pool, services)
 	createTestIntegration(t, pool, dsn, integrations)
 
-	provider := &fakeProvider{errs: []error{nil}, status: datadog.SLOStatus{State: "ok", ErrorBudgetRemaining: 100}}
+	provider := &fakeProvider{errs: []error{nil}, windows: healthyWindows()}
 	p := NewPoller(services, services, statusIntervals, integrations, provider, time.Hour, newTestSLOAnalyzer(pool, services), zap.NewNop())
 	p.pollOnce(ctx)
 
@@ -337,7 +346,7 @@ func TestPoller_PollOnce_RecoversFromInvalid_AfterSubsequentSuccess(t *testing.T
 		t.Fatalf("setup MarkDatadogInvalid() returned unexpected error: %v", err)
 	}
 
-	provider := &fakeProvider{errs: []error{nil}, status: datadog.SLOStatus{State: "ok", ErrorBudgetRemaining: 100}}
+	provider := &fakeProvider{errs: []error{nil}, windows: healthyWindows()}
 	p := NewPoller(services, services, statusIntervals, integrations, provider, time.Hour, newTestSLOAnalyzer(pool, services), zap.NewNop())
 	p.pollOnce(ctx)
 
@@ -371,8 +380,8 @@ func TestPoller_PollOnce_OneOfTwoServicesFails_IntegrationStaysActive(t *testing
 
 	backoffBase = time.Millisecond
 	provider := &sloKeyedFakeProvider{
-		statuses: map[string]datadog.SLOStatus{"slo-ok": {State: "ok", ErrorBudgetRemaining: 100, RequestCount: 10}},
-		errs:     map[string]error{"slo-not-found": datadog.ErrTimeout},
+		windows: map[string]datadog.SLOWindows{"slo-ok": healthyWindows()},
+		errs:    map[string]error{"slo-not-found": datadog.ErrTimeout},
 	}
 	p := NewPoller(services, services, statusIntervals, integrations, provider, time.Hour, newTestSLOAnalyzer(pool, services), zap.NewNop())
 	p.pollOnce(ctx)
@@ -420,7 +429,7 @@ func TestPoller_Run_StopsOnContextCancel(t *testing.T) {
 	services := db.NewServiceRepository(pool)
 	statusIntervals := db.NewStatusIntervalRepository(pool)
 	integrations := db.NewIntegrationRepository(pool)
-	provider := &fakeProvider{errs: []error{nil}, status: datadog.SLOStatus{State: "ok"}}
+	provider := &fakeProvider{errs: []error{nil}, windows: healthyWindows()}
 
 	p := NewPoller(services, services, statusIntervals, integrations, provider, time.Hour, newTestSLOAnalyzer(pool, services), zap.NewNop())
 
@@ -454,7 +463,7 @@ func TestPoller_Run_PollsImmediatelyBeforeFirstTick(t *testing.T) {
 	svc := createTestService(t, pool, services)
 	createTestIntegration(t, pool, dsn, integrations)
 
-	provider := &fakeProvider{errs: []error{nil}, status: datadog.SLOStatus{State: "ok", ErrorBudgetRemaining: 100, RequestCount: 10}}
+	provider := &fakeProvider{errs: []error{nil}, windows: healthyWindows()}
 	// A long interval - if Run waited for the ticker's first tick instead
 	// of polling immediately, this test would time out waiting for a
 	// status that shouldn't take an hour to appear.
@@ -513,9 +522,10 @@ func TestPoller_PollOnce_HungLLMEnrichment_DoesNotDelayRemainingServices(t *test
 	okSvc := createTestServiceWithSLO(t, pool, services, fmt.Sprintf("hung-llm-ok-%d", time.Now().UnixNano()))
 
 	provider := &sloKeyedFakeProvider{
-		statuses: map[string]datadog.SLOStatus{
-			degradingSvc.SLOID: {State: "warning", ErrorBudgetRemaining: 5, RequestCount: 10},
-			okSvc.SLOID:        {State: "ok", ErrorBudgetRemaining: 100, RequestCount: 10},
+		windows: map[string]datadog.SLOWindows{
+			// 10x burn on both windows with 5 short-window errors: degraded.
+			degradingSvc.SLOID: burningWindows(datadog.WindowCounts{Requests: 100, Errors: 5}, datadog.WindowCounts{Requests: 1000, Errors: 50}),
+			okSvc.SLOID:        healthyWindows(),
 		},
 	}
 
@@ -559,5 +569,82 @@ func TestPoller_PollOnce_HungLLMEnrichment_DoesNotDelayRemainingServices(t *test
 	}
 	if foundOK.CurrentStatus != "operational" {
 		t.Errorf("ok service CurrentStatus = %q, want %q (must not be delayed by the other service's hung enrichment)", foundOK.CurrentStatus, "operational")
+	}
+}
+
+// findTestService returns serviceID's row as services.List loads it - the
+// same read path pollOnce uses.
+func findTestService(t *testing.T, services *db.ServiceRepository, serviceID string) db.Service {
+	t.Helper()
+	all, err := services.List(context.Background())
+	if err != nil {
+		t.Fatalf("List() returned unexpected error: %v", err)
+	}
+	for i := range all {
+		if all[i].ID == serviceID {
+			return all[i]
+		}
+	}
+	t.Fatalf("service %s not found", serviceID)
+	return db.Service{}
+}
+
+// TestPoller_ZeroTrafficGrace_SurvivesRestart covers BURN-17's restart-safe
+// grace: the zero-traffic grace (BURN-06) is timed from the persisted
+// last_error_at, so a fresh Poller instance - a restart or an HA handover,
+// with no in-memory state from the instance that saw the errors - keeps a
+// degraded status inside the grace and recovers it after. Degraded rather
+// than outage so the transition doesn't auto-create an incident row this
+// fixture would have to clean up; classifyBurn treats both the same.
+func TestPoller_ZeroTrafficGrace_SurvivesRestart(t *testing.T) {
+	pool, dsn := newTestPool(t)
+	ctx := context.Background()
+
+	services := db.NewServiceRepository(pool)
+	statusIntervals := db.NewStatusIntervalRepository(pool)
+	integrations := db.NewIntegrationRepository(pool)
+	svc := createTestService(t, pool, services)
+	createTestIntegration(t, pool, dsn, integrations)
+
+	newPoller := func(windows datadog.SLOWindows) *Poller {
+		provider := &fakeProvider{errs: []error{nil}, windows: windows}
+		return NewPoller(services, services, statusIntervals, integrations, provider, time.Hour, newTestSLOAnalyzer(pool, services), zap.NewNop())
+	}
+
+	// First instance sees a burning short window (10x on both windows):
+	// degraded, last_error_at set.
+	newPoller(burningWindows(datadog.WindowCounts{Requests: 100, Errors: 5}, datadog.WindowCounts{Requests: 1000, Errors: 50})).pollOnce(ctx)
+	got := findTestService(t, services, svc.ID)
+	if got.CurrentStatus != "degraded" || got.LastErrorAt == nil {
+		t.Fatalf("after burning cycle: status = %q, last_error_at = %v, want degraded with last_error_at set", got.CurrentStatus, got.LastErrorAt)
+	}
+
+	zeroTraffic := burningWindows(datadog.WindowCounts{}, datadog.WindowCounts{})
+	setLastErrorAgo := func(ago time.Duration) time.Time {
+		t.Helper()
+		at := time.Now().Add(-ago).UTC().Truncate(time.Microsecond)
+		if _, err := pool.Exec(ctx, "UPDATE services SET last_error_at = $2 WHERE id = $1", svc.ID, at); err != nil {
+			t.Fatalf("seeding last_error_at returned unexpected error: %v", err)
+		}
+		return at
+	}
+
+	// A fresh instance 10 minutes after the last error: still in the grace.
+	seeded := setLastErrorAgo(10 * time.Minute)
+	newPoller(zeroTraffic).pollOnce(ctx)
+	got = findTestService(t, services, svc.ID)
+	if got.CurrentStatus != "degraded" {
+		t.Errorf("10 min after last error: status = %q, want %q (grace from persisted last_error_at)", got.CurrentStatus, "degraded")
+	}
+	if got.LastErrorAt == nil || !got.LastErrorAt.Equal(seeded) {
+		t.Errorf("last_error_at = %v, want %v carried forward by a cycle without errors", got.LastErrorAt, seeded)
+	}
+
+	// Another fresh instance 16 minutes after the last error: grace over.
+	setLastErrorAgo(16 * time.Minute)
+	newPoller(zeroTraffic).pollOnce(ctx)
+	got = findTestService(t, services, svc.ID)
+	if got.CurrentStatus != "operational" {
+		t.Errorf("16 min after last error: status = %q, want %q (grace elapsed)", got.CurrentStatus, "operational")
 	}
 }

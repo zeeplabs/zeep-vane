@@ -115,6 +115,32 @@ describe("services hooks", () => {
     expect(result.current.data!.hourly_buckets).toHaveLength(24);
   });
 
+  // BURN-14: latest_reading is a detail-only field - present on
+  // GET /api/services/{id} (null when there is no reading yet), absent from
+  // the list items.
+  it("useServiceDetail carries latest_reading; the list items do not", async () => {
+    await loginAsOwner();
+    const { result: list } = renderHook(() => useServices(1), { wrapper: TestQueryProvider });
+    await waitFor(() => expect(list.current.isSuccess).toBe(true));
+    for (const item of list.current.data!.items) {
+      expect(item).not.toHaveProperty("latest_reading");
+    }
+    const degraded = list.current.data!.items.find((s) => s.current_status === "degraded")!;
+    const notConfigured = list.current.data!.items.find((s) => s.current_status === "not_configured")!;
+
+    const { result } = renderHook(() => useServiceDetail(degraded.id), { wrapper: TestQueryProvider });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    const reading = result.current.data!.latest_reading!;
+    expect(reading).not.toBeNull();
+    expect(typeof reading.window_errors).toBe("number");
+    expect(typeof reading.window_requests).toBe("number");
+    expect(Number.isNaN(Date.parse(reading.read_at))).toBe(false);
+
+    const { result: empty } = renderHook(() => useServiceDetail(notConfigured.id), { wrapper: TestQueryProvider });
+    await waitFor(() => expect(empty.current.isSuccess).toBe(true));
+    expect(empty.current.data!.latest_reading).toBeNull();
+  });
+
   // SVC-20..25: useCreateService sends slo_name in the POST body (the
   // frontend already has it from the selected SLOSummary).
   it("useCreateService sends slo_name in the request body", async () => {

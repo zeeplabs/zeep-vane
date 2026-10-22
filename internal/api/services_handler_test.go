@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -1046,6 +1047,127 @@ func TestGetService_Incidents30d_ReflectsCount(t *testing.T) {
 
 	if detail.Incidents30d != 2 {
 		t.Errorf("detail.Incidents30d = %d, want 2", detail.Incidents30d)
+	}
+}
+
+// TestGetService_WithReading_ReturnsLatestReading covers BURN-13/BURN-14:
+// a reading persisted by the poller comes back on the detail endpoint in
+// the latest_reading shape, last_error_at is never exposed, and a +Inf
+// burn rate (target 100, errors > 0) stored as Postgres 'Infinity'
+// round-trips to JSON null instead of breaking the encoder.
+func TestGetService_WithReading_ReturnsLatestReading(t *testing.T) {
+	r, pool, admins := newServicesRouter(t)
+	token := issueTestSessionTokenWithTenant(t, admins, pool)
+	name := uniqueServiceName(t)
+	created := createServiceForDetail(t, r, pool, token, name, "slo-detail-reading", "")
+
+	readAt := time.Date(2026, 10, 22, 12, 0, 0, 0, time.UTC)
+	if _, err := pool.Exec(context.Background(),
+		`UPDATE services
+		 SET last_burn_rate_short = 12.3, last_burn_rate_long = 'Infinity'::float8,
+		     last_window_errors = 5, last_window_requests = 120,
+		     last_reading_at = $1, last_error_at = $1
+		 WHERE id = $2`, readAt, created.ID); err != nil {
+		t.Fatalf("setup UPDATE returned unexpected error: %v", err)
+	}
+
+	rec := getServiceDetail(t, r, token, created.ID)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	if strings.Contains(rec.Body.String(), "last_error_at") {
+		t.Errorf("body leaks last_error_at: %s", rec.Body.String())
+	}
+
+	var detail serviceDetailResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &detail); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+	reading := detail.LatestReading
+	if reading == nil {
+		t.Fatalf("detail.LatestReading = nil, want a reading, body = %s", rec.Body.String())
+	}
+	if reading.BurnRateShort == nil || *reading.BurnRateShort != 12.3 {
+		t.Errorf("BurnRateShort = %v, want 12.3", reading.BurnRateShort)
+	}
+	if reading.BurnRateLong != nil {
+		t.Errorf("BurnRateLong = %v, want nil (stored +Inf)", *reading.BurnRateLong)
+	}
+	if reading.WindowErrors != 5 {
+		t.Errorf("WindowErrors = %d, want 5", reading.WindowErrors)
+	}
+	if reading.WindowRequests != 120 {
+		t.Errorf("WindowRequests = %d, want 120", reading.WindowRequests)
+	}
+	if !reading.ReadAt.Equal(readAt) {
+		t.Errorf("ReadAt = %v, want %v", reading.ReadAt, readAt)
+	}
+}
+
+// TestGetService_NoReading_LatestReadingNull covers BURN-14's empty state:
+// a service the poller has never read serializes latest_reading as an
+// explicit null (the key is present, not omitted).
+func TestGetService_NoReading_LatestReadingNull(t *testing.T) {
+	r, pool, admins := newServicesRouter(t)
+	token := issueTestSessionTokenWithTenant(t, admins, pool)
+	name := uniqueServiceName(t)
+	created := createServiceForDetail(t, r, pool, token, name, "slo-detail-no-reading", "")
+
+	rec := getServiceDetail(t, r, token, created.ID)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), `"latest_reading":null`) {
+		t.Errorf("body = %s, want latest_reading:null", rec.Body.String())
+	}
+}
+
+// TestListServices_WithReading_OmitsLatestReading guards the lean list
+// payload: even with a persisted reading, GET /api/services never carries
+// latest_reading or any reading field - it is detail-only (BURN-14).
+func TestListServices_WithReading_OmitsLatestReading(t *testing.T) {
+	r, pool, admins := newServicesRouter(t)
+	token := issueTestSessionTokenWithTenant(t, admins, pool)
+	name := uniqueServiceName(t)
+	created := createServiceForDetail(t, r, pool, token, name, "slo-list-reading", "")
+
+	if _, err := pool.Exec(context.Background(),
+		`UPDATE services
+		 SET last_burn_rate_short = 1.5, last_burn_rate_long = 0.5,
+		     last_window_errors = 1, last_window_requests = 100, last_reading_at = now()
+		 WHERE id = $1`, created.ID); err != nil {
+		t.Fatalf("setup UPDATE returned unexpected error: %v", err)
+	}
+
+	// The services table is shared across this package's tests, so the
+	// seeded row can land on any page - walk them all (same termination as
+	// findServiceAcrossPages) and check every raw page body.
+	seen := false
+	for page := 1; ; page++ {
+		rec := getServicesPage(t, r, token, page)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("page=%d status = %d, want %d, body = %s", page, rec.Code, http.StatusOK, rec.Body.String())
+		}
+		body := rec.Body.String()
+		if strings.Contains(body, created.ID) {
+			seen = true
+		}
+		for _, key := range []string{"latest_reading", "burn_rate", "window_errors", "window_requests"} {
+			if strings.Contains(body, key) {
+				t.Errorf("page=%d list body contains %q, want detail-only: %s", page, key, body)
+			}
+		}
+
+		var got Page[serviceResponse]
+		if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+			t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+		}
+		if len(got.Items) == 0 || page*got.PageSize >= got.Total {
+			break
+		}
+	}
+	if !seen {
+		t.Fatalf("seeded service %s not present across any page of GET /api/services", created.ID)
 	}
 }
 
