@@ -1693,3 +1693,106 @@ func TestDeleteService_Unattached_RecordsServiceDeletedAuditLabelSurvivingDelete
 		t.Errorf("admin_audit_log target_label = %q, want %q (must survive the delete above)", gotTargetLabel, name)
 	}
 }
+
+// decodeDetailRaw fetches GET /api/services/{id} and decodes it into a raw
+// JSON map, so assertions pin the wire contract the frontend reads rather
+// than the Go DTO.
+func decodeDetailRaw(t *testing.T, r http.Handler, token, id string) map[string]any {
+	t.Helper()
+	rec := getServiceDetail(t, r, token, id)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	var body map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+	return body
+}
+
+// TestGetService_SLOMode_DetailJSONHasMonitorModeSLO guards the detail
+// drawer's latest-reading gate: monitor_mode used to be "" on GET
+// /api/services/{id} because ServiceRepository.Get never selected it, so
+// the drawer (which renders the block only for slo-mode services) never
+// showed it in production.
+func TestGetService_SLOMode_DetailJSONHasMonitorModeSLO(t *testing.T) {
+	r, pool, admins := newServicesRouter(t)
+	token := issueTestSessionTokenWithTenant(t, admins, pool)
+	created := createServiceForDetail(t, r, pool, token, uniqueServiceName(t), "slo-detail-mode", "Detail Mode SLO")
+
+	body := decodeDetailRaw(t, r, token, created.ID)
+	if body["monitor_mode"] != "slo" {
+		t.Errorf("monitor_mode = %v, want %q", body["monitor_mode"], "slo")
+	}
+	for _, key := range []string{"poll_type", "poll_target", "poll_interval_seconds"} {
+		value, present := body[key]
+		if !present || value != nil {
+			t.Errorf("%s = %v (present %v), want explicit null for an slo-mode service", key, value, present)
+		}
+	}
+}
+
+// TestGetService_PollingMode_DetailJSONHasPollFields is the polling-mode
+// counterpart: monitor_mode "polling" plus the persisted poll_* values.
+func TestGetService_PollingMode_DetailJSONHasPollFields(t *testing.T) {
+	r, pool, admins := newServicesRouter(t)
+	token := issueTestSessionTokenWithTenant(t, admins, pool)
+	name := uniqueServiceName(t) + "-detail-polling"
+	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), "DELETE FROM services WHERE name = $1", name) })
+
+	rec := postCreateServicePolling(t, r, token, name, "tcp", "polling-detail-test.invalid:5432", 60)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("setup create status = %d, want %d, body = %s", rec.Code, http.StatusCreated, rec.Body.String())
+	}
+	var created serviceResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &created); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+
+	body := decodeDetailRaw(t, r, token, created.ID)
+	if body["monitor_mode"] != "polling" {
+		t.Errorf("monitor_mode = %v, want %q", body["monitor_mode"], "polling")
+	}
+	if body["poll_type"] != "tcp" {
+		t.Errorf("poll_type = %v, want %q", body["poll_type"], "tcp")
+	}
+	if body["poll_target"] != "polling-detail-test.invalid:5432" {
+		t.Errorf("poll_target = %v, want %q", body["poll_target"], "polling-detail-test.invalid:5432")
+	}
+	if body["poll_interval_seconds"] != float64(60) {
+		t.Errorf("poll_interval_seconds = %v, want 60", body["poll_interval_seconds"])
+	}
+}
+
+// TestListServices_ItemsCarryMonitorMode asserts the paginated list items
+// carry monitor_mode too (ListPaginated had the same missing column).
+func TestListServices_ItemsCarryMonitorMode(t *testing.T) {
+	r, pool, admins := newServicesRouter(t)
+	token := issueTestSessionTokenWithTenant(t, admins, pool)
+	created := createServiceForDetail(t, r, pool, token, uniqueServiceName(t), "slo-list-mode", "")
+
+	// Walk every page: other tests' services can share the tenant and push
+	// this one past page 1 (the list is ordered by name).
+	for pageNum := 1; ; pageNum++ {
+		rec := getServicesPage(t, r, token, pageNum)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+		}
+		var page Page[serviceResponse]
+		if err := json.Unmarshal(rec.Body.Bytes(), &page); err != nil {
+			t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+		}
+		for _, item := range page.Items {
+			if item.ID == created.ID {
+				if item.MonitorMode != "slo" {
+					t.Errorf("list item MonitorMode = %q, want %q", item.MonitorMode, "slo")
+				}
+				return
+			}
+		}
+		if len(page.Items) == 0 || pageNum*page.PageSize >= page.Total {
+			break
+		}
+	}
+	t.Fatalf("no list page contained the created service %s", created.ID)
+}

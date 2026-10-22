@@ -523,4 +523,111 @@ describe("IncidentsPage", () => {
       await i18n.changeLanguage("pt-BR");
     }
   });
+  // Closing-note isolation: the drawer stays mounted across selections, so
+  // a note typed on one incident must never ride along on another's
+  // resolve. Both seed incidents are served as active (inc-2 is resolved
+  // in the default fixture) so both drawers show the resolve controls.
+  describe("closing note", () => {
+    function serveTwoActiveIncidents(sentBodies: Record<string, unknown>) {
+      server.use(
+        http.get("/api/incidents", () => {
+          const now = Date.now();
+          const base = {
+            description: null,
+            pending_close_comment: null,
+            auto_created: false,
+            resolved_at: null,
+          };
+          return HttpResponse.json({
+            items: [
+              {
+                ...base,
+                id: "inc-1",
+                title: "Latência elevada no Checkout",
+                status: "monitoring",
+                created_at: new Date(now - 60_000).toISOString(),
+                service_ids: ["svc-2"],
+                severity: "critical",
+              },
+              {
+                ...base,
+                id: "inc-2",
+                title: "Indisponibilidade parcial da API",
+                status: "identified",
+                created_at: new Date(now - 120_000).toISOString(),
+                service_ids: ["svc-1"],
+                severity: "moderate",
+              },
+            ],
+            total: 2,
+            page: 1,
+            page_size: 25,
+          });
+        }),
+        http.patch("/api/incidents/:id", async ({ request, params }) => {
+          sentBodies[params.id as string] = await request.json();
+          return HttpResponse.json({ error: "stop here" }, { status: 422 });
+        })
+      );
+    }
+
+    it("a note typed on incident A is not sent when resolving incident B", async () => {
+      const sentBodies: Record<string, unknown> = {};
+      serveTwoActiveIncidents(sentBodies);
+      await loginAs("owner@vane.app");
+      renderPage();
+
+      await openIncidentRow("Latência elevada no Checkout");
+      let dialog = await screen.findByRole("dialog");
+      await userEvent.click(within(dialog).getByRole("button", { name: "Adicionar nota de encerramento (opcional)" }));
+      await userEvent.type(within(dialog).getByLabelText("Nota de encerramento"), "Nota do incidente A");
+      await userEvent.click(within(dialog).getByRole("button", { name: "Fechar" }));
+      await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+
+      await openIncidentRow("Indisponibilidade parcial da API");
+      dialog = await screen.findByRole("dialog");
+      // B starts with the note field collapsed, not A's open field.
+      expect(within(dialog).queryByLabelText("Nota de encerramento")).not.toBeInTheDocument();
+      await userEvent.click(within(dialog).getByRole("button", { name: "Marcar como resolvido" }));
+
+      await waitFor(() => expect(sentBodies["inc-2"]).toEqual({ status: "resolved" }));
+      expect(sentBodies["inc-1"]).toBeUndefined();
+    });
+
+    it("caps the note at 2000 characters and shows a character counter", async () => {
+      serveTwoActiveIncidents({});
+      await loginAs("owner@vane.app");
+      renderPage();
+
+      await openIncidentRow("Latência elevada no Checkout");
+      const dialog = await screen.findByRole("dialog");
+      await userEvent.click(within(dialog).getByRole("button", { name: "Adicionar nota de encerramento (opcional)" }));
+      const textarea = within(dialog).getByLabelText("Nota de encerramento");
+      expect(textarea).toHaveAttribute("maxLength", "2000");
+      expect(within(dialog).getByTestId("closing-note-counter")).toHaveTextContent("0/2000 caracteres");
+
+      await userEvent.type(textarea, "abc");
+      expect(within(dialog).getByTestId("closing-note-counter")).toHaveTextContent("3/2000 caracteres");
+    });
+
+    it("shows the backend's 422 error when resolving fails", async () => {
+      server.use(
+        http.patch("/api/incidents/:id", () =>
+          HttpResponse.json({ error: "note must be at most 2000 characters" }, { status: 422 })
+        )
+      );
+      await loginAs("owner@vane.app");
+      renderPage();
+
+      await openIncidentRow("Latência elevada no Checkout");
+      const dialog = await screen.findByRole("dialog");
+      await userEvent.click(within(dialog).getByRole("button", { name: "Adicionar nota de encerramento (opcional)" }));
+      await userEvent.type(within(dialog).getByLabelText("Nota de encerramento"), "Rollback");
+      await userEvent.click(within(dialog).getByRole("button", { name: "Marcar como resolvido" }));
+
+      expect(await within(dialog).findByRole("alert")).toHaveTextContent("note must be at most 2000 characters");
+      // The draft survives a failed resolve so the operator can shorten it.
+      expect(within(dialog).getByLabelText("Nota de encerramento")).toHaveValue("Rollback");
+    });
+  });
 });

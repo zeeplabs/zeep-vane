@@ -74,6 +74,15 @@ export interface Service {
   name: string;
   slo_id: string | null;
   slo_name: string | null;
+  // slo_type/datadog_service_tag mirror serviceResponse's SLOType/
+  // DatadogServiceTag (slo-root-cause-enrichment RCA-01): the linked SLO's
+  // Datadog type ("metric", "monitor", ...) and its single service tag,
+  // both "" when absent (polling-mode services, rows saved before the
+  // feature). slo_type "monitor" matters to the detail drawer: a
+  // monitor-based SLO has no request counts, so the poller never writes a
+  // burn-rate reading for it.
+  slo_type: string;
+  datadog_service_tag: string;
   // monitor_mode defaults to "slo" server-side when omitted from a create
   // request, but every service the API returns always carries an explicit
   // value (never optional on read).

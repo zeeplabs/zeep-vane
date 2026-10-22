@@ -9,6 +9,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -1458,5 +1459,112 @@ func TestConfirmClose_FiresIncidentResolvedNotification(t *testing.T) {
 	}
 	if notifier.resolvedSummaries[0].IncidentID != incident.ID {
 		t.Errorf("summary.IncidentID = %q, want %q", notifier.resolvedSummaries[0].IncidentID, incident.ID)
+	}
+}
+
+// TestTransitionIncident_ResolveTwice_IdempotentNoTimelineNoSecondNotification:
+// re-sending "resolved" for an already-resolved incident (a double-clicked
+// Resolve) answers 200 with the incident unchanged - same resolved_at, no
+// extra timeline rows (the second request's note is dropped too) and no
+// second resolved notification.
+func TestTransitionIncident_ResolveTwice_IdempotentNoTimelineNoSecondNotification(t *testing.T) {
+	notifier := &recordingIncidentNotifier{}
+	r, pool, admins, _ := newIncidentsRouterWithNotifier(t, notifier)
+	token := issueTestSessionToken(t, admins)
+	incident := createTestIncident(t, r, pool, token, "resolve twice test incident")
+
+	first := patchIncidentStatus(t, r, token, incident.ID, "resolved")
+	if first.Code != http.StatusOK {
+		t.Fatalf("first resolve status = %d, want %d, body = %s", first.Code, http.StatusOK, first.Body.String())
+	}
+	var resolved incidentResponse
+	if err := json.Unmarshal(first.Body.Bytes(), &resolved); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+
+	second := patchIncidentTransition(t, r, token, incident.ID, transitionIncidentRequest{Status: "resolved", Note: "late note"})
+	if second.Code != http.StatusOK {
+		t.Fatalf("second resolve status = %d, want %d, body = %s", second.Code, http.StatusOK, second.Body.String())
+	}
+	var again incidentResponse
+	if err := json.Unmarshal(second.Body.Bytes(), &again); err != nil {
+		t.Fatalf("json.Unmarshal() returned unexpected error: %v", err)
+	}
+	if again.ID != incident.ID || again.Status != "resolved" || again.Title != incident.Title {
+		t.Errorf("second response = %+v, want the current resolved incident", again)
+	}
+	if again.ResolvedAt == nil || resolved.ResolvedAt == nil || !again.ResolvedAt.Equal(*resolved.ResolvedAt) {
+		t.Errorf("ResolvedAt = %v, want unchanged %v", again.ResolvedAt, resolved.ResolvedAt)
+	}
+
+	timeline := listTimeline(t, r, token, incident.ID)
+	if len(timeline) != 1 || timeline[0].Body != "Status changed to resolved" {
+		t.Errorf("timeline = %+v, want only the first resolve's status entry", timeline)
+	}
+	if len(notifier.resolvedSummaries) != 1 {
+		t.Errorf("resolved notifications = %d, want exactly 1", len(notifier.resolvedSummaries))
+	}
+}
+
+// TestTransitionIncident_SameNonResolvedStatus_NoTimelineEntry: the same
+// idempotency holds for any status, not only resolved.
+func TestTransitionIncident_SameNonResolvedStatus_NoTimelineEntry(t *testing.T) {
+	r, pool, admins := newIncidentsRouter(t)
+	token := issueTestSessionToken(t, admins)
+	incident := createTestIncident(t, r, pool, token, "same status twice test incident")
+
+	for i := 0; i < 2; i++ {
+		rec := patchIncidentStatus(t, r, token, incident.ID, "monitoring")
+		if rec.Code != http.StatusOK {
+			t.Fatalf("transition %d status = %d, want %d, body = %s", i, rec.Code, http.StatusOK, rec.Body.String())
+		}
+	}
+
+	timeline := listTimeline(t, r, token, incident.ID)
+	if len(timeline) != 1 || timeline[0].Body != "Status changed to monitoring" {
+		t.Errorf("timeline = %+v, want exactly one status entry", timeline)
+	}
+}
+
+// TestTransitionIncident_ClosingNoteLength covers the 2000-character cap:
+// counted in runes after trimming, so 2000 multi-byte characters (plus
+// surrounding whitespace) pass and 2001 are rejected with 422 before
+// anything is written.
+func TestTransitionIncident_ClosingNoteLength(t *testing.T) {
+	r, pool, admins := newIncidentsRouter(t)
+	token := issueTestSessionToken(t, admins)
+
+	atLimit := createTestIncident(t, r, pool, token, "note at limit test incident")
+	rec := patchIncidentTransition(t, r, token, atLimit.ID, transitionIncidentRequest{Status: "resolved", Note: "  " + strings.Repeat("é", maxClosingNoteRunes) + "  "})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("2000-rune note status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	overLimit := createTestIncident(t, r, pool, token, "note over limit test incident")
+	rec = patchIncidentTransition(t, r, token, overLimit.ID, transitionIncidentRequest{Status: "resolved", Note: strings.Repeat("é", maxClosingNoteRunes+1)})
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("2001-rune note status = %d, want %d, body = %s", rec.Code, http.StatusUnprocessableEntity, rec.Body.String())
+	}
+	if rec.Body.String() != closingNoteTooLongBody {
+		t.Errorf("body = %s, want %s", rec.Body.String(), closingNoteTooLongBody)
+	}
+	if timeline := listTimeline(t, r, token, overLimit.ID); len(timeline) != 0 {
+		t.Errorf("timeline = %+v, want nothing written for a rejected request", timeline)
+	}
+}
+
+// TestTransitionIncident_OversizedBody_422: the request body is capped
+// before decoding, independent of the note's rune limit.
+func TestTransitionIncident_OversizedBody_422(t *testing.T) {
+	r, pool, admins := newIncidentsRouter(t)
+	token := issueTestSessionToken(t, admins)
+	incident := createTestIncident(t, r, pool, token, "oversized body test incident")
+
+	rec := patchIncidentTransition(t, r, token, incident.ID, transitionIncidentRequest{Status: "resolved", Note: strings.Repeat("a", maxTransitionBodyBytes)})
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusUnprocessableEntity, rec.Body.String())
+	}
+	if rec.Body.String() != transitionBodyTooLargeBody {
+		t.Errorf("body = %s, want %s", rec.Body.String(), transitionBodyTooLargeBody)
 	}
 }

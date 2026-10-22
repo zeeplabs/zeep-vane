@@ -309,10 +309,14 @@ func (s *Service) WeeklyDigestRecipients(ctx context.Context, tenantID string) (
 }
 
 // SendWeeklyDigest sends the assembled digest to one recipient, filling the
-// dashboard link from adminBaseURL when the caller didn't set one.
+// dashboard and incidents-list links from adminBaseURL when the caller
+// didn't set them.
 func (s *Service) SendWeeklyDigest(ctx context.Context, to string, data email.WeeklyDigestEmailData) error {
 	if data.DashboardURL == "" && s.adminBaseURL != "" {
 		data.DashboardURL = strings.TrimRight(s.adminBaseURL, "/") + "/overview"
+	}
+	if data.IncidentsURL == "" && s.adminBaseURL != "" {
+		data.IncidentsURL = strings.TrimRight(s.adminBaseURL, "/") + "/incidents"
 	}
 	return s.sender.SendWeeklyDigest(ctx, to, data)
 }

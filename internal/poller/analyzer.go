@@ -135,7 +135,11 @@ func genericOutageDescription(serviceName string) string {
 // pollService already produced this cycle, so no second Datadog call is
 // ever made to gather analysis context. reading is nil when the cycle was
 // classified by the state-based fallback (no counts): the burn fields stay
-// zero and the prompts add no burn sentence (BURN-15).
+// zero and the prompts add no burn sentence (BURN-15). A reading with an
+// empty short window marks NoRecentTraffic: sloStatus's State/SLI then
+// cover the last hour, not the state classifyBurn just decided on (e.g.
+// "breached" on a recovery after the zero-traffic grace), so the prompts
+// leave them out.
 func buildAnalysisInput(svc db.Service, sloStatus datadog.SLOStatus, reading *db.ServiceReading) llm.AnalysisInput {
 	in := llm.AnalysisInput{
 		ServiceName:          svc.Name,
@@ -150,6 +154,7 @@ func buildAnalysisInput(svc db.Service, sloStatus datadog.SLOStatus, reading *db
 		in.BurnRateLong = reading.BurnLong
 		in.WindowErrors = reading.ShortErrors
 		in.WindowRequests = reading.ShortRequests
+		in.NoRecentTraffic = reading.ShortRequests <= 0
 	}
 	return in
 }

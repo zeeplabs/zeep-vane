@@ -112,6 +112,21 @@ type Service struct {
 // targets in sync.
 const serviceReadingColumns = `last_burn_rate_short, last_burn_rate_long, last_window_errors, last_window_requests, last_reading_at, last_error_at`
 
+// serviceModeColumns is the select list for Service's monitoring-mode
+// fields (MonitorMode plus the polling-only PollType/PollTarget/
+// PollIntervalSeconds, migration 0034), in the order modeScanArgs scans
+// them. poll_* are NULL for an slo-mode service and scan into nil pointers.
+// Shared so every read path that loads a full row (Get, ListPaginated,
+// List) reports the same monitor_mode - the detail drawer gates the
+// latest-reading block on it, and an unscanned column silently came back
+// as "" before this list existed.
+const serviceModeColumns = `monitor_mode, poll_type, poll_target, poll_interval_seconds`
+
+// modeScanArgs returns the scan targets for serviceModeColumns.
+func (s *Service) modeScanArgs() []any {
+	return []any{&s.MonitorMode, &s.PollType, &s.PollTarget, &s.PollIntervalSeconds}
+}
+
 // readingScanArgs returns the scan targets for serviceReadingColumns.
 func (s *Service) readingScanArgs() []any {
 	return []any{&s.LastBurnRateShort, &s.LastBurnRateLong, &s.LastWindowErrors, &s.LastWindowRequests, &s.LastReadingAt, &s.LastErrorAt}
@@ -189,7 +204,8 @@ func (r *ServiceRepository) Create(ctx context.Context, service *Service) error 
 }
 
 // Get returns the service identified by id, including SLOName,
-// CurrentStatus, StatusAnalysis, and the latest burn-rate reading - the
+// MonitorMode/poll_*, CurrentStatus, StatusAnalysis, and the latest
+// burn-rate reading - the
 // full row the monitored-services detail drawer needs (SVC-14, BURN-13). Returns found=false (no error) if no
 // service matches id, the same not-found convention
 // IncidentRepository.HasOpenIncidentForService uses.
@@ -197,11 +213,13 @@ func (r *ServiceRepository) Get(ctx context.Context, id string) (*Service, bool,
 	var service Service
 	row := r.pool.QueryRow(ctx,
 		`SELECT id, name, COALESCE(slo_id, ''), slo_name, COALESCE(slo_type, ''), COALESCE(datadog_service_tag, ''),
-		        environment, current_status, last_status_change_at, status_analysis, `+serviceReadingColumns+`
+		        environment, current_status, last_status_change_at, status_analysis, `+serviceModeColumns+`, `+serviceReadingColumns+`
 		 FROM services WHERE id = $1 AND deleted_at IS NULL`,
 		id,
 	)
-	scanArgs := append([]any{&service.ID, &service.Name, &service.SLOID, &service.SLOName, &service.SLOType, &service.DatadogServiceTag, &service.Environment, &service.CurrentStatus, &service.LastStatusChangeAt, &service.StatusAnalysis}, service.readingScanArgs()...)
+	scanArgs := []any{&service.ID, &service.Name, &service.SLOID, &service.SLOName, &service.SLOType, &service.DatadogServiceTag, &service.Environment, &service.CurrentStatus, &service.LastStatusChangeAt, &service.StatusAnalysis}
+	scanArgs = append(scanArgs, service.modeScanArgs()...)
+	scanArgs = append(scanArgs, service.readingScanArgs()...)
 	if err := row.Scan(scanArgs...); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, false, nil
@@ -221,7 +239,7 @@ func (r *ServiceRepository) ListPaginated(ctx context.Context, page, pageSize in
 
 	rows, err := r.pool.Query(ctx,
 		`SELECT id, name, COALESCE(slo_id, ''), slo_name, COALESCE(slo_type, ''), COALESCE(datadog_service_tag, ''),
-		        environment, current_status, last_status_change_at, `+serviceReadingColumns+`, COUNT(*) OVER() AS total
+		        environment, current_status, last_status_change_at, `+serviceModeColumns+`, `+serviceReadingColumns+`, COUNT(*) OVER() AS total
 		 FROM services
 		 WHERE deleted_at IS NULL
 		 ORDER BY name
@@ -237,7 +255,9 @@ func (r *ServiceRepository) ListPaginated(ctx context.Context, page, pageSize in
 	total := 0
 	for rows.Next() {
 		var service Service
-		scanArgs := append([]any{&service.ID, &service.Name, &service.SLOID, &service.SLOName, &service.SLOType, &service.DatadogServiceTag, &service.Environment, &service.CurrentStatus, &service.LastStatusChangeAt}, service.readingScanArgs()...)
+		scanArgs := []any{&service.ID, &service.Name, &service.SLOID, &service.SLOName, &service.SLOType, &service.DatadogServiceTag, &service.Environment, &service.CurrentStatus, &service.LastStatusChangeAt}
+		scanArgs = append(scanArgs, service.modeScanArgs()...)
+		scanArgs = append(scanArgs, service.readingScanArgs()...)
 		if err := rows.Scan(append(scanArgs, &total)...); err != nil {
 			return nil, 0, fmt.Errorf("db: failed to scan service: %w", err)
 		}
@@ -274,8 +294,8 @@ func (r *ServiceRepository) countServices(ctx context.Context) (int, error) {
 // this is the ServiceRepository/poller.go precedent, not a new deviation).
 func (r *ServiceRepository) List(ctx context.Context) ([]Service, error) {
 	rows, err := r.pool.Query(ctx,
-		`SELECT id, name, COALESCE(slo_id, ''), monitor_mode, COALESCE(slo_type, ''), COALESCE(datadog_service_tag, ''),
-		        current_status, last_status_change_at, `+serviceReadingColumns+`
+		`SELECT id, name, COALESCE(slo_id, ''), COALESCE(slo_type, ''), COALESCE(datadog_service_tag, ''),
+		        current_status, last_status_change_at, `+serviceModeColumns+`, `+serviceReadingColumns+`
 		 FROM services WHERE deleted_at IS NULL ORDER BY name`)
 	if err != nil {
 		return nil, fmt.Errorf("db: failed to list services: %w", err)
@@ -285,7 +305,9 @@ func (r *ServiceRepository) List(ctx context.Context) ([]Service, error) {
 	var services []Service
 	for rows.Next() {
 		var service Service
-		scanArgs := append([]any{&service.ID, &service.Name, &service.SLOID, &service.MonitorMode, &service.SLOType, &service.DatadogServiceTag, &service.CurrentStatus, &service.LastStatusChangeAt}, service.readingScanArgs()...)
+		scanArgs := []any{&service.ID, &service.Name, &service.SLOID, &service.SLOType, &service.DatadogServiceTag, &service.CurrentStatus, &service.LastStatusChangeAt}
+		scanArgs = append(scanArgs, service.modeScanArgs()...)
+		scanArgs = append(scanArgs, service.readingScanArgs()...)
 		if err := rows.Scan(scanArgs...); err != nil {
 			return nil, fmt.Errorf("db: failed to scan service: %w", err)
 		}

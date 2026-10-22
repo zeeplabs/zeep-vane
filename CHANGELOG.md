@@ -16,6 +16,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Latest reading on the service detail drawer** (admin only): error rate of the last 5 minutes, burn rate over 5 minutes and 1 hour, and when it was read. Never exposed on the public status page.
 
+### Fixed
+
+- The service detail API returned an empty `monitor_mode` (and no polling fields) for every service, in both the detail and list endpoints.
+- A closing note typed on one incident could be sent with the resolve of another incident opened afterwards in the same screen.
+- Manually resolving or closing an incident now runs inside the tenant's row-level-security scope; before, it bypassed the tenant transaction.
+- Resolving an already-resolved incident no longer rewrites its resolution time, duplicates timeline entries or re-sends the "Resolved" email.
+- Closing notes are limited to 2,000 characters.
+- The weekly digest lists at most 10 incidents (open ones first, then the longest) with a "+N more" link, shows incidents resolved after the period as ongoing, and can no longer be sent twice in one week after a timezone change.
+- Monitor-based SLOs show an explicit message instead of a "no reading yet" placeholder; stale readings are flagged; rates and burn rates follow the UI language's number format.
+
 ### Migration notes
 
 - Adds six nullable columns to `services` (migration `0052`): `last_burn_rate_short`, `last_burn_rate_long`, `last_window_errors`, `last_window_requests`, `last_reading_at`, `last_error_at`. No backfill; the first poll cycle after deploy fills them.

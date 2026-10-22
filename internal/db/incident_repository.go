@@ -297,7 +297,10 @@ type DigestIncident struct {
 // NOTIFPREF-10); its opened/resolved counts are a strict subset of what
 // CountOpenedResolvedBetween counts over the same window. Read-only. Requires
 // app.tenant_id set, so RLS scopes both incidents and services to one
-// tenant.
+// tenant. Deliberately not LIMITed: the window is one week, and the digest
+// needs every row for its true incident total and MTTR -
+// notify.BuildWeeklyDigestData caps what the email renders
+// (email.DigestIncidentsCap).
 func (r *IncidentRepository) ListActiveBetween(ctx context.Context, from, to time.Time) ([]DigestIncident, error) {
 	rows, err := r.pool.Query(ctx,
 		`SELECT i.id, i.title, i.status, i.created_at, i.resolved_at,
@@ -515,7 +518,15 @@ func (r *IncidentRepository) countIncidentUpdates(ctx context.Context, incidentI
 // (e.g. "resolved" back to "investigating", SP-20) doesn't leave a stale
 // resolution timestamp around. It records the transition on the incident's
 // timeline in the same transaction and returns ErrNotFound if incidentID
-// doesn't exist.
+// doesn't exist (or belongs to another tenant - RLS hides it).
+//
+// A transition to the status the incident already has is a no-op: nothing
+// is written (resolved_at keeps its original value, no timeline rows, the
+// note is dropped) and changed is false, with the incident's current state
+// returned so the caller can answer idempotently instead of re-notifying.
+// The UPDATE's "status <> $2" guard is re-evaluated by Postgres after any
+// row-lock wait, so two concurrent identical transitions (a double-clicked
+// "Resolve") yield exactly one changed=true.
 //
 // When note is non-empty it is appended as a second, human-authored timeline
 // entry (author_id = authorID, is_ai_summary = false) in the same
@@ -527,50 +538,101 @@ func (r *IncidentRepository) countIncidentUpdates(ctx context.Context, incidentI
 // clock_timestamp() rather than the column default now() (the transaction
 // start time, identical for both rows) so it sorts strictly after the system
 // entry in the newest-first timeline. An empty note behaves exactly as before.
-func (r *IncidentRepository) Transition(ctx context.Context, incidentID, status, note string, authorID *string) (*Incident, error) {
-	tx, err := r.pool.Begin(ctx)
+//
+// Runs on ctx's tenant transaction when there is one (see runInTx).
+func (r *IncidentRepository) Transition(ctx context.Context, incidentID, status, note string, authorID *string) (incident *Incident, changed bool, err error) {
+	err = r.runInTx(ctx, "incident transition", func(ctx context.Context) error {
+		incident, changed, err = r.transition(ctx, incidentID, status, note, authorID)
+		return err
+	})
 	if err != nil {
-		return nil, fmt.Errorf("db: failed to begin incident transition transaction: %w", err)
+		return nil, false, err
 	}
-	defer func() { _ = tx.Rollback(ctx) }()
+	return incident, changed, nil
+}
 
+func (r *IncidentRepository) transition(ctx context.Context, incidentID, status, note string, authorID *string) (*Incident, bool, error) {
 	incident := &Incident{ID: incidentID}
-	row := tx.QueryRow(ctx,
+	row := r.pool.QueryRow(ctx,
 		`UPDATE incidents
 		 SET status = $2,
 		     resolved_at = CASE WHEN $2 = 'resolved' THEN now() ELSE NULL END
-		 WHERE id = $1
+		 WHERE id = $1 AND status <> $2
 		 RETURNING title, status, created_at, resolved_at, severity`,
 		incidentID, status,
 	)
-	if err := row.Scan(&incident.Title, &incident.Status, &incident.CreatedAt, &incident.ResolvedAt, &incident.Severity); err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, ErrNotFound
+	err := row.Scan(&incident.Title, &incident.Status, &incident.CreatedAt, &incident.ResolvedAt, &incident.Severity)
+	if errors.Is(err, pgx.ErrNoRows) {
+		// Either the incident doesn't exist (for this tenant) or it already
+		// has this status - tell the two apart without writing anything.
+		current := &Incident{ID: incidentID}
+		if err := r.pool.QueryRow(ctx,
+			"SELECT title, status, created_at, resolved_at, severity FROM incidents WHERE id = $1",
+			incidentID,
+		).Scan(&current.Title, &current.Status, &current.CreatedAt, &current.ResolvedAt, &current.Severity); err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return nil, false, ErrNotFound
+			}
+			return nil, false, fmt.Errorf("db: failed to read incident for transition: %w", err)
 		}
-		return nil, fmt.Errorf("db: failed to transition incident: %w", err)
+		return current, false, nil
+	}
+	if err != nil {
+		return nil, false, fmt.Errorf("db: failed to transition incident: %w", err)
 	}
 
-	if _, err := tx.Exec(ctx,
+	if _, err := r.pool.Exec(ctx,
 		"INSERT INTO incident_updates (incident_id, body) VALUES ($1, $2)",
 		incidentID, "Status changed to "+status,
 	); err != nil {
-		return nil, fmt.Errorf("db: failed to record incident transition on timeline: %w", err)
+		return nil, false, fmt.Errorf("db: failed to record incident transition on timeline: %w", err)
 	}
 
 	if note != "" {
-		if _, err := tx.Exec(ctx,
+		if _, err := r.pool.Exec(ctx,
 			"INSERT INTO incident_updates (incident_id, body, author_id, is_ai_summary, created_at) VALUES ($1, $2, $3, false, clock_timestamp())",
 			incidentID, note, authorID,
 		); err != nil {
-			return nil, fmt.Errorf("db: failed to record incident transition note on timeline: %w", err)
+			return nil, false, fmt.Errorf("db: failed to record incident transition note on timeline: %w", err)
 		}
 	}
 
-	if err := tx.Commit(ctx); err != nil {
-		return nil, fmt.Errorf("db: failed to commit incident transition transaction: %w", err)
+	return incident, true, nil
+}
+
+// runInTx runs fn so that every r.pool call it makes shares one
+// transaction. If ctx already carries a tenant transaction (the HTTP
+// TenantContext middleware's request transaction, or a scheduler's
+// BeginTenantTx), fn runs directly on it: that transaction is the one with
+// app.tenant_id set, which every incidents query needs under FORCE ROW
+// LEVEL SECURITY, and its owner keeps commit/rollback (a failed statement
+// aborts it, so a partial write can never be committed by the owner
+// either). Otherwise - a caller with no tenant transaction, e.g. a test or
+// a pool whose connections carry the setting themselves - runInTx opens its
+// own transaction and commits it only if fn succeeds. Same shape as
+// Create/insert; never unconditionally r.pool.Begin, which silently
+// discarded the caller's tenant transaction (no app.tenant_id: a
+// non-bypass role matched zero rows and 404'd, a superuser bypassed tenant
+// isolation entirely).
+func (r *IncidentRepository) runInTx(ctx context.Context, op string, fn func(ctx context.Context) error) error {
+	if _, ok := TenantTxFromContext(ctx); ok {
+		return fn(ctx)
 	}
 
-	return incident, nil
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("db: failed to begin %s transaction: %w", op, err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	if err := fn(WithTenantTx(ctx, tx)); err != nil {
+		return err
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("db: failed to commit %s transaction: %w", op, err)
+	}
+	return nil
 }
 
 // SetSeverity updates incidentID's severity (INCSEV-04), independent of
@@ -938,23 +1000,32 @@ func (r *IncidentRepository) SetPendingCloseComment(ctx context.Context, inciden
 // SELECT ... FOR UPDATE below also serializes against a concurrent
 // SetPendingCloseComment write from the async enrichment goroutine.
 // Returns ErrNotFound if incidentID doesn't exist, ErrNoPendingProposal if
-// it exists but has no pending comment set.
+// it exists but has no pending comment set. Runs on ctx's tenant
+// transaction when there is one (see runInTx).
 func (r *IncidentRepository) ConfirmPendingClose(ctx context.Context, incidentID, expectedComment string) (*Incident, error) {
-	if err := r.mustExist(ctx, incidentID); err != nil {
+	var incident *Incident
+	err := r.runInTx(ctx, "confirm-close", func(ctx context.Context) error {
+		var err error
+		incident, err = r.confirmPendingClose(ctx, incidentID, expectedComment)
+		return err
+	})
+	if err != nil {
 		return nil, err
 	}
+	return incident, nil
+}
 
-	tx, err := r.pool.Begin(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("db: failed to begin confirm-close transaction: %w", err)
-	}
-	defer func() { _ = tx.Rollback(ctx) }()
-
+func (r *IncidentRepository) confirmPendingClose(ctx context.Context, incidentID, expectedComment string) (*Incident, error) {
+	// The locking read doubles as the existence check: under RLS another
+	// tenant's incident is simply absent, so it is ErrNotFound too.
 	var current *string
-	if err := tx.QueryRow(ctx,
+	if err := r.pool.QueryRow(ctx,
 		"SELECT pending_close_comment FROM incidents WHERE id = $1 FOR UPDATE",
 		incidentID,
 	).Scan(&current); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrNotFound
+		}
 		return nil, fmt.Errorf("db: failed to lock incident for confirm-close: %w", err)
 	}
 	if current == nil {
@@ -965,7 +1036,7 @@ func (r *IncidentRepository) ConfirmPendingClose(ctx context.Context, incidentID
 	}
 
 	incident := &Incident{ID: incidentID}
-	row := tx.QueryRow(ctx,
+	row := r.pool.QueryRow(ctx,
 		`UPDATE incidents
 		 SET status = 'resolved', resolved_at = now(), pending_close_comment = NULL
 		 WHERE id = $1
@@ -980,15 +1051,11 @@ func (r *IncidentRepository) ConfirmPendingClose(ctx context.Context, incidentID
 	// author_id stays NULL and is_ai_summary is true: the comment text is
 	// LLM-drafted (AI-19/AI-20); the human only confirms it, they don't
 	// author it (INCSEV-06).
-	if _, err := tx.Exec(ctx,
+	if _, err := r.pool.Exec(ctx,
 		"INSERT INTO incident_updates (incident_id, body, is_ai_summary) VALUES ($1, $2, true)",
 		incidentID, expectedComment,
 	); err != nil {
 		return nil, fmt.Errorf("db: failed to record closing comment on timeline: %w", err)
-	}
-
-	if err := tx.Commit(ctx); err != nil {
-		return nil, fmt.Errorf("db: failed to commit confirm-close transaction: %w", err)
 	}
 
 	return incident, nil

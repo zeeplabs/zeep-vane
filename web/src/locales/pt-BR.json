@@ -747,6 +747,8 @@
     "closingNoteToggle": "Adicionar nota de encerramento (opcional)",
     "closingNoteLabel": "Nota de encerramento",
     "closingNotePlaceholder": "O que resolveu o incidente? Enviada no e-mail de resolução ao marcar como resolvido.",
+    "closingNoteCounter": "{{length}}/{{max}} caracteres",
+    "genericTransitionError": "Não foi possível atualizar o status do incidente.",
     "author": {
       "aiSummary": "Resumo gerado por IA",
       "team": "Equipe",
@@ -1217,7 +1219,9 @@
         "requestCount_one": "{{value}} requisição",
         "requestCount_other": "{{value}} requisições",
         "errorsInRequests": "{{errors}} em {{requests}}",
-        "burnHelp": "1x = consumo exato do orçamento de erro do SLO."
+        "burnHelp": "1x = consumo exato do orçamento de erro do SLO.",
+        "stale": "Leitura desatualizada",
+        "monitorBased": "Leitura de burn rate indisponível para SLOs baseados em monitor."
       }
     },
     "addDrawer": {

@@ -347,15 +347,26 @@ type WeeklyDigestEmailData struct {
 	// count, so the template can say how many were left out.
 	Services      []DigestServiceRow
 	TotalServices int
-	// Incidents lists every incident that was open at any point in the
-	// period (opened, resolved, or still ongoing in it).
-	Incidents []DigestIncidentRow
+	// Incidents lists the incidents that were open at some point in the
+	// period (opened, resolved, or still ongoing in it), already capped at
+	// DigestIncidentsCap by the builder; TotalIncidents is the uncapped
+	// count, so the stat tile stays the true total and the template can say
+	// how many were left out.
+	Incidents      []DigestIncidentRow
+	TotalIncidents int
 	// MTTR is the mean time to resolution of incidents resolved in the
 	// period; zero when none were.
 	MTTR time.Duration
 	// DashboardURL links to the admin overview.
 	DashboardURL string
+	// IncidentsURL links to the admin incidents list, for the "+N more"
+	// line under a capped incidents list.
+	IncidentsURL string
 }
+
+// DigestIncidentsCap is how many incidents the digest lists before
+// deferring to the admin incidents page (same bound as the services list).
+const DigestIncidentsCap = 10
 
 // DigestServicesCap is how many services the digest lists before deferring
 // to the dashboard CTA (handoff: "Cap at ~10 services").
@@ -426,27 +437,44 @@ type DigestIncidentRow struct {
 	Title       string
 	ServiceName string
 	Status      string
+	// OngoingAtPeriodEnd marks an incident still open when the period
+	// ended, though since resolved (between the period end and the send):
+	// its current Status would wrongly read RESOLVED for the week being
+	// summarized, so the pill reads ONGOING instead.
+	OngoingAtPeriodEnd bool
 	// Duration is how long the incident lasted (resolved) or has lasted so
 	// far as of the digest's period end (still open).
 	Duration time.Duration
+}
+
+// pillStatus is the status the pill renders: "ongoing" for an incident that
+// was still open at period end but has resolved since, otherwise Status.
+func (r DigestIncidentRow) pillStatus() string {
+	if r.OngoingAtPeriodEnd {
+		return "ongoing"
+	}
+	return r.Status
 }
 
 // DurationText renders Duration ("2h 10min").
 func (r DigestIncidentRow) DurationText() string { return formatDuration(r.Duration) }
 
 // StatusPill is the pill text (handoff: RESOLVED/MONITORING/INVESTIGATING;
-// "identified" renders IDENTIFIED).
+// "identified" renders IDENTIFIED, OngoingAtPeriodEnd renders ONGOING).
 func (r DigestIncidentRow) StatusPill() string {
+	if r.OngoingAtPeriodEnd {
+		return "ONGOING"
+	}
 	return strings.ToUpper(labelOr(incidentStatusLabels, r.Status))
 }
 
 // PillColor is the pill text color: green resolved, amber monitoring and
-// identified, red investigating.
+// identified (and ongoing-at-period-end), red investigating.
 func (r DigestIncidentRow) PillColor() string {
-	switch r.Status {
+	switch r.pillStatus() {
 	case "resolved":
 		return colorSuccessText
-	case "monitoring", "identified":
+	case "monitoring", "identified", "ongoing":
 		return colorWarning
 	default:
 		return colorCritical
@@ -455,10 +483,10 @@ func (r DigestIncidentRow) PillColor() string {
 
 // PillBg is the pill background paired with PillColor.
 func (r DigestIncidentRow) PillBg() string {
-	switch r.Status {
+	switch r.pillStatus() {
 	case "resolved":
 		return colorSuccessBg
-	case "monitoring", "identified":
+	case "monitoring", "identified", "ongoing":
 		return colorWarningBg
 	default:
 		return colorCriticalBg
@@ -471,9 +499,18 @@ func (d WeeklyDigestEmailData) PeriodLabel() string { return formatPeriod(d.Peri
 // AvgUptimeText renders the mean uptime ("99.94%").
 func (d WeeklyDigestEmailData) AvgUptimeText() string { return fmt.Sprintf("%.2f%%", d.UptimePercent) }
 
-// IncidentCount is how many incidents the "This week's incidents" list
-// shows - the stat tile and the list always agree.
-func (d WeeklyDigestEmailData) IncidentCount() int { return len(d.Incidents) }
+// IncidentCount is how many incidents were active in the period - the
+// uncapped total (TotalIncidents), never just the rows the capped list
+// shows. Falls back to len(Incidents) when TotalIncidents is unset.
+func (d WeeklyDigestEmailData) IncidentCount() int {
+	if d.TotalIncidents > len(d.Incidents) {
+		return d.TotalIncidents
+	}
+	return len(d.Incidents)
+}
+
+// HiddenIncidents is how many incidents the cap left out of the list.
+func (d WeeklyDigestEmailData) HiddenIncidents() int { return d.IncidentCount() - len(d.Incidents) }
 
 // MTTRText renders MTTR ("34min"), or "—" when nothing resolved in the
 // period.

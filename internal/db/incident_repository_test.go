@@ -360,7 +360,7 @@ func TestIncidentRepository_SetSeverity_UpdatesAndReturnsIncident(t *testing.T) 
 	repo, pool := newIncidentRepoTestPool(t)
 	incident := createIncidentFixture(t, repo, pool, "severity update incident")
 
-	if _, err := repo.Transition(context.Background(), incident.ID, "resolved", "", nil); err != nil {
+	if _, _, err := repo.Transition(context.Background(), incident.ID, "resolved", "", nil); err != nil {
 		t.Fatalf("setup Transition() returned unexpected error: %v", err)
 	}
 
@@ -385,7 +385,7 @@ func TestIncidentRepository_Transition_WithNote_PersistsAuthoredUpdate(t *testin
 	incident := createIncidentFixture(t, repo, pool, "transition with note incident")
 	authorID := notificationFixtureUser(t, pool)
 
-	resolved, err := repo.Transition(context.Background(), incident.ID, "resolved", "root cause fixed", &authorID)
+	resolved, _, err := repo.Transition(context.Background(), incident.ID, "resolved", "root cause fixed", &authorID)
 	if err != nil {
 		t.Fatalf("Transition() returned unexpected error: %v", err)
 	}
@@ -415,7 +415,7 @@ func TestIncidentRepository_Transition_EmptyNote_OnlySystemEntry(t *testing.T) {
 	repo, pool := newIncidentRepoTestPool(t)
 	incident := createIncidentFixture(t, repo, pool, "transition empty note incident")
 
-	if _, err := repo.Transition(context.Background(), incident.ID, "resolved", "", nil); err != nil {
+	if _, _, err := repo.Transition(context.Background(), incident.ID, "resolved", "", nil); err != nil {
 		t.Fatalf("Transition() returned unexpected error: %v", err)
 	}
 
@@ -520,7 +520,7 @@ func TestIncidentRepository_CountOpenedResolvedBetween(t *testing.T) {
 		t.Fatalf("reading fixture created_at returned unexpected error: %v", err)
 	}
 
-	if _, err := repo.Transition(ctx, first.ID, "resolved", "", nil); err != nil {
+	if _, _, err := repo.Transition(ctx, first.ID, "resolved", "", nil); err != nil {
 		t.Fatalf("setup Transition() returned unexpected error: %v", err)
 	}
 
@@ -561,7 +561,7 @@ func TestIncidentRepository_ListActiveBetween(t *testing.T) {
 	if err := pool.QueryRow(ctx, "SELECT created_at FROM incidents WHERE id = $1", resolvedInc.ID).Scan(&anchor); err != nil {
 		t.Fatalf("reading fixture created_at returned unexpected error: %v", err)
 	}
-	if _, err := repo.Transition(ctx, resolvedInc.ID, "resolved", "", nil); err != nil {
+	if _, _, err := repo.Transition(ctx, resolvedInc.ID, "resolved", "", nil); err != nil {
 		t.Fatalf("setup Transition() returned unexpected error: %v", err)
 	}
 
@@ -691,7 +691,7 @@ func TestIncidentRepository_CountOpen_MixedOpenAndResolved_CountsOnlyOpen(t *tes
 	if err := repo.Create(ctx, resolvedC, nil); err != nil {
 		t.Fatalf("Create(resolvedC) returned unexpected error: %v", err)
 	}
-	if _, err := repo.Transition(ctx, resolvedC.ID, "resolved", "", nil); err != nil {
+	if _, _, err := repo.Transition(ctx, resolvedC.ID, "resolved", "", nil); err != nil {
 		t.Fatalf("Transition(resolvedC, resolved) returned unexpected error: %v", err)
 	}
 
@@ -732,7 +732,7 @@ func TestIncidentRepository_CountOpenBreakdown_MixedSeverityAndStatus_CountsInde
 	if err := repo.Create(ctx, monitoring, nil); err != nil {
 		t.Fatalf("Create(monitoring) returned unexpected error: %v", err)
 	}
-	if _, err := repo.Transition(ctx, monitoring.ID, "monitoring", "", nil); err != nil {
+	if _, _, err := repo.Transition(ctx, monitoring.ID, "monitoring", "", nil); err != nil {
 		t.Fatalf("Transition(monitoring) returned unexpected error: %v", err)
 	}
 
@@ -743,7 +743,7 @@ func TestIncidentRepository_CountOpenBreakdown_MixedSeverityAndStatus_CountsInde
 	if _, err := repo.SetSeverity(ctx, resolvedCritical.ID, "critical"); err != nil {
 		t.Fatalf("SetSeverity(resolvedCritical) returned unexpected error: %v", err)
 	}
-	if _, err := repo.Transition(ctx, resolvedCritical.ID, "resolved", "", nil); err != nil {
+	if _, _, err := repo.Transition(ctx, resolvedCritical.ID, "resolved", "", nil); err != nil {
 		t.Fatalf("Transition(resolvedCritical, resolved) returned unexpected error: %v", err)
 	}
 

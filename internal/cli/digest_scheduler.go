@@ -33,6 +33,10 @@ const (
 	// within 24h of the tenant's Monday 09:00 sends it; after that the week
 	// is skipped rather than mailing a "weekly" digest days late.
 	digestCatchUpWindow = 24 * time.Hour
+	// digestMinInterval is the minimum spacing between two digests for the
+	// same tenant (see digestDue): a guard against a timezone change
+	// mid-week moving this week's fire instant past an already-sent marker.
+	digestMinInterval = 6 * 24 * time.Hour
 )
 
 type digestTenantLister interface {
@@ -149,12 +153,36 @@ func weeklyDigestFire(now time.Time, loc *time.Location) time.Time {
 //     instead of skipping the week, but never mailed days late; and
 //   - the tenant's marker is before fire - last_digest_sent_at, or its
 //     created_at when it was never sent, so a tenant created after this
-//     week's fire waits for next week instead of getting an immediate digest.
+//     week's fire waits for next week instead of getting an immediate digest;
+//     and
+//   - when a digest was ever sent, at least digestMinInterval has passed
+//     since it.
 //
 // Because the marker is written in the same tenant transaction that commits
 // the pass (and before any email goes out), a second tick in the same week -
 // or a second replica after the leader lock is released - sees marker >= fire
 // and skips: never double-sent in the same week.
+//
+// The digestMinInterval guard covers a timezone change. The marker is an
+// absolute instant but fire is recomputed in the tenant's current zone, so
+// moving the tenant west mid-week (e.g. UTC -> America/Los_Angeles after
+// Monday 09:00 UTC went out) yields a later fire for the same week (Monday
+// 16:00 UTC) that the marker is before - without the guard that is a second
+// digest within hours. With it, nothing can be sent within 6 days of the
+// previous send, so at most one digest per week whatever the zone does.
+// Moving east needs no guard (this week's fire moves earlier, before the
+// marker, so the week already reads as sent).
+//
+// Why the guard never skips more than one week: in a fixed zone two fires
+// are 7 days apart (167h-169h across DST) and a send happens inside
+// [fire, fire+24h), so the earliest moment the guard allows the next send,
+// marker+6d, is at most fire_next+1h - always inside the next 24h catch-up
+// window, a delay of at most an hour. Only a large eastward zone jump
+// combined with a late (catch-up) previous send can move the next fire's
+// whole window before marker+6d; that week is then skipped, and the week
+// after is due normally, because the marker only moves on a send and is by
+// then more than 6 days old. So a timezone change costs at most one week,
+// never a permanent skip.
 func digestDue(tenant db.Tenant, now time.Time) (fire time.Time, due bool) {
 	fire = weeklyDigestFire(now, email.TenantLocation(tenant.Timezone))
 	if now.Sub(fire) >= digestCatchUpWindow {
@@ -163,6 +191,9 @@ func digestDue(tenant db.Tenant, now time.Time) (fire time.Time, due bool) {
 	marker := tenant.CreatedAt
 	if tenant.LastDigestSentAt != nil {
 		marker = *tenant.LastDigestSentAt
+		if now.Sub(marker) < digestMinInterval {
+			return fire, false
+		}
 	}
 	return fire, marker.Before(fire)
 }

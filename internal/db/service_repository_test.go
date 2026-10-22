@@ -1543,3 +1543,125 @@ func TestServiceRepository_ListForStatusPage_NoGroups_UnchangedResultNoRegressio
 		}
 	}
 }
+
+// seedModeServices creates one slo-mode and one polling-mode service in a
+// fresh tenant and registers their cleanup - fixtures for the monitor_mode
+// read-path tests below.
+func seedModeServices(t *testing.T, repo *ServiceRepository, pool *Pool, prefix string) (sloSvc, pollingSvc *Service) {
+	t.Helper()
+	tenantID := seedPlainTenant(t, pool)
+	stamp := time.Now().UnixNano()
+	sloSvc = &Service{Name: fmt.Sprintf("%s-slo-%d", prefix, stamp), SLOID: fmt.Sprintf("slo-%s-%d", prefix, stamp)}
+	pollingSvc = &Service{
+		Name:                fmt.Sprintf("%s-polling-%d", prefix, stamp),
+		MonitorMode:         "polling",
+		PollType:            strPtr("http"),
+		PollTarget:          strPtr("https://example.test/health"),
+		PollIntervalSeconds: intPtr(60),
+	}
+	for _, s := range []*Service{sloSvc, pollingSvc} {
+		withTenantTx(t, pool, tenantID, func(ctx context.Context) {
+			if err := repo.Create(ctx, s); err != nil {
+				t.Fatalf("setup Create() returned unexpected error: %v", err)
+			}
+		})
+		id := s.ID
+		t.Cleanup(func() { _, _ = pool.Exec(context.Background(), "DELETE FROM services WHERE id = $1", id) })
+	}
+	return sloSvc, pollingSvc
+}
+
+// assertSLOMode fails unless got is an slo-mode row with every poll_* nil.
+func assertSLOMode(t *testing.T, got Service) {
+	t.Helper()
+	if got.MonitorMode != "slo" {
+		t.Errorf("slo service MonitorMode = %q, want %q", got.MonitorMode, "slo")
+	}
+	if got.PollType != nil || got.PollTarget != nil || got.PollIntervalSeconds != nil {
+		t.Errorf("slo service poll fields = (%v, %v, %v), want all nil", got.PollType, got.PollTarget, got.PollIntervalSeconds)
+	}
+}
+
+// assertPollingMode fails unless got is the polling row seeded by
+// seedModeServices.
+func assertPollingMode(t *testing.T, got Service) {
+	t.Helper()
+	if got.MonitorMode != "polling" {
+		t.Errorf("polling service MonitorMode = %q, want %q", got.MonitorMode, "polling")
+	}
+	if got.PollType == nil || *got.PollType != "http" {
+		t.Errorf("polling service PollType = %v, want %q", got.PollType, "http")
+	}
+	if got.PollTarget == nil || *got.PollTarget != "https://example.test/health" {
+		t.Errorf("polling service PollTarget = %v, want %q", got.PollTarget, "https://example.test/health")
+	}
+	if got.PollIntervalSeconds == nil || *got.PollIntervalSeconds != 60 {
+		t.Errorf("polling service PollIntervalSeconds = %v, want 60", got.PollIntervalSeconds)
+	}
+}
+
+// TestServiceRepository_Get_ReturnsMonitorModeAndPollFields guards the
+// detail drawer's latest-reading gate: Get must load monitor_mode (it used
+// to come back "" for every service, hiding the block in production) and
+// the NULL-safe poll_* columns.
+func TestServiceRepository_Get_ReturnsMonitorModeAndPollFields(t *testing.T) {
+	repo, pool := newServiceRepoTestPool(t)
+	sloSvc, pollingSvc := seedModeServices(t, repo, pool, "get-mode")
+
+	gotSLO, found, err := repo.Get(context.Background(), sloSvc.ID)
+	if err != nil || !found {
+		t.Fatalf("Get(slo) = (found %v, err %v), want found with no error", found, err)
+	}
+	assertSLOMode(t, *gotSLO)
+
+	gotPolling, found, err := repo.Get(context.Background(), pollingSvc.ID)
+	if err != nil || !found {
+		t.Fatalf("Get(polling) = (found %v, err %v), want found with no error", found, err)
+	}
+	assertPollingMode(t, *gotPolling)
+}
+
+// TestServiceRepository_ListPaginated_ReturnsMonitorModeAndPollFields is
+// ListPaginated's counterpart: the admin list response mirrors the same
+// serviceResponse fields, so it must load them too.
+func TestServiceRepository_ListPaginated_ReturnsMonitorModeAndPollFields(t *testing.T) {
+	repo, pool := newServiceRepoTestPool(t)
+	sloSvc, pollingSvc := seedModeServices(t, repo, pool, "listpaginated-mode")
+
+	items, _, err := repo.ListPaginated(context.Background(), 1, 1000)
+	if err != nil {
+		t.Fatalf("ListPaginated() returned unexpected error: %v", err)
+	}
+	gotSLO, ok := lookupService(items, sloSvc.ID)
+	if !ok {
+		t.Fatalf("ListPaginated() did not return the seeded slo service")
+	}
+	assertSLOMode(t, gotSLO)
+	gotPolling, ok := lookupService(items, pollingSvc.ID)
+	if !ok {
+		t.Fatalf("ListPaginated() did not return the seeded polling service")
+	}
+	assertPollingMode(t, gotPolling)
+}
+
+// TestServiceRepository_List_ReturnsMonitorModeAndPollFields keeps List
+// (poller) in line with the other full-row read paths.
+func TestServiceRepository_List_ReturnsMonitorModeAndPollFields(t *testing.T) {
+	repo, pool := newServiceRepoTestPool(t)
+	sloSvc, pollingSvc := seedModeServices(t, repo, pool, "list-mode")
+
+	items, err := repo.List(context.Background())
+	if err != nil {
+		t.Fatalf("List() returned unexpected error: %v", err)
+	}
+	gotSLO, ok := lookupService(items, sloSvc.ID)
+	if !ok {
+		t.Fatalf("List() did not return the seeded slo service")
+	}
+	assertSLOMode(t, gotSLO)
+	gotPolling, ok := lookupService(items, pollingSvc.ID)
+	if !ok {
+		t.Fatalf("List() did not return the seeded polling service")
+	}
+	assertPollingMode(t, gotPolling)
+}

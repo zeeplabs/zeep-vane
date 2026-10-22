@@ -2,7 +2,7 @@ import { describe, it, expect, afterEach } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { http, HttpResponse } from "msw";
-import { MemoryRouter, Routes, Route } from "react-router-dom";
+import { MemoryRouter, Routes, Route, useNavigate } from "react-router-dom";
 import "../../lib/i18n";
 import { AuthProvider } from "../../auth/AuthProvider";
 import { TestQueryProvider } from "../../test/queryClient";
@@ -203,5 +203,88 @@ describe("IncidentDetail", () => {
 
     expect(await screen.findByRole("alert")).toHaveTextContent(/no pending close proposal/);
     expect(screen.getByRole("button", { name: "Descartar" })).toBeInTheDocument();
+  });
+  // React Router keeps IncidentDetail mounted when only :id changes, so the
+  // closing-note draft must be reset on navigation - otherwise A's note is
+  // sent when resolving B.
+  it("a note typed on one incident is not sent after navigating to another", async () => {
+    const sentBodies: Record<string, unknown> = {};
+    server.use(
+      http.get("/api/incidents", () => {
+        const base = {
+          description: null,
+          pending_close_comment: null,
+          auto_created: false,
+          resolved_at: null,
+          created_at: new Date().toISOString(),
+          severity: "minor",
+        };
+        return HttpResponse.json({
+          items: [
+            { ...base, id: "inc-1", title: "Incidente A", status: "monitoring", service_ids: ["svc-2"] },
+            { ...base, id: "inc-2", title: "Incidente B", status: "identified", service_ids: ["svc-1"] },
+          ],
+          total: 2,
+          page: 1,
+          page_size: 25,
+        });
+      }),
+      http.patch("/api/incidents/:id", async ({ request, params }) => {
+        sentBodies[params.id as string] = await request.json();
+        return HttpResponse.json({ error: "stop here" }, { status: 422 });
+      })
+    );
+
+    function GoToB() {
+      const navigate = useNavigate();
+      return (
+        <button type="button" onClick={() => navigate("/incidents/inc-2")}>
+          go-to-b
+        </button>
+      );
+    }
+
+    await loginAs("owner@vane.app");
+    render(
+      <MemoryRouter initialEntries={["/incidents/inc-1"]}>
+        <TestQueryProvider>
+          <AuthProvider>
+            <GoToB />
+            <Routes>
+              <Route path="/incidents/:id" element={<IncidentDetail />} />
+            </Routes>
+          </AuthProvider>
+        </TestQueryProvider>
+      </MemoryRouter>
+    );
+
+    await screen.findByText("Incidente A");
+    await userEvent.click(screen.getByRole("button", { name: "Adicionar nota de encerramento (opcional)" }));
+    await userEvent.type(screen.getByLabelText("Nota de encerramento"), "Nota do incidente A");
+
+    await userEvent.click(screen.getByRole("button", { name: "go-to-b" }));
+    await screen.findByText("Incidente B");
+    expect(screen.queryByLabelText("Nota de encerramento")).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Marcar como resolvido" }));
+
+    await waitFor(() => expect(sentBodies["inc-2"]).toEqual({ status: "resolved" }));
+    expect(sentBodies["inc-1"]).toBeUndefined();
+  });
+
+  it("shows the backend's error when the resolve PATCH is rejected", async () => {
+    server.use(
+      http.patch("/api/incidents/:id", () =>
+        HttpResponse.json({ error: "note must be at most 2000 characters" }, { status: 422 })
+      )
+    );
+    await loginAs("owner@vane.app");
+    renderDetail("inc-1");
+    await screen.findByText(/Identificamos aumento de latência/);
+
+    await userEvent.click(screen.getByRole("button", { name: "Adicionar nota de encerramento (opcional)" }));
+    await userEvent.type(screen.getByLabelText("Nota de encerramento"), "Rollback");
+    await userEvent.click(screen.getByRole("button", { name: "Marcar como resolvido" }));
+
+    expect(await screen.findByText("note must be at most 2000 characters")).toBeInTheDocument();
   });
 });

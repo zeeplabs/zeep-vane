@@ -38,6 +38,16 @@ type AnalysisInput struct {
 	BurnRateLong   float64
 	WindowErrors   int64
 	WindowRequests int64
+	// NoRecentTraffic is true when the cycle was classified by burn rate
+	// with an empty 5-minute window (no requests): a recovery after the
+	// zero-traffic grace, a not_configured service classified from the
+	// 1-hour window alone, or a metric SLO Datadog returned no series for.
+	// SLOState/SLI/ErrorBudgetRemaining then describe the last hour (or
+	// nothing, when that hour was empty too), not the current state, so
+	// the builders leave them out (sloContext) and say there was no
+	// traffic instead (burnSentence). False on the state-based fallback,
+	// whose state does cover the last 5 minutes.
+	NoRecentTraffic bool
 }
 
 // causeSentence returns the extra user-prompt sentence surfacing in's cause
@@ -56,7 +66,8 @@ func causeSentence(in AnalysisInput) string {
 
 // burnSentence returns the extra user-prompt sentence surfacing in's
 // burn-rate numbers (BURN-15), or "" when the 5-minute window had no
-// requests (no reading, or no traffic to describe). Same "optional extra
+// requests (no reading, or no traffic to describe) - except with
+// NoRecentTraffic, where it says so instead (noTrafficSentence). Same "optional extra
 // sentence" pattern as causeSentence: the numbers go into the user prompt
 // in plain words - "margem de falhas permitida", never "burn rate"/"error
 // budget" - so the model can cite them under analysisSystemPrompt's
@@ -64,6 +75,9 @@ func causeSentence(in AnalysisInput) string {
 // reaches the text: the multiplier is replaced by saying the target
 // tolerates no failures.
 func burnSentence(in AnalysisInput) string {
+	if in.NoRecentTraffic {
+		return noTrafficSentence(in)
+	}
 	if in.WindowRequests <= 0 {
 		return ""
 	}
@@ -80,6 +94,44 @@ func burnSentence(in AnalysisInput) string {
 	}
 	return sentence + fmt.Sprintf(" Nesse ritmo, as falhas consomem a margem de falhas permitida %.1f vezes mais rápido "+
 		"que o aceitável nos últimos 5 minutos, e %.1f vezes na última hora.", in.BurnRateShort, in.BurnRateLong)
+}
+
+// noTrafficSentence is burnSentence's text for NoRecentTraffic: it says
+// there is no recent measurement rather than claiming the last 5 minutes
+// were healthy, then adds the 1-hour burn when that hour had failures -
+// labeled as the last hour, so the model never reads it as the current
+// state. That hour's burn is what classified a not_configured service
+// from the long window alone, and it is past context on a recovery after
+// the zero-traffic grace. +Inf (100% target) is replaced by words, as in
+// burnSentence.
+func noTrafficSentence(in AnalysisInput) string {
+	sentence := " Nos últimos 5 minutos, o serviço não recebeu requisições, portanto não há medição recente de falhas."
+	switch {
+	case math.IsInf(in.BurnRateLong, 0) || math.IsNaN(in.BurnRateLong):
+		return sentence + " Houve falhas na última hora, e a meta deste serviço não tolera nenhuma falha."
+	case in.BurnRateLong > 0:
+		return sentence + fmt.Sprintf(" Na última hora, as falhas consumiram a margem de falhas permitida %.1f vezes mais rápido "+
+			"que o aceitável.", in.BurnRateLong)
+	default:
+		return sentence
+	}
+}
+
+// sloContext returns the SLO part of every user prompt: Datadog's state,
+// the SLI and the error budget approximation, plus the target and
+// timeframe. With NoRecentTraffic, the state/SLI/budget come from the last
+// hour (Datadog's own figures for the windows call's range) and would
+// contradict the classification - e.g. "Estado do SLO: breached. SLI
+// atual: 92" on a recovery declared after 15 minutes without traffic - so
+// only the target and timeframe, which are configuration rather than a
+// measurement, are kept. The default text is byte-identical to the
+// builders' pre-NoRecentTraffic format.
+func sloContext(in AnalysisInput) string {
+	if in.NoRecentTraffic {
+		return fmt.Sprintf("Meta: %.4f. Período: %s.", in.Target, in.Timeframe)
+	}
+	return fmt.Sprintf("Estado do SLO: %s. SLI atual: %.4f. Meta: %.4f. Período: %s. Error budget restante: %.2f%%.",
+		in.SLOState, in.SLI, in.Target, in.Timeframe, in.ErrorBudgetRemaining)
 }
 
 // analysisSystemPrompt is shared by all three builders (2026-10-07
@@ -105,10 +157,9 @@ const analysisSystemPrompt = "Você está escrevendo uma atualização curta par
 // not yet breached).
 func buildDegradedTooltipPrompt(in AnalysisInput) (systemPrompt, userPrompt string) {
 	userPrompt = fmt.Sprintf(
-		"O serviço %q está atualmente em estado degradado. Estado do SLO: %s. "+
-			"SLI atual: %.4f. Meta: %.4f. Período: %s. Error budget restante: %.2f%%.%s%s "+
+		"O serviço %q está atualmente em estado degradado. %s%s%s "+
 			"Escreva um tooltip curto explicando o estado degradado para quem visita a página de status.",
-		in.ServiceName, in.SLOState, in.SLI, in.Target, in.Timeframe, in.ErrorBudgetRemaining, causeSentence(in), burnSentence(in),
+		in.ServiceName, sloContext(in), causeSentence(in), burnSentence(in),
 	)
 	return analysisSystemPrompt, userPrompt
 }
@@ -117,10 +168,9 @@ func buildDegradedTooltipPrompt(in AnalysisInput) (systemPrompt, userPrompt stri
 // description when a service transitions into an outage (breached SLO).
 func buildOutageDescriptionPrompt(in AnalysisInput) (systemPrompt, userPrompt string) {
 	userPrompt = fmt.Sprintf(
-		"O serviço %q acabou de entrar em indisponibilidade. Estado do SLO: %s. "+
-			"SLI atual: %.4f. Meta: %.4f. Período: %s. Error budget restante: %.2f%%.%s%s "+
+		"O serviço %q acabou de entrar em indisponibilidade. %s%s%s "+
 			"Escreva uma descrição curta do incidente explicando o que está acontecendo para quem visita a página de status.",
-		in.ServiceName, in.SLOState, in.SLI, in.Target, in.Timeframe, in.ErrorBudgetRemaining, causeSentence(in), burnSentence(in),
+		in.ServiceName, sloContext(in), causeSentence(in), burnSentence(in),
 	)
 	return analysisSystemPrompt, userPrompt
 }
@@ -130,10 +180,9 @@ func buildOutageDescriptionPrompt(in AnalysisInput) (systemPrompt, userPrompt st
 // still open for it.
 func buildClosingCommentPrompt(in AnalysisInput) (systemPrompt, userPrompt string) {
 	userPrompt = fmt.Sprintf(
-		"O serviço %q se recuperou e voltou ao estado operacional. Estado do SLO: %s. "+
-			"SLI atual: %.4f. Meta: %.4f. Período: %s. Error budget restante: %.2f%%.%s "+
+		"O serviço %q se recuperou e voltou ao estado operacional. %s%s "+
 			"Escreva um comentário curto de encerramento do incidente, confirmando a recuperação para quem visita a página de status.",
-		in.ServiceName, in.SLOState, in.SLI, in.Target, in.Timeframe, in.ErrorBudgetRemaining, burnSentence(in),
+		in.ServiceName, sloContext(in), burnSentence(in),
 	)
 	return analysisSystemPrompt, userPrompt
 }

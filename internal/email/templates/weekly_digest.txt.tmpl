@@ -23,6 +23,9 @@ This week's incidents
 {{- else}}
 No incidents this week.
 {{- end}}
+{{- if .HiddenIncidents}}
++{{.HiddenIncidents}} more — view all incidents{{if .IncidentsURL}}: {{.IncidentsURL}}{{end}}
+{{- end}}
 {{if .DashboardURL}}
 View full dashboard: {{.DashboardURL}}
 {{end}}{{if .NotificationPrefsURL}}

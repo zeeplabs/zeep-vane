@@ -747,6 +747,8 @@
     "closingNoteToggle": "Add a closing note (optional)",
     "closingNoteLabel": "Closing note",
     "closingNotePlaceholder": "What resolved the incident? Sent with the resolution email when you mark it as resolved.",
+    "closingNoteCounter": "{{length}}/{{max}} characters",
+    "genericTransitionError": "Couldn't update the incident status.",
     "author": {
       "aiSummary": "AI-generated summary",
       "team": "Team",
@@ -1217,7 +1219,9 @@
         "requestCount_one": "{{value}} request",
         "requestCount_other": "{{value}} requests",
         "errorsInRequests": "{{errors}} in {{requests}}",
-        "burnHelp": "1x = consuming the SLO's error budget exactly."
+        "burnHelp": "1x = consuming the SLO's error budget exactly.",
+        "stale": "Stale reading",
+        "monitorBased": "Burn-rate reading unavailable for monitor-based SLOs."
       }
     },
     "addDrawer": {

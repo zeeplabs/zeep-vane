@@ -400,3 +400,57 @@ func TestDigestServiceRow_BarRule(t *testing.T) {
 }
 
 func strPtr(s string) *string { return &s }
+
+// TestRenderWeeklyDigest_CappedIncidents_RendersMoreLine: a capped incident
+// list keeps the true total in the stat tile and adds "+N more — view all
+// incidents" linking to the admin incidents page, in both bodies.
+func TestRenderWeeklyDigest_CappedIncidents_RendersMoreLine(t *testing.T) {
+	tmpls := mustParseTemplates(t)
+	end := time.Date(2026, 9, 15, 0, 0, 0, 0, time.UTC)
+	rows := make([]DigestIncidentRow, DigestIncidentsCap)
+	for i := range rows {
+		rows[i] = DigestIncidentRow{Title: "Incident", Status: "investigating", Duration: time.Hour}
+	}
+	data := WeeklyDigestEmailData{
+		Layout: testLayout, PeriodStart: end.Add(-7 * 24 * time.Hour), PeriodEnd: end, Location: DefaultLocation(),
+		Incidents: rows, TotalIncidents: 13, IncidentsURL: "https://admin.example.com/incidents",
+	}
+	html, text, err := tmpls.renderWeeklyDigest(data)
+	if err != nil {
+		t.Fatalf("renderWeeklyDigest() error: %v", err)
+	}
+	for _, want := range []string{
+		`>13<`, "13 incidents",
+		`+3 more — <a href="https://admin.example.com/incidents"`, "view all incidents</a>",
+	} {
+		if !strings.Contains(html, want) {
+			t.Errorf("HTML missing %q", want)
+		}
+	}
+	for _, want := range []string{"Incidents: 13", "+3 more — view all incidents: https://admin.example.com/incidents"} {
+		if !strings.Contains(text, want) {
+			t.Errorf("text body missing %q:\n%s", want, text)
+		}
+	}
+}
+
+// TestRenderWeeklyDigest_UncappedIncidents_NoMoreLine and the ONGOING pill.
+func TestRenderWeeklyDigest_UncappedIncidents_NoMoreLine(t *testing.T) {
+	tmpls := mustParseTemplates(t)
+	end := time.Date(2026, 9, 15, 0, 0, 0, 0, time.UTC)
+	data := WeeklyDigestEmailData{
+		Layout: testLayout, PeriodStart: end.Add(-7 * 24 * time.Hour), PeriodEnd: end, Location: DefaultLocation(),
+		Incidents:    []DigestIncidentRow{{Title: "Late fix", Status: "resolved", OngoingAtPeriodEnd: true, Duration: time.Hour}},
+		IncidentsURL: "https://admin.example.com/incidents",
+	}
+	html, text, err := tmpls.renderWeeklyDigest(data)
+	if err != nil {
+		t.Fatalf("renderWeeklyDigest() error: %v", err)
+	}
+	if strings.Contains(html, "more —") || strings.Contains(text, "view all incidents") {
+		t.Error("an uncapped list must not render the \"+N more\" line")
+	}
+	if !strings.Contains(html, "ONGOING") || strings.Contains(html, "RESOLVED") {
+		t.Error("an incident resolved after the period end must render ONGOING, not RESOLVED")
+	}
+}

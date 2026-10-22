@@ -1198,3 +1198,53 @@ func TestSLOAnalyzer_HandleTransition_NilReading_NoBurnFields(t *testing.T) {
 		t.Errorf("AnalysisInput burn fields = %v/%v/%d/%d, want all zero for a nil reading", in.BurnRateShort, in.BurnRateLong, in.WindowErrors, in.WindowRequests)
 	}
 }
+
+// TestBuildAnalysisInput_NoRecentTraffic covers the pre-release review of
+// BURN-15: only a burn-rate reading with an empty short window marks the
+// input NoRecentTraffic, so the prompts stop presenting the hour's Datadog
+// state/SLI as the current state. A reading with traffic and the
+// state-based fallback (nil reading, whose state covers the last 5
+// minutes) leave it false.
+func TestBuildAnalysisInput_NoRecentTraffic(t *testing.T) {
+	svc := db.Service{ID: "svc-1", Name: "API"}
+	status := datadog.SLOStatus{State: "breached", SLI: 92, Target: 99.5, Timeframe: "30d", ErrorBudgetRemaining: -7.5}
+
+	if in := buildAnalysisInput(svc, status, testBurnReading()); in.NoRecentTraffic {
+		t.Error("NoRecentTraffic = true for a reading with short-window traffic, want false")
+	}
+	if in := buildAnalysisInput(svc, status, nil); in.NoRecentTraffic {
+		t.Error("NoRecentTraffic = true for a nil reading (state fallback), want false")
+	}
+
+	empty := &db.ServiceReading{BurnLong: 16, ReadAt: time.Now()}
+	in := buildAnalysisInput(svc, status, empty)
+	if !in.NoRecentTraffic {
+		t.Error("NoRecentTraffic = false for a reading with an empty short window, want true")
+	}
+	if in.BurnRateLong != 16 || in.WindowRequests != 0 {
+		t.Errorf("burn long/window requests = %v/%d, want 16/0", in.BurnRateLong, in.WindowRequests)
+	}
+}
+
+// TestSLOAnalyzer_HandleTransition_GraceRecovery_ClosingInputHasNoRecentTraffic
+// covers the end of that wiring for the case the review found: an outage
+// recovering after the zero-traffic grace hands the closing comment an
+// input marked NoRecentTraffic, even though the SLOStatus still carries the
+// hour's "breached" state.
+func TestSLOAnalyzer_HandleTransition_GraceRecovery_ClosingInputHasNoRecentTraffic(t *testing.T) {
+	incidents := &fakeIncidentStore{
+		openIncidents:         map[string]string{"svc-1": "existing-incident"},
+		setPendingCommentDone: make(chan struct{}, 1),
+	}
+	llmSvc := &fakeLLMGenerator{closingResult: "recovered"}
+	a := newTestAnalyzer(incidents, &fakeStatusAnalysisWriter{}, llmSvc, time.Second)
+
+	status := datadog.SLOStatus{State: "breached", SLI: 92, Target: 99.5, Timeframe: "30d", ErrorBudgetRemaining: -7.5}
+	reading := &db.ServiceReading{BurnLong: 16, ReadAt: time.Now()}
+	a.HandleTransition(context.Background(), db.Service{ID: "svc-1", Name: "API"}, "outage", "operational", status, reading, "test-interval", nil)
+
+	waitOrTimeout(t, incidents.setPendingCommentDone)
+	if in := llmSvc.snapshotClosingInput(); !in.NoRecentTraffic {
+		t.Errorf("closing AnalysisInput = %+v, want NoRecentTraffic", in)
+	}
+}

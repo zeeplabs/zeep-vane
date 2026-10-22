@@ -510,6 +510,20 @@ The `release-v0.10.0` branch's CircleCI `go-integration` job failed `TestDomainH
 - **Date**: 2026-10-07
 - **Status**: Implemented on a worktree off `develop`, uncommitted.
 
+### AD-048 addendum: pre-release review fixes (2026-10-22)
+
+- **Decision**: Fixes from the pre-release review of `v0.10.0..develop`:
+  - `IncidentRepository.Transition` and `ConfirmPendingClose` run on the tenant transaction carried by ctx (helper `runInTx`, same pattern as `Create`/`insert`); before, they opened a raw `pool.Begin` with no `app.tenant_id`, so with a non-bypass role on FORCE-RLS `incidents` the update matched nothing (404), and with a superuser it bypassed isolation.
+  - `PATCH /api/incidents/{id}` with the incident's current status is a no-op (`UPDATE ... WHERE status <> $2`; `Transition` returns `changed bool`): 200 with the current incident, no timeline rows, no new `resolved_at`, no notification; a note sent with it is discarded (use `POST /updates`). A double submit yields exactly one change.
+  - Closing note capped at 2000 characters (runes, after trim) → 422; PATCH body capped at 64 KiB via `MaxBytesReader` → 422 (same as the logo upload pattern). Frontend: `maxLength` + counter, and a transition error alert.
+  - Frontend: the closing-note draft is reset when the selected incident id changes (drawer and route page), so a note typed for one incident can never be sent with another's resolve.
+  - Weekly digest lists at most 10 incidents (open at period end first, then longest), keeps the real total, and renders "+N more — view all incidents" linking to `{admin}/incidents`; MTTR still uses every incident. An incident resolved after the period end shows as ONGOING.
+  - `digestDue` also requires ≥ 6 days since the last send, so a tenant timezone change can never send two digests in one week; in a fixed zone the delay is at most 1 h (DST week included).
+- **Trade-off**: With `Transition` on the request's tenant transaction, the "Resolved" email is sent before the middleware commits (same as `Create` already did): a failed commit could leave an email for a resolve that did not persist, and the incident row lock is held during the synchronous send. A post-commit hook in `TenantContext` would fix it structurally; deferred (auth/tenant middleware is higher risk). `POST /api/incidents/{id}/updates` still has no body/length cap. A timezone change can cost at most one week's digest.
+- **Scope**: `internal/db/incident_repository.go`, `internal/api/incidents_handler.go`, `internal/notify/digest.go`, `internal/email/{provider.go,templates/weekly_digest.*}`, `internal/cli/digest_scheduler.go`, `web/src/features/incidents/{IncidentDetailDrawer.tsx,IncidentDetail.tsx,ClosingNoteField.tsx}`, locales, MSW.
+- **Date**: 2026-10-22
+- **Status**: Implemented on `develop` (2026-10-22).
+
 ### AD-049
 
 - **Decision**: The poller classifies metric-based SLO services by **multi-window burn rate**, the same signal Datadog's `slo alert` monitors use, replacing the AD-019 heuristics (addenda 1, 3, 4, 5). Feature: `.specs/features/poller-burn-rate-classification/`.
@@ -525,12 +539,14 @@ The `release-v0.10.0` branch's CircleCI `go-integration` job failed `TestDomainH
   - No recovery hold: a service hovering near 7.2x flaps (76 transitions/week on the replay's gateway — identical to the monitor proxy). Incidents open only on `outage` with no open incident, and degraded tooltips are rate-limited by `enrichmentCooldown`, so flapping costs status intervals, not duplicate incidents.
   - The fallback path also lost the 2-cycle hysteresis (it lived in `breachStreak`, removed): a single `breached` state on a monitor-based or `Target <= 0` SLO now flips to `outage` directly. `no_data` on that path still maps to `degraded` via `normalizeStatus` (unchanged behavior for those SLOs).
   - `/history`'s rate limit is undocumented; `X-RateLimit-*` headers are logged at debug and warned below 10% remaining. Bucket timestamps are assumed to mark the bucket start; if Datadog stamps the end, the short window shifts by one bucket (60s).
-  - `ErrorBudgetRemaining` (AD-019 addendum 2) is still `SLI - Target`, but the SLI now comes from the short window when it has traffic, otherwise Datadog's overall SLI for the fetched range.
+  - `ErrorBudgetRemaining` (AD-019 addendum 2) is still `SLI - Target`. SLI is the short window's when it has traffic, else Datadog's overall SLI for the fetched hour when the long window has traffic, else 100 (no request failed, consistent with burn 0), because Datadog's null `sli_value` decodes as 0 and would record `-Target` for a service with no traffic. The column stays inert (no reader).
+  - Metric SLO without series (pre-release review, 2026-10-22): whether Datadog omits `series` for a metric SLO with zero traffic over the whole hour is unverified, so a service whose stored `slo_type` is `metric` with `Target > 0` is classified on the burn path with empty windows whenever `!HasSeries` (no evidence: operational stays, degraded/outage hold for the 15-min grace, not_configured stays), with a zero reading persisted and no short-window state call. Monitor-based, `time_slice` and unknown types (`slo_type` empty on rows linked before RCA-01, no backfill) keep the state fallback, so a legacy metric SLO with empty `slo_type` still hits `no_data -> degraded` until its row is re-saved with the type.
+  - Analyzer prompts: a burn-path reading with an empty short window sets `AnalysisInput.NoRecentTraffic`; the prompts then omit Datadog's state/SLI/budget (they describe the last hour and contradicted grace-driven recoveries, e.g. "breached"/"SLI 92" in a closing comment), keep target/timeframe, say there were no requests in the last 5 minutes, and add the 1-hour burn labeled as the last hour. Default prompts and the system prompt are byte-identical (pinned tests).
   - `FetchWithRetry` was replaced by a generic `retryFetch` used by `FetchWindowsWithRetry` and `FetchStatusWithRetry` (same backoff/abort semantics). Fallback services cost two `/history` calls per cycle (windows + short-window state); burn-path services cost one.
-  - `datadog.SLOWindows` carries Datadog's overall `SLI` for the fetched range, used for the analyzer when the short window has no traffic.
+  - `datadog.SLOWindows` carries Datadog's overall `SLI` for the fetched range.
 - **Scope**: `internal/connectors/datadog/client.go` (`WindowCounts`, `SLOWindows`, `FetchSLOWindows`, `WithLogger`), `internal/cli/serve.go`, `internal/poller/{burn_rate.go,poller.go,retry.go,analyzer.go,manual_scheduler.go}` (deleted `breach_threshold.go`), `internal/db/migrations/0052_service_latest_reading.{up,down}.sql`, `internal/db/service_repository.go`, `internal/llm/prompts.go`, `internal/api/services_handler.go`, `web/src/features/services/{ServiceDetailDrawer.tsx,hooks.ts}`, `web/src/types/api.ts`, `web/src/locales/{en,pt-BR}.json`, `web/src/test/msw/handlers.ts`.
 - **Date**: 2026-10-22
-- **Status**: Implemented on `develop`, uncommitted. Supersedes the classification rules of AD-019 (carry-forward), addendum 1 (window width; the 60s lag is kept), addenda 3, 4 and 5.
+- **Status**: Implemented on `develop` (commit `6026770`, 2026-10-22). Supersedes the classification rules of AD-019 (carry-forward), addendum 1 (window width; the 60s lag is kept), addenda 3, 4 and 5.
 
 ## Handoff
 

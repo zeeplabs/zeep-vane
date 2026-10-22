@@ -505,16 +505,22 @@ function serviceUptimeAndLastSeen(service: Service): { uptime_30d: number | null
 }
 
 // toServiceResponse mirrors the real serviceResponse
-// (internal/api/services_handler.go): id, name, slo_id, slo_name,
-// monitor_mode, poll_type, poll_target, poll_interval_seconds, environment,
-// current_status, last_status_change_at, uptime_30d, last_seen_at.
+// (internal/api/services_handler.go): id, name, slo_id, slo_name, slo_type,
+// datadog_service_tag, monitor_mode, poll_type, poll_target,
+// poll_interval_seconds, environment, current_status,
+// last_status_change_at, uptime_30d, last_seen_at. slo_id/slo_name are
+// plain strings on the wire - "" (never null) for a polling-mode service,
+// since the repository reads them via COALESCE(slo_id, '') and the NOT
+// NULL slo_name column.
 function toServiceResponse(service: Service) {
   const { uptime_30d, last_seen_at } = serviceUptimeAndLastSeen(service);
   return {
     id: service.id,
     name: service.name,
-    slo_id: service.slo_id,
-    slo_name: service.slo_name,
+    slo_id: service.slo_id ?? "",
+    slo_name: service.slo_name ?? "",
+    slo_type: service.slo_type,
+    datadog_service_tag: service.datadog_service_tag,
     monitor_mode: service.monitor_mode,
     poll_type: service.poll_type,
     poll_target: service.poll_target,
@@ -1810,6 +1816,8 @@ export const handlers = [
       monitor_mode?: string;
       slo_id?: string;
       slo_name?: string;
+      slo_type?: string;
+      datadog_service_tag?: string;
       poll_type?: string;
       poll_target?: string;
       poll_interval_seconds?: number;
@@ -1845,6 +1853,8 @@ export const handlers = [
         name: body.name,
         slo_id: body.slo_id,
         slo_name: body.slo_name ?? sloCatalog.find((slo) => slo.id === body.slo_id)?.name ?? null,
+        slo_type: body.slo_type ?? "",
+        datadog_service_tag: body.datadog_service_tag ?? "",
         monitor_mode: "slo",
         poll_type: null,
         poll_target: null,
@@ -1888,6 +1898,8 @@ export const handlers = [
         name: body.name,
         slo_id: null,
         slo_name: null,
+        slo_type: "",
+        datadog_service_tag: "",
         monitor_mode: "polling",
         poll_type: body.poll_type as Service["poll_type"],
         poll_target: body.poll_target,
@@ -2066,6 +2078,13 @@ export const handlers = [
         { error: "status must be one of investigating, identified, monitoring, resolved" },
         { status: 422 },
       );
+    }
+    // Mirrors IncidentsHandler.Transition's maxClosingNoteRunes: the
+    // trimmed note (only read when resolving) is capped at 2000 characters
+    // (runes - Array.from counts code points, not UTF-16 units), checked
+    // before any state change.
+    if (body.status === "resolved" && Array.from(body.note?.trim() ?? "").length > 2000) {
+      return HttpResponse.json({ error: "note must be at most 2000 characters" }, { status: 422 });
     }
     incident.status = body.status;
     incident.resolved_at = body.status === "resolved" ? new Date().toISOString() : null;

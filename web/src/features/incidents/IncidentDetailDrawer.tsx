@@ -69,13 +69,35 @@ export function IncidentDetailDrawer({ incident, canManage, serviceName, onClose
   const [body, setBody] = useState("");
   const [proposalError, setProposalError] = useState<string | null>(null);
   const [closingNote, setClosingNote] = useState("");
+  const [transitionError, setTransitionError] = useState<string | null>(null);
+
+  // The drawer stays mounted across selections (IncidentsPage renders it
+  // once and only swaps `incident`), so per-incident drafts must be reset
+  // whenever the selected incident changes or the drawer closes (id ->
+  // null) - otherwise a closing note typed on incident A would be sent when
+  // resolving incident B. Reset during render (React's "adjust state on
+  // prop change" pattern) rather than in an effect, so B never renders,
+  // even for one frame, with A's drafts.
+  const incidentId = incident?.id ?? null;
+  const [draftsIncidentId, setDraftsIncidentId] = useState(incidentId);
+  if (incidentId !== draftsIncidentId) {
+    setDraftsIncidentId(incidentId);
+    setBody("");
+    setClosingNote("");
+    setProposalError(null);
+    setTransitionError(null);
+  }
 
   function handleTransition(status: IncidentStatus) {
+    setTransitionError(null);
     transition.mutate(
       { status, note: status === "resolved" ? closingNote : undefined },
       {
         onSuccess: () => {
           if (status === "resolved") setClosingNote("");
+        },
+        onError: (err) => {
+          setTransitionError(err instanceof ApiError ? err.message : t("incidentDetail.genericTransitionError"));
         },
       },
     );
@@ -245,7 +267,12 @@ export function IncidentDetailDrawer({ incident, canManage, serviceName, onClose
                           </Button>
                         ))}
                       </div>
-                      <ClosingNoteField value={closingNote} onChange={setClosingNote} />
+                      <ClosingNoteField key={incident.id} value={closingNote} onChange={setClosingNote} />
+                      {transitionError ? (
+                        <p role="alert" className="text-xs text-critical">
+                          {transitionError}
+                        </p>
+                      ) : null}
                     </div>
                   ) : null}
                 </>
@@ -264,10 +291,15 @@ export function IncidentDetailDrawer({ incident, canManage, serviceName, onClose
                     })}
                   </div>
                   {canManage ? (
-                    <Button variant="ghost" onClick={() => transition.mutate({ status: "investigating" })} disabled={transition.isPending}>
+                    <Button variant="ghost" onClick={() => handleTransition("investigating")} disabled={transition.isPending}>
                       <MdOutlineRefresh size={14} aria-hidden="true" />
                       {t("incidentDetail.reopenButton")}
                     </Button>
+                  ) : null}
+                  {canManage && transitionError ? (
+                    <p role="alert" className="text-xs text-critical">
+                      {transitionError}
+                    </p>
                   ) : null}
                 </>
               )}

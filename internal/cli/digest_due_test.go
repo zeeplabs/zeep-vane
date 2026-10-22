@@ -139,3 +139,76 @@ func TestDigestPeriod(t *testing.T) {
 		t.Errorf("digestPeriod() = %s..%s, want %s..%s", from, to, wantFrom, wantTo)
 	}
 }
+
+// TestDigestDue_TimezoneMovedWestMidWeek_NoSecondDigest: a UTC tenant got
+// this week's digest at Monday 09:01 UTC, then moved to Los Angeles. LA's
+// fire for the same week is Monday 16:00 UTC - after the marker - so only
+// the minimum-interval guard stops a second digest that week. The following
+// Monday's LA fire sends normally.
+func TestDigestDue_TimezoneMovedWestMidWeek_NoSecondDigest(t *testing.T) {
+	sentAt := time.Date(2026, 9, 7, 9, 1, 0, 0, time.UTC) // Monday 09:01 UTC
+	la := db.Tenant{Timezone: strPtr("America/Los_Angeles"), CreatedAt: longAgo, LastDigestSentAt: timePtr(sentAt)}
+
+	for _, now := range []time.Time{
+		time.Date(2026, 9, 7, 16, 1, 0, 0, time.UTC), // LA Monday 09:01, same week
+		time.Date(2026, 9, 8, 10, 1, 0, 0, time.UTC), // LA Tuesday 03:01, still in LA's catch-up window
+	} {
+		if _, due := digestDue(la, now); due {
+			t.Errorf("digestDue(LA, %s) = true, want false (already sent this week in the old zone)", now)
+		}
+	}
+
+	nextFire := time.Date(2026, 9, 14, 16, 0, 0, 0, time.UTC) // Monday 09:00 PDT
+	fire, due := digestDue(la, nextFire.Add(time.Minute))
+	if !due || !fire.Equal(nextFire) {
+		t.Errorf("digestDue(LA, next Monday) = (fire=%s, due=%v), want due at %s", fire, due, nextFire)
+	}
+}
+
+// TestDigestDue_TimezoneMovedEastMidWeek_NoSecondDigestNoSkip: a Los Angeles
+// tenant got this week's digest at Monday 16:01 UTC, then moved to Tokyo.
+// Tokyo's fire for the same week (Monday 00:00 UTC) is before the marker, so
+// the week stays sent; the next Monday's Tokyo fire is 6d8h after the marker
+// and sends normally.
+func TestDigestDue_TimezoneMovedEastMidWeek_NoSecondDigestNoSkip(t *testing.T) {
+	sentAt := time.Date(2026, 9, 7, 16, 1, 0, 0, time.UTC) // Monday 09:01 PDT
+	tokyo := db.Tenant{Timezone: strPtr("Asia/Tokyo"), CreatedAt: longAgo, LastDigestSentAt: timePtr(sentAt)}
+
+	if _, due := digestDue(tokyo, time.Date(2026, 9, 7, 17, 1, 0, 0, time.UTC)); due {
+		t.Error("digestDue(Tokyo, same Monday) = true, want false (already sent this week)")
+	}
+
+	nextFire := time.Date(2026, 9, 14, 0, 0, 0, 0, time.UTC) // Monday 09:00 JST
+	fire, due := digestDue(tokyo, nextFire.Add(time.Minute))
+	if !due || !fire.Equal(nextFire) {
+		t.Errorf("digestDue(Tokyo, next Monday) = (fire=%s, due=%v), want due at %s", fire, due, nextFire)
+	}
+}
+
+// TestDigestDue_MinIntervalNeverSkipsAWeekInAFixedZone: even the latest
+// possible previous send (end of the catch-up window) followed by a DST
+// spring-forward week (167h between fires) only delays the next digest by
+// up to an hour - it is still sent inside the next catch-up window.
+func TestDigestDue_MinIntervalNeverSkipsAWeekInAFixedZone(t *testing.T) {
+	ny := mustLoadLocation(t, "America/New_York")
+	// US DST starts 2027-03-14: Monday 2027-03-08 09:00 EST -> Monday
+	// 2027-03-15 09:00 EDT is 167h.
+	prevFire := time.Date(2027, 3, 8, 9, 0, 0, 0, ny)
+	nextFire := time.Date(2027, 3, 15, 9, 0, 0, 0, ny)
+	lateSend := prevFire.Add(digestCatchUpWindow - time.Minute)
+	tenant := db.Tenant{Timezone: strPtr("America/New_York"), CreatedAt: longAgo, LastDigestSentAt: timePtr(lateSend)}
+
+	sentInWindow := false
+	for now := nextFire.Add(time.Minute); now.Before(nextFire.Add(digestCatchUpWindow)); now = now.Add(time.Hour) {
+		if _, due := digestDue(tenant, now); due {
+			sentInWindow = true
+			if delay := now.Sub(nextFire); delay > 2*time.Hour {
+				t.Errorf("first due tick %s is %s after the fire, want at most ~1h", now, delay)
+			}
+			break
+		}
+	}
+	if !sentInWindow {
+		t.Fatal("the next week's digest was never due inside its catch-up window")
+	}
+}

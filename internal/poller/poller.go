@@ -23,6 +23,12 @@ const maxFetchAttempts = 3
 // (BURN-01).
 const recentWindowLag = 60 * time.Second
 
+// sloTypeMetric is db.Service.SLOType for a metric-based (request-count)
+// SLO, as recorded at link time from Datadog's /slo/search slo_type
+// (RCA-01). Only this type is burn-classified when Datadog returns no
+// series: its absence means no traffic, not "no counts by design".
+const sloTypeMetric = "metric"
+
 // serviceLister is the subset of *db.ServiceRepository the poller depends on
 // to discover which services to poll.
 type serviceLister interface {
@@ -337,10 +343,13 @@ func (p *Poller) pollOnce(ctx context.Context) {
 //
 // Classification (AD-049, superseding AD-019's window-SLI heuristics): a
 // metric-based SLO with a usable target is classified by multi-window burn
-// rate (classifyBurn) and its reading persisted with the status; an SLO with
-// no target (Target <= 0, BURN-09) or no request counts at all
-// (monitor-based, !HasSeries, NB-7) falls back to Datadog's own state over
-// the short window (classifyByState), persisted without a reading.
+// rate (classifyBurn) and its reading persisted with the status - including
+// one Datadog returned no series for (no traffic over the hour), classified
+// with empty windows; an SLO with no target (Target <= 0, BURN-09) or no
+// request counts at all when it is not known to be metric-based
+// (monitor-based or unknown slo_type, !HasSeries, NB-7) falls back to
+// Datadog's own state over the short window (classifyByState), persisted
+// without a reading.
 func (p *Poller) pollService(ctx context.Context, svc db.Service) error {
 	now := time.Now()
 	end := now.Add(-recentWindowLag)
@@ -352,6 +361,20 @@ func (p *Poller) pollService(ctx context.Context, svc db.Service) error {
 		return err
 	}
 
+	// A metric-based SLO with no series at all had no traffic to count: it
+	// is classified on the burn path with empty windows (no evidence), never
+	// sent to the state fallback, whose no_data -> degraded mapping is the
+	// bug BURN-08 removes. Datadog's response shape for a metric SLO with
+	// zero traffic over the whole hour is unverified (series omitted vs.
+	// zero-valued), so this holds either way. The counts are zeroed
+	// explicitly because SLOWindows documents them as meaningless without
+	// a series. Monitor-based SLOs and an unknown slo_type (rows linked
+	// before slo_type was recorded) keep the fallback unchanged.
+	if !windows.HasSeries && svc.SLOType == sloTypeMetric {
+		windows.Short, windows.Long = datadog.WindowCounts{}, datadog.WindowCounts{}
+	}
+	burnPath := windows.Target > 0 && (windows.HasSeries || svc.SLOType == sloTypeMetric)
+
 	short := windowCounts{Requests: windows.Short.Requests, Errors: windows.Short.Errors}
 	long := windowCounts{Requests: windows.Long.Requests, Errors: windows.Long.Errors}
 
@@ -361,7 +384,7 @@ func (p *Poller) pollService(ctx context.Context, svc db.Service) error {
 	var current string
 	var reading *db.ServiceReading
 	var status datadog.SLOStatus
-	if windows.HasSeries && windows.Target > 0 {
+	if burnPath {
 		current = classifyBurn(burnInput{
 			Short:        short,
 			Long:         long,
@@ -414,6 +437,7 @@ func (p *Poller) pollService(ctx context.Context, svc db.Service) error {
 		zap.Bool("transitioned", transitioned),
 		zap.Bool("burn_rate_classified", reading != nil),
 		zap.Bool("has_series", windows.HasSeries),
+		zap.String("slo_type", svc.SLOType),
 		zap.Float64("target", status.Target),
 		zap.String("datadog_state", status.State),
 		zap.Int64("short_requests", short.Requests),
@@ -508,9 +532,20 @@ func newServiceReading(short, long windowCounts, target float64, previousErrorAt
 
 // sloStatusFromWindows adapts this cycle's windows to the datadog.SLOStatus
 // shape status_intervals.error_budget_remaining and
-// SLOAnalyzer.HandleTransition still consume. SLI is the short window's own
-// success ratio when it has traffic (the window classification is driven
-// by), otherwise Datadog's overall SLI for the fetched range;
+// SLOAnalyzer.HandleTransition still consume. It is only called on the burn
+// path, where the counts are authoritative (zero for a metric SLO Datadog
+// returned no series for). SLI is, in order:
+//   - the short window's own success ratio when it has traffic (the window
+//     classification is driven by);
+//   - Datadog's overall SLI for the fetched range (~1h) when only the long
+//     window has traffic - a real, if older, measurement;
+//   - 100 when neither window has traffic: no request failed, matching
+//     burnRate's 0 for an empty window. Datadog's overall SLI can be null
+//     there (decoded as 0), which would record SLI - Target = -Target, a
+//     budget far below any real breach, for a service with no evidence.
+//
+// The analyzer never presents the last two as the current state: a reading
+// with an empty short window marks NoRecentTraffic (buildAnalysisInput).
 // ErrorBudgetRemaining keeps its SLI - Target approximation (AD-019
 // addendum 2) and RequestCount is the short window's.
 func sloStatusFromWindows(w datadog.SLOWindows) datadog.SLOStatus {
@@ -521,9 +556,12 @@ func sloStatusFromWindows(w datadog.SLOWindows) datadog.SLOStatus {
 		Timeframe:    w.Timeframe,
 		RequestCount: w.Short.Requests,
 	}
-	if w.HasSeries && w.Short.Requests > 0 {
+	switch {
+	case w.Short.Requests > 0:
 		errs := min(max(w.Short.Errors, 0), w.Short.Requests)
 		status.SLI = 100 * float64(w.Short.Requests-errs) / float64(w.Short.Requests)
+	case w.Long.Requests <= 0:
+		status.SLI = 100
 	}
 	status.ErrorBudgetRemaining = status.SLI - status.Target
 	return status

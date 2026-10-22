@@ -35,6 +35,8 @@ const svc1: Service = {
   name: "API pública",
   slo_id: null,
   slo_name: null,
+  slo_type: "metric",
+  datadog_service_tag: "",
   monitor_mode: "slo",
   poll_type: null,
   poll_target: null,

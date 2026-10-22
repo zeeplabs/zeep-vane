@@ -577,15 +577,24 @@ func TestSLOStatusFromWindows(t *testing.T) {
 			wantRequest: 1000,
 		},
 		{
-			name:        "empty short window falls back to Datadog's SLI",
-			windows:     datadog.SLOWindows{Target: 99.5, SLI: 99.9, HasSeries: true},
+			name:        "empty short window with long traffic falls back to Datadog's SLI",
+			windows:     datadog.SLOWindows{Target: 99.5, SLI: 99.9, Long: datadog.WindowCounts{Requests: 600, Errors: 1}, HasSeries: true},
 			wantSLI:     99.9,
 			wantBudget:  0.4,
 			wantRequest: 0,
 		},
 		{
-			name:        "monitor-based SLO uses Datadog's SLI",
-			windows:     datadog.SLOWindows{Target: 99, SLI: 100},
+			// Datadog's null sli_value decodes as 0; recording it would give
+			// a -99.5 budget for a service that had no request at all.
+			name:        "no traffic in either window records no failed request",
+			windows:     datadog.SLOWindows{State: "no_data", Target: 99.5, SLI: 0, HasSeries: true},
+			wantSLI:     100,
+			wantBudget:  0.5,
+			wantRequest: 0,
+		},
+		{
+			name:        "metric SLO without series (zeroed counts) records no failed request",
+			windows:     datadog.SLOWindows{State: "no_data", Target: 99, SLI: 0},
 			wantSLI:     100,
 			wantBudget:  1,
 			wantRequest: 0,
@@ -602,5 +611,157 @@ func TestSLOStatusFromWindows(t *testing.T) {
 				t.Errorf("Target/State = %v/%q, want %v/%q", got.Target, got.State, tt.windows.Target, tt.windows.State)
 			}
 		})
+	}
+}
+
+// noSeriesWindows is a windows response with no series at all, carrying a
+// "no_data" state (what the state fallback would map to degraded) and
+// stray counts, proving the burn path for a metric SLO zeroes them rather
+// than trusting counts SLOWindows documents as meaningless.
+func noSeriesWindows() datadog.SLOWindows {
+	return datadog.SLOWindows{
+		State:     "no_data",
+		Target:    99.5,
+		Timeframe: "30d",
+		Short:     datadog.WindowCounts{Requests: 100, Errors: 50},
+		Long:      datadog.WindowCounts{Requests: 100, Errors: 50},
+		HasSeries: false,
+	}
+}
+
+// TestPollService_MetricSLOWithoutSeries_ClassifiedAsNoTraffic covers the
+// pre-release review of BURN-08: a metric SLO Datadog returned no series
+// for (no traffic over the hour, whatever the response shape) is
+// classified on the burn path with empty windows - no evidence - instead
+// of falling back to the no_data state that normalizeStatus maps to
+// degraded. One /history call, a reading persisted with zero counts.
+func TestPollService_MetricSLOWithoutSeries_ClassifiedAsNoTraffic(t *testing.T) {
+	tests := []struct {
+		name         string
+		previous     string
+		lastErrorAgo time.Duration
+		wantStatus   string
+	}{
+		{name: "operational stays operational", previous: "operational", lastErrorAgo: time.Hour, wantStatus: "operational"},
+		{name: "degraded holds within the grace", previous: "degraded", lastErrorAgo: 5 * time.Minute, wantStatus: "degraded"},
+		{name: "degraded recovers after the grace", previous: "degraded", lastErrorAgo: 16 * time.Minute, wantStatus: "operational"},
+		{name: "outage holds within the grace", previous: "outage", lastErrorAgo: 5 * time.Minute, wantStatus: "outage"},
+		{name: "outage recovers after the grace", previous: "outage", lastErrorAgo: 16 * time.Minute, wantStatus: "operational"},
+		{name: "not_configured stays not_configured", previous: "not_configured", lastErrorAgo: time.Hour, wantStatus: "not_configured"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			provider := &fakeProvider{errs: []error{nil}, windows: noSeriesWindows(), status: datadog.SLOStatus{State: "no_data"}}
+			intervals := &fakeIntervalWriter{}
+			statuses := &fakeStatusUpdater{}
+			p, _ := newTestPoller(provider, intervals, statuses)
+
+			lastErrorAt := time.Now().Add(-tt.lastErrorAgo)
+			svc := db.Service{
+				ID: "svc-1", Name: "API", SLOID: "slo-1", SLOType: "metric",
+				CurrentStatus: tt.previous, LastStatusChangeAt: time.Now().Add(-2 * time.Hour), LastErrorAt: &lastErrorAt,
+			}
+			if err := p.pollService(t.Context(), svc); err != nil {
+				t.Fatalf("pollService() returned unexpected error: %v", err)
+			}
+
+			if provider.calls != 1 || provider.statusCalls != 0 {
+				t.Errorf("windows/status calls = %d/%d, want 1/0 (no short-window state call)", provider.calls, provider.statusCalls)
+			}
+			if len(statuses.calls) != 1 || statuses.calls[0].status != tt.wantStatus {
+				t.Fatalf("status writes = %+v, want one with status %q", statuses.calls, tt.wantStatus)
+			}
+			rd := statuses.calls[0].reading
+			if rd == nil {
+				t.Fatal("status written via UpdateStatus, want UpdateStatusAndReading with a reading")
+			}
+			if rd.ShortRequests != 0 || rd.ShortErrors != 0 || rd.BurnShort != 0 || rd.BurnLong != 0 {
+				t.Errorf("reading = %+v, want zero counts and burn rates (stray counts ignored)", *rd)
+			}
+			if rd.LastErrorAt == nil || !rd.LastErrorAt.Equal(lastErrorAt) {
+				t.Errorf("LastErrorAt = %v, want the previous %v carried forward", rd.LastErrorAt, lastErrorAt)
+			}
+			if len(intervals.calls) != 1 || intervals.calls[0].status != tt.wantStatus {
+				t.Fatalf("OpenOrExtend calls = %+v, want one with status %q", intervals.calls, tt.wantStatus)
+			}
+			if math.Abs(intervals.calls[0].errorBudget-0.5) > 1e-9 {
+				t.Errorf("error budget = %v, want 0.5 (SLI 100 with no request, never -Target)", intervals.calls[0].errorBudget)
+			}
+		})
+	}
+}
+
+// TestPollService_NoSeriesNotKnownMetric_KeepsStateFallback covers the
+// conservative half of the same fix: only an SLO recorded as metric-based
+// is burn-classified without a series. Monitor-based, unknown (rows linked
+// before slo_type was recorded) and any other type keep the short-window
+// state fallback, as does a metric SLO without a usable target (BURN-09).
+func TestPollService_NoSeriesNotKnownMetric_KeepsStateFallback(t *testing.T) {
+	tests := []struct {
+		name    string
+		sloType string
+		target  float64
+	}{
+		{name: "monitor-based SLO", sloType: "monitor", target: 99.5},
+		{name: "unknown slo_type", sloType: "", target: 99.5},
+		{name: "other slo_type", sloType: "time_slice", target: 99.5},
+		{name: "metric SLO without a target", sloType: "metric", target: 0},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			windows := noSeriesWindows()
+			windows.Target = tt.target
+			provider := &fakeProvider{errs: []error{nil}, windows: windows, status: datadog.SLOStatus{State: "warning", SLI: 99.9, Target: 99.5, ErrorBudgetRemaining: 0.4}}
+			intervals := &fakeIntervalWriter{}
+			statuses := &fakeStatusUpdater{}
+			p, _ := newTestPoller(provider, intervals, statuses)
+
+			svc := db.Service{ID: "svc-1", Name: "API", SLOID: "slo-1", SLOType: tt.sloType, CurrentStatus: "operational", LastStatusChangeAt: time.Now()}
+			if err := p.pollService(t.Context(), svc); err != nil {
+				t.Fatalf("pollService() returned unexpected error: %v", err)
+			}
+
+			if provider.calls != 1 || provider.statusCalls != 1 {
+				t.Errorf("windows/status calls = %d/%d, want 1/1 (state fallback)", provider.calls, provider.statusCalls)
+			}
+			if len(statuses.calls) != 1 || statuses.calls[0].status != "degraded" {
+				t.Fatalf("status writes = %+v, want one with status %q (warning via the fallback)", statuses.calls, "degraded")
+			}
+			if statuses.calls[0].reading != nil {
+				t.Errorf("reading = %+v, want nil (state fallback writes no reading)", *statuses.calls[0].reading)
+			}
+			if len(intervals.calls) != 1 || intervals.calls[0].errorBudget != 0.4 {
+				t.Errorf("OpenOrExtend calls = %+v, want one with the short-window budget 0.4", intervals.calls)
+			}
+		})
+	}
+}
+
+// TestPollService_GraceRecovery_IntervalBudgetFromTheHour covers what
+// status_intervals.error_budget_remaining records when the burn path
+// classified with an empty short window but a long window with traffic:
+// Datadog's overall SLI for the hour (a real, older measurement), not a
+// value derived from no requests.
+func TestPollService_GraceRecovery_IntervalBudgetFromTheHour(t *testing.T) {
+	windows := burningWindows(datadog.WindowCounts{}, datadog.WindowCounts{Requests: 600, Errors: 48})
+	windows.State, windows.SLI = "breached", 92
+	provider := &fakeProvider{errs: []error{nil}, windows: windows}
+	intervals := &fakeIntervalWriter{}
+	statuses := &fakeStatusUpdater{}
+	p, _ := newTestPoller(provider, intervals, statuses)
+
+	lastErrorAt := time.Now().Add(-16 * time.Minute)
+	svc := db.Service{ID: "svc-1", Name: "API", SLOID: "slo-1", SLOType: "metric", CurrentStatus: "outage", LastStatusChangeAt: time.Now().Add(-time.Hour), LastErrorAt: &lastErrorAt}
+	if err := p.pollService(t.Context(), svc); err != nil {
+		t.Fatalf("pollService() returned unexpected error: %v", err)
+	}
+
+	if len(statuses.calls) != 1 || statuses.calls[0].status != "operational" {
+		t.Fatalf("status writes = %+v, want one with status %q", statuses.calls, "operational")
+	}
+	if len(intervals.calls) != 1 || math.Abs(intervals.calls[0].errorBudget-(92-99.5)) > 1e-9 {
+		t.Errorf("OpenOrExtend calls = %+v, want one with budget %v (the hour's SLI - target)", intervals.calls, 92-99.5)
 	}
 }
