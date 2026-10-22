@@ -7,13 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.11.0] — 2026-10-22
+
 ### Changed
 
 - **SLO services are classified by multi-window burn rate** (AD-049): the poller now reads 5-minute and 1-hour windows from one Datadog `/history` call and marks a service `outage` when both windows burn the error budget at ≥ 14.4x (`degraded` at ≥ 7.2x), with at least 3 failed requests in the last 5 minutes — the same signal as Datadog's `slo alert` monitors. Services now recover as soon as the last 5 minutes are clean, instead of staying degraded/outage for hours after Datadog already shows them healthy. Isolated errors (1-2 in 5 minutes) no longer change status; a service with no traffic keeps its status for 15 minutes after its last error, then returns to operational. Monitor-based SLOs and SLOs without a target keep the previous state-based classification.
 - LLM-written incident descriptions, degraded tooltips and closing comments now mention the error rate of the last 5 minutes and how fast the error budget is burning.
+- **Transactional emails redesigned** (AD-047): invite, password reset, signup verification, incident opened, incident resolved and weekly digest use the new email-client-safe designs (shared header/footer, hosted logo, plain-text alternative for each), with copy in English and dates in the tenant's timezone.
+- **Weekly digest is sent per tenant** at about 09:00 Monday in the tenant's own timezone (hourly scheduler, at most once per week), covering the previous tenant-local calendar week — instead of one global Monday 00:00 UTC send.
+- LLM-written outage descriptions and closing comments use the same technical-but-accessible tone as degraded tooltips; the auto-detected incident title and fallback description are now in pt-BR.
 
 ### Added
 
+- **Closing note on manual resolve** (AD-048): resolving an incident by hand accepts an optional note, added to the timeline and used as the summary in the "Resolved" email.
+- `VANE_EMAIL_ASSETS_BASE_URL` (optional): absolute base URL emails load their logo from; defaults to the admin host's `/email` path.
+- Poller logs each cycle's classification inputs at debug level.
 - **Latest reading on the service detail drawer** (admin only): error rate of the last 5 minutes, burn rate over 5 minutes and 1 hour, and when it was read. Never exposed on the public status page.
 
 ### Fixed
@@ -28,6 +36,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Migration notes
 
+- Adds `tenants.last_digest_sent_at` (migration `0051`), the per-tenant weekly digest marker. No backfill.
 - Adds six nullable columns to `services` (migration `0052`): `last_burn_rate_short`, `last_burn_rate_long`, `last_window_errors`, `last_window_requests`, `last_reading_at`, `last_error_at`. No backfill; the first poll cycle after deploy fills them.
 
 ## [0.10.0] — 2026-10-07
