@@ -3,7 +3,7 @@
 **Fonte**: `.specs/features/admin-frontend/spec.md` + `design.md`
 **Objetivo deste doc**: dar contexto de produto suficiente para gerar layouts de alta fidelidade — não repete detalhe técnico de implementação (React/API), só o que afeta decisão visual/UX.
 
-**Premissa assumida** (não travada em spec/design, decidir ou ajustar): estilo visual novo, sem herdar identidade do `zeep-orbit`. Sem branding Starbem — este é produto standalone (status page / uptime monitoring), não produto B2B de saúde.
+**Premissa assumida** (não travada em spec/design, decidir ou ajustar): estilo visual novo, sem herdar identidade do `zeep-orbit`. Sem branding de terceiros — este é produto standalone (status page / uptime monitoring), não produto B2B de saúde.
 
 ---
 

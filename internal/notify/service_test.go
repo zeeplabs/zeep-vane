@@ -346,7 +346,7 @@ func TestWeeklyDigestRecipients_NoEligible_EmptyList(t *testing.T) {
 func domainExpiringSummary() DomainExpiringSummary {
 	return DomainExpiringSummary{
 		DomainID:      "dom-1",
-		Hostname:      "starbem.app",
+		Hostname:      "example.com",
 		DaysRemaining: 6,
 		ThresholdDays: 7,
 		TenantName:    "Acme",
@@ -356,7 +356,7 @@ func domainExpiringSummary() DomainExpiringSummary {
 func domainNSDriftSummary() DomainNSDriftSummary {
 	return DomainNSDriftSummary{
 		DomainID:   "dom-1",
-		Hostname:   "starbem.app",
+		Hostname:   "example.com",
 		ExpectedNS: []string{"ns1.old.net", "ns2.old.net"},
 		CurrentNS:  []string{"ns1.new.net"},
 		TenantName: "Acme",
@@ -388,8 +388,8 @@ func TestNotifyDomainExpiring_SendsOnlyToEnabledOwnerOperator(t *testing.T) {
 	if prefs.lastType != db.NotificationTypeDomainExpiring {
 		t.Errorf("resolved notification type = %q, want %q", prefs.lastType, db.NotificationTypeDomainExpiring)
 	}
-	if sender.lastExpiring.Hostname != "starbem.app" || sender.lastExpiring.DaysRemaining != 6 || sender.lastExpiring.ThresholdDays != 7 {
-		t.Errorf("expiring data = %+v, want hostname=starbem.app days=6 threshold=7", sender.lastExpiring)
+	if sender.lastExpiring.Hostname != "example.com" || sender.lastExpiring.DaysRemaining != 6 || sender.lastExpiring.ThresholdDays != 7 {
+		t.Errorf("expiring data = %+v, want hostname=example.com days=6 threshold=7", sender.lastExpiring)
 	}
 	if sender.lastExpiring.DashboardURL != "https://vane.example.com/domains" {
 		t.Errorf("DashboardURL = %q, want %q", sender.lastExpiring.DashboardURL, "https://vane.example.com/domains")
@@ -434,8 +434,8 @@ func TestNotifyDomainNSDrift_SendsOnlyToEnabledOwnerOperator(t *testing.T) {
 	if prefs.lastType != db.NotificationTypeDomainNSDrift {
 		t.Errorf("resolved notification type = %q, want %q", prefs.lastType, db.NotificationTypeDomainNSDrift)
 	}
-	if sender.lastDrift.Hostname != "starbem.app" {
-		t.Errorf("drift Hostname = %q, want %q", sender.lastDrift.Hostname, "starbem.app")
+	if sender.lastDrift.Hostname != "example.com" {
+		t.Errorf("drift Hostname = %q, want %q", sender.lastDrift.Hostname, "example.com")
 	}
 	if !reflect.DeepEqual(sender.lastDrift.ExpectedNS, []string{"ns1.old.net", "ns2.old.net"}) {
 		t.Errorf("ExpectedNS = %v, want the baseline set", sender.lastDrift.ExpectedNS)

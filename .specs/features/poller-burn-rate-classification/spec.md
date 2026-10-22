@@ -2,18 +2,18 @@
 
 ## Problem Statement
 
-`Poller.pollService` (`internal/poller/poller.go:368`) classifies each service from a single 5-minute window of `GET /api/v1/slo/{id}/history`, comparing that window's SLI against a target calibrated for the SLO's 30-day timeframe. Four layered heuristics (AD-019 and addenda 1-5: low-volume carry-forward, binomial `breachBound` with an uncalibrated `breachThresholdSigmas = 3`, `breachHysteresisCycles = 2`, Datadog-state fallback for low-volume first classification) patch the symptoms of that mismatch, but the result still disagrees with Datadog in the cases operators actually hit. Confirmed by code reading and a live read of the Starbem staging SLOs (2026-10-22):
+`Poller.pollService` (`internal/poller/poller.go:368`) classifies each service from a single 5-minute window of `GET /api/v1/slo/{id}/history`, comparing that window's SLI against a target calibrated for the SLO's 30-day timeframe. Four layered heuristics (AD-019 and addenda 1-5: low-volume carry-forward, binomial `breachBound` with an uncalibrated `breachThresholdSigmas = 3`, `breachHysteresisCycles = 2`, Datadog-state fallback for low-volume first classification) patch the symptoms of that mismatch, but the result still disagrees with Datadog in the cases operators actually hit. Confirmed by code reading and a live read of a reference deployment's staging SLOs (2026-10-22):
 
 1. **Zero-traffic windows pin a recovered service to `degraded`.** With `RequestCount == 0` after an incident, `pollService` classifies by Datadog's window `state`, which is `no_data` when the denominator is 0; `normalizeStatus("no_data")` returns `"degraded"` (`poller.go:545`). A low-traffic service (every staging service: 0 to ~6.5k requests per 30 days) stays orange indefinitely while Datadog shows the SLO as `ok`.
 2. **Low-volume windows freeze an outage.** With 1-9 requests, the previous status is carried forward (`minRecentWindowRequests = 10`), so a service that recovered stays in `outage` until a window with 10+ requests arrives.
 3. **`degraded` uses the raw 30-day target.** The `breachBound` band only guards `outage`; `degraded` fires on `SLI < Target`, so at 99.5% one failed request in ~150 marks a healthy service degraded.
-4. **No burn rate anywhere.** Datadog's SLO object does not expose burn rate (only `sli`, `error_budget_remaining`, `raw_error_budget_remaining`, `state`); burn rate exists only inside `slo alert` monitors. Starbem's production monitors use multi-window burn rate (`burn_rate(...).long_window("1h").short_window("5m")`, critical 14.4x / warning 7.2x), so Vane and the alerts in Slack disagree by construction.
+4. **No burn rate anywhere.** Datadog's SLO object does not expose burn rate (only `sli`, `error_budget_remaining`, `raw_error_budget_remaining`, `state`); burn rate exists only inside `slo alert` monitors. the reference deployment's production monitors use multi-window burn rate (`burn_rate(...).long_window("1h").short_window("5m")`, critical 14.4x / warning 7.2x), so Vane and the alerts in Slack disagree by construction.
 
 AD-019 addendum 3 already named the definitive fix (stop comparing a short window against a 30-day target; multi-window burn rate is listed there as the more robust option). This feature implements it.
 
 ## Goals
 
-- [ ] A service's public status is derived from multi-window burn rate (short 5m + long 1h), the same signal Starbem's production `slo alert` monitors use, so Vane and Datadog alerting agree on when a service is degraded/down.
+- [ ] A service's public status is derived from multi-window burn rate (short 5m + long 1h), the same signal typical production `slo alert` monitors use, so Vane and Datadog alerting agree on when a service is degraded/down.
 - [ ] A service that has recovered returns to `operational` within one short window plus poll latency (target: ≤ ~8 minutes at `POLL_INTERVAL_SECONDS=120`), including when traffic is low or absent.
 - [ ] A single isolated failed request never opens an incident or degrades a service, regardless of traffic volume.
 - [ ] Admins see the numbers behind a status (burn rate per window, errors, requests) and the LLM-generated incident text can cite them.
@@ -24,12 +24,12 @@ AD-019 addendum 3 already named the definitive fix (stop comparing a short windo
 | Feature | Reason |
 | --- | --- |
 | Reading the state of Datadog `slo alert` monitors as the status source | Decided 2026-10-22: Vane computes burn rate itself so self-hosted tenants work without depending on monitors created outside Vane. Monitors stay the Slack-alerting path. |
-| Per-tenant / per-service configurable thresholds (UI, API, migration) | User chose fixed defaults matching Starbem's production monitors. Constants stay single-line tunable, as every prior AD-019 constant. |
+| Per-tenant / per-service configurable thresholds (UI, API, migration) | User chose fixed defaults matching the reference deployment's production monitors. Constants stay single-line tunable, as every prior AD-019 constant. |
 | Showing burn rate / error numbers on the public status page | User chose admin + LLM prompt only; visitors keep seeing status and incident text. |
 | Automatic incident closing without owner/operator confirmation | AI-20 product rule (recovery proposes a closing comment, a human confirms). Unchanged. |
 | Monitor-based SLOs (`slo_type == "monitor"`, NB-7) | No `series` in `/history` for them; 0% of real usage in the reference org. Keep today's state-based behavior. |
 | Detecting a service that is fully down and emits no traces at all | An SLO built on tracer metrics cannot see requests that never reach the tracer. The grace period (BURN-06) limits the blind spot; real detection belongs to synthetic checks / manual polling (`manual-polling-monitoring`). |
-| Changing Datadog SLO / monitor definitions | Done separately in the Starbem `infra` repo (staging targets aligned to prod, 2026-10-22). |
+| Changing Datadog SLO / monitor definitions | Done separately in the reference deployment's infrastructure repo (staging targets aligned to prod, 2026-10-22). |
 | Changing the public hourly history bucketing (`internal/history`) | Consumes status intervals unchanged; fewer false transitions fix it at the source. |
 
 ---

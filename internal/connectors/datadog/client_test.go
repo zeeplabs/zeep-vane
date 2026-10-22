@@ -601,7 +601,7 @@ func TestSearchSLOs_SingleServiceTag_PopulatesSLOTypeAndServiceTag(t *testing.T)
 
 func TestSearchSLOs_ZeroServiceTags_ServiceTagEmpty(t *testing.T) {
 	body := `{"data":{"attributes":{"slos":[{"data":{"id":"abc","attributes":{
-		"name":"Compra de Consulta","slo_type":"metric","service_tags":[]
+		"name":"Checkout","slo_type":"metric","service_tags":[]
 	}}}]}}}`
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -625,7 +625,7 @@ func TestSearchSLOs_ZeroServiceTags_ServiceTagEmpty(t *testing.T) {
 
 func TestSearchSLOs_MultipleServiceTags_ServiceTagEmpty(t *testing.T) {
 	body := `{"data":{"attributes":{"slos":[{"data":{"id":"abc","attributes":{
-		"name":"Compra de Consulta","slo_type":"metric","service_tags":["service:checkout-svc","service:payments-svc"]
+		"name":"Checkout","slo_type":"metric","service_tags":["service:checkout-svc","service:payments-svc"]
 	}}}]}}}`
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")

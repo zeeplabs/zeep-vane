@@ -6,7 +6,7 @@ A service whose Datadog SLO genuinely receives zero requests in a poll window (`
 
 This gap was introduced by `086d678` (`slo-low-traffic-not-configured`, SLOTRAF-01), which deliberately skips the low-volume carry-forward guard (`poller.go:323`) for a service's first-ever classification (`CurrentStatus == "not_configured"`) so it doesn't carry a placeholder forever. That fix's own rationale — "any real reading beats a placeholder backed by zero data" — is self-contradicting for `RequestCount == 0`: a window with zero requests is not a reading at all, it is exactly the "zero data" the rationale says shouldn't count. `breach_threshold.go`'s own doc comment already assumed this couldn't happen ("Callers still apply their own low-volume guards before relying on the result") — SLOTRAF-01 broke that assumption for the `not_configured` case without noticing.
 
-Confirmed live: SLO `flow:profissional:fluxo-autenticacao-profissional` (doctors-ms login, 13 requests total in 30 days) shows `"outage"` (admin: "Inativo", public page: "Interrupção em andamento") despite the SLO reporting 100% healthy in Datadog — the service simply never crossed 1 request in its most recent 5-minute polling windows.
+Confirmed live: SLO `flow:example:login` (login service, 13 requests total in 30 days) shows `"outage"` (admin: "Inativo", public page: "Interrupção em andamento") despite the SLO reporting 100% healthy in Datadog — the service simply never crossed 1 request in its most recent 5-minute polling windows.
 
 ## Goals
 
@@ -46,7 +46,7 @@ Confirmed live: SLO `flow:profissional:fluxo-autenticacao-profissional` (doctors
 
 **User Story**: Como owner, quero que um serviço de baixíssimo tráfego não seja marcado como "outage" só porque uma janela de poll não teve nenhuma requisição, para que a página de status pública reflita a saúde real do serviço em vez de um falso positivo derivado da ausência de dado.
 
-**Why P1**: É o próprio bug relatado, ativo em produção agora (`flow:profissional:fluxo-autenticacao-profissional`).
+**Why P1**: É o próprio bug relatado, ativo em produção agora (`flow:example:login`).
 
 **Acceptance Criteria**:
 
@@ -85,6 +85,6 @@ Confirmed live: SLO `flow:profissional:fluxo-autenticacao-profissional` (doctors
 
 ## Success Criteria
 
-- [ ] `flow:profissional:fluxo-autenticacao-profissional` (e qualquer outro serviço com o mesmo padrão de baixíssimo tráfego) para de mostrar `"outage"`/"Inativo"/"Interrupção" sem uma falha real por trás.
+- [ ] `flow:example:login` (e qualquer outro serviço com o mesmo padrão de baixíssimo tráfego) para de mostrar `"outage"`/"Inativo"/"Interrupção" sem uma falha real por trás.
 - [ ] Nenhum teste existente de `poller_recent_window_test.go`/`breach_threshold_test.go` quebra.
 - [ ] `go build ./...`, `go test ./...`, `go vet ./...`, `gofmt -l` limpos.

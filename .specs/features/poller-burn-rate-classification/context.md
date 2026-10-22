@@ -20,7 +20,7 @@ Replace the poller's single-window, 30-day-target comparison (and the AD-019 heu
 
 ### Thresholds
 
-- Same as Starbem's production burn-rate monitors: outage at 14.4x, degraded at 7.2x, in both the 5m and 1h windows.
+- Same as the reference deployment's production burn-rate monitors: outage at 14.4x, degraded at 7.2x, in both the 5m and 1h windows.
 - Fixed defaults (package constants), not configurable per tenant/service.
 
 ### Zero traffic after an incident
@@ -46,9 +46,9 @@ Replace the poller's single-window, 30-day-target comparison (and the AD-019 heu
 
 ## Specific References
 
-- Starbem production monitors (`infra/datadog/terraform/flows_slo.tf`): `burn_rate("<slo>").over("30d").long_window("1h").short_window("5m")`, `critical = "14.4"`, `warning = "7.2"`.
+- Reference production monitors (Terraform): `burn_rate("<slo>").over("30d").long_window("1h").short_window("5m")`, `critical = "14.4"`, `warning = "7.2"`.
 - AD-019 addendum 3, items 1-5: the definitive fix described there.
-- Staging evidence (2026-10-22): 40 metric-based SLOs; `stela-emotional-ms` `breached` from ~1 error in 44 requests over 30 days; 3 SLOs `no_data`.
+- Staging evidence (2026-10-22): 40 metric-based SLOs; `example-service` `breached` from ~1 error in 44 requests over 30 days; 3 SLOs `no_data`.
 
 ---
 

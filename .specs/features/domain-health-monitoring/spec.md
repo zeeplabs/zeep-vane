@@ -4,7 +4,7 @@
 
 `vane` today only observes the *service* behind a tenant's status page (Datadog SLO polling, `internal/poller`). It has no visibility into the *domain* itself — expiration, registrar, or nameserver configuration. Domain verification (`internal/api/domain_verifier.go`) only checks DNS resolution and TLS handshake, on demand, when an operator clicks "verify" in the admin UI (`internal/api/domains_handler.go`).
 
-This blind spot caused a real production incident (Starbem, `eks-starbem-dev`, 2026-09-28): the root domain (`starbem.app`, registered at GoDaddy, DNS zone hosted on Route 53) went inoperative because its renewal payment failed. After renewal, the domain stayed broken for roughly 3 more hours because of DNS/nameserver cache propagation delay. Nothing in `vane` would have surfaced this risk in advance — no expiration warning, no way to see that the registrar (GoDaddy) and DNS host (Route 53) had drifted apart, no alert when the domain became unreachable at the registration level rather than the service level.
+This blind spot caused a real production incident (a real deployment, the shared dev cluster, 2026-09-28): the root domain (`example.com`, registered at GoDaddy, DNS zone hosted on Route 53) went inoperative because its renewal payment failed. After renewal, the domain stayed broken for roughly 3 more hours because of DNS/nameserver cache propagation delay. Nothing in `vane` would have surfaced this risk in advance — no expiration warning, no way to see that the registrar (GoDaddy) and DNS host (Route 53) had drifted apart, no alert when the domain became unreachable at the registration level rather than the service level.
 
 `vane` already has a `domains` table (`internal/db/domain_repository.go`) where operators register the domains they care about — today used for the CNAME/TLS attach flow to a status page. There is no periodic background job for domains at all; the only scheduled tenant-facing job today is the weekly digest (`internal/cli/digest_scheduler.go`).
 
@@ -20,7 +20,7 @@ This blind spot caused a real production incident (Starbem, `eks-starbem-dev`, 2
 
 | Feature | Reason |
 | --- | --- |
-| Serving traffic on a tenant's root/apex domain (routing `vane` itself onto e.g. `starbem.app` instead of a subdomain) | Explicitly rejected this session — the root domain today points at infrastructure `vane` doesn't control (Route 53 in the incident example), and making it a `vane`-served domain would require registrar-level changes and an admin choice with real operational weight. Out of scope entirely, not deferred. |
+| Serving traffic on a tenant's root/apex domain (routing `vane` itself onto e.g. `example.com` instead of a subdomain) | Explicitly rejected this session — the root domain today points at infrastructure `vane` doesn't control (Route 53 in the incident example), and making it a `vane`-served domain would require registrar-level changes and an admin choice with real operational weight. Out of scope entirely, not deferred. |
 | WHOIS text-format fallback when RDAP is unavailable for a TLD | Explicitly rejected this session in favor of simplicity — RDAP only, no fallback parser. A TLD without RDAP support simply won't get expiration/registrar data; NS drift detection (plain DNS lookup) is unaffected either way. |
 | Slack (or any new) notification channel for these alerts | Deferred — a Slack integration is planned for a future "integrations" section of `vane`, unrelated to this feature. This feature reuses whatever channel the existing notification pipeline already sends through (email today). |
 | Historical audit trail of NS/expiration changes over time (a `domain_health_checks` table) | Considered as Approach B during design and rejected for now — no stated requirement for a change history/timeline, only current state + alerting. The chosen design (extend the `domains` row in place) can be migrated to add history later without breaking this feature's contract. |
@@ -79,7 +79,7 @@ This blind spot caused a real production incident (Starbem, `eks-starbem-dev`, 2
 
 ### P3: Domain health visible for domains with no status page attached
 
-**User Story**: As an operator, I want to register and monitor a bare root domain (e.g. `starbem.app`) that has no CNAME or status page pointed at it, so the exact scenario that caused this feature's motivating incident is covered.
+**User Story**: As an operator, I want to register and monitor a bare root domain (e.g. `example.com`) that has no CNAME or status page pointed at it, so the exact scenario that caused this feature's motivating incident is covered.
 
 **Why P3**: Without this, the feature would only cover subdomains already used for status pages — missing the actual domain that broke in the real incident.
 

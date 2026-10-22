@@ -3,7 +3,7 @@
 **Fonte**: `.specs/features/mvp-core/spec.md` (SP-06 a SP-20) + `design.md`
 **Objetivo deste doc**: contexto de produto suficiente pra gerar layout de alta fidelidade da página pública — não repete detalhe de implementação (Go/renderer/Host header), só o que afeta decisão visual/UX.
 
-**Premissa assumida** (não travada em spec/design, decidir ou ajustar): mesma direção visual do `admin-frontend` (painel operacional, sem branding Starbem, produto standalone tipo Statuspage.io/Instatus) — mas esta tela é pública, sem sidebar/nav autenticada, sem RBAC.
+**Premissa assumida** (não travada em spec/design, decidir ou ajustar): mesma direção visual do `admin-frontend` (painel operacional, sem branding de terceiros, produto standalone tipo Statuspage.io/Instatus) — mas esta tela é pública, sem sidebar/nav autenticada, sem RBAC.
 
 ---
 
@@ -55,7 +55,7 @@ Só um "papel": visitante público, sem autenticação (SP-06 item 5). Não exis
 - Deve ser legível rápido — visitante quer resposta em segundos ("está tudo bem?"), não explorar a página
 - Paleta de estado igual ao brief do admin-frontend, pra manter consistência entre as duas telas do mesmo produto: sucesso/operacional, degradado/aviso, falha/crítico, neutro/não configurado
 - Sem exigir dark mode (não requisitado em spec)
-- Sem branding Starbem — produto standalone
+- Sem branding de terceiros — produto standalone
 
 ---
 

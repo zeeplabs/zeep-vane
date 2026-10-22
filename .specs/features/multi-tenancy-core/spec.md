@@ -68,7 +68,7 @@ Explicitly excluded. Documented to prevent scope creep.
 
 **User Story**: Como gestor de infra rodando Vane self-hosted, quero que o primeiro `/bootstrap` já crie meu tenant automaticamente, para que eu nunca precise entender ou interagir com o conceito de "tenant" — a experiência continua sendo "eu instalo, eu uso".
 
-**Why P1**: Self-hosted é o modelo que já roda em produção (teste Starbem); não pode regredir.
+**Why P1**: Self-hosted é o modelo que já roda em produção (ambiente de teste interno); não pode regredir.
 
 **Acceptance Criteria**:
 

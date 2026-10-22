@@ -9,7 +9,7 @@ Vane hoje é single-tenant por design (AD-002): 1 instalação self-hosted = 1 e
 
 Este documento cobre só o subsistema **fundação de multi-tenancy** — o que precisa existir antes de licença (próximo subsistema), billing e notificação-service ficarem em cima. Decomposição completa e ordem de dependência registradas na conversa de brainstorming; ver AD-022 em `.specs/STATE.md`.
 
-Não há hoje instalação self-hosted externa em produção (só o ambiente de teste da Starbem, controlado pela própria equipe) — logo este subsistema **não precisa de migração retrocompatível**: schema é recriado do zero. Esse pressuposto deixa de valer no dia em que existir o primeiro cliente self-hosted externo real (ver AD-022).
+Não há hoje instalação self-hosted externa em produção (só um ambiente de teste interno, controlado pela própria equipe) — logo este subsistema **não precisa de migração retrocompatível**: schema é recriado do zero. Esse pressuposto deixa de valer no dia em que existir o primeiro cliente self-hosted externo real (ver AD-022).
 
 ## Modelo de dado
 
@@ -87,7 +87,7 @@ Cookie de sessão (extensão aditiva do AD-004, continua `httpOnly`/`Secure`/`Sa
 
 ## Migração
 
-Sem compatibilidade retroativa (ver Contexto). Migrations recriam o schema do zero: dropam `admins`/`admin_invites` e sobem `tenants`, `users`, `tenant_memberships`, `tenant_invites`, `tenant_id` + policies RLS em toda tabela de domínio, tudo já no formato final. Ambiente de teste da Starbem no `eks-starbem-dev` é reprovisionado do zero (`helm uninstall` + reinstall, ou drop schema + reaplica migrations) — sem preocupação de downtime ou backfill.
+Sem compatibilidade retroativa (ver Contexto). Migrations recriam o schema do zero: dropam `admins`/`admin_invites` e sobem `tenants`, `users`, `tenant_memberships`, `tenant_invites`, `tenant_id` + policies RLS em toda tabela de domínio, tudo já no formato final. O ambiente de teste interno no cluster de dev é reprovisionado do zero (`helm uninstall` + reinstall, ou drop schema + reaplica migrations) — sem preocupação de downtime ou backfill.
 
 ## Testes
 

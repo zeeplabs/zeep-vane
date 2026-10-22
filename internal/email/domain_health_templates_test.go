@@ -17,7 +17,7 @@ func TestRenderDomainExpiring_IncludesHostnameDaysAndThreshold(t *testing.T) {
 
 	htmlBody, textBody, err := tmpls.renderDomainExpiring(DomainExpiringEmailData{
 		TenantName:    "Acme",
-		Hostname:      "starbem.app",
+		Hostname:      "example.com",
 		DaysRemaining: 6,
 		ThresholdDays: 7,
 		DashboardURL:  "https://vane.example.com/domains",
@@ -27,7 +27,7 @@ func TestRenderDomainExpiring_IncludesHostnameDaysAndThreshold(t *testing.T) {
 	}
 
 	for _, body := range []string{htmlBody, textBody} {
-		if !strings.Contains(body, "starbem.app") {
+		if !strings.Contains(body, "example.com") {
 			t.Errorf("body missing hostname: %q", body)
 		}
 		if !strings.Contains(body, "6") {
@@ -54,7 +54,7 @@ func TestRenderDomainExpiring_AlreadyExpired_ReadsAsExpiredNotNegativeDays(t *te
 	}
 
 	htmlBody, textBody, err := tmpls.renderDomainExpiring(DomainExpiringEmailData{
-		Hostname:      "starbem.app",
+		Hostname:      "example.com",
 		DaysRemaining: -3,
 		ThresholdDays: 7,
 		DashboardURL:  "https://vane.example.com/domains",
@@ -84,7 +84,7 @@ func TestRenderDomainNSDrift_IncludesHostnameAndExpectedVsCurrentNS(t *testing.T
 
 	htmlBody, textBody, err := tmpls.renderDomainNSDrift(DomainNSDriftEmailData{
 		TenantName:   "Acme",
-		Hostname:     "starbem.app",
+		Hostname:     "example.com",
 		ExpectedNS:   []string{"ns1.old.net", "ns2.old.net"},
 		CurrentNS:    []string{"ns1.new.net"},
 		DashboardURL: "https://vane.example.com/domains",
@@ -94,7 +94,7 @@ func TestRenderDomainNSDrift_IncludesHostnameAndExpectedVsCurrentNS(t *testing.T
 	}
 
 	for _, body := range []string{htmlBody, textBody} {
-		if !strings.Contains(body, "starbem.app") {
+		if !strings.Contains(body, "example.com") {
 			t.Errorf("body missing hostname: %q", body)
 		}
 		if !strings.Contains(body, "ns1.old.net") || !strings.Contains(body, "ns2.old.net") {
